@@ -53,7 +53,7 @@ def init_db():
 init_db()
 
 # HTML Dashboard Template
-DASHBOARD_HTML = '''<\!DOCTYPE html>
+DASHBOARD_HTML = '''<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
