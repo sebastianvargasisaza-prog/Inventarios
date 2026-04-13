@@ -355,7 +355,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <button class="tab-button" onclick="switchTab('movimientos')">📋 Movimientos</button>
         </div>
 
-        <\!-- Dashboard Tab -->
+        <!-- Dashboard Tab -->
         <div id="dashboard" class="tab-content active">
             <h2>Dashboard Principal</h2>
             <div class="grid">
@@ -379,7 +379,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <button onclick="loadDashboard()">Actualizar Dashboard</button>
         </div>
 
-        <\!-- Producción Tab -->
+        <!-- Producción Tab -->
         <div id="produccion" class="tab-content">
             <h2>Registrar Producción</h2>
             <div class="form-group">
@@ -398,14 +398,14 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <div id="prod-response"></div>
         </div>
 
-        <\!-- ABC Tab -->
+        <!-- ABC Tab -->
         <div id="abc" class="tab-content">
             <h2>Análisis ABC del Inventario</h2>
             <button onclick="loadABC()">Generar Análisis ABC</button>
             <div id="abc-results" style="margin-top: 20px;"></div>
         </div>
 
-        <\!-- Alertas Tab -->
+        <!-- Alertas Tab -->
         <div id="alertas" class="tab-content">
             <h2>Gestión de Alertas</h2>
             <button onclick="loadAlertas()">Cargar Alertas</button>
@@ -423,7 +423,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             </table>
         </div>
 
-        <\!-- Chat IA Tab -->
+        <!-- Chat IA Tab -->
         <div id="chat" class="tab-content">
             <h2>Chat con IA - Asesor de Inventario</h2>
             <div class="chat-container">
@@ -435,7 +435,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <\!-- Movimientos Tab -->
+        <!-- Movimientos Tab -->
         <div id="movimientos" class="tab-content">
             <h2>Registro de Movimientos</h2>
             <div class="form-group">
