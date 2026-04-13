@@ -1,0 +1,28 @@
+================================================================================
+FASE 6: LIMPIAR DATOS ANTIGUOS ANTES DE CARGAR FORMULAS NORMALIZADAS
+================================================================================
+
+INSTRUCCIONES:
+1. Abre Supabase SQL Editor
+2. Copia EXACTAMENTE el script a continuación (sin líneas en blanco extras)
+3. Ejecuta
+4. Espera confirmación: "DELETE {n}" para cada tabla
+
+================================================================================
+SCRIPT A EJECUTAR EN SUPABASE:
+================================================================================
+
+DELETE FROM movimientos_produccion;
+DELETE FROM formulas_productos;
+DELETE FROM lotes;
+
+================================================================================
+RESULTADO ESPERADO:
+================================================================================
+Success. 0 rows returned.
+(o DELETE {n} si hay registros previos)
+
+State: Esta operación elimina SOLO datos de movimientos, fórmulas y lotes.
+Los 212 materiales con códigos MPMP permanecen intactos en tabla materiales.
+
+================================================================================

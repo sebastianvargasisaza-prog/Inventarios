@@ -1,0 +1,107 @@
+═══════════════════════════════════════════════════════════════════════════════
+EJECUCIÓN INMEDIATA: Completar carga de 306 materiales MPMP
+═══════════════════════════════════════════════════════════════════════════════
+
+ESTADO ACTUAL:
+✅ Part 1 (MPMP00001-00107): 107/107
+⚠️ Part 2 (MPMP00108-00207): 93/100 → NECESITA CARGAR 7 FALTANTES
+✅ Part 3 (MPMP00208-00306): 99/99
+❌ Código anómalo: MPMP17S001 → DEBE ELIMINARSE
+────────────────────────────────────────────────────────────────────────────────
+TOTAL ACTUAL: 299/306 materiales
+OBJETIVO: 306/306 materiales
+
+═══════════════════════════════════════════════════════════════════════════════
+INSTRUCCIONES RÁPIDAS (3 pasos, 4 minutos)
+═══════════════════════════════════════════════════════════════════════════════
+
+PASO 1️⃣  CARGAR CÓDIGOS FALTANTES
+────────────────────────────────────────────────────────────────────────────────
+📄 Archivo: INSERT_PART2_COMPLETE_WITH_ONCONFLICT.sql
+
+1. Abre: https://supabase.com/dashboard/project/vppihjpqwbdtpipopymc/sql/
+2. Abre el archivo INSERT_PART2_COMPLETE_WITH_ONCONFLICT.sql
+3. Copia TODO el contenido (Ctrl+A, Ctrl+C)
+4. En Supabase SQL Editor:
+   - Haz clic en el editor
+   - Borra el contenido anterior (Ctrl+A, Delete)
+   - Pega el INSERT (Ctrl+V)
+   - Haz clic en RUN o presiona Ctrl+Enter
+
+✅ RESULTADO ESPERADO: Transacción completada exitosamente
+
+
+PASO 2️⃣  ELIMINAR CÓDIGO ANÓMALO
+────────────────────────────────────────────────────────────────────────────────
+Ejecuta esta query en Supabase SQL Editor:
+
+DELETE FROM materiales WHERE codigo = 'MPMP17S001';
+
+✅ RESULTADO ESPERADO: "0 rows deleted" (el código ya habrá sido ignorado en PASO 1)
+
+
+PASO 3️⃣  VERIFICACIÓN FINAL
+────────────────────────────────────────────────────────────────────────────────
+Ejecuta esta query en Supabase SQL Editor:
+
+SELECT
+  (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00001' AND 'MPMP00107') as part1,
+  (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00108' AND 'MPMP00207') as part2,
+  (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00208' AND 'MPMP00306') as part3,
+  (SELECT COUNT(*) FROM materiales WHERE codigo LIKE 'MPMP%') as total_mpmp;
+
+✅ RESULTADO ESPERADO:
+part1 | part2 | part3 | total_mpmp
+------|-------|-------|----------
+ 107  |  100  |  99   |   306 ✅✅✅
+
+═══════════════════════════════════════════════════════════════════════════════
+¿PROBLEMA?
+═══════════════════════════════════════════════════════════════════════════════
+
+Si el PASO 1 falla:
+  • Verifica que copie TODO el contenido del archivo
+  • El archivo contiene 7187 caracteres en una sola línea
+  • Intenta copiar nuevamente y asegúrate de pegar la línea COMPLETA
+
+Si la verificación muestra números diferentes:
+  • Recarga la página de Supabase
+  • Espera 2 segundos
+  • Intenta la verificación nuevamente
+
+Si necesitas ver exactamente qué códigos faltaban (diagnóstico):
+  • Ver archivo: FINALIZACION_CARGA_MATERIALES.md (PASO 1)
+
+═══════════════════════════════════════════════════════════════════════════════
+DESPUÉS (Decisión Estratégica sobre Lotes)
+═══════════════════════════════════════════════════════════════════════════════
+
+Una vez confirmes 306 materiales, hay que decidir qué hacer con los 84 lotes:
+
+OPCIÓN A (RECOMENDADA): Continuar con MPMP00001-306
+  → Los lotes actuales se descartan
+  → Sistema limpio y estandarizado
+  → Acción: DELETE FROM lotes;
+
+OPCIÓN B: Volver al sistema antiguo
+  → Se eliminan los 306 MPMP
+  → Se cargan 390 materiales antiguos + 389 lotes
+  → Acción: Ejecutar seed files antiguos
+
+OPCIÓN C: Coexistencia dual
+  → Crear tablas _legacy separadas
+  → NO RECOMENDADO (complejidad)
+
+Ver: FINALIZACION_CARGA_MATERIALES.md para más detalles
+
+═══════════════════════════════════════════════════════════════════════════════
+ARCHIVOS LISTOS EN C:\Users\sebas\OneDrive\Documentos\Claude\Projects\Inventarios\
+
+✅ INSERT_PART2_COMPLETE_WITH_ONCONFLICT.sql ← COPIAR A SUPABASE
+✅ FINALIZACION_CARGA_MATERIALES.md ← REFERENCIA COMPLETA
+✅ EXECUTE_THIS_SEQUENCE.md ← INSTRUCCIONES DETALLADAS
+✅ ESTE ARCHIVO ← GUÍA RÁPIDA
+
+═══════════════════════════════════════════════════════════════════════════════
+Preparado: 2026-04-12 | Sistema: Inventario IA Espagiria | Status: LISTO PARA GO
+═══════════════════════════════════════════════════════════════════════════════

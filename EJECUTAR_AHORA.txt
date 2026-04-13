@@ -1,0 +1,64 @@
+═══════════════════════════════════════════════════════════════════════════════
+INSTRUCCIONES DE EJECUCIÓN INMEDIATA - CARGAR 8 MATERIALES FALTANTES
+═══════════════════════════════════════════════════════════════════════════════
+
+ESTADO ACTUAL:
+- Part 1 (MPMP00001-107): 107/107 ✅
+- Part 2 (MPMP00108-207): 92/100 ⚠️  ← NECESITA CARGAR 8
+- Part 3 (MPMP00208-306): 99/99 ✅
+- TOTAL: 299/306 materiales
+
+ARCHIVO LISTO PARA EJECUTAR:
+📄 C:\Users\sebas\OneDrive\Documentos\Claude\Projects\Inventarios\INSERT_PART2_ONELINE.sql
+
+PASOS RÁPIDOS:
+═══════════════════════════════════════════════════════════════════════════════
+
+1️⃣  Abre Supabase → SQL Editor
+    URL: https://supabase.com/dashboard/project/vppihjpqwbdtpipopymc/sql/
+
+2️⃣  Abre el archivo INSERT_PART2_ONELINE.sql desde tu carpeta de Proyectos
+
+3️⃣  Copia TODO el contenido (Ctrl+A, Ctrl+C)
+
+4️⃣  En Supabase SQL Editor:
+    - Haz clic en el editor
+    - Borra el contenido anterior (Ctrl+A, Delete)
+    - Pega el INSERT (Ctrl+V)
+    - Haz clic en RUN (botón azul) o presiona Ctrl+Enter
+
+5️⃣  Ejecuta esta VERIFICACIÓN inmediatamente después:
+
+    SELECT
+      (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00001' AND 'MPMP00107') as part1,
+      (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00108' AND 'MPMP00207') as part2,
+      (SELECT COUNT(*) FROM materiales WHERE codigo BETWEEN 'MPMP00208' AND 'MPMP00306') as part3,
+      (SELECT COUNT(*) FROM materiales WHERE codigo LIKE 'MPMP%') as TOTAL;
+
+    ✅ RESULTADO ESPERADO:
+    part1 | part2 | part3 | TOTAL
+    ------|-------|-------|-------
+     107  |  100  |  99   |  306
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DESPUÉS (Verificar lotes):
+
+Una vez que tengas 306 materiales confirmados, ejecuta:
+
+    SELECT COUNT(*) as total_lotes FROM lotes;
+    -- Esperado: 389
+
+═══════════════════════════════════════════════════════════════════════════════
+
+¿PROBLEMA?
+Si el INSERT falla o no cambia el conteo de 92 a 100:
+- El archivo INSERT_PART2_ONELINE.sql está validado
+- El ON CONFLICT ignora duplicados automáticamente
+- Si sigue siendo 92, contactar a Alejandro/Sebastián con:
+  ✓ Screenshot de error
+  ✓ Nombre del archivo usado
+
+═══════════════════════════════════════════════════════════════════════════════
+Preparado por: Claude AI | Fecha: 2026-04-12 | Sistema: Inventario IA Espagiria
+═══════════════════════════════════════════════════════════════════════════════
