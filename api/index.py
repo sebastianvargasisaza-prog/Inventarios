@@ -638,7 +638,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         async function enviarChat() {
             const input = document.getElementById('chat-input');
             const message = input.value.trim();
-            if (\!message) return;
+            if (!message) return;
 
             const chatMessages = document.getElementById('chat-messages');
             chatMessages.innerHTML += `<div class="message user">${message}</div>`;
