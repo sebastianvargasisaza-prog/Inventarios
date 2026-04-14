@@ -26,7 +26,19 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   material_id TEXT, material_nombre TEXT, cantidad REAL,
-                  tipo TEXT, fecha TEXT, observaciones TEXT)""")
+                  tipo TEXT, fecha TEXT, observaciones TEXT,
+                  lote TEXT, fecha_vencimiento TEXT, estanteria TEXT,
+                  posicion TEXT, proveedor TEXT, estado_lote TEXT)""")
+    # Agregar columnas nuevas si no existen (migracion segura)
+    nuevas_cols = [
+        ("lote", "TEXT"), ("fecha_vencimiento", "TEXT"), ("estanteria", "TEXT"),
+        ("posicion", "TEXT"), ("proveedor", "TEXT"), ("estado_lote", "TEXT")
+    ]
+    for col, tipo in nuevas_cols:
+        try:
+            c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} {tipo}")
+        except Exception:
+            pass  # columna ya existe
     c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
@@ -115,22 +127,29 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="stock" class="tab-content">
-    <h2>&#128230; Stock Actual por Materia Prima</h2>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
-      <input type="text" id="stock-search" placeholder="Buscar codigo o nombre..." oninput="filterStock()" style="width:260px;margin-top:0;">
+    <h2>&#128230; Stock por Lote</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+      <input type="text" id="stock-search" placeholder="Buscar MP, lote, proveedor..." oninput="filterStock()" style="width:220px;margin-top:0;">
+      <select id="stock-estanteria" onchange="filterStock()" style="width:140px;padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;"><option value="">Todas estanterias</option></select>
+      <select id="stock-estado" onchange="filterStock()" style="width:140px;padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
+        <option value="">Todos estados</option>
+        <option value="vencido">Vencido</option>
+        <option value="critico">Critico menos 30d</option>
+        <option value="proximo">Proximo menos 90d</option>
+        <option value="ok">Vigente</option>
+      </select>
       <button onclick="loadStock()">&#8635; Actualizar</button>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
     <table class="table">
       <thead><tr>
-        <th>Codigo MP</th><th>Material</th>
-        <th style="text-align:right;">Entradas (g)</th>
-        <th style="text-align:right;">Salidas (g)</th>
-        <th style="text-align:right;">&#9654; Stock (g)</th>
-        <th style="text-align:right;">Stock (kg)</th>
+        <th>Codigo MP</th><th>Material</th><th>Lote</th>
+        <th>Proveedor</th><th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
+        <th style="text-align:right;">g</th><th style="text-align:right;">kg</th>
+        <th style="text-align:center;">Vence</th><th style="text-align:center;">Estado</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -244,7 +263,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 <script>
-var fData=[], allStock=[];
+var fData=[], allStock=[], allLotes=[];
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
@@ -547,6 +566,7 @@ def get_inventario():
 
 @app.route('/api/stock')
 def get_stock():
+    """Vista consolidada por material (para dashboard)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""SELECT material_id, material_nombre,
@@ -559,6 +579,54 @@ def get_stock():
     return jsonify({'items': [{'material_id': r[0], 'material_nombre': r[1],
                                 'entradas': round(r[2] or 0, 2), 'salidas': round(r[3] or 0, 2),
                                 'stock_actual': round(r[4] or 0, 2)} for r in rows]})
+
+@app.route('/api/lotes')
+def get_lotes():
+    """Vista por lote individual con ubicacion, vencimiento y proveedor"""
+    from datetime import date
+    hoy = date.today().isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento,
+                        estanteria, posicion, proveedor, estado_lote, fecha
+                 FROM movimientos
+                 WHERE tipo='Entrada'
+                 ORDER BY material_nombre ASC, lote ASC""")
+    rows = c.fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        mat_id, mat_nom, lote, cant, fvenc, estant, pos, prov, estado, fecha_mov = r
+        # Calcular dias para vencer
+        dias_venc = None
+        alerta = 'ok'
+        if fvenc and len(fvenc) >= 10:
+            try:
+                from datetime import datetime as dt2
+                fv = fvenc[:10]
+                dias = (dt2.strptime(fv, '%Y-%m-%d').date() - dt2.strptime(hoy, '%Y-%m-%d').date()).days
+                dias_venc = dias
+                if dias < 0: alerta = 'vencido'
+                elif dias <= 30: alerta = 'critico'
+                elif dias <= 90: alerta = 'proximo'
+            except Exception:
+                pass
+        result.append({
+            'material_id': mat_id or '',
+            'material_nombre': mat_nom or '',
+            'lote': lote or '',
+            'cantidad_g': round(cant or 0, 2),
+            'cantidad_kg': round((cant or 0) / 1000, 3),
+            'fecha_vencimiento': fvenc[:10] if fvenc and len(fvenc) >= 10 else '',
+            'dias_para_vencer': dias_venc,
+            'estanteria': estant or '',
+            'posicion': pos or '',
+            'ubicacion': f"{estant or ''}{pos or ''}".strip(),
+            'proveedor': prov or '',
+            'estado_lote': estado or '',
+            'alerta': alerta
+        })
+    return jsonify({'lotes': result, 'total': len(result)})
 
 @app.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
@@ -603,14 +671,26 @@ def handle_movimientos():
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
-        c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
+        c.execute("""INSERT INTO movimientos
+                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (data['material_id'], data['material_nombre'], data['cantidad'],
-                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', '')))
+                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', ''),
+                   data.get('lote',''), data.get('fecha_vencimiento',''),
+                   data.get('estanteria',''), data.get('posicion',''),
+                   data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
-    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
+    c.execute("""SELECT material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                        lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote
+                 FROM movimientos ORDER BY fecha DESC LIMIT 500""")
+    movimientos = [{'material_id': r[0], 'material_nombre': r[1], 'cantidad': r[2], 'tipo': r[3],
+                    'fecha': r[4], 'observaciones': r[5], 'lote': r[6] or '',
+                    'fecha_vencimiento': r[7] or '', 'estanteria': r[8] or '',
+                    'posicion': r[9] or '', 'proveedor': r[10] or '',
+                    'estado_lote': r[11] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
