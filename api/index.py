@@ -6,42 +6,6 @@ from flask import Flask, jsonify, request, render_template_string
 from anthropic import Anthropic
 import pandas as pd
 
-# Base de datos: PostgreSQL (persistente) o SQLite (temporal)
-DATABASE_URL = os.environ.get('DATABASE_URL')
-
-class _Cur:
-    """Cursor que adapta ? a %s para PostgreSQL automaticamente"""
-    def __init__(self, c, pg): self._c, self._pg = c, pg
-    def execute(self, q, p=None):
-        if self._pg: q = q.replace('?','%s')
-        self._c.execute(q, p) if p is not None else self._c.execute(q)
-    def fetchone(self): return self._c.fetchone()
-    def fetchall(self): return self._c.fetchall()
-
-class _Conn:
-    def __init__(self, c, pg): self._c, self._pg = c, pg
-    def cursor(self): return _Cur(self._c.cursor(), self._pg)
-    def commit(self): self._c.commit()
-    def rollback(self): self._c.rollback()
-    def close(self): self._c.close()
-
-if DATABASE_URL:
-    import psycopg2
-    def get_conn():
-        try:
-            return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
-        except Exception as e:
-            import sys
-            print(f"PostgreSQL connection failed: {e}", file=sys.stderr)
-            raise
-    IS_PG = True
-else:
-    DB_PATH = '/tmp/inventario.db'
-    def get_conn():
-        r = sqlite3.connect(DB_PATH); r.row_factory = sqlite3.Row
-        return _Conn(r, False)
-    IS_PG = False
-
 app = Flask(__name__)
 
 _anthropic_client = None
@@ -57,20 +21,32 @@ def get_anthropic_client():
 DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    pk = "SERIAL PRIMARY KEY" if IS_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    c.execute(f"CREATE TABLE IF NOT EXISTS movimientos (id {pk}, material_id TEXT, material_nombre TEXT, cantidad REAL, tipo TEXT, fecha TEXT, observaciones TEXT, lote TEXT, fecha_vencimiento TEXT, estanteria TEXT, posicion TEXT, proveedor TEXT, estado_lote TEXT)")
+    c.execute("""CREATE TABLE IF NOT EXISTS movimientos
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  material_id TEXT, material_nombre TEXT, cantidad REAL,
+                  tipo TEXT, fecha TEXT, observaciones TEXT,
+                  lote TEXT, fecha_vencimiento TEXT, estanteria TEXT,
+                  posicion TEXT, proveedor TEXT, estado_lote TEXT)""")
     for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote"]:
-        try:
-            c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT")
-            conn.commit()
-        except Exception:
-            if IS_PG: conn.rollback()
-    c.execute(f"CREATE TABLE IF NOT EXISTS producciones (id {pk}, producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)")
-    c.execute(f"CREATE TABLE IF NOT EXISTS alertas (id {pk}, material_id TEXT, material_nombre TEXT, stock_actual REAL, stock_minimo REAL, fecha TEXT, estado TEXT)")
-    c.execute(f"CREATE TABLE IF NOT EXISTS formula_headers (id {pk}, producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000, descripcion TEXT, fecha_creacion TEXT)")
-    c.execute(f"CREATE TABLE IF NOT EXISTS formula_items (id {pk}, producto_nombre TEXT, material_id TEXT, material_nombre TEXT, porcentaje REAL)")
+        try: c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT")
+        except Exception: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS producciones
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS alertas
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  material_id TEXT, material_nombre TEXT, stock_actual REAL,
+                  stock_minimo REAL, fecha TEXT, estado TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS formula_headers
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000,
+                  descripcion TEXT, fecha_creacion TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS formula_items
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  producto_nombre TEXT, material_id TEXT,
+                  material_nombre TEXT, porcentaje REAL)""")
     conn.commit()
     conn.close()
 
@@ -147,9 +123,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="Buscar MP, lote, proveedor..." oninput="filterStock()" style="width:220px;margin-top:0;">
-      <select id="stock-est" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
-        <option value="">Todas estanterias</option>
-      </select>
+      <select id="stock-est" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;"><option value="">Todas estanterias</option></select>
       <select id="stock-est2" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
         <option value="">Todos estados</option>
         <option value="vencido">Vencido</option>
@@ -227,7 +201,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </table>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;">
+      <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+      <button onclick="generarRotulos()" style="background:#c0392b;" id="btn-rotulos">&#128209; Generar Rotulos</button>
+    </div>
     <div id="prod-msg"></div>
   </div>
 
@@ -306,6 +283,7 @@ async function loadDashboard(){
   }catch(e){}
 }
 
+var allLotes=[];
 async function loadStock(){
   try{
     var r=await fetch('/api/lotes'), d=await r.json();
@@ -315,9 +293,8 @@ async function loadStock(){
     if(sel){sel.innerHTML='<option value="">Todas estanterias</option>';ests.forEach(function(e){var o=document.createElement('option');o.value=e;o.textContent='Est. '+e;sel.appendChild(o);});}
     document.getElementById('stock-count').textContent=allLotes.length+' lotes';
     renderStock(allLotes);
-  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error. Recarga.</td></tr>';}
+  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error al cargar stock.</td></tr>';}
 }
-var allLotes=[];
 function renderStock(items){
   var tb=document.getElementById('stock-body');
   if(!items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
@@ -346,7 +323,7 @@ function filterStock(){
   var estado=document.getElementById('stock-est2')?document.getElementById('stock-est2').value:'';
   var f=allLotes.filter(function(i){
     return(!q||(i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||(i.proveedor||'').toLowerCase().includes(q)))
-      &&(! est||i.estanteria===est)&&(! estado||i.alerta===estado);
+      &&(!est||i.estanteria===est)&&(!estado||i.alerta===estado);
   });
   document.getElementById('stock-count').textContent=f.length+' de '+allLotes.length;
   renderStock(f);
@@ -559,6 +536,14 @@ async function enviarChat(){
 }
 
 window.onload=function(){loadDashboard();loadFormulas();};
+
+function generarRotulos(){
+  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value.trim();
+  var kg=parseFloat(document.getElementById('prod-kg').value)||0;
+  if(!prod){alert('Selecciona un producto primero');return;}
+  if(kg<=0){alert('Ingresa la cantidad en kg');return;}
+  window.open('/rotulos/'+encodeURIComponent(prod)+'/'+kg,'_blank');
+}
 </script>
 </body>
 </html>
@@ -574,7 +559,7 @@ def health():
 
 @app.route('/api/inventario')
 def get_inventario():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM movimientos')
     mov = c.fetchone()[0]
@@ -590,7 +575,7 @@ def get_inventario():
 
 @app.route('/api/stock')
 def get_stock():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""SELECT material_id, material_nombre,
                  SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END),
@@ -605,7 +590,7 @@ def get_stock():
 
 @app.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -632,7 +617,7 @@ def handle_formulas():
 
 @app.route('/api/formulas/<producto_nombre>', methods=['DELETE'])
 def del_formula(producto_nombre):
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (producto_nombre,))
     c.execute('DELETE FROM formula_headers WHERE producto_nombre=?', (producto_nombre,))
@@ -642,24 +627,35 @@ def del_formula(producto_nombre):
 
 @app.route('/api/movimientos', methods=['GET', 'POST'])
 def handle_movimientos():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
-        c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
+        c.execute("""INSERT INTO movimientos
+                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (data['material_id'], data['material_nombre'], data['cantidad'],
-                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', '')))
+                   data['tipo'], datetime.now().isoformat(), data.get('observaciones',''),
+                   data.get('lote',''), data.get('fecha_vencimiento',''),
+                   data.get('estanteria',''), data.get('posicion',''),
+                   data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
-    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
+    c.execute("""SELECT material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                        lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote
+                 FROM movimientos ORDER BY fecha DESC LIMIT 500""")
+    movimientos = [{'material_id':r[0],'material_nombre':r[1],'cantidad':r[2],'tipo':r[3],
+                    'fecha':r[4],'observaciones':r[5],'lote':r[6] or '','fecha_vencimiento':r[7] or '',
+                    'estanteria':r[8] or '','posicion':r[9] or '','proveedor':r[10] or '',
+                    'estado_lote':r[11] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
 @app.route('/api/produccion', methods=['GET', 'POST'])
 def handle_produccion():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -704,7 +700,7 @@ def handle_chat():
 
 @app.route('/api/analisis-abc')
 def get_analisis_abc():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""SELECT material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
                  FROM movimientos GROUP BY material_nombre ORDER BY stock DESC""")
@@ -724,7 +720,7 @@ def get_analisis_abc():
 
 @app.route('/api/alertas', methods=['GET', 'POST'])
 def handle_alertas():
-    conn = get_conn()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -740,45 +736,42 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
-@app.route('/api/stock')
-def get_stock():
-    conn = get_conn(); c = conn.cursor()
-    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
-    rows = c.fetchall(); conn.close()
-    return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
-
 @app.route('/api/lotes')
 def get_lotes():
     from datetime import date
     hoy = date.today().isoformat()
-    conn = get_conn(); c = conn.cursor()
-    c.execute("SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, lote ASC")
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento,
+                        estanteria, posicion, proveedor, estado_lote
+                 FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, lote ASC""")
     rows = c.fetchall(); conn.close()
     result = []
     for r in rows:
-        mat_id,mat_nom,lote,cant,fvenc,estant,pos,prov,estado = r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]
+        mat_id,mat_nom,lote,cant,fvenc,estant,pos,prov,estado = r
         dias_venc,alerta = None,'ok'
         if fvenc and len(str(fvenc)) >= 10:
             try:
                 from datetime import datetime as dt2
-                fv = str(fvenc)[:10]
-                dias = (dt2.strptime(fv,'%Y-%m-%d').date() - dt2.strptime(hoy,'%Y-%m-%d').date()).days
+                dias = (dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date() - dt2.strptime(hoy,'%Y-%m-%d').date()).days
                 dias_venc = dias
                 if dias < 0: alerta = 'vencido'
                 elif dias <= 30: alerta = 'critico'
                 elif dias <= 90: alerta = 'proximo'
             except: pass
-        result.append({'material_id':mat_id or '','material_nombre':mat_nom or '','lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),'fecha_vencimiento':str(fvenc)[:10] if fvenc else '','dias_para_vencer':dias_venc,'estanteria':estant or '','posicion':pos or '','proveedor':prov or '','estado_lote':estado or '','alerta':alerta})
+        result.append({'material_id':mat_id or '','material_nombre':mat_nom or '','lote':lote or '',
+                       'cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
+                       'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
+                       'dias_para_vencer':dias_venc,'estanteria':estant or '','posicion':pos or '',
+                       'proveedor':prov or '','estado_lote':estado or '','alerta':alerta})
     return jsonify({'lotes': result, 'total': len(result)})
 
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_movimientos():
-    conn = get_conn(); c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("DELETE FROM movimientos")
     conn.commit()
     c.execute("SELECT COUNT(*) FROM movimientos")
-    count = c.fetchone()[0]
-    conn.close()
+    count = c.fetchone()[0]; conn.close()
     return jsonify({'message': 'Movimientos borrados', 'restantes': count})
 
 @app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
@@ -789,7 +782,7 @@ def generar_rotulos(producto_nombre, cantidad_kg):
     cantidad_g = cantidad_kg * 1000
     prod = urllib.parse.unquote(producto_nombre)
     op_num = "OP-" + date.today().strftime('%Y%m%d')
-    conn = get_conn(); c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
     lotes = {}
