@@ -1,734 +1,605 @@
 import os
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from flask import Flask, jsonify, request, render_template_string
 from anthropic import Anthropic
 import pandas as pd
 
 app = Flask(__name__)
 
-# Lazy Anthropic client - initialized on first use to avoid startup failure
 _anthropic_client = None
-
 def get_anthropic_client():
     global _anthropic_client
     if _anthropic_client is None:
         api_key = os.environ.get('ANTHROPIC_API_KEY')
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY no está configurada en las variables de entorno")
+            raise ValueError("ANTHROPIC_API_KEY no configurada")
         _anthropic_client = Anthropic(api_key=api_key)
     return _anthropic_client
 
-# Database path
 DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    """Initialize SQLite database with required tables"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    # Create movimientos table
-    c.execute('''CREATE TABLE IF NOT EXISTS movimientos
+    c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT,
-                  material_nombre TEXT,
-                  cantidad REAL,
-                  tipo TEXT,
-                  fecha TEXT,
-                  observaciones TEXT)''')
-
-    # Create producciones table
-    c.execute('''CREATE TABLE IF NOT EXISTS producciones
+                  material_id TEXT, material_nombre TEXT, cantidad REAL,
+                  tipo TEXT, fecha TEXT, observaciones TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto TEXT,
-                  cantidad REAL,
-                  fecha TEXT,
-                  estado TEXT,
-                  observaciones TEXT)''')
-
-    # Create alertas table
-    c.execute('''CREATE TABLE IF NOT EXISTS alertas
+                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS alertas
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT,
-                  material_nombre TEXT,
-                  stock_actual REAL,
-                  stock_minimo REAL,
-                  fecha TEXT,
-                  estado TEXT)''')
-
+                  material_id TEXT, material_nombre TEXT, stock_actual REAL,
+                  stock_minimo REAL, fecha TEXT, estado TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS formula_headers
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000,
+                  descripcion TEXT, fecha_creacion TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS formula_items
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  producto_nombre TEXT, material_id TEXT,
+                  material_nombre TEXT, porcentaje REAL)""")
     conn.commit()
     conn.close()
 
-# Initialize database on startup
 init_db()
-
-# HTML Dashboard Template
-DASHBOARD_HTML = '''<!DOCTYPE html>
+DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Inventarios - ÁNIMUS Lab</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .tabs {
-            display: flex;
-            background: #f5f5f5;
-            border-bottom: 2px solid #ddd;
-            overflow-x: auto;
-        }
-
-        .tab-button {
-            flex: 1;
-            padding: 15px 20px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: 500;
-            color: #666;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-
-        .tab-button:hover {
-            background: white;
-            color: #667eea;
-        }
-
-        .tab-button.active {
-            background: white;
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
-        }
-
-        .tab-content {
-            display: none;
-            padding: 30px;
-            animation: fadeIn 0.3s;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        input, textarea, select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            font-size: 1em;
-            transition: border-color 0.3s;
-        }
-
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: 600;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-
-        .table th {
-            background: #f5f5f5;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            color: #333;
-            border-bottom: 2px solid #ddd;
-        }
-
-        .table td {
-            padding: 12px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .table tr:hover {
-            background: #f9f9f9;
-        }
-
-        .alert {
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-
-        .chat-container {
-            height: 500px;
-            display: flex;
-            flex-direction: column;
-            background: #f9f9f9;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .message {
-            padding: 12px 16px;
-            border-radius: 6px;
-            max-width: 80%;
-            word-wrap: break-word;
-        }
-
-        .message.user {
-            background: #667eea;
-            color: white;
-            align-self: flex-end;
-        }
-
-        .message.assistant {
-            background: white;
-            color: #333;
-            border: 1px solid #ddd;
-            align-self: flex-start;
-        }
-
-        .chat-input {
-            display: flex;
-            gap: 10px;
-            padding: 15px;
-            background: white;
-            border-top: 2px solid #ddd;
-        }
-
-        .chat-input input {
-            flex: 1;
-            margin: 0;
-        }
-
-        .chat-input button {
-            width: 100px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: white;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .card h3 {
-            color: #667eea;
-            margin-bottom: 10px;
-        }
-
-        .card p {
-            font-size: 2em;
-            font-weight: bold;
-            color: #333;
-        }
-
-        .abc-item {
-            padding: 15px;
-            background: #f9f9f9;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            border-left: 4px solid #667eea;
-        }
-
-        .abc-item.A {
-            border-left-color: #ff6b6b;
-        }
-
-        .abc-item.B {
-            border-left-color: #ffd93d;
-        }
-
-        .abc-item.C {
-            border-left-color: #6bcf7f;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventarios - ANIMUS Lab</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#667eea,#764ba2); min-height:100vh; padding:20px; }
+.container { max-width:1400px; margin:0 auto; background:white; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.3); overflow:hidden; }
+.header { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:25px; text-align:center; }
+.header h1 { font-size:1.8em; margin-bottom:6px; }
+.tabs { display:flex; background:#f5f5f5; border-bottom:2px solid #ddd; overflow-x:auto; }
+.tab-button { flex:1; padding:13px 12px; background:none; border:none; cursor:pointer; font-size:0.9em; font-weight:500; color:#666; white-space:nowrap; min-width:90px; transition:all 0.2s; }
+.tab-button:hover { background:white; color:#667eea; }
+.tab-button.active { background:white; color:#667eea; border-bottom:3px solid #667eea; }
+.tab-content { display:none; padding:25px; }
+.tab-content.active { display:block; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:15px; margin:15px 0; }
+.card { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:18px; border-radius:10px; text-align:center; }
+.card h3 { font-size:0.85em; opacity:0.9; margin-bottom:6px; }
+.card p { font-size:1.8em; font-weight:700; }
+button { background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:500; }
+button:hover { opacity:0.9; }
+input,select,textarea { width:100%; padding:9px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; margin-top:3px; }
+.form-group { margin-bottom:14px; }
+label { font-weight:600; font-size:0.88em; color:#444; }
+.table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.88em; }
+.table th { background:#667eea; color:white; padding:9px 10px; text-align:left; }
+.table td { padding:8px 10px; border-bottom:1px solid #eee; }
+.table tr:hover { background:#f8f9ff; }
+.alert-success { background:#d4edda; color:#155724; padding:10px; border-radius:6px; margin-top:8px; }
+.alert-error { background:#f8d7da; color:#721c24; padding:10px; border-radius:6px; margin-top:8px; }
+.chat-box { height:320px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:#f9f9f9; }
+.msg { margin-bottom:10px; padding:9px 13px; border-radius:8px; max-width:85%; }
+.msg.user { background:#667eea; color:white; margin-left:auto; }
+.msg.bot { background:white; border:1px solid #ddd; }
+h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📦 Sistema de Inventarios</h1>
-            <p>ÁNIMUS Lab - Gestión Inteligente de Inventario</p>
-        </div>
+<div class="container">
+  <div class="header">
+    <h1>&#128230; Sistema de Inventarios</h1>
+    <p>ANIMUS Lab - Gestion Inteligente de Inventario</p>
+  </div>
+  <div class="tabs">
+    <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
+    <button class="tab-button" onclick="switchTab('stock',this)">&#128230; Stock</button>
+    <button class="tab-button" onclick="switchTab('formulas',this)">&#129514; Formulas</button>
+    <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
+    <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
+    <button class="tab-button" onclick="switchTab('alertas',this)">&#9888; Alertas</button>
+    <button class="tab-button" onclick="switchTab('chat',this)">&#129302; Chat IA</button>
+    <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
+  </div>
 
-        <div class="tabs">
-            <button class="tab-button active" onclick="switchTab('dashboard')">📊 Dashboard</button>
-            <button class="tab-button" onclick="switchTab('produccion')">🏭 Registrar Producción</button>
-            <button class="tab-button" onclick="switchTab('abc')">📈 Análisis ABC</button>
-            <button class="tab-button" onclick="switchTab('alertas')">⚠️ Alertas</button>
-            <button class="tab-button" onclick="switchTab('chat')">🤖 Chat IA</button>
-            <button class="tab-button" onclick="switchTab('movimientos')">📋 Movimientos</button>
-        </div>
-
-        <!-- Dashboard Tab -->
-        <div id="dashboard" class="tab-content active">
-            <h2>Dashboard Principal</h2>
-            <div class="grid">
-                <div class="card">
-                    <h3>Stock Total</h3>
-                    <p id="stock-total">0</p>
-                </div>
-                <div class="card">
-                    <h3>Movimientos</h3>
-                    <p id="movimientos-count">0</p>
-                </div>
-                <div class="card">
-                    <h3>Alertas</h3>
-                    <p id="alertas-count">0</p>
-                </div>
-                <div class="card">
-                    <h3>Producciones</h3>
-                    <p id="producciones-count">0</p>
-                </div>
-            </div>
-            <button onclick="loadDashboard()">Actualizar Dashboard</button>
-        </div>
-
-        <!-- Producción Tab -->
-        <div id="produccion" class="tab-content">
-            <h2>Registrar Producción</h2>
-            <div class="form-group">
-                <label>Producto</label>
-                <input type="text" id="producto" placeholder="Nombre del producto">
-            </div>
-            <div class="form-group">
-                <label>Cantidad</label>
-                <input type="number" id="cantidad" placeholder="Cantidad producida" step="0.01">
-            </div>
-            <div class="form-group">
-                <label>Observaciones</label>
-                <textarea id="obs-prod" placeholder="Observaciones adicionales" rows="4"></textarea>
-            </div>
-            <button onclick="registrarProduccion()">Registrar Producción</button>
-            <div id="prod-response"></div>
-        </div>
-
-        <!-- ABC Tab -->
-        <div id="abc" class="tab-content">
-            <h2>Análisis ABC del Inventario</h2>
-            <button onclick="loadABC()">Generar Análisis ABC</button>
-            <div id="abc-results" style="margin-top: 20px;"></div>
-        </div>
-
-        <!-- Alertas Tab -->
-        <div id="alertas" class="tab-content">
-            <h2>Gestión de Alertas</h2>
-            <button onclick="loadAlertas()">Cargar Alertas</button>
-            <table class="table" id="alertas-table" style="margin-top: 20px;">
-                <thead>
-                    <tr>
-                        <th>Material</th>
-                        <th>Stock Actual</th>
-                        <th>Stock Mínimo</th>
-                        <th>Estado</th>
-                        <th>Fecha</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-
-        <!-- Chat IA Tab -->
-        <div id="chat" class="tab-content">
-            <h2>Chat con IA - Asesor de Inventario</h2>
-            <div class="chat-container">
-                <div class="chat-messages" id="chat-messages"></div>
-                <div class="chat-input">
-                    <input type="text" id="chat-input" placeholder="Escribe tu pregunta..." onkeypress="if(event.key==='Enter') enviarChat()">
-                    <button onclick="enviarChat()">Enviar</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Movimientos Tab -->
-        <div id="movimientos" class="tab-content">
-            <h2>Registro de Movimientos</h2>
-            <div class="form-group">
-                <label>Material ID</label>
-                <input type="text" id="material-id" placeholder="ID del material">
-            </div>
-            <div class="form-group">
-                <label>Nombre Material</label>
-                <input type="text" id="material-nombre" placeholder="Nombre del material">
-            </div>
-            <div class="form-group">
-                <label>Cantidad</label>
-                <input type="number" id="movimiento-cantidad" placeholder="Cantidad" step="0.01">
-            </div>
-            <div class="form-group">
-                <label>Tipo</label>
-                <select id="movimiento-tipo">
-                    <option>Entrada</option>
-                    <option>Salida</option>
-                    <option>Ajuste</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Observaciones</label>
-                <textarea id="movimiento-obs" placeholder="Observaciones" rows="3"></textarea>
-            </div>
-            <button onclick="registrarMovimiento()">Registrar Movimiento</button>
-            <div id="movimiento-response"></div>
-
-            <h3 style="margin-top: 30px;">Historial de Movimientos</h3>
-            <button onclick="loadMovimientos()">Cargar Movimientos</button>
-            <table class="table" id="movimientos-table" style="margin-top: 20px;">
-                <thead>
-                    <tr>
-                        <th>Material</th>
-                        <th>Cantidad</th>
-                        <th>Tipo</th>
-                        <th>Fecha</th>
-                        <th>Observaciones</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
+  <div id="dashboard" class="tab-content active">
+    <h2>Dashboard Principal</h2>
+    <div class="grid">
+      <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
+      <div class="card"><h3>Materiales</h3><p id="materiales-count">-</p></div>
+      <div class="card"><h3>Alertas</h3><p id="alertas-count">-</p></div>
+      <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
     </div>
+    <button onclick="loadDashboard()">Actualizar</button>
+  </div>
 
-    <script>
-        function switchTab(tabName) {
-            // Hide all tabs
-            const tabs = document.querySelectorAll('.tab-content');
-            tabs.forEach(tab => tab.classList.remove('active'));
+  <div id="stock" class="tab-content">
+    <h2>&#128230; Stock Actual por Materia Prima</h2>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+      <input type="text" id="stock-search" placeholder="Buscar codigo o nombre..." oninput="filterStock()" style="width:260px;margin-top:0;">
+      <button onclick="loadStock()">&#8635; Actualizar</button>
+      <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="table">
+      <thead><tr>
+        <th>Codigo MP</th><th>Material</th>
+        <th style="text-align:right;">Entradas (g)</th>
+        <th style="text-align:right;">Salidas (g)</th>
+        <th style="text-align:right;">&#9654; Stock (g)</th>
+        <th style="text-align:right;">Stock (kg)</th>
+      </tr></thead>
+      <tbody id="stock-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
 
-            // Remove active class from buttons
-            const buttons = document.querySelectorAll('.tab-button');
-            buttons.forEach(btn => btn.classList.remove('active'));
+  <div id="formulas" class="tab-content">
+    <h2>&#129514; Formulas Maestras de Produccion</h2>
+    <p style="color:#666;margin-bottom:18px;">Define la receta de cada producto. Al registrar una produccion, las MPs se descuentan automaticamente del inventario.</p>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:22px;">
+      <h3 style="margin-bottom:12px;">Nueva Formula / Editar Existente</h3>
+      <div style="display:grid;grid-template-columns:1fr 200px;gap:12px;">
+        <div class="form-group"><label>Nombre del Producto</label><input type="text" id="formula-producto" placeholder="Ej: Renova C 10"></div>
+        <div class="form-group"><label>Base (g) = 100%</label><input type="number" id="formula-base" value="1000"></div>
+      </div>
+      <div class="form-group"><label>Descripcion (opcional)</label><input type="text" id="formula-desc" placeholder="Descripcion breve"></div>
+      <label style="display:block;margin-bottom:8px;font-weight:600;font-size:0.88em;color:#444;">Ingredientes (materias primas)</label>
+      <div style="display:grid;grid-template-columns:140px 1fr 90px 38px;gap:6px;margin-bottom:6px;">
+        <span style="font-size:0.8em;color:#888;font-weight:600;">CODIGO MP</span>
+        <span style="font-size:0.8em;color:#888;font-weight:600;">NOMBRE MATERIAL</span>
+        <span style="font-size:0.8em;color:#888;font-weight:600;">% EN FORMULA</span>
+        <span></span>
+      </div>
+      <div id="fi-container"></div>
+      <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap;">
+        <button onclick="addFRow()" style="background:#28a745;">+ Ingrediente</button>
+        <button onclick="guardarFormula()">&#128190; Guardar Formula</button>
+        <span id="pct-total" style="font-size:0.9em;color:#666;font-weight:600;"></span>
+      </div>
+      <div id="formula-msg"></div>
+    </div>
+    <h3 style="margin-bottom:12px;">Formulas Guardadas</h3>
+    <div id="formulas-list"><p style="color:#999;">Cargando...</p></div>
+  </div>
 
-            // Show selected tab
-            document.getElementById(tabName).classList.add('active');
+  <div id="produccion" class="tab-content">
+    <h2>&#127981; Registrar Produccion</h2>
+    <p style="color:#666;margin-bottom:16px;">Si el producto tiene formula maestra, las MPs se descuentan automaticamente del inventario al registrar.</p>
+    <div class="form-group">
+      <label>Producto (con formula maestra)</label>
+      <select id="prod-sel" onchange="previewProd()">
+        <option value="">-- Selecciona un producto --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>O escribe nombre manualmente (sin formula)</label>
+      <input type="text" id="prod-manual" placeholder="Producto sin formula registrada" oninput="previewProd()">
+    </div>
+    <div class="form-group">
+      <label>Cantidad a producir (kg)</label>
+      <input type="number" id="prod-kg" placeholder="Ej: 20" step="0.001" oninput="previewProd()">
+    </div>
+    <div id="prod-preview" style="background:#f0f8ff;border:1px solid #b8d4f0;border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
+      <strong style="color:#2c5f8a;">MPs que se descontaran automaticamente:</strong>
+      <table class="table" style="margin-top:8px;">
+        <thead><tr><th>Material</th><th style="text-align:right;">Cantidad (g)</th></tr></thead>
+        <tbody id="prod-preview-body"></tbody>
+      </table>
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
+    <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+    <div id="prod-msg"></div>
+  </div>
 
-            // Mark button as active
-            event.target.classList.add('active');
-        }
+  <div id="abc" class="tab-content">
+    <h2>&#128200; Analisis ABC de Inventario</h2>
+    <button onclick="loadABC()">Generar Analisis</button>
+    <div id="abc-results" style="margin-top:18px;"></div>
+  </div>
 
-        async function registrarMovimiento() {
-            const data = {
-                material_id: document.getElementById('material-id').value,
-                material_nombre: document.getElementById('material-nombre').value,
-                cantidad: parseFloat(document.getElementById('movimiento-cantidad').value),
-                tipo: document.getElementById('movimiento-tipo').value,
-                observaciones: document.getElementById('movimiento-obs').value
-            };
+  <div id="alertas" class="tab-content">
+    <h2>&#9888; Alertas de Inventario</h2>
+    <button onclick="loadAlertas()" style="margin-bottom:12px;">Actualizar Alertas</button>
+    <table class="table" id="alertas-table">
+      <thead><tr><th>Material</th><th>Stock Actual</th><th>Stock Minimo</th><th>Estado</th><th>Fecha</th></tr></thead>
+      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr></tbody>
+    </table>
+  </div>
 
-            try {
-                const response = await fetch('/api/movimientos', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(data)
-                });
-                const result = await response.json();
-                showAlert(result.message || 'Movimiento registrado', 'success');
-                document.getElementById('movimiento-response').innerHTML =
-                    '<div class="alert alert-success">' + result.message + '</div>';
-            } catch (error) {
-                showAlert('Error: ' + error.message, 'error');
-            }
-        }
+  <div id="chat" class="tab-content">
+    <h2>&#129302; Chat IA - Asesor de Inventarios</h2>
+    <div class="chat-box" id="chat-box">
+      <div class="msg bot">Hola! Soy tu asesor de inventarios con IA. Preguntame sobre stock, puntos de reorden, analisis ABC o cualquier tema de gestion de inventarios para manufactura cosmetica.</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="chat-in" placeholder="Escribe tu pregunta..." onkeypress="if(event.key==='Enter')enviarChat()" style="margin-top:0;">
+      <button onclick="enviarChat()" style="min-width:70px;">Enviar</button>
+    </div>
+  </div>
 
-        async function registrarProduccion() {
-            const data = {
-                producto: document.getElementById('producto').value,
-                cantidad: parseFloat(document.getElementById('cantidad').value),
-                observaciones: document.getElementById('obs-prod').value
-            };
+  <div id="movimientos" class="tab-content">
+    <h2>&#128203; Movimientos de Inventario</h2>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;">
+      <h3 style="margin-bottom:12px;">Registrar Movimiento Manual</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label>Codigo MP</label><input type="text" id="mov-id" placeholder="MP00001"></div>
+        <div class="form-group"><label>Nombre Material</label><input type="text" id="mov-nombre" placeholder="Nombre"></div>
+        <div class="form-group"><label>Cantidad (g)</label><input type="number" id="mov-cant" placeholder="0" step="0.01"></div>
+        <div class="form-group"><label>Tipo</label>
+          <select id="mov-tipo"><option value="Entrada">Entrada</option><option value="Salida">Salida</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Observaciones</label><input type="text" id="mov-obs" placeholder="Opcional"></div>
+      <button onclick="registrarMov()">Registrar</button>
+      <div id="mov-msg"></div>
+    </div>
+    <button onclick="loadMovimientos()" style="margin-bottom:10px;">Ver Ultimos Movimientos</button>
+    <table class="table" id="mov-table">
+      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
+      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
+    </table>
+  </div>
 
-            try {
-                const response = await fetch('/api/produccion', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(data)
-                });
-                const result = await response.json();
-                document.getElementById('prod-response').innerHTML =
-                    '<div class="alert alert-success">' + result.message + '</div>';
-                setTimeout(() => {
-                    document.getElementById('producto').value = '';
-                    document.getElementById('cantidad').value = '';
-                    document.getElementById('obs-prod').value = '';
-                }, 1500);
-            } catch (error) {
-                document.getElementById('prod-response').innerHTML =
-                    '<div class="alert alert-error">Error: ' + error.message + '</div>';
-            }
-        }
+</div>
+<script>
+var fData=[], allStock=[];
 
-        async function loadDashboard() {
-            try {
-                const response = await fetch('/api/inventario');
-                const data = await response.json();
-                document.getElementById('stock-total').textContent = data.total_items || '0';
-                document.getElementById('movimientos-count').textContent = data.movimientos || '0';
-                document.getElementById('alertas-count').textContent = data.alertas || '0';
-                document.getElementById('producciones-count').textContent = data.producciones || '0';
-            } catch (error) {
-                console.error('Error loading dashboard:', error);
-            }
-        }
+function switchTab(n,btn){
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  document.getElementById(n).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(n==='stock') loadStock();
+  if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='abc') loadABC();
+  if(n==='alertas') loadAlertas();
+  if(n==='movimientos') loadMovimientos();
+}
 
-        async function loadABC() {
-            try {
-                const response = await fetch('/api/analisis-abc');
-                const data = await response.json();
-                let html = '';
-                if (data.items && data.items.length > 0) {
-                    data.items.forEach(item => {
-                        html += `<div class="abc-item ${item.clasificacion}">
-                            <strong>${item.material}</strong> - Clasificación: ${item.clasificacion}<br>
-                            Cantidad: ${item.cantidad} | Valor: ${item.valor}
-                        </div>`;
-                    });
-                } else {
-                    html = '<p>No hay datos para el análisis ABC</p>';
-                }
-                document.getElementById('abc-results').innerHTML = html;
-            } catch (error) {
-                document.getElementById('abc-results').innerHTML =
-                    '<div class="alert alert-error">Error: ' + error.message + '</div>';
-            }
-        }
+async function loadDashboard(){
+  try{
+    var r=await fetch('/api/inventario'), d=await r.json();
+    document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
+    document.getElementById('materiales-count').textContent=d.movimientos||'0';
+    document.getElementById('alertas-count').textContent=d.alertas||'0';
+    document.getElementById('producciones-count').textContent=d.producciones||'0';
+  }catch(e){}
+}
 
-        async function loadAlertas() {
-            try {
-                const response = await fetch('/api/alertas');
-                const data = response.ok ? await response.json() : {alertas: []};
-                const tbody = document.querySelector('#alertas-table tbody');
-                tbody.innerHTML = '';
+async function loadStock(){
+  try{
+    var r=await fetch('/api/stock'), d=await r.json();
+    allStock=d.items||[];
+    document.getElementById('stock-count').textContent=allStock.length+' materiales';
+    renderStock(allStock);
+  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="6">Error</td></tr>';}
+}
 
-                if (data.alertas && data.alertas.length > 0) {
-                    data.alertas.forEach(alerta => {
-                        tbody.innerHTML += `<tr>
-                            <td>${alerta.material_nombre}</td>
-                            <td>${alerta.stock_actual}</td>
-                            <td>${alerta.stock_minimo}</td>
-                            <td>${alerta.estado}</td>
-                            <td>${alerta.fecha}</td>
-                        </tr>`;
-                    });
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="5">No hay alertas</td></tr>';
-                }
-            } catch (error) {
-                console.error('Error loading alertas:', error);
-            }
-        }
+function renderStock(items){
+  var tb=document.getElementById('stock-body');
+  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  tb.innerHTML=items.map(function(i){
+    var c=i.stock_actual<=0?'color:#cc0000;font-weight:700;':i.stock_actual<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
+    return '<tr>'
+      +'<td style="font-family:monospace;font-size:0.83em;color:#555;">'+i.material_id+'</td>'
+      +'<td>'+i.material_nombre+'</td>'
+      +'<td style="text-align:right;">'+i.entradas.toLocaleString()+'</td>'
+      +'<td style="text-align:right;color:#cc4444;">'+i.salidas.toLocaleString()+'</td>'
+      +'<td style="text-align:right;'+c+'">'+i.stock_actual.toLocaleString()+'</td>'
+      +'<td style="text-align:right;color:#888;">'+(i.stock_actual/1000).toFixed(3)+'</td>'
+      +'</tr>';
+  }).join('');
+}
 
-        async function loadMovimientos() {
-            try {
-                const response = await fetch('/api/movimientos');
-                const data = response.ok ? await response.json() : {movimientos: []};
-                const tbody = document.querySelector('#movimientos-table tbody');
-                tbody.innerHTML = '';
+function filterStock(){
+  var q=document.getElementById('stock-search').value.toLowerCase();
+  renderStock(allStock.filter(function(i){return i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q);}));
+}
 
-                if (data.movimientos && data.movimientos.length > 0) {
-                    data.movimientos.forEach(mov => {
-                        tbody.innerHTML += `<tr>
-                            <td>${mov.material_nombre}</td>
-                            <td>${mov.cantidad}</td>
-                            <td>${mov.tipo}</td>
-                            <td>${mov.fecha}</td>
-                            <td>${mov.observaciones}</td>
-                        </tr>`;
-                    });
-                } else {
-                    tbody.innerHTML = '<tr><td colspan="5">No hay movimientos registrados</td></tr>';
-                }
-            } catch (error) {
-                console.error('Error loading movimientos:', error);
-            }
-        }
+async function loadFormulas(){
+  try{
+    var r=await fetch('/api/formulas'), d=await r.json();
+    fData=d.formulas||[];
+    renderFormulas(fData);
+    var sel=document.getElementById('prod-sel');
+    if(sel){
+      var cur=sel.value;
+      sel.innerHTML='<option value="">-- Selecciona un producto --</option>';
+      fData.forEach(function(f){var o=document.createElement('option');o.value=f.producto_nombre;o.textContent=f.producto_nombre;sel.appendChild(o);});
+      sel.value=cur;
+    }
+  }catch(e){}
+}
 
-        async function enviarChat() {
-            const input = document.getElementById('chat-input');
-            const message = input.value.trim();
-            if (!message) return;
+function renderFormulas(fl){
+  var c=document.getElementById('formulas-list'); if(!c) return;
+  if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun. Crea la primera arriba.</p>';return;}
+  c.innerHTML=fl.map(function(f){
+    var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
+    return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      +'<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>'
+      +'<div style="display:flex;gap:6px;">'
+      +'<button onclick="editFormula(\''+f.producto_nombre+'\')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      +'<button onclick="delFormula(\''+f.producto_nombre+'\')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
+      +'</div></div>'
+      +'<table class="table" style="font-size:0.85em;">'
+      +'<thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g por kg producto</th></tr></thead>'
+      +'<tbody>'+f.items.map(function(it){return '<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+it.porcentaje+'%</td><td style="font-weight:600;">'+(it.porcentaje*10).toFixed(2)+'g</td></tr>';}).join('')+'</tbody>'
+      +'</table>'
+      +'<small style="color:'+(Math.abs(total-100)<0.1?'#28a745':'#e68a00')+';">Total: '+total.toFixed(2)+'%'+(Math.abs(total-100)<0.1?' (OK)':' - revisar')+'</small>'
+      +'</div>';
+  }).join('');
+}
 
-            const chatMessages = document.getElementById('chat-messages');
-            chatMessages.innerHTML += `<div class="message user">${message}</div>`;
-            input.value = '';
+function addFRow(){
+  var div=document.createElement('div');
+  div.style.cssText='display:grid;grid-template-columns:140px 1fr 90px 38px;gap:6px;margin-bottom:6px;';
+  div.innerHTML='<input type="text" placeholder="MP00001" class="fi-id" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'
+    +'<input type="text" placeholder="Nombre material" class="fi-nm" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'
+    +'<input type="number" placeholder="%" step="0.001" class="fi-pc" style="padding:7px;border:1px solid #ddd;border-radius:5px;" oninput="calcPct()">'
+    +'<button onclick="this.parentElement.remove();calcPct();" style="background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;padding:7px;font-size:0.9em;">x</button>';
+  document.getElementById('fi-container').appendChild(div);
+}
 
-            try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: message})
-                });
-                const data = await response.json();
-                chatMessages.innerHTML += `<div class="message assistant">${data.response}</div>`;
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            } catch (error) {
-                chatMessages.innerHTML += `<div class="message assistant">Error: ${error.message}</div>`;
-            }
-        }
+function calcPct(){
+  var t=Array.from(document.querySelectorAll('.fi-pc')).reduce(function(s,i){return s+(parseFloat(i.value)||0);},0);
+  var el=document.getElementById('pct-total');
+  el.textContent='Total: '+t.toFixed(2)+'%';
+  el.style.color=Math.abs(t-100)<0.1?'#28a745':(t>100?'#cc0000':'#e68a00');
+}
 
-        function showAlert(message, type) {
-            console.log(type + ': ' + message);
-        }
+async function guardarFormula(){
+  var prod=document.getElementById('formula-producto').value.trim();
+  if(!prod){alert('Ingresa el nombre del producto');return;}
+  var base=parseFloat(document.getElementById('formula-base').value)||1000;
+  var desc=document.getElementById('formula-desc').value.trim();
+  var rows=document.querySelectorAll('#fi-container > div');
+  var items=[];
+  rows.forEach(function(row){
+    var id=row.querySelector('.fi-id').value.trim();
+    var nm=row.querySelector('.fi-nm').value.trim();
+    var pc=parseFloat(row.querySelector('.fi-pc').value)||0;
+    if(id&&nm&&pc>0) items.push({material_id:id,material_nombre:nm,porcentaje:pc});
+  });
+  if(!items.length){alert('Agrega al menos un ingrediente');return;}
+  try{
+    var r=await fetch('/api/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod,unidad_base_g:base,descripcion:desc,items:items})});
+    var res=await r.json();
+    document.getElementById('formula-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+    await loadFormulas();
+    setTimeout(function(){document.getElementById('formula-msg').innerHTML='';},3000);
+  }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
 
-        // Load dashboard on page load
-        window.onload = loadDashboard;
-    </script>
+function editFormula(nombre){
+  var f=fData.find(function(x){return x.producto_nombre===nombre;});
+  if(!f) return;
+  document.getElementById('formula-producto').value=f.producto_nombre;
+  document.getElementById('formula-base').value=f.unidad_base_g;
+  document.getElementById('formula-desc').value=f.descripcion||'';
+  document.getElementById('fi-container').innerHTML='';
+  f.items.forEach(function(item){
+    addFRow();
+    var rows=document.getElementById('fi-container').querySelectorAll('div');
+    var row=rows[rows.length-1];
+    row.querySelector('.fi-id').value=item.material_id;
+    row.querySelector('.fi-nm').value=item.material_nombre;
+    row.querySelector('.fi-pc').value=item.porcentaje;
+  });
+  calcPct();
+  document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
+}
+
+async function delFormula(nombre){
+  if(!confirm('Eliminar formula de '+nombre+'?')) return;
+  await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
+  await loadFormulas();
+}
+
+function previewProd(){
+  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value.trim();
+  var kg=parseFloat(document.getElementById('prod-kg').value)||0;
+  var preview=document.getElementById('prod-preview');
+  if(!prod||kg<=0){preview.style.display='none';return;}
+  var f=fData.find(function(x){return x.producto_nombre===prod;});
+  if(!f||!f.items.length){preview.style.display='none';return;}
+  var g=kg*1000;
+  document.getElementById('prod-preview-body').innerHTML=f.items.map(function(it){
+    return '<tr><td>'+it.material_nombre+'</td><td style="text-align:right;font-weight:700;">'+((it.porcentaje/100)*g).toFixed(1)+' g</td></tr>';
+  }).join('');
+  preview.style.display='block';
+}
+
+async function registrarProd(){
+  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value.trim();
+  if(!prod){alert('Ingresa un producto');return;}
+  var kg=parseFloat(document.getElementById('prod-kg').value);
+  if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
+  try{
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value})});
+    var res=await r.json();
+    var html='<div class="alert-success">'+res.message+'</div>';
+    if(res.descuentos&&res.descuentos.length){
+      html+='<div style="margin-top:8px;font-size:0.88em;color:#555;"><strong>MPs descontadas del inventario:</strong><ul style="margin-top:4px;padding-left:18px;">';
+      res.descuentos.forEach(function(d){html+='<li>'+d.material+': '+d.cantidad_g.toLocaleString()+' g</li>';});
+      html+='</ul></div>';
+    }
+    document.getElementById('prod-msg').innerHTML=html;
+    document.getElementById('prod-preview').style.display='none';
+    setTimeout(function(){
+      document.getElementById('prod-sel').value='';
+      document.getElementById('prod-manual').value='';
+      document.getElementById('prod-kg').value='';
+      document.getElementById('prod-obs').value='';
+      document.getElementById('prod-msg').innerHTML='';
+    },5000);
+  }catch(e){document.getElementById('prod-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
+
+async function loadABC(){
+  try{
+    var r=await fetch('/api/analisis-abc'), d=await r.json();
+    var html='';
+    if(d.items&&d.items.length){
+      html='<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Clase</th><th>Material</th><th>Stock (g)</th><th>% Acumulado</th></tr></thead><tbody>';
+      d.items.forEach(function(i){
+        var bg=i.clasificacion==='A'?'#28a745':i.clasificacion==='B'?'#fd7e14':'#6c757d';
+        html+='<tr><td><span style="background:'+bg+';color:white;padding:3px 10px;border-radius:10px;font-weight:700;">'+i.clasificacion+'</span></td>'
+          +'<td>'+i.material+'</td><td style="text-align:right;">'+Number(i.cantidad).toLocaleString()+'</td>'
+          +'<td style="text-align:right;color:#667eea;">'+i.valor+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    } else { html='<p style="color:#999;">Sin datos de inventario para analizar</p>'; }
+    document.getElementById('abc-results').innerHTML=html;
+  }catch(e){document.getElementById('abc-results').innerHTML='<div class="alert-error">Error</div>';}
+}
+
+async function loadAlertas(){
+  try{
+    var r=await fetch('/api/alertas'), d=await r.json();
+    var tb=document.querySelector('#alertas-table tbody');
+    if(d.alertas&&d.alertas.length){
+      tb.innerHTML=d.alertas.map(function(a){return '<tr><td>'+a.material_nombre+'</td><td>'+a.stock_actual+'</td><td>'+a.stock_minimo+'</td><td>'+a.estado+'</td><td style="font-size:0.85em;">'+a.fecha+'</td></tr>';}).join('');
+    }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr>';}
+  }catch(e){}
+}
+
+async function loadMovimientos(){
+  try{
+    var r=await fetch('/api/movimientos'), d=await r.json();
+    var tb=document.querySelector('#mov-table tbody');
+    if(d.movimientos&&d.movimientos.length){
+      tb.innerHTML=d.movimientos.map(function(m){
+        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">Entrada</span>':'<span style="color:#cc4444;font-weight:600;">Salida</span>';
+        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td style="font-size:0.82em;color:#888;">'+m.fecha+'</td><td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td></tr>';
+      }).join('');
+    }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
+  }catch(e){}
+}
+
+async function registrarMov(){
+  var data={material_id:document.getElementById('mov-id').value,material_nombre:document.getElementById('mov-nombre').value,cantidad:parseFloat(document.getElementById('mov-cant').value),tipo:document.getElementById('mov-tipo').value,observaciones:document.getElementById('mov-obs').value};
+  try{
+    var r=await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('mov-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+    loadMovimientos();
+  }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error</div>';}
+}
+
+async function enviarChat(){
+  var inp=document.getElementById('chat-in'), msg=inp.value.trim();
+  if(!msg) return;
+  var box=document.getElementById('chat-box');
+  box.innerHTML+='<div class="msg user">'+msg+'</div>';
+  inp.value='';
+  try{
+    var r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+    var d=await r.json();
+    box.innerHTML+='<div class="msg bot">'+d.response+'</div>';
+    box.scrollTop=box.scrollHeight;
+  }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
+}
+
+window.onload=function(){loadDashboard();loadFormulas();};
+</script>
 </body>
 </html>
-'''
+"""
 
-# API Endpoints
 @app.route('/')
 def index():
     return render_template_string(DASHBOARD_HTML)
 
 @app.route('/api/health')
 def health():
-    return jsonify({'status': 'ok', 'message': 'Inventory system is running'})
+    return jsonify({'status': 'ok', 'message': 'Inventory system running'})
 
 @app.route('/api/inventario')
 def get_inventario():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
     c.execute('SELECT COUNT(*) FROM movimientos')
-    movimientos = c.fetchone()[0]
-
+    mov = c.fetchone()[0]
     c.execute('SELECT COUNT(*) FROM producciones')
-    producciones = c.fetchone()[0]
-
+    prod = c.fetchone()[0]
     c.execute('SELECT COUNT(*) FROM alertas')
-    alertas = c.fetchone()[0]
-
+    alrt = c.fetchone()[0]
+    c.execute('SELECT COALESCE(SUM(CASE WHEN tipo="Entrada" THEN cantidad ELSE -cantidad END),0) FROM movimientos')
+    stock = c.fetchone()[0]
     conn.close()
+    return jsonify({'total_items': mov, 'movimientos': mov, 'producciones': prod,
+                    'alertas': alrt, 'stock_total': round(stock, 2)})
 
-    return jsonify({
-        'total_items': movimientos + producciones,
-        'movimientos': movimientos,
-        'producciones': producciones,
-        'alertas': alertas
-    })
+@app.route('/api/stock')
+def get_stock():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""SELECT material_id, material_nombre,
+                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END),
+                 SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END),
+                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END)
+                 FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre""")
+    rows = c.fetchall()
+    conn.close()
+    return jsonify({'items': [{'material_id': r[0], 'material_nombre': r[1],
+                                'entradas': round(r[2] or 0, 2), 'salidas': round(r[3] or 0, 2),
+                                'stock_actual': round(r[4] or 0, 2)} for r in rows]})
+
+@app.route('/api/formulas', methods=['GET', 'POST'])
+def handle_formulas():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if request.method == 'POST':
+        data = request.json
+        prod = data['producto_nombre']
+        c.execute('INSERT OR REPLACE INTO formula_headers (producto_nombre, unidad_base_g, descripcion, fecha_creacion) VALUES (?,?,?,?)',
+                  (prod, data.get('unidad_base_g', 1000), data.get('descripcion', ''), datetime.now().isoformat()))
+        c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (prod,))
+        for item in data.get('items', []):
+            c.execute('INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) VALUES (?,?,?,?)',
+                      (prod, item['material_id'], item['material_nombre'], item['porcentaje']))
+        conn.commit()
+        conn.close()
+        return jsonify({'message': f'Formula de {prod} guardada exitosamente'}), 201
+    c.execute('SELECT producto_nombre, unidad_base_g, descripcion, fecha_creacion FROM formula_headers ORDER BY producto_nombre')
+    headers = c.fetchall()
+    formulas = []
+    for h in headers:
+        c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (h[0],))
+        items = [{'material_id': r[0], 'material_nombre': r[1], 'porcentaje': r[2]} for r in c.fetchall()]
+        formulas.append({'producto_nombre': h[0], 'unidad_base_g': h[1], 'descripcion': h[2],
+                         'fecha_creacion': h[3], 'items': items})
+    conn.close()
+    return jsonify({'formulas': formulas})
+
+@app.route('/api/formulas/<producto_nombre>', methods=['DELETE'])
+def del_formula(producto_nombre):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (producto_nombre,))
+    c.execute('DELETE FROM formula_headers WHERE producto_nombre=?', (producto_nombre,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': f'Formula {producto_nombre} eliminada'})
 
 @app.route('/api/movimientos', methods=['GET', 'POST'])
 def handle_movimientos():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
     if request.method == 'POST':
         data = request.json
-        c.execute('''INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones)
-                     VALUES (?, ?, ?, ?, ?, ?)''',
+        c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
                   (data['material_id'], data['material_nombre'], data['cantidad'],
                    data['tipo'], datetime.now().isoformat(), data.get('observaciones', '')))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-
-    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 100')
-    movimientos = [{'material_nombre': row[0], 'cantidad': row[1], 'tipo': row[2], 'fecha': row[3], 'observaciones': row[4]} for row in c.fetchall()]
+    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
+    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
@@ -736,94 +607,81 @@ def handle_movimientos():
 def handle_produccion():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
     if request.method == 'POST':
         data = request.json
-        c.execute('''INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones)
-                     VALUES (?, ?, ?, ?, ?)''',
-                  (data['producto'], data['cantidad'], datetime.now().isoformat(), 'Completado', data.get('observaciones', '')))
+        producto = data['producto']
+        cantidad_kg = float(data['cantidad'])
+        cantidad_g = cantidad_kg * 1000
+        fecha = datetime.now().isoformat()
+        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones) VALUES (?,?,?,?,?)',
+                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', '')))
+        c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (producto,))
+        formula_items = c.fetchall()
+        descuentos = []
+        for mat_id, mat_nombre, pct in formula_items:
+            g = round((pct / 100) * cantidad_g, 2)
+            if g > 0:
+                c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
+                          (mat_id, mat_nombre, g, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
+                descuentos.append({'material': mat_nombre, 'cantidad_g': g})
         conn.commit()
         conn.close()
-        return jsonify({'message': 'Producción registrada exitosamente'}), 201
-
+        msg = f'Produccion registrada: {producto} x {cantidad_kg}kg'
+        if descuentos:
+            msg += f'. {len(descuentos)} MPs descontadas automaticamente.'
+        return jsonify({'message': msg, 'descuentos': descuentos}), 201
     c.execute('SELECT producto, cantidad, fecha, estado FROM producciones ORDER BY fecha DESC LIMIT 50')
-    producciones = [{'producto': row[0], 'cantidad': row[1], 'fecha': row[2], 'estado': row[3]} for row in c.fetchall()]
+    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3]} for r in c.fetchall()]
     conn.close()
-    return jsonify({'producciones': producciones})
+    return jsonify({'producciones': prod})
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
     data = request.json
-    user_message = data.get('message', '')
-
     try:
         client = get_anthropic_client()
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=1024,
-            messages=[
-                {"role": "user", "content": f"Eres un asesor experto en gestión de inventarios. Responde brevemente en español. Pregunta: {user_message}"}
-            ]
+            model="claude-3-5-sonnet-20241022", max_tokens=1024,
+            messages=[{"role": "user", "content": f"Eres asesor experto en gestion de inventarios para manufactura cosmetica. Responde brevemente en espanol. Pregunta: {data.get('message', '')}"}]
         )
-        assistant_message = response.content[0].text
-        return jsonify({'response': assistant_message})
+        return jsonify({'response': response.content[0].text})
     except Exception as e:
-        return jsonify({'response': f'Error en el chat: {str(e)}'}), 500
+        return jsonify({'response': f'Error: {str(e)}'}), 500
 
-@app.route('/api/analisis-abc', methods=['GET'])
+@app.route('/api/analisis-abc')
 def get_analisis_abc():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    c.execute('''SELECT material_nombre, SUM(cantidad) as total_qty FROM movimientos
-                 WHERE tipo = 'Entrada' GROUP BY material_nombre ORDER BY total_qty DESC''')
-    items = c.fetchall()
+    c.execute("""SELECT material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                 FROM movimientos GROUP BY material_nombre ORDER BY stock DESC""")
+    items = [(r[0], r[1]) for r in c.fetchall() if r[1] and r[1] > 0]
     conn.close()
-
     if not items:
         return jsonify({'items': []})
-
-    total = sum(item[1] for item in items)
+    total = sum(i[1] for i in items)
     cumulative = 0
-    abc_items = []
-
-    for material, qty in items:
+    abc = []
+    for mat, qty in items:
         cumulative += qty
-        percentage = (cumulative / total) * 100
-
-        if percentage <= 80:
-            clasificacion = 'A'
-        elif percentage <= 95:
-            clasificacion = 'B'
-        else:
-            clasificacion = 'C'
-
-        abc_items.append({
-            'material': material,
-            'cantidad': qty,
-            'valor': f'{percentage:.1f}%',
-            'clasificacion': clasificacion
-        })
-
-    return jsonify({'items': abc_items})
+        pct = (cumulative / total) * 100
+        abc.append({'material': mat, 'cantidad': qty, 'valor': f'{pct:.1f}%',
+                    'clasificacion': 'A' if pct <= 80 else ('B' if pct <= 95 else 'C')})
+    return jsonify({'items': abc})
 
 @app.route('/api/alertas', methods=['GET', 'POST'])
 def handle_alertas():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
     if request.method == 'POST':
         data = request.json
-        c.execute('''INSERT INTO alertas (material_id, material_nombre, stock_actual, stock_minimo, fecha, estado)
-                     VALUES (?, ?, ?, ?, ?, ?)''',
+        c.execute('INSERT INTO alertas (material_id, material_nombre, stock_actual, stock_minimo, fecha, estado) VALUES (?,?,?,?,?,?)',
                   (data['material_id'], data['material_nombre'], data['stock_actual'],
                    data['stock_minimo'], datetime.now().isoformat(), 'Activa'))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Alerta creada'}), 201
-
     c.execute('SELECT material_nombre, stock_actual, stock_minimo, estado, fecha FROM alertas ORDER BY fecha DESC')
-    alertas = [{'material_nombre': row[0], 'stock_actual': row[1], 'stock_minimo': row[2], 'estado': row[3], 'fecha': row[4]} for row in c.fetchall()]
+    alertas = [{'material_nombre': r[0], 'stock_actual': r[1], 'stock_minimo': r[2], 'estado': r[3], 'fecha': r[4]} for r in c.fetchall()]
     conn.close()
     return jsonify({'alertas': alertas})
 
