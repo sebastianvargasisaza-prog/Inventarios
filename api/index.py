@@ -259,6 +259,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 <script>
+{%- raw %}
 var fData=[], allStock=[];
 
 function switchTab(n,btn){
@@ -544,6 +545,7 @@ function generarRotulos(){
   if(kg<=0){alert('Ingresa la cantidad en kg');return;}
   window.open('/rotulos/'+encodeURIComponent(prod)+'/'+kg,'_blank');
 }
+{%- endraw %}
 </script>
 </body>
 </html>
