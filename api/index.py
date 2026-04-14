@@ -696,5 +696,18 @@ def handle_alertas():
     conn.close()
     return jsonify({'alertas': alertas})
 
+
+@app.route('/api/reset-movimientos', methods=['POST'])
+def reset_movimientos():
+    """Borra todos los movimientos para recargar limpio"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM movimientos')
+    conn.commit()
+    c.execute('SELECT COUNT(*) FROM movimientos')
+    count = c.fetchone()[0]
+    conn.close()
+    return jsonify({'message': 'Movimientos borrados', 'restantes': count})
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
