@@ -6,6 +6,37 @@ from flask import Flask, jsonify, request, render_template_string
 from anthropic import Anthropic
 import pandas as pd
 
+# Base de datos: PostgreSQL (persistente) o SQLite (temporal)
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+class _Cur:
+    """Cursor que adapta ? a %s para PostgreSQL automaticamente"""
+    def __init__(self, c, pg): self._c, self._pg = c, pg
+    def execute(self, q, p=None):
+        if self._pg: q = q.replace('?','%s')
+        self._c.execute(q, p) if p is not None else self._c.execute(q)
+    def fetchone(self): return self._c.fetchone()
+    def fetchall(self): return self._c.fetchall()
+
+class _Conn:
+    def __init__(self, c, pg): self._c, self._pg = c, pg
+    def cursor(self): return _Cur(self._c.cursor(), self._pg)
+    def commit(self): self._c.commit()
+    def rollback(self): self._c.rollback()
+    def close(self): self._c.close()
+
+if DATABASE_URL:
+    import psycopg2
+    def get_conn():
+        return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
+    IS_PG = True
+else:
+    DB_PATH = '/tmp/inventario.db'
+    def get_conn():
+        r = get_conn(); r.row_factory = sqlite3.Row
+        return _Conn(r, False)
+    IS_PG = False
+
 app = Flask(__name__)
 
 _anthropic_client = None
@@ -21,39 +52,20 @@ def get_anthropic_client():
 DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS movimientos
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT, material_nombre TEXT, cantidad REAL,
-                  tipo TEXT, fecha TEXT, observaciones TEXT,
-                  lote TEXT, fecha_vencimiento TEXT, estanteria TEXT,
-                  posicion TEXT, proveedor TEXT, estado_lote TEXT)""")
-    # Agregar columnas nuevas si no existen (migracion segura)
-    nuevas_cols = [
-        ("lote", "TEXT"), ("fecha_vencimiento", "TEXT"), ("estanteria", "TEXT"),
-        ("posicion", "TEXT"), ("proveedor", "TEXT"), ("estado_lote", "TEXT")
-    ]
-    for col, tipo in nuevas_cols:
+    pk = "SERIAL PRIMARY KEY" if IS_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    c.execute(f"CREATE TABLE IF NOT EXISTS movimientos (id {pk}, material_id TEXT, material_nombre TEXT, cantidad REAL, tipo TEXT, fecha TEXT, observaciones TEXT, lote TEXT, fecha_vencimiento TEXT, estanteria TEXT, posicion TEXT, proveedor TEXT, estado_lote TEXT)")
+    for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote"]:
         try:
-            c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} {tipo}")
+            c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT")
+            conn.commit()
         except Exception:
-            pass  # columna ya existe
-    c.execute("""CREATE TABLE IF NOT EXISTS producciones
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS alertas
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT, material_nombre TEXT, stock_actual REAL,
-                  stock_minimo REAL, fecha TEXT, estado TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS formula_headers
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000,
-                  descripcion TEXT, fecha_creacion TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS formula_items
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto_nombre TEXT, material_id TEXT,
-                  material_nombre TEXT, porcentaje REAL)""")
+            if IS_PG: conn.rollback()
+    c.execute(f"CREATE TABLE IF NOT EXISTS producciones (id {pk}, producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)")
+    c.execute(f"CREATE TABLE IF NOT EXISTS alertas (id {pk}, material_id TEXT, material_nombre TEXT, stock_actual REAL, stock_minimo REAL, fecha TEXT, estado TEXT)")
+    c.execute(f"CREATE TABLE IF NOT EXISTS formula_headers (id {pk}, producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000, descripcion TEXT, fecha_creacion TEXT)")
+    c.execute(f"CREATE TABLE IF NOT EXISTS formula_items (id {pk}, producto_nombre TEXT, material_id TEXT, material_nombre TEXT, porcentaje REAL)")
     conn.commit()
     conn.close()
 
@@ -130,12 +142,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="Buscar MP, lote, proveedor..." oninput="filterStock()" style="width:220px;margin-top:0;">
-      <select id="stock-estanteria" onchange="filterStock()" style="width:140px;padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;"><option value="">Todas estanterias</option></select>
-      <select id="stock-estado" onchange="filterStock()" style="width:140px;padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
+      <select id="stock-est" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
+        <option value="">Todas estanterias</option>
+      </select>
+      <select id="stock-est2" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
         <option value="">Todos estados</option>
         <option value="vencido">Vencido</option>
-        <option value="critico">Critico menos 30d</option>
-        <option value="proximo">Proximo menos 90d</option>
+        <option value="critico">Critico -30d</option>
+        <option value="proximo">Proximo -90d</option>
         <option value="ok">Vigente</option>
       </select>
       <button onclick="loadStock()">&#8635; Actualizar</button>
@@ -144,7 +158,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="overflow-x:auto;">
     <table class="table">
       <thead><tr>
-        <th>Codigo MP</th><th>Material</th><th>Lote</th>
+        <th>Codigo</th><th>Material</th><th>Lote</th>
         <th>Proveedor</th><th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
         <th style="text-align:right;">g</th><th style="text-align:right;">kg</th>
         <th style="text-align:center;">Vence</th><th style="text-align:center;">Estado</th>
@@ -208,10 +222,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </table>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;">
-      <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
-      <button onclick="generarRotulos()" style="background:#c0392b;" id="btn-rotulos" disabled>&#128209; Generar Rotulos</button>
-    </div>
+    <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
     <div id="prod-msg"></div>
   </div>
 
@@ -266,68 +277,74 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 <script>
-var fData=[], allStock=[], allLotes=[];
+var fData=[], allStock=[];
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
-  var el=document.getElementById(n);
-  if(el){ el.classList.add('active'); }
-  if(btn){ btn.classList.add('active'); }
-  if(n==='stock'){ loadStock(); }
-  else if(n==='formulas'){ loadFormulas(); }
-  else if(n==='produccion'){ loadFormulas(); }
-  else if(n==='abc'){ loadABC(); }
-  else if(n==='alertas'){ loadAlertas(); }
-  else if(n==='movimientos'){ loadMovimientos(); }
+  document.getElementById(n).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(n==='stock') loadStock();
+  if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='abc') loadABC();
+  if(n==='alertas') loadAlertas();
+  if(n==='movimientos') loadMovimientos();
 }
 
 async function loadDashboard(){
-  ['stock-total','materiales-count','alertas-count','producciones-count'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.textContent='...';
-  });
   try{
     var r=await fetch('/api/inventario'), d=await r.json();
     document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
     document.getElementById('alertas-count').textContent=d.alertas||'0';
     document.getElementById('producciones-count').textContent=d.producciones||'0';
-  }catch(e){
-    ['stock-total','materiales-count','alertas-count','producciones-count'].forEach(function(id){
-      var el=document.getElementById(id); if(el) el.textContent='ERR';
-    });
-    console.error('loadDashboard error:',e);
-  }
+  }catch(e){}
 }
 
 async function loadStock(){
   try{
-    var r=await fetch('/api/stock'), d=await r.json();
-    allStock=d.items||[];
-    document.getElementById('stock-count').textContent=allStock.length+' materiales';
-    renderStock(allStock);
-  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="6">Error</td></tr>';}
+    var r=await fetch('/api/lotes'), d=await r.json();
+    allLotes=d.lotes||[];
+    var ests=[...new Set(allLotes.map(function(l){return l.estanteria;}).filter(Boolean))].sort(function(a,b){return Number(a)-Number(b)||a.localeCompare(b);});
+    var sel=document.getElementById('stock-est');
+    if(sel){sel.innerHTML='<option value="">Todas estanterias</option>';ests.forEach(function(e){var o=document.createElement('option');o.value=e;o.textContent='Est. '+e;sel.appendChild(o);});}
+    document.getElementById('stock-count').textContent=allLotes.length+' lotes';
+    renderStock(allLotes);
+  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error. Recarga.</td></tr>';}
 }
-
+var allLotes=[];
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  if(!items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  var AS={vencido:{bg:'#ffebeb',c:'#cc0000',l:'VENCIDO'},critico:{bg:'#fff3e0',c:'#e65100',l:'CRITICO'},proximo:{bg:'#fffde7',c:'#f57f17',l:'PROXIMO'},ok:{bg:'transparent',c:'#1a8a1a',l:'VIGENTE'}};
   tb.innerHTML=items.map(function(i){
-    var c=i.stock_actual<=0?'color:#cc0000;font-weight:700;':i.stock_actual<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
-    return '<tr>'
-      +'<td style="font-family:monospace;font-size:0.83em;color:#555;">'+i.material_id+'</td>'
-      +'<td>'+i.material_nombre+'</td>'
-      +'<td style="text-align:right;">'+i.entradas.toLocaleString()+'</td>'
-      +'<td style="text-align:right;color:#cc4444;">'+i.salidas.toLocaleString()+'</td>'
-      +'<td style="text-align:right;'+c+'">'+i.stock_actual.toLocaleString()+'</td>'
-      +'<td style="text-align:right;color:#888;">'+(i.stock_actual/1000).toFixed(3)+'</td>'
+    var a=AS[i.alerta]||AS.ok;
+    var qc=i.cantidad_g<=0?'color:#cc0000;':i.cantidad_g<100?'color:#e68a00;':'color:#1a8a1a;';
+    var dias=i.dias_para_vencer!=null?(i.dias_para_vencer<0?'Hace '+(Math.abs(i.dias_para_vencer))+'d':i.dias_para_vencer+'d'):'';
+    return '<tr style="background:'+a.bg+';">'
+      +'<td style="font-family:monospace;font-size:0.8em;color:#555;">'+i.material_id+'</td>'
+      +'<td style="font-weight:500;">'+i.material_nombre+'</td>'
+      +'<td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>'
+      +'<td style="font-size:0.85em;color:#666;">'+i.proveedor+'</td>'
+      +'<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>'
+      +'<td style="text-align:center;">'+i.posicion+'</td>'
+      +'<td style="text-align:right;font-weight:700;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>'
+      +'<td style="text-align:right;color:#888;">'+i.cantidad_kg.toFixed(3)+'</td>'
+      +'<td style="text-align:center;font-size:0.82em;color:'+a.c+';">'+i.fecha_vencimiento+'<br><b>'+dias+'</b></td>'
+      +'<td style="text-align:center;"><span style="background:'+a.bg+';color:'+a.c+';padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+a.c+';">'+a.l+'</span></td>'
       +'</tr>';
   }).join('');
 }
-
 function filterStock(){
   var q=document.getElementById('stock-search').value.toLowerCase();
-  renderStock(allStock.filter(function(i){return i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q);}));
+  var est=document.getElementById('stock-est')?document.getElementById('stock-est').value:'';
+  var estado=document.getElementById('stock-est2')?document.getElementById('stock-est2').value:'';
+  var f=allLotes.filter(function(i){
+    return(!q||(i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||(i.proveedor||'').toLowerCase().includes(q)))
+      &&(! est||i.estanteria===est)&&(! estado||i.alerta===estado);
+  });
+  document.getElementById('stock-count').textContent=f.length+' de '+allLotes.length;
+  renderStock(f);
 }
 
 async function loadFormulas(){
@@ -348,14 +365,14 @@ async function loadFormulas(){
 function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun. Crea la primera arriba.</p>';return;}
-  c.innerHTML=fl.map(function(f,idx){
+  c.innerHTML=fl.map(function(f){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
     return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
       +'<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>'
       +'<div style="display:flex;gap:6px;">'
-      +'<button onclick="editFormula("+idx+")" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
-      +'<button onclick="delFormula("+idx+")" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
+      +'<button onclick="editFormula(\''+f.producto_nombre+'\')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      +'<button onclick="delFormula(\''+f.producto_nombre+'\')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
       +'</div></div>'
       +'<table class="table" style="font-size:0.85em;">'
       +'<thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g por kg producto</th></tr></thead>'
@@ -406,8 +423,8 @@ async function guardarFormula(){
   }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
-function editFormula(idx){
-  var f=fData[idx];
+function editFormula(nombre){
+  var f=fData.find(function(x){return x.producto_nombre===nombre;});
   if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;
@@ -425,9 +442,8 @@ function editFormula(idx){
   document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
 }
 
-async function delFormula(idx){
-  var nombre=fData[idx]?fData[idx].producto_nombre:'';
-  if(!nombre||!confirm('Eliminar formula de '+nombre+'?')) return;
+async function delFormula(nombre){
+  if(!confirm('Eliminar formula de '+nombre+'?')) return;
   await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
   await loadFormulas();
 }
@@ -537,7 +553,7 @@ async function enviarChat(){
   }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
 }
 
-window.onload=function(){try{loadDashboard();}catch(e){console.error(e);} try{loadFormulas();}catch(e){console.error(e);}  };
+window.onload=function(){loadDashboard();loadFormulas();};
 </script>
 </body>
 </html>
@@ -553,7 +569,7 @@ def health():
 
 @app.route('/api/inventario')
 def get_inventario():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM movimientos')
     mov = c.fetchone()[0]
@@ -569,8 +585,7 @@ def get_inventario():
 
 @app.route('/api/stock')
 def get_stock():
-    """Vista consolidada por material (para dashboard)"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     c.execute("""SELECT material_id, material_nombre,
                  SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END),
@@ -583,57 +598,9 @@ def get_stock():
                                 'entradas': round(r[2] or 0, 2), 'salidas': round(r[3] or 0, 2),
                                 'stock_actual': round(r[4] or 0, 2)} for r in rows]})
 
-@app.route('/api/lotes')
-def get_lotes():
-    """Vista por lote individual con ubicacion, vencimiento y proveedor"""
-    from datetime import date
-    hoy = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento,
-                        estanteria, posicion, proveedor, estado_lote, fecha
-                 FROM movimientos
-                 WHERE tipo='Entrada'
-                 ORDER BY material_nombre ASC, lote ASC""")
-    rows = c.fetchall()
-    conn.close()
-    result = []
-    for r in rows:
-        mat_id, mat_nom, lote, cant, fvenc, estant, pos, prov, estado, fecha_mov = r
-        # Calcular dias para vencer
-        dias_venc = None
-        alerta = 'ok'
-        if fvenc and len(fvenc) >= 10:
-            try:
-                from datetime import datetime as dt2
-                fv = fvenc[:10]
-                dias = (dt2.strptime(fv, '%Y-%m-%d').date() - dt2.strptime(hoy, '%Y-%m-%d').date()).days
-                dias_venc = dias
-                if dias < 0: alerta = 'vencido'
-                elif dias <= 30: alerta = 'critico'
-                elif dias <= 90: alerta = 'proximo'
-            except Exception:
-                pass
-        result.append({
-            'material_id': mat_id or '',
-            'material_nombre': mat_nom or '',
-            'lote': lote or '',
-            'cantidad_g': round(cant or 0, 2),
-            'cantidad_kg': round((cant or 0) / 1000, 3),
-            'fecha_vencimiento': fvenc[:10] if fvenc and len(fvenc) >= 10 else '',
-            'dias_para_vencer': dias_venc,
-            'estanteria': estant or '',
-            'posicion': pos or '',
-            'ubicacion': f"{estant or ''}{pos or ''}".strip(),
-            'proveedor': prov or '',
-            'estado_lote': estado or '',
-            'alerta': alerta
-        })
-    return jsonify({'lotes': result, 'total': len(result)})
-
 @app.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -660,7 +627,7 @@ def handle_formulas():
 
 @app.route('/api/formulas/<producto_nombre>', methods=['DELETE'])
 def del_formula(producto_nombre):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (producto_nombre,))
     c.execute('DELETE FROM formula_headers WHERE producto_nombre=?', (producto_nombre,))
@@ -670,36 +637,24 @@ def del_formula(producto_nombre):
 
 @app.route('/api/movimientos', methods=['GET', 'POST'])
 def handle_movimientos():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
-        c.execute("""INSERT INTO movimientos
-                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
-                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
                   (data['material_id'], data['material_nombre'], data['cantidad'],
-                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', ''),
-                   data.get('lote',''), data.get('fecha_vencimiento',''),
-                   data.get('estanteria',''), data.get('posicion',''),
-                   data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
+                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', '')))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute("""SELECT material_id, material_nombre, cantidad, tipo, fecha, observaciones,
-                        lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote
-                 FROM movimientos ORDER BY fecha DESC LIMIT 500""")
-    movimientos = [{'material_id': r[0], 'material_nombre': r[1], 'cantidad': r[2], 'tipo': r[3],
-                    'fecha': r[4], 'observaciones': r[5], 'lote': r[6] or '',
-                    'fecha_vencimiento': r[7] or '', 'estanteria': r[8] or '',
-                    'posicion': r[9] or '', 'proveedor': r[10] or '',
-                    'estado_lote': r[11] or ''} for r in c.fetchall()]
+    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
+    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
 @app.route('/api/produccion', methods=['GET', 'POST'])
 def handle_produccion():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -744,7 +699,7 @@ def handle_chat():
 
 @app.route('/api/analisis-abc')
 def get_analisis_abc():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     c.execute("""SELECT material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
                  FROM movimientos GROUP BY material_nombre ORDER BY stock DESC""")
@@ -764,7 +719,7 @@ def get_analisis_abc():
 
 @app.route('/api/alertas', methods=['GET', 'POST'])
 def handle_alertas():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
@@ -780,18 +735,46 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
+@app.route('/api/stock')
+def get_stock():
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
+
+@app.route('/api/lotes')
+def get_lotes():
+    from datetime import date
+    hoy = date.today().isoformat()
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, lote ASC")
+    rows = c.fetchall(); conn.close()
+    result = []
+    for r in rows:
+        mat_id,mat_nom,lote,cant,fvenc,estant,pos,prov,estado = r[0],r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]
+        dias_venc,alerta = None,'ok'
+        if fvenc and len(str(fvenc)) >= 10:
+            try:
+                from datetime import datetime as dt2
+                fv = str(fvenc)[:10]
+                dias = (dt2.strptime(fv,'%Y-%m-%d').date() - dt2.strptime(hoy,'%Y-%m-%d').date()).days
+                dias_venc = dias
+                if dias < 0: alerta = 'vencido'
+                elif dias <= 30: alerta = 'critico'
+                elif dias <= 90: alerta = 'proximo'
+            except: pass
+        result.append({'material_id':mat_id or '','material_nombre':mat_nom or '','lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),'fecha_vencimiento':str(fvenc)[:10] if fvenc else '','dias_para_vencer':dias_venc,'estanteria':estant or '','posicion':pos or '','proveedor':prov or '','estado_lote':estado or '','alerta':alerta})
+    return jsonify({'lotes': result, 'total': len(result)})
+
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_movimientos():
-    """Borra todos los movimientos para recargar limpio"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('DELETE FROM movimientos')
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM movimientos")
     conn.commit()
-    c.execute('SELECT COUNT(*) FROM movimientos')
+    c.execute("SELECT COUNT(*) FROM movimientos")
     count = c.fetchone()[0]
     conn.close()
     return jsonify({'message': 'Movimientos borrados', 'restantes': count})
-
 
 @app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
 def generar_rotulos(producto_nombre, cantidad_kg):
@@ -801,94 +784,58 @@ def generar_rotulos(producto_nombre, cantidad_kg):
     cantidad_g = cantidad_kg * 1000
     prod = urllib.parse.unquote(producto_nombre)
     op_num = "OP-" + date.today().strftime('%Y%m%d')
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
-
     lotes = {}
-    for mat_id, mat_nom, pct in items:
-        c.execute("SELECT lote, estanteria, posicion, proveedor FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY fecha DESC LIMIT 1", (mat_id,))
+    for r in items:
+        mat_id = r[0]
+        c.execute("SELECT lote, estanteria, posicion FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY fecha DESC LIMIT 1", (mat_id,))
         row = c.fetchone()
-        lotes[mat_id] = {"lote": row[0] if row else "S/L", "est": row[1] if row else "", "pos": row[2] if row else "", "prov": row[3] if row else ""}
+        lotes[mat_id] = {"lote": row[0] if row else "S/L", "est": row[1] if row else "", "pos": row[2] if row else ""}
     conn.close()
-
     if not items:
         return "<h2>Formula no encontrada: " + prod + "</h2>", 404
-
     rhtml = ""
-    for i, (mat_id, mat_nom, pct) in enumerate(items):
+    for idx, r in enumerate(items):
+        mat_id, mat_nom, pct = r[0], r[1], r[2]
         peso = round((pct / 100) * cantidad_g, 2)
         info = lotes.get(mat_id, {})
-        lote_mp = info.get("lote", "")
-        ubicacion = ("Est. " + info.get("est","") + info.get("pos","")).strip()
-        rhtml += """<div class="r">
-  <div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span><span class="rc">Codigo: PRD-PRO-001-F08 | v1<br>Vigencia: 04-Mar-2025 / 03-Mar-2028</span></div>
-  <table><tr>
-    <td class="l">OP:</td><td class="v">"""+op_num+"""</td>
-    <td class="l">Fecha:</td><td class="v">"""+hoy+"""</td>
-  </tr><tr>
-    <td class="l">Producto:</td><td class="v big" colspan="3"><b>"""+prod+"""</b> &mdash; """+str(cantidad_kg)+""" kg</td>
-  </tr><tr>
-    <td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>"""+mat_nom+"""</b> <span style="color:#888;font-size:0.8em;">("""+mat_id+""")</span></td>
-  </tr><tr>
-    <td class="l">Lote MP:</td><td class="v bold">"""+lote_mp+"""</td>
-    <td class="l">Ubicacion:</td><td class="v">"""+ubicacion+"""</td>
-  </tr><tr>
-    <td class="l">Peso teorico:</td><td class="v peso">"""+f"{peso:,.2f} g"+"""</td>
-    <td class="l">% formula:</td><td class="v">"""+str(pct)+"""%</td>
-  </tr><tr>
-    <td class="l">Tara:</td><td class="blank"></td>
-    <td class="l">Peso Neto:</td><td class="blank"></td>
-  </tr><tr>
-    <td class="l">Peso Bruto:</td><td class="blank"></td>
-    <td class="l">Lote Prod.:</td><td class="blank"></td>
-  </tr><tr>
-    <td class="l">Pesado por:</td><td class="blank firma"></td>
-    <td class="l">Verificado:</td><td class="blank firma"></td>
-  </tr></table>
-  <div class="rf">MP: Materia Prima &nbsp; | &nbsp; #"""+str(i+1)+""" de """+str(len(items))+"""</div>
-</div>"""
-
-    return """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-<title>Rotulos """ + prod + """</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}
+        lote_mp = info.get("lote", "S/L")
+        ubicacion = ("Est. " + str(info.get("est","")) + str(info.get("pos",""))).strip()
+        rhtml += ('<div class="r">'
+            + '<div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span>'
+            + '<span class="rc">Codigo: PRD-PRO-001-F08 | v1<br>Vigencia: 04-Mar-2025 / 03-Mar-2028</span></div>'
+            + '<table>'
+            + '<tr><td class="l">OP:</td><td class="v">' + op_num + '</td><td class="l">Fecha:</td><td class="v">' + hoy + '</td></tr>'
+            + '<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>' + prod + '</b> &mdash; ' + str(cantidad_kg) + ' kg</td></tr>'
+            + '<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>' + mat_nom + '</b> <span style="color:#888;font-size:0.8em;">(' + mat_id + ')</span></td></tr>'
+            + '<tr><td class="l">Lote MP:</td><td class="v bold">' + lote_mp + '</td><td class="l">Ubicacion:</td><td class="v">' + ubicacion + '</td></tr>'
+            + '<tr><td class="l">Peso teorico:</td><td class="v peso">' + f"{peso:,.2f} g" + '</td><td class="l">% formula:</td><td class="v">' + str(pct) + '%</td></tr>'
+            + '<tr><td class="l">Tara:</td><td class="blank"></td><td class="l">Peso Neto:</td><td class="blank"></td></tr>'
+            + '<tr><td class="l">Peso Bruto:</td><td class="blank"></td><td class="l">Lote Prod.:</td><td class="blank"></td></tr>'
+            + '<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
+            + '</table>'
+            + '<div class="rf">MP: Materia Prima &nbsp;|&nbsp; #' + str(idx+1) + ' de ' + str(len(items)) + '</div>'
+            + '</div>')
+    return ("""<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos </title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}
 .ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
-.ph h2{font-size:11pt;}
-.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
-.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}
-.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}
+.ph h2{font-size:11pt;}.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
+.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}
 .rh{background:#1a252f;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}
-.rt{font-weight:bold;font-size:8pt;}
-.rc{font-size:6.5pt;text-align:right;line-height:1.4;}
-table{width:100%;border-collapse:collapse;}
-td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}
+.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.5pt;text-align:right;line-height:1.4;}
+table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}
 .l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#1a252f;white-space:nowrap;width:27%;}
-.v{font-size:8.5pt;width:23%;}
-.bold{font-size:9pt;}
-.big{font-size:9pt;}
+.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}
 .peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}
-.blank{height:20px;width:23%;}
-.firma{height:26px;}
-.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}
-@media print{
-  body{background:white;}
-  .ph{display:none;}
-  .wrap{padding:0;gap:3px;}
-  .r{width:48%;}
-  @page{size:letter landscape;margin:7mm;}
-}
+.blank{height:20px;width:23%;}.firma{height:26px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}
+@media print{body{background:white;}.ph{display:none;}.wrap{padding:0;gap:3px;}.r{width:48%;}@page{size:letter landscape;margin:7mm;}}
 </style></head><body>
-<div class="ph">
-  <div><h2>Rotulos de Dispensacion &mdash; """ + prod + """</h2>
-  <div style="font-size:8pt;opacity:0.8;">""" + op_num + """ &nbsp;|&nbsp; """ + str(cantidad_kg) + """ kg &nbsp;|&nbsp; """ + str(len(items)) + """ MPs &nbsp;|&nbsp; """ + hoy + """</div></div>
-  <button class="pbtn" onclick="window.print()">Imprimir todos</button>
-</div>
-<div class="wrap">""" + rhtml + """</div></body></html>"""
-
+<div class="ph"><div><h2>Rotulos &mdash; """ + prod + """ &mdash; """ + str(cantidad_kg) + """ kg</h2>
+<div style="font-size:8pt;opacity:0.8;">""" + op_num + """ | """ + str(len(items)) + """ MPs | """ + hoy + """</div></div>
+<button class="pbtn" onclick="window.print()">Imprimir todos</button></div>
+<div class="wrap">""" + rhtml + """</div></body></html>""")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
