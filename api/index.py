@@ -247,25 +247,36 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 var fData=[], allStock=[];
 
 function switchTab(n,btn){
-  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
-  document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
-  document.getElementById(n).classList.add('active');
-  if(btn) btn.classList.add('active');
-  if(n==='stock') loadStock();
-  if(n==='formulas'||n==='produccion') loadFormulas();
-  if(n==='abc') loadABC();
-  if(n==='alertas') loadAlertas();
-  if(n==='movimientos') loadMovimientos();
+  try{
+    document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+    var el=document.getElementById(n);
+    if(el) el.classList.add('active');
+    if(btn) btn.classList.add('active');
+    if(n==='stock') loadStock();
+    if(n==='formulas'||n==='produccion') loadFormulas();
+    if(n==='abc') loadABC();
+    if(n==='alertas') loadAlertas();
+    if(n==='movimientos') loadMovimientos();
+  }catch(err){console.error('switchTab error:',err);}
 }
 
 async function loadDashboard(){
+  ['stock-total','materiales-count','alertas-count','producciones-count'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.textContent='...';
+  });
   try{
-    var r=await fetch('/api/inventario'), d=await r.json();
+    var r=await fetch('/api/inventario',{signal:AbortSignal.timeout?AbortSignal.timeout(30000):undefined}), d=await r.json();
     document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
     document.getElementById('alertas-count').textContent=d.alertas||'0';
     document.getElementById('producciones-count').textContent=d.producciones||'0';
-  }catch(e){}
+  }catch(e){
+    ['stock-total','materiales-count','alertas-count','producciones-count'].forEach(function(id){
+      var el=document.getElementById(id); if(el) el.textContent='ERR';
+    });
+    console.error('loadDashboard error:',e);
+  }
 }
 
 async function loadStock(){
@@ -316,14 +327,14 @@ async function loadFormulas(){
 function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun. Crea la primera arriba.</p>';return;}
-  c.innerHTML=fl.map(function(f){
+  c.innerHTML=fl.map(function(f,idx){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
     return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
       +'<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>'
       +'<div style="display:flex;gap:6px;">'
-      +'<button onclick="editFormula(\''+f.producto_nombre+'\')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
-      +'<button onclick="delFormula(\''+f.producto_nombre+'\')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
+      +'<button onclick="editFormula("+idx+")" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      +'<button onclick="delFormula("+idx+")" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
       +'</div></div>'
       +'<table class="table" style="font-size:0.85em;">'
       +'<thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g por kg producto</th></tr></thead>'
@@ -374,8 +385,8 @@ async function guardarFormula(){
   }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
-function editFormula(nombre){
-  var f=fData.find(function(x){return x.producto_nombre===nombre;});
+function editFormula(idx){
+  var f=fData[idx];
   if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;
@@ -393,8 +404,9 @@ function editFormula(nombre){
   document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
 }
 
-async function delFormula(nombre){
-  if(!confirm('Eliminar formula de '+nombre+'?')) return;
+async function delFormula(idx){
+  var nombre=fData[idx]?fData[idx].producto_nombre:'';
+  if(\!nombre||\!confirm('Eliminar formula de '+nombre+'?')) return;
   await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
   await loadFormulas();
 }
