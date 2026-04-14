@@ -298,7 +298,7 @@ async function loadStock(){
 function renderStock(items){
   var tb=document.getElementById('stock-body');
   if(!items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
-  var AS={vencido:{bg:'#ffebeb',c:'#cc0000',l:'VENCIDO'},critico:{bg:'#fff3e0',c:'#e65100',l:'CRITICO'},proximo:{bg:'#fffde7',c:'#f57f17',l:'PROXIMO'},ok:{bg:'transparent',c:'#1a8a1a',l:'VIGENTE'}};
+  var AS={vencido:{bg:'#ffebeb',c:'#cc0000',l:'VENCIDO'},critico:{bg:'#fff3e0',c:'#e65100',l:'CRITICO'},proximo:{bg:'#fffde7',c:'#f57f17',l:'PROXIMO'},ok:{bg:'transparent',c:'#1a8a1a',l:'VIGENTE'} };
   tb.innerHTML=items.map(function(i){
     var a=AS[i.alerta]||AS.ok;
     var qc=i.cantidad_g<=0?'color:#cc0000;':i.cantidad_g<100?'color:#e68a00;':'color:#1a8a1a;';
