@@ -208,7 +208,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </table>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;">
+      <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+      <button onclick="generarRotulos()" style="background:#c0392b;" id="btn-rotulos" disabled>&#128209; Generar Rotulos</button>
+    </div>
     <div id="prod-msg"></div>
   </div>
 
@@ -788,6 +791,104 @@ def reset_movimientos():
     count = c.fetchone()[0]
     conn.close()
     return jsonify({'message': 'Movimientos borrados', 'restantes': count})
+
+
+@app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
+def generar_rotulos(producto_nombre, cantidad_kg):
+    from datetime import date
+    import urllib.parse
+    hoy = date.today().strftime('%d-%b-%Y').upper()
+    cantidad_g = cantidad_kg * 1000
+    prod = urllib.parse.unquote(producto_nombre)
+    op_num = "OP-" + date.today().strftime('%Y%m%d')
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
+    items = c.fetchall()
+
+    lotes = {}
+    for mat_id, mat_nom, pct in items:
+        c.execute("SELECT lote, estanteria, posicion, proveedor FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY fecha DESC LIMIT 1", (mat_id,))
+        row = c.fetchone()
+        lotes[mat_id] = {"lote": row[0] if row else "S/L", "est": row[1] if row else "", "pos": row[2] if row else "", "prov": row[3] if row else ""}
+    conn.close()
+
+    if not items:
+        return "<h2>Formula no encontrada: " + prod + "</h2>", 404
+
+    rhtml = ""
+    for i, (mat_id, mat_nom, pct) in enumerate(items):
+        peso = round((pct / 100) * cantidad_g, 2)
+        info = lotes.get(mat_id, {})
+        lote_mp = info.get("lote", "")
+        ubicacion = ("Est. " + info.get("est","") + info.get("pos","")).strip()
+        rhtml += """<div class="r">
+  <div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span><span class="rc">Codigo: PRD-PRO-001-F08 | v1<br>Vigencia: 04-Mar-2025 / 03-Mar-2028</span></div>
+  <table><tr>
+    <td class="l">OP:</td><td class="v">"""+op_num+"""</td>
+    <td class="l">Fecha:</td><td class="v">"""+hoy+"""</td>
+  </tr><tr>
+    <td class="l">Producto:</td><td class="v big" colspan="3"><b>"""+prod+"""</b> &mdash; """+str(cantidad_kg)+""" kg</td>
+  </tr><tr>
+    <td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>"""+mat_nom+"""</b> <span style="color:#888;font-size:0.8em;">("""+mat_id+""")</span></td>
+  </tr><tr>
+    <td class="l">Lote MP:</td><td class="v bold">"""+lote_mp+"""</td>
+    <td class="l">Ubicacion:</td><td class="v">"""+ubicacion+"""</td>
+  </tr><tr>
+    <td class="l">Peso teorico:</td><td class="v peso">"""+f"{peso:,.2f} g"+"""</td>
+    <td class="l">% formula:</td><td class="v">"""+str(pct)+"""%</td>
+  </tr><tr>
+    <td class="l">Tara:</td><td class="blank"></td>
+    <td class="l">Peso Neto:</td><td class="blank"></td>
+  </tr><tr>
+    <td class="l">Peso Bruto:</td><td class="blank"></td>
+    <td class="l">Lote Prod.:</td><td class="blank"></td>
+  </tr><tr>
+    <td class="l">Pesado por:</td><td class="blank firma"></td>
+    <td class="l">Verificado:</td><td class="blank firma"></td>
+  </tr></table>
+  <div class="rf">MP: Materia Prima &nbsp; | &nbsp; #"""+str(i+1)+""" de """+str(len(items))+"""</div>
+</div>"""
+
+    return """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<title>Rotulos """ + prod + """</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}
+.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
+.ph h2{font-size:11pt;}
+.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
+.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}
+.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}
+.rh{background:#1a252f;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}
+.rt{font-weight:bold;font-size:8pt;}
+.rc{font-size:6.5pt;text-align:right;line-height:1.4;}
+table{width:100%;border-collapse:collapse;}
+td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}
+.l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#1a252f;white-space:nowrap;width:27%;}
+.v{font-size:8.5pt;width:23%;}
+.bold{font-size:9pt;}
+.big{font-size:9pt;}
+.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}
+.blank{height:20px;width:23%;}
+.firma{height:26px;}
+.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}
+@media print{
+  body{background:white;}
+  .ph{display:none;}
+  .wrap{padding:0;gap:3px;}
+  .r{width:48%;}
+  @page{size:letter landscape;margin:7mm;}
+}
+</style></head><body>
+<div class="ph">
+  <div><h2>Rotulos de Dispensacion &mdash; """ + prod + """</h2>
+  <div style="font-size:8pt;opacity:0.8;">""" + op_num + """ &nbsp;|&nbsp; """ + str(cantidad_kg) + """ kg &nbsp;|&nbsp; """ + str(len(items)) + """ MPs &nbsp;|&nbsp; """ + hoy + """</div></div>
+  <button class="pbtn" onclick="window.print()">Imprimir todos</button>
+</div>
+<div class="wrap">""" + rhtml + """</div></body></html>"""
+
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
