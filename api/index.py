@@ -247,18 +247,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 var fData=[], allStock=[];
 
 function switchTab(n,btn){
-  try{
-    document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
-    document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
-    var el=document.getElementById(n);
-    if(el) el.classList.add('active');
-    if(btn) btn.classList.add('active');
-    if(n==='stock') loadStock();
-    if(n==='formulas'||n==='produccion') loadFormulas();
-    if(n==='abc') loadABC();
-    if(n==='alertas') loadAlertas();
-    if(n==='movimientos') loadMovimientos();
-  }catch(err){console.error('switchTab error:',err);}
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  var el=document.getElementById(n);
+  if(el){ el.classList.add('active'); }
+  if(btn){ btn.classList.add('active'); }
+  if(n==='stock'){ loadStock(); }
+  else if(n==='formulas'){ loadFormulas(); }
+  else if(n==='produccion'){ loadFormulas(); }
+  else if(n==='abc'){ loadABC(); }
+  else if(n==='alertas'){ loadAlertas(); }
+  else if(n==='movimientos'){ loadMovimientos(); }
 }
 
 async function loadDashboard(){
@@ -266,7 +265,7 @@ async function loadDashboard(){
     var el=document.getElementById(id); if(el) el.textContent='...';
   });
   try{
-    var r=await fetch('/api/inventario',{signal:AbortSignal.timeout?AbortSignal.timeout(30000):undefined}), d=await r.json();
+    var r=await fetch('/api/inventario'), d=await r.json();
     document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
     document.getElementById('alertas-count').textContent=d.alertas||'0';
@@ -406,7 +405,7 @@ function editFormula(idx){
 
 async function delFormula(idx){
   var nombre=fData[idx]?fData[idx].producto_nombre:'';
-  if(\!nombre||\!confirm('Eliminar formula de '+nombre+'?')) return;
+  if(!nombre||!confirm('Eliminar formula de '+nombre+'?')) return;
   await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
   await loadFormulas();
 }
@@ -516,7 +515,7 @@ async function enviarChat(){
   }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
 }
 
-window.onload=function(){loadDashboard();loadFormulas();};
+window.onload=function(){try{loadDashboard();}catch(e){console.error(e);} try{loadFormulas();}catch(e){console.error(e);}  };
 </script>
 </body>
 </html>
