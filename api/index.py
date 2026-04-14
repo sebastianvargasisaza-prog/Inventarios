@@ -121,22 +121,29 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="stock" class="tab-content">
-    <h2>&#128230; Stock Actual por Materia Prima</h2>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
-      <input type="text" id="stock-search" placeholder="Buscar codigo o nombre..." oninput="filterStock()" style="width:260px;margin-top:0;">
+    <h2>&#128230; Stock por Lote</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+      <input type="text" id="stock-search" placeholder="Buscar MP, lote, proveedor..." oninput="filterStock()" style="width:220px;margin-top:0;">
+      <select id="stock-est" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;"><option value="">Todas estanterias</option></select>
+      <select id="stock-est2" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
+        <option value="">Todos estados</option>
+        <option value="vencido">Vencido</option>
+        <option value="critico">Critico -30d</option>
+        <option value="proximo">Proximo -90d</option>
+        <option value="ok">Vigente</option>
+      </select>
       <button onclick="loadStock()">&#8635; Actualizar</button>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
     <table class="table">
       <thead><tr>
-        <th>Codigo MP</th><th>Material</th>
-        <th style="text-align:right;">Entradas (g)</th>
-        <th style="text-align:right;">Salidas (g)</th>
-        <th style="text-align:right;">&#9654; Stock (g)</th>
-        <th style="text-align:right;">Stock (kg)</th>
+        <th>Codigo</th><th>Material</th><th>Lote</th>
+        <th>Proveedor</th><th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
+        <th style="text-align:right;">g</th><th style="text-align:right;">kg</th>
+        <th style="text-align:center;">Vence</th><th style="text-align:center;">Estado</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -274,36 +281,53 @@ async function loadDashboard(){
   }catch(e){}
 }
 
+var allLotes=[];
 async function loadStock(){
   try{
-    var r=await fetch('/api/stock'), d=await r.json();
-    allStock=d.items||[];
-    document.getElementById('stock-count').textContent=allStock.length+' materiales';
-    renderStock(allStock);
-  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="6">Error</td></tr>';}
+    var r=await fetch('/api/lotes'), d=await r.json();
+    allLotes=d.lotes||[];
+    var ests=[...new Set(allLotes.map(function(l){return l.estanteria;}).filter(Boolean))].sort(function(a,b){return Number(a)-Number(b)||a.localeCompare(b);});
+    var sel=document.getElementById('stock-est');
+    if(sel){sel.innerHTML='<option value="">Todas estanterias</option>';ests.forEach(function(e){var o=document.createElement('option');o.value=e;o.textContent='Est. '+e;sel.appendChild(o);});}
+    document.getElementById('stock-count').textContent=allLotes.length+' lotes';
+    renderStock(allLotes);
+  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error al cargar stock.</td></tr>';}
 }
-
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
-  tb.innerHTML=items.map(function(i){
-    var c=i.stock_actual<=0?'color:#cc0000;font-weight:700;':i.stock_actual<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
-    return '<tr>'
-      +'<td style="font-family:monospace;font-size:0.83em;color:#555;">'+i.material_id+'</td>'
-      +'<td>'+i.material_nombre+'</td>'
-      +'<td style="text-align:right;">'+i.entradas.toLocaleString()+'</td>'
-      +'<td style="text-align:right;color:#cc4444;">'+i.salidas.toLocaleString()+'</td>'
-      +'<td style="text-align:right;'+c+'">'+i.stock_actual.toLocaleString()+'</td>'
-      +'<td style="text-align:right;color:#888;">'+(i.stock_actual/1000).toFixed(3)+'</td>'
-      +'</tr>';
-  }).join('');
+  if(!items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  var AS={vencido:{bg:'#ffebeb',c:'#cc0000',l:'VENCIDO'},critico:{bg:'#fff3e0',c:'#e65100',l:'CRITICO'},proximo:{bg:'#fffde7',c:'#f57f17',l:'PROXIMO'},ok:{bg:'transparent',c:'#1a8a1a',l:'VIGENTE'}};
+  var html='';
+  items.forEach(function(i){
+    var a=AS[i.alerta]||AS.ok;
+    var qc=i.cantidad_g<=0?'color:#cc0000;':i.cantidad_g<100?'color:#e68a00;':'color:#1a8a1a;';
+    var dias=i.dias_para_vencer!=null?(i.dias_para_vencer<0?'Hace '+(Math.abs(i.dias_para_vencer))+'d':i.dias_para_vencer+'d'):'';
+    html+='<tr style="background:'+a.bg+';">';
+    html+='<td style="font-family:monospace;font-size:0.8em;color:#555;">'+i.material_id+'</td>';
+    html+='<td style="font-weight:500;">'+i.material_nombre+'</td>';
+    html+='<td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>';
+    html+='<td style="font-size:0.85em;color:#666;">'+i.proveedor+'</td>';
+    html+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';
+    html+='<td style="text-align:center;">'+i.posicion+'</td>';
+    html+='<td style="text-align:right;font-weight:700;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
+    html+='<td style="text-align:right;color:#888;">'+i.cantidad_kg.toFixed(3)+'</td>';
+    html+='<td style="text-align:center;font-size:0.82em;color:'+a.c+';">'+i.fecha_vencimiento+'<br><b>'+dias+'</b></td>';
+    html+='<td style="text-align:center;"><span style="background:'+a.bg+';color:'+a.c+';padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+a.c+';">'+a.l+'</span></td>';
+    html+='</tr>';
+  });
+  tb.innerHTML=html;
 }
-
 function filterStock(){
   var q=document.getElementById('stock-search').value.toLowerCase();
-  renderStock(allStock.filter(function(i){return i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q);}));
+  var est=document.getElementById('stock-est')?document.getElementById('stock-est').value:'';
+  var estado=document.getElementById('stock-est2')?document.getElementById('stock-est2').value:'';
+  var f=allLotes.filter(function(i){
+    return(!q||(i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||(i.proveedor||'').toLowerCase().includes(q)))
+      &&(!est||i.estanteria===est)&&(!estado||i.alerta===estado);
+  });
+  document.getElementById('stock-count').textContent=f.length+' de '+allLotes.length;
+  renderStock(f);
 }
-
 async function loadFormulas(){
   try{
     var r=await fetch('/api/formulas'), d=await r.json();
@@ -726,6 +750,36 @@ def reset_movimientos():
     c.execute("DELETE FROM movimientos"); conn.commit()
     c.execute("SELECT COUNT(*) FROM movimientos"); count = c.fetchone()[0]; conn.close()
     return jsonify({'message': 'Movimientos borrados', 'restantes': count})
+
+
+@app.route('/api/lotes')
+def get_lotes():
+    from datetime import date
+    hoy = date.today().isoformat()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento,
+                        estanteria, posicion, proveedor, estado_lote
+                 FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, lote ASC""")
+    rows = c.fetchall(); conn.close()
+    result = []
+    for r in rows:
+        mat_id,mat_nom,lote,cant,fvenc,estant,pos,prov,estado = r
+        dias_venc,alerta = None,'ok'
+        if fvenc and len(str(fvenc)) >= 10:
+            try:
+                from datetime import datetime as dt2
+                dias = (dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date() - dt2.strptime(hoy,'%Y-%m-%d').date()).days
+                dias_venc = dias
+                if dias < 0: alerta = 'vencido'
+                elif dias <= 30: alerta = 'critico'
+                elif dias <= 90: alerta = 'proximo'
+            except: pass
+        result.append({'material_id':mat_id or '','material_nombre':mat_nom or '','lote':lote or '',
+                       'cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
+                       'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
+                       'dias_para_vencer':dias_venc,'estanteria':estant or '','posicion':pos or '',
+                       'proveedor':prov or '','estado_lote':estado or '','alerta':alerta})
+    return jsonify({'lotes': result, 'total': len(result)})
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
