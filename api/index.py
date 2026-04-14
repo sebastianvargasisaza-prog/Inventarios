@@ -7,7 +7,18 @@ from anthropic import Anthropic
 import pandas as pd
 
 app = Flask(__name__)
-client = Anthropic()
+
+# Lazy Anthropic client - initialized on first use to avoid startup failure
+_anthropic_client = None
+
+def get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY no está configurada en las variables de entorno")
+        _anthropic_client = Anthropic(api_key=api_key)
+    return _anthropic_client
 
 # Database path
 DB_PATH = '/tmp/inventario.db'
@@ -746,6 +757,7 @@ def handle_chat():
     user_message = data.get('message', '')
 
     try:
+        client = get_anthropic_client()
         response = client.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=1024,
