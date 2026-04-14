@@ -6,6 +6,47 @@ from flask import Flask, jsonify, request, render_template_string
 from anthropic import Anthropic
 import pandas as pd
 
+# ── BASE DE DATOS: PostgreSQL si DATABASE_URL, SQLite si no ──────────────────
+DATABASE_URL = os.environ.get('DATABASE_URL')
+DB_PATH = '/tmp/inventario.db'
+
+class _Cur:
+    """Cursor adaptador: convierte ? a %s para PostgreSQL automáticamente"""
+    def __init__(self, c, pg): self._c, self._pg = c, pg
+    def execute(self, q, p=None):
+        if self._pg: q = q.replace('?', '%s')
+        self._c.execute(q, p) if p is not None else self._c.execute(q)
+    def fetchone(self): return self._c.fetchone()
+    def fetchall(self): return self._c.fetchall()
+
+class _Conn:
+    def __init__(self, c, pg): self._c, self._pg = c, pg
+    def cursor(self): return _Cur(self._c.cursor(), self._pg)
+    def commit(self): self._c.commit()
+    def rollback(self):
+        try: self._c.rollback()
+        except: pass
+    def close(self): self._c.close()
+
+IS_PG = False
+if DATABASE_URL:
+    try:
+        import psycopg2
+        def get_conn():
+            return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
+        # Test connection
+        _test = get_conn(); _test.close()
+        IS_PG = True
+    except Exception as _e:
+        import sys
+        print(f"PostgreSQL no disponible ({_e}), usando SQLite", file=sys.stderr)
+
+if not IS_PG:
+    def get_conn():
+        r = sqlite3.connect(DB_PATH)
+        r.row_factory = sqlite3.Row
+        return _Conn(r, False)
+
 app = Flask(__name__)
 
 _anthropic_client = None
@@ -21,33 +62,34 @@ def get_anthropic_client():
 DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS movimientos
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT, material_nombre TEXT, cantidad REAL,
-                  tipo TEXT, fecha TEXT, observaciones TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS producciones
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS alertas
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  material_id TEXT, material_nombre TEXT, stock_actual REAL,
-                  stock_minimo REAL, fecha TEXT, estado TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS formula_headers
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000,
-                  descripcion TEXT, fecha_creacion TEXT)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS formula_items
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto_nombre TEXT, material_id TEXT,
-                  material_nombre TEXT, porcentaje REAL)""")
-    # Catálogo maestro de materias primas
-    c.execute("""CREATE TABLE IF NOT EXISTS maestro_mps
-                 (codigo_mp TEXT PRIMARY KEY,
-                  nombre_inci TEXT, nombre_comercial TEXT,
-                  tipo TEXT, proveedor TEXT, stock_minimo REAL DEFAULT 0,
-                  activo INTEGER DEFAULT 1)""")
+    pk = "SERIAL PRIMARY KEY" if IS_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    c.execute(f"CREATE TABLE IF NOT EXISTS movimientos (id {pk}, material_id TEXT, material_nombre TEXT, cantidad REAL, tipo TEXT, fecha TEXT, observaciones TEXT, lote TEXT, fecha_vencimiento TEXT, estanteria TEXT, posicion TEXT, proveedor TEXT, estado_lote TEXT)")
+    for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote"]:
+        try: c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT"); conn.commit()
+        except: conn.rollback() if IS_PG else None
+
+    c.execute(f"CREATE TABLE IF NOT EXISTS producciones (id {pk}, producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT, lote_produccion TEXT)")
+    try: c.execute("ALTER TABLE producciones ADD COLUMN lote_produccion TEXT"); conn.commit()
+    except: conn.rollback() if IS_PG else None
+
+    c.execute(f"CREATE TABLE IF NOT EXISTS alertas (id {pk}, material_id TEXT, material_nombre TEXT, stock_actual REAL, stock_minimo REAL, fecha TEXT, estado TEXT)")
+    c.execute(f"CREATE TABLE IF NOT EXISTS formula_headers (id {pk}, producto_nombre TEXT UNIQUE, unidad_base_g REAL DEFAULT 1000, descripcion TEXT, fecha_creacion TEXT)")
+    c.execute(f"CREATE TABLE IF NOT EXISTS formula_items (id {pk}, producto_nombre TEXT, material_id TEXT, material_nombre TEXT, porcentaje REAL)")
+
+    c.execute(f"""CREATE TABLE IF NOT EXISTS maestro_mps (
+        codigo_mp TEXT PRIMARY KEY, nombre_inci TEXT, nombre_comercial TEXT,
+        tipo TEXT, proveedor TEXT, stock_minimo REAL DEFAULT 0, activo INTEGER DEFAULT 1)""")
+
+    c.execute(f"""CREATE TABLE IF NOT EXISTS ordenes_compra (
+        id {pk}, numero_oc TEXT UNIQUE, fecha TEXT, estado TEXT DEFAULT 'Pendiente',
+        proveedor TEXT, observaciones TEXT)""")
+    c.execute(f"""CREATE TABLE IF NOT EXISTS ordenes_compra_items (
+        id {pk}, numero_oc TEXT, codigo_mp TEXT, nombre_mp TEXT,
+        cantidad_solicitada REAL, unidad TEXT DEFAULT 'g', precio_unitario REAL DEFAULT 0)""")
+
     conn.commit()
     conn.close()
 
@@ -101,6 +143,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
     <button class="tab-button" onclick="switchTab('stock',this)">&#128230; Stock</button>
+            <button class="tab-button" onclick="switchTab('recepcion',this)">&#128666; Recepcion</button>
+            <button class="tab-button" onclick="switchTab('compras',this)">&#128722; Compras</button>
     <button class="tab-button" onclick="switchTab('formulas',this)">&#129514; Formulas</button>
     <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
     <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
@@ -123,13 +167,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="stock" class="tab-content">
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
-      <input type="text" id="stock-search" placeholder="Buscar MP, lote, proveedor..." oninput="filterStock()" style="width:220px;margin-top:0;">
+      <input type="text" id="stock-search" placeholder="MP, lote, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <select id="stock-est" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;"><option value="">Todas estanterias</option></select>
-      <select id="stock-est2" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
-        <option value="">Todos estados</option>
-        <option value="vencido">Vencido</option>
-        <option value="critico">Critico -30d</option>
-        <option value="proximo">Proximo -90d</option>
+      <select id="stock-alerta" onchange="filterStock()" style="padding:9px;border:1px solid #ddd;border-radius:6px;margin-top:0;">
+        <option value="">Todos estados</option><option value="vencido">Vencido</option>
+        <option value="critico">Critico &lt;30d</option><option value="proximo">Proximo &lt;90d</option>
         <option value="ok">Vigente</option>
       </select>
       <button onclick="loadStock()">&#8635; Actualizar</button>
@@ -138,14 +180,111 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="overflow-x:auto;">
     <table class="table">
       <thead><tr>
-        <th>Codigo</th><th>Material</th><th>Lote</th>
-        <th>Proveedor</th><th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
+        <th>Codigo</th><th>Material</th><th>Lote</th><th>Proveedor</th>
+        <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
         <th style="text-align:right;">g</th><th style="text-align:right;">kg</th>
         <th style="text-align:center;">Vence</th><th style="text-align:center;">Estado</th>
       </tr></thead>
       <tbody id="stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
+  </div>
+
+
+  <!-- RECEPCION DE MP -->
+  <div id="recepcion" class="tab-content">
+    <h2>&#128666; Recepcion de Materia Prima</h2>
+    <p style="color:#666;margin-bottom:18px;">Registra el ingreso de MPs. Escribe el codigo y el sistema completa la informacion del catalogo automaticamente.</p>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+        <div class="form-group">
+          <label>Codigo MP</label>
+          <input type="text" id="rec-codigo" placeholder="MP00001" oninput="buscarMP(this.value)" style="text-transform:uppercase;">
+          <small id="rec-mp-info" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small>
+        </div>
+        <div class="form-group">
+          <label>Nombre Comercial</label>
+          <input type="text" id="rec-nombre" placeholder="Se completa automaticamente">
+        </div>
+        <div class="form-group">
+          <label>Nombre INCI</label>
+          <input type="text" id="rec-inci" placeholder="Se completa automaticamente">
+        </div>
+        <div class="form-group">
+          <label>Proveedor</label>
+          <input type="text" id="rec-proveedor" placeholder="Se completa automaticamente">
+        </div>
+        <div class="form-group">
+          <label>N Lote (dejar vacio para auto)</label>
+          <input type="text" id="rec-lote" placeholder="Ej: LYPH250727 o AUTO">
+        </div>
+        <div class="form-group">
+          <label>Cantidad recibida (g)</label>
+          <input type="number" id="rec-cantidad" placeholder="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Fecha Vencimiento</label>
+          <input type="date" id="rec-vencimiento">
+        </div>
+        <div class="form-group">
+          <label>Estanteria</label>
+          <input type="text" id="rec-estanteria" placeholder="Ej: 9">
+        </div>
+        <div class="form-group">
+          <label>Posicion</label>
+          <input type="text" id="rec-posicion" placeholder="Ej: B">
+        </div>
+        <div class="form-group">
+          <label>Observaciones</label>
+          <input type="text" id="rec-obs" placeholder="Opcional">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;">
+        <button onclick="registrarRecepcion()" style="background:#27ae60;">&#10003; Registrar Entrada</button>
+        <button onclick="generarRotuloRecepcion()" style="background:#2980b9;" id="btn-rotulo-rec">&#128209; Generar Rotulo Recepcion</button>
+        <button onclick="limpiarRecepcion()" style="background:#95a5a6;">Limpiar</button>
+      </div>
+      <div id="rec-msg" style="margin-top:12px;"></div>
+    </div>
+    <h3 style="margin-bottom:10px;">Ultimas Recepciones</h3>
+    <table class="table" id="rec-table">
+      <thead><tr><th>Codigo</th><th>Material</th><th>Lote</th><th>Cantidad (g)</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
+      <tbody><tr><td colspan="7" style="text-align:center;color:#999;">Sin recepciones</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ORDENES DE COMPRA -->
+  <div id="compras" class="tab-content">
+    <h2>&#128722; Ordenes de Compra</h2>
+    <div style="display:flex;gap:15px;margin-bottom:20px;">
+      <div style="flex:1;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;">
+        <h4 style="color:#856404;margin-bottom:8px;">&#9888; MPs bajo stock minimo</h4>
+        <div id="alertas-reabas" style="font-size:0.9em;color:#555;">Calculando...</div>
+        <button onclick="generarOCAutomatica()" style="background:#e67e22;margin-top:10px;padding:7px 14px;font-size:0.88em;">Generar OC Automatica</button>
+      </div>
+    </div>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:20px;">
+      <h3 style="margin-bottom:12px;">Nueva Orden de Compra Manual</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label>Proveedor</label><input type="text" id="oc-proveedor" placeholder="Nombre del proveedor"></div>
+        <div class="form-group"><label>Observaciones</label><input type="text" id="oc-obs" placeholder="Opcional"></div>
+      </div>
+      <div id="oc-items-container" style="margin-top:12px;">
+        <div style="display:grid;grid-template-columns:130px 1fr 120px 38px;gap:6px;margin-bottom:6px;">
+          <span style="font-size:0.8em;color:#888;font-weight:600;">CODIGO MP</span>
+          <span style="font-size:0.8em;color:#888;font-weight:600;">NOMBRE MP</span>
+          <span style="font-size:0.8em;color:#888;font-weight:600;">CANTIDAD (g)</span>
+          <span></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px;">
+        <button onclick="addOCItem()" style="background:#28a745;">+ Agregar MP</button>
+        <button onclick="crearOC()">&#128190; Crear OC</button>
+      </div>
+      <div id="oc-msg" style="margin-top:10px;"></div>
+    </div>
+    <h3 style="margin-bottom:10px;">Ordenes de Compra</h3>
+    <div id="oc-list"><p style="color:#999;">Cargando...</p></div>
   </div>
 
   <div id="formulas" class="tab-content">
@@ -202,7 +341,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </table>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
+      <button onclick="generarRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos FEFO</button>
+    </div>
     <div id="prod-msg"></div>
   </div>
 
@@ -262,9 +404,12 @@ var fData=[], allStock=[];
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
-  document.getElementById(n).classList.add('active');
+  var el=document.getElementById(n);
+  if(el) el.classList.add('active');
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
+  if(n==='recepcion') loadRecepcion();
+  if(n==='compras'){ loadCompras(); loadAlertasReabastecimiento(); }
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='abc') loadABC();
   if(n==='alertas') loadAlertas();
@@ -281,7 +426,8 @@ async function loadDashboard(){
   }catch(e){}
 }
 
-var allLotes=[];
+var allLotes=[], catalogoMPs={};
+
 async function loadStock(){
   try{
     var r=await fetch('/api/lotes'), d=await r.json();
@@ -291,8 +437,9 @@ async function loadStock(){
     if(sel){sel.innerHTML='<option value="">Todas estanterias</option>';ests.forEach(function(e){var o=document.createElement('option');o.value=e;o.textContent='Est. '+e;sel.appendChild(o);});}
     document.getElementById('stock-count').textContent=allLotes.length+' lotes';
     renderStock(allLotes);
-  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error al cargar stock.</td></tr>';}
+  }catch(e){document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';}
 }
+
 function renderStock(items){
   var tb=document.getElementById('stock-body');
   if(!items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
@@ -302,32 +449,203 @@ function renderStock(items){
     var a=AS[i.alerta]||AS.ok;
     var qc=i.cantidad_g<=0?'color:#cc0000;':i.cantidad_g<100?'color:#e68a00;':'color:#1a8a1a;';
     var dias=i.dias_para_vencer!=null?(i.dias_para_vencer<0?'Hace '+(Math.abs(i.dias_para_vencer))+'d':i.dias_para_vencer+'d'):'';
-    html+='<tr style="background:'+a.bg+';">';
-    html+='<td style="font-family:monospace;font-size:0.8em;color:#555;">'+i.material_id+'</td>';
-    html+='<td style="font-weight:500;">'+i.material_nombre+'</td>';
-    html+='<td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>';
+    html+='<tr style="background:'+a.bg+';"><td style="font-family:monospace;font-size:0.8em;color:#555;">'+i.material_id+'</td>';
+    html+='<td style="font-weight:500;">'+i.material_nombre+'</td><td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>';
     html+='<td style="font-size:0.85em;color:#666;">'+i.proveedor+'</td>';
-    html+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';
-    html+='<td style="text-align:center;">'+i.posicion+'</td>';
+    html+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td><td style="text-align:center;">'+i.posicion+'</td>';
     html+='<td style="text-align:right;font-weight:700;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
     html+='<td style="text-align:right;color:#888;">'+i.cantidad_kg.toFixed(3)+'</td>';
-    html+='<td style="text-align:center;font-size:0.82em;color:'+a.c+';">'+i.fecha_vencimiento+'<br><b>'+dias+'</b></td>';
-    html+='<td style="text-align:center;"><span style="background:'+a.bg+';color:'+a.c+';padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+a.c+';">'+a.l+'</span></td>';
-    html+='</tr>';
+    html+='<td style="text-align:center;font-size:0.82em;color:'+a.c+';"><b>'+i.fecha_vencimiento+'</b><br>'+dias+'</td>';
+    html+='<td style="text-align:center;"><span style="background:'+a.bg+';color:'+a.c+';padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+a.c+';display:inline-block;">'+a.l+'</span></td></tr>';
   });
   tb.innerHTML=html;
 }
+
 function filterStock(){
   var q=document.getElementById('stock-search').value.toLowerCase();
   var est=document.getElementById('stock-est')?document.getElementById('stock-est').value:'';
-  var estado=document.getElementById('stock-est2')?document.getElementById('stock-est2').value:'';
+  var alerta=document.getElementById('stock-alerta')?document.getElementById('stock-alerta').value:'';
   var f=allLotes.filter(function(i){
-    return(!q||(i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||(i.proveedor||'').toLowerCase().includes(q)))
-      &&(!est||i.estanteria===est)&&(!estado||i.alerta===estado);
+    return(!q||(i.material_nombre.toLowerCase().includes(q)||i.material_id.toLowerCase().includes(q)||(i.lote||''). toLowerCase().includes(q)||(i.proveedor||''). toLowerCase().includes(q)))
+      &&(!est||i.estanteria===est)&&(!alerta||i.alerta===alerta);
   });
   document.getElementById('stock-count').textContent=f.length+' de '+allLotes.length;
   renderStock(f);
 }
+
+// ── RECEPCION DE MP ────────────────────────────────────────────────────────
+async function loadCatalogo(){
+  try{
+    var r=await fetch('/api/maestro-mps'), d=await r.json();
+    catalogoMPs={};
+    (d.mps||[]).forEach(function(mp){ catalogoMPs[mp.codigo_mp]=mp; });
+  }catch(e){}
+}
+
+async function buscarMP(codigo){
+  if(!codigo||codigo.length<3) return;
+  // Buscar en catalogo local primero
+  var mp=catalogoMPs[codigo.toUpperCase()];
+  if(mp){
+    document.getElementById('rec-nombre').value=mp.nombre_comercial||'';
+    document.getElementById('rec-inci').value=mp.nombre_inci||'';
+    document.getElementById('rec-proveedor').value=mp.proveedor||'';
+    document.getElementById('rec-mp-info').textContent='Catalogo: '+mp.nombre_comercial+(mp.tipo?' | '+mp.tipo:'');
+    return;
+  }
+  // Buscar en API
+  try{
+    var r=await fetch('/api/maestro-mps/'+codigo.toUpperCase());
+    if(r.ok){
+      var mp2=await r.json();
+      document.getElementById('rec-nombre').value=mp2.nombre_comercial||'';
+      document.getElementById('rec-inci').value=mp2.nombre_inci||'';
+      document.getElementById('rec-proveedor').value=mp2.proveedor||'';
+      document.getElementById('rec-mp-info').textContent='Catalogo: '+mp2.nombre_comercial;
+    } else {
+      document.getElementById('rec-mp-info').textContent='MP no encontrada en catalogo. Ingresa datos manualmente.';
+    }
+  }catch(e){}
+}
+
+async function registrarRecepcion(){
+  var data={
+    codigo_mp: document.getElementById('rec-codigo').value.trim().toUpperCase(),
+    nombre_comercial: document.getElementById('rec-nombre').value.trim(),
+    lote: document.getElementById('rec-lote').value.trim()||'AUTO',
+    cantidad: parseFloat(document.getElementById('rec-cantidad').value)||0,
+    fecha_vencimiento: document.getElementById('rec-vencimiento').value,
+    estanteria: document.getElementById('rec-estanteria').value.trim(),
+    posicion: document.getElementById('rec-posicion').value.trim(),
+    proveedor: document.getElementById('rec-proveedor').value.trim(),
+    observaciones: document.getElementById('rec-obs').value.trim()
+  };
+  if(!data.codigo_mp){alert('Ingresa el codigo MP');return;}
+  if(data.cantidad<=0){alert('Ingresa una cantidad valida');return;}
+  try{
+    var r=await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('rec-msg').innerHTML='<div class="alert-success">'+(res.message||'Entrada registrada')+'</div>';
+    // Guardar lote para rotulo
+    window._ultimoLoteRec={codigo:data.codigo_mp,lote:res.lote||data.lote,cantidad:data.cantidad};
+    document.getElementById('btn-rotulo-rec').style.background='#c0392b';
+    loadRecepcion();
+  }catch(e){document.getElementById('rec-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
+
+function generarRotuloRecepcion(){
+  var d=window._ultimoLoteRec;
+  if(!d){alert('Registra una recepcion primero');return;}
+  var url='/rotulo-recepcion/'+encodeURIComponent(d.codigo)+'/'+encodeURIComponent(d.lote)+'/'+d.cantidad;
+  window.open(url,'_blank');
+}
+
+function limpiarRecepcion(){
+  ['rec-codigo','rec-nombre','rec-inci','rec-proveedor','rec-lote','rec-cantidad','rec-vencimiento','rec-estanteria','rec-posicion','rec-obs'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('rec-mp-info').textContent='';
+  document.getElementById('rec-msg').innerHTML='';
+}
+
+async function loadRecepcion(){
+  try{
+    await loadCatalogo();
+    var r=await fetch('/api/movimientos'), d=await r.json();
+    var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,20);
+    var tb=document.querySelector('#rec-table tbody');
+    if(entradas.length){
+      tb.innerHTML=entradas.map(function(m){
+        return '<tr><td style="font-family:monospace;font-size:0.85em;">'+m.material_id+'</td><td>'+m.material_nombre+'</td><td style="font-family:monospace;">'+( m.lote||'')+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+( m.proveedor||'')+'</td><td style="color:#c0392b;">'+( m.fecha_vencimiento?m.fecha_vencimiento.substring(0,10):'')+'</td><td style="font-size:0.82em;color:#888;">'+m.fecha.substring(0,10)+'</td></tr>';
+      }).join('');
+    }else{tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin recepciones</td></tr>';}
+  }catch(e){}
+}
+
+// ── ORDENES DE COMPRA ─────────────────────────────────────────────────────
+async function loadAlertasReabastecimiento(){
+  try{
+    var r=await fetch('/api/alertas-reabastecimiento'), d=await r.json();
+    var alertas=d.alertas||[];
+    var el=document.getElementById('alertas-reabas');
+    if(!alertas.length){el.innerHTML='<span style="color:#28a745;">Todo el stock esta sobre el minimo</span>';return;}
+    el.innerHTML=alertas.slice(0,5).map(function(a){
+      return '<div style="margin-bottom:4px;"><b>'+a.nombre+'</b> ('+ a.codigo_mp+'): '+a.stock_actual.toLocaleString()+'g / min '+a.stock_minimo.toLocaleString()+'g <span style="color:#cc4444;">deficit: '+a.deficit.toLocaleString()+'g</span></div>';
+    }).join('')+( alertas.length>5?'<div style="color:#888;">... y '+(alertas.length-5)+' mas</div>':'')+'<div style="margin-top:6px;color:#888;font-size:0.85em;">'+alertas.length+' MPs bajo minimo</div>';
+    window._alertasReabas=alertas;
+  }catch(e){document.getElementById('alertas-reabas').textContent='Error cargando alertas';}
+}
+
+async function generarOCAutomatica(){
+  var alertas=window._alertasReabas||[];
+  if(!alertas.length){alert('No hay MPs bajo stock minimo');return;}
+  var por_proveedor={};
+  alertas.forEach(function(a){
+    var p=a.proveedor||'Sin proveedor';
+    if(!por_proveedor[p]) por_proveedor[p]=[];
+    por_proveedor[p].push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_solicitada:Math.ceil(a.deficit*1.1),unidad:'g'});
+  });
+  var resultados=[];
+  for(var proveedor in por_proveedor){
+    var oc={proveedor:proveedor,observaciones:'OC automatica por stock bajo minimo',items:por_proveedor[proveedor]};
+    try{
+      var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(oc)});
+      var res=await r.json();
+      resultados.push(res.numero_oc);
+    }catch(e){}
+  }
+  alert('OCs creadas: '+resultados.join(', '));
+  await loadCompras();
+}
+
+function addOCItem(){
+  var div=document.createElement('div');
+  div.style.cssText='display:grid;grid-template-columns:130px 1fr 120px 38px;gap:6px;margin-bottom:6px;';
+  div.innerHTML='<input type="text" placeholder="MP00001" class="oc-cod" style="padding:7px;border:1px solid #ddd;border-radius:5px;text-transform:uppercase;">'+'<input type="text" placeholder="Nombre MP" class="oc-nom" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'+'<input type="number" placeholder="g" class="oc-cant" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'+'<button onclick="this.parentElement.remove()" style="background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;padding:7px;">x</button>';
+  document.getElementById('oc-items-container').appendChild(div);
+}
+
+async function crearOC(){
+  var proveedor=document.getElementById('oc-proveedor').value.trim();
+  var obs=document.getElementById('oc-obs').value.trim();
+  var rows=document.querySelectorAll('#oc-items-container > div[style]');
+  var items=[];
+  rows.forEach(function(row){
+    var cod=row.querySelector('.oc-cod').value.trim();
+    var nom=row.querySelector('.oc-nom').value.trim();
+    var cant=parseFloat(row.querySelector('.oc-cant').value)||0;
+    if(cod&&cant>0) items.push({codigo_mp:cod,nombre_mp:nom,cantidad_solicitada:cant,unidad:'g'});
+  });
+  if(!items.length){alert('Agrega al menos un item');return;}
+  try{
+    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor,observaciones:obs,items})});
+    var res=await r.json();
+    document.getElementById('oc-msg').innerHTML='<div class="alert-success">'+(res.message||'OC creada')+'</div>';
+    await loadCompras();
+  }catch(e){document.getElementById('oc-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
+
+async function loadCompras(){
+  try{
+    var r=await fetch('/api/ordenes-compra'), d=await r.json();
+    var ocs=d.ordenes||[];
+    var el=document.getElementById('oc-list');
+    if(!ocs.length){el.innerHTML='<p style="color:#999;">Sin ordenes de compra</p>';return;}
+    el.innerHTML=ocs.map(function(oc){
+      var items_html=oc.items.map(function(it){return '<li>'+it.codigo_mp+': '+it.nombre_mp+' - '+it.cantidad.toLocaleString()+' '+it.unidad+'</li>';}).join('');
+      var color=oc.estado==='Recibida'?'#28a745':'#e67e22';
+      return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:10px;background:white;">'+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+'<h4 style="color:#667eea;">'+oc.numero_oc+' - '+oc.proveedor+'</h4>'+'<span style="background:'+color+';color:white;padding:3px 10px;border-radius:10px;font-size:0.85em;font-weight:600;">'+oc.estado+'</span></div>'+'<ul style="list-style:none;padding:0;margin:0 0 8px;">'+items_html+'</ul>'+'<small style="color:#888;">'+oc.fecha.substring(0,10)+'</small>'+( oc.estado!=='Recibida'?'&nbsp;<button onclick="recibirOC(\''+oc.numero_oc+'\')" style="padding:4px 10px;font-size:0.82em;background:#27ae60;">Marcar Recibida</button>':'')+ '</div>';
+    }).join('');
+  }catch(e){}
+}
+
+async function recibirOC(numero_oc){
+  try{
+    await fetch('/api/ordenes-compra/'+encodeURIComponent(numero_oc)+'/recibir',{method:'POST'});
+    await loadCompras();
+  }catch(e){}
+}
+
 async function loadFormulas(){
   try{
     var r=await fetch('/api/formulas'), d=await r.json();
@@ -346,26 +664,22 @@ async function loadFormulas(){
 function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun. Crea la primera arriba.</p>';return;}
-  var html='';
-  fl.forEach(function(f,idx){
+  c.innerHTML=fl.map(function(f){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
-    var ok=Math.abs(total-100)<0.1;
-    var rows='';
-    f.items.forEach(function(it){
-      rows+='<tr><td style="font-family:monospace;font-size:0.85em;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+it.porcentaje+'%</td><td style="font-weight:600;">'+(it.porcentaje*10).toFixed(2)+'g</td></tr>';
-    });
-    html+='<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
-    html+='<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>';
-    html+='<div style="display:flex;gap:6px;">';
-    html+='<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>';
-    html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
-    html+='</div></div>';
-    html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g/kg</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';">Total: '+total.toFixed(2)+'%'+(ok?' OK':' revisar')+'</small>';
-    html+='</div>';
-  });
-  c.innerHTML=html;
+    return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+      +'<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>'
+      +'<div style="display:flex;gap:6px;">'
+      +'<button onclick="editFormula(\''+f.producto_nombre+'\')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      +'<button onclick="delFormula(\''+f.producto_nombre+'\')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>'
+      +'</div></div>'
+      +'<table class="table" style="font-size:0.85em;">'
+      +'<thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g por kg producto</th></tr></thead>'
+      +'<tbody>'+f.items.map(function(it){return '<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+it.porcentaje+'%</td><td style="font-weight:600;">'+(it.porcentaje*10).toFixed(2)+'g</td></tr>';}).join('')+'</tbody>'
+      +'</table>'
+      +'<small style="color:'+(Math.abs(total-100)<0.1?'#28a745':'#e68a00')+';">Total: '+total.toFixed(2)+'%'+(Math.abs(total-100)<0.1?' (OK)':' - revisar')+'</small>'
+      +'</div>';
+  }).join('');
 }
 
 function addFRow(){
@@ -408,8 +722,9 @@ async function guardarFormula(){
   }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
-function editFormula(idx){
-  var f=fData[idx]; if(!f) return;
+function editFormula(nombre){
+  var f=fData.find(function(x){return x.producto_nombre===nombre;});
+  if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;
   document.getElementById('formula-desc').value=f.descripcion||'';
@@ -426,9 +741,8 @@ function editFormula(idx){
   document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
 }
 
-async function delFormula(idx){
-  var nombre=fData[idx]?fData[idx].producto_nombre:'';
-  if(!nombre||!confirm('Eliminar formula de '+nombre+'?')) return;
+async function delFormula(nombre){
+  if(!confirm('Eliminar formula de '+nombre+'?')) return;
   await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
   await loadFormulas();
 }
@@ -538,7 +852,17 @@ async function enviarChat(){
   }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
 }
 
-window.onload=function(){loadDashboard();loadFormulas();};
+window.onload=function(){loadDashboard();loadFormulas();loadCatalogo();};
+
+function generarRotulos(){
+  var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
+  var manual=document.getElementById('prod-manual')?document.getElementById('prod-manual').value.trim():'';
+  var producto=prod||manual;
+  var kg=parseFloat(document.getElementById('prod-kg')?document.getElementById('prod-kg').value:0)||0;
+  if(!producto){alert('Selecciona un producto primero');return;}
+  if(kg<=0){alert('Ingresa la cantidad en kg');return;}
+  window.open('/rotulos/'+encodeURIComponent(producto)+'/'+kg,'_blank');
+}
 </script>
 </body>
 </html>
@@ -626,9 +950,15 @@ def handle_movimientos():
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
-        c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
+        c.execute("""INSERT INTO movimientos
+                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (data['material_id'], data['material_nombre'], data['cantidad'],
-                   data['tipo'], datetime.now().isoformat(), data.get('observaciones', '')))
+                   data['tipo'], datetime.now().isoformat(), data.get('observaciones',''),
+                   data.get('lote',''), data.get('fecha_vencimiento',''),
+                   data.get('estanteria',''), data.get('posicion',''),
+                   data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
@@ -653,11 +983,30 @@ def handle_produccion():
         formula_items = c.fetchall()
         descuentos = []
         for mat_id, mat_nombre, pct in formula_items:
-            g = round((pct / 100) * cantidad_g, 2)
-            if g > 0:
+            g_total = round((pct / 100) * cantidad_g, 2)
+            if g_total <= 0: continue
+            # FEFO: descontar del lote más próximo a vencer con stock disponible
+            c.execute("""SELECT lote, fecha_vencimiento,
+                                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                         FROM movimientos WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                         GROUP BY lote HAVING stock > 0
+                         ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento='' THEN '9999' ELSE fecha_vencimiento END ASC""", (mat_id,))
+            lotes_disponibles = c.fetchall()
+            g_restante = g_total
+            lotes_usados = []
+            for lote_row in lotes_disponibles:
+                if g_restante <= 0: break
+                lote_nom, lote_venc, lote_stock = lote_row
+                g_de_este_lote = min(g_restante, lote_stock)
+                c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote) VALUES (?,?,?,?,?,?,?)',
+                          (mat_id, mat_nombre, g_de_este_lote, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg | FEFO', lote_nom))
+                lotes_usados.append(f"{lote_nom}:{g_de_este_lote}g")
+                g_restante -= g_de_este_lote
+            if g_restante > 0:
+                # Si no hay suficiente stock con lotes, descontar sin lote
                 c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
-                          (mat_id, mat_nombre, g, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
-                descuentos.append({'material': mat_nombre, 'cantidad_g': g})
+                          (mat_id, mat_nombre, g_restante, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
+            descuentos.append({'material': mat_nombre, 'cantidad_g': g_total, 'lotes': lotes_usados})
         conn.commit()
         conn.close()
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg'
@@ -720,46 +1069,42 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
+# ── CATÁLOGO MAESTRO DE MPs ───────────────────────────────────────────────────
 @app.route('/api/maestro-mps', methods=['GET', 'POST'])
 def handle_maestro_mps():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_conn(); c = conn.cursor()
     if request.method == 'POST':
-        data = request.json
-        c.execute("""INSERT OR REPLACE INTO maestro_mps
-                     (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo)
-                     VALUES (?,?,?,?,?,?)""",
-                  (data['codigo_mp'], data.get('nombre_inci',''), data.get('nombre_comercial',''),
-                   data.get('tipo',''), data.get('proveedor',''), data.get('stock_minimo',0)))
+        d = request.json
+        c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
+                  (d['codigo_mp'], d.get('nombre_inci',''), d.get('nombre_comercial',''), d.get('tipo',''), d.get('proveedor',''), d.get('stock_minimo',0)))
         conn.commit(); conn.close()
-        return jsonify({'message': f"MP {data['codigo_mp']} registrada"}), 201
+        return jsonify({'message': f"MP {d['codigo_mp']} registrada"}), 201
     c.execute("SELECT codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo FROM maestro_mps WHERE activo=1 ORDER BY nombre_comercial")
     rows = c.fetchall(); conn.close()
     return jsonify({'mps': [{'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]} for r in rows]})
 
-@app.route('/api/maestro-mps/<codigo_mp>', methods=['GET'])
-def get_mp(codigo_mp):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+@app.route('/api/maestro-mps/<codigo_mp>')
+def get_mp_detail(codigo_mp):
+    conn = get_conn(); c = conn.cursor()
     c.execute("SELECT codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
     r = c.fetchone(); conn.close()
     if not r: return jsonify({'error': 'MP no encontrada'}), 404
     return jsonify({'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]})
 
-@app.route('/api/reset-movimientos', methods=['POST'])
-def reset_movimientos():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM movimientos"); conn.commit()
-    c.execute("SELECT COUNT(*) FROM movimientos"); count = c.fetchone()[0]; conn.close()
-    return jsonify({'message': 'Movimientos borrados', 'restantes': count})
-
+# ── STOCK POR LOTE CON VENCIMIENTO ────────────────────────────────────────────
+@app.route('/api/stock')
+def get_stock():
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
 
 @app.route('/api/lotes')
 def get_lotes():
     from datetime import date
     hoy = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("""SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento,
-                        estanteria, posicion, proveedor, estado_lote
-                 FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, lote ASC""")
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, lote, cantidad, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote FROM movimientos WHERE tipo='Entrada' ORDER BY material_nombre ASC, fecha_vencimiento ASC NULLS LAST, lote ASC")
     rows = c.fetchall(); conn.close()
     result = []
     for r in rows:
@@ -776,10 +1121,226 @@ def get_lotes():
             except: pass
         result.append({'material_id':mat_id or '','material_nombre':mat_nom or '','lote':lote or '',
                        'cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
-                       'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
-                       'dias_para_vencer':dias_venc,'estanteria':estant or '','posicion':pos or '',
-                       'proveedor':prov or '','estado_lote':estado or '','alerta':alerta})
+                       'fecha_vencimiento':str(fvenc)[:10] if fvenc else '','dias_para_vencer':dias_venc,
+                       'estanteria':estant or '','posicion':pos or '','proveedor':prov or '',
+                       'estado_lote':estado or '','alerta':alerta})
     return jsonify({'lotes': result, 'total': len(result)})
+
+# ── RECEPCION DE MP ───────────────────────────────────────────────────────────
+@app.route('/api/recepcion', methods=['POST'])
+def registrar_recepcion():
+    """Registra la entrada de una MP desde una compra"""
+    d = request.json
+    codigo_mp = d.get('codigo_mp','')
+    conn = get_conn(); c = conn.cursor()
+    # Obtener info del catalogo maestro
+    c.execute("SELECT nombre_comercial, nombre_inci, proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+    mp_info = c.fetchone()
+    nombre = mp_info[0] if mp_info else d.get('nombre_comercial', codigo_mp)
+    proveedor = mp_info[2] if mp_info else d.get('proveedor', '')
+    # Generar numero de lote si no viene
+    lote = d.get('lote','')
+    if not lote or lote == 'AUTO':
+        from datetime import date
+        lote = f"ESP{date.today().strftime('%y%m%d')}{codigo_mp[-3:]}"
+    c.execute("""INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                  lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (codigo_mp, nombre, float(d.get('cantidad',0)), 'Entrada',
+               datetime.now().isoformat(), d.get('observaciones','Recepcion de compra'),
+               lote, d.get('fecha_vencimiento',''), d.get('estanteria',''),
+               d.get('posicion',''), proveedor, 'VIGENTE'))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'MP {nombre} recibida. Lote: {lote}', 'lote': lote}), 201
+
+# ── ORDENES DE COMPRA ─────────────────────────────────────────────────────────
+@app.route('/api/ordenes-compra', methods=['GET', 'POST'])
+def handle_ordenes_compra():
+    conn = get_conn(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        # Generar numero OC correlativo
+        c.execute("SELECT COUNT(*) FROM ordenes_compra")
+        num = (c.fetchone()[0] or 0) + 1
+        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
+                  (numero_oc, datetime.now().isoformat(), 'Pendiente', d.get('proveedor',''), d.get('observaciones','')))
+        for item in d.get('items', []):
+            c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_solicitada, unidad) VALUES (?,?,?,?,?)",
+                      (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_solicitada'], item.get('unidad','g')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'OC {numero_oc} creada', 'numero_oc': numero_oc}), 201
+    c.execute("SELECT numero_oc, fecha, estado, proveedor FROM ordenes_compra ORDER BY fecha DESC LIMIT 50")
+    ocs = []
+    for oc in c.fetchall():
+        c.execute("SELECT codigo_mp, nombre_mp, cantidad_solicitada, unidad FROM ordenes_compra_items WHERE numero_oc=?", (oc[0],))
+        items = [{'codigo_mp':r[0],'nombre_mp':r[1],'cantidad':r[2],'unidad':r[3]} for r in c.fetchall()]
+        ocs.append({'numero_oc':oc[0],'fecha':oc[1],'estado':oc[2],'proveedor':oc[3],'items':items})
+    conn.close()
+    return jsonify({'ordenes': ocs})
+
+@app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
+def recibir_oc(numero_oc):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'OC {numero_oc} marcada como recibida'})
+
+@app.route('/api/alertas-reabastecimiento')
+def alertas_reabastecimiento():
+    """MPs donde stock actual < stock minimo del catalogo"""
+    conn = get_conn(); c = conn.cursor()
+    c.execute("""SELECT m.codigo_mp, m.nombre_comercial, m.proveedor, m.stock_minimo,
+                        COALESCE(s.stock_actual, 0) as stock_actual
+                 FROM maestro_mps m
+                 LEFT JOIN (
+                     SELECT material_id,
+                            SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                     FROM movimientos GROUP BY material_id
+                 ) s ON m.codigo_mp = s.material_id
+                 WHERE m.activo=1 AND m.stock_minimo > 0
+                   AND COALESCE(s.stock_actual, 0) < m.stock_minimo
+                 ORDER BY (m.stock_minimo - COALESCE(s.stock_actual, 0)) DESC""")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'alertas': [{'codigo_mp':r[0],'nombre':r[1],'proveedor':r[2],
+                                  'stock_minimo':r[3],'stock_actual':round(r[4],2),
+                                  'deficit':round(r[3]-r[4],2)} for r in rows]})
+
+# ── RESET MOVIMIENTOS ─────────────────────────────────────────────────────────
+@app.route('/api/reset-movimientos', methods=['POST'])
+def reset_movimientos():
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM movimientos"); conn.commit()
+    c.execute("SELECT COUNT(*) FROM movimientos"); count = c.fetchone()[0]; conn.close()
+    return jsonify({'message': 'Movimientos borrados', 'restantes': count})
+
+# ── ROTULO DE DISPENSACION ────────────────────────────────────────────────────
+@app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
+def generar_rotulos(producto_nombre, cantidad_kg):
+    from datetime import date
+    import urllib.parse
+    hoy = date.today().strftime('%d-%b-%Y').upper()
+    cantidad_g = cantidad_kg * 1000
+    prod = urllib.parse.unquote(producto_nombre)
+    op_num = "OP-" + date.today().strftime('%Y%m%d')
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
+    items = c.fetchall()
+    lotes = {}
+    for r in items:
+        mat_id = r[0]
+        # FEFO: seleccionar lote con fecha_vencimiento más próxima que tenga stock
+        c.execute("""SELECT lote, estanteria, posicion, fecha_vencimiento,
+                            SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                     FROM movimientos WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                     GROUP BY lote HAVING stock > 0
+                     ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento='' THEN '9999' ELSE fecha_vencimiento END ASC LIMIT 1""", (mat_id,))
+        row = c.fetchone()
+        lotes[mat_id] = {"lote": row[0] if row else "S/L", "est": row[1] if row else "",
+                         "pos": row[2] if row else "", "vence": str(row[3])[:10] if row and row[3] else ""}
+    conn.close()
+    if not items: return "<h2>Formula no encontrada: " + prod + "</h2>", 404
+    rhtml = ""
+    for idx, r in enumerate(items):
+        mat_id, mat_nom, pct = r[0], r[1], r[2]
+        peso = round((pct / 100) * cantidad_g, 2)
+        info = lotes.get(mat_id, {})
+        lote_mp = info.get("lote", "S/L")
+        ubicacion = ("Est. " + str(info.get("est","")) + str(info.get("pos",""))).strip()
+        vence = info.get("vence","")
+        rhtml += ('<div class="r">'
+            + '<div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span>'
+            + '<span class="rc">PRD-PRO-001-F08 | v1<br>Vigencia: 04-Mar-2025 / 03-Mar-2028</span></div>'
+            + '<table>'
+            + '<tr><td class="l">OP:</td><td class="v">' + op_num + '</td><td class="l">Fecha:</td><td class="v">' + hoy + '</td></tr>'
+            + '<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>' + prod + '</b> &mdash; ' + str(cantidad_kg) + ' kg</td></tr>'
+            + '<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>' + mat_nom + '</b> <span style="color:#888;font-size:0.8em;">(' + mat_id + ')</span></td></tr>'
+            + '<tr><td class="l">Lote MP:</td><td class="v bold">' + lote_mp + '</td><td class="l">Ubicacion:</td><td class="v">' + ubicacion + '</td></tr>'
+            + '<tr><td class="l">Vencimiento:</td><td class="v" style="color:#c0392b;">' + vence + '</td><td class="l">% formula:</td><td class="v">' + str(pct) + '%</td></tr>'
+            + '<tr><td class="l">Peso teorico:</td><td class="v peso">' + f"{peso:,.2f} g" + '</td><td class="l">Lote Prod.:</td><td class="blank"></td></tr>'
+            + '<tr><td class="l">Tara:</td><td class="blank"></td><td class="l">Peso Neto:</td><td class="blank"></td></tr>'
+            + '<tr><td class="l">Peso Bruto:</td><td class="blank"></td><td></td><td></td></tr>'
+            + '<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
+            + '</table>'
+            + '<div class="rf">FEFO | #' + str(idx+1) + ' de ' + str(len(items)) + '</div>'
+            + '</div>')
+    css = """<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos </title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}
+.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
+.ph h2{font-size:11pt;}.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
+.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}
+.rh{background:#1a252f;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}
+.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.5pt;text-align:right;line-height:1.4;}
+table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}
+.l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#1a252f;white-space:nowrap;width:27%;}
+.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}
+.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}
+.blank{height:20px;width:23%;}.firma{height:26px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}
+@media print{body{background:white;}.ph{display:none;}.wrap{padding:0;gap:3px;}.r{width:48%;}@page{size:letter landscape;margin:7mm;}}
+</style></head><body>"""
+    return (css + '<div class="ph"><div><h2>Rotulos Dispensacion &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
+            + '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs (FEFO) | ' + hoy + '</div></div>'
+            + '<button class="pbtn" onclick="window.print()">Imprimir todos</button></div>'
+            + '<div class="wrap">' + rhtml + '</div></body></html>')
+
+# ── ROTULO DE RECEPCION ───────────────────────────────────────────────────────
+@app.route('/rotulo-recepcion/<codigo_mp>/<lote>/<float:cantidad_g>')
+def rotulo_recepcion(codigo_mp, lote, cantidad_g):
+    from datetime import date
+    import urllib.parse
+    hoy = date.today().strftime('%d-%b-%Y').upper()
+    lote = urllib.parse.unquote(lote)
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT nombre_inci, nombre_comercial, tipo, proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+    mp = c.fetchone()
+    c.execute("SELECT fecha_vencimiento, estanteria, posicion FROM movimientos WHERE material_id=? AND lote=? ORDER BY fecha DESC LIMIT 1", (codigo_mp, lote))
+    mov = c.fetchone()
+    conn.close()
+    nombre_comercial = mp[1] if mp else codigo_mp
+    nombre_inci = mp[0] if mp else ''
+    tipo = mp[2] if mp else ''
+    proveedor = mp[3] if mp else ''
+    fecha_venc = str(mov[0])[:10] if mov and mov[0] else ''
+    estanteria = (mov[1] or '') + (mov[2] or '') if mov else ''
+    num_rec = "REC-" + date.today().strftime('%Y%m%d') + "-" + codigo_mp[-3:]
+    return ("""<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion</title>
+<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}
+.r{background:white;border:3px solid #1a252f;border-radius:5px;max-width:500px;margin:auto;page-break-inside:avoid;}
+.rh{background:#1a252f;color:white;padding:8px 12px;text-align:center;}
+.rt{font-weight:bold;font-size:11pt;display:block;margin-bottom:3px;}
+.rc{font-size:7.5pt;opacity:0.8;}
+table{width:100%;border-collapse:collapse;}td{border:1px solid #ccc;padding:6px 8px;vertical-align:middle;}
+.l{background:#ecf0f1;font-weight:bold;font-size:8.5pt;color:#1a252f;white-space:nowrap;width:35%;}
+.v{font-size:9.5pt;}.bold{font-weight:700;font-size:11pt;color:#1a252f;}
+.lote-box{background:#fff3cd;border:2px solid #f39c12;padding:10px;text-align:center;margin:10px;}
+.lote-num{font-size:20pt;font-weight:bold;color:#c0392b;letter-spacing:2px;}
+.rf{background:#ecf0f1;padding:4px 10px;font-size:7.5pt;color:#888;text-align:center;}
+.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
+@media print{.ph{display:none;}body{background:white;padding:0;}}
+</style></head><body>
+<div class="ph"><div><b>Rotulo de Recepcion</b></div><button class="pbtn" onclick="window.print()">Imprimir</button></div>
+<div class="r">
+<div class="rh"><span class="rt">ROTULO DE INGRESO DE MATERIA PRIMA</span>
+<span class="rc">Espagiria Laboratorios | PRD-REC-001 | """ + hoy + """</span></div>
+<div class="lote-box"><div style="font-size:9pt;color:#888;margin-bottom:4px;">NUMERO DE LOTE</div>
+<div class="lote-num">""" + lote + """</div></div>
+<table>
+<tr><td class="l">Codigo MP:</td><td class="v bold">""" + codigo_mp + """</td></tr>
+<tr><td class="l">Nombre INCI:</td><td class="v">""" + nombre_inci + """</td></tr>
+<tr><td class="l">Nombre Comercial:</td><td class="v bold">""" + nombre_comercial + """</td></tr>
+<tr><td class="l">Tipo:</td><td class="v">""" + tipo + """</td></tr>
+<tr><td class="l">Proveedor:</td><td class="v bold">""" + proveedor + """</td></tr>
+<tr><td class="l">Cantidad Recibida:</td><td class="v bold" style="color:#27ae60;">""" + f"{cantidad_g:,.0f} g = {cantidad_g/1000:.3f} kg" + """</td></tr>
+<tr><td class="l">Fecha Vencimiento:</td><td class="v" style="color:#c0392b;font-weight:700;">""" + fecha_venc + """</td></tr>
+<tr><td class="l">Ubicacion:</td><td class="v">Est. """ + estanteria + """</td></tr>
+<tr><td class="l">N Recepcion:</td><td class="v">""" + num_rec + """</td></tr>
+<tr><td class="l">Recibido por:</td><td style="height:30px;"></td></tr>
+<tr><td class="l">Verificado por:</td><td style="height:30px;"></td></tr>
+</table>
+<div class="rf">Ingreso registrado al sistema | """ + hoy + """</div>
+</div></body></html>""")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
