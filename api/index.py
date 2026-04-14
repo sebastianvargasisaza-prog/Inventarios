@@ -28,12 +28,17 @@ class _Conn:
 if DATABASE_URL:
     import psycopg2
     def get_conn():
-        return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
+        try:
+            return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
+        except Exception as e:
+            import sys
+            print(f"PostgreSQL connection failed: {e}", file=sys.stderr)
+            raise
     IS_PG = True
 else:
     DB_PATH = '/tmp/inventario.db'
     def get_conn():
-        r = get_conn(); r.row_factory = sqlite3.Row
+        r = sqlite3.connect(DB_PATH); r.row_factory = sqlite3.Row
         return _Conn(r, False)
     IS_PG = False
 
