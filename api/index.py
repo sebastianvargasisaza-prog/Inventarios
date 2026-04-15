@@ -611,7 +611,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
     <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
     <button class="tab-button" onclick="switchTab('alertas',this)">&#9888; Alertas</button>
-    <button class="tab-button" onclick="switchTab('chat',this)">&#129302; Chat IA</button>
     <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
   </div>
 
@@ -841,15 +840,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </table>
   </div>
 
-  <div id="chat" class="tab-content">
-    <h2>&#129514; Paracelso - Asistente de Inventarios</h2>
-    <div class="chat-box" id="chat-box">
-      <div class="msg bot">Hola! Soy tu asesor de inventarios con IA. Preguntame sobre stock, puntos de reorden, analisis ABC o cualquier tema de gestion de inventarios para manufactura cosmetica.</div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <input type="text" id="chat-in" placeholder="Escribe tu pregunta..." onkeypress="if(event.key==='Enter')enviarChat()" style="margin-top:0;">
-      <button onclick="enviarChat()" style="min-width:70px;">Enviar</button>
-    </div>
   </div>
 
   <div id="movimientos" class="tab-content">
@@ -1026,26 +1016,23 @@ async function buscarMPIngreso(val){
   }
   if(st){st.textContent='Buscando...';st.style.color='#888';}
   try{
-    // Cargar catálogo y buscar por código O nombre
     var r2=await fetch('/api/maestro-mps');
     var d2=await r2.json();
     var mps=d2.mps||[];
     var busq=val.toLowerCase();
-    // Buscar coincidencia exacta de código primero, luego por nombre
     var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
     if(!found) found=mps.find(function(m){
       return (m.nombre_comercial||'').toLowerCase().includes(busq)||
              (m.nombre_inci||'').toLowerCase().includes(busq);
     });
-    // Actualizar datalist con sugerencias
     var dl=document.getElementById('mp-sugerencias');
     if(dl){
       var matches=mps.filter(function(m){
         return (m.codigo_mp||'').toLowerCase().includes(busq)||
                (m.nombre_comercial||'').toLowerCase().includes(busq)||
                (m.nombre_inci||'').toLowerCase().includes(busq);
-      }).slice(0,8);
-      dl.innerHTML=matches.map(function(m){return '<option value="'+m.codigo_mp+'">'+m.nombre_comercial+'</option>';}).join('');
+      }).slice(0,10);
+      dl.innerHTML=matches.map(function(m){return '<option value="'+m.codigo_mp+'">'+m.codigo_mp+' — '+m.nombre_comercial+'</option>';}).join('');
     }
     if(found){
       document.getElementById('ing-cod').value=found.codigo_mp;
@@ -1061,6 +1048,7 @@ async function buscarMPIngreso(val){
     }
   }catch(e){if(st){st.textContent='Error buscando MP';st.style.color='#c0392b';}}
 }
+
 async function registrarIngreso(){
   var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
   var cant=parseFloat(document.getElementById('ing-cant').value)||0;
