@@ -954,12 +954,22 @@ async function exportarExcelProducciones(){
 }
 function hoy(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');}
 function descargarCSV(nombre,cols,rows){
-  var sep=';';
-  var bom='\uFEFF';
-  var csv=bom+cols.join(sep)+'\n'+rows.map(function(r){return r.map(function(c){var s=c==null?'':String(c);if(s.includes(sep)||s.includes('"')||s.includes('\n'))s='"'+s.replace(/"/g,'""')+'"';return s;}).join(sep);}).join('\n');
-  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var sep=',';
+  var lines=[cols.join(sep)];
+  rows.forEach(function(r){
+    lines.push(r.map(function(c){
+      var s=c==null?'':String(c);
+      if(s.indexOf(',')>=0||s.indexOf('"')>=0){s='"'+s.replace(/"/g,'""')+'"';}
+      return s;
+    }).join(sep));
+  });
+  var csv=lines.join('\n');
+  var blob=new Blob([csv],{type:'text/csv'});
   var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download=nombre;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  var a=document.createElement('a');
+  a.href=url;a.download=nombre;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function cargarHistProd(){
