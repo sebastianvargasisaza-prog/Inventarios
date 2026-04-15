@@ -1063,7 +1063,7 @@ async function registrarIngreso(){
 }
 function generarRotuloIngreso(){
   if(!_ultimoIng){alert('Registra un ingreso primero');return;}
-  window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(_ultimoIng.cantidad||0),'_blank');
+  window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(parseFloat(_ultimoIng.cantidad)||0).toFixed(1),'_blank');
 }
 function limpiarIngreso(){
   ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});ocultarFormNuevaMP();
@@ -1098,7 +1098,7 @@ function abrirRotulos(){
   var kg=parseFloat(document.getElementById('prod-kg')?document.getElementById('prod-kg').value:0)||0;
   if(!producto){alert('Selecciona un producto primero');return;}
   if(kg<=0){alert('Ingresa la cantidad en kg');return;}
-  window.open('/rotulos/'+encodeURIComponent(producto)+'/'+kg,'_blank');
+  window.open('/rotulos/'+encodeURIComponent(producto)+'/'+(parseFloat(kg)||0).toFixed(1),'_blank');
 }
 
 async function loadFormulas(){
