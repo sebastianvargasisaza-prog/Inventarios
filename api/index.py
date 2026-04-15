@@ -1017,21 +1017,30 @@ async function initIngreso(){
 async function buscarMPIngreso(cod){
   cod=(cod||'').toUpperCase().trim();
   var st=document.getElementById('ing-status');
-  ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el&&cod.length<3)el.value='';});
-  if(cod.length<3){if(st)st.textContent='';return;}
-  var mp=_cat[cod];
-  if(!mp){try{var r=await fetch('/api/maestro-mps/'+cod);if(r.ok){mp=await r.json();_cat[cod]=mp;}}catch(e){}}
   var panel=document.getElementById('ing-nueva-mp');
-  if(mp){
-    var f={'ing-inci':mp.nombre_inci||'','ing-nombre':mp.nombre_comercial||'','ing-tipo':mp.tipo||'','ing-prov':mp.proveedor||''};
-    Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
-    if(st){st.textContent='Catalogo: '+mp.nombre_comercial+(mp.tipo?' | '+mp.tipo:'');st.style.color='#28a745';}
-    if(panel) panel.style.display='none';
-  } else {
-    if(st){st.textContent='MP nueva — completa los datos del catalogo para registrarla';st.style.color='#e67e22';}
-    if(panel) panel.style.display='block';
-    // Pre-llenar nombre con el codigo si no tiene nombre
-    var nEl=document.getElementById('ing-nombre'); if(nEl&&!nEl.value) nEl.value=cod;
+  if(cod.length<3){
+    if(st)st.textContent='';
+    ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+    if(panel)panel.style.display='none';
+    return;
+  }
+  if(st){st.textContent='Buscando...';st.style.color='#888';}
+  try{
+    var r=await fetch('/api/maestro-mps/'+cod);
+    if(r.ok){
+      var mp=await r.json();
+      document.getElementById('ing-inci').value=mp.nombre_inci||'';
+      document.getElementById('ing-nombre').value=mp.nombre_comercial||'';
+      document.getElementById('ing-tipo').value=mp.tipo||'';
+      var pEl=document.getElementById('ing-prov');if(pEl&&!pEl.value)pEl.value=mp.proveedor||'';
+      if(st){st.textContent='✓ '+mp.nombre_comercial+(mp.tipo?' · '+mp.tipo:'');st.style.color='#27ae60';}
+      if(panel)panel.style.display='none';
+    } else {
+      if(st){st.textContent='MP nueva — llena los datos para crearla en el catálogo';st.style.color='#e67e22';}
+      if(panel)panel.style.display='block';
+    }
+  }catch(e){
+    if(st){st.textContent='Error buscando MP';st.style.color='#c0392b';}
   }
 }
 async function registrarIngreso(){
