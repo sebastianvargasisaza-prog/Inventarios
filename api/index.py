@@ -1723,8 +1723,10 @@ def reset_mov():
     c.execute("DELETE FROM movimientos"); conn.commit(); conn.close()
     return jsonify({'message': 'Borrado'})
 
-@app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
-def generar_rotulos(producto_nombre, cantidad_kg):
+@app.route('/rotulos/<producto_nombre>/<cantidad_str>')
+def generar_rotulos(producto_nombre, cantidad_str):
+    try: cantidad_kg = float(cantidad_str)
+    except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper()
     prod = urllib.parse.unquote(producto_nombre); op_num = "OP-"+date.today().strftime('%Y%m%d'); cant_g = cantidad_kg*1000
@@ -1780,8 +1782,10 @@ def generar_rotulos(producto_nombre, cantidad_kg):
             '<script>window.onload=function(){'+barcodes+'};</script>'
             '</body></html>')
 
-@app.route('/rotulo-recepcion/<codigo>/<lote>/<float:cantidad>')
-def rotulo_recepcion(codigo, lote, cantidad):
+@app.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
+def rotulo_recepcion(codigo, lote, cantidad_str):
+    try: cantidad = float(cantidad_str)
+    except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
