@@ -47,6 +47,8 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
+    try: c.execute("ALTER TABLE producciones ADD COLUMN operador TEXT")
+    except: pass
     c.execute("""CREATE TABLE IF NOT EXISTS alertas
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   material_id TEXT, material_nombre TEXT, stock_actual REAL,
@@ -596,12 +598,41 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </style>
 </head>
 <body>
+<div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:36px 40px;max-width:420px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="font-size:2.5em;margin-bottom:8px;">&#128100;</div>
+    <h2 style="color:#2B7A78;margin-top:0;margin-bottom:6px;">&#191;Con qui&#233;n trabajamos hoy?</h2>
+    <p style="color:#888;font-size:0.88em;margin-bottom:22px;">Tu nombre quedar&#225; registrado en cada movimiento</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <button onclick="selOper('Sebastian')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Sebastian</button>
+      <button onclick="selOper('Alejandro')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Alejandro</button>
+      <button onclick="selOper('Catalina')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Catalina</button>
+      <button onclick="selOper('Luz')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Luz</button>
+      <button onclick="selOper('Mayra')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Mayra</button>
+      <button onclick="selOper('Daniela')" style="background:#6c757d;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Daniela</button>
+    </div>
+  </div>
+</div>
+<div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <h2 style="color:#2B7A78;margin-bottom:4px;">&#9878; Ajustar Inventario</h2>
+    <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:16px;"></p>
+    <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:#888;"></div>
+    <div class="form-group"><label style="color:#2B7A78;font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid #2B7A78;"></div>
+    <div class="form-group"><label>Observaci&#243;n</label><input type="text" id="ajuste-obs" placeholder="Ej: Conteo del 15/04"></div>
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <button onclick="confirmarAjuste()" style="flex:1;background:#2B7A78;">&#10003; Confirmar Ajuste</button>
+      <button onclick="cerrarAjuste()" style="flex:1;background:#6c757d;">Cancelar</button>
+    </div>
+    <div id="ajuste-msg" style="margin-top:10px;"></div>
+  </div>
+</div>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
     <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
-    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a>
+    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -684,7 +715,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <th style="text-align:right;">Cantidad (g)</th>
         <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
         <th style="text-align:center;">Fecha Venc.</th>
-        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th>
+        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th>
       </tr></thead>
       <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
@@ -810,6 +841,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
     <div style="display:flex;gap:10px;"><button onclick="registrarProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
+    <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
+      <h3 style="color:#2B7A78;margin-bottom:12px;">&#128202; Historial de Producciones</h3>
+      <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
+      <tbody id="hist-prod-body"><tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
+    </div>
   </div>
 
   <div id="abc" class="tab-content">
@@ -868,6 +904,52 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
+var OPER_ACTUAL='';
+var _ajDat={};
+function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='👤 '+n;}
+function abrirAjuste(mid,mn,lt,sa){
+  if(\!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
+  _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
+  document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt\!='S/L'?' (Lote: '+lt+')':'');
+  document.getElementById('ajuste-sistema').value=sa;
+  document.getElementById('ajuste-fisico').value='';
+  document.getElementById('ajuste-obs').value='';
+  document.getElementById('ajuste-msg').innerHTML='';
+  document.getElementById('modal-ajuste').style.display='flex';
+}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+async function confirmarAjuste(){
+  var fis=parseFloat(document.getElementById('ajuste-fisico').value);
+  if(isNaN(fis)||fis<0){alert('Cantidad inválida');return;}
+  var dif=Math.round((fis-_ajDat.sa)*100)/100;
+  if(dif===0){alert('El stock físico coincide con el sistema');return;}
+  var tipo=dif>0?'Entrada':'Salida';
+  var obs='AJUSTE: '+(document.getElementById('ajuste-obs').value||'Conteo físico')+' | Op: '+OPER_ACTUAL;
+  try{
+    var r=await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({material_id:_ajDat.mid,material_nombre:_ajDat.mn,
+        cantidad:Math.abs(dif),tipo:tipo,observaciones:obs,lote:_ajDat.lt,operador:OPER_ACTUAL})});
+    var res=await r.json();
+    var sg=dif>0?'+':'';
+    document.getElementById('ajuste-msg').innerHTML='<div class="alert-success">✓ Ajuste registrado: '+sg+dif.toLocaleString()+'g ('+tipo+'). Stock actualizado.</div>';
+    setTimeout(function(){cerrarAjuste();loadStock();},2500);
+  }catch(e){document.getElementById('ajuste-msg').innerHTML='<div class="alert-error">Error al registrar ajuste</div>';}
+}
+async function cargarHistProd(){
+  try{
+    var r=await fetch('/api/produccion'),d=await r.json();
+    var ps=d.producciones||[];
+    var tb=document.getElementById('hist-prod-body');
+    if(\!tb)return;
+    if(\!ps.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Sin producciones registradas</td></tr>';return;}
+    tb.innerHTML=ps.map(function(p){
+      var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
+      var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
+      return '<tr><td style="font-weight:600;">'+p.producto+'</td><td style="text-align:right;font-weight:700;color:#2B7A78;">'+p.cantidad.toLocaleString()+' kg</td><td style="font-size:0.85em;color:#666;">'+f+'</td><td>'+op+'</td><td style="text-align:center;"><span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+p.estado+'</span></td></tr>';
+    }).join('');
+  }catch(e){}
+}
+
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
@@ -879,6 +961,7 @@ function switchTab(n,btn){
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
+  if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
 }
 
@@ -983,6 +1066,8 @@ function renderStock(items){
     h+='<td style="text-align:center;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
     h+='<td style="text-align:right;'+dc+'">'+dias+'</td>';
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
+    var _cg=i.cantidad_g,_mid=i.material_id,_mn=(i.material_nombre||'').replace(/"/g,"'"),_lt=i.lote||'';
+    h+='<td style="text-align:center;"><button onclick="abrirAjuste(\"'+_mid+'\",\"'+_mn+'\",\"'+_lt+'\",'+_cg+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;
@@ -1056,7 +1141,7 @@ async function registrarIngreso(){
   if(cant<=0){alert('Ingresa una cantidad valida');return;}
   var esNueva=document.getElementById('ing-nueva-mp')&&document.getElementById('ing-nueva-mp').style.display!=='none';
   var data={codigo_mp:cod,nombre_comercial:document.getElementById('ing-nombre').value||'',
-    lote:document.getElementById('ing-lote').value||'',cantidad:cant,
+    lote:document.getElementById('ing-lote').value||'',cantidad:cant,operador:OPER_ACTUAL,
     fecha_vencimiento:document.getElementById('ing-vence').value||'',
     estanteria:document.getElementById('ing-est').value||'',
     posicion:document.getElementById('ing-pos').value||'',
@@ -1242,7 +1327,7 @@ async function registrarProd(){
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
   try{
-    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value})});
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:OPER_ACTUAL})});
     var res=await r.json();
     var html='<div class="alert-success">'+res.message+'</div>';
     if(res.descuentos&&res.descuentos.length){
@@ -1530,8 +1615,8 @@ def handle_produccion():
         cantidad_kg = float(data['cantidad'])
         cantidad_g = cantidad_kg * 1000
         fecha = datetime.now().isoformat()
-        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones) VALUES (?,?,?,?,?)',
-                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', '')))
+        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, operador) VALUES (?,?,?,?,?,?)',
+                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', ''), data.get('operador', '')))
         c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (producto,))
         formula_items = c.fetchall()
         descuentos = []
@@ -1569,8 +1654,8 @@ def handle_produccion():
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
         return jsonify({'message': msg, 'descuentos': descuentos}), 201
-    c.execute('SELECT producto, cantidad, fecha, estado FROM producciones ORDER BY fecha DESC LIMIT 50')
-    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3]} for r in c.fetchall()]
+    c.execute('SELECT producto, cantidad, fecha, estado, operador FROM producciones ORDER BY fecha DESC LIMIT 50')
+    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'producciones': prod})
 
