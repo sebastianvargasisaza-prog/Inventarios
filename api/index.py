@@ -816,24 +816,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="prod-msg"></div>
   </div>
 
-  <div id="prod-historial" style="margin-top:8px;">
-  <div id="produccion-hist" class="tab-content" style="display:block;padding:0;">
-    <div style="background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-top:0;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h3 style="font-size:1.05em;color:#1C2B30;">Historial de Producciones</h3>
-        <button onclick="loadHistorialProd()" style="background:#2B7A78;font-size:0.82em;padding:6px 14px;">&#8635; Actualizar</button>
-      </div>
-      <table class="table" id="hist-prod-table">
-        <thead><tr>
-          <th>#</th><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th>
-          <th>Fecha</th><th>Estado</th><th>Operador</th><th>Observaciones</th>
-        </tr></thead>
-        <tbody id="hist-prod-body"><tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">Cargando historial...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-  </div>
-
   <div id="abc" class="tab-content">
     <h2>&#128200; Analisis ABC de Inventario</h2>
     <button onclick="loadABC()">Generar Analisis</button>
@@ -906,7 +888,7 @@ function switchTab(n,btn){
   document.getElementById(n).classList.add('active');
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
-  if(n==='formulas'||n==='produccion'){loadFormulas();loadHistorialProd();document.getElementById('prod-historial').style.display='block';}
+  if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='abc') loadABC();
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
   if(n==='movimientos') loadMovimientos();
