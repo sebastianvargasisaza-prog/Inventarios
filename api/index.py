@@ -599,18 +599,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </head>
 <body>
 <div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9999;display:flex;align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:16px;padding:36px 40px;max-width:420px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+  <div style="background:white;border-radius:16px;padding:40px;max-width:400px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <div style="font-size:2.5em;margin-bottom:8px;">&#128100;</div>
     <h2 style="color:#2B7A78;margin-top:0;margin-bottom:6px;">&#191;Con qui&#233;n trabajamos hoy?</h2>
-    <p style="color:#888;font-size:0.88em;margin-bottom:22px;">Tu nombre quedar&#225; registrado en cada movimiento</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      <button onclick="selOper('Sebastian')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Sebastian</button>
-      <button onclick="selOper('Alejandro')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Alejandro</button>
-      <button onclick="selOper('Catalina')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Catalina</button>
-      <button onclick="selOper('Luz')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Luz</button>
-      <button onclick="selOper('Mayra')" style="background:#2B7A78;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Mayra</button>
-      <button onclick="selOper('Daniela')" style="background:#6c757d;padding:14px;border-radius:8px;font-size:1em;font-weight:600;">Daniela</button>
-    </div>
+    <p style="color:#888;font-size:0.88em;margin-bottom:24px;">Escribe tu nombre para registrar los movimientos</p>
+    <input type="text" id="oper-input" placeholder="Tu nombre..." style="font-size:1.1em;text-align:center;padding:12px;border:2px solid #2B7A78;border-radius:8px;margin-bottom:14px;" onkeypress="if(event.key==='Enter')confirmarOper()">
+    <br>
+    <button onclick="confirmarOper()" style="background:#2B7A78;padding:13px 40px;border-radius:8px;font-size:1em;font-weight:600;width:100%;">Entrar</button>
+    <div id="oper-error" style="color:#cc0000;font-size:0.85em;margin-top:8px;display:none;">Por favor escribe tu nombre</div>
   </div>
 </div>
 <div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
@@ -907,6 +903,7 @@ var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var OPER_ACTUAL='';
 var _ajDat={};
 function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;}
+function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
 function abrirAjuste(mid,mn,lt,sa){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
