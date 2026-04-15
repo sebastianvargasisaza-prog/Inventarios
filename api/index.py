@@ -906,11 +906,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var OPER_ACTUAL='';
 var _ajDat={};
-function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='👤 '+n;}
+function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;}
 function abrirAjuste(mid,mn,lt,sa){
-  if(\!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
+  if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
-  document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt\!='S/L'?' (Lote: '+lt+')':'');
+  document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
   document.getElementById('ajuste-sistema').value=sa;
   document.getElementById('ajuste-fisico').value='';
   document.getElementById('ajuste-obs').value='';
@@ -940,8 +940,8 @@ async function cargarHistProd(){
     var r=await fetch('/api/produccion'),d=await r.json();
     var ps=d.producciones||[];
     var tb=document.getElementById('hist-prod-body');
-    if(\!tb)return;
-    if(\!ps.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Sin producciones registradas</td></tr>';return;}
+    if(!tb)return;
+    if(!ps.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Sin producciones registradas</td></tr>';return;}
     tb.innerHTML=ps.map(function(p){
       var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
       var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
