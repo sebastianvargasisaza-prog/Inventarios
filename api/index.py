@@ -923,36 +923,35 @@ async function confirmarAjuste(){
 }
 
 async function exportarExcelStock(){
-  try{
-    var r=await fetch('/api/lotes'),d=await r.json();
-    var lotes=d.lotes||[];
-    if(!lotes.length){alert('Sin datos de stock');return;}
-    var cols=['Codigo MP','Nombre INCI','Nombre Comercial','Tipo','Proveedor','Stock Min (g)','Lote','Cantidad (g)','Estanteria','Posicion','Fecha Vencimiento','Dias','Estado'];
-    var rows=lotes.map(function(l){return [l.material_id,l.nombre_inci,l.material_nombre,l.tipo,l.proveedor,l.stock_min_g,l.lote,l.cantidad_g,l.estanteria,l.posicion,l.fecha_vencimiento,l.dias_para_vencer,l.alerta];});
-    descargarCSV('Stock_Inventario_'+hoy()+'.csv', cols, rows);
-  }catch(e){alert('Error al exportar stock');}
+  var r=await fetch('/api/lotes'),d=await r.json(),L=d.lotes||[];
+  if(!L.length){alert('Sin datos');return;}
+  var h='Codigo,Nombre,Lote,Cantidad_g,Estanteria,Posicion,FechaVenc,Estado';
+  var rows=L.map(function(i){return [i.material_id,i.material_nombre,i.lote,i.cantidad_g,i.estanteria,i.posicion,i.fecha_vencimiento,i.alerta].join(',');});
+  dlCSV('Stock_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
 }
 async function exportarExcelMovimientos(){
-  try{
-    var r=await fetch('/api/movimientos'),d=await r.json();
-    var movs=d.movimientos||[];
-    if(!movs.length){alert('Sin movimientos');return;}
-    var cols=['Material','Cantidad (g)','Tipo','Fecha','Observaciones','Operador'];
-    var rows=movs.map(function(m){return [m.material_nombre,m.cantidad,m.tipo,m.fecha,m.observaciones,m.operador||''];});
-    descargarCSV('Movimientos_'+hoy()+'.csv', cols, rows);
-  }catch(e){alert('Error al exportar movimientos');}
+  var r=await fetch('/api/movimientos'),d=await r.json(),M=d.movimientos||[];
+  if(!M.length){alert('Sin movimientos');return;}
+  var h='Material,Cantidad_g,Tipo,Fecha,Observaciones,Operador';
+  var rows=M.map(function(m){return [m.material_nombre,m.cantidad,m.tipo,m.fecha,(m.observaciones||'').replace(/,/g,';'),m.operador||''].join(',');});
+  dlCSV('Movimientos_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
 }
 async function exportarExcelProducciones(){
-  try{
-    var r=await fetch('/api/produccion'),d=await r.json();
-    var prods=d.producciones||[];
-    if(!prods.length){alert('Sin producciones');return;}
-    var cols=['Producto','Cantidad (kg)','Fecha','Operador','Estado'];
-    var rows=prods.map(function(p){return [p.producto,p.cantidad,p.fecha,p.operador||'',p.estado];});
-    descargarCSV('Producciones_'+hoy()+'.csv', cols, rows);
-  }catch(e){alert('Error al exportar producciones');}
+  var r=await fetch('/api/produccion'),d=await r.json(),P=d.producciones||[];
+  if(!P.length){alert('Sin producciones');return;}
+  var h='Producto,Cantidad_kg,Fecha,Operador,Estado';
+  var rows=P.map(function(p){return [p.producto,p.cantidad,p.fecha,p.operador||'',p.estado].join(',');});
+  dlCSV('Producciones_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
 }
-function hoy(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');}
+function fhoy(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+function dlCSV(n,csv){
+  var b=new Blob([csv],{type:'text/csv'});
+  var u=URL.createObjectURL(b);
+  var a=document.createElement('a');
+  a.href=u;a.download=n;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(u);
+}
 function descargarCSV(nombre,cols,rows){
   var sep=',';
   var lines=[cols.join(sep)];
