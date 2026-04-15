@@ -29,14 +29,22 @@ class _Conn:
 IS_PG = False
 if DATABASE_URL:
     try:
-        import psycopg2
-        def get_conn(): return _Conn(psycopg2.connect(DATABASE_URL, sslmode='require'), True)
-        _t = get_conn(); _t.close(); IS_PG = True
-    except Exception as _e:
-        import sys as _sys; print(f"PG not available: {_e}", file=_sys.stderr)
+        import psycopg2 as _pg2
+        def get_conn(): return _Conn(_pg2.connect(DATABASE_URL, sslmode='require'), True)
+        _t = get_conn(); _t.close()
+        IS_PG = True
+        print("PostgreSQL connected OK")
+    except BaseException as _e:
+        import sys as _sys
+        print(f"PostgreSQL unavailable, using SQLite: {_e}", file=_sys.stderr)
+        IS_PG = False
+
 if not IS_PG:
     def get_conn():
-        r = get_conn(); r.row_factory = sqlite3.Row; return _Conn(r, False)
+        r = sqlite3.connect(DB_PATH)
+        r.row_factory = sqlite3.Row
+        return _Conn(r, False)
+
 
 app = Flask(__name__)
 
