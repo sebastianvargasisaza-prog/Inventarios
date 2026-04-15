@@ -2,7 +2,7 @@ import os
 import json
 import sqlite3
 from datetime import datetime
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, Response
 from anthropic import Anthropic
 import pandas as pd
 
@@ -888,7 +888,7 @@ function generarRotulos(){
 
 @app.route('/')
 def index():
-    return render_template_string(DASHBOARD_HTML)
+    return Response(DASHBOARD_HTML, mimetype="text/html")
 
 @app.route('/api/health')
 def health():
