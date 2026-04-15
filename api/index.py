@@ -85,7 +85,7 @@ def init_db():
 init_db()
 
 # ─── HUB HHA GROUP ────────────────────────────────────────────
-HUB_HTML = """<\!DOCTYPE html>
+HUB_HTML = """"<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -117,7 +117,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="logo-wrap">
-  <div class="logo-badge"><div class="logo-text">HHA Group</div></div>
+  <div class="logo-badge" style="display:flex;align-items:center;gap:16px;padding:14px 36px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 90" width="50" height="58"><path d="M40 5 C40 5 12 38 12 55 C12 72 24.5 83 40 83 C55.5 83 68 72 68 55 C68 38 40 5 40 5Z" fill="none" stroke="white" stroke-width="3.5"/><path d="M33 28 L33 44 L22 62 L58 62 L47 44 L47 28 Z" fill="none" stroke="white" stroke-width="2.5"/><line x1="30" y1="32" x2="50" y2="32" stroke="white" stroke-width="2.5"/><path d="M36 54 Q40 42 52 50 Q44 58 36 54Z" fill="white" opacity="0.85"/></svg><div class="logo-text">HHA Group</div></div>
   <div class="logo-sub">Sistema Operativo Interno</div>
 </div>
 <div class="grid">
@@ -156,7 +156,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </html>"""
 
 # ─── LOGIN COMPRAS ────────────────────────────────────────────
-LOGIN_HTML = """<\!DOCTYPE html>
+LOGIN_HTML = """"<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -198,7 +198,7 @@ input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px s
 </html>"""
 
 # ─── MÓDULO COMPRAS ───────────────────────────────────────────
-COMPRAS_HTML = """<\!DOCTYPE html>
+COMPRAS_HTML = """"<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -580,7 +580,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <body>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-    <div><h1>&#128230; Sistema de Inventarios Espagiria</h1>
+    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
     <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a>
