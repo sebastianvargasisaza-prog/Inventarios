@@ -3,8 +3,6 @@ import json
 import sqlite3
 from datetime import datetime
 from flask import Flask, jsonify, request, Response, session, redirect, url_for
-from anthropic import Anthropic
-import pandas as pd
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
@@ -18,15 +16,6 @@ COMPRAS_USERS = {
 ADMIN_USERS = {'sebastian', 'alejandro'}
 READONLY_USERS = {'mayra'}
 
-_anthropic_client = None
-def get_anthropic_client():
-    global _anthropic_client
-    if _anthropic_client is None:
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY no configurada")
-        _anthropic_client = Anthropic(api_key=api_key)
-    return _anthropic_client
 
 DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
 
@@ -699,7 +688,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
-      <button onclick="loadStock()">&#8635; Actualizar</button>
+      <div style="display:flex;gap:10px;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
@@ -838,7 +827,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;gap:10px;"><button onclick="registrarProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <h3 style="color:#2B7A78;margin-bottom:12px;">&#128202; Historial de Producciones</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3><button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button></div>
       <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
       <tbody id="hist-prod-body"><tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
     </div>
@@ -890,7 +879,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="registrarMov()">Registrar</button>
       <div id="mov-msg"></div>
     </div>
-    <button onclick="loadMovimientos()" style="margin-bottom:10px;">Ver Ultimos Movimientos</button>
+    <div style="display:flex;gap:10px;margin-bottom:10px;"><button onclick="loadMovimientos()">Ver Ultimos Movimientos</button><button onclick="exportarExcelMovimientos()" style="background:#217346;">&#128196; Descargar Excel</button></div>
     <table class="table" id="mov-table">
       <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
@@ -932,6 +921,47 @@ async function confirmarAjuste(){
     setTimeout(function(){cerrarAjuste();loadStock();},2500);
   }catch(e){document.getElementById('ajuste-msg').innerHTML='<div class="alert-error">Error al registrar ajuste</div>';}
 }
+
+async function exportarExcelStock(){
+  try{
+    var r=await fetch('/api/lotes'),d=await r.json();
+    var lotes=d.lotes||[];
+    if(!lotes.length){alert('Sin datos de stock');return;}
+    var cols=['Codigo MP','Nombre INCI','Nombre Comercial','Tipo','Proveedor','Stock Min (g)','Lote','Cantidad (g)','Estanteria','Posicion','Fecha Vencimiento','Dias','Estado'];
+    var rows=lotes.map(function(l){return [l.material_id,l.nombre_inci,l.material_nombre,l.tipo,l.proveedor,l.stock_min_g,l.lote,l.cantidad_g,l.estanteria,l.posicion,l.fecha_vencimiento,l.dias_para_vencer,l.alerta];});
+    descargarCSV('Stock_Inventario_'+hoy()+'.csv', cols, rows);
+  }catch(e){alert('Error al exportar stock');}
+}
+async function exportarExcelMovimientos(){
+  try{
+    var r=await fetch('/api/movimientos'),d=await r.json();
+    var movs=d.movimientos||[];
+    if(!movs.length){alert('Sin movimientos');return;}
+    var cols=['Material','Cantidad (g)','Tipo','Fecha','Observaciones','Operador'];
+    var rows=movs.map(function(m){return [m.material_nombre,m.cantidad,m.tipo,m.fecha,m.observaciones,m.operador||''];});
+    descargarCSV('Movimientos_'+hoy()+'.csv', cols, rows);
+  }catch(e){alert('Error al exportar movimientos');}
+}
+async function exportarExcelProducciones(){
+  try{
+    var r=await fetch('/api/produccion'),d=await r.json();
+    var prods=d.producciones||[];
+    if(!prods.length){alert('Sin producciones');return;}
+    var cols=['Producto','Cantidad (kg)','Fecha','Operador','Estado'];
+    var rows=prods.map(function(p){return [p.producto,p.cantidad,p.fecha,p.operador||'',p.estado];});
+    descargarCSV('Producciones_'+hoy()+'.csv', cols, rows);
+  }catch(e){alert('Error al exportar producciones');}
+}
+function hoy(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0');}
+function descargarCSV(nombre,cols,rows){
+  var sep=';';
+  var bom='\uFEFF';
+  var csv=bom+cols.join(sep)+'\n'+rows.map(function(r){return r.map(function(c){var s=c==null?'':String(c);if(s.includes(sep)||s.includes('"')||s.includes('\n'))s='"'+s.replace(/"/g,'""')+'"';return s;}).join(sep);}).join('\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download=nombre;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+}
+
 async function cargarHistProd(){
   try{
     var r=await fetch('/api/produccion'),d=await r.json();
@@ -1395,18 +1425,6 @@ async function registrarMov(){
   }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error</div>';}
 }
 
-async function enviarChat(){
-  var inp=document.getElementById('chat-in'), msg=inp.value.trim();
-  if(!msg) return;
-  var box=document.getElementById('chat-box');
-  box.innerHTML+='<div class="msg user">'+msg+'</div>';
-  inp.value='';
-  try{
-    var r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
-    var d=await r.json();
-    box.innerHTML+='<div class="msg bot">'+d.response+'</div>';
-    box.scrollTop=box.scrollHeight;
-  }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
 }
 
 async function loadAlertasReabas(){
@@ -1656,18 +1674,6 @@ def handle_produccion():
     conn.close()
     return jsonify({'producciones': prod})
 
-@app.route('/api/chat', methods=['POST'])
-def handle_chat():
-    data = request.json
-    try:
-        client = get_anthropic_client()
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022", max_tokens=1024,
-            messages=[{"role": "user", "content": f"Eres Paracelso, el asistente de inventarios de Espagiria Laboratorios. Eres experto en materias primas cosméticas, BPM, gestión de inventarios y formulación. Respondes de forma directa y útil en español, con un toque de personalidad. Pregunta: {data.get('message', '')}"}]
-        )
-        return jsonify({'response': response.content[0].text})
-    except Exception as e:
-        return jsonify({'response': f'Error: {str(e)}'}), 500
 
 @app.route('/api/analisis-abc')
 def get_analisis_abc():
