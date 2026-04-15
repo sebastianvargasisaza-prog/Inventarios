@@ -1434,8 +1434,6 @@ async function registrarMov(){
   }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error</div>';}
 }
 
-}
-
 async function loadAlertasReabas(){
   try{
     var r=await fetch('/api/alertas-reabastecimiento'), d=await r.json();
