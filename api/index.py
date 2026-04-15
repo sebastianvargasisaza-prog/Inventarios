@@ -157,7 +157,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
       </div>
       <div id="ing-nueva-mp" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
-        <h4 style="color:#856404;margin-bottom:10px;">&#9888; MP no encontrada en catalogo — ingresa los datos para crearla</h4>
+        <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima — Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group"><label>Nombre INCI *</label><input type="text" id="ing-inci-new" placeholder="Ej: NIACINAMIDE"></div>
           <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo-new" placeholder="Ej: Activo, Emoliente..."></div>
@@ -678,6 +678,10 @@ async function enviarChat(){
 }
 
 window.onload=function(){loadDashboard();loadFormulas();};
+function mostrarFormNuevaMP(){
+  var panel=document.getElementById('ing-nueva-mp');
+  if(panel) panel.style.display='block';
+}
 </script>
 </body>
 </html>
