@@ -155,6 +155,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
+      </div>
+      <div id="ing-nueva-mp" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
+        <h4 style="color:#856404;margin-bottom:10px;">&#9888; MP no encontrada en catalogo — ingresa los datos para crearla</h4>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group"><label>Nombre INCI *</label><input type="text" id="ing-inci-new" placeholder="Ej: NIACINAMIDE"></div>
+          <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo-new" placeholder="Ej: Activo, Emoliente..."></div>
+          <div class="form-group"><label>Stock Minimo (g)</label><input type="number" id="ing-smin-new" placeholder="0" value="0"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727"></div>
         <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01"></div>
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
@@ -376,17 +386,25 @@ async function buscarMPIngreso(cod){
   if(cod.length<3){if(st)st.textContent='';return;}
   var mp=_cat[cod];
   if(!mp){try{var r=await fetch('/api/maestro-mps/'+cod);if(r.ok){mp=await r.json();_cat[cod]=mp;}}catch(e){}}
+  var panel=document.getElementById('ing-nueva-mp');
   if(mp){
     var f={'ing-inci':mp.nombre_inci||'','ing-nombre':mp.nombre_comercial||'','ing-tipo':mp.tipo||'','ing-prov':mp.proveedor||''};
     Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
     if(st){st.textContent='Catalogo: '+mp.nombre_comercial+(mp.tipo?' | '+mp.tipo:'');st.style.color='#28a745';}
-  } else {if(st){st.textContent='No encontrada en catalogo - completa manualmente';st.style.color='#e67e22';}}
+    if(panel) panel.style.display='none';
+  } else {
+    if(st){st.textContent='MP nueva — completa los datos del catalogo para registrarla';st.style.color='#e67e22';}
+    if(panel) panel.style.display='block';
+    // Pre-llenar nombre con el codigo si no tiene nombre
+    var nEl=document.getElementById('ing-nombre'); if(nEl&&!nEl.value) nEl.value=cod;
+  }
 }
 async function registrarIngreso(){
   var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
   var cant=parseFloat(document.getElementById('ing-cant').value)||0;
   if(!cod){alert('Ingresa el codigo MP');return;}
   if(cant<=0){alert('Ingresa una cantidad valida');return;}
+  var esNueva=document.getElementById('ing-nueva-mp')&&document.getElementById('ing-nueva-mp').style.display!=='none';
   var data={codigo_mp:cod,nombre_comercial:document.getElementById('ing-nombre').value||'',
     lote:document.getElementById('ing-lote').value||'',cantidad:cant,
     fecha_vencimiento:document.getElementById('ing-vence').value||'',
@@ -394,6 +412,11 @@ async function registrarIngreso(){
     posicion:document.getElementById('ing-pos').value||'',
     proveedor:document.getElementById('ing-prov').value||'',
     observaciones:document.getElementById('ing-obs').value||''};
+  if(esNueva){
+    data.nombre_inci=document.getElementById('ing-inci-new')?document.getElementById('ing-inci-new').value:'';
+    data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
+    data.stock_minimo=parseFloat(document.getElementById('ing-smin-new')?document.getElementById('ing-smin-new').value:0)||0;
+  }
   try{
     var r=await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
@@ -409,7 +432,7 @@ function generarRotuloIngreso(){
   window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(_ultimoIng.cantidad||0),'_blank');
 }
 function limpiarIngreso(){
-  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-inci-new','ing-tipo-new','ing-smin-new'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var pn=document.getElementById('ing-nueva-mp');if(pn)pn.style.display='none';
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';
 }
@@ -759,16 +782,38 @@ def handle_produccion():
         formula_items = c.fetchall()
         descuentos = []
         for mat_id, mat_nombre, pct in formula_items:
-            g = round((pct / 100) * cantidad_g, 2)
-            if g > 0:
-                c.execute('INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)',
-                          (mat_id, mat_nombre, g, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
-                descuentos.append({'material': mat_nombre, 'cantidad_g': g})
+            g_total = round((pct / 100) * cantidad_g, 2)
+            if g_total <= 0: continue
+            # FEFO: seleccionar lotes por fecha de vencimiento mas proxima con stock disponible
+            c.execute("""SELECT lote, fecha_vencimiento,
+                                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                         FROM movimientos
+                         WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                         GROUP BY lote HAVING stock > 0
+                         ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento=''
+                                  THEN '9999' ELSE fecha_vencimiento END ASC""", (mat_id,))
+            lotes_fefo = c.fetchall()
+            g_restante = g_total; lotes_usados = []
+            for lrow in lotes_fefo:
+                if g_restante <= 0: break
+                lote_n, lote_v, lote_s = lrow
+                g_lote = round(min(g_restante, lote_s), 2)
+                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote) VALUES (?,?,?,?,?,?,?)",
+                          (mat_id, mat_nombre, g_lote, 'Salida', fecha,
+                           f'FEFO: {producto} x {cantidad_kg}kg', lote_n))
+                lotes_usados.append({'lote': lote_n, 'vence': str(lote_v)[:10] if lote_v else '', 'cantidad_g': g_lote})
+                g_restante = round(g_restante - g_lote, 2)
+            if g_restante > 0:
+                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)",
+                          (mat_id, mat_nombre, g_restante, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
+                lotes_usados.append({'lote': 'sin_lote', 'vence': '', 'cantidad_g': g_restante})
+            descuentos.append({'material': mat_nombre, 'material_id': mat_id,
+                                'cantidad_g': g_total, 'lotes_fefo': lotes_usados})
         conn.commit()
         conn.close()
-        msg = f'Produccion registrada: {producto} x {cantidad_kg}kg'
+        msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
-            msg += f'. {len(descuentos)} MPs descontadas automaticamente.'
+            msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
         return jsonify({'message': msg, 'descuentos': descuentos}), 201
     c.execute('SELECT producto, cantidad, fecha, estado FROM producciones ORDER BY fecha DESC LIMIT 50')
     prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3]} for r in c.fetchall()]
@@ -889,8 +934,13 @@ def registrar_recepcion():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     mp = c.fetchone()
-    nombre = mp[1] if mp else d.get('nombre_comercial', codigo)
+    nombre = d.get('nombre_comercial','') or (mp[1] if mp else codigo)
     proveedor = d.get('proveedor','') or (mp[3] if mp else '')
+    # Si la MP es nueva y viene con datos, crearla en el catalogo
+    if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
+                  (codigo, d.get('nombre_inci',''), nombre, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
+        conn.commit()
     lote = (d.get('lote') or '').strip()
     if not lote or lote.upper()=='AUTO':
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
