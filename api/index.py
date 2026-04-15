@@ -21,8 +21,7 @@ def get_anthropic_client():
 DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   material_id TEXT, material_nombre TEXT, cantidad REAL,
@@ -32,6 +31,9 @@ def init_db():
     for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote"]:
         try: c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT")
         except: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS maestro_mps
+                 (codigo_mp TEXT PRIMARY KEY, nombre_inci TEXT, nombre_comercial TEXT,
+                  tipo TEXT, proveedor TEXT, stock_minimo REAL DEFAULT 0, activo INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
@@ -100,6 +102,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
     <button class="tab-button" onclick="switchTab('stock',this)">&#128230; Stock</button>
+            <button class="tab-button" onclick="switchTab('ingreso',this)">&#128666; Ingreso MP</button>
     <button class="tab-button" onclick="switchTab('formulas',this)">&#129514; Formulas</button>
     <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
     <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
@@ -122,12 +125,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="stock" class="tab-content">
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
-      <input type="text" id="stock-search" placeholder="MP, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
+      <input type="text" id="stock-search" placeholder="MP, INCI, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
       <button onclick="loadStock()">&#8635; Actualizar</button>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
-    <table class="table">
+    <table class="table" style="font-size:0.83em;">
       <thead><tr>
         <th>Cod. MP</th><th>Nombre INCI</th><th>Nombre Comercial</th>
         <th>Tipo</th><th>Proveedor</th>
@@ -140,6 +143,37 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
+  </div>
+
+  <div id="ingreso" class="tab-content">
+    <h2>&#128666; Ingreso de Materia Prima</h2>
+    <p style="color:#666;margin-bottom:18px;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+        <div class="form-group"><label>Codigo MP *</label><input type="text" id="ing-cod" placeholder="MP00001" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)"><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
+        <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
+        <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
+        <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
+        <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
+        <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727"></div>
+        <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01"></div>
+        <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
+        <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
+        <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px;"><label>Observaciones</label><input type="text" id="ing-obs" placeholder="Opcional"></div>
+      <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;">
+        <button onclick="registrarIngreso()" style="background:#27ae60;">&#10003; Registrar Entrada</button>
+        <button onclick="generarRotuloIngreso()" style="background:#2980b9;" id="btn-rotulo-ing">&#128209; Generar Rotulo + Codigo de Barras</button>
+        <button onclick="limpiarIngreso()" style="background:#95a5a6;">Limpiar</button>
+      </div>
+      <div id="ing-msg" style="margin-top:12px;"></div>
+    </div>
+    <h3 style="margin-bottom:10px;">Ultimas Entradas</h3>
+    <div style="overflow-x:auto;"><table class="table" id="ing-hist">
+      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
+      <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
+    </table></div>
   </div>
 
   <div id="formulas" class="tab-content">
@@ -196,10 +230,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </table>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button onclick="registrarProd()">&#9989; Registrar Produccion</button>
-      <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button>
-    </div>
+    <div style="display:flex;gap:10px;"><button onclick="registrarProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
   </div>
 
@@ -278,7 +309,7 @@ async function loadDashboard(){
   }catch(e){}
 }
 
-var _lotes=[];
+var _lotes=[], _cat={}, _ultimoIng=null;
 async function loadStock(){
   try{
     var r=await fetch('/api/lotes'), d=await r.json();
@@ -286,15 +317,12 @@ async function loadStock(){
     document.getElementById('stock-count').textContent=_lotes.length+' lotes';
     renderStock(_lotes);
   }catch(e){
-    document.getElementById('stock-body').innerHTML='<tr><td colspan="10" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
+    document.getElementById('stock-body').innerHTML='<tr><td colspan="13" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
   }
 }
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){
-    tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';
-    return;
-  }
+  if(!items.length){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
   var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent'};
   var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a'};
   var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE'};
@@ -302,22 +330,23 @@ function renderStock(items){
   items.forEach(function(i){
     var a=i.alerta||'ok';
     var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
+    var bajo_min=i.stock_min_g>0&&i.cantidad_g<i.stock_min_g;
+    var min_style=bajo_min?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
     var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
-    var dias_color=i.dias_para_vencer!=null&&i.dias_para_vencer<0?'color:#cc0000;font-weight:700;':i.dias_para_vencer<=30?'color:#e65100;font-weight:700;':'';
-    var min_color=i.cantidad_g>0&&i.stock_min_g>0&&i.cantidad_g<i.stock_min_g?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
-    h+='<tr style="background:'+bg[a]+';font-size:0.85em;">';
-    h+='<td style="font-family:monospace;font-size:0.82em;color:#555;">'+i.material_id+'</td>';
-    h+='<td style="font-size:0.8em;color:#444;">'+i.nombre_inci+'</td>';
+    var dc=i.dias_para_vencer!=null&&i.dias_para_vencer<0?'color:#cc0000;font-weight:700;':i.dias_para_vencer<=30?'color:#e65100;font-weight:700;':'';
+    h+='<tr style="background:'+bg[a]+';font-size:0.83em;">';
+    h+='<td style="font-family:monospace;color:#555;">'+i.material_id+'</td>';
+    h+='<td style="color:#444;font-size:0.82em;">'+i.nombre_inci+'</td>';
     h+='<td style="font-weight:600;">'+i.material_nombre+'</td>';
-    h+='<td style="color:#888;font-size:0.82em;">'+i.tipo+'</td>';
-    h+='<td style="font-size:0.82em;color:#555;">'+i.proveedor+'</td>';
-    h+='<td style="text-align:right;'+min_color+'">'+i.stock_min_g.toLocaleString()+'</td>';
-    h+='<td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>';
+    h+='<td style="color:#888;">'+i.tipo+'</td>';
+    h+='<td style="color:#555;">'+i.proveedor+'</td>';
+    h+='<td style="text-align:right;'+min_style+'">'+i.stock_min_g.toLocaleString()+'</td>';
+    h+='<td style="font-family:monospace;">'+i.lote+'</td>';
     h+='<td style="text-align:right;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
     h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';
-    h+='<td style="text-align:center;color:#555;">'+i.posicion+'</td>';
-    h+='<td style="text-align:center;font-size:0.82em;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
-    h+='<td style="text-align:right;'+dias_color+'">'+dias+'</td>';
+    h+='<td style="text-align:center;">'+i.posicion+'</td>';
+    h+='<td style="text-align:center;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
+    h+='<td style="text-align:right;'+dc+'">'+dias+'</td>';
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
     h+='</tr>';
   });
@@ -326,13 +355,93 @@ function renderStock(items){
 function filterStock(){
   var q=document.getElementById('stock-search').value.toLowerCase();
   var f=_lotes.filter(function(i){
-    return !q||(i.material_nombre.toLowerCase().includes(q)||
-                i.material_id.toLowerCase().includes(q)||
-                (i.lote||'').toLowerCase().includes(q)||
-                (i.proveedor||'').toLowerCase().includes(q));
+    return !q||(i.material_id.toLowerCase().includes(q)||i.material_nombre.toLowerCase().includes(q)||
+               i.nombre_inci.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||
+               (i.proveedor||'').toLowerCase().includes(q));
   });
   document.getElementById('stock-count').textContent=f.length+' de '+_lotes.length;
   renderStock(f);
+}
+
+async function initIngreso(){
+  if(Object.keys(_cat).length===0){
+    try{var r=await fetch('/api/maestro-mps'),d=await r.json();(d.mps||[]).forEach(function(mp){_cat[mp.codigo_mp]=mp;});}catch(e){}
+  }
+  cargarHistIngreso();
+}
+async function buscarMPIngreso(cod){
+  cod=(cod||'').toUpperCase().trim();
+  var st=document.getElementById('ing-status');
+  ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el&&cod.length<3)el.value='';});
+  if(cod.length<3){if(st)st.textContent='';return;}
+  var mp=_cat[cod];
+  if(!mp){try{var r=await fetch('/api/maestro-mps/'+cod);if(r.ok){mp=await r.json();_cat[cod]=mp;}}catch(e){}}
+  if(mp){
+    var f={'ing-inci':mp.nombre_inci||'','ing-nombre':mp.nombre_comercial||'','ing-tipo':mp.tipo||'','ing-prov':mp.proveedor||''};
+    Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
+    if(st){st.textContent='Catalogo: '+mp.nombre_comercial+(mp.tipo?' | '+mp.tipo:'');st.style.color='#28a745';}
+  } else {if(st){st.textContent='No encontrada en catalogo - completa manualmente';st.style.color='#e67e22';}}
+}
+async function registrarIngreso(){
+  var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
+  var cant=parseFloat(document.getElementById('ing-cant').value)||0;
+  if(!cod){alert('Ingresa el codigo MP');return;}
+  if(cant<=0){alert('Ingresa una cantidad valida');return;}
+  var data={codigo_mp:cod,nombre_comercial:document.getElementById('ing-nombre').value||'',
+    lote:document.getElementById('ing-lote').value||'',cantidad:cant,
+    fecha_vencimiento:document.getElementById('ing-vence').value||'',
+    estanteria:document.getElementById('ing-est').value||'',
+    posicion:document.getElementById('ing-pos').value||'',
+    proveedor:document.getElementById('ing-prov').value||'',
+    observaciones:document.getElementById('ing-obs').value||''};
+  try{
+    var r=await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok){
+      _ultimoIng=res;
+      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+      await cargarHistIngreso();
+    } else {document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';}
+  }catch(e){document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
+function generarRotuloIngreso(){
+  if(!_ultimoIng){alert('Registra un ingreso primero');return;}
+  window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(_ultimoIng.cantidad||0),'_blank');
+}
+function limpiarIngreso(){
+  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
+  document.getElementById('ing-msg').innerHTML='';
+}
+async function cargarHistIngreso(){
+  try{
+    var r=await fetch('/api/movimientos'),d=await r.json();
+    var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,20);
+    var tb=document.querySelector('#ing-hist tbody'); if(!tb) return;
+    if(!entradas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
+    var h='';
+    entradas.forEach(function(m){
+      h+='<tr><td style="font-family:monospace;font-size:0.85em;">'+(m.material_id||'')+'</td>';
+      var cat=_cat[m.material_id]||{};
+      h+='<td style="font-size:0.8em;color:#444;">'+(cat.nombre_inci||'')+'</td>';
+      h+='<td>'+m.material_nombre+'</td>';
+      h+='<td style="font-family:monospace;">'+(m.lote||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:600;">'+m.cantidad.toLocaleString()+'</td>';
+      h+='<td style="font-size:0.85em;">'+(m.proveedor||'')+'</td>';
+      h+='<td style="color:#c0392b;font-size:0.85em;">'+(m.fecha_vencimiento?m.fecha_vencimiento.substring(0,10):'')+'</td>';
+      h+='<td style="font-size:0.82em;color:#888;">'+m.fecha.substring(0,10)+'</td></tr>';
+    });
+    tb.innerHTML=h;
+  }catch(e){}
+}
+function abrirRotulos(){
+  var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
+  var manual=document.getElementById('prod-manual')?document.getElementById('prod-manual').value.trim():'';
+  var producto=prod||manual;
+  var kg=parseFloat(document.getElementById('prod-kg')?document.getElementById('prod-kg').value:0)||0;
+  if(!producto){alert('Selecciona un producto primero');return;}
+  if(kg<=0){alert('Ingresa la cantidad en kg');return;}
+  window.open('/rotulos/'+encodeURIComponent(producto)+'/'+kg,'_blank');
 }
 
 async function loadFormulas(){
@@ -352,7 +461,7 @@ async function loadFormulas(){
 
 function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
-  if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun. Crea la primera arriba.</p>';return;}
+  if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun.</p>';return;}
   var html='';
   fl.forEach(function(f,idx){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
@@ -415,9 +524,8 @@ async function guardarFormula(){
   }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
-function editFormula(nombre){
-  var f=fData.find(function(x){return x.producto_nombre===nombre;});
-  if(!f) return;
+function editFormula(idx){
+  var f=fData[idx]; if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;
   document.getElementById('formula-desc').value=f.descripcion||'';
@@ -434,8 +542,9 @@ function editFormula(nombre){
   document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
 }
 
-async function delFormula(nombre){
-  if(!confirm('Eliminar formula de '+nombre+'?')) return;
+async function delFormula(idx){
+  var nombre=fData[idx]?fData[idx].producto_nombre:'';
+  if(!nombre||!confirm('Eliminar formula de '+nombre+'?')) return;
   await fetch('/api/formulas/'+encodeURIComponent(nombre),{method:'DELETE'});
   await loadFormulas();
 }
@@ -546,16 +655,6 @@ async function enviarChat(){
 }
 
 window.onload=function(){loadDashboard();loadFormulas();};
-
-function abrirRotulos(){
-  var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
-  var manual=document.getElementById('prod-manual')?document.getElementById('prod-manual').value.trim():'';
-  var producto=prod||manual;
-  var kg=parseFloat(document.getElementById('prod-kg')?document.getElementById('prod-kg').value:0)||0;
-  if(!producto){alert('Selecciona un producto primero');return;}
-  if(kg<=0){alert('Ingresa la cantidad en kg');return;}
-  window.open('/rotulos/'+encodeURIComponent(producto)+'/'+kg,'_blank');
-}
 </script>
 </body>
 </html>
@@ -584,21 +683,6 @@ def get_inventario():
     conn.close()
     return jsonify({'total_items': mov, 'movimientos': mov, 'producciones': prod,
                     'alertas': alrt, 'stock_total': round(stock, 2)})
-
-@app.route('/api/stock')
-def get_stock():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""SELECT material_id, material_nombre,
-                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END),
-                 SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END),
-                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END)
-                 FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre""")
-    rows = c.fetchall()
-    conn.close()
-    return jsonify({'items': [{'material_id': r[0], 'material_nombre': r[1],
-                                'entradas': round(r[2] or 0, 2), 'salidas': round(r[3] or 0, 2),
-                                'stock_actual': round(r[4] or 0, 2)} for r in rows]})
 
 @app.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
@@ -652,8 +736,7 @@ def handle_movimientos():
                    data.get('lote',''), data.get('fecha_vencimiento',''),
                    data.get('estanteria',''), data.get('posicion',''),
                    data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
-        conn.commit()
-        conn.close()
+        conn.commit(); conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
     c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
     movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
@@ -743,123 +826,195 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
-@app.route('/api/reset-movimientos', methods=['POST'])
-def reset_mov():
+@app.route('/api/stock')
+def get_stock():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM movimientos"); conn.commit()
-    conn.close()
-    return jsonify({'message': 'Borrado'})
-
+    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
 
 @app.route('/api/lotes')
 def get_lotes():
-    from datetime import date
-    hoy = date.today().isoformat()
+    from datetime import date; hoy = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT m.material_id, m.material_nombre, m.lote, m.cantidad,
-                        m.fecha_vencimiento, m.estanteria, m.posicion, m.proveedor,
-                        m.estado_lote,
-                        COALESCE(mp.nombre_inci, '') as nombre_inci,
-                        COALESCE(mp.tipo, '') as tipo,
-                        COALESCE(mp.stock_minimo, 0) as stock_minimo
-                 FROM movimientos m
-                 LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
-                 WHERE m.tipo='Entrada'
-                 ORDER BY m.material_nombre ASC, m.fecha_vencimiento ASC""")
+                        m.fecha_vencimiento, m.estanteria, m.posicion, m.proveedor, m.estado_lote,
+                        COALESCE(mp.nombre_inci,'') as inci, COALESCE(mp.tipo,'') as tipo,
+                        COALESCE(mp.stock_minimo,0) as smin
+                 FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                 WHERE m.tipo='Entrada' ORDER BY m.material_nombre ASC, m.fecha_vencimiento ASC""")
     rows = c.fetchall(); conn.close()
     result = []
     for r in rows:
-        mid,mnm,lote,cant,fvenc,est,pos,prov,estado,inci,tipo,stock_min = r
+        mid,mnm,lote,cant,fvenc,est,pos,prov,estado,inci,tipo,smin = r
         dias,alerta = None,'ok'
-        if fvenc and len(str(fvenc)) >= 10:
+        if fvenc and len(str(fvenc))>=10:
             try:
                 from datetime import datetime as dt2
-                dias = (dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date() -
-                        dt2.strptime(hoy,'%Y-%m-%d').date()).days
-                if dias < 0: alerta = 'vencido'
-                elif dias <= 30: alerta = 'critico'
-                elif dias <= 90: alerta = 'proximo'
+                dias=(dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date()-dt2.strptime(hoy,'%Y-%m-%d').date()).days
+                alerta='vencido' if dias<0 else ('critico' if dias<=30 else ('proximo' if dias<=90 else 'ok'))
             except: pass
-        result.append({
-            'material_id': mid or '', 'nombre_inci': inci or '',
-            'material_nombre': mnm or '', 'tipo': tipo or '',
-            'proveedor': prov or '', 'stock_min_g': round(stock_min or 0, 1),
-            'lote': lote or '', 'cantidad_g': round(cant or 0, 2),
-            'cantidad_kg': round((cant or 0)/1000, 3),
-            'estanteria': est or '', 'posicion': pos or '',
-            'fecha_vencimiento': str(fvenc)[:10] if fvenc else '',
-            'dias_para_vencer': dias, 'estado_lote': estado or '', 'alerta': alerta
-        })
+        result.append({'material_id':mid or '','nombre_inci':inci,'material_nombre':mnm or '',
+                       'tipo':tipo,'proveedor':prov or '','stock_min_g':round(smin,1),
+                       'lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
+                       'estanteria':est or '','posicion':pos or '',
+                       'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
+                       'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta})
     return jsonify({'lotes': result, 'total': len(result)})
 
+@app.route('/api/maestro-mps', methods=['GET','POST'])
+def handle_maestro():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo) VALUES (?,?,?,?,?,?)",
+                  (d['codigo_mp'],d.get('nombre_inci',''),d.get('nombre_comercial',''),d.get('tipo',''),d.get('proveedor',''),d.get('stock_minimo',0)))
+        conn.commit(); conn.close()
+        return jsonify({'message': 'MP guardada'}), 201
+    c.execute("SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo FROM maestro_mps WHERE activo=1 ORDER BY nombre_comercial")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'mps': [{'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]} for r in rows]})
+
+@app.route('/api/maestro-mps/<codigo>')
+def get_mp(codigo):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    r = c.fetchone(); conn.close()
+    return jsonify({'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]}) if r else (jsonify({'error':'not found'}),404)
+
+@app.route('/api/recepcion', methods=['POST'])
+def registrar_recepcion():
+    d = request.json; codigo = (d.get('codigo_mp') or '').upper().strip()
+    if not codigo: return jsonify({'error': 'Codigo MP requerido'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    mp = c.fetchone()
+    nombre = mp[1] if mp else d.get('nombre_comercial', codigo)
+    proveedor = d.get('proveedor','') or (mp[3] if mp else '')
+    lote = (d.get('lote') or '').strip()
+    if not lote or lote.upper()=='AUTO':
+        from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
+    c.execute("""INSERT INTO movimientos
+                 (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
+                  lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (codigo,nombre,float(d.get('cantidad',0)),'Entrada',datetime.now().isoformat(),
+               d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
+               d.get('estanteria',''),d.get('posicion',''),proveedor,'VIGENTE'))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'{nombre} ingresada. Lote: {lote}','lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0)}), 201
+
+@app.route('/api/reset-movimientos', methods=['POST'])
+def reset_mov():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM movimientos"); conn.commit(); conn.close()
+    return jsonify({'message': 'Borrado'})
 
 @app.route('/rotulos/<producto_nombre>/<float:cantidad_kg>')
 def generar_rotulos(producto_nombre, cantidad_kg):
-    from datetime import date
-    import urllib.parse
+    from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper()
-    prod = urllib.parse.unquote(producto_nombre)
-    op_num = "OP-" + date.today().strftime('%Y%m%d')
-    cant_g = cantidad_kg * 1000
+    prod = urllib.parse.unquote(producto_nombre); op_num = "OP-"+date.today().strftime('%Y%m%d'); cant_g = cantidad_kg*1000
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
+    c.execute("SELECT material_id,material_nombre,porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
     lotes = {}; incis = {}
     for r in items:
         mid = r[0]
-        c.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?", (mid,))
-        ir = c.fetchone(); incis[mid] = ir[0] if ir and ir[0] else ''
-        c.execute("""SELECT lote, estanteria, posicion, fecha_vencimiento
-                     FROM movimientos WHERE material_id=? AND tipo='Entrada'
-                     AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                     ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento=''
-                              THEN '9999' ELSE fecha_vencimiento END ASC LIMIT 1""", (mid,))
-        row = c.fetchone()
-        lotes[mid] = {'lote': row[0] if row else 'S/L', 'est': row[1] if row else '',
-                      'pos': row[2] if row else '', 'vence': str(row[3])[:10] if row and row[3] else ''}
+        c.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?", (mid,)); ir=c.fetchone(); incis[mid]=ir[0] if ir and ir[0] else ''
+        c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento='' THEN '9999' ELSE fecha_vencimiento END ASC LIMIT 1", (mid,))
+        row=c.fetchone(); lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
     conn.close()
-    if not items: return '<h2>Formula no encontrada: ' + prod + '</h2>', 404
-    rhtml = ''
-    for i, r in enumerate(items):
-        mid, mnm, pct = r; peso = round((pct/100)*cant_g, 2)
-        info = lotes.get(mid, {}); lote_mp = info.get('lote','S/L')
-        ubicacion = ('Est. ' + str(info.get('est','')) + str(info.get('pos',''))).strip()
-        vence = info.get('vence','')
-        rhtml += '<div class="r"><div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span>'
-        rhtml += '<span class="rc">PRD-PRO-001-F08 | v1<br>Vigencia: 04-Mar-2025 / 03-Mar-2028</span></div>'
-        rhtml += '<table>'
-        rhtml += '<tr><td class="l">OP:</td><td class="v">' + op_num + '</td><td class="l">Fecha:</td><td class="v">' + hoy + '</td></tr>'
-        rhtml += '<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>' + prod + '</b> &mdash; ' + str(cantidad_kg) + ' kg</td></tr>'
-        inci = incis.get(mid, '')
-        rhtml += '<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>' + mnm + '</b> <span style="color:#888;font-size:0.8em;">(' + mid + ')</span></td></tr>'
-        if inci:
-            rhtml += '<tr><td class="l">Nombre INCI:</td><td class="v" colspan="3" style="font-size:0.82em;color:#444;">' + inci + '</td></tr>'
-        rhtml += '<tr><td class="l">Lote MP:</td><td class="v bold">' + lote_mp + '</td><td class="l">Ubicacion:</td><td class="v">' + ubicacion + '</td></tr>'
-        rhtml += '<tr><td class="l">Vencimiento:</td><td class="v" style="color:#c0392b;">' + vence + '</td><td class="l">% formula:</td><td class="v">' + str(pct) + '%</td></tr>'
-        rhtml += '<tr><td class="l">Peso teorico:</td><td class="v peso">' + f"{peso:,.2f} g" + '</td><td class="l">Lote Prod.:</td><td class="blank"></td></tr>'
-        rhtml += '<tr><td class="l">Tara:</td><td class="blank"></td><td class="l">Peso Neto:</td><td class="blank"></td></tr>'
-        rhtml += '<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
-        rhtml += '</table><div class="rf">MP: Materia Prima &nbsp;|&nbsp; #' + str(i+1) + ' de ' + str(len(items)) + '</div></div>'
-    css = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos</title>'
-           '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}'
-           '.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}'
-           '.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}'
-           '.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}'
-           '.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}'
-           '.rh{background:#1a252f;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}'
-           '.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.5pt;text-align:right;line-height:1.4;}'
-           'table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}'
-           '.l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#1a252f;white-space:nowrap;width:27%;}'
-           '.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}'
-           '.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}'
-           '.blank{height:20px;width:23%;}.firma{height:26px;}'
-           '.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}'
-           '@media print{body{background:white;}.ph{display:none;}.wrap{padding:0;gap:3px;}.r{width:48%;}'
-           '@page{size:letter landscape;margin:7mm;}}</style></head><body>')
-    return (css + '<div class="ph"><div><h2>Rotulos de Dispensacion &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
-            '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy + '</div></div>'
+    if not items: return '<h2>Formula no encontrada: '+prod+'</h2>', 404
+    rhtml=''; barcodes=''
+    for i,r in enumerate(items):
+        mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
+        ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
+        bv=mid+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.2,height:35,displayValue:false,margin:0}})}}catch(e){{}};'
+        rhtml+='<div class="r"><div class="rh"><span class="rt">ROTULO MATERIA PRIMA DISPENSADA</span><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
+        rhtml+='<table><tr><td class="l">OP:</td><td class="v">'+op_num+'</td><td class="l">Fecha:</td><td class="v">'+hoy+'</td></tr>'
+        rhtml+='<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
+        rhtml+='<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>'+mnm+'</b> <span style="color:#888;font-size:0.8em;">('+mid+')</span></td></tr>'
+        if inci: rhtml+='<tr><td class="l">Nombre INCI:</td><td class="v" colspan="3" style="font-size:0.82em;color:#444;">'+inci+'</td></tr>'
+        rhtml+='<tr><td class="l">Lote MP:</td><td class="v bold">'+lote_mp+'</td><td class="l">Ubicacion:</td><td class="v">'+ubicacion+'</td></tr>'
+        rhtml+='<tr><td class="l">Vencimiento:</td><td class="v" style="color:#c0392b;">'+vence+'</td><td class="l">% formula:</td><td class="v">'+str(pct)+'%</td></tr>'
+        rhtml+='<tr><td class="l">Peso teorico:</td><td class="v peso">'+f"{peso:,.2f} g"+'</td><td class="l">Lote Prod.:</td><td class="blank"></td></tr>'
+        rhtml+='<tr><td class="l">Tara:</td><td class="blank"></td><td class="l">Peso Neto:</td><td class="blank"></td></tr>'
+        rhtml+='<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
+        rhtml+='</table>'
+        rhtml+='<div style="text-align:center;padding:4px;"><svg id="bc'+str(i)+'"></svg></div>'
+        rhtml+='<div class="rf">'+mid+'|'+lote_mp+' | #'+str(i+1)+' de '+str(len(items))+'</div></div>'
+    css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos</title>'
+         '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+         '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}'
+         '.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}'
+         '.pbtn{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}'
+         '.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}'
+         '.r{background:white;border:2px solid #1a252f;border-radius:3px;width:370px;page-break-inside:avoid;}'
+         '.rh{background:#1a252f;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}'
+         '.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.5pt;text-align:right;line-height:1.4;}'
+         'table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}'
+         '.l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#1a252f;white-space:nowrap;width:27%;}'
+         '.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}'
+         '.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}'
+         '.blank{height:20px;width:23%;}.firma{height:26px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}'
+         '@media print{body{background:white;}.ph{display:none;}.wrap{padding:0;gap:3px;}.r{width:48%;}@page{size:letter landscape;margin:7mm;}}'
+         '</style></head><body>')
+    return (css+'<div class="ph"><div><h2>Rotulos &mdash; '+prod+' &mdash; '+str(cantidad_kg)+' kg</h2>'
+            '<div style="font-size:8pt;opacity:0.8;">'+op_num+' | '+str(len(items))+' MPs | '+hoy+'</div></div>'
             '<button class="pbtn" onclick="window.print()">Imprimir todos</button></div>'
-            '<div class="wrap">' + rhtml + '</div></body></html>')
+            '<div class="wrap">'+rhtml+'</div>'
+            '<script>window.onload=function(){'+barcodes+'};</script>'
+            '</body></html>')
+
+@app.route('/rotulo-recepcion/<codigo>/<lote>/<float:cantidad>')
+def rotulo_recepcion(codigo, lote, cantidad):
+    from datetime import date; import urllib.parse
+    hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)); mp=c.fetchone()
+    c.execute("SELECT fecha_vencimiento,estanteria,posicion FROM movimientos WHERE material_id=? AND lote=? ORDER BY fecha DESC LIMIT 1", (codigo,lote)); mov=c.fetchone(); conn.close()
+    ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''; pv=mp[3] if mp else ''
+    fv=str(mov[0])[:10] if mov and mov[0] else ''; ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
+    nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
+    h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion</title>'
+       '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+       '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}'
+       '.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;margin-bottom:10px;}'
+       '.pb{background:#27ae60;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}'
+       '.r{background:white;border:3px solid #1a252f;border-radius:5px;max-width:520px;margin:auto;}'
+       '.rh{background:#1a252f;color:white;padding:8px 12px;text-align:center;}'
+       '.lote{background:#fff3cd;border:2px solid #f39c12;padding:10px;text-align:center;margin:10px;}'
+       '.lnum{font-size:20pt;font-weight:bold;color:#c0392b;letter-spacing:2px;}'
+       'table{width:100%;border-collapse:collapse;}td{border:1px solid #ccc;padding:6px 8px;}'
+       '.l{background:#ecf0f1;font-weight:bold;font-size:8.5pt;width:35%;}'
+       '@media print{.ph{display:none;}body{background:white;padding:0;}}'
+       '</style></head><body>')
+    h+=('<div class="ph"><b>Rotulo de Recepcion</b><button class="pb" onclick="window.print()">Imprimir</button></div>'
+        '<div class="r"><div class="rh"><span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:3px;">ROTULO DE INGRESO DE MATERIA PRIMA</span>'
+        '<span style="font-size:7.5pt;opacity:0.8;">Espagiria Laboratorios | PRD-REC-001 | '+hoy+'</span></div>'
+        '<div class="lote"><div style="font-size:9pt;color:#888;margin-bottom:4px;">NUMERO DE LOTE — CODIGO DE BARRAS</div>'
+        '<div class="lnum">'+lote+'</div>'
+        '<svg id="bc" style="margin-top:6px;"></svg>'
+        '<div style="font-size:7pt;color:#888;margin-top:2px;">'+bv+'</div>'
+        '</div><table>'
+        '<tr><td class="l">Codigo MP:</td><td style="font-weight:700;">'+codigo+'</td></tr>'
+        '<tr><td class="l">Nombre INCI:</td><td style="font-size:0.9em;color:#444;">'+ni+'</td></tr>'
+        '<tr><td class="l">Nombre Comercial:</td><td style="font-weight:700;">'+nc+'</td></tr>'
+        '<tr><td class="l">Tipo:</td><td>'+tp+'</td></tr>'
+        '<tr><td class="l">Proveedor:</td><td style="font-weight:700;">'+pv+'</td></tr>'
+        '<tr><td class="l">Cantidad:</td><td style="color:#27ae60;font-weight:700;">'+f"{cantidad:,.0f} g"+'</td></tr>'
+        '<tr><td class="l">Vencimiento:</td><td style="color:#c0392b;font-weight:700;">'+fv+'</td></tr>'
+        '<tr><td class="l">Ubicacion:</td><td>Est. '+ub+'</td></tr>'
+        '<tr><td class="l">N Recepcion:</td><td>'+nr+'</td></tr>'
+        '<tr><td class="l">Recibido por:</td><td style="height:30px;"></td></tr>'
+        '<tr><td class="l">Verificado por:</td><td style="height:30px;"></td></tr>'
+        '</table>'
+        '<div style="background:#ecf0f1;padding:4px 10px;font-size:7.5pt;color:#888;text-align:center;">Ingreso registrado al sistema | '+hoy+'</div>'
+        '</div>'
+        '<script>window.onload=function(){try{JsBarcode("#bc","'+bv+'",{format:"CODE128",width:1.5,height:45,displayValue:false,margin:0});}catch(e){}}</script>'
+        '</body></html>')
+    return h
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
