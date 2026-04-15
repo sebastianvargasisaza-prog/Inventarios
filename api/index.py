@@ -83,6 +83,460 @@ def init_db():
     conn.close()
 
 init_db()
+
+# ─── HUB HHA GROUP ────────────────────────────────────────────
+HUB_HTML = """<\!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HHA Group — Portal Interno</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:50px 20px;}
+.logo-wrap{text-align:center;margin-bottom:52px;}
+.logo-badge{display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);border-radius:18px;padding:18px 44px;margin-bottom:16px;box-shadow:0 8px 32px rgba(99,102,241,0.35);}
+.logo-text{font-size:2.6em;font-weight:900;color:white;letter-spacing:6px;text-transform:uppercase;}
+.logo-sub{color:#64748b;font-size:0.85em;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:22px;max-width:1080px;width:100%;}
+.card{background:#1e293b;border:1px solid #334155;border-radius:18px;padding:34px 28px;text-decoration:none;display:block;position:relative;overflow:hidden;transition:all 0.3s ease;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--c);border-radius:18px 18px 0 0;}
+.card:hover:not(.disabled){transform:translateY(-6px);border-color:var(--c);box-shadow:0 24px 48px rgba(0,0,0,0.5);}
+.card.disabled{opacity:0.45;cursor:not-allowed;pointer-events:none;}
+.card-icon{font-size:2.8em;margin-bottom:18px;display:block;}
+.card-title{font-size:1.35em;font-weight:700;color:white;margin-bottom:5px;}
+.card-co{font-size:0.75em;color:var(--c);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:14px;}
+.card-desc{font-size:0.88em;color:#94a3b8;line-height:1.65;margin-bottom:22px;}
+.badge{display:inline-block;padding:5px 14px;border-radius:20px;font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
+.badge-on{background:rgba(34,197,94,.15);color:#22c55e;}
+.badge-lock{background:rgba(251,146,60,.15);color:#fb923c;}
+.badge-soon{background:rgba(148,163,184,.12);color:#94a3b8;}
+.c-inv{--c:#6366f1;}.c-buy{--c:#f59e0b;}.c-trz{--c:#10b981;}.c-sol{--c:#ec4899;}
+.footer{margin-top:52px;color:#334155;font-size:0.78em;text-align:center;}
+.credit{margin-top:8px;color:#1e3a5f;font-size:0.72em;text-align:center;}
+</style>
+</head>
+<body>
+<div class="logo-wrap">
+  <div class="logo-badge"><div class="logo-text">HHA Group</div></div>
+  <div class="logo-sub">Sistema Operativo Interno</div>
+</div>
+<div class="grid">
+  <a href="/inventarios" class="card c-inv">
+    <span class="card-icon">📦</span>
+    <div class="card-title">Inventarios</div>
+    <div class="card-co">Espagiria Laboratorios</div>
+    <div class="card-desc">Control de stock, recepción por lotes, FEFO, alertas de reabastecimiento y órdenes de compra automáticas.</div>
+    <span class="badge badge-on">● Activo</span>
+  </a>
+  <a href="/compras" class="card c-buy">
+    <span class="card-icon">🛒</span>
+    <div class="card-title">Compras</div>
+    <div class="card-co">HHA Group</div>
+    <div class="card-desc">Gestión de órdenes de compra, proveedores, aprobaciones y seguimiento de pedidos. Acceso restringido.</div>
+    <span class="badge badge-lock">🔒 Acceso restringido</span>
+  </a>
+  <a href="#" class="card c-trz disabled">
+    <span class="card-icon">🔬</span>
+    <div class="card-title">Trazabilidad</div>
+    <div class="card-co">Espagiria Laboratorios</div>
+    <div class="card-desc">Registro de qué lotes de materias primas se usaron en cada producción. Cumplimiento BPM.</div>
+    <span class="badge badge-soon">Próximamente</span>
+  </a>
+  <a href="#" class="card c-sol disabled">
+    <span class="card-icon">📋</span>
+    <div class="card-title">Solicitudes</div>
+    <div class="card-co">HHA Group</div>
+    <div class="card-desc">Solicitudes de compra del equipo. Crea y haz seguimiento de tus pedidos internos.</div>
+    <span class="badge badge-soon">Próximamente</span>
+  </a>
+</div>
+<div class="footer">HHA Group © 2026 · Sistema interno de operaciones</div>
+<div class="credit">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
+</body>
+</html>"""
+
+# ─── LOGIN COMPRAS ────────────────────────────────────────────
+LOGIN_HTML = """<\!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HHA Group — Acceso Compras</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.card{background:#1e293b;border:1px solid #334155;border-radius:20px;padding:48px 40px;width:100%;max-width:420px;}
+.logo{text-align:center;margin-bottom:36px;}
+.logo-badge{display:inline-block;background:linear-gradient(135deg,#f59e0b,#ef4444);border-radius:12px;padding:10px 28px;margin-bottom:14px;}
+.logo-text{font-size:1.5em;font-weight:900;color:white;letter-spacing:4px;}
+.logo-mod{color:#f59e0b;font-weight:700;font-size:1.05em;margin-bottom:4px;}
+.logo-sub{color:#64748b;font-size:0.82em;}
+label{display:block;color:#94a3b8;font-size:0.8em;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;}
+.fg{margin-bottom:20px;}
+input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px 16px;color:white;font-size:1em;outline:none;}
+.btn{width:100%;background:linear-gradient(135deg,#f59e0b,#ef4444);color:white;border:none;border-radius:10px;padding:14px;font-size:1em;font-weight:700;cursor:pointer;margin-top:8px;}
+.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;padding:12px 16px;border-radius:8px;font-size:0.88em;margin-bottom:20px;text-align:center;}
+.back{text-align:center;margin-top:24px;}
+.back a{color:#475569;font-size:0.83em;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-badge"><div class="logo-text">HHA</div></div>
+    <div class="logo-mod">Módulo de Compras</div>
+    <div class="logo-sub">Solo acceso autorizado</div>
+  </div>
+  {error}
+  <form method="POST" action="/login">
+    <div class="fg"><label>Usuario</label><input type="text" name="username" placeholder="Tu usuario" required autofocus></div>
+    <div class="fg"><label>Contraseña</label><input type="password" name="password" placeholder="••••••••" required></div>
+    <button type="submit" class="btn">Ingresar al sistema →</button>
+  </form>
+  <div class="back"><a href="/">← Volver al portal HHA Group</a></div>
+</div>
+</body>
+</html>"""
+
+# ─── MÓDULO COMPRAS ───────────────────────────────────────────
+COMPRAS_HTML = """<\!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Compras — HHA Group</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#FAF8F5;color:#1C1917;min-height:100vh;}
+.topbar{background:#fff;border-bottom:1px solid #E8E4DE;padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-dot{width:10px;height:10px;background:#4A6741;border-radius:50%;}
+.brand-name{font-weight:700;font-size:1em;color:#1C1917;}
+.brand-mod{font-size:0.78em;color:#9C8B7A;margin-left:4px;}
+.topbar-right{display:flex;align-items:center;gap:16px;}
+.user-chip{background:#FAF8F5;border:1px solid #E8E4DE;padding:5px 14px;border-radius:20px;font-size:0.82em;color:#4A6741;font-weight:600;}
+.btn-logout{background:none;border:none;color:#9C8B7A;font-size:0.82em;cursor:pointer;text-decoration:underline;}
+.nav{display:flex;border-bottom:1px solid #E8E4DE;background:#fff;padding:0 32px;overflow-x:auto;}
+.nav-btn{padding:14px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:0.88em;font-weight:500;color:#9C8B7A;white-space:nowrap;transition:all 0.2s;}
+.nav-btn:hover{color:#1C1917;}
+.nav-btn.active{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}
+.page{display:none;padding:28px 32px;max-width:1200px;margin:0 auto;}
+.page.active{display:block;}
+h2{font-size:1.2em;font-weight:700;margin-bottom:4px;}
+.page-sub{color:#9C8B7A;font-size:0.85em;margin-bottom:24px;}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px;}
+.kpi{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:18px 20px;}
+.kpi-label{font-size:0.75em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+.kpi-val{font-size:1.7em;font-weight:700;}
+.kpi-val.green{color:#4A6741;}.kpi-val.gold{color:#B5924A;}.kpi-val.red{color:#B54A4A;}
+.card{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-bottom:16px;}
+.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.btn{background:#4A6741;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-size:0.88em;font-weight:600;cursor:pointer;}
+.btn:hover{opacity:0.85;}
+.btn-gold{background:#B5924A;}
+.btn-ghost{background:none;border:1px solid #E8E4DE;color:#1C1917;}
+.btn-ghost:hover{background:#FAF8F5;}
+.btn-sm{padding:5px 12px;font-size:0.8em;}
+.btn-danger{background:#B54A4A;}
+table{width:100%;border-collapse:collapse;font-size:0.87em;}
+th{background:#FAF8F5;color:#9C8B7A;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;text-align:left;border-bottom:1px solid #E8E4DE;}
+td{padding:11px 12px;border-bottom:1px solid #F0EDE8;}
+tr:hover td{background:#FDFCFB;}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;}
+.badge-pend{background:#FFF3E0;color:#B5924A;}.badge-aprov{background:#E8F5E9;color:#4A6741;}
+.badge-env{background:#E3F2FD;color:#1565C0;}.badge-rec{background:#E8F5E9;color:#2E7D32;}
+.badge-rech{background:#FFEBEE;color:#B54A4A;}.badge-bor{background:#F5F5F5;color:#9C8B7A;}
+label{font-size:0.82em;font-weight:600;display:block;margin-bottom:4px;}
+input,select,textarea{width:100%;padding:9px 12px;border:1px solid #E8E4DE;border-radius:7px;font-size:0.9em;color:#1C1917;background:#fff;outline:none;}
+input:focus,select:focus{border-color:#4A6741;}
+.fg{margin-bottom:14px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.msg-ok{background:#E8F5E9;color:#2E7D32;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}
+.msg-err{background:#FFEBEE;color:#B54A4A;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}
+.empty{text-align:center;color:#9C8B7A;padding:32px;font-size:0.9em;}
+.divider{height:1px;background:#E8E4DE;margin:20px 0;}
+.footer-credit{text-align:center;color:#C5BDB5;font-size:0.75em;padding:24px 0 16px;}
+.footer-credit a{color:#B5924A;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><div class="brand-dot"></div><span class="brand-name">HHA Group <span class="brand-mod">/ Compras</span></span></div>
+  <div class="topbar-right">
+    <span class="user-chip" id="user-label">...</span>
+    <a href="/" style="font-size:0.82em;color:#9C8B7A;text-decoration:none;">Portal</a>
+    <button class="btn-logout" onclick="location.href='/logout'">Cerrar sesión</button>
+  </div>
+</div>
+<div class="nav">
+  <button class="nav-btn active" onclick="goTo('dashboard',this)">Dashboard</button>
+  <button class="nav-btn" onclick="goTo('alertas',this)">Alertas de compra</button>
+  <button class="nav-btn" onclick="goTo('ordenes',this)">Órdenes de compra</button>
+  <button class="nav-btn" onclick="goTo('solicitudes',this)">Solicitudes</button>
+  <button class="nav-btn" onclick="goTo('proveedores',this)">Proveedores</button>
+</div>
+
+<div id="dashboard" class="page active">
+  <h2>Resumen de Compras</h2><p class="page-sub">Estado actual del módulo de compras HHA Group</p>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">MPs bajo mínimo</div><div class="kpi-val red" id="k-alertas">—</div></div>
+    <div class="kpi"><div class="kpi-label">OCs pendientes</div><div class="kpi-val gold" id="k-oc-pend">—</div></div>
+    <div class="kpi"><div class="kpi-label">OCs en tránsito</div><div class="kpi-val" id="k-oc-trans">—</div></div>
+    <div class="kpi"><div class="kpi-label">Solicitudes pendientes</div><div class="kpi-val" id="k-sol-pend">—</div></div>
+    <div class="kpi"><div class="kpi-label">Proveedores activos</div><div class="kpi-val green" id="k-provs">—</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><strong>Órdenes recientes</strong><button class="btn btn-sm" onclick="goTo('ordenes',document.querySelectorAll('.nav-btn')[2])">Ver todas</button></div>
+    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Estado</th><th>Acción</th></tr></thead>
+    <tbody id="dash-oc-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-head"><strong>Solicitudes recientes</strong><button class="btn btn-sm btn-ghost" onclick="goTo('solicitudes',document.querySelectorAll('.nav-btn')[3])">Ver todas</button></div>
+    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th></tr></thead>
+    <tbody id="dash-sol-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div id="alertas" class="page">
+  <h2>Alertas de reabastecimiento</h2><p class="page-sub">Materias primas bajo stock mínimo</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="generarOCAutomatica()">⚡ Generar OCs automáticas</button>
+    <button class="btn btn-ghost" onclick="loadAlertas()">↻ Actualizar</button>
+  </div>
+  <div id="alertas-msg"></div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Código</th><th>Materia Prima</th><th>Proveedor</th><th>Stock mín.</th><th>Stock actual</th><th>Déficit</th><th>Nivel</th></tr></thead>
+    <tbody id="alertas-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div id="ordenes" class="page">
+  <h2>Órdenes de Compra</h2><p class="page-sub">Gestión completa de órdenes</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="showFormOC()">+ Nueva OC</button>
+    <button class="btn btn-ghost" onclick="loadOCs()">↻ Actualizar</button>
+  </div>
+  <div id="form-oc" style="display:none;" class="card">
+    <div class="card-head"><strong>Nueva Orden de Compra</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-oc').style.display='none'">✕</button></div>
+    <div class="grid2">
+      <div class="fg"><label>Proveedor *</label><input type="text" id="oc-prov" placeholder="Nombre del proveedor"></div>
+      <div class="fg"><label>Fecha entrega estimada</label><input type="date" id="oc-fecha-ent"></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="oc-obs" rows="2" placeholder="Condiciones, notas..."></textarea></div>
+    <div class="divider"></div>
+    <strong style="font-size:0.88em;">Items</strong>
+    <div style="margin-top:12px;">
+      <div class="grid3" style="margin-bottom:8px;font-size:0.78em;font-weight:700;color:#9C8B7A;text-transform:uppercase;"><span>Código MP</span><span>Cantidad (g)</span><span>Precio unit. ($)</span></div>
+      <div id="oc-items-list">
+        <div class="grid3 oc-item-row" style="margin-bottom:8px;"><input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addItemOC()">+ Agregar ítem</button>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button class="btn" onclick="crearOC()">Guardar OC</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('form-oc').style.display='none'">Cancelar</button>
+    </div>
+    <div id="oc-msg"></div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Entrega est.</th><th>Estado</th><th>Items</th><th>Acción</th></tr></thead>
+    <tbody id="oc-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div id="solicitudes" class="page">
+  <h2>Solicitudes de Compra</h2><p class="page-sub">Solicitudes del equipo pendientes de aprobación</p>
+  <div style="margin-bottom:20px;"><button class="btn btn-ghost" onclick="loadSolicitudes()">↻ Actualizar</button></div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th><th>Acción</th></tr></thead>
+    <tbody id="sol-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div id="proveedores" class="page">
+  <h2>Proveedores</h2><p class="page-sub">Directorio de proveedores activos</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="showFormProv()">+ Nuevo proveedor</button>
+    <button class="btn btn-ghost" onclick="loadProveedores()">↻ Actualizar</button>
+  </div>
+  <div id="form-prov" style="display:none;" class="card">
+    <div class="card-head"><strong>Nuevo Proveedor</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-prov').style.display='none'">✕</button></div>
+    <div class="grid2">
+      <div class="fg"><label>Nombre *</label><input type="text" id="p-nombre" placeholder="Nombre del proveedor"></div>
+      <div class="fg"><label>Contacto</label><input type="text" id="p-contacto" placeholder="Nombre del contacto"></div>
+      <div class="fg"><label>Email</label><input type="email" id="p-email" placeholder="correo@empresa.com"></div>
+      <div class="fg"><label>Teléfono</label><input type="tel" id="p-tel" placeholder="+57..."></div>
+      <div class="fg"><label>Categoría</label><select id="p-cat"><option>Materias primas</option><option>Material de empaque</option><option>Insumos generales</option><option>Servicios</option></select></div>
+      <div class="fg"><label>Condiciones de pago</label><input type="text" id="p-pago" placeholder="30 días, contado..."></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn" onclick="crearProveedor()">Guardar</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('form-prov').style.display='none'">Cancelar</button>
+    </div>
+    <div id="prov-msg"></div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Nombre</th><th>Contacto</th><th>Email</th><th>Teléfono</th><th>Categoría</th><th>Pago</th></tr></thead>
+    <tbody id="prov-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div class="footer-credit">Desarrollado por <a href="#">Sebastián Vargas Isaza</a> · HHA Group Sistema Operativo Interno · 2026</div>
+
+<script>
+var USUARIO = '{usuario}';
+document.getElementById('user-label').textContent = '👤 ' + USUARIO;
+
+function goTo(id,btn){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  document.getElementById(id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='dashboard') loadDashboard();
+  if(id==='alertas') loadAlertas();
+  if(id==='ordenes') loadOCs();
+  if(id==='solicitudes') loadSolicitudes();
+  if(id==='proveedores') loadProveedores();
+}
+
+function badgeEstado(e){
+  var map={'Borrador':'badge-bor','Pendiente':'badge-pend','Aprobada':'badge-aprov',
+           'Enviada':'badge-env','En tránsito':'badge-env','Recibida':'badge-rec',
+           'Rechazada':'badge-rech','Normal':'badge-bor','Urgente':'badge-pend','Crítico':'badge-rech'};
+  return '<span class="badge '+(map[e]||'badge-bor')+'">'+e+'</span>';
+}
+
+async function loadDashboard(){
+  try{
+    var ra=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});
+    var roc=await fetch('/api/ordenes-compra').then(function(r){return r.json();});
+    var rsol=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
+    var rprov=await fetch('/api/proveedores-compras').then(function(r){return r.json();});
+    document.getElementById('k-alertas').textContent=(ra.alertas||[]).length;
+    var ocs=roc.ordenes||[];
+    document.getElementById('k-oc-pend').textContent=ocs.filter(function(o){return o.estado==='Pendiente';}).length;
+    document.getElementById('k-oc-trans').textContent=ocs.filter(function(o){return o.estado==='En tránsito';}).length;
+    var sols=rsol.solicitudes||[];
+    document.getElementById('k-sol-pend').textContent=sols.filter(function(s){return s.estado==='Pendiente';}).length;
+    document.getElementById('k-provs').textContent=(rprov.proveedores||[]).length;
+    var ocR=ocs.slice(0,5);
+    document.getElementById('dash-oc-body').innerHTML=ocR.length?ocR.map(function(o){
+      return '<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado</button></td></tr>';
+    }).join(''):'<tr><td colspan="5" class="empty">Sin órdenes</td></tr>';
+    var solR=sols.slice(0,5);
+    document.getElementById('dash-sol-body').innerHTML=solR.length?solR.map(function(s){
+      return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td></tr>';
+    }).join(''):'<tr><td colspan="5" class="empty">Sin solicitudes</td></tr>';
+  }catch(e){console.error(e);}
+}
+
+async function loadAlertas(){
+  try{
+    var d=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});
+    var tb=document.getElementById('alertas-body');
+    if(\!d.alertas||\!d.alertas.length){tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>';return;}
+    tb.innerHTML=d.alertas.map(function(a){
+      var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
+      var nivel=pct<25?'Crítico':pct<50?'Urgente':'Bajo';
+      var badge=pct<25?'badge-rech':pct<50?'badge-pend':'badge-bor';
+      return '<tr><td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td><td style="font-weight:600;">'+a.nombre+'</td><td style="color:#9C8B7A;">'+a.proveedor+'</td><td style="text-align:right;">'+a.stock_minimo.toLocaleString()+' g</td><td style="text-align:right;color:#B54A4A;font-weight:700;">'+a.stock_actual.toLocaleString()+' g</td><td style="text-align:right;font-weight:700;">'+a.deficit.toLocaleString()+' g</td><td><span class="badge '+badge+'">'+nivel+' ('+pct+'%)</span></td></tr>';
+    }).join('');
+  }catch(e){}
+}
+
+async function generarOCAutomatica(){
+  document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">Generando OCs...</div>';
+  try{
+    var r=await fetch('/api/generar-oc-automatica',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">'+d.message+'</div>';
+    loadAlertas();loadOCs();
+  }catch(e){document.getElementById('alertas-msg').innerHTML='<div class="msg-err">Error al generar OCs</div>';}
+}
+
+async function loadOCs(){
+  try{
+    var d=await fetch('/api/ordenes-compra').then(function(r){return r.json();});
+    var tb=document.getElementById('oc-body');
+    if(\!d.ordenes||\!d.ordenes.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>';return;}
+    tb.innerHTML=d.ordenes.map(function(o){
+      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado ↓</button></td></tr>';
+    }).join('');
+  }catch(e){}
+}
+
+function showFormOC(){var f=document.getElementById('form-oc');f.style.display=f.style.display==='none'?'block':'none';}
+function addItemOC(){
+  var div=document.createElement('div');div.className='grid3 oc-item-row';div.style.marginBottom='8px';
+  div.innerHTML='<input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01">';
+  document.getElementById('oc-items-list').appendChild(div);
+}
+async function crearOC(){
+  var items=[];
+  document.querySelectorAll('.oc-item-row').forEach(function(row){
+    var cod=row.querySelector('.oc-cod').value.trim();
+    var cant=parseFloat(row.querySelector('.oc-cant').value)||0;
+    var precio=parseFloat(row.querySelector('.oc-precio').value)||0;
+    if(cod&&cant>0) items.push({codigo_mp:cod,cantidad_g:cant,precio_unitario:precio});
+  });
+  var data={proveedor:document.getElementById('oc-prov').value,fecha_entrega_est:document.getElementById('oc-fecha-ent').value,observaciones:document.getElementById('oc-obs').value,items:items,creado_por:USUARIO};
+  try{
+    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok){document.getElementById('oc-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>';loadOCs();}
+    else{document.getElementById('oc-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>';}
+  }catch(e){document.getElementById('oc-msg').innerHTML='<div class="msg-err">Error</div>';}
+}
+async function cambiarEstadoOC(numero){
+  var estados=['Borrador','Pendiente','Aprobada','Enviada','En tránsito','Recibida'];
+  var nuevo=prompt('Estado de '+numero+':\n'+estados.join(', '));
+  if(\!nuevo||\!estados.includes(nuevo)) return;
+  await fetch('/api/ordenes-compra/'+numero,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
+  loadOCs();loadDashboard();
+}
+
+async function loadSolicitudes(){
+  try{
+    var d=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
+    var tb=document.getElementById('sol-body');
+    if(\!d.solicitudes||\!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
+    tb.innerHTML=d.solicitudes.map(function(s){
+      var acc=s.estado==='Pendiente'?'<button class="btn btn-sm" onclick="accionSol(\''+s.numero+'\',\'Aprobada\')">Aprobar</button> <button class="btn btn-sm btn-danger" onclick="accionSol(\''+s.numero+'\',\'Rechazada\')">Rechazar</button>':badgeEstado(s.estado);
+      return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+acc+'</td></tr>';
+    }).join('');
+  }catch(e){}
+}
+async function accionSol(numero,estado){
+  await fetch('/api/solicitudes-compra/'+numero,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:estado,aprobado_por:USUARIO})});
+  loadSolicitudes();loadDashboard();
+}
+
+async function loadProveedores(){
+  try{
+    var d=await fetch('/api/proveedores-compras').then(function(r){return r.json();});
+    var tb=document.getElementById('prov-body');
+    if(\!d.proveedores||\!d.proveedores.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores</td></tr>';return;}
+    tb.innerHTML=d.proveedores.map(function(p){
+      return '<tr><td style="font-weight:600;">'+p.nombre+'</td><td>'+(p.contacto||'—')+'</td><td>'+(p.email||'—')+'</td><td>'+(p.telefono||'—')+'</td><td>'+(p.categoria||'—')+'</td><td>'+(p.condiciones_pago||'—')+'</td></tr>';
+    }).join('');
+  }catch(e){}
+}
+function showFormProv(){var f=document.getElementById('form-prov');f.style.display=f.style.display==='none'?'block':'none';}
+async function crearProveedor(){
+  var data={nombre:document.getElementById('p-nombre').value,contacto:document.getElementById('p-contacto').value,email:document.getElementById('p-email').value,telefono:document.getElementById('p-tel').value,categoria:document.getElementById('p-cat').value,condiciones_pago:document.getElementById('p-pago').value};
+  if(\!data.nombre){document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>';return;}
+  try{
+    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok){document.getElementById('prov-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>';loadProveedores();document.getElementById('form-prov').style.display='none';}
+    else{document.getElementById('prov-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>';}
+  }catch(e){document.getElementById('prov-msg').innerHTML='<div class="msg-err">Error</div>';}
+}
+
+window.onload=function(){loadDashboard();};
+</script>
+</body>
+</html>"""
+
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
