@@ -59,6 +59,31 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   producto_nombre TEXT, material_id TEXT,
                   material_nombre TEXT, porcentaje REAL)""")
+    # ── MÓDULO COMPRAS ────────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS proveedores
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  nombre TEXT UNIQUE, contacto TEXT, email TEXT, telefono TEXT,
+                  categoria TEXT, condiciones_pago TEXT, activo INTEGER DEFAULT 1,
+                  fecha_creacion TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ordenes_compra
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  numero_oc TEXT UNIQUE, fecha TEXT, estado TEXT DEFAULT 'Borrador',
+                  proveedor TEXT, valor_total REAL DEFAULT 0,
+                  observaciones TEXT, creado_por TEXT, fecha_entrega_est TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ordenes_compra_items
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  numero_oc TEXT, codigo_mp TEXT, nombre_mp TEXT,
+                  cantidad_g REAL, precio_unitario REAL DEFAULT 0, subtotal REAL DEFAULT 0)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS solicitudes_compra
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  numero TEXT UNIQUE, fecha TEXT, estado TEXT DEFAULT 'Pendiente',
+                  solicitante TEXT, urgencia TEXT DEFAULT 'Normal',
+                  observaciones TEXT, aprobado_por TEXT, fecha_aprobacion TEXT,
+                  numero_oc TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS solicitudes_compra_items
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  numero TEXT, codigo_mp TEXT, nombre_mp TEXT,
+                  cantidad_g REAL, unidad TEXT DEFAULT 'g', justificacion TEXT)""")
     conn.commit()
     conn.close()
 
@@ -191,6 +216,7 @@ body {
 </div>
 
 <div class="footer">HHA Group &copy; 2026 &middot; Sistema interno de operaciones</div>
+<div style="text-align:center;color:#1e3a5f;font-size:0.72em;margin-top:10px;opacity:0.5;">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
 </body>
 </html>"""
 
@@ -295,6 +321,413 @@ input:focus {{ border-color:#f59e0b; }}
   </form>
   <div class="back"><a href="/">← Volver al portal HHA Group</a></div>
 </div>
+</body>
+</html>"""
+
+# ─── MÓDULO COMPRAS ────────────────────────────────────────────────────────────
+COMPRAS_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compras — HHA Group</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:#FAF8F5;color:#1C1917;min-height:100vh;}}
+.topbar{{background:#fff;border-bottom:1px solid #E8E4DE;padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;}}
+.brand{{display:flex;align-items:center;gap:12px;}}
+.brand-dot{{width:10px;height:10px;background:#4A6741;border-radius:50%;}}
+.brand-name{{font-weight:700;font-size:1em;color:#1C1917;letter-spacing:0.5px;}}
+.brand-mod{{font-size:0.78em;color:#9C8B7A;margin-left:4px;}}
+.topbar-right{{display:flex;align-items:center;gap:16px;}}
+.user-chip{{background:#FAF8F5;border:1px solid #E8E4DE;padding:5px 14px;border-radius:20px;font-size:0.82em;color:#4A6741;font-weight:600;}}
+.btn-logout{{background:none;border:none;color:#9C8B7A;font-size:0.82em;cursor:pointer;text-decoration:underline;}}
+.btn-logout:hover{{color:#1C1917;}}
+.nav{{display:flex;gap:0;border-bottom:1px solid #E8E4DE;background:#fff;padding:0 32px;overflow-x:auto;}}
+.nav-btn{{padding:14px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:0.88em;font-weight:500;color:#9C8B7A;white-space:nowrap;transition:all 0.2s;}}
+.nav-btn:hover{{color:#1C1917;}}
+.nav-btn.active{{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}}
+.page{{display:none;padding:28px 32px;max-width:1200px;margin:0 auto;}}
+.page.active{{display:block;}}
+h2{{font-size:1.2em;font-weight:700;color:#1C1917;margin-bottom:4px;}}
+.page-sub{{color:#9C8B7A;font-size:0.85em;margin-bottom:24px;}}
+.kpi-row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px;}}
+.kpi{{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:18px 20px;}}
+.kpi-label{{font-size:0.75em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}}
+.kpi-val{{font-size:1.7em;font-weight:700;color:#1C1917;}}
+.kpi-val.green{{color:#4A6741;}}
+.kpi-val.gold{{color:#B5924A;}}
+.kpi-val.red{{color:#B54A4A;}}
+.card{{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-bottom:16px;}}
+.card-head{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}}
+.btn{{background:#4A6741;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-size:0.88em;font-weight:600;cursor:pointer;transition:opacity 0.2s;}}
+.btn:hover{{opacity:0.85;}}
+.btn-gold{{background:#B5924A;}}
+.btn-ghost{{background:none;border:1px solid #E8E4DE;color:#1C1917;}}
+.btn-ghost:hover{{background:#FAF8F5;}}
+.btn-sm{{padding:5px 12px;font-size:0.8em;}}
+.btn-danger{{background:#B54A4A;}}
+table{{width:100%;border-collapse:collapse;font-size:0.87em;}}
+th{{background:#FAF8F5;color:#9C8B7A;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;text-align:left;border-bottom:1px solid #E8E4DE;}}
+td{{padding:11px 12px;border-bottom:1px solid #F0EDE8;color:#1C1917;}}
+tr:hover td{{background:#FDFCFB;}}
+.badge{{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;}}
+.badge-pend{{background:#FFF3E0;color:#B5924A;}}
+.badge-aprov{{background:#E8F5E9;color:#4A6741;}}
+.badge-env{{background:#E3F2FD;color:#1565C0;}}
+.badge-rec{{background:#E8F5E9;color:#2E7D32;}}
+.badge-rech{{background:#FFEBEE;color:#B54A4A;}}
+.badge-bor{{background:#F5F5F5;color:#9C8B7A;}}
+label{{font-size:0.82em;font-weight:600;color:#1C1917;display:block;margin-bottom:4px;}}
+input,select,textarea{{width:100%;padding:9px 12px;border:1px solid #E8E4DE;border-radius:7px;font-size:0.9em;color:#1C1917;background:#fff;outline:none;transition:border-color 0.2s;}}
+input:focus,select:focus,textarea:focus{{border-color:#4A6741;}}
+.fg{{margin-bottom:14px;}}
+.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
+.grid3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}}
+.msg-ok{{background:#E8F5E9;color:#2E7D32;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}}
+.msg-err{{background:#FFEBEE;color:#B54A4A;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}}
+.alert-row{{background:#FFFBF0;border-left:3px solid #B5924A;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}}
+.alert-row.critico{{background:#FFF5F5;border-left-color:#B54A4A;}}
+.empty{{text-align:center;color:#9C8B7A;padding:32px;font-size:0.9em;}}
+.divider{{height:1px;background:#E8E4DE;margin:20px 0;}}
+.footer-credit{{text-align:center;color:#C5BDB5;font-size:0.75em;padding:24px 0 16px;}}
+.footer-credit a{{color:#B5924A;text-decoration:none;}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-dot"></div>
+    <span class="brand-name">HHA Group <span class="brand-mod">/ Compras</span></span>
+  </div>
+  <div class="topbar-right">
+    <span class="user-chip" id="user-label">...</span>
+    <a href="/" style="font-size:0.82em;color:#9C8B7A;text-decoration:none;">Portal</a>
+    <button class="btn-logout" onclick="location.href='/logout'">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="nav">
+  <button class="nav-btn active" onclick="goTo('dashboard',this)">Dashboard</button>
+  <button class="nav-btn" onclick="goTo('alertas',this)">Alertas de compra</button>
+  <button class="nav-btn" onclick="goTo('ordenes',this)">Órdenes de compra</button>
+  <button class="nav-btn" onclick="goTo('solicitudes',this)">Solicitudes</button>
+  <button class="nav-btn" onclick="goTo('proveedores',this)">Proveedores</button>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="page active">
+  <h2>Resumen de Compras</h2>
+  <p class="page-sub">Estado actual del módulo de compras HHA Group</p>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">MPs bajo mínimo</div><div class="kpi-val red" id="k-alertas">—</div></div>
+    <div class="kpi"><div class="kpi-label">OCs pendientes</div><div class="kpi-val gold" id="k-oc-pend">—</div></div>
+    <div class="kpi"><div class="kpi-label">OCs en tránsito</div><div class="kpi-val" id="k-oc-trans">—</div></div>
+    <div class="kpi"><div class="kpi-label">Solicitudes pendientes</div><div class="kpi-val" id="k-sol-pend">—</div></div>
+    <div class="kpi"><div class="kpi-label">Proveedores activos</div><div class="kpi-val green" id="k-provs">—</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><strong>Órdenes de compra recientes</strong><button class="btn btn-sm" onclick="goTo('ordenes',document.querySelectorAll('.nav-btn')[2])">Ver todas</button></div>
+    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Estado</th><th>Acción</th></tr></thead>
+    <tbody id="dash-oc-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-head"><strong>Solicitudes recientes</strong><button class="btn btn-sm btn-ghost" onclick="goTo('solicitudes',document.querySelectorAll('.nav-btn')[3])">Ver todas</button></div>
+    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th></tr></thead>
+    <tbody id="dash-sol-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<!-- ALERTAS -->
+<div id="alertas" class="page">
+  <h2>Alertas de reabastecimiento</h2>
+  <p class="page-sub">Materias primas bajo stock mínimo que requieren compra</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="generarOCAutomatica()">⚡ Generar OCs automáticas por proveedor</button>
+    <button class="btn btn-ghost" onclick="loadAlertas()">↻ Actualizar</button>
+  </div>
+  <div id="alertas-msg"></div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Código</th><th>Materia Prima</th><th>Proveedor</th><th>Stock mínimo</th><th>Stock actual</th><th>Déficit</th><th>Criticidad</th></tr></thead>
+    <tbody id="alertas-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<!-- ÓRDENES DE COMPRA -->
+<div id="ordenes" class="page">
+  <h2>Órdenes de Compra</h2>
+  <p class="page-sub">Gestión completa de órdenes de compra</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="showFormOC()">+ Nueva OC</button>
+    <button class="btn btn-ghost" onclick="loadOCs()">↻ Actualizar</button>
+  </div>
+
+  <div id="form-oc" style="display:none;" class="card">
+    <div class="card-head"><strong>Nueva Orden de Compra</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-oc').style.display='none'">✕ Cerrar</button></div>
+    <div class="grid2">
+      <div class="fg"><label>Proveedor</label><input type="text" id="oc-prov" placeholder="Nombre del proveedor"></div>
+      <div class="fg"><label>Fecha entrega estimada</label><input type="date" id="oc-fecha-ent"></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="oc-obs" rows="2" placeholder="Condiciones, referencias, notas..."></textarea></div>
+    <div class="divider"></div>
+    <strong style="font-size:0.88em;">Items de la orden</strong>
+    <div id="oc-items-wrap" style="margin-top:12px;">
+      <div class="grid3" style="margin-bottom:8px;font-size:0.78em;font-weight:700;color:#9C8B7A;text-transform:uppercase;">
+        <span>Código MP</span><span>Cantidad (g)</span><span>Precio unit. ($)</span>
+      </div>
+      <div id="oc-items-list">
+        <div class="grid3 oc-item-row" style="margin-bottom:8px;">
+          <input type="text" class="oc-cod" placeholder="MP00001">
+          <input type="number" class="oc-cant" placeholder="0" step="0.01">
+          <input type="number" class="oc-precio" placeholder="0" step="0.01">
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addItemOC()" style="margin-top:4px;">+ Agregar ítem</button>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button class="btn" onclick="crearOC()">Guardar OC</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('form-oc').style.display='none'">Cancelar</button>
+    </div>
+    <div id="oc-msg"></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Entrega est.</th><th>Estado</th><th>Items</th><th>Acción</th></tr></thead>
+    <tbody id="oc-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<!-- SOLICITUDES -->
+<div id="solicitudes" class="page">
+  <h2>Solicitudes de Compra</h2>
+  <p class="page-sub">Solicitudes del equipo pendientes de aprobación</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn btn-ghost" onclick="loadSolicitudes()">↻ Actualizar</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th><th>Acción</th></tr></thead>
+    <tbody id="sol-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<!-- PROVEEDORES -->
+<div id="proveedores" class="page">
+  <h2>Proveedores</h2>
+  <p class="page-sub">Directorio de proveedores activos</p>
+  <div style="display:flex;gap:10px;margin-bottom:20px;">
+    <button class="btn" onclick="showFormProv()">+ Nuevo proveedor</button>
+    <button class="btn btn-ghost" onclick="loadProveedores()">↻ Actualizar</button>
+  </div>
+
+  <div id="form-prov" style="display:none;" class="card">
+    <div class="card-head"><strong>Nuevo Proveedor</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-prov').style.display='none'">✕</button></div>
+    <div class="grid2">
+      <div class="fg"><label>Nombre empresa *</label><input type="text" id="p-nombre" placeholder="Nombre del proveedor"></div>
+      <div class="fg"><label>Contacto</label><input type="text" id="p-contacto" placeholder="Nombre del contacto"></div>
+      <div class="fg"><label>Email</label><input type="email" id="p-email" placeholder="correo@empresa.com"></div>
+      <div class="fg"><label>Teléfono</label><input type="tel" id="p-tel" placeholder="+57..."></div>
+      <div class="fg"><label>Categoría</label>
+        <select id="p-cat"><option>Materias primas</option><option>Material de empaque</option><option>Insumos generales</option><option>Servicios</option></select>
+      </div>
+      <div class="fg"><label>Condiciones de pago</label><input type="text" id="p-pago" placeholder="Ej: 30 días, contado..."></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn" onclick="crearProveedor()">Guardar proveedor</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('form-prov').style.display='none'">Cancelar</button>
+    </div>
+    <div id="prov-msg"></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table><thead><tr><th>Nombre</th><th>Contacto</th><th>Email</th><th>Teléfono</th><th>Categoría</th><th>Pago</th></tr></thead>
+    <tbody id="prov-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div class="footer-credit">
+  Desarrollado por <a href="#">Sebastián Vargas Isaza</a> · HHA Group Sistema Operativo Interno · 2026
+</div>
+
+<script>
+var USUARIO = '{usuario}';
+document.getElementById('user-label').textContent = '👤 ' + USUARIO;
+
+function goTo(id, btn) {{
+  document.querySelectorAll('.page').forEach(function(p){{p.classList.remove('active');}});
+  document.querySelectorAll('.nav-btn').forEach(function(b){{b.classList.remove('active');}});
+  document.getElementById(id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='dashboard') loadDashboard();
+  if(id==='alertas') loadAlertas();
+  if(id==='ordenes') loadOCs();
+  if(id==='solicitudes') loadSolicitudes();
+  if(id==='proveedores') loadProveedores();
+}}
+
+function badgeEstado(e) {{
+  var map = {{'Borrador':'badge-bor','Pendiente':'badge-pend','Aprobada':'badge-aprov',
+              'Enviada':'badge-env','En tránsito':'badge-env','Recibida':'badge-rec',
+              'Rechazada':'badge-rech','Normal':'badge-bor','Urgente':'badge-pend','Crítico':'badge-rech'}};
+  return '<span class="badge '+(map[e]||'badge-bor')+'">'+e+'</span>';
+}}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {{
+  try {{
+    var [ra, roc, rsol, rprov] = await Promise.all([
+      fetch('/api/alertas-reabastecimiento').then(r=>r.json()),
+      fetch('/api/ordenes-compra').then(r=>r.json()),
+      fetch('/api/solicitudes-compra').then(r=>r.json()),
+      fetch('/api/proveedores').then(r=>r.json())
+    ]);
+    document.getElementById('k-alertas').textContent = (ra.alertas||[]).length;
+    var ocs = roc.ordenes||[];
+    document.getElementById('k-oc-pend').textContent = ocs.filter(o=>o.estado==='Pendiente').length;
+    document.getElementById('k-oc-trans').textContent = ocs.filter(o=>o.estado==='En tránsito').length;
+    var sols = rsol.solicitudes||[];
+    document.getElementById('k-sol-pend').textContent = sols.filter(s=>s.estado==='Pendiente').length;
+    document.getElementById('k-provs').textContent = (rprov.proveedores||[]).length;
+
+    var ocRecent = ocs.slice(0,5);
+    document.getElementById('dash-oc-body').innerHTML = ocRecent.length ?
+      ocRecent.map(o=>'<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado</button></td></tr>').join('') :
+      '<tr><td colspan="5" class="empty">Sin órdenes</td></tr>';
+
+    var solRecent = sols.slice(0,5);
+    document.getElementById('dash-sol-body').innerHTML = solRecent.length ?
+      solRecent.map(s=>'<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td></tr>').join('') :
+      '<tr><td colspan="5" class="empty">Sin solicitudes</td></tr>';
+  }} catch(e) {{ console.error(e); }}
+}}
+
+// ── ALERTAS ───────────────────────────────────────────────────────────────────
+async function loadAlertas() {{
+  try {{
+    var d = await fetch('/api/alertas-reabastecimiento').then(r=>r.json());
+    var alertas = d.alertas||[];
+    var tb = document.getElementById('alertas-body');
+    if(!alertas.length) {{ tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>'; return; }}
+    tb.innerHTML = alertas.map(function(a) {{
+      var pct = a.stock_minimo>0 ? Math.round((a.stock_actual/a.stock_minimo)*100) : 0;
+      var nivel = pct<25?'Crítico':pct<50?'Urgente':'Bajo';
+      var badge = pct<25?'badge-rech':pct<50?'badge-pend':'badge-bor';
+      return '<tr><td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td><td style="font-weight:600;">'+a.nombre+'</td><td style="color:#9C8B7A;">'+a.proveedor+'</td><td style="text-align:right;">'+a.stock_minimo.toLocaleString()+' g</td><td style="text-align:right;color:#B54A4A;font-weight:700;">'+a.stock_actual.toLocaleString()+' g</td><td style="text-align:right;font-weight:700;">'+a.deficit.toLocaleString()+' g</td><td><span class="badge '+badge+'">'+nivel+' ('+pct+'%)</span></td></tr>';
+    }}).join('');
+  }} catch(e) {{}}
+}}
+
+async function generarOCAutomatica() {{
+  document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">Generando OCs automáticas...</div>';
+  try {{
+    var r = await fetch('/api/generar-oc-automatica',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:'{{}}'}});
+    var d = await r.json();
+    document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">'+d.message+'</div>';
+    loadAlertas(); loadOCs();
+  }} catch(e) {{ document.getElementById('alertas-msg').innerHTML='<div class="msg-err">Error al generar OCs</div>'; }}
+}}
+
+// ── ÓRDENES DE COMPRA ─────────────────────────────────────────────────────────
+async function loadOCs() {{
+  try {{
+    var d = await fetch('/api/ordenes-compra').then(r=>r.json());
+    var ocs = d.ordenes||[];
+    var tb = document.getElementById('oc-body');
+    if(!ocs.length) {{ tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>'; return; }}
+    tb.innerHTML = ocs.map(function(o) {{
+      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado ↓</button></td></tr>';
+    }}).join('');
+  }} catch(e) {{}}
+}}
+
+function showFormOC() {{
+  var f = document.getElementById('form-oc');
+  f.style.display = f.style.display==='none'?'block':'none';
+}}
+function addItemOC() {{
+  var div = document.createElement('div');
+  div.className = 'grid3 oc-item-row';
+  div.style.marginBottom = '8px';
+  div.innerHTML = '<input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01">';
+  document.getElementById('oc-items-list').appendChild(div);
+}}
+async function crearOC() {{
+  var items = [];
+  document.querySelectorAll('.oc-item-row').forEach(function(row) {{
+    var cod = row.querySelector('.oc-cod').value.trim();
+    var cant = parseFloat(row.querySelector('.oc-cant').value)||0;
+    var precio = parseFloat(row.querySelector('.oc-precio').value)||0;
+    if(cod && cant>0) items.push({{codigo_mp:cod,cantidad_g:cant,precio_unitario:precio}});
+  }});
+  var data = {{proveedor:document.getElementById('oc-prov').value,fecha_entrega_est:document.getElementById('oc-fecha-ent').value,observaciones:document.getElementById('oc-obs').value,items:items,creado_por:USUARIO}};
+  try {{
+    var r = await fetch('/api/ordenes-compra',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(data)}});
+    var res = await r.json();
+    if(r.ok) {{ document.getElementById('oc-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>'; loadOCs(); }}
+    else {{ document.getElementById('oc-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>'; }}
+  }} catch(e) {{ document.getElementById('oc-msg').innerHTML='<div class="msg-err">Error</div>'; }}
+}}
+async function cambiarEstadoOC(numero) {{
+  var estados = ['Borrador','Pendiente','Aprobada','Enviada','En tránsito','Recibida'];
+  var nuevo = prompt('Cambiar estado de '+numero+' a:\n'+estados.join(', '));
+  if(!nuevo || !estados.includes(nuevo)) return;
+  try {{
+    await fetch('/api/ordenes-compra/'+numero,{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{estado:nuevo}})}});
+    loadOCs(); loadDashboard();
+  }} catch(e) {{}}
+}}
+
+// ── SOLICITUDES ───────────────────────────────────────────────────────────────
+async function loadSolicitudes() {{
+  try {{
+    var d = await fetch('/api/solicitudes-compra').then(r=>r.json());
+    var sols = d.solicitudes||[];
+    var tb = document.getElementById('sol-body');
+    if(!sols.length) {{ tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes pendientes</td></tr>'; return; }}
+    tb.innerHTML = sols.map(function(s) {{
+      var acciones = s.estado==='Pendiente' ?
+        '<button class="btn btn-sm" onclick="accionSol(\''+s.numero+'\',\'Aprobada\')">Aprobar</button> <button class="btn btn-sm btn-danger" onclick="accionSol(\''+s.numero+'\',\'Rechazada\')">Rechazar</button>' :
+        badgeEstado(s.estado);
+      return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+acciones+'</td></tr>';
+    }}).join('');
+  }} catch(e) {{}}
+}}
+async function accionSol(numero, estado) {{
+  try {{
+    await fetch('/api/solicitudes-compra/'+numero,{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{estado:estado,aprobado_por:USUARIO}})}});
+    loadSolicitudes(); loadDashboard();
+  }} catch(e) {{}}
+}}
+
+// ── PROVEEDORES ───────────────────────────────────────────────────────────────
+async function loadProveedores() {{
+  try {{
+    var d = await fetch('/api/proveedores').then(r=>r.json());
+    var provs = d.proveedores||[];
+    var tb = document.getElementById('prov-body');
+    if(!provs.length) {{ tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores registrados</td></tr>'; return; }}
+    tb.innerHTML = provs.map(function(p) {{
+      return '<tr><td style="font-weight:600;">'+p.nombre+'</td><td>'+(p.contacto||'—')+'</td><td>'+(p.email||'—')+'</td><td>'+(p.telefono||'—')+'</td><td>'+(p.categoria||'—')+'</td><td>'+(p.condiciones_pago||'—')+'</td></tr>';
+    }}).join('');
+  }} catch(e) {{}}
+}}
+function showFormProv() {{
+  var f = document.getElementById('form-prov');
+  f.style.display = f.style.display==='none'?'block':'none';
+}}
+async function crearProveedor() {{
+  var data = {{nombre:document.getElementById('p-nombre').value,contacto:document.getElementById('p-contacto').value,email:document.getElementById('p-email').value,telefono:document.getElementById('p-tel').value,categoria:document.getElementById('p-cat').value,condiciones_pago:document.getElementById('p-pago').value}};
+  if(!data.nombre) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>'; return; }}
+  try {{
+    var r = await fetch('/api/proveedores',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(data)}});
+    var res = await r.json();
+    if(r.ok) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>'; loadProveedores(); document.getElementById('form-prov').style.display='none'; }}
+    else {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>'; }}
+  }} catch(e) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">Error</div>'; }}
+}}
+
+window.onload = function() {{ loadDashboard(); }};
+</script>
 </body>
 </html>"""
 
@@ -1216,8 +1649,112 @@ def logout():
 def compras():
     if 'compras_user' not in session:
         return redirect('/login')
-    # Módulo de compras — por construir, por ahora redirige al dashboard con tab compras
-    return redirect('/inventarios#tab-compras')
+    usuario = session.get('compras_user', '').capitalize()
+    html = COMPRAS_HTML.replace('{usuario}', usuario)
+    return Response(html, mimetype='text/html')
+
+# ── API ÓRDENES DE COMPRA ──────────────────────────────────────────────────────
+@app.route('/api/ordenes-compra', methods=['GET','POST'])
+def handle_ordenes_compra():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        if not d.get('proveedor'):
+            conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
+        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
+        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est) VALUES (?,?,?,?,?,?,?)",
+                  (numero_oc, datetime.now().isoformat(), 'Pendiente',
+                   d['proveedor'], d.get('observaciones',''),
+                   d.get('creado_por',''), d.get('fecha_entrega_est','')))
+        for it in (d.get('items') or []):
+            subtotal = round((it.get('cantidad_g',0)) * (it.get('precio_unitario',0)), 2)
+            c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
+                      (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                       it.get('cantidad_g',0), it.get('precio_unitario',0), subtotal))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'OC {numero_oc} creada exitosamente', 'numero_oc': numero_oc}), 201
+    c.execute("""SELECT o.numero_oc, o.fecha, o.estado, o.proveedor,
+                        o.fecha_entrega_est, o.observaciones, o.creado_por,
+                        COUNT(i.id) as num_items
+                 FROM ordenes_compra o
+                 LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc
+                 GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 100""")
+    cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones','creado_por','num_items']
+    ordenes = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'ordenes': ordenes})
+
+@app.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT'])
+def handle_oc(numero_oc):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'PUT':
+        d = request.json
+        if d.get('estado'):
+            c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'OC {numero_oc} actualizada'})
+    c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    oc = c.fetchone()
+    c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    items = c.fetchall()
+    conn.close()
+    if not oc: return jsonify({'error': 'OC no encontrada'}), 404
+    return jsonify({'oc': oc, 'items': items})
+
+# ── API PROVEEDORES ────────────────────────────────────────────────────────────
+@app.route('/api/proveedores', methods=['GET','POST'])
+def handle_proveedores():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        if not d.get('nombre'):
+            conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
+        try:
+            c.execute("INSERT INTO proveedores (nombre,contacto,email,telefono,categoria,condiciones_pago,fecha_creacion) VALUES (?,?,?,?,?,?,?)",
+                      (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
+                       d.get('categoria',''),d.get('condiciones_pago',''),datetime.now().isoformat()))
+            conn.commit(); conn.close()
+            return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
+        except Exception as e:
+            conn.close(); return jsonify({'error': str(e)}), 400
+    c.execute("SELECT nombre,contacto,email,telefono,categoria,condiciones_pago FROM proveedores WHERE activo=1 ORDER BY nombre")
+    cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago']
+    provs = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'proveedores': provs})
+
+# ── API SOLICITUDES DE COMPRA ──────────────────────────────────────────────────
+@app.route('/api/solicitudes-compra', methods=['GET','POST'])
+def handle_solicitudes_compra():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO solicitudes_compra (numero,fecha,estado,solicitante,urgencia,observaciones) VALUES (?,?,?,?,?,?)",
+                  (numero, datetime.now().isoformat(), 'Pendiente',
+                   d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones','')))
+        for it in (d.get('items') or []):
+            c.execute("INSERT INTO solicitudes_compra_items (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion) VALUES (?,?,?,?,?,?)",
+                      (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                       it.get('cantidad_g',0), it.get('unidad','g'), it.get('justificacion','')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+    c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,aprobado_por FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
+    cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','aprobado_por']
+    sols = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'solicitudes': sols})
+
+@app.route('/api/solicitudes-compra/<numero>', methods=['PUT'])
+def update_solicitud_compra(numero):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    d = request.json
+    c.execute("UPDATE solicitudes_compra SET estado=?,aprobado_por=?,fecha_aprobacion=? WHERE numero=?",
+              (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Solicitud {numero} actualizada'})
 
 @app.route('/api/health')
 def health():
