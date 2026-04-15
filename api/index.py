@@ -962,7 +962,7 @@ function descargarCSV(nombre,cols,rows){
       return s;
     }).join(sep));
   });
-  var csv=lines.join('\n');
+  var csv=lines.join(String.fromCharCode(10));
   var blob=new Blob([csv],{type:'text/csv'});
   var url=URL.createObjectURL(blob);
   var a=document.createElement('a');
