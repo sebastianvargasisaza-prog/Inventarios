@@ -690,13 +690,6 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
-@app.route('/api/stock')
-def get_stock():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
-    rows = c.fetchall(); conn.close()
-    return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
-
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
