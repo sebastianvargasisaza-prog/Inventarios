@@ -9,11 +9,12 @@ import pandas as pd
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
 COMPRAS_USERS = {
-    'sebastian': os.environ.get('PASS_SEBASTIAN', 'hha2026'),
-    'alejandro': os.environ.get('PASS_ALEJANDRO', 'hha2026'),
-    'catalina':  os.environ.get('PASS_CATALINA',  'hha2026'),
-    'luz':       os.environ.get('PASS_LUZ',       'hha2026'),
-    'mayra':     os.environ.get('PASS_MAYRA',     'hha2026'),
+    'sebastian': os.environ.get('SEBASTIAN', 'hha2026'),
+    'alejandro': os.environ.get('ALEJANDRO', 'hha2026'),
+    'catalina':  os.environ.get('CATALINA',  'hha2026'),
+    'luz':       os.environ.get('LUZ',       'hha2026'),
+    'mayra':     os.environ.get('MAYRA',     'hha2026'),
+    'daniela':   os.environ.get('DANIELA',   'hha2026'),
 }
 ADMIN_USERS = {'sebastian', 'alejandro'}
 READONLY_USERS = {'mayra'}
@@ -121,25 +122,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="logo-wrap">
-  <div class="logo-badge" style="display:flex;align-items:center;gap:18px;padding:16px 40px;">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 66" width="44" height="52" style="flex-shrink:0"><path d="M28 4 C28 4 5 33 5 49 C5 62 15.5 70 28 70 C40.5 70 51 62 51 49 C51 33 28 4 28 4Z" fill="none" stroke="white" stroke-width="2.8"/><path d="M21 22 L21 37 L11 53 L45 53 L35 37 L35 22 Z" fill="none" stroke="white" stroke-width="2.2" stroke-linejoin="round"/><line x1="19" y1="27" x2="37" y2="27" stroke="white" stroke-width="2.2"/><path d="M25 44 Q28 35 40 42 Q32 50 25 44Z" fill="white" opacity="0.85"/></svg>
+  <div class="logo-badge">
     <div class="logo-text">HHA Group</div>
+    <div style="font-size:0.72em;font-weight:400;letter-spacing:2px;opacity:0.85;margin-top:4px;">TRANSFORMAMOS CIENCIA EN CUIDADO</div>
   </div>
-  <div class="logo-sub" style="margin-bottom:20px;">Sistema Operativo Interno</div>
+  <div class="logo-sub" style="margin-bottom:22px;">Sistema Operativo Interno</div>
   <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:8px;">
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:11px 20px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(43,122,120,0.07);">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 54 54" width="36" height="36" style="flex-shrink:0"><circle cx="27" cy="8" r="4.5" fill="#2B7A78"/><circle cx="8" cy="26" r="4.5" fill="#2B7A78"/><circle cx="46" cy="26" r="4.5" fill="#2B7A78"/><circle cx="15" cy="45" r="4.5" fill="#2B7A78"/><circle cx="39" cy="45" r="4.5" fill="#2B7A78"/><line x1="27" y1="12" x2="11" y2="23" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="27" y1="12" x2="43" y2="23" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="11" y1="29" x2="17" y2="42" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="43" y1="29" x2="37" y2="42" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="19" y1="45" x2="35" y2="45" stroke="#2B7A78" stroke-width="2" opacity="0.6"/></svg>
-      <div>
-        <div style="font-weight:800;font-size:0.88em;color:#1C2B30;letter-spacing:1.5px;">ÁNIMUS LAB</div>
-        <div style="font-size:0.68em;color:#7A9E9C;letter-spacing:1px;margin-top:1px;">Autocuidado consciente</div>
-      </div>
+    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
+      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ÁNIMUS LAB</div>
+      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Autocuidado consciente</div>
     </div>
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:11px 20px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(43,122,120,0.07);">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 54 60" width="34" height="38" style="flex-shrink:0"><path d="M20 10 L20 28 L8 50 L46 50 L34 28 L34 10 Z" fill="none" stroke="#2B7A78" stroke-width="2.5" stroke-linejoin="round"/><line x1="17" y1="15" x2="37" y2="15" stroke="#2B7A78" stroke-width="2.5"/><path d="M27 39 Q20 31 20 24 Q27 30 27 39Z" fill="#2B7A78" opacity="0.75"/><path d="M27 39 Q34 31 34 24 Q27 30 27 39Z" fill="#2B7A78" opacity="0.75"/><path d="M27 39 Q17 36 15 43 Q22 42 27 39Z" fill="#2B7A78" opacity="0.5"/><path d="M27 39 Q37 36 39 43 Q32 42 27 39Z" fill="#2B7A78" opacity="0.5"/><circle cx="27" cy="39" r="3" fill="#2B7A78"/></svg>
-      <div>
-        <div style="font-weight:800;font-size:0.88em;color:#1C2B30;letter-spacing:1.5px;">ESPAGIRIA</div>
-        <div style="font-size:0.68em;color:#7A9E9C;letter-spacing:1px;margin-top:1px;">Laboratorios</div>
-      </div>
+    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
+      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ESPAGIRIA</div>
+      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Ciencia que crea</div>
     </div>
   </div>
 </div>
