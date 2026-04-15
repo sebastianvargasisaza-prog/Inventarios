@@ -9,16 +9,14 @@ import pandas as pd
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
 COMPRAS_USERS = {
-    'sebastian': os.environ.get('SEBASTIAN', 'hha2026'),
-    'alejandro': os.environ.get('ALEJANDRO', 'hha2026'),
-    'catalina':  os.environ.get('CATALINA',  'hha2026'),
-    'luz':       os.environ.get('LUZ',       'hha2026'),
-    'mayra':     os.environ.get('MAYRA',     'hha2026'),
-    'daniela':   os.environ.get('DANIELA',   'hha2026'),
+    'sebastian': os.environ.get('PASS_SEBASTIAN', 'hha2026'),
+    'alejandro': os.environ.get('PASS_ALEJANDRO', 'hha2026'),
+    'catalina':  os.environ.get('PASS_CATALINA',  'hha2026'),
+    'luz':       os.environ.get('PASS_LUZ',       'hha2026'),
+    'mayra':     os.environ.get('PASS_MAYRA',     'hha2026'),
 }
 ADMIN_USERS = {'sebastian', 'alejandro'}
-COMPRAS_FULL = {'sebastian', 'alejandro', 'catalina', 'mayra'}  # acceso completo a Compras
-INVENTARIOS_ONLY = {'luz', 'daniela'}  # solo Inventarios + Solicitudes
+READONLY_USERS = {'mayra'}
 
 _anthropic_client = None
 def get_anthropic_client():
@@ -48,9 +46,7 @@ def init_db():
                   tipo TEXT, proveedor TEXT, stock_minimo REAL DEFAULT 0, activo INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT, operador TEXT)""")
-    try: c.execute("ALTER TABLE producciones ADD COLUMN operador TEXT")
-    except: pass
+                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS alertas
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   material_id TEXT, material_nombre TEXT, stock_actual REAL,
@@ -125,19 +121,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="logo-wrap">
-  <div class="logo-badge">
+  <div class="logo-badge" style="display:flex;align-items:center;gap:18px;padding:16px 40px;">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 66" width="44" height="52" style="flex-shrink:0"><path d="M28 4 C28 4 5 33 5 49 C5 62 15.5 70 28 70 C40.5 70 51 62 51 49 C51 33 28 4 28 4Z" fill="none" stroke="white" stroke-width="2.8"/><path d="M21 22 L21 37 L11 53 L45 53 L35 37 L35 22 Z" fill="none" stroke="white" stroke-width="2.2" stroke-linejoin="round"/><line x1="19" y1="27" x2="37" y2="27" stroke="white" stroke-width="2.2"/><path d="M25 44 Q28 35 40 42 Q32 50 25 44Z" fill="white" opacity="0.85"/></svg>
     <div class="logo-text">HHA Group</div>
-    <div style="font-size:0.72em;font-weight:400;letter-spacing:2px;opacity:0.85;margin-top:4px;">TRANSFORMAMOS CIENCIA EN CUIDADO</div>
   </div>
-  <div class="logo-sub" style="margin-bottom:22px;">Sistema Operativo Interno</div>
+  <div class="logo-sub" style="margin-bottom:20px;">Sistema Operativo Interno</div>
   <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:8px;">
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
-      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ÁNIMUS LAB</div>
-      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Autocuidado consciente</div>
+    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:11px 20px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(43,122,120,0.07);">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 54 54" width="36" height="36" style="flex-shrink:0"><circle cx="27" cy="8" r="4.5" fill="#2B7A78"/><circle cx="8" cy="26" r="4.5" fill="#2B7A78"/><circle cx="46" cy="26" r="4.5" fill="#2B7A78"/><circle cx="15" cy="45" r="4.5" fill="#2B7A78"/><circle cx="39" cy="45" r="4.5" fill="#2B7A78"/><line x1="27" y1="12" x2="11" y2="23" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="27" y1="12" x2="43" y2="23" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="11" y1="29" x2="17" y2="42" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="43" y1="29" x2="37" y2="42" stroke="#2B7A78" stroke-width="2" opacity="0.6"/><line x1="19" y1="45" x2="35" y2="45" stroke="#2B7A78" stroke-width="2" opacity="0.6"/></svg>
+      <div>
+        <div style="font-weight:800;font-size:0.88em;color:#1C2B30;letter-spacing:1.5px;">ÁNIMUS LAB</div>
+        <div style="font-size:0.68em;color:#7A9E9C;letter-spacing:1px;margin-top:1px;">Autocuidado consciente</div>
+      </div>
     </div>
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
-      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ESPAGIRIA</div>
-      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Ciencia que crea</div>
+    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:11px 20px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(43,122,120,0.07);">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 54 60" width="34" height="38" style="flex-shrink:0"><path d="M20 10 L20 28 L8 50 L46 50 L34 28 L34 10 Z" fill="none" stroke="#2B7A78" stroke-width="2.5" stroke-linejoin="round"/><line x1="17" y1="15" x2="37" y2="15" stroke="#2B7A78" stroke-width="2.5"/><path d="M27 39 Q20 31 20 24 Q27 30 27 39Z" fill="#2B7A78" opacity="0.75"/><path d="M27 39 Q34 31 34 24 Q27 30 27 39Z" fill="#2B7A78" opacity="0.75"/><path d="M27 39 Q17 36 15 43 Q22 42 27 39Z" fill="#2B7A78" opacity="0.5"/><path d="M27 39 Q37 36 39 43 Q32 42 27 39Z" fill="#2B7A78" opacity="0.5"/><circle cx="27" cy="39" r="3" fill="#2B7A78"/></svg>
+      <div>
+        <div style="font-weight:800;font-size:0.88em;color:#1C2B30;letter-spacing:1.5px;">ESPAGIRIA</div>
+        <div style="font-size:0.68em;color:#7A9E9C;letter-spacing:1px;margin-top:1px;">Laboratorios</div>
+      </div>
     </div>
   </div>
 </div>
@@ -602,9 +604,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <body>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.5em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.72em;letter-spacing:2px;opacity:0.85;font-weight:500;margin-top:3px;">ESPAGIRIA LABORATORIOS</div></div></div>
-    
-    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;margin-left:auto;">← Portal HHA</a>
+    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
+    <p>Espagiria Laboratorios - Control de Materias Primas</p>
+    </div>
+    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -1405,7 +1408,8 @@ def inventarios():
 def login():
     error = ''
     if request.method == 'POST':
-        username = request.form.get('username','').strip().lower()
+        username = request.form.get('username','').strip().lower().capitalize() if request.form.get('username','').strip() else ''
+        
         password = request.form.get('password','').strip()
         if username in COMPRAS_USERS and COMPRAS_USERS[username] == password:
             session['compras_user'] = username
@@ -1555,8 +1559,8 @@ def handle_produccion():
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
         return jsonify({'message': msg, 'descuentos': descuentos}), 201
-    c.execute('SELECT producto, cantidad, fecha, estado, observaciones, operador FROM producciones ORDER BY fecha DESC LIMIT 100')
-    prod = [{'producto':r[0],'cantidad':r[1],'fecha':r[2],'estado':r[3],'observaciones':r[4] or '','operador':r[5] or ''} for r in c.fetchall()]
+    c.execute('SELECT producto, cantidad, fecha, estado FROM producciones ORDER BY fecha DESC LIMIT 50')
+    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3]} for r in c.fetchall()]
     conn.close()
     return jsonify({'producciones': prod})
 
@@ -2044,134 +2048,6 @@ def update_solicitud_compra(numero):
               (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
     conn.commit(); conn.close()
     return jsonify({'message': f'Solicitud {numero} actualizada'})
-
-
-# ── TRAZABILIDAD SOL → OC → REC ───────────────────────────────────────────────
-@app.route('/api/trazabilidad/<codigo>')
-def get_trazabilidad(codigo):
-    """Muestra toda la cadena: SOL → OC → REC de un código de trazabilidad"""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    result = {'codigo': codigo, 'sol': None, 'oc': None, 'recepciones': []}
-    # Buscar en solicitudes
-    if codigo.startswith('SOL'):
-        c.execute("SELECT * FROM solicitudes_compra WHERE numero=?", (codigo,))
-        sol = c.fetchone()
-        if sol:
-            c.execute("PRAGMA table_info(solicitudes_compra)"); cols=[r[1] for r in c.fetchall()]
-            result['sol'] = dict(zip(cols, sol))
-            c.execute("SELECT * FROM solicitudes_compra_items WHERE numero=?", (codigo,))
-            items = c.fetchall(); c.execute("PRAGMA table_info(solicitudes_compra_items)"); icols=[r[1] for r in c.fetchall()]
-            result['sol']['items'] = [dict(zip(icols, i)) for i in items]
-            # Ver si tiene OC vinculada
-            if result['sol'].get('numero_oc'):
-                codigo = result['sol']['numero_oc']
-    if codigo.startswith('OC'):
-        c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (codigo,))
-        oc = c.fetchone()
-        if oc:
-            c.execute("PRAGMA table_info(ordenes_compra)"); cols=[r[1] for r in c.fetchall()]
-            result['oc'] = dict(zip(cols, oc))
-            c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (codigo,))
-            items = c.fetchall(); c.execute("PRAGMA table_info(ordenes_compra_items)"); icols=[r[1] for r in c.fetchall()]
-            result['oc']['items'] = [dict(zip(icols, i)) for i in items]
-    # Recepciones vinculadas
-    c.execute("SELECT * FROM movimientos WHERE observaciones LIKE ? ORDER BY fecha DESC",
-              (f'%{codigo}%',))
-    movs = c.fetchall()
-    if movs:
-        c.execute("PRAGMA table_info(movimientos)"); cols=[r[1] for r in c.fetchall()]
-        result['recepciones'] = [dict(zip(cols, m)) for m in movs]
-    conn.close()
-    return jsonify(result)
-
-# ── RECEPCIÓN DE OC → ACTUALIZA INVENTARIO ────────────────────────────────────
-@app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
-def recibir_oc_completa(numero_oc):
-    """Recibe una OC: marca como recibida y crea entradas en inventario"""
-    d = request.json or {}
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    # Obtener items de la OC
-    c.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-    items = c.fetchall()
-    if not items:
-        conn.close(); return jsonify({'error': 'OC sin ítems registrados'}), 400
-    # Obtener proveedor de la OC
-    c.execute("SELECT proveedor FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
-    oc_row = c.fetchone()
-    proveedor = oc_row[0] if oc_row else ''
-    from datetime import date
-    fecha_hoy = datetime.now().isoformat()
-    operador = d.get('operador', '')
-    lotes_creados = []
-    for codigo_mp, nombre_mp, cantidad_g in items:
-        cant_recibida = d.get('cantidades', {}).get(codigo_mp, cantidad_g)
-        if not cant_recibida or float(cant_recibida) <= 0:
-            continue
-        # Generar número de lote automático
-        lote = f"REC{date.today().strftime('%y%m%d')}{(codigo_mp or 'XX')[-3:]}"
-        # Crear entrada en movimientos (inventario)
-        c.execute("""INSERT INTO movimientos
-                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
-                      lote, proveedor, estado_lote, operador)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                  (codigo_mp, nombre_mp, float(cant_recibida), 'Entrada', fecha_hoy,
-                   f'Recepción OC {numero_oc}', lote, proveedor, 'VIGENTE', operador))
-        lotes_creados.append({'codigo_mp': codigo_mp, 'nombre': nombre_mp,
-                               'cantidad_g': float(cant_recibida), 'lote': lote})
-    # Actualizar estado de la OC
-    c.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
-    # Actualizar solicitud vinculada si existe
-    c.execute("UPDATE solicitudes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
-    conn.commit(); conn.close()
-    return jsonify({
-        'message': f'OC {numero_oc} recibida. {len(lotes_creados)} MPs ingresadas al inventario.',
-        'lotes_creados': lotes_creados
-    }), 201
-
-# ── VINCULAR SOL → OC ─────────────────────────────────────────────────────────
-@app.route('/api/solicitudes-compra/<numero>/convertir-oc', methods=['POST'])
-def convertir_sol_a_oc(numero):
-    """Convierte una solicitud aprobada en Orden de Compra"""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    d = request.json or {}
-    c.execute("SELECT solicitante, urgencia FROM solicitudes_compra WHERE numero=?", (numero,))
-    sol = c.fetchone()
-    if not sol: conn.close(); return jsonify({'error': 'Solicitud no encontrada'}), 404
-    c.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM solicitudes_compra_items WHERE numero=?", (numero,))
-    items = c.fetchall()
-    # Crear OC
-    c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
-    numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
-    c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por) VALUES (?,?,?,?,?,?)",
-              (numero_oc, datetime.now().isoformat(), 'Pendiente',
-               d.get('proveedor', ''), f'Generada desde {numero}', d.get('creado_por', '')))
-    for codigo_mp, nombre_mp, cantidad_g in items:
-        c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g) VALUES (?,?,?,?)",
-                  (numero_oc, codigo_mp, nombre_mp, cantidad_g))
-    # Vincular SOL con OC
-    c.execute("UPDATE solicitudes_compra SET estado='En proceso', numero_oc=? WHERE numero=?",
-              (numero_oc, numero))
-    conn.commit(); conn.close()
-    return jsonify({'message': f'SOL {numero} convertida a {numero_oc}', 'numero_oc': numero_oc}), 201
-
-# ── SOLICITUDES DESDE INVENTARIOS (para Luz y Daniela) ────────────────────────
-@app.route('/api/solicitar-mp', methods=['POST'])
-def solicitar_mp():
-    """Endpoint simple para crear solicitudes de compra desde Inventarios"""
-    d = request.json or {}
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
-    numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
-    c.execute("INSERT INTO solicitudes_compra (numero,fecha,estado,solicitante,urgencia,observaciones) VALUES (?,?,?,?,?,?)",
-              (numero, datetime.now().isoformat(), 'Pendiente',
-               d.get('solicitante', ''), d.get('urgencia', 'Normal'), d.get('observaciones', '')))
-    for it in (d.get('items') or []):
-        c.execute("INSERT INTO solicitudes_compra_items (numero,codigo_mp,nombre_mp,cantidad_g,justificacion) VALUES (?,?,?,?,?)",
-                  (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                   it.get('cantidad_g', 0), it.get('justificacion', '')))
-    conn.commit(); conn.close()
-    return jsonify({'message': f'Solicitud {numero} creada. Compras será notificado.',
-                    'numero': numero}), 201
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
