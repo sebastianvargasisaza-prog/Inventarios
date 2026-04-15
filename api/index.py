@@ -58,7 +58,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inventarios - ANIMUS Lab</title>
+<title>Inventarios - Espagiria Laboratorios</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#667eea,#764ba2); min-height:100vh; padding:20px; }
@@ -96,8 +96,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <body>
 <div class="container">
   <div class="header">
-    <h1>&#128230; Sistema de Inventarios</h1>
-    <p>ANIMUS Lab - Gestion Inteligente de Inventario</p>
+    <h1>&#128230; Sistema de Inventarios Espagiria</h1>
+    <p>Espagiria Laboratorios - Control de Materias Primas</p>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -147,7 +147,29 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="ingreso" class="tab-content">
     <h2>&#128666; Ingreso de Materia Prima</h2>
-    <p style="color:#666;margin-bottom:18px;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <p style="color:#666;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
+      <button onclick="mostrarFormNuevaMP()" style="background:#27ae60;white-space:nowrap;margin-left:15px;">&#43; Nueva MP en Catalogo</button>
+    </div>
+    <div id="ing-nueva-mp" style="display:none;background:#e8f5e9;border:2px solid #27ae60;border-radius:8px;padding:18px;margin-bottom:15px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h4 style="color:#1b5e20;">&#43; Crear Nueva Materia Prima en el Catalogo</h4>
+        <button onclick="ocultarFormNuevaMP()" style="background:#95a5a6;padding:4px 12px;font-size:0.85em;">&#10005; Cerrar</button>
+      </div>
+      <p style="font-size:0.88em;color:#2e7d32;margin-bottom:12px;">Esta MP quedara registrada en el catalogo y disponible para futuros ingresos.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label>Codigo MP * (ej: MP00350)</label><input type="text" id="nmp-cod" placeholder="MP00350" style="text-transform:uppercase;"></div>
+        <div class="form-group"><label>Nombre INCI *</label><input type="text" id="nmp-inci" placeholder="Ej: NIACINAMIDE"></div>
+        <div class="form-group"><label>Nombre Comercial *</label><input type="text" id="nmp-nombre" placeholder="Ej: Niacinamida"></div>
+        <div class="form-group"><label>Tipo</label><input type="text" id="nmp-tipo" placeholder="Ej: Activo, Emoliente, Conservante..."></div>
+        <div class="form-group"><label>Proveedor</label><input type="text" id="nmp-prov" placeholder="Nombre del proveedor"></div>
+        <div class="form-group"><label>Stock Minimo (g)</label><input type="number" id="nmp-smin" placeholder="0" value="500"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px;">
+        <button onclick="crearNuevaMP()" style="background:#1b5e20;">&#10003; Crear en Catalogo</button>
+      </div>
+      <div id="nmp-msg" style="margin-top:10px;"></div>
+    </div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>Codigo MP *</label><input type="text" id="ing-cod" placeholder="MP00001" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)"><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
@@ -252,7 +274,20 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="alertas" class="tab-content">
     <h2>&#9888; Alertas de Inventario</h2>
-    <button onclick="loadAlertas()" style="margin-bottom:12px;">Actualizar Alertas</button>
+
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <h3 style="color:#856404;margin-bottom:10px;">&#128308; MPs bajo stock minimo (basado en plan anual)</h3>
+      <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
+      <div id="alertas-reabas-tabla">
+        <table class="table">
+          <thead><tr><th>Codigo</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Stock Min (g)</th><th style="text-align:right;">Stock Actual (g)</th><th style="text-align:right;">Deficit (g)</th><th style="text-align:center;">Criticidad</th></tr></thead>
+          <tbody id="reabas-body"><tr><td colspan="7" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3 style="margin-bottom:10px;">Alertas manuales de stock</h3>
+    <button onclick="loadAlertas()" style="margin-bottom:12px;">Actualizar</button>
     <table class="table" id="alertas-table">
       <thead><tr><th>Material</th><th>Stock Actual</th><th>Stock Minimo</th><th>Estado</th><th>Fecha</th></tr></thead>
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr></tbody>
@@ -260,7 +295,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="chat" class="tab-content">
-    <h2>&#129302; Chat IA - Asesor de Inventarios</h2>
+    <h2>&#129514; Paracelso - Asistente de Inventarios</h2>
     <div class="chat-box" id="chat-box">
       <div class="msg bot">Hola! Soy tu asesor de inventarios con IA. Preguntame sobre stock, puntos de reorden, analisis ABC o cualquier tema de gestion de inventarios para manufactura cosmetica.</div>
     </div>
@@ -305,7 +340,7 @@ function switchTab(n,btn){
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='abc') loadABC();
-  if(n==='alertas') loadAlertas();
+  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
   if(n==='movimientos') loadMovimientos();
 }
 
@@ -316,6 +351,12 @@ async function loadDashboard(){
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
     document.getElementById('alertas-count').textContent=d.alertas||'0';
     document.getElementById('producciones-count').textContent=d.producciones||'0';
+    // Cargar alertas de reabastecimiento en el dashboard
+    fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();}).then(function(ar){
+      var n=ar.alertas?ar.alertas.length:0;
+      var el=document.getElementById('alertas-count');
+      if(el&&n>0) el.textContent=n+' reabas';
+    }).catch(function(){});
   }catch(e){}
 }
 
@@ -432,7 +473,7 @@ function generarRotuloIngreso(){
   window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(_ultimoIng.cantidad||0),'_blank');
 }
 function limpiarIngreso(){
-  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-inci-new','ing-tipo-new','ing-smin-new'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});var pn=document.getElementById('ing-nueva-mp');if(pn)pn.style.display='none';
+  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});ocultarFormNuevaMP();
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';
 }
@@ -677,10 +718,79 @@ async function enviarChat(){
   }catch(e){box.innerHTML+='<div class="msg bot">Error: '+e.message+'</div>';}
 }
 
+async function loadAlertasReabas(){
+  try{
+    var r=await fetch('/api/alertas-reabastecimiento'), d=await r.json();
+    var alertas=d.alertas||[];
+    var tb=document.getElementById('reabas-body');
+    if(!tb) return;
+    if(!alertas.length){
+      tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#28a745;padding:15px;">&#10003; Todo el stock esta sobre el minimo calculado</td></tr>';
+      return;
+    }
+    var h='';
+    alertas.forEach(function(a){
+      var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
+      var critico=pct<25;
+      var urgente=pct>=25&&pct<50;
+      var color=critico?'#ffebeb':urgente?'#fff3e0':'#fffde7';
+      var badge=critico?'<span style="background:#cc0000;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">CRITICO</span>':
+                urgente?'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">URGENTE</span>':
+                '<span style="background:#f57f17;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">BAJO</span>';
+      h+='<tr style="background:'+color+';">';
+      h+='<td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td>';
+      h+='<td style="font-weight:600;">'+a.nombre+'</td>';
+      h+='<td style="font-size:0.85em;color:#666;">'+a.proveedor+'</td>';
+      h+='<td style="text-align:right;font-weight:600;">'+a.stock_minimo.toLocaleString()+'</td>';
+      h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+'</td>';
+      h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+'</td>';
+      h+='<td style="text-align:center;">'+badge+' '+pct+'%</td>';
+      h+='</tr>';
+    });
+    tb.innerHTML=h;
+  }catch(e){
+    var tb2=document.getElementById('reabas-body');
+    if(tb2) tb2.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Carga el catalogo maestro primero (python cargar_maestro.py)</td></tr>';
+  }
+}
+
 window.onload=function(){loadDashboard();loadFormulas();};
 function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
-  if(panel) panel.style.display='block';
+  if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+}
+function ocultarFormNuevaMP(){
+  var panel=document.getElementById('ing-nueva-mp');
+  if(panel) panel.style.display='none';
+  ['nmp-cod','nmp-inci','nmp-nombre','nmp-tipo','nmp-prov'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.value='';
+  });
+  var ns=document.getElementById('nmp-smin'); if(ns) ns.value='500';
+  var nm=document.getElementById('nmp-msg'); if(nm) nm.innerHTML='';
+}
+async function crearNuevaMP(){
+  var cod=(document.getElementById('nmp-cod').value||'').toUpperCase().trim();
+  var inci=(document.getElementById('nmp-inci').value||'').trim();
+  var nombre=(document.getElementById('nmp-nombre').value||'').trim();
+  if(!cod||!nombre){alert('Codigo y Nombre Comercial son obligatorios');return;}
+  var data={codigo_mp:cod,nombre_inci:inci,nombre_comercial:nombre,
+    tipo:(document.getElementById('nmp-tipo').value||'').trim(),
+    proveedor:(document.getElementById('nmp-prov').value||'').trim(),
+    stock_minimo:parseFloat(document.getElementById('nmp-smin').value)||500};
+  try{
+    var r=await fetch('/api/maestro-mps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok){
+      document.getElementById('nmp-msg').innerHTML='<div class="alert-success">MP '+cod+' creada en catalogo. Ya puedes usarla en el ingreso.</div>';
+      _cat[cod]=data;  // Agregar al catalogo local
+      // Pre-llenar el formulario de ingreso
+      var f={'ing-cod':cod,'ing-inci':inci,'ing-nombre':nombre,'ing-tipo':data.tipo,'ing-prov':data.proveedor};
+      Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
+      var st=document.getElementById('ing-status'); if(st){st.textContent='Nueva MP creada y lista para ingresar';st.style.color='#28a745';}
+    } else {
+      document.getElementById('nmp-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al crear')+'</div>';
+    }
+  }catch(e){document.getElementById('nmp-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 </script>
 </body>
@@ -831,7 +941,7 @@ def handle_chat():
         client = get_anthropic_client()
         response = client.messages.create(
             model="claude-3-5-sonnet-20241022", max_tokens=1024,
-            messages=[{"role": "user", "content": f"Eres asesor experto en gestion de inventarios para manufactura cosmetica. Responde brevemente en espanol. Pregunta: {data.get('message', '')}"}]
+            messages=[{"role": "user", "content": f"Eres Paracelso, el asistente de inventarios de Espagiria Laboratorios. Eres experto en materias primas cosméticas, BPM, gestión de inventarios y formulación. Respondes de forma directa y útil en español, con un toque de personalidad. Pregunta: {data.get('message', '')}"}]
         )
         return jsonify({'response': response.content[0].text})
     except Exception as e:
