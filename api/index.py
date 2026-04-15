@@ -893,6 +893,11 @@ var OPER_ACTUAL='';
 var _ajDat={};
 function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;}
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
+function abrirAjusteIdx(idx){
+  var i=_lotes[idx];
+  if(!i)return;
+  abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g);
+}
 function abrirAjuste(mid,mn,lt,sa){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
@@ -1081,7 +1086,7 @@ function renderStock(items){
   var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a'};
   var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE'};
   var h='';
-  items.forEach(function(i){
+  items.forEach(function(i,idx){
     var a=i.alerta||'ok';
     var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
     var bajo_min=i.stock_min_g>0&&i.cantidad_g<i.stock_min_g;
@@ -1102,8 +1107,7 @@ function renderStock(items){
     h+='<td style="text-align:center;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
     h+='<td style="text-align:right;'+dc+'">'+dias+'</td>';
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
-    var _cg=i.cantidad_g,_mid=i.material_id,_mn=(i.material_nombre||'').replace(/"/g,"'"),_lt=i.lote||'';
-    h+='<td style="text-align:center;"><button onclick="abrirAjuste(\"'+_mid+'\",\"'+_mn+'\",\"'+_lt+'\",'+_cg+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
+    h+='<td style="text-align:center;"><button onclick="abrirAjusteIdx('+idx+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;
