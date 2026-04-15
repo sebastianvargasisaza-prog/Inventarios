@@ -8,12 +8,9 @@ import pandas as pd
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
-
-# Usuarios autorizados para el módulo de Compras
-# Contraseñas configurables por variables de entorno en Render
 COMPRAS_USERS = {
     'sebastian': os.environ.get('PASS_SEBASTIAN', 'hha2026'),
-    'catalina': os.environ.get('PASS_CATALINA', 'hha2026'),
+    'catalina':  os.environ.get('PASS_CATALINA',  'hha2026'),
     'alejandro': os.environ.get('PASS_ALEJANDRO', 'hha2026'),
 }
 
@@ -27,10 +24,9 @@ def get_anthropic_client():
         _anthropic_client = Anthropic(api_key=api_key)
     return _anthropic_client
 
-DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
+DB_PATH = '/tmp/inventario.db'
 
 def init_db():
-    import pathlib; pathlib.Path(os.path.dirname(DB_PATH)).mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +55,6 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   producto_nombre TEXT, material_id TEXT,
                   material_nombre TEXT, porcentaje REAL)""")
-    # ── MÓDULO COMPRAS ────────────────────────────────────────────────────────
     c.execute("""CREATE TABLE IF NOT EXISTS proveedores
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   nombre TEXT UNIQUE, contacto TEXT, email TEXT, telefono TEXT,
@@ -88,649 +83,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-# ─── HUB HHA GROUP ────────────────────────────────────────────────────────────
-HUB_HTML = """<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HHA Group — Portal Interno</title>
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-  font-family:'Segoe UI',system-ui,sans-serif;
-  background:#0f172a;
-  min-height:100vh;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  padding:50px 20px;
-}
-.logo-wrap { text-align:center; margin-bottom:52px; }
-.logo-badge {
-  display:inline-block;
-  background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
-  border-radius:18px;
-  padding:18px 44px;
-  margin-bottom:16px;
-  box-shadow:0 8px 32px rgba(99,102,241,0.35);
-}
-.logo-text { font-size:2.6em; font-weight:900; color:white; letter-spacing:6px; text-transform:uppercase; }
-.logo-sub { color:#64748b; font-size:0.85em; letter-spacing:3px; text-transform:uppercase; margin-top:4px; }
-.grid {
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
-  gap:22px;
-  max-width:1080px;
-  width:100%;
-}
-.card {
-  background:#1e293b;
-  border:1px solid #334155;
-  border-radius:18px;
-  padding:34px 28px;
-  text-decoration:none;
-  display:block;
-  position:relative;
-  overflow:hidden;
-  transition:all 0.3s ease;
-}
-.card::before {
-  content:'';
-  position:absolute;
-  top:0; left:0; right:0;
-  height:4px;
-  background:var(--c);
-  border-radius:18px 18px 0 0;
-}
-.card:hover:not(.disabled) {
-  transform:translateY(-6px);
-  border-color:var(--c);
-  box-shadow:0 24px 48px rgba(0,0,0,0.5);
-}
-.card.disabled { opacity:0.45; cursor:not-allowed; pointer-events:none; }
-.card-icon { font-size:2.8em; margin-bottom:18px; display:block; }
-.card-title { font-size:1.35em; font-weight:700; color:white; margin-bottom:5px; }
-.card-co { font-size:0.75em; color:var(--c); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin-bottom:14px; }
-.card-desc { font-size:0.88em; color:#94a3b8; line-height:1.65; margin-bottom:22px; }
-.badge {
-  display:inline-block;
-  padding:5px 14px;
-  border-radius:20px;
-  font-size:0.72em;
-  font-weight:700;
-  text-transform:uppercase;
-  letter-spacing:0.5px;
-}
-.badge-on { background:rgba(34,197,94,.15); color:#22c55e; }
-.badge-lock { background:rgba(251,146,60,.15); color:#fb923c; }
-.badge-soon { background:rgba(148,163,184,.12); color:#94a3b8; }
-.c-inv { --c:#6366f1; }
-.c-buy { --c:#f59e0b; }
-.c-trz { --c:#10b981; }
-.c-sol { --c:#ec4899; }
-.footer { margin-top:52px; color:#334155; font-size:0.78em; text-align:center; }
-</style>
-</head>
-<body>
-<div class="logo-wrap">
-  <div class="logo-badge">
-    <div class="logo-text">HHA Group</div>
-  </div>
-  <div class="logo-sub">Sistema Operativo Interno</div>
-</div>
-
-<div class="grid">
-  <a href="/inventarios" class="card c-inv">
-    <span class="card-icon">📦</span>
-    <div class="card-title">Inventarios</div>
-    <div class="card-co">Espagiria Laboratorios</div>
-    <div class="card-desc">Control de stock en tiempo real, recepción por lotes, FEFO, alertas de reabastecimiento y órdenes de compra automáticas.</div>
-    <span class="badge badge-on">● Activo</span>
-  </a>
-
-  <a href="/compras" class="card c-buy">
-    <span class="card-icon">🛒</span>
-    <div class="card-title">Compras</div>
-    <div class="card-co">HHA Group</div>
-    <div class="card-desc">Gestión de órdenes de compra, proveedores, aprobaciones y seguimiento de pedidos. Flujo completo de compras.</div>
-    <span class="badge badge-lock">🔒 Acceso restringido</span>
-  </a>
-
-  <a href="#" class="card c-trz disabled">
-    <span class="card-icon">🔬</span>
-    <div class="card-title">Trazabilidad</div>
-    <div class="card-co">Espagiria Laboratorios</div>
-    <div class="card-desc">Registro de qué lotes de materias primas se usaron en cada producción. Cumplimiento BPM y auditoría.</div>
-    <span class="badge badge-soon">Próximamente</span>
-  </a>
-
-  <a href="#" class="card c-sol disabled">
-    <span class="card-icon">📋</span>
-    <div class="card-title">Solicitudes</div>
-    <div class="card-co">HHA Group</div>
-    <div class="card-desc">Solicitudes de compra abiertas a todo el equipo. Crea, consulta y haz seguimiento de tus pedidos internos.</div>
-    <span class="badge badge-soon">Próximamente</span>
-  </a>
-</div>
-
-<div class="footer">HHA Group &copy; 2026 &middot; Sistema interno de operaciones</div>
-<div style="text-align:center;color:#1e3a5f;font-size:0.72em;margin-top:10px;opacity:0.5;">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
-</body>
-</html>"""
-
-# ─── LOGIN COMPRAS ─────────────────────────────────────────────────────────────
-LOGIN_HTML = """<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HHA Group — Acceso Compras</title>
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{
-  font-family:'Segoe UI',system-ui,sans-serif;
-  background:#0f172a;
-  min-height:100vh;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:20px;
-}}
-.card {{
-  background:#1e293b;
-  border:1px solid #334155;
-  border-radius:20px;
-  padding:48px 40px;
-  width:100%;
-  max-width:420px;
-}}
-.logo {{ text-align:center; margin-bottom:36px; }}
-.logo-badge {{
-  display:inline-block;
-  background:linear-gradient(135deg,#f59e0b,#ef4444);
-  border-radius:12px;
-  padding:10px 28px;
-  margin-bottom:14px;
-}}
-.logo-text {{ font-size:1.5em; font-weight:900; color:white; letter-spacing:4px; }}
-.logo-mod {{ color:#f59e0b; font-weight:700; font-size:1.05em; margin-bottom:4px; }}
-.logo-sub {{ color:#64748b; font-size:0.82em; }}
-label {{ display:block; color:#94a3b8; font-size:0.8em; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }}
-.fg {{ margin-bottom:20px; }}
-input[type=text], input[type=password] {{
-  width:100%;
-  background:#0f172a;
-  border:1px solid #334155;
-  border-radius:10px;
-  padding:14px 16px;
-  color:white;
-  font-size:1em;
-  outline:none;
-  transition:border-color 0.2s;
-}}
-input:focus {{ border-color:#f59e0b; }}
-.btn {{
-  width:100%;
-  background:linear-gradient(135deg,#f59e0b,#ef4444);
-  color:white;
-  border:none;
-  border-radius:10px;
-  padding:14px;
-  font-size:1em;
-  font-weight:700;
-  cursor:pointer;
-  margin-top:8px;
-  transition:opacity 0.2s;
-}}
-.btn:hover {{ opacity:0.9; }}
-.err {{
-  background:rgba(239,68,68,.1);
-  border:1px solid rgba(239,68,68,.3);
-  color:#f87171;
-  padding:12px 16px;
-  border-radius:8px;
-  font-size:0.88em;
-  margin-bottom:20px;
-  text-align:center;
-}}
-.back {{ text-align:center; margin-top:24px; }}
-.back a {{ color:#475569; font-size:0.83em; text-decoration:none; }}
-.back a:hover {{ color:#94a3b8; }}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="logo">
-    <div class="logo-badge"><div class="logo-text">HHA</div></div>
-    <div class="logo-mod">Módulo de Compras</div>
-    <div class="logo-sub">Solo acceso autorizado</div>
-  </div>
-  {error}
-  <form method="POST" action="/login">
-    <div class="fg">
-      <label>Usuario</label>
-      <input type="text" name="username" placeholder="Tu usuario" required autofocus>
-    </div>
-    <div class="fg">
-      <label>Contraseña</label>
-      <input type="password" name="password" placeholder="••••••••" required>
-    </div>
-    <button type="submit" class="btn">Ingresar al sistema →</button>
-  </form>
-  <div class="back"><a href="/">← Volver al portal HHA Group</a></div>
-</div>
-</body>
-</html>"""
-
-# ─── MÓDULO COMPRAS ────────────────────────────────────────────────────────────
-COMPRAS_HTML = """<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Compras — HHA Group</title>
-<style>
-*{{margin:0;padding:0;box-sizing:border-box;}}
-body{{font-family:'Segoe UI',system-ui,sans-serif;background:#FAF8F5;color:#1C1917;min-height:100vh;}}
-.topbar{{background:#fff;border-bottom:1px solid #E8E4DE;padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;}}
-.brand{{display:flex;align-items:center;gap:12px;}}
-.brand-dot{{width:10px;height:10px;background:#4A6741;border-radius:50%;}}
-.brand-name{{font-weight:700;font-size:1em;color:#1C1917;letter-spacing:0.5px;}}
-.brand-mod{{font-size:0.78em;color:#9C8B7A;margin-left:4px;}}
-.topbar-right{{display:flex;align-items:center;gap:16px;}}
-.user-chip{{background:#FAF8F5;border:1px solid #E8E4DE;padding:5px 14px;border-radius:20px;font-size:0.82em;color:#4A6741;font-weight:600;}}
-.btn-logout{{background:none;border:none;color:#9C8B7A;font-size:0.82em;cursor:pointer;text-decoration:underline;}}
-.btn-logout:hover{{color:#1C1917;}}
-.nav{{display:flex;gap:0;border-bottom:1px solid #E8E4DE;background:#fff;padding:0 32px;overflow-x:auto;}}
-.nav-btn{{padding:14px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:0.88em;font-weight:500;color:#9C8B7A;white-space:nowrap;transition:all 0.2s;}}
-.nav-btn:hover{{color:#1C1917;}}
-.nav-btn.active{{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}}
-.page{{display:none;padding:28px 32px;max-width:1200px;margin:0 auto;}}
-.page.active{{display:block;}}
-h2{{font-size:1.2em;font-weight:700;color:#1C1917;margin-bottom:4px;}}
-.page-sub{{color:#9C8B7A;font-size:0.85em;margin-bottom:24px;}}
-.kpi-row{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px;}}
-.kpi{{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:18px 20px;}}
-.kpi-label{{font-size:0.75em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}}
-.kpi-val{{font-size:1.7em;font-weight:700;color:#1C1917;}}
-.kpi-val.green{{color:#4A6741;}}
-.kpi-val.gold{{color:#B5924A;}}
-.kpi-val.red{{color:#B54A4A;}}
-.card{{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-bottom:16px;}}
-.card-head{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}}
-.btn{{background:#4A6741;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-size:0.88em;font-weight:600;cursor:pointer;transition:opacity 0.2s;}}
-.btn:hover{{opacity:0.85;}}
-.btn-gold{{background:#B5924A;}}
-.btn-ghost{{background:none;border:1px solid #E8E4DE;color:#1C1917;}}
-.btn-ghost:hover{{background:#FAF8F5;}}
-.btn-sm{{padding:5px 12px;font-size:0.8em;}}
-.btn-danger{{background:#B54A4A;}}
-table{{width:100%;border-collapse:collapse;font-size:0.87em;}}
-th{{background:#FAF8F5;color:#9C8B7A;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;text-align:left;border-bottom:1px solid #E8E4DE;}}
-td{{padding:11px 12px;border-bottom:1px solid #F0EDE8;color:#1C1917;}}
-tr:hover td{{background:#FDFCFB;}}
-.badge{{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;}}
-.badge-pend{{background:#FFF3E0;color:#B5924A;}}
-.badge-aprov{{background:#E8F5E9;color:#4A6741;}}
-.badge-env{{background:#E3F2FD;color:#1565C0;}}
-.badge-rec{{background:#E8F5E9;color:#2E7D32;}}
-.badge-rech{{background:#FFEBEE;color:#B54A4A;}}
-.badge-bor{{background:#F5F5F5;color:#9C8B7A;}}
-label{{font-size:0.82em;font-weight:600;color:#1C1917;display:block;margin-bottom:4px;}}
-input,select,textarea{{width:100%;padding:9px 12px;border:1px solid #E8E4DE;border-radius:7px;font-size:0.9em;color:#1C1917;background:#fff;outline:none;transition:border-color 0.2s;}}
-input:focus,select:focus,textarea:focus{{border-color:#4A6741;}}
-.fg{{margin-bottom:14px;}}
-.grid2{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
-.grid3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}}
-.msg-ok{{background:#E8F5E9;color:#2E7D32;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}}
-.msg-err{{background:#FFEBEE;color:#B54A4A;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}}
-.alert-row{{background:#FFFBF0;border-left:3px solid #B5924A;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}}
-.alert-row.critico{{background:#FFF5F5;border-left-color:#B54A4A;}}
-.empty{{text-align:center;color:#9C8B7A;padding:32px;font-size:0.9em;}}
-.divider{{height:1px;background:#E8E4DE;margin:20px 0;}}
-.footer-credit{{text-align:center;color:#C5BDB5;font-size:0.75em;padding:24px 0 16px;}}
-.footer-credit a{{color:#B5924A;text-decoration:none;}}
-</style>
-</head>
-<body>
-
-<div class="topbar">
-  <div class="brand">
-    <div class="brand-dot"></div>
-    <span class="brand-name">HHA Group <span class="brand-mod">/ Compras</span></span>
-  </div>
-  <div class="topbar-right">
-    <span class="user-chip" id="user-label">...</span>
-    <a href="/" style="font-size:0.82em;color:#9C8B7A;text-decoration:none;">Portal</a>
-    <button class="btn-logout" onclick="location.href='/logout'">Cerrar sesión</button>
-  </div>
-</div>
-
-<div class="nav">
-  <button class="nav-btn active" onclick="goTo('dashboard',this)">Dashboard</button>
-  <button class="nav-btn" onclick="goTo('alertas',this)">Alertas de compra</button>
-  <button class="nav-btn" onclick="goTo('ordenes',this)">Órdenes de compra</button>
-  <button class="nav-btn" onclick="goTo('solicitudes',this)">Solicitudes</button>
-  <button class="nav-btn" onclick="goTo('proveedores',this)">Proveedores</button>
-</div>
-
-<!-- DASHBOARD -->
-<div id="dashboard" class="page active">
-  <h2>Resumen de Compras</h2>
-  <p class="page-sub">Estado actual del módulo de compras HHA Group</p>
-  <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">MPs bajo mínimo</div><div class="kpi-val red" id="k-alertas">—</div></div>
-    <div class="kpi"><div class="kpi-label">OCs pendientes</div><div class="kpi-val gold" id="k-oc-pend">—</div></div>
-    <div class="kpi"><div class="kpi-label">OCs en tránsito</div><div class="kpi-val" id="k-oc-trans">—</div></div>
-    <div class="kpi"><div class="kpi-label">Solicitudes pendientes</div><div class="kpi-val" id="k-sol-pend">—</div></div>
-    <div class="kpi"><div class="kpi-label">Proveedores activos</div><div class="kpi-val green" id="k-provs">—</div></div>
-  </div>
-  <div class="card">
-    <div class="card-head"><strong>Órdenes de compra recientes</strong><button class="btn btn-sm" onclick="goTo('ordenes',document.querySelectorAll('.nav-btn')[2])">Ver todas</button></div>
-    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Estado</th><th>Acción</th></tr></thead>
-    <tbody id="dash-oc-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-  <div class="card">
-    <div class="card-head"><strong>Solicitudes recientes</strong><button class="btn btn-sm btn-ghost" onclick="goTo('solicitudes',document.querySelectorAll('.nav-btn')[3])">Ver todas</button></div>
-    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th></tr></thead>
-    <tbody id="dash-sol-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<!-- ALERTAS -->
-<div id="alertas" class="page">
-  <h2>Alertas de reabastecimiento</h2>
-  <p class="page-sub">Materias primas bajo stock mínimo que requieren compra</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="generarOCAutomatica()">⚡ Generar OCs automáticas por proveedor</button>
-    <button class="btn btn-ghost" onclick="loadAlertas()">↻ Actualizar</button>
-  </div>
-  <div id="alertas-msg"></div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Código</th><th>Materia Prima</th><th>Proveedor</th><th>Stock mínimo</th><th>Stock actual</th><th>Déficit</th><th>Criticidad</th></tr></thead>
-    <tbody id="alertas-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<!-- ÓRDENES DE COMPRA -->
-<div id="ordenes" class="page">
-  <h2>Órdenes de Compra</h2>
-  <p class="page-sub">Gestión completa de órdenes de compra</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="showFormOC()">+ Nueva OC</button>
-    <button class="btn btn-ghost" onclick="loadOCs()">↻ Actualizar</button>
-  </div>
-
-  <div id="form-oc" style="display:none;" class="card">
-    <div class="card-head"><strong>Nueva Orden de Compra</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-oc').style.display='none'">✕ Cerrar</button></div>
-    <div class="grid2">
-      <div class="fg"><label>Proveedor</label><input type="text" id="oc-prov" placeholder="Nombre del proveedor"></div>
-      <div class="fg"><label>Fecha entrega estimada</label><input type="date" id="oc-fecha-ent"></div>
-    </div>
-    <div class="fg"><label>Observaciones</label><textarea id="oc-obs" rows="2" placeholder="Condiciones, referencias, notas..."></textarea></div>
-    <div class="divider"></div>
-    <strong style="font-size:0.88em;">Items de la orden</strong>
-    <div id="oc-items-wrap" style="margin-top:12px;">
-      <div class="grid3" style="margin-bottom:8px;font-size:0.78em;font-weight:700;color:#9C8B7A;text-transform:uppercase;">
-        <span>Código MP</span><span>Cantidad (g)</span><span>Precio unit. ($)</span>
-      </div>
-      <div id="oc-items-list">
-        <div class="grid3 oc-item-row" style="margin-bottom:8px;">
-          <input type="text" class="oc-cod" placeholder="MP00001">
-          <input type="number" class="oc-cant" placeholder="0" step="0.01">
-          <input type="number" class="oc-precio" placeholder="0" step="0.01">
-        </div>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="addItemOC()" style="margin-top:4px;">+ Agregar ítem</button>
-    </div>
-    <div style="margin-top:16px;display:flex;gap:10px;">
-      <button class="btn" onclick="crearOC()">Guardar OC</button>
-      <button class="btn btn-ghost" onclick="document.getElementById('form-oc').style.display='none'">Cancelar</button>
-    </div>
-    <div id="oc-msg"></div>
-  </div>
-
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Entrega est.</th><th>Estado</th><th>Items</th><th>Acción</th></tr></thead>
-    <tbody id="oc-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<!-- SOLICITUDES -->
-<div id="solicitudes" class="page">
-  <h2>Solicitudes de Compra</h2>
-  <p class="page-sub">Solicitudes del equipo pendientes de aprobación</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn btn-ghost" onclick="loadSolicitudes()">↻ Actualizar</button>
-  </div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th><th>Acción</th></tr></thead>
-    <tbody id="sol-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<!-- PROVEEDORES -->
-<div id="proveedores" class="page">
-  <h2>Proveedores</h2>
-  <p class="page-sub">Directorio de proveedores activos</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="showFormProv()">+ Nuevo proveedor</button>
-    <button class="btn btn-ghost" onclick="loadProveedores()">↻ Actualizar</button>
-  </div>
-
-  <div id="form-prov" style="display:none;" class="card">
-    <div class="card-head"><strong>Nuevo Proveedor</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-prov').style.display='none'">✕</button></div>
-    <div class="grid2">
-      <div class="fg"><label>Nombre empresa *</label><input type="text" id="p-nombre" placeholder="Nombre del proveedor"></div>
-      <div class="fg"><label>Contacto</label><input type="text" id="p-contacto" placeholder="Nombre del contacto"></div>
-      <div class="fg"><label>Email</label><input type="email" id="p-email" placeholder="correo@empresa.com"></div>
-      <div class="fg"><label>Teléfono</label><input type="tel" id="p-tel" placeholder="+57..."></div>
-      <div class="fg"><label>Categoría</label>
-        <select id="p-cat"><option>Materias primas</option><option>Material de empaque</option><option>Insumos generales</option><option>Servicios</option></select>
-      </div>
-      <div class="fg"><label>Condiciones de pago</label><input type="text" id="p-pago" placeholder="Ej: 30 días, contado..."></div>
-    </div>
-    <div style="display:flex;gap:10px;margin-top:8px;">
-      <button class="btn" onclick="crearProveedor()">Guardar proveedor</button>
-      <button class="btn btn-ghost" onclick="document.getElementById('form-prov').style.display='none'">Cancelar</button>
-    </div>
-    <div id="prov-msg"></div>
-  </div>
-
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Nombre</th><th>Contacto</th><th>Email</th><th>Teléfono</th><th>Categoría</th><th>Pago</th></tr></thead>
-    <tbody id="prov-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<div class="footer-credit">
-  Desarrollado por <a href="#">Sebastián Vargas Isaza</a> · HHA Group Sistema Operativo Interno · 2026
-</div>
-
-<script>
-var USUARIO = '{usuario}';
-document.getElementById('user-label').textContent = '👤 ' + USUARIO;
-
-function goTo(id, btn) {{
-  document.querySelectorAll('.page').forEach(function(p){{p.classList.remove('active');}});
-  document.querySelectorAll('.nav-btn').forEach(function(b){{b.classList.remove('active');}});
-  document.getElementById(id).classList.add('active');
-  if(btn) btn.classList.add('active');
-  if(id==='dashboard') loadDashboard();
-  if(id==='alertas') loadAlertas();
-  if(id==='ordenes') loadOCs();
-  if(id==='solicitudes') loadSolicitudes();
-  if(id==='proveedores') loadProveedores();
-}}
-
-function badgeEstado(e) {{
-  var map = {{'Borrador':'badge-bor','Pendiente':'badge-pend','Aprobada':'badge-aprov',
-              'Enviada':'badge-env','En tránsito':'badge-env','Recibida':'badge-rec',
-              'Rechazada':'badge-rech','Normal':'badge-bor','Urgente':'badge-pend','Crítico':'badge-rech'}};
-  return '<span class="badge '+(map[e]||'badge-bor')+'">'+e+'</span>';
-}}
-
-// ── DASHBOARD ─────────────────────────────────────────────────────────────────
-async function loadDashboard() {{
-  try {{
-    var [ra, roc, rsol, rprov] = await Promise.all([
-      fetch('/api/alertas-reabastecimiento').then(r=>r.json()),
-      fetch('/api/ordenes-compra').then(r=>r.json()),
-      fetch('/api/solicitudes-compra').then(r=>r.json()),
-      fetch('/api/proveedores').then(r=>r.json())
-    ]);
-    document.getElementById('k-alertas').textContent = (ra.alertas||[]).length;
-    var ocs = roc.ordenes||[];
-    document.getElementById('k-oc-pend').textContent = ocs.filter(o=>o.estado==='Pendiente').length;
-    document.getElementById('k-oc-trans').textContent = ocs.filter(o=>o.estado==='En tránsito').length;
-    var sols = rsol.solicitudes||[];
-    document.getElementById('k-sol-pend').textContent = sols.filter(s=>s.estado==='Pendiente').length;
-    document.getElementById('k-provs').textContent = (rprov.proveedores||[]).length;
-
-    var ocRecent = ocs.slice(0,5);
-    document.getElementById('dash-oc-body').innerHTML = ocRecent.length ?
-      ocRecent.map(o=>'<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado</button></td></tr>').join('') :
-      '<tr><td colspan="5" class="empty">Sin órdenes</td></tr>';
-
-    var solRecent = sols.slice(0,5);
-    document.getElementById('dash-sol-body').innerHTML = solRecent.length ?
-      solRecent.map(s=>'<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td></tr>').join('') :
-      '<tr><td colspan="5" class="empty">Sin solicitudes</td></tr>';
-  }} catch(e) {{ console.error(e); }}
-}}
-
-// ── ALERTAS ───────────────────────────────────────────────────────────────────
-async function loadAlertas() {{
-  try {{
-    var d = await fetch('/api/alertas-reabastecimiento').then(r=>r.json());
-    var alertas = d.alertas||[];
-    var tb = document.getElementById('alertas-body');
-    if(!alertas.length) {{ tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>'; return; }}
-    tb.innerHTML = alertas.map(function(a) {{
-      var pct = a.stock_minimo>0 ? Math.round((a.stock_actual/a.stock_minimo)*100) : 0;
-      var nivel = pct<25?'Crítico':pct<50?'Urgente':'Bajo';
-      var badge = pct<25?'badge-rech':pct<50?'badge-pend':'badge-bor';
-      return '<tr><td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td><td style="font-weight:600;">'+a.nombre+'</td><td style="color:#9C8B7A;">'+a.proveedor+'</td><td style="text-align:right;">'+a.stock_minimo.toLocaleString()+' g</td><td style="text-align:right;color:#B54A4A;font-weight:700;">'+a.stock_actual.toLocaleString()+' g</td><td style="text-align:right;font-weight:700;">'+a.deficit.toLocaleString()+' g</td><td><span class="badge '+badge+'">'+nivel+' ('+pct+'%)</span></td></tr>';
-    }}).join('');
-  }} catch(e) {{}}
-}}
-
-async function generarOCAutomatica() {{
-  document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">Generando OCs automáticas...</div>';
-  try {{
-    var r = await fetch('/api/generar-oc-automatica',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:'{{}}'}});
-    var d = await r.json();
-    document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">'+d.message+'</div>';
-    loadAlertas(); loadOCs();
-  }} catch(e) {{ document.getElementById('alertas-msg').innerHTML='<div class="msg-err">Error al generar OCs</div>'; }}
-}}
-
-// ── ÓRDENES DE COMPRA ─────────────────────────────────────────────────────────
-async function loadOCs() {{
-  try {{
-    var d = await fetch('/api/ordenes-compra').then(r=>r.json());
-    var ocs = d.ordenes||[];
-    var tb = document.getElementById('oc-body');
-    if(!ocs.length) {{ tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>'; return; }}
-    tb.innerHTML = ocs.map(function(o) {{
-      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado ↓</button></td></tr>';
-    }}).join('');
-  }} catch(e) {{}}
-}}
-
-function showFormOC() {{
-  var f = document.getElementById('form-oc');
-  f.style.display = f.style.display==='none'?'block':'none';
-}}
-function addItemOC() {{
-  var div = document.createElement('div');
-  div.className = 'grid3 oc-item-row';
-  div.style.marginBottom = '8px';
-  div.innerHTML = '<input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01">';
-  document.getElementById('oc-items-list').appendChild(div);
-}}
-async function crearOC() {{
-  var items = [];
-  document.querySelectorAll('.oc-item-row').forEach(function(row) {{
-    var cod = row.querySelector('.oc-cod').value.trim();
-    var cant = parseFloat(row.querySelector('.oc-cant').value)||0;
-    var precio = parseFloat(row.querySelector('.oc-precio').value)||0;
-    if(cod && cant>0) items.push({{codigo_mp:cod,cantidad_g:cant,precio_unitario:precio}});
-  }});
-  var data = {{proveedor:document.getElementById('oc-prov').value,fecha_entrega_est:document.getElementById('oc-fecha-ent').value,observaciones:document.getElementById('oc-obs').value,items:items,creado_por:USUARIO}};
-  try {{
-    var r = await fetch('/api/ordenes-compra',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(data)}});
-    var res = await r.json();
-    if(r.ok) {{ document.getElementById('oc-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>'; loadOCs(); }}
-    else {{ document.getElementById('oc-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>'; }}
-  }} catch(e) {{ document.getElementById('oc-msg').innerHTML='<div class="msg-err">Error</div>'; }}
-}}
-async function cambiarEstadoOC(numero) {{
-  var estados = ['Borrador','Pendiente','Aprobada','Enviada','En tránsito','Recibida'];
-  var nuevo = prompt('Cambiar estado de '+numero+' a:\n'+estados.join(', '));
-  if(!nuevo || !estados.includes(nuevo)) return;
-  try {{
-    await fetch('/api/ordenes-compra/'+numero,{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{estado:nuevo}})}});
-    loadOCs(); loadDashboard();
-  }} catch(e) {{}}
-}}
-
-// ── SOLICITUDES ───────────────────────────────────────────────────────────────
-async function loadSolicitudes() {{
-  try {{
-    var d = await fetch('/api/solicitudes-compra').then(r=>r.json());
-    var sols = d.solicitudes||[];
-    var tb = document.getElementById('sol-body');
-    if(!sols.length) {{ tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes pendientes</td></tr>'; return; }}
-    tb.innerHTML = sols.map(function(s) {{
-      var acciones = s.estado==='Pendiente' ?
-        '<button class="btn btn-sm" onclick="accionSol(\''+s.numero+'\',\'Aprobada\')">Aprobar</button> <button class="btn btn-sm btn-danger" onclick="accionSol(\''+s.numero+'\',\'Rechazada\')">Rechazar</button>' :
-        badgeEstado(s.estado);
-      return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+acciones+'</td></tr>';
-    }}).join('');
-  }} catch(e) {{}}
-}}
-async function accionSol(numero, estado) {{
-  try {{
-    await fetch('/api/solicitudes-compra/'+numero,{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{estado:estado,aprobado_por:USUARIO}})}});
-    loadSolicitudes(); loadDashboard();
-  }} catch(e) {{}}
-}}
-
-// ── PROVEEDORES ───────────────────────────────────────────────────────────────
-async function loadProveedores() {{
-  try {{
-    var d = await fetch('/api/proveedores').then(r=>r.json());
-    var provs = d.proveedores||[];
-    var tb = document.getElementById('prov-body');
-    if(!provs.length) {{ tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores registrados</td></tr>'; return; }}
-    tb.innerHTML = provs.map(function(p) {{
-      return '<tr><td style="font-weight:600;">'+p.nombre+'</td><td>'+(p.contacto||'—')+'</td><td>'+(p.email||'—')+'</td><td>'+(p.telefono||'—')+'</td><td>'+(p.categoria||'—')+'</td><td>'+(p.condiciones_pago||'—')+'</td></tr>';
-    }}).join('');
-  }} catch(e) {{}}
-}}
-function showFormProv() {{
-  var f = document.getElementById('form-prov');
-  f.style.display = f.style.display==='none'?'block':'none';
-}}
-async function crearProveedor() {{
-  var data = {{nombre:document.getElementById('p-nombre').value,contacto:document.getElementById('p-contacto').value,email:document.getElementById('p-email').value,telefono:document.getElementById('p-tel').value,categoria:document.getElementById('p-cat').value,condiciones_pago:document.getElementById('p-pago').value}};
-  if(!data.nombre) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>'; return; }}
-  try {{
-    var r = await fetch('/api/proveedores',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(data)}});
-    var res = await r.json();
-    if(r.ok) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>'; loadProveedores(); document.getElementById('form-prov').style.display='none'; }}
-    else {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>'; }}
-  }} catch(e) {{ document.getElementById('prov-msg').innerHTML='<div class="msg-err">Error</div>'; }}
-}}
-
-window.onload = function() {{ loadDashboard(); }};
-</script>
-</body>
-</html>"""
-
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -773,30 +125,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </head>
 <body>
 <div class="container">
-  <!-- MODAL IDENTIDAD -->
-  <div id="modal-operador" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.85);z-index:9999;align-items:center;justify-content:center;">
-    <div style="background:#1e293b;border:1px solid #334155;border-radius:20px;padding:44px 36px;max-width:400px;width:90%;text-align:center;">
-      <div style="font-size:2.5em;margin-bottom:12px;">👋</div>
-      <h2 style="color:white;margin-bottom:8px;font-size:1.4em;">Bienvenido/a</h2>
-      <p style="color:#94a3b8;font-size:0.9em;margin-bottom:24px;">¿Cómo te llamas? Tu nombre quedará registrado en cada movimiento que realices.</p>
-      <input id="op-nombre-input" type="text" placeholder="Tu nombre completo" onkeydown="if(event.key==='Enter')guardarOperador();"
-        style="width:100%;background:#0f172a;border:1px solid #475569;border-radius:10px;padding:13px 16px;color:white;font-size:1em;outline:none;margin-bottom:16px;">
-      <button onclick="guardarOperador()" style="width:100%;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;">Ingresar →</button>
+  <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+    <div><h1>&#128230; Sistema de Inventarios Espagiria</h1>
+    <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
-  </div>
-
-  <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-    <div>
-      <h1>&#128230; Sistema de Inventarios Espagiria</h1>
-      <p>Espagiria Laboratorios - Control de Materias Primas</p>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span id="op-chip" onclick="cambiarOperador()" title="Cambiar nombre"
-        style="background:rgba(255,255,255,0.15);color:white;padding:7px 16px;border-radius:20px;font-size:0.85em;font-weight:600;cursor:pointer;white-space:nowrap;">
-        👤 ...
-      </span>
-      <a href="/" style="color:rgba(255,255,255,0.7);font-size:0.8em;text-decoration:none;">← Portal HHA</a>
-    </div>
+    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -1065,39 +398,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <button onclick="loadMovimientos()" style="margin-bottom:10px;">Ver Ultimos Movimientos</button>
     <table class="table" id="mov-table">
-      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Operador</th><th>Fecha</th><th>Observaciones</th></tr></thead>
-      <tbody><tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
+      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
+      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
     </table>
   </div>
 
 </div>
 <script>
 var fData=[], allStock=[];
-
-// ── IDENTIDAD DEL OPERADOR ────────────────────────────────────────────────────
-function getOperador(){ return localStorage.getItem('espagiria_operador')||''; }
-
-function initOperador(){
-  if(!getOperador()){
-    document.getElementById('modal-operador').style.display='flex';
-  } else {
-    document.getElementById('op-chip').textContent = '👤 '+getOperador();
-  }
-}
-
-function guardarOperador(){
-  var n = document.getElementById('op-nombre-input').value.trim();
-  if(!n){ alert('Por favor ingresa tu nombre.'); return; }
-  localStorage.setItem('espagiria_operador', n);
-  document.getElementById('modal-operador').style.display='none';
-  document.getElementById('op-chip').textContent = '👤 '+n;
-}
-
-function cambiarOperador(){
-  var n = prompt('Ingresa tu nombre:', getOperador());
-  if(n && n.trim()){ localStorage.setItem('espagiria_operador', n.trim()); document.getElementById('op-chip').textContent='👤 '+n.trim(); }
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
@@ -1265,8 +573,7 @@ async function registrarIngreso(){
     estanteria:document.getElementById('ing-est').value||'',
     posicion:document.getElementById('ing-pos').value||'',
     proveedor:document.getElementById('ing-prov').value||'',
-    observaciones:document.getElementById('ing-obs').value||'',
-    operador:getOperador()};
+    observaciones:document.getElementById('ing-obs').value||''};
   if(esNueva){
     data.nombre_inci=document.getElementById('ing-inci-new')?document.getElementById('ing-inci-new').value:'';
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
@@ -1447,7 +754,7 @@ async function registrarProd(){
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
   try{
-    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:getOperador()})});
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value})});
     var res=await r.json();
     var html='<div class="alert-success">'+res.message+'</div>';
     if(res.descuentos&&res.descuentos.length){
@@ -1501,23 +808,15 @@ async function loadMovimientos(){
     var tb=document.querySelector('#mov-table tbody');
     if(d.movimientos&&d.movimientos.length){
       tb.innerHTML=d.movimientos.map(function(m){
-        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">↑ Entrada</span>':'<span style="color:#cc4444;font-weight:600;">↓ Salida</span>';
-        var op=m.operador?'<span style="background:#f0f0ff;color:#667eea;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+m.operador+'</span>':'<span style="color:#ccc;font-size:0.8em;">—</span>';
-        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td>'+op+'</td><td style="font-size:0.8em;color:#888;">'+m.fecha.substring(0,16).replace('T',' ')+'</td><td style="font-size:0.8em;color:#888;">'+m.observaciones+'</td></tr>';
+        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">Entrada</span>':'<span style="color:#cc4444;font-weight:600;">Salida</span>';
+        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td style="font-size:0.82em;color:#888;">'+m.fecha+'</td><td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td></tr>';
       }).join('');
-    }else{tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
+    }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
   }catch(e){}
 }
 
 async function registrarMov(){
-  var data={
-    material_id:document.getElementById('mov-id').value,
-    material_nombre:document.getElementById('mov-nombre').value,
-    cantidad:parseFloat(document.getElementById('mov-cant').value),
-    tipo:document.getElementById('mov-tipo').value,
-    observaciones:document.getElementById('mov-obs').value,
-    operador:getOperador()
-  };
+  var data={material_id:document.getElementById('mov-id').value,material_nombre:document.getElementById('mov-nombre').value,cantidad:parseFloat(document.getElementById('mov-cant').value),tipo:document.getElementById('mov-tipo').value,observaciones:document.getElementById('mov-obs').value};
   try{
     var r=await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
@@ -1576,7 +875,7 @@ async function loadAlertasReabas(){
   }
 }
 
-window.onload=function(){initOperador();loadDashboardCompleto();loadFormulas();};
+window.onload=function(){loadDashboardCompleto();loadFormulas();};
 function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
   if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
@@ -1621,13 +920,12 @@ async function crearNuevaMP(){
 
 @app.route('/')
 def index():
-    return Response(HUB_HTML, mimetype="text/html")
+    return Response(HUB_HTML, mimetype='text/html')
 
 @app.route('/inventarios')
 def inventarios():
-    return Response(DASHBOARD_HTML, mimetype="text/html")
+    return Response(DASHBOARD_HTML, mimetype='text/html')
 
-# ─── AUTH COMPRAS ──────────────────────────────────────────────────────────────
 @app.route('/login', methods=['GET','POST'])
 def login():
     error = ''
@@ -1638,7 +936,7 @@ def login():
             session['compras_user'] = username
             return redirect('/compras')
         error = '<div class="err">Usuario o contraseña incorrectos.</div>'
-    return Response(LOGIN_HTML.replace('{error}', error), mimetype="text/html")
+    return Response(LOGIN_HTML.replace('{error}', error), mimetype='text/html')
 
 @app.route('/logout')
 def logout():
@@ -1652,109 +950,6 @@ def compras():
     usuario = session.get('compras_user', '').capitalize()
     html = COMPRAS_HTML.replace('{usuario}', usuario)
     return Response(html, mimetype='text/html')
-
-# ── API ÓRDENES DE COMPRA ──────────────────────────────────────────────────────
-@app.route('/api/ordenes-compra', methods=['GET','POST'])
-def handle_ordenes_compra():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'POST':
-        d = request.json
-        if not d.get('proveedor'):
-            conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
-        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
-        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
-        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est) VALUES (?,?,?,?,?,?,?)",
-                  (numero_oc, datetime.now().isoformat(), 'Pendiente',
-                   d['proveedor'], d.get('observaciones',''),
-                   d.get('creado_por',''), d.get('fecha_entrega_est','')))
-        for it in (d.get('items') or []):
-            subtotal = round((it.get('cantidad_g',0)) * (it.get('precio_unitario',0)), 2)
-            c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
-                      (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                       it.get('cantidad_g',0), it.get('precio_unitario',0), subtotal))
-        conn.commit(); conn.close()
-        return jsonify({'message': f'OC {numero_oc} creada exitosamente', 'numero_oc': numero_oc}), 201
-    c.execute("""SELECT o.numero_oc, o.fecha, o.estado, o.proveedor,
-                        o.fecha_entrega_est, o.observaciones, o.creado_por,
-                        COUNT(i.id) as num_items
-                 FROM ordenes_compra o
-                 LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc
-                 GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 100""")
-    cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones','creado_por','num_items']
-    ordenes = [dict(zip(cols, r)) for r in c.fetchall()]
-    conn.close()
-    return jsonify({'ordenes': ordenes})
-
-@app.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT'])
-def handle_oc(numero_oc):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'PUT':
-        d = request.json
-        if d.get('estado'):
-            c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
-        conn.commit(); conn.close()
-        return jsonify({'message': f'OC {numero_oc} actualizada'})
-    c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
-    oc = c.fetchone()
-    c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-    items = c.fetchall()
-    conn.close()
-    if not oc: return jsonify({'error': 'OC no encontrada'}), 404
-    return jsonify({'oc': oc, 'items': items})
-
-# ── API PROVEEDORES ────────────────────────────────────────────────────────────
-@app.route('/api/proveedores', methods=['GET','POST'])
-def handle_proveedores():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'POST':
-        d = request.json
-        if not d.get('nombre'):
-            conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
-        try:
-            c.execute("INSERT INTO proveedores (nombre,contacto,email,telefono,categoria,condiciones_pago,fecha_creacion) VALUES (?,?,?,?,?,?,?)",
-                      (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
-                       d.get('categoria',''),d.get('condiciones_pago',''),datetime.now().isoformat()))
-            conn.commit(); conn.close()
-            return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
-        except Exception as e:
-            conn.close(); return jsonify({'error': str(e)}), 400
-    c.execute("SELECT nombre,contacto,email,telefono,categoria,condiciones_pago FROM proveedores WHERE activo=1 ORDER BY nombre")
-    cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago']
-    provs = [dict(zip(cols, r)) for r in c.fetchall()]
-    conn.close()
-    return jsonify({'proveedores': provs})
-
-# ── API SOLICITUDES DE COMPRA ──────────────────────────────────────────────────
-@app.route('/api/solicitudes-compra', methods=['GET','POST'])
-def handle_solicitudes_compra():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'POST':
-        d = request.json
-        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
-        numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
-        c.execute("INSERT INTO solicitudes_compra (numero,fecha,estado,solicitante,urgencia,observaciones) VALUES (?,?,?,?,?,?)",
-                  (numero, datetime.now().isoformat(), 'Pendiente',
-                   d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones','')))
-        for it in (d.get('items') or []):
-            c.execute("INSERT INTO solicitudes_compra_items (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion) VALUES (?,?,?,?,?,?)",
-                      (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                       it.get('cantidad_g',0), it.get('unidad','g'), it.get('justificacion','')))
-        conn.commit(); conn.close()
-        return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
-    c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,aprobado_por FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
-    cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','aprobado_por']
-    sols = [dict(zip(cols, r)) for r in c.fetchall()]
-    conn.close()
-    return jsonify({'solicitudes': sols})
-
-@app.route('/api/solicitudes-compra/<numero>', methods=['PUT'])
-def update_solicitud_compra(numero):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    d = request.json
-    c.execute("UPDATE solicitudes_compra SET estado=?,aprobado_por=?,fecha_aprobacion=? WHERE numero=?",
-              (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
-    conn.commit(); conn.close()
-    return jsonify({'message': f'Solicitud {numero} actualizada'})
 
 @app.route('/api/health')
 def health():
@@ -1941,10 +1136,10 @@ def handle_alertas():
     return jsonify({'alertas': alertas})
 
 
+
 @app.route('/api/alertas-reabastecimiento')
 def alertas_reabastecimiento():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    # Stock actual por MP (entradas - salidas)
     c.execute("""SELECT m.material_id,
                         COALESCE(mp.nombre_comercial, m.material_nombre) as nombre,
                         COALESCE(mp.proveedor,'') as proveedor,
@@ -1960,14 +1155,9 @@ def alertas_reabastecimiento():
     for r in rows:
         stock_actual = round(r[4] or 0, 1)
         stock_minimo = round(r[3], 1)
-        alertas.append({
-            'codigo_mp': r[0] or '',
-            'nombre': r[1] or '',
-            'proveedor': r[2] or '',
-            'stock_minimo': stock_minimo,
-            'stock_actual': max(stock_actual, 0),
-            'deficit': round(max(stock_minimo - stock_actual, 0), 1)
-        })
+        alertas.append({'codigo_mp': r[0] or '', 'nombre': r[1] or '', 'proveedor': r[2] or '',
+                        'stock_minimo': stock_minimo, 'stock_actual': max(stock_actual, 0),
+                        'deficit': round(max(stock_minimo - stock_actual, 0), 1)})
     return jsonify({'alertas': alertas, 'total': len(alertas)})
 
 @app.route('/api/stock')
@@ -2294,206 +1484,91 @@ def generar_oc_automatica():
     }), 201
 
 
-@app.route('/api/proveedores', methods=['GET', 'POST'])
-def handle_proveedores():
+# ── MÓDULO COMPRAS ──────────────────────────────────────────────────────────
+@app.route('/api/ordenes-compra', methods=['GET','POST'])
+def handle_ordenes_compra():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.json
-        c.execute("""INSERT INTO proveedores
-                     (nombre, contacto, email, telefono, nit, terminos_pago, lead_time_dias, notas, fecha_creacion)
-                     VALUES (?,?,?,?,?,?,?,?,?)""",
-                  (d['nombre'], d.get('contacto',''), d.get('email',''), d.get('telefono',''),
-                   d.get('nit',''), d.get('terminos_pago','Contado'), d.get('lead_time_dias',7),
-                   d.get('notas',''), datetime.now().isoformat()))
+        if not d.get('proveedor'): conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
+        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
+        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est) VALUES (?,?,?,?,?,?,?)",
+                  (numero_oc, datetime.now().isoformat(), 'Pendiente', d['proveedor'],
+                   d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est','')))
+        for it in (d.get('items') or []):
+            subtotal = round((it.get('cantidad_g',0)) * (it.get('precio_unitario',0)), 2)
+            c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
+                      (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                       it.get('cantidad_g',0), it.get('precio_unitario',0), subtotal))
         conn.commit(); conn.close()
-        return jsonify({'message': f"Proveedor {d['nombre']} creado"}), 201
-    c.execute("SELECT id,nombre,contacto,email,telefono,nit,terminos_pago,lead_time_dias,notas FROM proveedores WHERE activo=1 ORDER BY nombre")
-    rows = c.fetchall(); conn.close()
-    return jsonify({'proveedores': [{'id':r[0],'nombre':r[1],'contacto':r[2],'email':r[3],
-                                     'telefono':r[4],'nit':r[5],'terminos_pago':r[6],
-                                     'lead_time_dias':r[7],'notas':r[8]} for r in rows]})
+        return jsonify({'message': f'OC {numero_oc} creada', 'numero_oc': numero_oc}), 201
+    c.execute("""SELECT o.numero_oc, o.fecha, o.estado, o.proveedor, o.fecha_entrega_est,
+                        o.observaciones, o.creado_por, COUNT(i.id) as num_items
+                 FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc
+                 GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 100""")
+    cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones','creado_por','num_items']
+    conn.close()
+    return jsonify({'ordenes': [dict(zip(cols, r)) for r in c.fetchall()]})
 
-@app.route('/api/proveedores/<int:prov_id>', methods=['GET','PUT','DELETE'])
-def handle_proveedor(prov_id):
+@app.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT'])
+def handle_oc_detalle(numero_oc):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'DELETE':
-        c.execute("UPDATE proveedores SET activo=0 WHERE id=?", (prov_id,))
-        conn.commit(); conn.close()
-        return jsonify({'message': 'Proveedor desactivado'})
     if request.method == 'PUT':
         d = request.json
-        c.execute("""UPDATE proveedores SET nombre=?,contacto=?,email=?,telefono=?,nit=?,
-                     terminos_pago=?,lead_time_dias=?,notas=? WHERE id=?""",
-                  (d.get('nombre',''), d.get('contacto',''), d.get('email',''),
-                   d.get('telefono',''), d.get('nit',''), d.get('terminos_pago','Contado'),
-                   d.get('lead_time_dias',7), d.get('notas',''), prov_id))
-        conn.commit(); conn.close()
-        return jsonify({'message': 'Proveedor actualizado'})
-    c.execute("SELECT id,nombre,contacto,email,telefono,nit,terminos_pago,lead_time_dias,notas FROM proveedores WHERE id=?", (prov_id,))
-    r = c.fetchone(); conn.close()
-    return jsonify({'id':r[0],'nombre':r[1],'contacto':r[2],'email':r[3],'telefono':r[4],
-                    'nit':r[5],'terminos_pago':r[6],'lead_time_dias':r[7],'notas':r[8]}) if r else (jsonify({'error':'not found'}),404)
-
-@app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['GET','POST'])
-def recibir_oc(numero_oc):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'GET':
-        # Obtener items de la OC para mostrar el formulario de recepción
-        c.execute("""SELECT codigo_mp, nombre_mp, cantidad_solicitada, COALESCE(cantidad_recibida,0), estado
-                     FROM ordenes_compra_items WHERE numero_oc=?""", (numero_oc,))
-        items = [{'codigo_mp':r[0],'nombre_mp':r[1],'cantidad_pedida':r[2],
-                  'cantidad_recibida':r[3],'estado':r[4]} for r in c.fetchall()]
-        conn.close()
-        return jsonify({'numero_oc': numero_oc, 'items': items})
-    # POST: registrar recepción
-    d = request.json
-    items_recibidos = d.get('items', [])
-    recibido_por = d.get('recibido_por', 'Catalina')
-    obs = d.get('observaciones', '')
-    fecha = datetime.now().isoformat()
-    # Crear registro de recepción
-    c.execute("INSERT INTO recepciones_oc (numero_oc, fecha, recibido_por, observaciones) VALUES (?,?,?,?)",
-              (numero_oc, fecha, recibido_por, obs))
-    rec_id = c.lastrowid
-    entradas_creadas = []
-    for item in items_recibidos:
-        codigo = item.get('codigo_mp','')
-        nombre = item.get('nombre_mp','')
-        cant_rec = float(item.get('cantidad_recibida', 0))
-        cant_ped = float(item.get('cantidad_pedida', 0))
-        lote = item.get('lote','')
-        fvenc = item.get('fecha_vencimiento','')
-        est = item.get('estanteria','')
-        pos = item.get('posicion','')
-        diferencia = cant_ped - cant_rec
-        estado_item = 'OK' if diferencia == 0 else ('Parcial' if cant_rec > 0 else 'Pendiente')
-        # Registrar en recepciones_oc_items
-        c.execute("""INSERT INTO recepciones_oc_items
-                     (recepcion_id, numero_oc, codigo_mp, nombre_mp, cantidad_pedida, cantidad_recibida,
-                      lote, fecha_vencimiento, estanteria, posicion, diferencia, estado)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (rec_id, numero_oc, codigo, nombre, cant_ped, cant_rec, lote, fvenc, est, pos, diferencia, estado_item))
-        # Actualizar estado del item en la OC
-        c.execute("UPDATE ordenes_compra_items SET cantidad_recibida=?, estado=? WHERE numero_oc=? AND codigo_mp=?",
-                  (cant_rec, estado_item, numero_oc, codigo))
-        if cant_rec > 0:
-            # Crear entrada en inventario automáticamente
-            if not lote or lote == 'AUTO':
-                from datetime import date
-                lote = f"REC{date.today().strftime('%y%m%d')}{codigo[-3:]}"
-            c.execute("""INSERT INTO movimientos
-                         (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
-                          lote, fecha_vencimiento, estanteria, posicion, estado_lote)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                      (codigo, nombre, cant_rec, 'Entrada', fecha,
-                       f'Recepcion OC: {numero_oc}', lote, fvenc, est, pos, 'VIGENTE'))
-            entradas_creadas.append({'codigo': codigo, 'nombre': nombre, 'cantidad_g': cant_rec, 'lote': lote})
-    # Actualizar estado de la OC
-    c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND estado='Pendiente'", (numero_oc,))
-    pendientes = c.fetchone()[0]
-    nuevo_estado = 'Recibida' if pendientes == 0 else 'Recibida parcialmente'
-    c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (nuevo_estado, numero_oc))
-    conn.commit(); conn.close()
-    return jsonify({
-        'message': f'Recepcion registrada. {len(entradas_creadas)} items ingresados al inventario.',
-        'entradas_inventario': entradas_creadas,
-        'estado_oc': nuevo_estado
-    }), 201
-
-@app.route('/api/ordenes-compra/<numero_oc>/detalle')
-def detalle_oc(numero_oc):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT numero_oc, fecha, estado, proveedor, observaciones FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+        if d.get('estado'): c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
+        conn.commit(); conn.close(); return jsonify({'message': f'OC {numero_oc} actualizada'})
+    c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc = c.fetchone()
-    if not oc:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
-    c.execute("SELECT codigo_mp, nombre_mp, cantidad_solicitada, COALESCE(cantidad_recibida,0), unidad, COALESCE(estado,'Pendiente') FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-    items = [{'codigo_mp':r[0],'nombre_mp':r[1],'cantidad_pedida':r[2],
-              'cantidad_recibida':r[3],'unidad':r[4],'estado':r[5]} for r in c.fetchall()]
-    # Historial de recepciones
-    c.execute("SELECT fecha, recibido_por, observaciones, estado FROM recepciones_oc WHERE numero_oc=? ORDER BY fecha DESC", (numero_oc,))
-    recepciones = [{'fecha':r[0],'recibido_por':r[1],'obs':r[2],'estado':r[3]} for r in c.fetchall()]
-    conn.close()
-    return jsonify({'numero_oc':oc[0],'fecha':oc[1],'estado':oc[2],'proveedor':oc[3],
-                    'observaciones':oc[4],'items':items,'recepciones':recepciones})
+    c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    items = c.fetchall(); conn.close()
+    if not oc: return jsonify({'error': 'OC no encontrada'}), 404
+    return jsonify({'oc': oc, 'items': items})
 
-
-@app.route('/api/solicitudes', methods=['GET','POST'])
-def handle_solicitudes():
+@app.route('/api/proveedores-compras', methods=['GET','POST'])
+def handle_proveedores_compras():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.json
-        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); n=(c.fetchone()[0] or 0)+1
-        numero = f"SR-{datetime.now().strftime('%Y')}-{n:04d}"
-        c.execute("""INSERT INTO solicitudes_compra
-                     (numero, tipo, solicitante, departamento, descripcion, justificacion,
-                      urgencia, fecha, estado)
-                     VALUES (?,?,?,?,?,?,?,?,?)""",
-                  (numero, d.get('tipo','Otro'), d.get('solicitante',''), d.get('departamento',''),
-                   d.get('descripcion',''), d.get('justificacion',''),
-                   d.get('urgencia','Normal'), datetime.now().isoformat(), 'Enviada'))
-        sol_id = c.lastrowid
-        for item in d.get('items',[]):
-            c.execute("""INSERT INTO solicitudes_compra_items
-                         (solicitud_id, descripcion, cantidad, unidad, codigo_mp)
-                         VALUES (?,?,?,?,?)""",
-                      (sol_id, item.get('descripcion',''), item.get('cantidad',1),
-                       item.get('unidad','unidad'), item.get('codigo_mp','')))
+        if not d.get('nombre'): conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
+        try:
+            c.execute("INSERT INTO proveedores (nombre,contacto,email,telefono,categoria,condiciones_pago,fecha_creacion) VALUES (?,?,?,?,?,?,?)",
+                      (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
+                       d.get('categoria',''),d.get('condiciones_pago',''),datetime.now().isoformat()))
+            conn.commit(); conn.close()
+            return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
+        except Exception as e: conn.close(); return jsonify({'error': str(e)}), 400
+    c.execute("SELECT nombre,contacto,email,telefono,categoria,condiciones_pago FROM proveedores WHERE activo=1 ORDER BY nombre")
+    cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago']
+    provs = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
+    return jsonify({'proveedores': provs})
+
+@app.route('/api/solicitudes-compra', methods=['GET','POST'])
+def handle_solicitudes_compra():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO solicitudes_compra (numero,fecha,estado,solicitante,urgencia,observaciones) VALUES (?,?,?,?,?,?)",
+                  (numero, datetime.now().isoformat(), 'Pendiente', d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones','')))
+        for it in (d.get('items') or []):
+            c.execute("INSERT INTO solicitudes_compra_items (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion) VALUES (?,?,?,?,?,?)",
+                      (numero, it.get('codigo_mp',''), it.get('nombre_mp',''), it.get('cantidad_g',0), it.get('unidad','g'), it.get('justificacion','')))
         conn.commit(); conn.close()
-        return jsonify({'message': f'Solicitud {numero} enviada', 'numero': numero}), 201
-    estado_filtro = request.args.get('estado','')
-    if estado_filtro:
-        c.execute("SELECT id,numero,tipo,solicitante,descripcion,urgencia,fecha,estado,valor_total,proveedor_asignado FROM solicitudes_compra WHERE estado=? ORDER BY fecha DESC", (estado_filtro,))
-    else:
-        c.execute("SELECT id,numero,tipo,solicitante,descripcion,urgencia,fecha,estado,valor_total,proveedor_asignado FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
-    rows = c.fetchall(); conn.close()
-    return jsonify({'solicitudes': [{'id':r[0],'numero':r[1],'tipo':r[2],'solicitante':r[3],
-                                     'descripcion':r[4],'urgencia':r[5],'fecha':r[6][:10],
-                                     'estado':r[7],'valor_total':r[8] or 0,'proveedor':r[9] or ''} for r in rows]})
+        return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+    c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,aprobado_por FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
+    cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','aprobado_por']
+    sols = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
+    return jsonify({'solicitudes': sols})
 
-@app.route('/api/solicitudes/<numero>', methods=['GET','PUT'])
-def handle_solicitud(numero):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'PUT':
-        d = request.json; updates = []; vals = []
-        for field in ['estado','proveedor_asignado','valor_total','comentarios_gerencia',
-                      'aprobado_por','fecha_aprobacion','fecha_pago','metodo_pago','numero_oc']:
-            if field in d:
-                if field == 'fecha_aprobacion' and d[field] == 'now': d[field] = datetime.now().isoformat()
-                if field == 'fecha_pago' and d[field] == 'now': d[field] = datetime.now().isoformat()
-                updates.append(f"{field}=?"); vals.append(d[field])
-        # Actualizar precios de items si vienen
-        for item in d.get('items',[]):
-            c.execute("UPDATE solicitudes_compra_items SET precio_unitario=?,precio_total=? WHERE id=?",
-                      (item.get('precio_unitario',0), item.get('precio_total',0), item.get('id',0)))
-        if updates:
-            vals.append(numero)
-            c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", vals)
-        conn.commit()
-    c.execute("SELECT * FROM solicitudes_compra WHERE numero=?", (numero,)); sol=c.fetchone()
-    if not sol: conn.close(); return jsonify({'error':'not found'}),404
-    c.execute("SELECT * FROM solicitudes_compra_items WHERE solicitud_id=?", (sol[0],)); items=c.fetchall()
-    conn.close()
-    cols=['id','numero','tipo','solicitante','departamento','descripcion','justificacion',
-          'urgencia','fecha','estado','proveedor_asignado','valor_total','fecha_cotizacion',
-          'fecha_aprobacion','aprobado_por','comentarios_gerencia','fecha_pago','metodo_pago','numero_oc']
-    result = dict(zip(cols, sol))
-    result['items'] = [{'id':i[0],'descripcion':i[2],'cantidad':i[3],'unidad':i[4],
-                        'codigo_mp':i[5],'precio_unitario':i[6],'precio_total':i[7]} for i in items]
-    result['valor_total_calculado'] = sum(i['precio_total'] for i in result['items'])
-    return jsonify(result)
-
-@app.route('/api/solicitudes-resumen')
-def solicitudes_resumen():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT estado, COUNT(*) FROM solicitudes_compra GROUP BY estado")
-    estados = {r[0]:r[1] for r in c.fetchall()}
-    c.execute("SELECT SUM(valor_total) FROM solicitudes_compra WHERE estado IN ('Aprobada','Pedida','En transito','Recibida')")
-    comprometido = c.fetchone()[0] or 0
-    c.execute("SELECT SUM(valor_total) FROM solicitudes_compra WHERE fecha>=date('now','-30 days')")
-    mes_actual = c.fetchone()[0] or 0
-    conn.close()
-    return jsonify({'por_estado': estados, 'comprometido': comprometido, 'mes_actual': mes_actual})
+@app.route('/api/solicitudes-compra/<numero>', methods=['PUT'])
+def update_solicitud_compra(numero):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); d = request.json
+    c.execute("UPDATE solicitudes_compra SET estado=?,aprobado_por=?,fecha_aprobacion=? WHERE numero=?",
+              (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Solicitud {numero} actualizada'})
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
