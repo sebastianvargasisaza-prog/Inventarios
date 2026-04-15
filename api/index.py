@@ -1319,5 +1319,82 @@ def dashboard_stats():
         'stock_total_kg': round(stock_total_g/1000, 1)
     })
 
+
+@app.route('/api/generar-oc-automatica', methods=['POST'])
+def generar_oc_automatica():
+    """Genera OCs automaticas por proveedor para todas las MPs bajo minimo"""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    # Obtener MPs bajo minimo
+    c.execute("""SELECT m.codigo_mp, m.nombre_comercial, m.proveedor, m.stock_minimo,
+                        COALESCE(s.stock_actual, 0) as stock_actual
+                 FROM maestro_mps m
+                 LEFT JOIN (SELECT material_id,
+                            SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                            FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+                 WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock_actual,0)<m.stock_minimo
+                 ORDER BY m.proveedor, m.nombre_comercial""")
+    alertas = c.fetchall()
+
+    if not alertas:
+        conn.close()
+        return jsonify({'message': 'No hay MPs bajo stock minimo', 'ordenes': []})
+
+    # Agrupar por proveedor
+    por_proveedor = {}
+    for row in alertas:
+        codigo, nombre, prov, smin, sact = row
+        prov = prov or 'Sin proveedor'
+        deficit = smin - sact
+        cantidad_pedir = round(deficit * 1.1, 0)  # pedir el deficit + 10% extra
+        if prov not in por_proveedor:
+            por_proveedor[prov] = []
+        por_proveedor[prov].append({
+            'codigo_mp': codigo, 'nombre_mp': nombre,
+            'stock_actual': round(sact, 0), 'stock_minimo': smin,
+            'deficit': round(deficit, 0), 'cantidad_pedir': cantidad_pedir,
+            'unidad': 'g'
+        })
+
+    # Crear OC por cada proveedor
+    ordenes_creadas = []
+    for prov, items in por_proveedor.items():
+        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num=(c.fetchone()[0] or 0)+1
+        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+        c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
+                  (numero_oc, datetime.now().isoformat(), 'Pendiente', prov, 'Generada automaticamente por stock bajo minimo'))
+        for item in items:
+            c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_solicitada, unidad) VALUES (?,?,?,?,?)",
+                      (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_pedir'], 'g'))
+        # Generar cuerpo del email
+        sep = '-' * 50
+        fecha_str = datetime.now().strftime('%d/%m/%Y')
+        eb = 'ORDEN DE COMPRA: ' + numero_oc + '\n'
+        eb += 'Fecha: ' + fecha_str + '\n'
+        eb += 'Proveedor: ' + prov + '\n'
+        eb += 'Generada por: Sistema de Inventarios Espagiria\n\n'
+        eb += 'MATERIAS PRIMAS A COMPRAR:\n' + sep + '\n'
+        for it in items:
+            eb += str(it['codigo_mp']) + ' - ' + str(it['nombre_mp']) + '\n'
+            eb += '  Stock actual: ' + str(int(it['stock_actual'])) + 'g | Minimo: ' + str(int(it['stock_minimo'])) + 'g\n'
+            eb += '  CANTIDAD A PEDIR: ' + str(int(it['cantidad_pedir'])) + ' g = ' + str(round(it['cantidad_pedir']/1000, 2)) + ' kg\n'
+            eb += sep + '\n'
+        eb += '\nTotal: ' + str(len(items)) + ' items pendientes de compra.\n'
+        eb += 'Por favor aprobar y contactar al proveedor.\n'
+        eb += '\n--- Sistema de Inventarios Espagiria Laboratorios ---\n'
+        email_body = eb
+        ordenes_creadas.append({
+            'numero_oc': numero_oc, 'proveedor': prov,
+            'total_items': len(items), 'items': items,
+            'email_subject': f'[OC] {numero_oc} - Espagiria Laboratorios',
+            'email_body': email_body
+        })
+
+    conn.commit(); conn.close()
+    return jsonify({
+        'message': f'{len(ordenes_creadas)} OC(s) generadas automaticamente',
+        'ordenes': ordenes_creadas
+    }), 201
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
