@@ -129,12 +129,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="overflow-x:auto;">
     <table class="table">
       <thead><tr>
-        <th>Codigo</th><th>Material</th><th>Lote</th><th>Proveedor</th>
+        <th>Cod. MP</th><th>Nombre INCI</th><th>Nombre Comercial</th>
+        <th>Tipo</th><th>Proveedor</th>
+        <th style="text-align:right;">Stock Min (g)</th><th>Lote</th>
+        <th style="text-align:right;">Cantidad (g)</th>
         <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
-        <th style="text-align:right;">g</th><th style="text-align:right;">kg</th>
-        <th style="text-align:center;">Vencimiento</th><th style="text-align:center;">Estado</th>
+        <th style="text-align:center;">Fecha Venc.</th>
+        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -289,7 +292,7 @@ async function loadStock(){
 function renderStock(items){
   var tb=document.getElementById('stock-body');
   if(!items.length){
-    tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';
+    tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';
     return;
   }
   var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent'};
@@ -298,18 +301,24 @@ function renderStock(items){
   var h='';
   items.forEach(function(i){
     var a=i.alerta||'ok';
-    var qc=i.cantidad_g<=0?'color:#cc0000;':i.cantidad_g<100?'color:#e68a00;':'color:#1a8a1a;';
-    var dias=i.dias_para_vencer!=null?(i.dias_para_vencer<0?'Venc. hace '+(Math.abs(i.dias_para_vencer))+'d':i.dias_para_vencer+'d'):'';
-    h+='<tr style="background:'+bg[a]+';"><td style="font-family:monospace;font-size:0.8em;color:#555;">'+i.material_id+'</td>';
-    h+='<td style="font-weight:500;">'+i.material_nombre+'</td>';
+    var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
+    var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
+    var dias_color=i.dias_para_vencer!=null&&i.dias_para_vencer<0?'color:#cc0000;font-weight:700;':i.dias_para_vencer<=30?'color:#e65100;font-weight:700;':'';
+    var min_color=i.cantidad_g>0&&i.stock_min_g>0&&i.cantidad_g<i.stock_min_g?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
+    h+='<tr style="background:'+bg[a]+';font-size:0.85em;">';
+    h+='<td style="font-family:monospace;font-size:0.82em;color:#555;">'+i.material_id+'</td>';
+    h+='<td style="font-size:0.8em;color:#444;">'+i.nombre_inci+'</td>';
+    h+='<td style="font-weight:600;">'+i.material_nombre+'</td>';
+    h+='<td style="color:#888;font-size:0.82em;">'+i.tipo+'</td>';
+    h+='<td style="font-size:0.82em;color:#555;">'+i.proveedor+'</td>';
+    h+='<td style="text-align:right;'+min_color+'">'+i.stock_min_g.toLocaleString()+'</td>';
     h+='<td style="font-family:monospace;font-size:0.82em;">'+i.lote+'</td>';
-    h+='<td style="font-size:0.85em;color:#666;">'+i.proveedor+'</td>';
+    h+='<td style="text-align:right;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
     h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';
-    h+='<td style="text-align:center;">'+i.posicion+'</td>';
-    h+='<td style="text-align:right;font-weight:700;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
-    h+='<td style="text-align:right;color:#888;">'+i.cantidad_kg.toFixed(3)+'</td>';
-    h+='<td style="text-align:center;font-size:0.82em;color:'+fc[a]+';">'+i.fecha_vencimiento+'<br><b>'+dias+'</b></td>';
-    h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
+    h+='<td style="text-align:center;color:#555;">'+i.posicion+'</td>';
+    h+='<td style="text-align:center;font-size:0.82em;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
+    h+='<td style="text-align:right;'+dias_color+'">'+dias+'</td>';
+    h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;
@@ -747,14 +756,20 @@ def get_lotes():
     from datetime import date
     hoy = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("""SELECT material_id, material_nombre, lote, cantidad,
-                        fecha_vencimiento, estanteria, posicion, proveedor, estado_lote
-                 FROM movimientos WHERE tipo='Entrada'
-                 ORDER BY material_nombre ASC, fecha_vencimiento ASC""")
+    c.execute("""SELECT m.material_id, m.material_nombre, m.lote, m.cantidad,
+                        m.fecha_vencimiento, m.estanteria, m.posicion, m.proveedor,
+                        m.estado_lote,
+                        COALESCE(mp.nombre_inci, '') as nombre_inci,
+                        COALESCE(mp.tipo, '') as tipo,
+                        COALESCE(mp.stock_minimo, 0) as stock_minimo
+                 FROM movimientos m
+                 LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
+                 WHERE m.tipo='Entrada'
+                 ORDER BY m.material_nombre ASC, m.fecha_vencimiento ASC""")
     rows = c.fetchall(); conn.close()
     result = []
     for r in rows:
-        mid,mnm,lote,cant,fvenc,est,pos,prov,estado = r
+        mid,mnm,lote,cant,fvenc,est,pos,prov,estado,inci,tipo,stock_min = r
         dias,alerta = None,'ok'
         if fvenc and len(str(fvenc)) >= 10:
             try:
@@ -766,13 +781,14 @@ def get_lotes():
                 elif dias <= 90: alerta = 'proximo'
             except: pass
         result.append({
-            'material_id': mid or '', 'material_nombre': mnm or '',
+            'material_id': mid or '', 'nombre_inci': inci or '',
+            'material_nombre': mnm or '', 'tipo': tipo or '',
+            'proveedor': prov or '', 'stock_min_g': round(stock_min or 0, 1),
             'lote': lote or '', 'cantidad_g': round(cant or 0, 2),
             'cantidad_kg': round((cant or 0)/1000, 3),
+            'estanteria': est or '', 'posicion': pos or '',
             'fecha_vencimiento': str(fvenc)[:10] if fvenc else '',
-            'dias_para_vencer': dias, 'estanteria': est or '',
-            'posicion': pos or '', 'proveedor': prov or '',
-            'estado_lote': estado or '', 'alerta': alerta
+            'dias_para_vencer': dias, 'estado_lote': estado or '', 'alerta': alerta
         })
     return jsonify({'lotes': result, 'total': len(result)})
 
@@ -788,9 +804,11 @@ def generar_rotulos(producto_nombre, cantidad_kg):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
-    lotes = {}
+    lotes = {}; incis = {}
     for r in items:
         mid = r[0]
+        c.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?", (mid,))
+        ir = c.fetchone(); incis[mid] = ir[0] if ir and ir[0] else ''
         c.execute("""SELECT lote, estanteria, posicion, fecha_vencimiento
                      FROM movimientos WHERE material_id=? AND tipo='Entrada'
                      AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
@@ -812,7 +830,10 @@ def generar_rotulos(producto_nombre, cantidad_kg):
         rhtml += '<table>'
         rhtml += '<tr><td class="l">OP:</td><td class="v">' + op_num + '</td><td class="l">Fecha:</td><td class="v">' + hoy + '</td></tr>'
         rhtml += '<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>' + prod + '</b> &mdash; ' + str(cantidad_kg) + ' kg</td></tr>'
+        inci = incis.get(mid, '')
         rhtml += '<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>' + mnm + '</b> <span style="color:#888;font-size:0.8em;">(' + mid + ')</span></td></tr>'
+        if inci:
+            rhtml += '<tr><td class="l">Nombre INCI:</td><td class="v" colspan="3" style="font-size:0.82em;color:#444;">' + inci + '</td></tr>'
         rhtml += '<tr><td class="l">Lote MP:</td><td class="v bold">' + lote_mp + '</td><td class="l">Ubicacion:</td><td class="v">' + ubicacion + '</td></tr>'
         rhtml += '<tr><td class="l">Vencimiento:</td><td class="v" style="color:#c0392b;">' + vence + '</td><td class="l">% formula:</td><td class="v">' + str(pct) + '%</td></tr>'
         rhtml += '<tr><td class="l">Peso teorico:</td><td class="v peso">' + f"{peso:,.2f} g" + '</td><td class="l">Lote Prod.:</td><td class="blank"></td></tr>'

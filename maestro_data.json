@@ -1,0 +1,2300 @@
+{
+  "mps": [
+    {
+      "codigo_mp": "MP00186",
+      "nombre_inci": "4-BUTYLRESORCINOL",
+      "nombre_comercial": "4-Butyl resorcinol",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00183",
+      "nombre_inci": "ALPHA-ARBUTIN",
+      "nombre_comercial": "Alpha arbutina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00117",
+      "nombre_inci": "COCOS NUCIFERA OIL",
+      "nombre_comercial": "Aceite de coco",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00138",
+      "nombre_inci": "LACTIC ACID",
+      "nombre_comercial": "Ácido láctico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00235",
+      "nombre_inci": "NICOTINAMIDE ADENINE DINUCLEOTIDE",
+      "nombre_comercial": "NAD",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00275",
+      "nombre_inci": "NICOTINAMIDE MONONUCLEOTIDE",
+      "nombre_comercial": "NMN",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00189",
+      "nombre_inci": "ACETYL ZINGERONE",
+      "nombre_comercial": "Acetil zingerone",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00152",
+      "nombre_inci": "ADENOSINE",
+      "nombre_comercial": "Adenosina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00223",
+      "nombre_inci": "SODIUM DNA",
+      "nombre_comercial": "ADN vegetal (PDRN)",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00085",
+      "nombre_inci": "MELALEUCA ALTERNIFOLIA LEAF OIL",
+      "nombre_comercial": "Aceite esencial árbol de té",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00088",
+      "nombre_inci": "PELARGONIUM GRAVEOLENS FLOWER OIL",
+      "nombre_comercial": "Aceite esencial de geranio",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00096",
+      "nombre_inci": "BOSWELLIA CARTERII RESIN OIL",
+      "nombre_comercial": "Aceite esencial de incienso",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00104",
+      "nombre_inci": "JASMINUM OFFICINALE OIL",
+      "nombre_comercial": "Aceite esencial de jazmín",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00039",
+      "nombre_inci": "LAVANDULA ANGUSTIFOLIA OIL",
+      "nombre_comercial": "Aceite esencial de lavanda",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00091",
+      "nombre_inci": "MATRICARIA CHAMOMILLA FLOWER OIL",
+      "nombre_comercial": "Aceite esencial de manzanilla",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00025",
+      "nombre_inci": "CITRUS AURANTIUM AMARA FLOWER OIL",
+      "nombre_comercial": "Aceite de neroli",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00139",
+      "nombre_inci": "ROSMARINUS OFFICINALIS LEAF OIL",
+      "nombre_comercial": "Aceite esencial de romero",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00101",
+      "nombre_inci": "VANILLA PLANIFOLIA FRUIT OIL",
+      "nombre_comercial": "Aceite esencial de vainilla",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00192",
+      "nombre_inci": "ACETYL HEXAPEPTIDE-8",
+      "nombre_comercial": "Acetyl hexapeptide-8",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00047",
+      "nombre_inci": "ALLANTOIN",
+      "nombre_comercial": "Alantoína",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00158",
+      "nombre_inci": "LACTOBIONIC ACID",
+      "nombre_comercial": "Ácido lactobiónico",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00044",
+      "nombre_inci": "ETHANOL",
+      "nombre_comercial": "Alcohol etílico 95-96%",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00133",
+      "nombre_inci": "ISOPROPYL ALCOHOL",
+      "nombre_comercial": "Alcohol isopropílico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00216",
+      "nombre_inci": "ALOE BARBADENSIS LEAF JUICE POWDER",
+      "nombre_comercial": "Aloe vera polvo",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00217",
+      "nombre_inci": "ALOE BARBADENSIS LEAF JUICE POWDER",
+      "nombre_comercial": "Aloe vera 200X polvo",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPANAC01",
+      "nombre_inci": "P-ANISIC ACID",
+      "nombre_comercial": "P-anisic acid",
+      "tipo": "",
+      "proveedor": "Bolite",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00165",
+      "nombre_inci": "ANEMARRHENA ASPHODELOIDES ROOT EXTRACT",
+      "nombre_comercial": "Anemarrhena root extract",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00234",
+      "nombre_inci": "APIGENIN",
+      "nombre_comercial": "Apigenin",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00230",
+      "nombre_inci": "ASCORBIC ACID",
+      "nombre_comercial": "Vitamina C",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00156",
+      "nombre_inci": "ASCORBYL PALMITATE",
+      "nombre_comercial": "Ascorbyl palmitate",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00238",
+      "nombre_inci": "ASCORBYL GLUCOSIDE",
+      "nombre_comercial": "Ascorbyl glucoside",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00185",
+      "nombre_inci": "ASIATICOSIDE",
+      "nombre_comercial": "Asiaticoside 95%",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00170",
+      "nombre_inci": "ACETYL TETRAPEPTIDE-3",
+      "nombre_comercial": "Acetyl tetrapeptide-3",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00178",
+      "nombre_inci": "ACETYL TETRAPEPTIDE-40",
+      "nombre_comercial": "Acetyl tetrapeptide-40",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00175",
+      "nombre_inci": "ACETYL TETRAPEPTIDE-5",
+      "nombre_comercial": "Acetyl tetrapeptide-5",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPATSG01",
+      "nombre_inci": "MALEATED SOYBEAN OIL GLYCERYL/OCTYLDODECANOL ESTERS",
+      "nombre_comercial": "Antaron Soja Glyceride",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00218",
+      "nombre_inci": "ASTAXANTHIN",
+      "nombre_comercial": "Astaxantina",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00221",
+      "nombre_inci": "AZELAIC ACID",
+      "nombre_comercial": "Ácido azelaico",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00284",
+      "nombre_inci": "POTASSIUM AZELOYL DIGLYCINATE (AND) WATER",
+      "nombre_comercial": "Azeclair",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBADM01",
+      "nombre_inci": "BIS-AMINOPROPYL DIGLYCOL DIMALATE",
+      "nombre_comercial": "Bis-aminopropyl diglycol dimalate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00264",
+      "nombre_inci": "BETA-CYCLODEXTRIN",
+      "nombre_comercial": "Beta-cyclodextrin",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00052",
+      "nombre_inci": "BIS-DIGLYCERYL POLYACYLADIPATE-2",
+      "nombre_comercial": "Bis-diglyceryl polyacyladipate-2",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00267",
+      "nombre_inci": "BIS-ETHYLHEXYLOXYPHENOL METHOXYPHENYL TRIAZINE",
+      "nombre_comercial": "Bis-ethyloxyphenol methoxyphenyl triazine",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBENJ01",
+      "nombre_inci": "STYRAX BENZOIN RESIN",
+      "nombre_comercial": "Benjuí tintura",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00263",
+      "nombre_inci": "BETAINE SALICYLATE",
+      "nombre_comercial": "Betaine salicylate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00215",
+      "nombre_inci": "BETAINE",
+      "nombre_comercial": "Betaína",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00214",
+      "nombre_inci": "BETA-GLUCAN",
+      "nombre_comercial": "Betaglucano",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBHTC01",
+      "nombre_inci": "BEHENTRIMONIUM CHLORIDE",
+      "nombre_comercial": "Behentrimonium chloride",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00067",
+      "nombre_inci": "BUTYLHYDROXYTOLUENE",
+      "nombre_comercial": "Antioxidante BHT",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00173",
+      "nombre_inci": "BAKUCHIOL",
+      "nombre_comercial": "Bakuchiol",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00128",
+      "nombre_inci": "CYCLOPENTASILOXANE (AND) DIMETHICONE CROSSPOLYMER",
+      "nombre_comercial": "BM-600",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00184",
+      "nombre_inci": "PEG-12 DIMETHICONE",
+      "nombre_comercial": "BM-939",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00129",
+      "nombre_inci": "CYCLOPENTASILOXANE",
+      "nombre_comercial": "BM-945",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00127",
+      "nombre_inci": "PHENYL TRIMETHICONE",
+      "nombre_comercial": "BM-956",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00293",
+      "nombre_inci": "DIMETHICONE",
+      "nombre_comercial": "BM 96-350",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00087",
+      "nombre_inci": "EUTERPE OLERACEA FRUIT OIL",
+      "nombre_comercial": "Beauty Oil Acaí",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00137",
+      "nombre_inci": "ARGANIA SPINOSA KERNEL OIL",
+      "nombre_comercial": "Beauty Oil Argán",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00099",
+      "nombre_inci": "ARNICA MONTANA FLOWER EXTRACT",
+      "nombre_comercial": "Beauty Oil Árnica",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00037",
+      "nombre_inci": "ADANSONIA DIGITATA SEED OIL",
+      "nombre_comercial": "Beauty Oil Baobab",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00038",
+      "nombre_inci": "MAURITIA FLEXUOSA FRUIT OIL",
+      "nombre_comercial": "Beauty Oil Buriti",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00097",
+      "nombre_inci": "THEOBROMA CACAO SEED OIL",
+      "nombre_comercial": "Beauty Oil Cacao",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00102",
+      "nombre_inci": "CENTELLA ASIATICA EXTRACT",
+      "nombre_comercial": "Beauty Oil Centella Asiatica",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00034",
+      "nombre_inci": "COFFEA ARABICA SEED OIL",
+      "nombre_comercial": "Beauty Oil Café",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00029",
+      "nombre_inci": "BACTRIS GASIPAES FRUIT OIL",
+      "nombre_comercial": "Beauty Oil Chontaduro",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00100",
+      "nombre_inci": "CAMELLIA OLEIFERA SEED OIL",
+      "nombre_comercial": "Beauty Oil Camelia",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBOCO01",
+      "nombre_inci": "COPAIFERA OFFICINALIS RESIN OIL",
+      "nombre_comercial": "Beauty Oil Copaiba",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00103",
+      "nombre_inci": "CERAMIDE NP",
+      "nombre_comercial": "Beauty Oil Cerámidas",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00136",
+      "nombre_inci": "SIMMONDSIA CHINENSIS SEED OIL",
+      "nombre_comercial": "Beauty Oil Jojoba",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00098",
+      "nombre_inci": "ORBIGNYA OLEIFERA SEED OIL",
+      "nombre_comercial": "Beauty Oil Kakaí",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00032",
+      "nombre_inci": "PASSIFLORA INCARNATA SEED OIL",
+      "nombre_comercial": "Beauty Oil Maracuyá",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00043",
+      "nombre_inci": "PROPANEDIOL",
+      "nombre_comercial": "Beauty Propanediol",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00105",
+      "nombre_inci": "ROSA CANINA FRUIT OIL",
+      "nombre_comercial": "Beauty Oil Rosa mosqueta",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00036",
+      "nombre_inci": "VITIS VINIFERA SEED OIL",
+      "nombre_comercial": "Beauty Oil Pepita de uva",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00031",
+      "nombre_inci": "DAUCUS CAROTA SATIVA ROOT EXTRACT",
+      "nombre_comercial": "Beauty Oil Zanahoria",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00122",
+      "nombre_inci": "HDI/TRIMETHYLOL HEXYLLACTONE CROSSPOLYMER (AND) SILICA",
+      "nombre_comercial": "BPD-500W",
+      "tipo": "",
+      "proveedor": "Colquímicos",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00203",
+      "nombre_inci": "PENDIENTE INCI",
+      "nombre_comercial": "BRO-IIS2",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBSBL01",
+      "nombre_inci": "BISABOLOL",
+      "nombre_comercial": "Bisabolol",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00068",
+      "nombre_inci": "PHENOXYETHANOL (AND) ETHYLHEXYLGLYCERIN",
+      "nombre_comercial": "Biosure FE",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00206",
+      "nombre_inci": "PENDIENTE INCI",
+      "nombre_comercial": "BTD-IIS2",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00258",
+      "nombre_inci": "BUTYLENE GLYCOL",
+      "nombre_comercial": "Butilenglicol",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00030",
+      "nombre_inci": "PROPYL HEPTYL CAPRYLATE",
+      "nombre_comercial": "Bauty Sensof",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00193",
+      "nombre_inci": "BIOTINOYL TRIPEPTIDE-1",
+      "nombre_comercial": "Biotinoyl tripeptide-1",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00135",
+      "nombre_inci": "PENDIENTE INCI",
+      "nombre_comercial": "BY0-IIS2",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00253",
+      "nombre_inci": "BENZYL NICOTINATE",
+      "nombre_comercial": "Benzyl nicotinate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCAAW01",
+      "nombre_inci": "CITRUS AURANTIUM AMARA FLOWER WATER",
+      "nombre_comercial": "Citrus aurantium amara water",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00118",
+      "nombre_inci": "CAFFEINE",
+      "nombre_comercial": "Cafeína anhidra",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00254",
+      "nombre_inci": "C13-15 ALKANE",
+      "nombre_comercial": "C13-C15 Alkane",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00008",
+      "nombre_inci": "CARBOMER",
+      "nombre_comercial": "Carbopol",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00246",
+      "nombre_inci": "CAPRYLOYL SALICYLIC ACID",
+      "nombre_comercial": "Capryloyl salicylic acid",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00176",
+      "nombre_inci": "CENTELLA ASIATICA EXTRACT",
+      "nombre_comercial": "Centella asiatica triterpenes 80%",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00084",
+      "nombre_inci": "COCAMIDOPROPYL BETAINE",
+      "nombre_comercial": "Probetaína",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00058",
+      "nombre_inci": "EUPHORBIA CERIFERA CERA",
+      "nombre_comercial": "Candelilla wax",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00208",
+      "nombre_inci": "CERA ALBA",
+      "nombre_comercial": "Cera de abejas",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00126",
+      "nombre_inci": "CELLULOSE",
+      "nombre_comercial": "Celulosa",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00201",
+      "nombre_inci": "CETYL ALCOHOL",
+      "nombre_comercial": "Alcohol cetílico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00240",
+      "nombre_inci": "CETYL TRANEXAMATE MESYLATE",
+      "nombre_comercial": "Cetyl tranexamate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00041",
+      "nombre_inci": "CERESIN",
+      "nombre_comercial": "Ceresine wax",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00181",
+      "nombre_inci": "CENTELLA ASIATICA EXTRACT",
+      "nombre_comercial": "Centella asiatica extract",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00220",
+      "nombre_inci": "CHITOSAN",
+      "nombre_comercial": "Chitosan",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCHLV01",
+      "nombre_inci": "CHOLESTEROL",
+      "nombre_comercial": "Cholesterol vegetal",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00065",
+      "nombre_inci": "CITRIC ACID",
+      "nombre_comercial": "Ácido cítrico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCMLW01",
+      "nombre_inci": "CAMELLIA SINENSIS LEAF WATER",
+      "nombre_comercial": "Camellia sinensis leaf water",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCOCP01",
+      "nombre_inci": "COCO-CAPRYLATE",
+      "nombre_comercial": "Coco caprylate",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00050",
+      "nombre_inci": "CAPRYLYL/CAPRYL GLUCOSIDE",
+      "nombre_comercial": "Caprylyl/capryl glucoside",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCRCO01",
+      "nombre_inci": "COCOS NUCIFERA WAX",
+      "nombre_comercial": "Cera de coco",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00017",
+      "nombre_inci": "CI 77288",
+      "nombre_comercial": "Chromium Oxide Green",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00076",
+      "nombre_inci": "GLYCINE SOJA WAX",
+      "nombre_comercial": "Cera de soja",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00059",
+      "nombre_inci": "COPERNICIA CERIFERA CERA",
+      "nombre_comercial": "Carnauba wax",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCTLH01",
+      "nombre_inci": "PEG-7 GLYCERYL COCOATE",
+      "nombre_comercial": "Cetiol HE (BASF/IMCD)",
+      "tipo": "",
+      "proveedor": "BASF",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00040",
+      "nombre_inci": "DICAPRYLYL CARBONATE",
+      "nombre_comercial": "Cetiol",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00194",
+      "nombre_inci": "COPPER TRIPEPTIDE-1",
+      "nombre_comercial": "Copper tripeptide-1",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00268",
+      "nombre_inci": "DIETHYLAMINO HYDROXYBENZOYL HEXYL BENZOATE",
+      "nombre_comercial": "Diethylamino hydroxybenzoyl hexyl benzoate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00266",
+      "nombre_inci": "DIBUTYL ADIPATE",
+      "nombre_comercial": "Dibutyl adipate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00048",
+      "nombre_inci": "DIISOSTEARYL MALATE",
+      "nombre_comercial": "Diisostearyl malate (Greenway)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00259",
+      "nombre_inci": "DIMETHYL ISOSORBIDE",
+      "nombre_comercial": "Dimethyl isosorbide",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00179",
+      "nombre_inci": "DIPEPTIDE DIAMINOBUTYROYL BENZYLAMIDE DIACETATE",
+      "nombre_comercial": "Dipeptide diaminobutyroyl benzylamide diacetate",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00010",
+      "nombre_inci": "CI 15850",
+      "nombre_comercial": "D&C Red 6 Barium Lake",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPDSHC01",
+      "nombre_inci": "DISTEARDIMONIUM HECTORITE",
+      "nombre_comercial": "Disteardimonium hectorite",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00226",
+      "nombre_inci": "ECTOIN",
+      "nombre_comercial": "Ectoin",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00046",
+      "nombre_inci": "DISODIUM EDTA",
+      "nombre_comercial": "EDTA disódico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00150",
+      "nombre_inci": "ERGOTHIONEINE",
+      "nombre_comercial": "Ergotioneína",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPEHGL01",
+      "nombre_inci": "ETHYLHEXYLGLYCERIN",
+      "nombre_comercial": "Ethylhexylglycerin",
+      "tipo": "",
+      "proveedor": "Bolite",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00269",
+      "nombre_inci": "ETHYLHEXYL TRIAZONE",
+      "nombre_comercial": "Ethylhexyl triazone",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPELSS01",
+      "nombre_inci": "SODIUM LAUROYL SARCOSINATE",
+      "nombre_comercial": "Eversoft S12 (Inchemical)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00116",
+      "nombre_inci": "AZELAMIDOPROPYL DIMETHYL AMINE (AND) WATER (AND) BUTYLENE GLYCOL",
+      "nombre_comercial": "Epi-On",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00160",
+      "nombre_inci": "3-O-ETHYL ASCORBIC ACID",
+      "nombre_comercial": "Etil ascórbico acid",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00256",
+      "nombre_inci": "ETHOXYDIGLYCOL",
+      "nombre_comercial": "Etoxidiglicol",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00089",
+      "nombre_inci": "CALENDULA OFFICINALIS FLOWER EXTRACT",
+      "nombre_comercial": "Extracto de caléndula",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00026",
+      "nombre_inci": "PANAX GINSENG ROOT EXTRACT",
+      "nombre_comercial": "Extracto de ginseng",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00242",
+      "nombre_inci": "ROSMARINUS OFFICINALIS LEAF EXTRACT",
+      "nombre_comercial": "Extracto CO2 de romero",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00094",
+      "nombre_inci": "SALVIA OFFICINALIS LEAF EXTRACT",
+      "nombre_comercial": "Extracto de salvia",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00035",
+      "nombre_inci": "CAMELLIA SINENSIS LEAF EXTRACT",
+      "nombre_comercial": "Extracto de té verde",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00300",
+      "nombre_inci": "SODIUM COCOYL GLYCINATE",
+      "nombre_comercial": "Eversoft YCS-30S (Inchemical)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00011",
+      "nombre_inci": "CI 42090",
+      "nombre_comercial": "FD&C Blue 1 Aluminum Lake",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPFRCN01",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fragancia canela",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPFRDU01",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fragancia durazno",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPFREU01",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fragancia eucalipto",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00019",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fresa cremosa",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00004",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fresa lips",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPFRGI01",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fragancia gin",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00062",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Fragancia pistacho",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00020",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Yogurt cremoso",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00014",
+      "nombre_inci": "CI 15985:1",
+      "nombre_comercial": "FD&C Yellow 5 Aluminum Lake",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00009",
+      "nombre_inci": "CI 15985",
+      "nombre_comercial": "FD&C Yellow 6 Aluminum Lake",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPGHTC01",
+      "nombre_inci": "GUAR HYDROXYPROPYLTRIMONIUM CHLORIDE",
+      "nombre_comercial": "Guar hydroxypropyltrimonium",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00290",
+      "nombre_inci": "GLUTAMIC ACID",
+      "nombre_comercial": "Ácido glutámico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPGLAC02",
+      "nombre_inci": "GLYCOLIC ACID",
+      "nombre_comercial": "Ácido glicólico",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00231",
+      "nombre_inci": "GLYCINAMIDE",
+      "nombre_comercial": "Glicinamida",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00195",
+      "nombre_inci": "GLYCERIN",
+      "nombre_comercial": "Glicerina",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00270",
+      "nombre_inci": "GLUCONOLACTONE",
+      "nombre_comercial": "Gluconolactona",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00120",
+      "nombre_inci": "GLYCYRRHIZA GLABRA ROOT EXTRACT",
+      "nombre_comercial": "Regaliz raíz polvo",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00145",
+      "nombre_inci": "GLUTATHIONE",
+      "nombre_comercial": "Glutatión",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00265",
+      "nombre_inci": "GLYCINE",
+      "nombre_comercial": "Glicina",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00072",
+      "nombre_inci": "BIS-PEG-12 DIMETHICONE",
+      "nombre_comercial": "Gransil VX-419",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00271",
+      "nombre_inci": "MALVA SYLVESTRIS FLOWER/LEAF/STEM EXTRACT (AND) GLYCERIN (AND) AQUA (AND) CITRIC ACID (AND) MENTHA PIPERITA LEAF EXTRACT (AND) PRIMULA VERIS EXTRACT (AND) ALCHEMILLA VULGARIS EXTRACT (AND) VERONICA OFFICINALIS FLOWER/LEAF/STEM EXTRACT (AND) MELISSA OFFICINALIS LEAF EXTRACT (AND) ACHILLEA MILLEFOLIUM EXTRACT",
+      "nombre_comercial": "Giga White",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00245",
+      "nombre_inci": "1,2-HEXANEDIOL",
+      "nombre_comercial": "1,2-Hexanediol",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00142",
+      "nombre_inci": "HYALURONIC ACID (1500 kD)",
+      "nombre_comercial": "Ácido hialurónico 1500 kD",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00233",
+      "nombre_inci": "HYALURONIC ACID (300 kD)",
+      "nombre_comercial": "Ácido hialurónico 300 kD",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00163",
+      "nombre_inci": "HYALURONIC ACID (50 kD)",
+      "nombre_comercial": "Ácido hialurónico 50 kD",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00285",
+      "nombre_inci": "HYDROLYZED COLLAGEN",
+      "nombre_comercial": "Péptido de colágeno",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPHYEC01",
+      "nombre_inci": "HYDROXYETHYLCELLULOSE",
+      "nombre_comercial": "Hydroxyethylcellulose",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00168",
+      "nombre_inci": "HYDROLYZED KERATIN",
+      "nombre_comercial": "Hydrolyzed keratin",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00162",
+      "nombre_inci": "HYDROLYZED RICE EXTRACT",
+      "nombre_comercial": "Hydrolyzed rice extract",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00248",
+      "nombre_inci": "HYDROLYZED SPONGE",
+      "nombre_comercial": "Hydrolyzed sponge",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00057",
+      "nombre_inci": "INULIN",
+      "nombre_comercial": "Inulin",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00213",
+      "nombre_inci": "INOSITOL",
+      "nombre_comercial": "Mio inositol",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00018",
+      "nombre_inci": "CI 77499",
+      "nombre_comercial": "Iron Oxide Black",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00013",
+      "nombre_inci": "CI 77491",
+      "nombre_comercial": "Iron Oxide Red",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPIOXY01",
+      "nombre_inci": "CI 77492",
+      "nombre_comercial": "Iron Oxide Yellow",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00134",
+      "nombre_inci": "ISOPROPYL MYRISTATE",
+      "nombre_comercial": "Miristato de isopropilo",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPISNM01",
+      "nombre_inci": "ISONONYL ISONONANOATE",
+      "nombre_comercial": "Isononyl isononanoate",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00002",
+      "nombre_inci": "POTASSIUM ALUM",
+      "nombre_comercial": "Piedra alumbre Banalum",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00237",
+      "nombre_inci": "KOJIC ACID",
+      "nombre_comercial": "Ácido kójico",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00244",
+      "nombre_inci": "POTASSIUM AZELOYL DIGLYCINATE",
+      "nombre_comercial": "Potassium azeloyl diglycinate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00147",
+      "nombre_inci": "ARGININE",
+      "nombre_comercial": "L-arginina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00161",
+      "nombre_inci": "CARNITINE",
+      "nombre_comercial": "L-carnitina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00070",
+      "nombre_inci": "LAURYL GLUCOSIDE",
+      "nombre_comercial": "Plantaren Lauryl 1200 / Eversoft 1200",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00188",
+      "nombre_inci": "LINUM USITATISSIMUM SEED OIL",
+      "nombre_comercial": "Linseed oil",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00054",
+      "nombre_inci": "LAUROYL LYSINE",
+      "nombre_comercial": "Lauroyl lysine",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00180",
+      "nombre_inci": "L-THEANINE",
+      "nombre_comercial": "L-teanina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00109",
+      "nombre_inci": "TRIHEPTANOIN (AND) C13-16 ISOALKANE",
+      "nombre_comercial": "LexFeel WOW",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00227",
+      "nombre_inci": "MADECASSIC ACID",
+      "nombre_comercial": "Ácido madecásico",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00229",
+      "nombre_inci": "MAGNESIUM ASCORBYL PHOSPHATE",
+      "nombre_comercial": "Magnesium ascorbyl phosphate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00276",
+      "nombre_inci": "METHYLENE BIS-BENZOTRIAZOLYL TETRAMETHYLBUTYLPHENOL",
+      "nombre_comercial": "Methylene bis-benzotriazolyl",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00024",
+      "nombre_inci": "MICROCRYSTALLINE WAX",
+      "nombre_comercial": "Microcristalina 127 blanca",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00003",
+      "nombre_inci": "MAGNESIUM STEARATE",
+      "nombre_comercial": "Magnesium stearate",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00219",
+      "nombre_inci": "MELATONIN",
+      "nombre_comercial": "Melatonina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00075",
+      "nombre_inci": "ORBIGNYA OLEIFERA SEED OIL",
+      "nombre_comercial": "Manteca de babasú",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00074",
+      "nombre_inci": "THEOBROMA GRANDIFLORUM SEED BUTTER",
+      "nombre_comercial": "Mantequilla de copoazú",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00042",
+      "nombre_inci": "BUTYROSPERMUM PARKII BUTTER",
+      "nombre_comercial": "Mantequilla de karité",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00166",
+      "nombre_inci": "MENTHYL LACTATE",
+      "nombre_comercial": "Menthyl lactate",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00196",
+      "nombre_inci": "MANGIFERA INDICA SEED BUTTER",
+      "nombre_comercial": "Mantequilla de mango",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00077",
+      "nombre_inci": "ASTROCARYUM MURUMURU SEED BUTTER",
+      "nombre_comercial": "Mantequilla de murumuru",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00005",
+      "nombre_inci": "PARFUM",
+      "nombre_comercial": "Mocaccino lips",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00171",
+      "nombre_inci": "MYRISTOYL HEXAPEPTIDE-16",
+      "nombre_comercial": "Myristoyl hexapeptide-16",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00250",
+      "nombre_inci": "MYRISTOYL NONAPEPTIDE-3",
+      "nombre_comercial": "Myristoyl nonapeptide-3",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00187",
+      "nombre_inci": "MYRISTOYL PENTAPEPTIDE-17",
+      "nombre_comercial": "Myristoyl pentapeptide-17",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00164",
+      "nombre_inci": "N-ACETYL-L-CYSTEINE",
+      "nombre_comercial": "N-acetil cisteína",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00262",
+      "nombre_inci": "N-ACETYL GLUCOSAMINE",
+      "nombre_comercial": "N-acetil glucosamina",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00148",
+      "nombre_inci": "NIACINAMIDE",
+      "nombre_comercial": "Niacinamida",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00153",
+      "nombre_inci": "TITANIUM DIOXIDE",
+      "nombre_comercial": "Nano titanium dioxide",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00001",
+      "nombre_inci": "NYLON-12",
+      "nombre_comercial": "Nylon 12 SP-500",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00143",
+      "nombre_inci": "ZINC OXIDE",
+      "nombre_comercial": "Nano zinc oxide",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00177",
+      "nombre_inci": "OLIGOPEPTIDE-68",
+      "nombre_comercial": "Oligopeptide-68",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00236",
+      "nombre_inci": "PANTHENOL",
+      "nombre_comercial": "Pantenol polvo",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00110",
+      "nombre_inci": "PANTHENOL",
+      "nombre_comercial": "D-Pantenol sólido",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00093",
+      "nombre_inci": "POLYBUTENE",
+      "nombre_comercial": "Polybutene",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00006",
+      "nombre_inci": "ACRYLATES/C10-30 ALKYL ACRYLATE CROSSPOLYMER",
+      "nombre_comercial": "Pemulen EZ-4U (Lubrizol)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00064",
+      "nombre_inci": "PEG-400",
+      "nombre_comercial": "Polietilenglicol 400",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00204",
+      "nombre_inci": "PETROLATUM",
+      "nombre_comercial": "Vaselina USP",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00154",
+      "nombre_inci": "POLYGLUTAMIC ACID",
+      "nombre_comercial": "Polyglutamic acid",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00051",
+      "nombre_inci": "POLYGLYCERYL-2 TRIISOSTEARATE",
+      "nombre_comercial": "Polyglyceryl-2 triisostearate",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00021",
+      "nombre_inci": "PHENOXYETHANOL",
+      "nombre_comercial": "Fenoxietanol / Biosure",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPPHP101",
+      "nombre_inci": "PHENOXYETHANOL",
+      "nombre_comercial": "Phenoxyethanol P10",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00209",
+      "nombre_inci": "POLYISOBUTENE",
+      "nombre_comercial": "PIB 24 (IMCD)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPPIRC01",
+      "nombre_inci": "PIROCTONE OLAMINE",
+      "nombre_comercial": "Piroctone olamine",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00055",
+      "nombre_inci": "POLYMETHYLSILSESQUIOXANE",
+      "nombre_comercial": "Polymethylsilsesquioxane",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00132",
+      "nombre_inci": "POLYGLYCERYL-4 LAURATE (AND) POLYGLYCERYL-6 LAURATE",
+      "nombre_comercial": "Polyaquol LW (Colquimicos)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00202",
+      "nombre_inci": "POTASSIUM SORBATE",
+      "nombre_comercial": "Sorbato de potasio",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00049",
+      "nombre_inci": "POLOXAMER 184",
+      "nombre_comercial": "Poloxamer 184",
+      "tipo": "",
+      "proveedor": "Bolite",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPPOX188",
+      "nombre_inci": "POLOXAMER 188",
+      "nombre_comercial": "Poloxamer 188",
+      "tipo": "",
+      "proveedor": "Greenway",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00228",
+      "nombre_inci": "PALMITOYL PENTAPEPTIDE-4",
+      "nombre_comercial": "Palmitoyl pentapeptide-4",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00115",
+      "nombre_inci": "POLYQUATERNIUM-10",
+      "nombre_comercial": "Polyaquol OS2",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPPRCA01",
+      "nombre_inci": "PROPYLENE CARBONATE",
+      "nombre_comercial": "Propylene carbonate",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00151",
+      "nombre_inci": "PROLINE",
+      "nombre_comercial": "Prolina",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00023",
+      "nombre_inci": "HYDROLYZED SOY PROTEIN",
+      "nombre_comercial": "Proteína de soja",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00033",
+      "nombre_inci": "HYDROLYZED WHEAT PROTEIN",
+      "nombre_comercial": "Proteína de germen de trigo",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00190",
+      "nombre_inci": "PALMITOYL TRIPEPTIDE-1",
+      "nombre_comercial": "Palmitoyl tripeptide-1",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00174",
+      "nombre_inci": "PALMITOYL TRIPEPTIDE-38",
+      "nombre_comercial": "Palmitoyl tripeptide-38",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00191",
+      "nombre_inci": "PALMITOYL TRIPEPTIDE-5",
+      "nombre_comercial": "Palmitoyl tripeptide-5",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00172",
+      "nombre_inci": "PALMITOYL TETRAPEPTIDE-7",
+      "nombre_comercial": "Palmitoyl tetrapeptide-7",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00056",
+      "nombre_inci": "PULLULAN",
+      "nombre_comercial": "Pullulan",
+      "tipo": "",
+      "proveedor": "Bolite",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00111",
+      "nombre_inci": "C13-15 ALKANE (AND) DIMETHICONE/VINYL DIMETHICONE CROSSPOLYMER",
+      "nombre_comercial": "Puresil ORG01",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPPVPK01",
+      "nombre_inci": "PVP",
+      "nombre_comercial": "PVP K-30",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00071",
+      "nombre_inci": "ACRYLATES/PALMETH-25 ACRYLATE COPOLYMER",
+      "nombre_comercial": "Quincream",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00241",
+      "nombre_inci": "TRIFOLIUM PRATENSE FLOWER EXTRACT",
+      "nombre_comercial": "Red clover extract",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00274",
+      "nombre_inci": "HYDROXYPINACOLONE RETINOATE",
+      "nombre_comercial": "Hydroxypinacolone retinoate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00261",
+      "nombre_inci": "RETINALDEHYDE",
+      "nombre_comercial": "Retinaldehído",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00281",
+      "nombre_inci": "RETINOL",
+      "nombre_comercial": "Retinol 99%",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00287",
+      "nombre_inci": "RETINYL RETINOATE",
+      "nombre_comercial": "Retinyl retinoate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00210",
+      "nombre_inci": "SALICYLIC ACID",
+      "nombre_comercial": "Ácido salicílico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00053",
+      "nombre_inci": "SILICA DIMETHYL SILYLATE",
+      "nombre_comercial": "Silica dimethylsilylate / Aerosil R972",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00112",
+      "nombre_inci": "SILICA",
+      "nombre_comercial": "Aerosil 200",
+      "tipo": "",
+      "proveedor": "Evonik",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00277",
+      "nombre_inci": "SILYBUM MARIANUM FRUIT EXTRACT",
+      "nombre_comercial": "Silimarina",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00289",
+      "nombre_inci": "SILICA",
+      "nombre_comercial": "Silica MSS-500/3H",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00199",
+      "nombre_inci": "DIMETHICONE",
+      "nombre_comercial": "Silicona SF-350",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00169",
+      "nombre_inci": "SODIUM ASCORBYL PHOSPHATE",
+      "nombre_comercial": "Sodium ascorbyl phosphate",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00045",
+      "nombre_inci": "SODIUM BENZOATE",
+      "nombre_comercial": "Benzoato de sodio",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00130",
+      "nombre_inci": "SODIUM METABISULFITE",
+      "nombre_comercial": "Metabisulfito de sodio",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00131",
+      "nombre_inci": "SODIUM BICARBONATE",
+      "nombre_comercial": "Bicarbonato de sodio",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00239",
+      "nombre_inci": "SODIUM PHYTATE",
+      "nombre_comercial": "Sodium phytate",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00066",
+      "nombre_inci": "SODIUM HYDROXIDE",
+      "nombre_comercial": "Soda cáustica",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00121",
+      "nombre_inci": "PROPYLENE GLYCOL",
+      "nombre_comercial": "Propilenglicol (Colquimicos)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00282",
+      "nombre_inci": "SQUALANE",
+      "nombre_comercial": "Squalane",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPSTAC01",
+      "nombre_inci": "STEARIC ACID",
+      "nombre_comercial": "Ácido esteárico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00207",
+      "nombre_inci": "PHENETHYL ALCOHOL (AND) CAPRYLYL GLYCOL",
+      "nombre_comercial": "Stabil",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPSTDM01",
+      "nombre_inci": "STEARAMIDOPROPYL DIMETHYLAMINE",
+      "nombre_comercial": "Stearamidopropyl dimethylamine",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPSTEV01",
+      "nombre_inci": "STEVIA REBAUDIANA LEAF/STEM EXTRACT",
+      "nombre_comercial": "Estevia en polvo",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00260",
+      "nombre_inci": "SUCCINIC ACID",
+      "nombre_comercial": "Ácido succínico",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPSXEX01",
+      "nombre_inci": "SALVIA HISPANICA SEED EXTRACT",
+      "nombre_comercial": "Salvia hispanica seed extract",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPSXOL01",
+      "nombre_inci": "SALVIA HISPANICA SEED OIL",
+      "nombre_comercial": "Salvia hispanica seed oil",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00257",
+      "nombre_inci": "SYNTHETIC WAX",
+      "nombre_comercial": "Synthetic wax",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00090",
+      "nombre_inci": "CAPRYLIC/CAPRIC TRIGLYCERIDE",
+      "nombre_comercial": "Triglicérido caprílico",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00212",
+      "nombre_inci": "SODIUM C14-16 OLEFIN SULFONATE",
+      "nombre_comercial": "Bautyterge AOS-40 / Asco AOS-40",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00092",
+      "nombre_inci": "DECYL GLUCOSIDE",
+      "nombre_comercial": "Decyl glucoside (Sumiquim)",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00061",
+      "nombre_inci": "TRIETHYLHEXANOIN",
+      "nombre_comercial": "Triethylhexanoin",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00063",
+      "nombre_inci": "PENTAERYTHRITYL TETRA-DI-T-BUTYL HYDROXYHYDROCINNAMATE",
+      "nombre_comercial": "Tinogard TT",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00149",
+      "nombre_inci": "TETRAHEXYLDECYL ASCORBATE",
+      "nombre_comercial": "Tetrahexyldecyl ascorbate",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00016",
+      "nombre_inci": "CI 77891",
+      "nombre_comercial": "Titanium Dioxide",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00123",
+      "nombre_inci": "TRIETHANOLAMINE",
+      "nombre_comercial": "Trietanolamina",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00082",
+      "nombre_inci": "POLYSORBATE 20",
+      "nombre_comercial": "Tween 20",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00083",
+      "nombre_inci": "POLYSORBATE 80",
+      "nombre_comercial": "Tween 80",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00167",
+      "nombre_inci": "TRANEXAMIC ACID",
+      "nombre_comercial": "Ácido tranexámico",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00015",
+      "nombre_inci": "CI 77007",
+      "nombre_comercial": "Ultramarine Blue",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00146",
+      "nombre_inci": "UNDECYLENOYL PHENYLALANINE",
+      "nombre_comercial": "Undecylenoyl phenylalanine",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00107",
+      "nombre_inci": "UREA",
+      "nombre_comercial": "Urea",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00140",
+      "nombre_inci": "VANILLYL BUTYL ETHER",
+      "nombre_comercial": "Vanillyl butyl ether",
+      "tipo": "",
+      "proveedor": "Lyphar",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00078",
+      "nombre_inci": "TOCOPHEROL",
+      "nombre_comercial": "Vitamina E líquida",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00079",
+      "nombre_inci": "PENDIENTE INCI",
+      "nombre_comercial": "Vitamina E polvo",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPVNEX01",
+      "nombre_inci": "VANILLA PLANIFOLIA FRUIT EXTRACT",
+      "nombre_comercial": "Vanilla CO2 extract",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00073",
+      "nombre_inci": "XANTHAN GUM",
+      "nombre_comercial": "Goma xanthan",
+      "tipo": "",
+      "proveedor": "",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPYUZU01",
+      "nombre_inci": "CITRUS JUNOS PEEL OIL",
+      "nombre_comercial": "Yuzu oil",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPZBNG01",
+      "nombre_inci": "ZANTHOXYLUM BUNGEANUM PEEL OIL",
+      "nombre_comercial": "Zanthoxylum bungeanum oil",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00283",
+      "nombre_inci": "ZINC PCA",
+      "nombre_comercial": "Zinc PCA",
+      "tipo": "",
+      "proveedor": "YTBIO",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MP00297",
+      "nombre_inci": "SODIUM HYDROXIDE",
+      "nombre_comercial": "Hidróxido de sodio sol.",
+      "tipo": "",
+      "proveedor": "Agenquímicos",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPBNIT01",
+      "nombre_inci": "BORON NITRIDE",
+      "nombre_comercial": "Boron Nitride",
+      "tipo": "",
+      "proveedor": "Tianki",
+      "stock_minimo": 0.0
+    },
+    {
+      "codigo_mp": "MPCAKY01",
+      "nombre_inci": "CACAY OIL",
+      "nombre_comercial": "Aceite de cacay",
+      "tipo": "",
+      "proveedor": "Inchemical",
+      "stock_minimo": 0.0
+    }
+  ]
+}
