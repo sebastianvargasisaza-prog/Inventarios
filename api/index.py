@@ -47,7 +47,9 @@ def init_db():
                   tipo TEXT, proveedor TEXT, stock_minimo REAL DEFAULT 0, activo INTEGER DEFAULT 1)""")
     c.execute("""CREATE TABLE IF NOT EXISTS producciones
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT)""")
+                  producto TEXT, cantidad REAL, fecha TEXT, estado TEXT, observaciones TEXT, operador TEXT)""")
+    try: c.execute("ALTER TABLE producciones ADD COLUMN operador TEXT")
+    except: pass
     c.execute("""CREATE TABLE IF NOT EXISTS alertas
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   material_id TEXT, material_nombre TEXT, stock_actual REAL,
@@ -814,6 +816,25 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="prod-msg"></div>
   </div>
 
+  <\!-- HISTORIAL DE PRODUCCIONES -->
+  <div id="prod-historial" style="margin-top:8px;display:none;">
+  <div id="produccion-hist" class="tab-content" style="display:block;padding:0;">
+    <div style="background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-top:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="font-size:1.05em;color:#1C2B30;">Historial de Producciones</h3>
+        <button onclick="loadHistorialProd()" style="background:#2B7A78;font-size:0.82em;padding:6px 14px;">&#8635; Actualizar</button>
+      </div>
+      <table class="table" id="hist-prod-table">
+        <thead><tr>
+          <th>#</th><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th>
+          <th>Fecha</th><th>Estado</th><th>Operador</th><th>Observaciones</th>
+        </tr></thead>
+        <tbody id="hist-prod-body"><tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">Cargando historial...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
   <div id="abc" class="tab-content">
     <h2>&#128200; Analisis ABC de Inventario</h2>
     <button onclick="loadABC()">Generar Analisis</button>
@@ -886,7 +907,7 @@ function switchTab(n,btn){
   document.getElementById(n).classList.add('active');
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
-  if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='formulas'||n==='produccion'){loadFormulas();loadHistorialProd();document.getElementById('prod-historial').style.display='block';}
   if(n==='abc') loadABC();
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
   if(n==='movimientos') loadMovimientos();
@@ -1554,8 +1575,8 @@ def handle_produccion():
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
         return jsonify({'message': msg, 'descuentos': descuentos}), 201
-    c.execute('SELECT producto, cantidad, fecha, estado FROM producciones ORDER BY fecha DESC LIMIT 50')
-    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3]} for r in c.fetchall()]
+    c.execute('SELECT producto, cantidad, fecha, estado, observaciones, operador FROM producciones ORDER BY fecha DESC LIMIT 100')
+    prod = [{'producto':r[0],'cantidad':r[1],'fecha':r[2],'estado':r[3],'observaciones':r[4] or '','operador':r[5] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'producciones': prod})
 
@@ -2043,6 +2064,134 @@ def update_solicitud_compra(numero):
               (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
     conn.commit(); conn.close()
     return jsonify({'message': f'Solicitud {numero} actualizada'})
+
+
+# ── TRAZABILIDAD SOL → OC → REC ───────────────────────────────────────────────
+@app.route('/api/trazabilidad/<codigo>')
+def get_trazabilidad(codigo):
+    """Muestra toda la cadena: SOL → OC → REC de un código de trazabilidad"""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    result = {'codigo': codigo, 'sol': None, 'oc': None, 'recepciones': []}
+    # Buscar en solicitudes
+    if codigo.startswith('SOL'):
+        c.execute("SELECT * FROM solicitudes_compra WHERE numero=?", (codigo,))
+        sol = c.fetchone()
+        if sol:
+            c.execute("PRAGMA table_info(solicitudes_compra)"); cols=[r[1] for r in c.fetchall()]
+            result['sol'] = dict(zip(cols, sol))
+            c.execute("SELECT * FROM solicitudes_compra_items WHERE numero=?", (codigo,))
+            items = c.fetchall(); c.execute("PRAGMA table_info(solicitudes_compra_items)"); icols=[r[1] for r in c.fetchall()]
+            result['sol']['items'] = [dict(zip(icols, i)) for i in items]
+            # Ver si tiene OC vinculada
+            if result['sol'].get('numero_oc'):
+                codigo = result['sol']['numero_oc']
+    if codigo.startswith('OC'):
+        c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (codigo,))
+        oc = c.fetchone()
+        if oc:
+            c.execute("PRAGMA table_info(ordenes_compra)"); cols=[r[1] for r in c.fetchall()]
+            result['oc'] = dict(zip(cols, oc))
+            c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (codigo,))
+            items = c.fetchall(); c.execute("PRAGMA table_info(ordenes_compra_items)"); icols=[r[1] for r in c.fetchall()]
+            result['oc']['items'] = [dict(zip(icols, i)) for i in items]
+    # Recepciones vinculadas
+    c.execute("SELECT * FROM movimientos WHERE observaciones LIKE ? ORDER BY fecha DESC",
+              (f'%{codigo}%',))
+    movs = c.fetchall()
+    if movs:
+        c.execute("PRAGMA table_info(movimientos)"); cols=[r[1] for r in c.fetchall()]
+        result['recepciones'] = [dict(zip(cols, m)) for m in movs]
+    conn.close()
+    return jsonify(result)
+
+# ── RECEPCIÓN DE OC → ACTUALIZA INVENTARIO ────────────────────────────────────
+@app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
+def recibir_oc_completa(numero_oc):
+    """Recibe una OC: marca como recibida y crea entradas en inventario"""
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Obtener items de la OC
+    c.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    items = c.fetchall()
+    if not items:
+        conn.close(); return jsonify({'error': 'OC sin ítems registrados'}), 400
+    # Obtener proveedor de la OC
+    c.execute("SELECT proveedor FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    oc_row = c.fetchone()
+    proveedor = oc_row[0] if oc_row else ''
+    from datetime import date
+    fecha_hoy = datetime.now().isoformat()
+    operador = d.get('operador', '')
+    lotes_creados = []
+    for codigo_mp, nombre_mp, cantidad_g in items:
+        cant_recibida = d.get('cantidades', {}).get(codigo_mp, cantidad_g)
+        if not cant_recibida or float(cant_recibida) <= 0:
+            continue
+        # Generar número de lote automático
+        lote = f"REC{date.today().strftime('%y%m%d')}{(codigo_mp or 'XX')[-3:]}"
+        # Crear entrada en movimientos (inventario)
+        c.execute("""INSERT INTO movimientos
+                     (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                      lote, proveedor, estado_lote, operador)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                  (codigo_mp, nombre_mp, float(cant_recibida), 'Entrada', fecha_hoy,
+                   f'Recepción OC {numero_oc}', lote, proveedor, 'VIGENTE', operador))
+        lotes_creados.append({'codigo_mp': codigo_mp, 'nombre': nombre_mp,
+                               'cantidad_g': float(cant_recibida), 'lote': lote})
+    # Actualizar estado de la OC
+    c.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
+    # Actualizar solicitud vinculada si existe
+    c.execute("UPDATE solicitudes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
+    conn.commit(); conn.close()
+    return jsonify({
+        'message': f'OC {numero_oc} recibida. {len(lotes_creados)} MPs ingresadas al inventario.',
+        'lotes_creados': lotes_creados
+    }), 201
+
+# ── VINCULAR SOL → OC ─────────────────────────────────────────────────────────
+@app.route('/api/solicitudes-compra/<numero>/convertir-oc', methods=['POST'])
+def convertir_sol_a_oc(numero):
+    """Convierte una solicitud aprobada en Orden de Compra"""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    d = request.json or {}
+    c.execute("SELECT solicitante, urgencia FROM solicitudes_compra WHERE numero=?", (numero,))
+    sol = c.fetchone()
+    if not sol: conn.close(); return jsonify({'error': 'Solicitud no encontrada'}), 404
+    c.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM solicitudes_compra_items WHERE numero=?", (numero,))
+    items = c.fetchall()
+    # Crear OC
+    c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
+    numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+    c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por) VALUES (?,?,?,?,?,?)",
+              (numero_oc, datetime.now().isoformat(), 'Pendiente',
+               d.get('proveedor', ''), f'Generada desde {numero}', d.get('creado_por', '')))
+    for codigo_mp, nombre_mp, cantidad_g in items:
+        c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g) VALUES (?,?,?,?)",
+                  (numero_oc, codigo_mp, nombre_mp, cantidad_g))
+    # Vincular SOL con OC
+    c.execute("UPDATE solicitudes_compra SET estado='En proceso', numero_oc=? WHERE numero=?",
+              (numero_oc, numero))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'SOL {numero} convertida a {numero_oc}', 'numero_oc': numero_oc}), 201
+
+# ── SOLICITUDES DESDE INVENTARIOS (para Luz y Daniela) ────────────────────────
+@app.route('/api/solicitar-mp', methods=['POST'])
+def solicitar_mp():
+    """Endpoint simple para crear solicitudes de compra desde Inventarios"""
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
+    numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
+    c.execute("INSERT INTO solicitudes_compra (numero,fecha,estado,solicitante,urgencia,observaciones) VALUES (?,?,?,?,?,?)",
+              (numero, datetime.now().isoformat(), 'Pendiente',
+               d.get('solicitante', ''), d.get('urgencia', 'Normal'), d.get('observaciones', '')))
+    for it in (d.get('items') or []):
+        c.execute("INSERT INTO solicitudes_compra_items (numero,codigo_mp,nombre_mp,cantidad_g,justificacion) VALUES (?,?,?,?,?)",
+                  (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                   it.get('cantidad_g', 0), it.get('justificacion', '')))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Solicitud {numero} creada. Compras será notificado.',
+                    'numero': numero}), 201
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
