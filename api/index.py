@@ -719,7 +719,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="form-group"><label>Codigo MP *</label><input type="text" id="ing-cod" placeholder="MP00001" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)"><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
+        <div class="form-group"><label>Codigo MP *</label><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." list="mp-sugerencias" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)"><datalist id="mp-sugerencias"></datalist><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
@@ -1014,11 +1014,11 @@ async function initIngreso(){
   }
   cargarHistIngreso();
 }
-async function buscarMPIngreso(cod){
-  cod=(cod||'').toUpperCase().trim();
+async function buscarMPIngreso(val){
+  val=(val||'').trim();
   var st=document.getElementById('ing-status');
   var panel=document.getElementById('ing-nueva-mp');
-  if(cod.length<3){
+  if(val.length<3){
     if(st)st.textContent='';
     ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
     if(panel)panel.style.display='none';
@@ -1026,22 +1026,40 @@ async function buscarMPIngreso(cod){
   }
   if(st){st.textContent='Buscando...';st.style.color='#888';}
   try{
-    var r=await fetch('/api/maestro-mps/'+cod);
-    if(r.ok){
-      var mp=await r.json();
-      document.getElementById('ing-inci').value=mp.nombre_inci||'';
-      document.getElementById('ing-nombre').value=mp.nombre_comercial||'';
-      document.getElementById('ing-tipo').value=mp.tipo||'';
-      var pEl=document.getElementById('ing-prov');if(pEl&&!pEl.value)pEl.value=mp.proveedor||'';
-      if(st){st.textContent='✓ '+mp.nombre_comercial+(mp.tipo?' · '+mp.tipo:'');st.style.color='#27ae60';}
+    // Cargar catálogo y buscar por código O nombre
+    var r2=await fetch('/api/maestro-mps');
+    var d2=await r2.json();
+    var mps=d2.mps||[];
+    var busq=val.toLowerCase();
+    // Buscar coincidencia exacta de código primero, luego por nombre
+    var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
+    if(!found) found=mps.find(function(m){
+      return (m.nombre_comercial||'').toLowerCase().includes(busq)||
+             (m.nombre_inci||'').toLowerCase().includes(busq);
+    });
+    // Actualizar datalist con sugerencias
+    var dl=document.getElementById('mp-sugerencias');
+    if(dl){
+      var matches=mps.filter(function(m){
+        return (m.codigo_mp||'').toLowerCase().includes(busq)||
+               (m.nombre_comercial||'').toLowerCase().includes(busq)||
+               (m.nombre_inci||'').toLowerCase().includes(busq);
+      }).slice(0,8);
+      dl.innerHTML=matches.map(function(m){return '<option value="'+m.codigo_mp+'">'+m.nombre_comercial+'</option>';}).join('');
+    }
+    if(found){
+      document.getElementById('ing-cod').value=found.codigo_mp;
+      document.getElementById('ing-inci').value=found.nombre_inci||'';
+      document.getElementById('ing-nombre').value=found.nombre_comercial||'';
+      document.getElementById('ing-tipo').value=found.tipo||'';
+      var pEl=document.getElementById('ing-prov');if(pEl&&!pEl.value)pEl.value=found.proveedor||'';
+      if(st){st.textContent='✓ '+found.nombre_comercial+' ('+found.codigo_mp+')';st.style.color='#27ae60';}
       if(panel)panel.style.display='none';
     } else {
-      if(st){st.textContent='MP nueva — llena los datos para crearla en el catálogo';st.style.color='#e67e22';}
+      if(st){st.textContent='MP nueva — llena los datos para crearla';st.style.color='#e67e22';}
       if(panel)panel.style.display='block';
     }
-  }catch(e){
-    if(st){st.textContent='Error buscando MP';st.style.color='#c0392b';}
-  }
+  }catch(e){if(st){st.textContent='Error buscando MP';st.style.color='#c0392b';}}
 }
 async function registrarIngreso(){
   var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
@@ -2044,18 +2062,6 @@ def handle_solicitudes_compra():
                       (numero, it.get('codigo_mp',''), it.get('nombre_mp',''), it.get('cantidad_g',0), it.get('unidad','g'), it.get('justificacion','')))
         conn.commit(); conn.close()
         return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
-    c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,aprobado_por FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
-    cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','aprobado_por']
-    sols = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
-    return jsonify({'solicitudes': sols})
-
-@app.route('/api/solicitudes-compra/<numero>', methods=['PUT'])
-def update_solicitud_compra(numero):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor(); d = request.json
-    c.execute("UPDATE solicitudes_compra SET estado=?,aprobado_por=?,fecha_aprobacion=? WHERE numero=?",
-              (d.get('estado'), d.get('aprobado_por',''), datetime.now().isoformat(), numero))
-    conn.commit(); conn.close()
-    return jsonify({'message': f'Solicitud {numero} actualizada'})
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
