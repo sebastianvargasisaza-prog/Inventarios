@@ -17,7 +17,8 @@ COMPRAS_USERS = {
     'daniela':   os.environ.get('DANIELA',   'hha2026'),
 }
 ADMIN_USERS = {'sebastian', 'alejandro'}
-READONLY_USERS = {'mayra'}
+COMPRAS_FULL = {'sebastian', 'alejandro', 'catalina', 'mayra'}  # acceso completo a Compras
+INVENTARIOS_ONLY = {'luz', 'daniela'}  # solo Inventarios + Solicitudes
 
 _anthropic_client = None
 def get_anthropic_client():
@@ -1423,8 +1424,7 @@ def inventarios():
 def login():
     error = ''
     if request.method == 'POST':
-        username = request.form.get('username','').strip().lower().capitalize() if request.form.get('username','').strip() else ''
-        
+        username = request.form.get('username','').strip().lower()
         password = request.form.get('password','').strip()
         if username in COMPRAS_USERS and COMPRAS_USERS[username] == password:
             session['compras_user'] = username
