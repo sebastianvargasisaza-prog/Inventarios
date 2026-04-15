@@ -18,9 +18,10 @@ def get_anthropic_client():
         _anthropic_client = Anthropic(api_key=api_key)
     return _anthropic_client
 
-DB_PATH = '/tmp/inventario.db'
+DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
 
 def init_db():
+    import pathlib; pathlib.Path(os.path.dirname(DB_PATH)).mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1395,6 +1396,208 @@ def generar_oc_automatica():
         'message': f'{len(ordenes_creadas)} OC(s) generadas automaticamente',
         'ordenes': ordenes_creadas
     }), 201
+
+
+@app.route('/api/proveedores', methods=['GET', 'POST'])
+def handle_proveedores():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        c.execute("""INSERT INTO proveedores
+                     (nombre, contacto, email, telefono, nit, terminos_pago, lead_time_dias, notas, fecha_creacion)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (d['nombre'], d.get('contacto',''), d.get('email',''), d.get('telefono',''),
+                   d.get('nit',''), d.get('terminos_pago','Contado'), d.get('lead_time_dias',7),
+                   d.get('notas',''), datetime.now().isoformat()))
+        conn.commit(); conn.close()
+        return jsonify({'message': f"Proveedor {d['nombre']} creado"}), 201
+    c.execute("SELECT id,nombre,contacto,email,telefono,nit,terminos_pago,lead_time_dias,notas FROM proveedores WHERE activo=1 ORDER BY nombre")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'proveedores': [{'id':r[0],'nombre':r[1],'contacto':r[2],'email':r[3],
+                                     'telefono':r[4],'nit':r[5],'terminos_pago':r[6],
+                                     'lead_time_dias':r[7],'notas':r[8]} for r in rows]})
+
+@app.route('/api/proveedores/<int:prov_id>', methods=['GET','PUT','DELETE'])
+def handle_proveedor(prov_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("UPDATE proveedores SET activo=0 WHERE id=?", (prov_id,))
+        conn.commit(); conn.close()
+        return jsonify({'message': 'Proveedor desactivado'})
+    if request.method == 'PUT':
+        d = request.json
+        c.execute("""UPDATE proveedores SET nombre=?,contacto=?,email=?,telefono=?,nit=?,
+                     terminos_pago=?,lead_time_dias=?,notas=? WHERE id=?""",
+                  (d.get('nombre',''), d.get('contacto',''), d.get('email',''),
+                   d.get('telefono',''), d.get('nit',''), d.get('terminos_pago','Contado'),
+                   d.get('lead_time_dias',7), d.get('notas',''), prov_id))
+        conn.commit(); conn.close()
+        return jsonify({'message': 'Proveedor actualizado'})
+    c.execute("SELECT id,nombre,contacto,email,telefono,nit,terminos_pago,lead_time_dias,notas FROM proveedores WHERE id=?", (prov_id,))
+    r = c.fetchone(); conn.close()
+    return jsonify({'id':r[0],'nombre':r[1],'contacto':r[2],'email':r[3],'telefono':r[4],
+                    'nit':r[5],'terminos_pago':r[6],'lead_time_dias':r[7],'notas':r[8]}) if r else (jsonify({'error':'not found'}),404)
+
+@app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['GET','POST'])
+def recibir_oc(numero_oc):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'GET':
+        # Obtener items de la OC para mostrar el formulario de recepción
+        c.execute("""SELECT codigo_mp, nombre_mp, cantidad_solicitada, COALESCE(cantidad_recibida,0), estado
+                     FROM ordenes_compra_items WHERE numero_oc=?""", (numero_oc,))
+        items = [{'codigo_mp':r[0],'nombre_mp':r[1],'cantidad_pedida':r[2],
+                  'cantidad_recibida':r[3],'estado':r[4]} for r in c.fetchall()]
+        conn.close()
+        return jsonify({'numero_oc': numero_oc, 'items': items})
+    # POST: registrar recepción
+    d = request.json
+    items_recibidos = d.get('items', [])
+    recibido_por = d.get('recibido_por', 'Catalina')
+    obs = d.get('observaciones', '')
+    fecha = datetime.now().isoformat()
+    # Crear registro de recepción
+    c.execute("INSERT INTO recepciones_oc (numero_oc, fecha, recibido_por, observaciones) VALUES (?,?,?,?)",
+              (numero_oc, fecha, recibido_por, obs))
+    rec_id = c.lastrowid
+    entradas_creadas = []
+    for item in items_recibidos:
+        codigo = item.get('codigo_mp','')
+        nombre = item.get('nombre_mp','')
+        cant_rec = float(item.get('cantidad_recibida', 0))
+        cant_ped = float(item.get('cantidad_pedida', 0))
+        lote = item.get('lote','')
+        fvenc = item.get('fecha_vencimiento','')
+        est = item.get('estanteria','')
+        pos = item.get('posicion','')
+        diferencia = cant_ped - cant_rec
+        estado_item = 'OK' if diferencia == 0 else ('Parcial' if cant_rec > 0 else 'Pendiente')
+        # Registrar en recepciones_oc_items
+        c.execute("""INSERT INTO recepciones_oc_items
+                     (recepcion_id, numero_oc, codigo_mp, nombre_mp, cantidad_pedida, cantidad_recibida,
+                      lote, fecha_vencimiento, estanteria, posicion, diferencia, estado)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (rec_id, numero_oc, codigo, nombre, cant_ped, cant_rec, lote, fvenc, est, pos, diferencia, estado_item))
+        # Actualizar estado del item en la OC
+        c.execute("UPDATE ordenes_compra_items SET cantidad_recibida=?, estado=? WHERE numero_oc=? AND codigo_mp=?",
+                  (cant_rec, estado_item, numero_oc, codigo))
+        if cant_rec > 0:
+            # Crear entrada en inventario automáticamente
+            if not lote or lote == 'AUTO':
+                from datetime import date
+                lote = f"REC{date.today().strftime('%y%m%d')}{codigo[-3:]}"
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+                          lote, fecha_vencimiento, estanteria, posicion, estado_lote)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                      (codigo, nombre, cant_rec, 'Entrada', fecha,
+                       f'Recepcion OC: {numero_oc}', lote, fvenc, est, pos, 'VIGENTE'))
+            entradas_creadas.append({'codigo': codigo, 'nombre': nombre, 'cantidad_g': cant_rec, 'lote': lote})
+    # Actualizar estado de la OC
+    c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND estado='Pendiente'", (numero_oc,))
+    pendientes = c.fetchone()[0]
+    nuevo_estado = 'Recibida' if pendientes == 0 else 'Recibida parcialmente'
+    c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (nuevo_estado, numero_oc))
+    conn.commit(); conn.close()
+    return jsonify({
+        'message': f'Recepcion registrada. {len(entradas_creadas)} items ingresados al inventario.',
+        'entradas_inventario': entradas_creadas,
+        'estado_oc': nuevo_estado
+    }), 201
+
+@app.route('/api/ordenes-compra/<numero_oc>/detalle')
+def detalle_oc(numero_oc):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT numero_oc, fecha, estado, proveedor, observaciones FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    oc = c.fetchone()
+    if not oc:
+        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    c.execute("SELECT codigo_mp, nombre_mp, cantidad_solicitada, COALESCE(cantidad_recibida,0), unidad, COALESCE(estado,'Pendiente') FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    items = [{'codigo_mp':r[0],'nombre_mp':r[1],'cantidad_pedida':r[2],
+              'cantidad_recibida':r[3],'unidad':r[4],'estado':r[5]} for r in c.fetchall()]
+    # Historial de recepciones
+    c.execute("SELECT fecha, recibido_por, observaciones, estado FROM recepciones_oc WHERE numero_oc=? ORDER BY fecha DESC", (numero_oc,))
+    recepciones = [{'fecha':r[0],'recibido_por':r[1],'obs':r[2],'estado':r[3]} for r in c.fetchall()]
+    conn.close()
+    return jsonify({'numero_oc':oc[0],'fecha':oc[1],'estado':oc[2],'proveedor':oc[3],
+                    'observaciones':oc[4],'items':items,'recepciones':recepciones})
+
+
+@app.route('/api/solicitudes', methods=['GET','POST'])
+def handle_solicitudes():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); n=(c.fetchone()[0] or 0)+1
+        numero = f"SR-{datetime.now().strftime('%Y')}-{n:04d}"
+        c.execute("""INSERT INTO solicitudes_compra
+                     (numero, tipo, solicitante, departamento, descripcion, justificacion,
+                      urgencia, fecha, estado)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (numero, d.get('tipo','Otro'), d.get('solicitante',''), d.get('departamento',''),
+                   d.get('descripcion',''), d.get('justificacion',''),
+                   d.get('urgencia','Normal'), datetime.now().isoformat(), 'Enviada'))
+        sol_id = c.lastrowid
+        for item in d.get('items',[]):
+            c.execute("""INSERT INTO solicitudes_compra_items
+                         (solicitud_id, descripcion, cantidad, unidad, codigo_mp)
+                         VALUES (?,?,?,?,?)""",
+                      (sol_id, item.get('descripcion',''), item.get('cantidad',1),
+                       item.get('unidad','unidad'), item.get('codigo_mp','')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'Solicitud {numero} enviada', 'numero': numero}), 201
+    estado_filtro = request.args.get('estado','')
+    if estado_filtro:
+        c.execute("SELECT id,numero,tipo,solicitante,descripcion,urgencia,fecha,estado,valor_total,proveedor_asignado FROM solicitudes_compra WHERE estado=? ORDER BY fecha DESC", (estado_filtro,))
+    else:
+        c.execute("SELECT id,numero,tipo,solicitante,descripcion,urgencia,fecha,estado,valor_total,proveedor_asignado FROM solicitudes_compra ORDER BY fecha DESC LIMIT 100")
+    rows = c.fetchall(); conn.close()
+    return jsonify({'solicitudes': [{'id':r[0],'numero':r[1],'tipo':r[2],'solicitante':r[3],
+                                     'descripcion':r[4],'urgencia':r[5],'fecha':r[6][:10],
+                                     'estado':r[7],'valor_total':r[8] or 0,'proveedor':r[9] or ''} for r in rows]})
+
+@app.route('/api/solicitudes/<numero>', methods=['GET','PUT'])
+def handle_solicitud(numero):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'PUT':
+        d = request.json; updates = []; vals = []
+        for field in ['estado','proveedor_asignado','valor_total','comentarios_gerencia',
+                      'aprobado_por','fecha_aprobacion','fecha_pago','metodo_pago','numero_oc']:
+            if field in d:
+                if field == 'fecha_aprobacion' and d[field] == 'now': d[field] = datetime.now().isoformat()
+                if field == 'fecha_pago' and d[field] == 'now': d[field] = datetime.now().isoformat()
+                updates.append(f"{field}=?"); vals.append(d[field])
+        # Actualizar precios de items si vienen
+        for item in d.get('items',[]):
+            c.execute("UPDATE solicitudes_compra_items SET precio_unitario=?,precio_total=? WHERE id=?",
+                      (item.get('precio_unitario',0), item.get('precio_total',0), item.get('id',0)))
+        if updates:
+            vals.append(numero)
+            c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", vals)
+        conn.commit()
+    c.execute("SELECT * FROM solicitudes_compra WHERE numero=?", (numero,)); sol=c.fetchone()
+    if not sol: conn.close(); return jsonify({'error':'not found'}),404
+    c.execute("SELECT * FROM solicitudes_compra_items WHERE solicitud_id=?", (sol[0],)); items=c.fetchall()
+    conn.close()
+    cols=['id','numero','tipo','solicitante','departamento','descripcion','justificacion',
+          'urgencia','fecha','estado','proveedor_asignado','valor_total','fecha_cotizacion',
+          'fecha_aprobacion','aprobado_por','comentarios_gerencia','fecha_pago','metodo_pago','numero_oc']
+    result = dict(zip(cols, sol))
+    result['items'] = [{'id':i[0],'descripcion':i[2],'cantidad':i[3],'unidad':i[4],
+                        'codigo_mp':i[5],'precio_unitario':i[6],'precio_total':i[7]} for i in items]
+    result['valor_total_calculado'] = sum(i['precio_total'] for i in result['items'])
+    return jsonify(result)
+
+@app.route('/api/solicitudes-resumen')
+def solicitudes_resumen():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT estado, COUNT(*) FROM solicitudes_compra GROUP BY estado")
+    estados = {r[0]:r[1] for r in c.fetchall()}
+    c.execute("SELECT SUM(valor_total) FROM solicitudes_compra WHERE estado IN ('Aprobada','Pedida','En transito','Recibida')")
+    comprometido = c.fetchone()[0] or 0
+    c.execute("SELECT SUM(valor_total) FROM solicitudes_compra WHERE fecha>=date('now','-30 days')")
+    mes_actual = c.fetchone()[0] or 0
+    conn.close()
+    return jsonify({'por_estado': estados, 'comprometido': comprometido, 'mes_actual': mes_actual})
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
