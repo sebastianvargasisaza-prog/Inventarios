@@ -603,7 +603,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
     <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.5em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.72em;letter-spacing:2px;opacity:0.85;font-weight:500;margin-top:3px;">ESPAGIRIA LABORATORIOS</div></div></div>
-    <p>Espagiria Laboratorios - Control de Materias Primas</p>
+    
     <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;margin-left:auto;">← Portal HHA</a>
   </div>
   <div class="tabs">
