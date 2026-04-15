@@ -877,7 +877,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 <script>
-var fData=[], allStock=[];
+var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
@@ -886,6 +886,7 @@ function switchTab(n,btn){
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
   if(n==='movimientos') loadMovimientos();
