@@ -455,7 +455,7 @@ async function loadAlertas(){
   try{
     var d=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});
     var tb=document.getElementById('alertas-body');
-    if(!d.alertas||!d.alertas.length){tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>';return;}
+    if(\!d.alertas||\!d.alertas.length){tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>';return;}
     tb.innerHTML=d.alertas.map(function(a){
       var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
       var nivel=pct<25?'Crítico':pct<50?'Urgente':'Bajo';
@@ -479,7 +479,7 @@ async function loadOCs(){
   try{
     var d=await fetch('/api/ordenes-compra').then(function(r){return r.json();});
     var tb=document.getElementById('oc-body');
-    if(!d.ordenes||!d.ordenes.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>';return;}
+    if(\!d.ordenes||\!d.ordenes.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>';return;}
     tb.innerHTML=d.ordenes.map(function(o){
       return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado ↓</button></td></tr>';
     }).join('');
@@ -511,7 +511,7 @@ async function crearOC(){
 async function cambiarEstadoOC(numero){
   var estados=['Borrador','Pendiente','Aprobada','Enviada','En tránsito','Recibida'];
   var nuevo=prompt('Estado de '+numero+':\n'+estados.join(', '));
-  if(!nuevo||!estados.includes(nuevo)) return;
+  if(\!nuevo||\!estados.includes(nuevo)) return;
   await fetch('/api/ordenes-compra/'+numero,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
   loadOCs();loadDashboard();
 }
@@ -520,7 +520,7 @@ async function loadSolicitudes(){
   try{
     var d=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
     var tb=document.getElementById('sol-body');
-    if(!d.solicitudes||!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
+    if(\!d.solicitudes||\!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
     tb.innerHTML=d.solicitudes.map(function(s){
       var acc=s.estado==='Pendiente'?'<button class="btn btn-sm" onclick="accionSol(\''+s.numero+'\',\'Aprobada\')">Aprobar</button> <button class="btn btn-sm btn-danger" onclick="accionSol(\''+s.numero+'\',\'Rechazada\')">Rechazar</button>':badgeEstado(s.estado);
       return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+acc+'</td></tr>';
@@ -536,7 +536,7 @@ async function loadProveedores(){
   try{
     var d=await fetch('/api/proveedores-compras').then(function(r){return r.json();});
     var tb=document.getElementById('prov-body');
-    if(!d.proveedores||!d.proveedores.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores</td></tr>';return;}
+    if(\!d.proveedores||\!d.proveedores.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores</td></tr>';return;}
     tb.innerHTML=d.proveedores.map(function(p){
       return '<tr><td style="font-weight:600;">'+p.nombre+'</td><td>'+(p.contacto||'—')+'</td><td>'+(p.email||'—')+'</td><td>'+(p.telefono||'—')+'</td><td>'+(p.categoria||'—')+'</td><td>'+(p.condiciones_pago||'—')+'</td></tr>';
     }).join('');
@@ -545,7 +545,7 @@ async function loadProveedores(){
 function showFormProv(){var f=document.getElementById('form-prov');f.style.display=f.style.display==='none'?'block':'none';}
 async function crearProveedor(){
   var data={nombre:document.getElementById('p-nombre').value,contacto:document.getElementById('p-contacto').value,email:document.getElementById('p-email').value,telefono:document.getElementById('p-tel').value,categoria:document.getElementById('p-cat').value,condiciones_pago:document.getElementById('p-pago').value};
-  if(!data.nombre){document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>';return;}
+  if(\!data.nombre){document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>';return;}
   try{
     var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
@@ -670,15 +670,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         </div>
       </div>
     </div>
-  
-    <div style="background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:18px;margin-top:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h3 style="font-size:1em;font-weight:700;color:#1C2B30;">Últimas Producciones</h3>
-        <button onclick="switchTab('produccion',document.querySelectorAll('.tab-button')[4])" style="background:none;border:1px solid #E8E4DE;color:#2B7A78;border-radius:7px;padding:4px 12px;font-size:0.8em;cursor:pointer;">+ Registrar</button>
-      </div>
-      <div id="dash-prod-hist">Cargando...</div>
-    </div>
-
+  </div>
 
   <div id="stock" class="tab-content">
     <h2>&#128230; Stock por Lote</h2>
@@ -823,6 +815,26 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;gap:10px;"><button onclick="registrarProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
   </div>
+
+  <\!-- HISTORIAL DE PRODUCCIONES -->
+  <div id="prod-historial" style="margin-top:8px;">
+  <div id="produccion-hist" class="tab-content" style="display:block;padding:0;">
+    <div style="background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-top:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h3 style="font-size:1.05em;color:#1C2B30;">Historial de Producciones</h3>
+        <button onclick="loadHistorialProd()" style="background:#2B7A78;font-size:0.82em;padding:6px 14px;">&#8635; Actualizar</button>
+      </div>
+      <table class="table" id="hist-prod-table">
+        <thead><tr>
+          <th>#</th><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th>
+          <th>Fecha</th><th>Estado</th><th>Operador</th><th>Observaciones</th>
+        </tr></thead>
+        <tbody id="hist-prod-body"><tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">Cargando historial...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
   <div id="abc" class="tab-content">
     <h2>&#128200; Analisis ABC de Inventario</h2>
     <button onclick="loadABC()">Generar Analisis</button>
