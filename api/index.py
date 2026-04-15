@@ -601,7 +601,12 @@ async function generarOCAutomatica(){
 function addOCItem(){
   var div=document.createElement('div');
   div.style.cssText='display:grid;grid-template-columns:130px 1fr 120px 38px;gap:6px;margin-bottom:6px;';
-  div.innerHTML='<input type="text" placeholder="MP00001" class="oc-cod" style="padding:7px;border:1px solid #ddd;border-radius:5px;text-transform:uppercase;">'+'<input type="text" placeholder="Nombre MP" class="oc-nom" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'+'<input type="number" placeholder="g" class="oc-cant" style="padding:7px;border:1px solid #ddd;border-radius:5px;">'+'<button onclick="this.parentElement.remove()" style="background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;padding:7px;">x</button>';
+  var h='';
+  h+='<input type="text" placeholder="MP00001" class="oc-cod" style="padding:7px;border:1px solid #ddd;border-radius:5px;text-transform:uppercase;">';
+  h+='<input type="text" placeholder="Nombre MP" class="oc-nom" style="padding:7px;border:1px solid #ddd;border-radius:5px;">';
+  h+='<input type="number" placeholder="g" class="oc-cant" style="padding:7px;border:1px solid #ddd;border-radius:5px;">';
+  h+='<button onclick="this.parentElement.remove()" style="background:#ff4444;color:white;border:none;border-radius:5px;cursor:pointer;padding:7px;">x</button>';
+  div.innerHTML=h;
   document.getElementById('oc-items-container').appendChild(div);
 }
 
@@ -634,7 +639,20 @@ async function loadCompras(){
     el.innerHTML=ocs.map(function(oc){
       var items_html=oc.items.map(function(it){return '<li>'+it.codigo_mp+': '+it.nombre_mp+' - '+it.cantidad.toLocaleString()+' '+it.unidad+'</li>';}).join('');
       var color=oc.estado==='Recibida'?'#28a745':'#e67e22';
-      return '<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:10px;background:white;">'+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+'<h4 style="color:#667eea;">'+oc.numero_oc+' - '+oc.proveedor+'</h4>'+'<span style="background:'+color+';color:white;padding:3px 10px;border-radius:10px;font-size:0.85em;font-weight:600;">'+oc.estado+'</span></div>'+'<ul style="list-style:none;padding:0;margin:0 0 8px;">'+items_html+'</ul>'+'<small style="color:#888;">'+oc.fecha.substring(0,10)+'</small>'+( oc.estado!=='Recibida'?'&nbsp;<button onclick="recibirOC(\''+oc.numero_oc+'\')" style="padding:4px 10px;font-size:0.82em;background:#27ae60;">Marcar Recibida</button>':'')+ '</div>';
+      var ocHtml='';
+      ocHtml+='<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:10px;background:white;">';
+      ocHtml+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      ocHtml+='<h4 style="color:#667eea;">'+oc.numero_oc+' &mdash; '+oc.proveedor+'</h4>';
+      ocHtml+='<span style="background:'+color+';color:white;padding:3px 10px;border-radius:10px;font-size:0.85em;font-weight:600;">'+oc.estado+'</span>';
+      ocHtml+='</div>';
+      ocHtml+='<ul style="list-style:none;padding:0;margin:0 0 8px;">'+items_html+'</ul>';
+      ocHtml+='<small style="color:#888;">'+oc.fecha.substring(0,10)+'</small>';
+      if(oc.estado!=='Recibida'){
+        ocHtml+=' &nbsp;<button onclick="recibirOC(\'' +oc.numero_oc+ '\')" style="padding:4px 10px;font-size:0.82em;background:#27ae60;color:white;border:none;border-radius:4px;cursor:pointer;">Marcar Recibida</button>';
+      }
+      ocHtml+='</div>';
+      return ocHtml;
+
     }).join('');
   }catch(e){}
 }
