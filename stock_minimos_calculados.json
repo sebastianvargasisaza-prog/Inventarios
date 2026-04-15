@@ -1,0 +1,951 @@
+{
+  "minimos": [
+    {
+      "codigo_mp": "MP00121",
+      "nombre": "Propilenglicol",
+      "consumo_anual_g": 298052.0,
+      "consumo_mensual_g": 24838.0,
+      "stock_minimo": 54643.0
+    },
+    {
+      "codigo_mp": "MP00195",
+      "nombre": "Glicerina",
+      "consumo_anual_g": 283092.0,
+      "consumo_mensual_g": 23591.0,
+      "stock_minimo": 51900.0
+    },
+    {
+      "codigo_mp": "MP00148",
+      "nombre": "Niacinamida",
+      "consumo_anual_g": 114288.0,
+      "consumo_mensual_g": 9524.0,
+      "stock_minimo": 20953.0
+    },
+    {
+      "codigo_mp": "MP00212",
+      "nombre": "AOS-40",
+      "consumo_anual_g": 81600.0,
+      "consumo_mensual_g": 6800.0,
+      "stock_minimo": 14960.0
+    },
+    {
+      "codigo_mp": "MP00064",
+      "nombre": "Polietilenglicol 400",
+      "consumo_anual_g": 79500.0,
+      "consumo_mensual_g": 6625.0,
+      "stock_minimo": 14575.0
+    },
+    {
+      "codigo_mp": "MP00084",
+      "nombre": "Probetaína",
+      "consumo_anual_g": 56460.0,
+      "consumo_mensual_g": 4705.0,
+      "stock_minimo": 10351.0
+    },
+    {
+      "codigo_mp": "MP00107",
+      "nombre": "Urea",
+      "consumo_anual_g": 51120.0,
+      "consumo_mensual_g": 4260.0,
+      "stock_minimo": 9372.0
+    },
+    {
+      "codigo_mp": "MP00210",
+      "nombre": "Ácido salicílico",
+      "consumo_anual_g": 39077.0,
+      "consumo_mensual_g": 3256.0,
+      "stock_minimo": 7164.0
+    },
+    {
+      "codigo_mp": "MP00123",
+      "nombre": "Trietanolamina 85%",
+      "consumo_anual_g": 37789.0,
+      "consumo_mensual_g": 3149.0,
+      "stock_minimo": 6928.0
+    },
+    {
+      "codigo_mp": "MP00167",
+      "nombre": "Ácido tranexámico",
+      "consumo_anual_g": 37575.0,
+      "consumo_mensual_g": 3131.0,
+      "stock_minimo": 6889.0
+    },
+    {
+      "codigo_mp": "MP00021",
+      "nombre": "Fenoxietanol",
+      "consumo_anual_g": 35116.0,
+      "consumo_mensual_g": 2926.0,
+      "stock_minimo": 6438.0
+    },
+    {
+      "codigo_mp": "MP00199",
+      "nombre": "Silicona SF-350",
+      "consumo_anual_g": 25872.0,
+      "consumo_mensual_g": 2156.0,
+      "stock_minimo": 4743.0
+    },
+    {
+      "codigo_mp": "MP00030",
+      "nombre": "Beauty Sensoft",
+      "consumo_anual_g": 24945.0,
+      "consumo_mensual_g": 2079.0,
+      "stock_minimo": 4573.0
+    },
+    {
+      "codigo_mp": "MP00184",
+      "nombre": "BM-939",
+      "consumo_anual_g": 23853.0,
+      "consumo_mensual_g": 1988.0,
+      "stock_minimo": 4373.0
+    },
+    {
+      "codigo_mp": "MP00068",
+      "nombre": "Biosure FE",
+      "consumo_anual_g": 22460.0,
+      "consumo_mensual_g": 1872.0,
+      "stock_minimo": 4118.0
+    },
+    {
+      "codigo_mp": "MP00073",
+      "nombre": "Goma xanthan",
+      "consumo_anual_g": 21807.0,
+      "consumo_mensual_g": 1817.0,
+      "stock_minimo": 3998.0
+    },
+    {
+      "codigo_mp": "MP00270",
+      "nombre": "Gluconolactona",
+      "consumo_anual_g": 19025.0,
+      "consumo_mensual_g": 1585.0,
+      "stock_minimo": 3488.0
+    },
+    {
+      "codigo_mp": "MP00043",
+      "nombre": "Propanediol",
+      "consumo_anual_g": 18476.0,
+      "consumo_mensual_g": 1540.0,
+      "stock_minimo": 3387.0
+    },
+    {
+      "codigo_mp": "MP00262",
+      "nombre": "N-acetil glucosamina",
+      "consumo_anual_g": 16834.0,
+      "consumo_mensual_g": 1403.0,
+      "stock_minimo": 3086.0
+    },
+    {
+      "codigo_mp": "MP00040",
+      "nombre": "Cetiol",
+      "consumo_anual_g": 14340.0,
+      "consumo_mensual_g": 1195.0,
+      "stock_minimo": 2629.0
+    },
+    {
+      "codigo_mp": "MP00160",
+      "nombre": "Etil ascórbico",
+      "consumo_anual_g": 13480.0,
+      "consumo_mensual_g": 1123.0,
+      "stock_minimo": 2471.0
+    },
+    {
+      "codigo_mp": "MP00092",
+      "nombre": "Decyl glucoside",
+      "consumo_anual_g": 13328.0,
+      "consumo_mensual_g": 1111.0,
+      "stock_minimo": 2443.0
+    },
+    {
+      "codigo_mp": "MP00183",
+      "nombre": "Alfa arbutina",
+      "consumo_anual_g": 12018.0,
+      "consumo_mensual_g": 1002.0,
+      "stock_minimo": 2203.0
+    },
+    {
+      "codigo_mp": "MP00071",
+      "nombre": "Quincream",
+      "consumo_anual_g": 11662.0,
+      "consumo_mensual_g": 972.0,
+      "stock_minimo": 2138.0
+    },
+    {
+      "codigo_mp": "MP00116",
+      "nombre": "Epi-On",
+      "consumo_anual_g": 10797.0,
+      "consumo_mensual_g": 900.0,
+      "stock_minimo": 1979.0
+    },
+    {
+      "codigo_mp": "MP00221",
+      "nombre": "Ácido azelaico",
+      "consumo_anual_g": 10604.0,
+      "consumo_mensual_g": 884.0,
+      "stock_minimo": 1944.0
+    },
+    {
+      "codigo_mp": "MP00082",
+      "nombre": "Tween 20",
+      "consumo_anual_g": 10155.0,
+      "consumo_mensual_g": 846.0,
+      "stock_minimo": 1862.0
+    },
+    {
+      "codigo_mp": "MP00169",
+      "nombre": "Sodium ascorbyl phosphate",
+      "consumo_anual_g": 9870.0,
+      "consumo_mensual_g": 822.0,
+      "stock_minimo": 1810.0
+    },
+    {
+      "codigo_mp": "MP00266",
+      "nombre": "Adipato de butil",
+      "consumo_anual_g": 9478.0,
+      "consumo_mensual_g": 790.0,
+      "stock_minimo": 1738.0
+    },
+    {
+      "codigo_mp": "MP00230",
+      "nombre": "Ácido ascórbico",
+      "consumo_anual_g": 9300.0,
+      "consumo_mensual_g": 775.0,
+      "stock_minimo": 1705.0
+    },
+    {
+      "codigo_mp": "MP00244",
+      "nombre": "Azelolil diglicinato potasio",
+      "consumo_anual_g": 8750.0,
+      "consumo_mensual_g": 729.0,
+      "stock_minimo": 1604.0
+    },
+    {
+      "codigo_mp": "MP00127",
+      "nombre": "BM-956",
+      "consumo_anual_g": 8488.0,
+      "consumo_mensual_g": 707.0,
+      "stock_minimo": 1556.0
+    },
+    {
+      "codigo_mp": "MP00163",
+      "nombre": "Ác. hialurónico 50 kD",
+      "consumo_anual_g": 8223.0,
+      "consumo_mensual_g": 685.0,
+      "stock_minimo": 1508.0
+    },
+    {
+      "codigo_mp": "MP00245",
+      "nombre": "1,2-Hexanediol",
+      "consumo_anual_g": 7971.0,
+      "consumo_mensual_g": 664.0,
+      "stock_minimo": 1461.0
+    },
+    {
+      "codigo_mp": "MP00103",
+      "nombre": "Beauty Oil Cerámidas",
+      "consumo_anual_g": 7947.0,
+      "consumo_mensual_g": 662.0,
+      "stock_minimo": 1457.0
+    },
+    {
+      "codigo_mp": "MP00050",
+      "nombre": "Caprylyl/capryl glucoside",
+      "consumo_anual_g": 7250.0,
+      "consumo_mensual_g": 604.0,
+      "stock_minimo": 1329.0
+    },
+    {
+      "codigo_mp": "MP00072",
+      "nombre": "Gransil VX-419",
+      "consumo_anual_g": 5970.0,
+      "consumo_mensual_g": 498.0,
+      "stock_minimo": 1095.0
+    },
+    {
+      "codigo_mp": "MP00256",
+      "nombre": "Etoxidiglicol",
+      "consumo_anual_g": 5908.0,
+      "consumo_mensual_g": 492.0,
+      "stock_minimo": 1083.0
+    },
+    {
+      "codigo_mp": "MP00259",
+      "nombre": "Dimethyl isosorbide",
+      "consumo_anual_g": 5908.0,
+      "consumo_mensual_g": 492.0,
+      "stock_minimo": 1083.0
+    },
+    {
+      "codigo_mp": "MP00297",
+      "nombre": "Soda cáustica 10%",
+      "consumo_anual_g": 5881.0,
+      "consumo_mensual_g": 490.0,
+      "stock_minimo": 1078.0
+    },
+    {
+      "codigo_mp": "MP00008",
+      "nombre": "Carbopol",
+      "consumo_anual_g": 5478.0,
+      "consumo_mensual_g": 456.0,
+      "stock_minimo": 1004.0
+    },
+    {
+      "codigo_mp": "MP00237",
+      "nombre": "Ácido kójico",
+      "consumo_anual_g": 5183.0,
+      "consumo_mensual_g": 432.0,
+      "stock_minimo": 950.0
+    },
+    {
+      "codigo_mp": "MP00078",
+      "nombre": "Vitamina E líquida",
+      "consumo_anual_g": 4985.0,
+      "consumo_mensual_g": 415.0,
+      "stock_minimo": 914.0
+    },
+    {
+      "codigo_mp": "MP00079",
+      "nombre": "Vitamina E polvo",
+      "consumo_anual_g": 4789.0,
+      "consumo_mensual_g": 399.0,
+      "stock_minimo": 878.0
+    },
+    {
+      "codigo_mp": "MP00137",
+      "nombre": "Beauty Oil Argán",
+      "consumo_anual_g": 4784.0,
+      "consumo_mensual_g": 399.0,
+      "stock_minimo": 877.0
+    },
+    {
+      "codigo_mp": "MP00134",
+      "nombre": "Miristato de isopropilo",
+      "consumo_anual_g": 4739.0,
+      "consumo_mensual_g": 395.0,
+      "stock_minimo": 869.0
+    },
+    {
+      "codigo_mp": "MP00136",
+      "nombre": "Beauty Oil Jojoba",
+      "consumo_anual_g": 4739.0,
+      "consumo_mensual_g": 395.0,
+      "stock_minimo": 869.0
+    },
+    {
+      "codigo_mp": "MPCTLH01",
+      "nombre": "Cetiol HE",
+      "consumo_anual_g": 4425.0,
+      "consumo_mensual_g": 369.0,
+      "stock_minimo": 811.0
+    },
+    {
+      "codigo_mp": "MP00049",
+      "nombre": "Poloxamer 184",
+      "consumo_anual_g": 4247.0,
+      "consumo_mensual_g": 354.0,
+      "stock_minimo": 779.0
+    },
+    {
+      "codigo_mp": "MP00149",
+      "nombre": "Tetrahexyldecyl ascorbate",
+      "consumo_anual_g": 4220.0,
+      "consumo_mensual_g": 352.0,
+      "stock_minimo": 774.0
+    },
+    {
+      "codigo_mp": "MP00047",
+      "nombre": "Alantoína",
+      "consumo_anual_g": 4143.0,
+      "consumo_mensual_g": 345.0,
+      "stock_minimo": 759.0
+    },
+    {
+      "codigo_mp": "MP00231",
+      "nombre": "Glicinamida",
+      "consumo_anual_g": 4070.0,
+      "consumo_mensual_g": 339.0,
+      "stock_minimo": 746.0
+    },
+    {
+      "codigo_mp": "MP00006",
+      "nombre": "Pemulen EZ-4U",
+      "consumo_anual_g": 3788.0,
+      "consumo_mensual_g": 316.0,
+      "stock_minimo": 694.0
+    },
+    {
+      "codigo_mp": "MP00138",
+      "nombre": "Ácido láctico",
+      "consumo_anual_g": 3507.0,
+      "consumo_mensual_g": 292.0,
+      "stock_minimo": 643.0
+    },
+    {
+      "codigo_mp": "MP00233",
+      "nombre": "Ác. hialurónico 300 kD",
+      "consumo_anual_g": 3416.0,
+      "consumo_mensual_g": 285.0,
+      "stock_minimo": 626.0
+    },
+    {
+      "codigo_mp": "MP00142",
+      "nombre": "Ác. hialurónico 1500 kD",
+      "consumo_anual_g": 3354.0,
+      "consumo_mensual_g": 280.0,
+      "stock_minimo": 615.0
+    },
+    {
+      "codigo_mp": "MP00215",
+      "nombre": "Betaína",
+      "consumo_anual_g": 3110.0,
+      "consumo_mensual_g": 259.0,
+      "stock_minimo": 570.0
+    },
+    {
+      "codigo_mp": "MPEHGL01",
+      "nombre": "Ethylhexylglycerin",
+      "consumo_anual_g": 2972.0,
+      "consumo_mensual_g": 248.0,
+      "stock_minimo": 545.0
+    },
+    {
+      "codigo_mp": "MP00246",
+      "nombre": "Ácido capriloil salicílico",
+      "consumo_anual_g": 2494.0,
+      "consumo_mensual_g": 208.0,
+      "stock_minimo": 457.0
+    },
+    {
+      "codigo_mp": "MP00201",
+      "nombre": "Alcohol cetílico",
+      "consumo_anual_g": 2380.0,
+      "consumo_mensual_g": 198.0,
+      "stock_minimo": 436.0
+    },
+    {
+      "codigo_mp": "MP00226",
+      "nombre": "Ectoína",
+      "consumo_anual_g": 2379.0,
+      "consumo_mensual_g": 198.0,
+      "stock_minimo": 436.0
+    },
+    {
+      "codigo_mp": "MP00240",
+      "nombre": "Cetyl tranexamate",
+      "consumo_anual_g": 2320.0,
+      "consumo_mensual_g": 193.0,
+      "stock_minimo": 425.0
+    },
+    {
+      "codigo_mp": "MP00214",
+      "nombre": "Betaglucano",
+      "consumo_anual_g": 2292.0,
+      "consumo_mensual_g": 191.0,
+      "stock_minimo": 420.0
+    },
+    {
+      "codigo_mp": "MP00083",
+      "nombre": "Tween 80",
+      "consumo_anual_g": 2250.0,
+      "consumo_mensual_g": 188.0,
+      "stock_minimo": 413.0
+    },
+    {
+      "codigo_mp": "MP00132",
+      "nombre": "Polyaquol LW",
+      "consumo_anual_g": 1972.0,
+      "consumo_mensual_g": 164.0,
+      "stock_minimo": 362.0
+    },
+    {
+      "codigo_mp": "MP00283",
+      "nombre": "Zinc PCA",
+      "consumo_anual_g": 1761.0,
+      "consumo_mensual_g": 147.0,
+      "stock_minimo": 323.0
+    },
+    {
+      "codigo_mp": "MP00181",
+      "nombre": "Centella asiatica extract",
+      "consumo_anual_g": 1746.0,
+      "consumo_mensual_g": 146.0,
+      "stock_minimo": 320.0
+    },
+    {
+      "codigo_mp": "MP00046",
+      "nombre": "EDTA disódico",
+      "consumo_anual_g": 1648.0,
+      "consumo_mensual_g": 137.0,
+      "stock_minimo": 302.0
+    },
+    {
+      "codigo_mp": "MP00202",
+      "nombre": "Sorbato de potasio",
+      "consumo_anual_g": 1517.0,
+      "consumo_mensual_g": 126.0,
+      "stock_minimo": 278.0
+    },
+    {
+      "codigo_mp": "MP00045",
+      "nombre": "Benzoato de sodio",
+      "consumo_anual_g": 1517.0,
+      "consumo_mensual_g": 126.0,
+      "stock_minimo": 278.0
+    },
+    {
+      "codigo_mp": "MP00238",
+      "nombre": "Ascorbyl glucoside",
+      "consumo_anual_g": 1160.0,
+      "consumo_mensual_g": 97.0,
+      "stock_minimo": 213.0
+    },
+    {
+      "codigo_mp": "MP00048",
+      "nombre": "Diisostearyl malate",
+      "consumo_anual_g": 1125.0,
+      "consumo_mensual_g": 94.0,
+      "stock_minimo": 206.0
+    },
+    {
+      "codigo_mp": "MP00236",
+      "nombre": "Pantenol polvo",
+      "consumo_anual_g": 1105.0,
+      "consumo_mensual_g": 92.0,
+      "stock_minimo": 203.0
+    },
+    {
+      "codigo_mp": "MP00090",
+      "nombre": "Triglicérido caprílico",
+      "consumo_anual_g": 1092.0,
+      "consumo_mensual_g": 91.0,
+      "stock_minimo": 200.0
+    },
+    {
+      "codigo_mp": "MP00264",
+      "nombre": "Beta-ciclodextrina",
+      "consumo_anual_g": 1027.0,
+      "consumo_mensual_g": 86.0,
+      "stock_minimo": 188.0
+    },
+    {
+      "codigo_mp": "MP00282",
+      "nombre": "Squalane",
+      "consumo_anual_g": 991.0,
+      "consumo_mensual_g": 83.0,
+      "stock_minimo": 182.0
+    },
+    {
+      "codigo_mp": "MP00062",
+      "nombre": "Fragancia pistacho",
+      "consumo_anual_g": 948.0,
+      "consumo_mensual_g": 79.0,
+      "stock_minimo": 174.0
+    },
+    {
+      "codigo_mp": "MP00260",
+      "nombre": "Ácido succínico",
+      "consumo_anual_g": 886.0,
+      "consumo_mensual_g": 74.0,
+      "stock_minimo": 162.0
+    },
+    {
+      "codigo_mp": "MP00053",
+      "nombre": "Aerosil R972",
+      "consumo_anual_g": 808.0,
+      "consumo_mensual_g": 67.0,
+      "stock_minimo": 148.0
+    },
+    {
+      "codigo_mp": "MPAEAT01",
+      "nombre": "Aceite árbol de té",
+      "consumo_anual_g": 795.0,
+      "consumo_mensual_g": 66.0,
+      "stock_minimo": 146.0
+    },
+    {
+      "codigo_mp": "MP00120",
+      "nombre": "Regaliz raíz",
+      "consumo_anual_g": 662.0,
+      "consumo_mensual_g": 55.0,
+      "stock_minimo": 121.0
+    },
+    {
+      "codigo_mp": "MP00118",
+      "nombre": "Cafeína anhidra",
+      "consumo_anual_g": 634.0,
+      "consumo_mensual_g": 53.0,
+      "stock_minimo": 116.0
+    },
+    {
+      "codigo_mp": "MP00052",
+      "nombre": "Bis-diglyceryl polyacyladipate-2",
+      "consumo_anual_g": 630.0,
+      "consumo_mensual_g": 52.0,
+      "stock_minimo": 116.0
+    },
+    {
+      "codigo_mp": "MP00077",
+      "nombre": "Manteca de murumuru",
+      "consumo_anual_g": 630.0,
+      "consumo_mensual_g": 52.0,
+      "stock_minimo": 116.0
+    },
+    {
+      "codigo_mp": "MP00093",
+      "nombre": "Polybutene low-viscosity",
+      "consumo_anual_g": 585.0,
+      "consumo_mensual_g": 49.0,
+      "stock_minimo": 107.0
+    },
+    {
+      "codigo_mp": "MPBNIT01",
+      "nombre": "Boron nitride",
+      "consumo_anual_g": 580.0,
+      "consumo_mensual_g": 48.0,
+      "stock_minimo": 106.0
+    },
+    {
+      "codigo_mp": "MP00235",
+      "nombre": "NAD+",
+      "consumo_anual_g": 580.0,
+      "consumo_mensual_g": 48.0,
+      "stock_minimo": 106.0
+    },
+    {
+      "codigo_mp": "MP00020",
+      "nombre": "Yogurt cremoso",
+      "consumo_anual_g": 474.0,
+      "consumo_mensual_g": 39.0,
+      "stock_minimo": 87.0
+    },
+    {
+      "codigo_mp": "MP00145",
+      "nombre": "Glutatión",
+      "consumo_anual_g": 457.0,
+      "consumo_mensual_g": 38.0,
+      "stock_minimo": 84.0
+    },
+    {
+      "codigo_mp": "MP00219",
+      "nombre": "Melatonina",
+      "consumo_anual_g": 394.0,
+      "consumo_mensual_g": 33.0,
+      "stock_minimo": 72.0
+    },
+    {
+      "codigo_mp": "MP00176",
+      "nombre": "Terpenos solubles",
+      "consumo_anual_g": 370.0,
+      "consumo_mensual_g": 31.0,
+      "stock_minimo": 68.0
+    },
+    {
+      "codigo_mp": "MP00194",
+      "nombre": "Copper tripeptide-1",
+      "consumo_anual_g": 355.0,
+      "consumo_mensual_g": 30.0,
+      "stock_minimo": 65.0
+    },
+    {
+      "codigo_mp": "MP00285",
+      "nombre": "Péptidos de colágeno",
+      "consumo_anual_g": 332.0,
+      "consumo_mensual_g": 28.0,
+      "stock_minimo": 61.0
+    },
+    {
+      "codigo_mp": "MP00277",
+      "nombre": "Silimarina",
+      "consumo_anual_g": 331.0,
+      "consumo_mensual_g": 28.0,
+      "stock_minimo": 61.0
+    },
+    {
+      "codigo_mp": "MP00063",
+      "nombre": "Tinogard TT",
+      "consumo_anual_g": 331.0,
+      "consumo_mensual_g": 28.0,
+      "stock_minimo": 61.0
+    },
+    {
+      "codigo_mp": "MP00265",
+      "nombre": "Glicina",
+      "consumo_anual_g": 318.0,
+      "consumo_mensual_g": 26.0,
+      "stock_minimo": 58.0
+    },
+    {
+      "codigo_mp": "MP00239",
+      "nombre": "Fitato de sodio",
+      "consumo_anual_g": 307.0,
+      "consumo_mensual_g": 26.0,
+      "stock_minimo": 56.0
+    },
+    {
+      "codigo_mp": "MP00161",
+      "nombre": "L-carnitina",
+      "consumo_anual_g": 300.0,
+      "consumo_mensual_g": 25.0,
+      "stock_minimo": 55.0
+    },
+    {
+      "codigo_mp": "MP00263",
+      "nombre": "Betaine salicylate",
+      "consumo_anual_g": 295.0,
+      "consumo_mensual_g": 25.0,
+      "stock_minimo": 54.0
+    },
+    {
+      "codigo_mp": "MP00185",
+      "nombre": "Asiaticoside 95%",
+      "consumo_anual_g": 283.0,
+      "consumo_mensual_g": 24.0,
+      "stock_minimo": 52.0
+    },
+    {
+      "codigo_mp": "MP00223",
+      "nombre": "PDRN",
+      "consumo_anual_g": 192.0,
+      "consumo_mensual_g": 16.0,
+      "stock_minimo": 35.0
+    },
+    {
+      "codigo_mp": "MP00051",
+      "nombre": "Polyglyceryl-2 triisostearate",
+      "consumo_anual_g": 180.0,
+      "consumo_mensual_g": 15.0,
+      "stock_minimo": 33.0
+    },
+    {
+      "codigo_mp": "MP00173",
+      "nombre": "Bakuchiol",
+      "consumo_anual_g": 179.0,
+      "consumo_mensual_g": 15.0,
+      "stock_minimo": 33.0
+    },
+    {
+      "codigo_mp": "MP00065",
+      "nombre": "Ácido cítrico",
+      "consumo_anual_g": 155.0,
+      "consumo_mensual_g": 13.0,
+      "stock_minimo": 28.0
+    },
+    {
+      "codigo_mp": "MP00192",
+      "nombre": "Acetyl hexapeptide-8",
+      "consumo_anual_g": 137.0,
+      "consumo_mensual_g": 11.0,
+      "stock_minimo": 25.0
+    },
+    {
+      "codigo_mp": "MP00274",
+      "nombre": "HPR",
+      "consumo_anual_g": 133.0,
+      "consumo_mensual_g": 11.0,
+      "stock_minimo": 24.0
+    },
+    {
+      "codigo_mp": "MP00152",
+      "nombre": "Adenosina",
+      "consumo_anual_g": 104.0,
+      "consumo_mensual_g": 9.0,
+      "stock_minimo": 19.0
+    },
+    {
+      "codigo_mp": "—",
+      "nombre": "Pigmentos CI",
+      "consumo_anual_g": 94.0,
+      "consumo_mensual_g": 8.0,
+      "stock_minimo": 17.0
+    },
+    {
+      "codigo_mp": "MP00074",
+      "nombre": "Manteca de cupuazú",
+      "consumo_anual_g": 90.0,
+      "consumo_mensual_g": 8.0,
+      "stock_minimo": 16.0
+    },
+    {
+      "codigo_mp": "MP00110",
+      "nombre": "D-Pantenol líquido",
+      "consumo_anual_g": 90.0,
+      "consumo_mensual_g": 8.0,
+      "stock_minimo": 16.0
+    },
+    {
+      "codigo_mp": "MP00150",
+      "nombre": "Ergotioneína",
+      "consumo_anual_g": 78.0,
+      "consumo_mensual_g": 6.0,
+      "stock_minimo": 14.0
+    },
+    {
+      "codigo_mp": "MP00207",
+      "nombre": "Stabil",
+      "consumo_anual_g": 72.0,
+      "consumo_mensual_g": 6.0,
+      "stock_minimo": 13.0
+    },
+    {
+      "codigo_mp": "MP00216",
+      "nombre": "Aloe vera polvo",
+      "consumo_anual_g": 62.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 11.0
+    },
+    {
+      "codigo_mp": "MP00180",
+      "nombre": "L-teanina",
+      "consumo_anual_g": 60.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 11.0
+    },
+    {
+      "codigo_mp": "MP00287",
+      "nombre": "Retinyl retinoate",
+      "consumo_anual_g": 58.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 11.0
+    },
+    {
+      "codigo_mp": "MP00242",
+      "nombre": "Extracto CO2 romero",
+      "consumo_anual_g": 58.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 11.0
+    },
+    {
+      "codigo_mp": "MP00275",
+      "nombre": "NMN",
+      "consumo_anual_g": 58.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 11.0
+    },
+    {
+      "codigo_mp": "MP00261",
+      "nombre": "Retinaldehído",
+      "consumo_anual_g": 56.0,
+      "consumo_mensual_g": 5.0,
+      "stock_minimo": 10.0
+    },
+    {
+      "codigo_mp": "MP00166",
+      "nombre": "Menthyl lactate",
+      "consumo_anual_g": 54.0,
+      "consumo_mensual_g": 4.0,
+      "stock_minimo": 10.0
+    },
+    {
+      "codigo_mp": "MP00190",
+      "nombre": "Palmitoyl tripeptide-1",
+      "consumo_anual_g": 49.0,
+      "consumo_mensual_g": 4.0,
+      "stock_minimo": 9.0
+    },
+    {
+      "codigo_mp": "MP00172",
+      "nombre": "Palmitoyl tetrapeptide-7",
+      "consumo_anual_g": 46.0,
+      "consumo_mensual_g": 4.0,
+      "stock_minimo": 9.0
+    },
+    {
+      "codigo_mp": "MP00191",
+      "nombre": "Palmitoyl tripeptide-5",
+      "consumo_anual_g": 42.0,
+      "consumo_mensual_g": 4.0,
+      "stock_minimo": 8.0
+    },
+    {
+      "codigo_mp": "MP00054",
+      "nombre": "Lauroyl lysine",
+      "consumo_anual_g": 40.0,
+      "consumo_mensual_g": 3.0,
+      "stock_minimo": 7.0
+    },
+    {
+      "codigo_mp": "MP00179",
+      "nombre": "Dipeptide diaminobutyroyl...",
+      "consumo_anual_g": 35.0,
+      "consumo_mensual_g": 3.0,
+      "stock_minimo": 6.0
+    },
+    {
+      "codigo_mp": "MP00005",
+      "nombre": "Mocaccino Lips (Disaromas)",
+      "consumo_anual_g": 27.0,
+      "consumo_mensual_g": 2.0,
+      "stock_minimo": 5.0
+    },
+    {
+      "codigo_mp": "MP00175",
+      "nombre": "Acetyl tetrapeptide-5",
+      "consumo_anual_g": 19.0,
+      "consumo_mensual_g": 2.0,
+      "stock_minimo": 3.0
+    },
+    {
+      "codigo_mp": "MP00228",
+      "nombre": "Palmitoyl pentapeptide-4",
+      "consumo_anual_g": 18.0,
+      "consumo_mensual_g": 1.0,
+      "stock_minimo": 3.0
+    },
+    {
+      "codigo_mp": "MP00234",
+      "nombre": "Apigenin",
+      "consumo_anual_g": 12.0,
+      "consumo_mensual_g": 1.0,
+      "stock_minimo": 2.0
+    },
+    {
+      "codigo_mp": "MPCAKY01",
+      "nombre": "Aceite de cacay",
+      "consumo_anual_g": 9.0,
+      "consumo_mensual_g": 1.0,
+      "stock_minimo": 2.0
+    },
+    {
+      "codigo_mp": "MP00178",
+      "nombre": "Acetyl tetrapeptide-40",
+      "consumo_anual_g": 9.0,
+      "consumo_mensual_g": 1.0,
+      "stock_minimo": 2.0
+    },
+    {
+      "codigo_mp": "MP00174",
+      "nombre": "Palmitoyl tripeptide-38",
+      "consumo_anual_g": 6.0,
+      "consumo_mensual_g": 1.0,
+      "stock_minimo": 1.0
+    },
+    {
+      "codigo_mp": "MP00140",
+      "nombre": "Vanillyl butyl ether",
+      "consumo_anual_g": 5.0,
+      "consumo_mensual_g": 0.0,
+      "stock_minimo": 1.0
+    },
+    {
+      "codigo_mp": "MP00253",
+      "nombre": "Benzyl nicotinate",
+      "consumo_anual_g": 4.0,
+      "consumo_mensual_g": 0.0,
+      "stock_minimo": 1.0
+    },
+    {
+      "codigo_mp": "MP00250",
+      "nombre": "Myristoyl nonapeptide-3",
+      "consumo_anual_g": 4.0,
+      "consumo_mensual_g": 0.0,
+      "stock_minimo": 1.0
+    },
+    {
+      "codigo_mp": "MP00177",
+      "nombre": "Oligopéptido-68",
+      "consumo_anual_g": 4.0,
+      "consumo_mensual_g": 0.0,
+      "stock_minimo": 1.0
+    }
+  ],
+  "metodologia": "Consumo anual / 12 x 2 meses x 1.1 buffer",
+  "total_mps": 135
+}

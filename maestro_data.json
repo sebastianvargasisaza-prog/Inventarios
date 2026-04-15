@@ -6,7 +6,7 @@
       "nombre_comercial": "4-Butyl resorcinol",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00183",
@@ -14,7 +14,7 @@
       "nombre_comercial": "Alpha arbutina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 2203.0
     },
     {
       "codigo_mp": "MP00117",
@@ -22,7 +22,7 @@
       "nombre_comercial": "Aceite de coco",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00138",
@@ -30,7 +30,7 @@
       "nombre_comercial": "Ácido láctico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 643.0
     },
     {
       "codigo_mp": "MP00235",
@@ -38,7 +38,7 @@
       "nombre_comercial": "NAD",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 106.0
     },
     {
       "codigo_mp": "MP00275",
@@ -46,7 +46,7 @@
       "nombre_comercial": "NMN",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 11.0
     },
     {
       "codigo_mp": "MP00189",
@@ -54,7 +54,7 @@
       "nombre_comercial": "Acetil zingerone",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00152",
@@ -62,7 +62,7 @@
       "nombre_comercial": "Adenosina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 19.0
     },
     {
       "codigo_mp": "MP00223",
@@ -70,7 +70,7 @@
       "nombre_comercial": "ADN vegetal (PDRN)",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 35.0
     },
     {
       "codigo_mp": "MP00085",
@@ -78,7 +78,7 @@
       "nombre_comercial": "Aceite esencial árbol de té",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00088",
@@ -86,7 +86,7 @@
       "nombre_comercial": "Aceite esencial de geranio",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00096",
@@ -94,7 +94,7 @@
       "nombre_comercial": "Aceite esencial de incienso",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00104",
@@ -102,7 +102,7 @@
       "nombre_comercial": "Aceite esencial de jazmín",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00039",
@@ -110,7 +110,7 @@
       "nombre_comercial": "Aceite esencial de lavanda",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00091",
@@ -118,7 +118,7 @@
       "nombre_comercial": "Aceite esencial de manzanilla",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00025",
@@ -126,7 +126,7 @@
       "nombre_comercial": "Aceite de neroli",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00139",
@@ -134,7 +134,7 @@
       "nombre_comercial": "Aceite esencial de romero",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00101",
@@ -142,7 +142,7 @@
       "nombre_comercial": "Aceite esencial de vainilla",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00192",
@@ -150,7 +150,7 @@
       "nombre_comercial": "Acetyl hexapeptide-8",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 25.0
     },
     {
       "codigo_mp": "MP00047",
@@ -158,7 +158,7 @@
       "nombre_comercial": "Alantoína",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 759.0
     },
     {
       "codigo_mp": "MP00158",
@@ -166,7 +166,7 @@
       "nombre_comercial": "Ácido lactobiónico",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00044",
@@ -174,7 +174,7 @@
       "nombre_comercial": "Alcohol etílico 95-96%",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00133",
@@ -182,7 +182,7 @@
       "nombre_comercial": "Alcohol isopropílico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00216",
@@ -190,7 +190,7 @@
       "nombre_comercial": "Aloe vera polvo",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 11.0
     },
     {
       "codigo_mp": "MP00217",
@@ -198,7 +198,7 @@
       "nombre_comercial": "Aloe vera 200X polvo",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPANAC01",
@@ -206,7 +206,7 @@
       "nombre_comercial": "P-anisic acid",
       "tipo": "",
       "proveedor": "Bolite",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00165",
@@ -214,7 +214,7 @@
       "nombre_comercial": "Anemarrhena root extract",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00234",
@@ -222,7 +222,7 @@
       "nombre_comercial": "Apigenin",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 2.0
     },
     {
       "codigo_mp": "MP00230",
@@ -230,7 +230,7 @@
       "nombre_comercial": "Vitamina C",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1705.0
     },
     {
       "codigo_mp": "MP00156",
@@ -238,7 +238,7 @@
       "nombre_comercial": "Ascorbyl palmitate",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00238",
@@ -246,7 +246,7 @@
       "nombre_comercial": "Ascorbyl glucoside",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 213.0
     },
     {
       "codigo_mp": "MP00185",
@@ -254,7 +254,7 @@
       "nombre_comercial": "Asiaticoside 95%",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 52.0
     },
     {
       "codigo_mp": "MP00170",
@@ -262,7 +262,7 @@
       "nombre_comercial": "Acetyl tetrapeptide-3",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00178",
@@ -270,7 +270,7 @@
       "nombre_comercial": "Acetyl tetrapeptide-40",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 2.0
     },
     {
       "codigo_mp": "MP00175",
@@ -278,7 +278,7 @@
       "nombre_comercial": "Acetyl tetrapeptide-5",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 3.0
     },
     {
       "codigo_mp": "MPATSG01",
@@ -286,7 +286,7 @@
       "nombre_comercial": "Antaron Soja Glyceride",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00218",
@@ -294,7 +294,7 @@
       "nombre_comercial": "Astaxantina",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00221",
@@ -302,7 +302,7 @@
       "nombre_comercial": "Ácido azelaico",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1944.0
     },
     {
       "codigo_mp": "MP00284",
@@ -310,7 +310,7 @@
       "nombre_comercial": "Azeclair",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPBADM01",
@@ -318,7 +318,7 @@
       "nombre_comercial": "Bis-aminopropyl diglycol dimalate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00264",
@@ -326,7 +326,7 @@
       "nombre_comercial": "Beta-cyclodextrin",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 188.0
     },
     {
       "codigo_mp": "MP00052",
@@ -334,7 +334,7 @@
       "nombre_comercial": "Bis-diglyceryl polyacyladipate-2",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 116.0
     },
     {
       "codigo_mp": "MP00267",
@@ -342,7 +342,7 @@
       "nombre_comercial": "Bis-ethyloxyphenol methoxyphenyl triazine",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPBENJ01",
@@ -350,7 +350,7 @@
       "nombre_comercial": "Benjuí tintura",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00263",
@@ -358,7 +358,7 @@
       "nombre_comercial": "Betaine salicylate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 54.0
     },
     {
       "codigo_mp": "MP00215",
@@ -366,7 +366,7 @@
       "nombre_comercial": "Betaína",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 570.0
     },
     {
       "codigo_mp": "MP00214",
@@ -374,7 +374,7 @@
       "nombre_comercial": "Betaglucano",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 420.0
     },
     {
       "codigo_mp": "MPBHTC01",
@@ -382,7 +382,7 @@
       "nombre_comercial": "Behentrimonium chloride",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00067",
@@ -390,7 +390,7 @@
       "nombre_comercial": "Antioxidante BHT",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00173",
@@ -398,7 +398,7 @@
       "nombre_comercial": "Bakuchiol",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 33.0
     },
     {
       "codigo_mp": "MP00128",
@@ -406,7 +406,7 @@
       "nombre_comercial": "BM-600",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00184",
@@ -414,7 +414,7 @@
       "nombre_comercial": "BM-939",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 4373.0
     },
     {
       "codigo_mp": "MP00129",
@@ -422,7 +422,7 @@
       "nombre_comercial": "BM-945",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00127",
@@ -430,7 +430,7 @@
       "nombre_comercial": "BM-956",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1556.0
     },
     {
       "codigo_mp": "MP00293",
@@ -438,7 +438,7 @@
       "nombre_comercial": "BM 96-350",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00087",
@@ -446,7 +446,7 @@
       "nombre_comercial": "Beauty Oil Acaí",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00137",
@@ -454,7 +454,7 @@
       "nombre_comercial": "Beauty Oil Argán",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 877.0
     },
     {
       "codigo_mp": "MP00099",
@@ -462,7 +462,7 @@
       "nombre_comercial": "Beauty Oil Árnica",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00037",
@@ -470,7 +470,7 @@
       "nombre_comercial": "Beauty Oil Baobab",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00038",
@@ -478,7 +478,7 @@
       "nombre_comercial": "Beauty Oil Buriti",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00097",
@@ -486,7 +486,7 @@
       "nombre_comercial": "Beauty Oil Cacao",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00102",
@@ -494,7 +494,7 @@
       "nombre_comercial": "Beauty Oil Centella Asiatica",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00034",
@@ -502,7 +502,7 @@
       "nombre_comercial": "Beauty Oil Café",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00029",
@@ -510,7 +510,7 @@
       "nombre_comercial": "Beauty Oil Chontaduro",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00100",
@@ -518,7 +518,7 @@
       "nombre_comercial": "Beauty Oil Camelia",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPBOCO01",
@@ -526,7 +526,7 @@
       "nombre_comercial": "Beauty Oil Copaiba",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00103",
@@ -534,7 +534,7 @@
       "nombre_comercial": "Beauty Oil Cerámidas",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 1457.0
     },
     {
       "codigo_mp": "MP00136",
@@ -542,7 +542,7 @@
       "nombre_comercial": "Beauty Oil Jojoba",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 869.0
     },
     {
       "codigo_mp": "MP00098",
@@ -550,7 +550,7 @@
       "nombre_comercial": "Beauty Oil Kakaí",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00032",
@@ -558,7 +558,7 @@
       "nombre_comercial": "Beauty Oil Maracuyá",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00043",
@@ -566,7 +566,7 @@
       "nombre_comercial": "Beauty Propanediol",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 3387.0
     },
     {
       "codigo_mp": "MP00105",
@@ -574,7 +574,7 @@
       "nombre_comercial": "Beauty Oil Rosa mosqueta",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00036",
@@ -582,7 +582,7 @@
       "nombre_comercial": "Beauty Oil Pepita de uva",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00031",
@@ -590,7 +590,7 @@
       "nombre_comercial": "Beauty Oil Zanahoria",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00122",
@@ -598,7 +598,7 @@
       "nombre_comercial": "BPD-500W",
       "tipo": "",
       "proveedor": "Colquímicos",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00203",
@@ -606,7 +606,7 @@
       "nombre_comercial": "BRO-IIS2",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPBSBL01",
@@ -614,7 +614,7 @@
       "nombre_comercial": "Bisabolol",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00068",
@@ -622,7 +622,7 @@
       "nombre_comercial": "Biosure FE",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 4118.0
     },
     {
       "codigo_mp": "MP00206",
@@ -630,7 +630,7 @@
       "nombre_comercial": "BTD-IIS2",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00258",
@@ -638,7 +638,7 @@
       "nombre_comercial": "Butilenglicol",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00030",
@@ -646,7 +646,7 @@
       "nombre_comercial": "Bauty Sensof",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 4573.0
     },
     {
       "codigo_mp": "MP00193",
@@ -654,7 +654,7 @@
       "nombre_comercial": "Biotinoyl tripeptide-1",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00135",
@@ -662,7 +662,7 @@
       "nombre_comercial": "BY0-IIS2",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00253",
@@ -670,7 +670,7 @@
       "nombre_comercial": "Benzyl nicotinate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1.0
     },
     {
       "codigo_mp": "MPCAAW01",
@@ -678,7 +678,7 @@
       "nombre_comercial": "Citrus aurantium amara water",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00118",
@@ -686,7 +686,7 @@
       "nombre_comercial": "Cafeína anhidra",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 116.0
     },
     {
       "codigo_mp": "MP00254",
@@ -694,7 +694,7 @@
       "nombre_comercial": "C13-C15 Alkane",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00008",
@@ -702,7 +702,7 @@
       "nombre_comercial": "Carbopol",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1004.0
     },
     {
       "codigo_mp": "MP00246",
@@ -710,7 +710,7 @@
       "nombre_comercial": "Capryloyl salicylic acid",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 457.0
     },
     {
       "codigo_mp": "MP00176",
@@ -718,7 +718,7 @@
       "nombre_comercial": "Centella asiatica triterpenes 80%",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 68.0
     },
     {
       "codigo_mp": "MP00084",
@@ -726,7 +726,7 @@
       "nombre_comercial": "Probetaína",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 10351.0
     },
     {
       "codigo_mp": "MP00058",
@@ -734,7 +734,7 @@
       "nombre_comercial": "Candelilla wax",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00208",
@@ -742,7 +742,7 @@
       "nombre_comercial": "Cera de abejas",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00126",
@@ -750,7 +750,7 @@
       "nombre_comercial": "Celulosa",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00201",
@@ -758,7 +758,7 @@
       "nombre_comercial": "Alcohol cetílico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 436.0
     },
     {
       "codigo_mp": "MP00240",
@@ -766,7 +766,7 @@
       "nombre_comercial": "Cetyl tranexamate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 425.0
     },
     {
       "codigo_mp": "MP00041",
@@ -774,7 +774,7 @@
       "nombre_comercial": "Ceresine wax",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00181",
@@ -782,7 +782,7 @@
       "nombre_comercial": "Centella asiatica extract",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 320.0
     },
     {
       "codigo_mp": "MP00220",
@@ -790,7 +790,7 @@
       "nombre_comercial": "Chitosan",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPCHLV01",
@@ -798,7 +798,7 @@
       "nombre_comercial": "Cholesterol vegetal",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00065",
@@ -806,7 +806,7 @@
       "nombre_comercial": "Ácido cítrico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 28.0
     },
     {
       "codigo_mp": "MPCMLW01",
@@ -814,7 +814,7 @@
       "nombre_comercial": "Camellia sinensis leaf water",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPCOCP01",
@@ -822,7 +822,7 @@
       "nombre_comercial": "Coco caprylate",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00050",
@@ -830,7 +830,7 @@
       "nombre_comercial": "Caprylyl/capryl glucoside",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 1329.0
     },
     {
       "codigo_mp": "MPCRCO01",
@@ -838,7 +838,7 @@
       "nombre_comercial": "Cera de coco",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00017",
@@ -846,7 +846,7 @@
       "nombre_comercial": "Chromium Oxide Green",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00076",
@@ -854,7 +854,7 @@
       "nombre_comercial": "Cera de soja",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00059",
@@ -862,7 +862,7 @@
       "nombre_comercial": "Carnauba wax",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPCTLH01",
@@ -870,7 +870,7 @@
       "nombre_comercial": "Cetiol HE (BASF/IMCD)",
       "tipo": "",
       "proveedor": "BASF",
-      "stock_minimo": 0.0
+      "stock_minimo": 811.0
     },
     {
       "codigo_mp": "MP00040",
@@ -878,7 +878,7 @@
       "nombre_comercial": "Cetiol",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 2629.0
     },
     {
       "codigo_mp": "MP00194",
@@ -886,7 +886,7 @@
       "nombre_comercial": "Copper tripeptide-1",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 65.0
     },
     {
       "codigo_mp": "MP00268",
@@ -894,7 +894,7 @@
       "nombre_comercial": "Diethylamino hydroxybenzoyl hexyl benzoate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00266",
@@ -902,7 +902,7 @@
       "nombre_comercial": "Dibutyl adipate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1738.0
     },
     {
       "codigo_mp": "MP00048",
@@ -910,7 +910,7 @@
       "nombre_comercial": "Diisostearyl malate (Greenway)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 206.0
     },
     {
       "codigo_mp": "MP00259",
@@ -918,7 +918,7 @@
       "nombre_comercial": "Dimethyl isosorbide",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1083.0
     },
     {
       "codigo_mp": "MP00179",
@@ -926,7 +926,7 @@
       "nombre_comercial": "Dipeptide diaminobutyroyl benzylamide diacetate",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 6.0
     },
     {
       "codigo_mp": "MP00010",
@@ -934,7 +934,7 @@
       "nombre_comercial": "D&C Red 6 Barium Lake",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPDSHC01",
@@ -942,7 +942,7 @@
       "nombre_comercial": "Disteardimonium hectorite",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00226",
@@ -950,7 +950,7 @@
       "nombre_comercial": "Ectoin",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 436.0
     },
     {
       "codigo_mp": "MP00046",
@@ -958,7 +958,7 @@
       "nombre_comercial": "EDTA disódico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 302.0
     },
     {
       "codigo_mp": "MP00150",
@@ -966,7 +966,7 @@
       "nombre_comercial": "Ergotioneína",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 14.0
     },
     {
       "codigo_mp": "MPEHGL01",
@@ -974,7 +974,7 @@
       "nombre_comercial": "Ethylhexylglycerin",
       "tipo": "",
       "proveedor": "Bolite",
-      "stock_minimo": 0.0
+      "stock_minimo": 545.0
     },
     {
       "codigo_mp": "MP00269",
@@ -982,7 +982,7 @@
       "nombre_comercial": "Ethylhexyl triazone",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPELSS01",
@@ -990,7 +990,7 @@
       "nombre_comercial": "Eversoft S12 (Inchemical)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00116",
@@ -998,7 +998,7 @@
       "nombre_comercial": "Epi-On",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1979.0
     },
     {
       "codigo_mp": "MP00160",
@@ -1006,7 +1006,7 @@
       "nombre_comercial": "Etil ascórbico acid",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 2471.0
     },
     {
       "codigo_mp": "MP00256",
@@ -1014,7 +1014,7 @@
       "nombre_comercial": "Etoxidiglicol",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1083.0
     },
     {
       "codigo_mp": "MP00089",
@@ -1022,7 +1022,7 @@
       "nombre_comercial": "Extracto de caléndula",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00026",
@@ -1030,7 +1030,7 @@
       "nombre_comercial": "Extracto de ginseng",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00242",
@@ -1038,7 +1038,7 @@
       "nombre_comercial": "Extracto CO2 de romero",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 11.0
     },
     {
       "codigo_mp": "MP00094",
@@ -1046,7 +1046,7 @@
       "nombre_comercial": "Extracto de salvia",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00035",
@@ -1054,7 +1054,7 @@
       "nombre_comercial": "Extracto de té verde",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00300",
@@ -1062,7 +1062,7 @@
       "nombre_comercial": "Eversoft YCS-30S (Inchemical)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00011",
@@ -1070,7 +1070,7 @@
       "nombre_comercial": "FD&C Blue 1 Aluminum Lake",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPFRCN01",
@@ -1078,7 +1078,7 @@
       "nombre_comercial": "Fragancia canela",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPFRDU01",
@@ -1086,7 +1086,7 @@
       "nombre_comercial": "Fragancia durazno",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPFREU01",
@@ -1094,7 +1094,7 @@
       "nombre_comercial": "Fragancia eucalipto",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00019",
@@ -1102,7 +1102,7 @@
       "nombre_comercial": "Fresa cremosa",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00004",
@@ -1110,7 +1110,7 @@
       "nombre_comercial": "Fresa lips",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPFRGI01",
@@ -1118,7 +1118,7 @@
       "nombre_comercial": "Fragancia gin",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00062",
@@ -1126,7 +1126,7 @@
       "nombre_comercial": "Fragancia pistacho",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 174.0
     },
     {
       "codigo_mp": "MP00020",
@@ -1134,7 +1134,7 @@
       "nombre_comercial": "Yogurt cremoso",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 87.0
     },
     {
       "codigo_mp": "MP00014",
@@ -1142,7 +1142,7 @@
       "nombre_comercial": "FD&C Yellow 5 Aluminum Lake",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00009",
@@ -1150,7 +1150,7 @@
       "nombre_comercial": "FD&C Yellow 6 Aluminum Lake",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPGHTC01",
@@ -1158,7 +1158,7 @@
       "nombre_comercial": "Guar hydroxypropyltrimonium",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00290",
@@ -1166,7 +1166,7 @@
       "nombre_comercial": "Ácido glutámico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPGLAC02",
@@ -1174,7 +1174,7 @@
       "nombre_comercial": "Ácido glicólico",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00231",
@@ -1182,7 +1182,7 @@
       "nombre_comercial": "Glicinamida",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 746.0
     },
     {
       "codigo_mp": "MP00195",
@@ -1190,7 +1190,7 @@
       "nombre_comercial": "Glicerina",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 51900.0
     },
     {
       "codigo_mp": "MP00270",
@@ -1198,7 +1198,7 @@
       "nombre_comercial": "Gluconolactona",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 3488.0
     },
     {
       "codigo_mp": "MP00120",
@@ -1206,7 +1206,7 @@
       "nombre_comercial": "Regaliz raíz polvo",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 121.0
     },
     {
       "codigo_mp": "MP00145",
@@ -1214,7 +1214,7 @@
       "nombre_comercial": "Glutatión",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 84.0
     },
     {
       "codigo_mp": "MP00265",
@@ -1222,7 +1222,7 @@
       "nombre_comercial": "Glicina",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 58.0
     },
     {
       "codigo_mp": "MP00072",
@@ -1230,7 +1230,7 @@
       "nombre_comercial": "Gransil VX-419",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1095.0
     },
     {
       "codigo_mp": "MP00271",
@@ -1238,7 +1238,7 @@
       "nombre_comercial": "Giga White",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00245",
@@ -1246,7 +1246,7 @@
       "nombre_comercial": "1,2-Hexanediol",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1461.0
     },
     {
       "codigo_mp": "MP00142",
@@ -1254,7 +1254,7 @@
       "nombre_comercial": "Ácido hialurónico 1500 kD",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 615.0
     },
     {
       "codigo_mp": "MP00233",
@@ -1262,7 +1262,7 @@
       "nombre_comercial": "Ácido hialurónico 300 kD",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 626.0
     },
     {
       "codigo_mp": "MP00163",
@@ -1270,7 +1270,7 @@
       "nombre_comercial": "Ácido hialurónico 50 kD",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1508.0
     },
     {
       "codigo_mp": "MP00285",
@@ -1278,7 +1278,7 @@
       "nombre_comercial": "Péptido de colágeno",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 61.0
     },
     {
       "codigo_mp": "MPHYEC01",
@@ -1286,7 +1286,7 @@
       "nombre_comercial": "Hydroxyethylcellulose",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00168",
@@ -1294,7 +1294,7 @@
       "nombre_comercial": "Hydrolyzed keratin",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00162",
@@ -1302,7 +1302,7 @@
       "nombre_comercial": "Hydrolyzed rice extract",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00248",
@@ -1310,7 +1310,7 @@
       "nombre_comercial": "Hydrolyzed sponge",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00057",
@@ -1318,7 +1318,7 @@
       "nombre_comercial": "Inulin",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00213",
@@ -1326,7 +1326,7 @@
       "nombre_comercial": "Mio inositol",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00018",
@@ -1334,7 +1334,7 @@
       "nombre_comercial": "Iron Oxide Black",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00013",
@@ -1342,7 +1342,7 @@
       "nombre_comercial": "Iron Oxide Red",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPIOXY01",
@@ -1350,7 +1350,7 @@
       "nombre_comercial": "Iron Oxide Yellow",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00134",
@@ -1358,7 +1358,7 @@
       "nombre_comercial": "Miristato de isopropilo",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 869.0
     },
     {
       "codigo_mp": "MPISNM01",
@@ -1366,7 +1366,7 @@
       "nombre_comercial": "Isononyl isononanoate",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00002",
@@ -1374,7 +1374,7 @@
       "nombre_comercial": "Piedra alumbre Banalum",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00237",
@@ -1382,7 +1382,7 @@
       "nombre_comercial": "Ácido kójico",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 950.0
     },
     {
       "codigo_mp": "MP00244",
@@ -1390,7 +1390,7 @@
       "nombre_comercial": "Potassium azeloyl diglycinate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 1604.0
     },
     {
       "codigo_mp": "MP00147",
@@ -1398,7 +1398,7 @@
       "nombre_comercial": "L-arginina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00161",
@@ -1406,7 +1406,7 @@
       "nombre_comercial": "L-carnitina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 55.0
     },
     {
       "codigo_mp": "MP00070",
@@ -1414,7 +1414,7 @@
       "nombre_comercial": "Plantaren Lauryl 1200 / Eversoft 1200",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00188",
@@ -1422,7 +1422,7 @@
       "nombre_comercial": "Linseed oil",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00054",
@@ -1430,7 +1430,7 @@
       "nombre_comercial": "Lauroyl lysine",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 7.0
     },
     {
       "codigo_mp": "MP00180",
@@ -1438,7 +1438,7 @@
       "nombre_comercial": "L-teanina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 11.0
     },
     {
       "codigo_mp": "MP00109",
@@ -1446,7 +1446,7 @@
       "nombre_comercial": "LexFeel WOW",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00227",
@@ -1454,7 +1454,7 @@
       "nombre_comercial": "Ácido madecásico",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00229",
@@ -1462,7 +1462,7 @@
       "nombre_comercial": "Magnesium ascorbyl phosphate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00276",
@@ -1470,7 +1470,7 @@
       "nombre_comercial": "Methylene bis-benzotriazolyl",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00024",
@@ -1478,7 +1478,7 @@
       "nombre_comercial": "Microcristalina 127 blanca",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00003",
@@ -1486,7 +1486,7 @@
       "nombre_comercial": "Magnesium stearate",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00219",
@@ -1494,7 +1494,7 @@
       "nombre_comercial": "Melatonina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 72.0
     },
     {
       "codigo_mp": "MP00075",
@@ -1502,7 +1502,7 @@
       "nombre_comercial": "Manteca de babasú",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00074",
@@ -1510,7 +1510,7 @@
       "nombre_comercial": "Mantequilla de copoazú",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 16.0
     },
     {
       "codigo_mp": "MP00042",
@@ -1518,7 +1518,7 @@
       "nombre_comercial": "Mantequilla de karité",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00166",
@@ -1526,7 +1526,7 @@
       "nombre_comercial": "Menthyl lactate",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 10.0
     },
     {
       "codigo_mp": "MP00196",
@@ -1534,7 +1534,7 @@
       "nombre_comercial": "Mantequilla de mango",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00077",
@@ -1542,7 +1542,7 @@
       "nombre_comercial": "Mantequilla de murumuru",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 116.0
     },
     {
       "codigo_mp": "MP00005",
@@ -1550,7 +1550,7 @@
       "nombre_comercial": "Mocaccino lips",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 5.0
     },
     {
       "codigo_mp": "MP00171",
@@ -1558,7 +1558,7 @@
       "nombre_comercial": "Myristoyl hexapeptide-16",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00250",
@@ -1566,7 +1566,7 @@
       "nombre_comercial": "Myristoyl nonapeptide-3",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1.0
     },
     {
       "codigo_mp": "MP00187",
@@ -1574,7 +1574,7 @@
       "nombre_comercial": "Myristoyl pentapeptide-17",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00164",
@@ -1582,7 +1582,7 @@
       "nombre_comercial": "N-acetil cisteína",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00262",
@@ -1590,7 +1590,7 @@
       "nombre_comercial": "N-acetil glucosamina",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 3086.0
     },
     {
       "codigo_mp": "MP00148",
@@ -1598,7 +1598,7 @@
       "nombre_comercial": "Niacinamida",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 20953.0
     },
     {
       "codigo_mp": "MP00153",
@@ -1606,7 +1606,7 @@
       "nombre_comercial": "Nano titanium dioxide",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00001",
@@ -1614,7 +1614,7 @@
       "nombre_comercial": "Nylon 12 SP-500",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00143",
@@ -1622,7 +1622,7 @@
       "nombre_comercial": "Nano zinc oxide",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00177",
@@ -1630,7 +1630,7 @@
       "nombre_comercial": "Oligopeptide-68",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1.0
     },
     {
       "codigo_mp": "MP00236",
@@ -1638,7 +1638,7 @@
       "nombre_comercial": "Pantenol polvo",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 203.0
     },
     {
       "codigo_mp": "MP00110",
@@ -1646,7 +1646,7 @@
       "nombre_comercial": "D-Pantenol sólido",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 16.0
     },
     {
       "codigo_mp": "MP00093",
@@ -1654,7 +1654,7 @@
       "nombre_comercial": "Polybutene",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 107.0
     },
     {
       "codigo_mp": "MP00006",
@@ -1662,7 +1662,7 @@
       "nombre_comercial": "Pemulen EZ-4U (Lubrizol)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 694.0
     },
     {
       "codigo_mp": "MP00064",
@@ -1670,7 +1670,7 @@
       "nombre_comercial": "Polietilenglicol 400",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 14575.0
     },
     {
       "codigo_mp": "MP00204",
@@ -1678,7 +1678,7 @@
       "nombre_comercial": "Vaselina USP",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00154",
@@ -1686,7 +1686,7 @@
       "nombre_comercial": "Polyglutamic acid",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00051",
@@ -1694,7 +1694,7 @@
       "nombre_comercial": "Polyglyceryl-2 triisostearate",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 33.0
     },
     {
       "codigo_mp": "MP00021",
@@ -1702,7 +1702,7 @@
       "nombre_comercial": "Fenoxietanol / Biosure",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 6438.0
     },
     {
       "codigo_mp": "MPPHP101",
@@ -1710,7 +1710,7 @@
       "nombre_comercial": "Phenoxyethanol P10",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00209",
@@ -1718,7 +1718,7 @@
       "nombre_comercial": "PIB 24 (IMCD)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPPIRC01",
@@ -1726,7 +1726,7 @@
       "nombre_comercial": "Piroctone olamine",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00055",
@@ -1734,7 +1734,7 @@
       "nombre_comercial": "Polymethylsilsesquioxane",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00132",
@@ -1742,7 +1742,7 @@
       "nombre_comercial": "Polyaquol LW (Colquimicos)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 362.0
     },
     {
       "codigo_mp": "MP00202",
@@ -1750,7 +1750,7 @@
       "nombre_comercial": "Sorbato de potasio",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 278.0
     },
     {
       "codigo_mp": "MP00049",
@@ -1758,7 +1758,7 @@
       "nombre_comercial": "Poloxamer 184",
       "tipo": "",
       "proveedor": "Bolite",
-      "stock_minimo": 0.0
+      "stock_minimo": 779.0
     },
     {
       "codigo_mp": "MPPOX188",
@@ -1766,7 +1766,7 @@
       "nombre_comercial": "Poloxamer 188",
       "tipo": "",
       "proveedor": "Greenway",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00228",
@@ -1774,7 +1774,7 @@
       "nombre_comercial": "Palmitoyl pentapeptide-4",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 3.0
     },
     {
       "codigo_mp": "MP00115",
@@ -1782,7 +1782,7 @@
       "nombre_comercial": "Polyaquol OS2",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPPRCA01",
@@ -1790,7 +1790,7 @@
       "nombre_comercial": "Propylene carbonate",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00151",
@@ -1798,7 +1798,7 @@
       "nombre_comercial": "Prolina",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00023",
@@ -1806,7 +1806,7 @@
       "nombre_comercial": "Proteína de soja",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00033",
@@ -1814,7 +1814,7 @@
       "nombre_comercial": "Proteína de germen de trigo",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00190",
@@ -1822,7 +1822,7 @@
       "nombre_comercial": "Palmitoyl tripeptide-1",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 9.0
     },
     {
       "codigo_mp": "MP00174",
@@ -1830,7 +1830,7 @@
       "nombre_comercial": "Palmitoyl tripeptide-38",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1.0
     },
     {
       "codigo_mp": "MP00191",
@@ -1838,7 +1838,7 @@
       "nombre_comercial": "Palmitoyl tripeptide-5",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 8.0
     },
     {
       "codigo_mp": "MP00172",
@@ -1846,7 +1846,7 @@
       "nombre_comercial": "Palmitoyl tetrapeptide-7",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 9.0
     },
     {
       "codigo_mp": "MP00056",
@@ -1854,7 +1854,7 @@
       "nombre_comercial": "Pullulan",
       "tipo": "",
       "proveedor": "Bolite",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00111",
@@ -1862,7 +1862,7 @@
       "nombre_comercial": "Puresil ORG01",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPPVPK01",
@@ -1870,7 +1870,7 @@
       "nombre_comercial": "PVP K-30",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00071",
@@ -1878,7 +1878,7 @@
       "nombre_comercial": "Quincream",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 2138.0
     },
     {
       "codigo_mp": "MP00241",
@@ -1886,7 +1886,7 @@
       "nombre_comercial": "Red clover extract",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00274",
@@ -1894,7 +1894,7 @@
       "nombre_comercial": "Hydroxypinacolone retinoate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 24.0
     },
     {
       "codigo_mp": "MP00261",
@@ -1902,7 +1902,7 @@
       "nombre_comercial": "Retinaldehído",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 10.0
     },
     {
       "codigo_mp": "MP00281",
@@ -1910,7 +1910,7 @@
       "nombre_comercial": "Retinol 99%",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00287",
@@ -1918,7 +1918,7 @@
       "nombre_comercial": "Retinyl retinoate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 11.0
     },
     {
       "codigo_mp": "MP00210",
@@ -1926,7 +1926,7 @@
       "nombre_comercial": "Ácido salicílico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 7164.0
     },
     {
       "codigo_mp": "MP00053",
@@ -1934,7 +1934,7 @@
       "nombre_comercial": "Silica dimethylsilylate / Aerosil R972",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 148.0
     },
     {
       "codigo_mp": "MP00112",
@@ -1942,7 +1942,7 @@
       "nombre_comercial": "Aerosil 200",
       "tipo": "",
       "proveedor": "Evonik",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00277",
@@ -1950,7 +1950,7 @@
       "nombre_comercial": "Silimarina",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 61.0
     },
     {
       "codigo_mp": "MP00289",
@@ -1958,7 +1958,7 @@
       "nombre_comercial": "Silica MSS-500/3H",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00199",
@@ -1966,7 +1966,7 @@
       "nombre_comercial": "Silicona SF-350",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 4743.0
     },
     {
       "codigo_mp": "MP00169",
@@ -1974,7 +1974,7 @@
       "nombre_comercial": "Sodium ascorbyl phosphate",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1810.0
     },
     {
       "codigo_mp": "MP00045",
@@ -1982,7 +1982,7 @@
       "nombre_comercial": "Benzoato de sodio",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 278.0
     },
     {
       "codigo_mp": "MP00130",
@@ -1990,7 +1990,7 @@
       "nombre_comercial": "Metabisulfito de sodio",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00131",
@@ -1998,7 +1998,7 @@
       "nombre_comercial": "Bicarbonato de sodio",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00239",
@@ -2006,7 +2006,7 @@
       "nombre_comercial": "Sodium phytate",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 56.0
     },
     {
       "codigo_mp": "MP00066",
@@ -2014,7 +2014,7 @@
       "nombre_comercial": "Soda cáustica",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00121",
@@ -2022,7 +2022,7 @@
       "nombre_comercial": "Propilenglicol (Colquimicos)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 54643.0
     },
     {
       "codigo_mp": "MP00282",
@@ -2030,7 +2030,7 @@
       "nombre_comercial": "Squalane",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 182.0
     },
     {
       "codigo_mp": "MPSTAC01",
@@ -2038,7 +2038,7 @@
       "nombre_comercial": "Ácido esteárico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00207",
@@ -2046,7 +2046,7 @@
       "nombre_comercial": "Stabil",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 13.0
     },
     {
       "codigo_mp": "MPSTDM01",
@@ -2054,7 +2054,7 @@
       "nombre_comercial": "Stearamidopropyl dimethylamine",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPSTEV01",
@@ -2062,7 +2062,7 @@
       "nombre_comercial": "Estevia en polvo",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00260",
@@ -2070,7 +2070,7 @@
       "nombre_comercial": "Ácido succínico",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 162.0
     },
     {
       "codigo_mp": "MPSXEX01",
@@ -2078,7 +2078,7 @@
       "nombre_comercial": "Salvia hispanica seed extract",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPSXOL01",
@@ -2086,7 +2086,7 @@
       "nombre_comercial": "Salvia hispanica seed oil",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00257",
@@ -2094,7 +2094,7 @@
       "nombre_comercial": "Synthetic wax",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00090",
@@ -2102,7 +2102,7 @@
       "nombre_comercial": "Triglicérido caprílico",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 200.0
     },
     {
       "codigo_mp": "MP00212",
@@ -2110,7 +2110,7 @@
       "nombre_comercial": "Bautyterge AOS-40 / Asco AOS-40",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 14960.0
     },
     {
       "codigo_mp": "MP00092",
@@ -2118,7 +2118,7 @@
       "nombre_comercial": "Decyl glucoside (Sumiquim)",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 2443.0
     },
     {
       "codigo_mp": "MP00061",
@@ -2126,7 +2126,7 @@
       "nombre_comercial": "Triethylhexanoin",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00063",
@@ -2134,7 +2134,7 @@
       "nombre_comercial": "Tinogard TT",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 61.0
     },
     {
       "codigo_mp": "MP00149",
@@ -2142,7 +2142,7 @@
       "nombre_comercial": "Tetrahexyldecyl ascorbate",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 774.0
     },
     {
       "codigo_mp": "MP00016",
@@ -2150,7 +2150,7 @@
       "nombre_comercial": "Titanium Dioxide",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00123",
@@ -2158,7 +2158,7 @@
       "nombre_comercial": "Trietanolamina",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 6928.0
     },
     {
       "codigo_mp": "MP00082",
@@ -2166,7 +2166,7 @@
       "nombre_comercial": "Tween 20",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 1862.0
     },
     {
       "codigo_mp": "MP00083",
@@ -2174,7 +2174,7 @@
       "nombre_comercial": "Tween 80",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 413.0
     },
     {
       "codigo_mp": "MP00167",
@@ -2182,7 +2182,7 @@
       "nombre_comercial": "Ácido tranexámico",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 6889.0
     },
     {
       "codigo_mp": "MP00015",
@@ -2190,7 +2190,7 @@
       "nombre_comercial": "Ultramarine Blue",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00146",
@@ -2198,7 +2198,7 @@
       "nombre_comercial": "Undecylenoyl phenylalanine",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00107",
@@ -2206,7 +2206,7 @@
       "nombre_comercial": "Urea",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 9372.0
     },
     {
       "codigo_mp": "MP00140",
@@ -2214,7 +2214,7 @@
       "nombre_comercial": "Vanillyl butyl ether",
       "tipo": "",
       "proveedor": "Lyphar",
-      "stock_minimo": 0.0
+      "stock_minimo": 1.0
     },
     {
       "codigo_mp": "MP00078",
@@ -2222,7 +2222,7 @@
       "nombre_comercial": "Vitamina E líquida",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 914.0
     },
     {
       "codigo_mp": "MP00079",
@@ -2230,7 +2230,7 @@
       "nombre_comercial": "Vitamina E polvo",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 878.0
     },
     {
       "codigo_mp": "MPVNEX01",
@@ -2238,7 +2238,7 @@
       "nombre_comercial": "Vanilla CO2 extract",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00073",
@@ -2246,7 +2246,7 @@
       "nombre_comercial": "Goma xanthan",
       "tipo": "",
       "proveedor": "",
-      "stock_minimo": 0.0
+      "stock_minimo": 3998.0
     },
     {
       "codigo_mp": "MPYUZU01",
@@ -2254,7 +2254,7 @@
       "nombre_comercial": "Yuzu oil",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MPZBNG01",
@@ -2262,7 +2262,7 @@
       "nombre_comercial": "Zanthoxylum bungeanum oil",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 500
     },
     {
       "codigo_mp": "MP00283",
@@ -2270,7 +2270,7 @@
       "nombre_comercial": "Zinc PCA",
       "tipo": "",
       "proveedor": "YTBIO",
-      "stock_minimo": 0.0
+      "stock_minimo": 323.0
     },
     {
       "codigo_mp": "MP00297",
@@ -2278,7 +2278,7 @@
       "nombre_comercial": "Hidróxido de sodio sol.",
       "tipo": "",
       "proveedor": "Agenquímicos",
-      "stock_minimo": 0.0
+      "stock_minimo": 1078.0
     },
     {
       "codigo_mp": "MPBNIT01",
@@ -2286,7 +2286,7 @@
       "nombre_comercial": "Boron Nitride",
       "tipo": "",
       "proveedor": "Tianki",
-      "stock_minimo": 0.0
+      "stock_minimo": 106.0
     },
     {
       "codigo_mp": "MPCAKY01",
@@ -2294,7 +2294,7 @@
       "nombre_comercial": "Aceite de cacay",
       "tipo": "",
       "proveedor": "Inchemical",
-      "stock_minimo": 0.0
+      "stock_minimo": 2.0
     }
   ]
 }

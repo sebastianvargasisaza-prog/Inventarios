@@ -56,7 +56,7 @@ init_db()
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Inventarios - Espagiria Laboratorios</title>
 <style>
@@ -112,14 +112,57 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="dashboard" class="tab-content active">
-    <h2>Dashboard Principal</h2>
-    <div class="grid">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;">Dashboard Ejecutivo</h2>
+      <button onclick="loadDashboardCompleto()" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid" style="margin-bottom:20px;">
       <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
-      <div class="card"><h3>Materiales</h3><p id="materiales-count">-</p></div>
-      <div class="card"><h3>Alertas</h3><p id="alertas-count">-</p></div>
+      <div class="card"><h3>Lotes en Bodega</h3><p id="materiales-count">-</p></div>
+      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchTab('alertas',document.querySelector('[onclick*=alertas]'))"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
       <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
     </div>
-    <button onclick="loadDashboard()">Actualizar</button>
+
+    <!-- Alertas criticas rápidas -->
+    <div id="dash-alertas-rapidas" style="display:none;background:#ffebeb;border:1px solid #cc0000;border-radius:8px;padding:12px;margin-bottom:20px;">
+      <h4 style="color:#cc0000;margin-bottom:8px;">&#128308; MPs criticas — bajo stock minimo ahora</h4>
+      <div id="dash-alertas-lista" style="font-size:0.88em;"></div>
+    </div>
+
+    <!-- Gráficas -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+      <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
+        <h4 style="margin-bottom:12px;color:#333;">&#128308; Vencimientos próximos 6 meses</h4>
+        <canvas id="chart-vencimientos" height="180"></canvas>
+        <p id="chart-venc-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin vencimientos próximos</p>
+      </div>
+      <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
+        <h4 style="margin-bottom:12px;color:#333;">&#128230; Top 5 MPs por Stock</h4>
+        <canvas id="chart-top-stock" height="180"></canvas>
+        <p id="chart-stock-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin datos de stock</p>
+      </div>
+    </div>
+
+    <!-- Estado de lotes -->
+    <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
+      <h4 style="margin-bottom:12px;color:#333;">Estado general de lotes</h4>
+      <div style="display:flex;gap:15px;flex-wrap:wrap;" id="dash-estados">
+        <div style="text-align:center;padding:10px 20px;background:#ffebeb;border-radius:8px;">
+          <div style="font-size:1.8em;font-weight:700;color:#cc0000;" id="dash-vencidos">-</div>
+          <div style="font-size:0.82em;color:#888;">Vencidos</div>
+        </div>
+        <div style="text-align:center;padding:10px 20px;background:#fff3e0;border-radius:8px;">
+          <div style="font-size:1.8em;font-weight:700;color:#e65100;" id="dash-criticos">-</div>
+          <div style="font-size:0.82em;color:#888;">Críticos &lt;30d</div>
+        </div>
+        <div style="text-align:center;padding:10px 20px;background:#fffde7;border-radius:8px;">
+          <div style="font-size:1.8em;font-weight:700;color:#f57f17;" id="dash-proximos">-</div>
+          <div style="font-size:0.82em;color:#888;">Próximos &lt;90d</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="stock" class="tab-content">
@@ -344,23 +387,69 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
 }
 
+var _charts={};
 async function loadDashboard(){
   try{
     var r=await fetch('/api/inventario'), d=await r.json();
     document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
-    document.getElementById('alertas-count').textContent=d.alertas||'0';
     document.getElementById('producciones-count').textContent=d.producciones||'0';
-    // Cargar alertas de reabastecimiento en el dashboard
-    fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();}).then(function(ar){
+    fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
       var el=document.getElementById('alertas-count');
-      if(el&&n>0) el.textContent=n+' reabas';
+      if(el) el.textContent=n>0?n+' alertas!':'OK';
+      var panel=document.getElementById('dash-alertas-rapidas');
+      if(panel&&n>0){
+        panel.style.display='block';
+        var lista=document.getElementById('dash-alertas-lista');
+        if(lista) lista.innerHTML=ar.alertas.slice(0,3).map(function(a){
+          return '<div style="margin-bottom:4px;"><b>'+a.codigo_mp+'</b> '+a.nombre+' - Stock: '+a.stock_actual.toLocaleString()+'g / Min: '+a.stock_minimo.toLocaleString()+'g <span style="color:#cc0000;font-weight:700;">Deficit: '+a.deficit.toLocaleString()+'g</span></div>';
+        }).join('')+(n>3?'<div style="color:#888;font-size:0.85em;">... y '+(n-3)+' mas</div>':'');
+      } else if(panel){ panel.style.display='none'; }
     }).catch(function(){});
-  }catch(e){}
+  }catch(e){ console.error(e); }
 }
 
-var _lotes=[], _cat={}, _ultimoIng=null;
+async function loadDashboardCompleto(){
+  loadDashboard();
+  try{
+    var r=await fetch('/api/dashboard-stats'), d=await r.json();
+    var estados=d.estados_lotes||{};
+    var ev=document.getElementById('dash-vencidos'); if(ev) ev.textContent=estados.VENCIDO||0;
+    var ec=document.getElementById('dash-criticos'); if(ec) ec.textContent=estados.CRITICO||0;
+    var ep=document.getElementById('dash-proximos'); if(ep) ep.textContent=estados.PROXIMO||0;
+    var venc=d.vencimientos_por_mes||{}; var meses=Object.keys(venc);
+    var ctx1=document.getElementById('chart-vencimientos');
+    if(ctx1){
+      if(_charts.venc){ _charts.venc.destroy(); }
+      var emp=document.getElementById('chart-venc-empty');
+      if(meses.length>0){
+        ctx1.style.display='block'; if(emp) emp.style.display='none';
+        _charts.venc=new Chart(ctx1.getContext('2d'),{
+          type:'bar',
+          data:{labels:meses,datasets:[{label:'Kg que vencen',data:meses.map(function(m){return venc[m].kg;}),
+            backgroundColor:meses.map(function(m,i){return i===0?'rgba(204,0,0,0.7)':i<=1?'rgba(230,81,0,0.7)':'rgba(245,127,23,0.7)';}),borderRadius:4}]},
+          options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'kg'}}}}
+        });
+      } else { ctx1.style.display='none'; if(emp) emp.style.display='block'; }
+    }
+    var top=d.top_stock||[]; var ctx2=document.getElementById('chart-top-stock');
+    if(ctx2){
+      if(_charts.top){ _charts.top.destroy(); }
+      var emp2=document.getElementById('chart-stock-empty');
+      if(top.length>0){
+        ctx2.style.display='block'; if(emp2) emp2.style.display='none';
+        _charts.top=new Chart(ctx2.getContext('2d'),{
+          type:'bar',
+          data:{labels:top.map(function(t){return t.nombre.length>18?t.nombre.substring(0,16)+'...':t.nombre;}),
+            datasets:[{label:'Stock (kg)',data:top.map(function(t){return t.kg;}),backgroundColor:'rgba(102,126,234,0.7)',borderRadius:4}]},
+          options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,title:{display:true,text:'kg'}}}}
+        });
+      } else { ctx2.style.display='none'; if(emp2) emp2.style.display='block'; }
+    }
+  }catch(e){ console.error('Stats error:',e); }
+}
+
 async function loadStock(){
   try{
     var r=await fetch('/api/lotes'), d=await r.json();
@@ -754,7 +843,7 @@ async function loadAlertasReabas(){
   }
 }
 
-window.onload=function(){loadDashboard();loadFormulas();};
+window.onload=function(){loadDashboardCompleto();loadFormulas();};
 function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
   if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
@@ -1108,7 +1197,7 @@ def generar_rotulos(producto_nombre, cantidad_kg):
         rhtml+='</table>'
         rhtml+='<div style="text-align:center;padding:4px;"><svg id="bc'+str(i)+'"></svg></div>'
         rhtml+='<div class="rf">'+mid+'|'+lote_mp+' | #'+str(i+1)+' de '+str(len(items))+'</div></div>'
-    css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos</title>'
+    css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script><title>Rotulos</title>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
          '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}'
          '.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}'
@@ -1141,7 +1230,7 @@ def rotulo_recepcion(codigo, lote, cantidad):
     ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''; pv=mp[3] if mp else ''
     fv=str(mov[0])[:10] if mov and mov[0] else ''; ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
     nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
-    h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion</title>'
+    h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script><title>Rotulo Recepcion</title>'
        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
        '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}'
        '.ph{background:#1a252f;color:white;padding:10px 16px;display:flex;justify-content:space-between;margin-bottom:10px;}'
@@ -1179,6 +1268,56 @@ def rotulo_recepcion(codigo, lote, cantidad):
         '<script>window.onload=function(){try{JsBarcode("#bc","'+bv+'",{format:"CODE128",width:1.5,height:45,displayValue:false,margin:0});}catch(e){}}</script>'
         '</body></html>')
     return h
+
+
+@app.route('/api/dashboard-stats')
+def dashboard_stats():
+    from datetime import date
+    hoy = date.today().isoformat()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    # Vencimientos por mes (próximos 6 meses)
+    venc_por_mes = {}
+    c.execute("""SELECT fecha_vencimiento, COUNT(*) as n, SUM(cantidad) as total_g
+                 FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL
+                 AND fecha_vencimiento >= ? AND fecha_vencimiento <= date(?, '+180 days')
+                 GROUP BY substr(fecha_vencimiento,1,7) ORDER BY fecha_vencimiento""", (hoy, hoy))
+    for row in c.fetchall():
+        if row[0]:
+            mes = str(row[0])[:7]
+            venc_por_mes[mes] = {'lotes': row[1], 'kg': round((row[2] or 0)/1000, 1)}
+
+    # Alertas de reabastecimiento: MPs bajo mínimo
+    c.execute("""SELECT COUNT(*) FROM maestro_mps m
+                 LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                            FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+                 WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo""")
+    mps_bajo_minimo = c.fetchone()[0] or 0
+
+    # Lotes vencidos / críticos / próximos
+    c.execute("""SELECT estado_lote, COUNT(*) FROM movimientos WHERE tipo='Entrada' AND estado_lote IN ('VENCIDO','CRITICO','PROXIMO')
+                 GROUP BY estado_lote""")
+    estados = {r[0]: r[1] for r in c.fetchall()}
+
+    # Top 5 MPs por stock actual
+    c.execute("""SELECT material_id, material_nombre,
+                        SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                 FROM movimientos GROUP BY material_id, material_nombre
+                 HAVING stock > 0 ORDER BY stock DESC LIMIT 5""")
+    top_stock = [{'codigo': r[0], 'nombre': r[1], 'kg': round(r[2]/1000, 1)} for r in c.fetchall()]
+
+    # Stock total en kg
+    c.execute("SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos")
+    stock_total_g = c.fetchone()[0] or 0
+
+    conn.close()
+    return jsonify({
+        'vencimientos_por_mes': venc_por_mes,
+        'mps_bajo_minimo': mps_bajo_minimo,
+        'estados_lotes': estados,
+        'top_stock': top_stock,
+        'stock_total_kg': round(stock_total_g/1000, 1)
+    })
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
