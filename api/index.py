@@ -24,7 +24,7 @@ def get_anthropic_client():
         _anthropic_client = Anthropic(api_key=api_key)
     return _anthropic_client
 
-DB_PATH = '/tmp/inventario.db'
+DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
 
 def init_db():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
