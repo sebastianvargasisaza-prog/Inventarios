@@ -92,27 +92,27 @@ HUB_HTML = """<\!DOCTYPE html>
 <title>HHA Group — Portal Interno</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:50px 20px;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:50px 20px;}
 .logo-wrap{text-align:center;margin-bottom:52px;}
-.logo-badge{display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);border-radius:18px;padding:18px 44px;margin-bottom:16px;box-shadow:0 8px 32px rgba(99,102,241,0.35);}
-.logo-text{font-size:2.6em;font-weight:900;color:white;letter-spacing:6px;text-transform:uppercase;}
-.logo-sub{color:#64748b;font-size:0.85em;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:22px;max-width:1080px;width:100%;}
-.card{background:#1e293b;border:1px solid #334155;border-radius:18px;padding:34px 28px;text-decoration:none;display:block;position:relative;overflow:hidden;transition:all 0.3s ease;}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--c);border-radius:18px 18px 0 0;}
-.card:hover:not(.disabled){transform:translateY(-6px);border-color:var(--c);box-shadow:0 24px 48px rgba(0,0,0,0.5);}
-.card.disabled{opacity:0.45;cursor:not-allowed;pointer-events:none;}
-.card-icon{font-size:2.8em;margin-bottom:18px;display:block;}
-.card-title{font-size:1.35em;font-weight:700;color:white;margin-bottom:5px;}
-.card-co{font-size:0.75em;color:var(--c);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:14px;}
-.card-desc{font-size:0.88em;color:#94a3b8;line-height:1.65;margin-bottom:22px;}
-.badge{display:inline-block;padding:5px 14px;border-radius:20px;font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
-.badge-on{background:rgba(34,197,94,.15);color:#22c55e;}
-.badge-lock{background:rgba(251,146,60,.15);color:#fb923c;}
-.badge-soon{background:rgba(148,163,184,.12);color:#94a3b8;}
-.c-inv{--c:#6366f1;}.c-buy{--c:#f59e0b;}.c-trz{--c:#10b981;}.c-sol{--c:#ec4899;}
-.footer{margin-top:52px;color:#334155;font-size:0.78em;text-align:center;}
-.credit{margin-top:8px;color:#1e3a5f;font-size:0.72em;text-align:center;}
+.logo-badge{display:inline-block;background:#2B7A78;border-radius:16px;padding:16px 40px;margin-bottom:14px;box-shadow:0 4px 20px rgba(43,122,120,0.25);}
+.logo-text{font-size:2.2em;font-weight:900;color:white;letter-spacing:6px;text-transform:uppercase;}
+.logo-sub{color:#7A9E9C;font-size:0.82em;letter-spacing:3px;text-transform:uppercase;margin-top:6px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;max-width:1080px;width:100%;}
+.card{background:#fff;border:1px solid #DDE8E8;border-radius:14px;padding:32px 26px;text-decoration:none;display:block;position:relative;overflow:hidden;transition:all 0.25s ease;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c);border-radius:14px 14px 0 0;}
+.card:hover:not(.disabled){transform:translateY(-4px);border-color:var(--c);box-shadow:0 12px 32px rgba(43,122,120,0.12);}
+.card.disabled{opacity:0.4;cursor:not-allowed;pointer-events:none;}
+.card-icon{font-size:2.4em;margin-bottom:16px;display:block;}
+.card-title{font-size:1.25em;font-weight:700;color:#1C2B30;margin-bottom:4px;}
+.card-co{font-size:0.72em;color:var(--c);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:12px;}
+.card-desc{font-size:0.87em;color:#5C7A7A;line-height:1.65;margin-bottom:20px;}
+.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
+.badge-on{background:rgba(43,122,120,.1);color:#2B7A78;}
+.badge-lock{background:rgba(180,148,60,.1);color:#B5924A;}
+.badge-soon{background:#F0EEEA;color:#9C8B7A;}
+.c-inv{--c:#2B7A78;}.c-buy{--c:#B5924A;}.c-trz{--c:#4A8B6A;}.c-sol{--c:#7A4A8B;}
+.footer{margin-top:52px;color:#9C8B7A;font-size:0.78em;text-align:center;border-top:1px solid #E8E4DE;width:100%;max-width:1080px;padding-top:20px;}
+.credit{margin-top:6px;color:#B5A898;font-size:0.72em;text-align:center;}
 </style>
 </head>
 <body>
@@ -545,27 +545,27 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <title>Inventarios - Espagiria Laboratorios</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#667eea,#764ba2); min-height:100vh; padding:20px; }
+body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; padding:20px; }
 .container { max-width:1400px; margin:0 auto; background:white; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.3); overflow:hidden; }
-.header { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:25px; text-align:center; }
+.header { background:#2B7A78; color:white; padding:25px; text-align:center; }
 .header h1 { font-size:1.8em; margin-bottom:6px; }
 .tabs { display:flex; background:#f5f5f5; border-bottom:2px solid #ddd; overflow-x:auto; }
 .tab-button { flex:1; padding:13px 12px; background:none; border:none; cursor:pointer; font-size:0.9em; font-weight:500; color:#666; white-space:nowrap; min-width:90px; transition:all 0.2s; }
-.tab-button:hover { background:white; color:#667eea; }
-.tab-button.active { background:white; color:#667eea; border-bottom:3px solid #667eea; }
+.tab-button:hover { background:white; color:#2B7A78; }
+.tab-button.active { background:white; color:#2B7A78; border-bottom:3px solid #2B7A78; }
 .tab-content { display:none; padding:25px; }
 .tab-content.active { display:block; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:15px; margin:15px 0; }
-.card { background:linear-gradient(135deg,#667eea,#764ba2); color:white; padding:18px; border-radius:10px; text-align:center; }
+.card { background:#2B7A78; color:white; padding:18px; border-radius:10px; text-align:center; }
 .card h3 { font-size:0.85em; opacity:0.9; margin-bottom:6px; }
 .card p { font-size:1.8em; font-weight:700; }
-button { background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:500; }
+button { background:#2B7A78; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:500; }
 button:hover { opacity:0.9; }
 input,select,textarea { width:100%; padding:9px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; margin-top:3px; }
 .form-group { margin-bottom:14px; }
 label { font-weight:600; font-size:0.88em; color:#444; }
 .table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.88em; }
-.table th { background:#667eea; color:white; padding:9px 10px; text-align:left; }
+.table th { background:#2B7A78; color:white; padding:9px 10px; text-align:left; }
 .table td { padding:8px 10px; border-bottom:1px solid #eee; }
 .table tr:hover { background:#f8f9ff; }
 .alert-success { background:#d4edda; color:#155724; padding:10px; border-radius:6px; margin-top:8px; }
