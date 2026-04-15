@@ -2,11 +2,20 @@ import os
 import json
 import sqlite3
 from datetime import datetime
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, session, redirect, url_for
 from anthropic import Anthropic
 import pandas as pd
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
+
+# Usuarios autorizados para el módulo de Compras
+# Contraseñas configurables por variables de entorno en Render
+COMPRAS_USERS = {
+    'sebastian': os.environ.get('PASS_SEBASTIAN', 'hha2026'),
+    'catalina': os.environ.get('PASS_CATALINA', 'hha2026'),
+    'alejandro': os.environ.get('PASS_ALEJANDRO', 'hha2026'),
+}
 
 _anthropic_client = None
 def get_anthropic_client():
@@ -29,7 +38,7 @@ def init_db():
                   tipo TEXT, fecha TEXT, observaciones TEXT,
                   lote TEXT, fecha_vencimiento TEXT, estanteria TEXT,
                   posicion TEXT, proveedor TEXT, estado_lote TEXT)""")
-    for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote"]:
+    for col in ["lote","fecha_vencimiento","estanteria","posicion","proveedor","estado_lote","operador"]:
         try: c.execute(f"ALTER TABLE movimientos ADD COLUMN {col} TEXT")
         except: pass
     c.execute("""CREATE TABLE IF NOT EXISTS maestro_mps
@@ -54,6 +63,241 @@ def init_db():
     conn.close()
 
 init_db()
+
+# ─── HUB HHA GROUP ────────────────────────────────────────────────────────────
+HUB_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HHA Group — Portal Interno</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family:'Segoe UI',system-ui,sans-serif;
+  background:#0f172a;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:50px 20px;
+}
+.logo-wrap { text-align:center; margin-bottom:52px; }
+.logo-badge {
+  display:inline-block;
+  background:linear-gradient(135deg,#6366f1,#8b5cf6,#ec4899);
+  border-radius:18px;
+  padding:18px 44px;
+  margin-bottom:16px;
+  box-shadow:0 8px 32px rgba(99,102,241,0.35);
+}
+.logo-text { font-size:2.6em; font-weight:900; color:white; letter-spacing:6px; text-transform:uppercase; }
+.logo-sub { color:#64748b; font-size:0.85em; letter-spacing:3px; text-transform:uppercase; margin-top:4px; }
+.grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
+  gap:22px;
+  max-width:1080px;
+  width:100%;
+}
+.card {
+  background:#1e293b;
+  border:1px solid #334155;
+  border-radius:18px;
+  padding:34px 28px;
+  text-decoration:none;
+  display:block;
+  position:relative;
+  overflow:hidden;
+  transition:all 0.3s ease;
+}
+.card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:4px;
+  background:var(--c);
+  border-radius:18px 18px 0 0;
+}
+.card:hover:not(.disabled) {
+  transform:translateY(-6px);
+  border-color:var(--c);
+  box-shadow:0 24px 48px rgba(0,0,0,0.5);
+}
+.card.disabled { opacity:0.45; cursor:not-allowed; pointer-events:none; }
+.card-icon { font-size:2.8em; margin-bottom:18px; display:block; }
+.card-title { font-size:1.35em; font-weight:700; color:white; margin-bottom:5px; }
+.card-co { font-size:0.75em; color:var(--c); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin-bottom:14px; }
+.card-desc { font-size:0.88em; color:#94a3b8; line-height:1.65; margin-bottom:22px; }
+.badge {
+  display:inline-block;
+  padding:5px 14px;
+  border-radius:20px;
+  font-size:0.72em;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+}
+.badge-on { background:rgba(34,197,94,.15); color:#22c55e; }
+.badge-lock { background:rgba(251,146,60,.15); color:#fb923c; }
+.badge-soon { background:rgba(148,163,184,.12); color:#94a3b8; }
+.c-inv { --c:#6366f1; }
+.c-buy { --c:#f59e0b; }
+.c-trz { --c:#10b981; }
+.c-sol { --c:#ec4899; }
+.footer { margin-top:52px; color:#334155; font-size:0.78em; text-align:center; }
+</style>
+</head>
+<body>
+<div class="logo-wrap">
+  <div class="logo-badge">
+    <div class="logo-text">HHA Group</div>
+  </div>
+  <div class="logo-sub">Sistema Operativo Interno</div>
+</div>
+
+<div class="grid">
+  <a href="/inventarios" class="card c-inv">
+    <span class="card-icon">📦</span>
+    <div class="card-title">Inventarios</div>
+    <div class="card-co">Espagiria Laboratorios</div>
+    <div class="card-desc">Control de stock en tiempo real, recepción por lotes, FEFO, alertas de reabastecimiento y órdenes de compra automáticas.</div>
+    <span class="badge badge-on">● Activo</span>
+  </a>
+
+  <a href="/compras" class="card c-buy">
+    <span class="card-icon">🛒</span>
+    <div class="card-title">Compras</div>
+    <div class="card-co">HHA Group</div>
+    <div class="card-desc">Gestión de órdenes de compra, proveedores, aprobaciones y seguimiento de pedidos. Flujo completo de compras.</div>
+    <span class="badge badge-lock">🔒 Acceso restringido</span>
+  </a>
+
+  <a href="#" class="card c-trz disabled">
+    <span class="card-icon">🔬</span>
+    <div class="card-title">Trazabilidad</div>
+    <div class="card-co">Espagiria Laboratorios</div>
+    <div class="card-desc">Registro de qué lotes de materias primas se usaron en cada producción. Cumplimiento BPM y auditoría.</div>
+    <span class="badge badge-soon">Próximamente</span>
+  </a>
+
+  <a href="#" class="card c-sol disabled">
+    <span class="card-icon">📋</span>
+    <div class="card-title">Solicitudes</div>
+    <div class="card-co">HHA Group</div>
+    <div class="card-desc">Solicitudes de compra abiertas a todo el equipo. Crea, consulta y haz seguimiento de tus pedidos internos.</div>
+    <span class="badge badge-soon">Próximamente</span>
+  </a>
+</div>
+
+<div class="footer">HHA Group &copy; 2026 &middot; Sistema interno de operaciones</div>
+</body>
+</html>"""
+
+# ─── LOGIN COMPRAS ─────────────────────────────────────────────────────────────
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HHA Group — Acceso Compras</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{
+  font-family:'Segoe UI',system-ui,sans-serif;
+  background:#0f172a;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}}
+.card {{
+  background:#1e293b;
+  border:1px solid #334155;
+  border-radius:20px;
+  padding:48px 40px;
+  width:100%;
+  max-width:420px;
+}}
+.logo {{ text-align:center; margin-bottom:36px; }}
+.logo-badge {{
+  display:inline-block;
+  background:linear-gradient(135deg,#f59e0b,#ef4444);
+  border-radius:12px;
+  padding:10px 28px;
+  margin-bottom:14px;
+}}
+.logo-text {{ font-size:1.5em; font-weight:900; color:white; letter-spacing:4px; }}
+.logo-mod {{ color:#f59e0b; font-weight:700; font-size:1.05em; margin-bottom:4px; }}
+.logo-sub {{ color:#64748b; font-size:0.82em; }}
+label {{ display:block; color:#94a3b8; font-size:0.8em; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }}
+.fg {{ margin-bottom:20px; }}
+input[type=text], input[type=password] {{
+  width:100%;
+  background:#0f172a;
+  border:1px solid #334155;
+  border-radius:10px;
+  padding:14px 16px;
+  color:white;
+  font-size:1em;
+  outline:none;
+  transition:border-color 0.2s;
+}}
+input:focus {{ border-color:#f59e0b; }}
+.btn {{
+  width:100%;
+  background:linear-gradient(135deg,#f59e0b,#ef4444);
+  color:white;
+  border:none;
+  border-radius:10px;
+  padding:14px;
+  font-size:1em;
+  font-weight:700;
+  cursor:pointer;
+  margin-top:8px;
+  transition:opacity 0.2s;
+}}
+.btn:hover {{ opacity:0.9; }}
+.err {{
+  background:rgba(239,68,68,.1);
+  border:1px solid rgba(239,68,68,.3);
+  color:#f87171;
+  padding:12px 16px;
+  border-radius:8px;
+  font-size:0.88em;
+  margin-bottom:20px;
+  text-align:center;
+}}
+.back {{ text-align:center; margin-top:24px; }}
+.back a {{ color:#475569; font-size:0.83em; text-decoration:none; }}
+.back a:hover {{ color:#94a3b8; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-badge"><div class="logo-text">HHA</div></div>
+    <div class="logo-mod">Módulo de Compras</div>
+    <div class="logo-sub">Solo acceso autorizado</div>
+  </div>
+  {error}
+  <form method="POST" action="/login">
+    <div class="fg">
+      <label>Usuario</label>
+      <input type="text" name="username" placeholder="Tu usuario" required autofocus>
+    </div>
+    <div class="fg">
+      <label>Contraseña</label>
+      <input type="password" name="password" placeholder="••••••••" required>
+    </div>
+    <button type="submit" class="btn">Ingresar al sistema →</button>
+  </form>
+  <div class="back"><a href="/">← Volver al portal HHA Group</a></div>
+</div>
+</body>
+</html>"""
+
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -96,9 +340,30 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </head>
 <body>
 <div class="container">
-  <div class="header">
-    <h1>&#128230; Sistema de Inventarios Espagiria</h1>
-    <p>Espagiria Laboratorios - Control de Materias Primas</p>
+  <!-- MODAL IDENTIDAD -->
+  <div id="modal-operador" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.85);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:20px;padding:44px 36px;max-width:400px;width:90%;text-align:center;">
+      <div style="font-size:2.5em;margin-bottom:12px;">👋</div>
+      <h2 style="color:white;margin-bottom:8px;font-size:1.4em;">Bienvenido/a</h2>
+      <p style="color:#94a3b8;font-size:0.9em;margin-bottom:24px;">¿Cómo te llamas? Tu nombre quedará registrado en cada movimiento que realices.</p>
+      <input id="op-nombre-input" type="text" placeholder="Tu nombre completo" onkeydown="if(event.key==='Enter')guardarOperador();"
+        style="width:100%;background:#0f172a;border:1px solid #475569;border-radius:10px;padding:13px 16px;color:white;font-size:1em;outline:none;margin-bottom:16px;">
+      <button onclick="guardarOperador()" style="width:100%;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;">Ingresar →</button>
+    </div>
+  </div>
+
+  <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+    <div>
+      <h1>&#128230; Sistema de Inventarios Espagiria</h1>
+      <p>Espagiria Laboratorios - Control de Materias Primas</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="op-chip" onclick="cambiarOperador()" title="Cambiar nombre"
+        style="background:rgba(255,255,255,0.15);color:white;padding:7px 16px;border-radius:20px;font-size:0.85em;font-weight:600;cursor:pointer;white-space:nowrap;">
+        👤 ...
+      </span>
+      <a href="/" style="color:rgba(255,255,255,0.7);font-size:0.8em;text-decoration:none;">← Portal HHA</a>
+    </div>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -367,14 +632,39 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <button onclick="loadMovimientos()" style="margin-bottom:10px;">Ver Ultimos Movimientos</button>
     <table class="table" id="mov-table">
-      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
-      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
+      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Operador</th><th>Fecha</th><th>Observaciones</th></tr></thead>
+      <tbody><tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
     </table>
   </div>
 
 </div>
 <script>
 var fData=[], allStock=[];
+
+// ── IDENTIDAD DEL OPERADOR ────────────────────────────────────────────────────
+function getOperador(){ return localStorage.getItem('espagiria_operador')||''; }
+
+function initOperador(){
+  if(!getOperador()){
+    document.getElementById('modal-operador').style.display='flex';
+  } else {
+    document.getElementById('op-chip').textContent = '👤 '+getOperador();
+  }
+}
+
+function guardarOperador(){
+  var n = document.getElementById('op-nombre-input').value.trim();
+  if(!n){ alert('Por favor ingresa tu nombre.'); return; }
+  localStorage.setItem('espagiria_operador', n);
+  document.getElementById('modal-operador').style.display='none';
+  document.getElementById('op-chip').textContent = '👤 '+n;
+}
+
+function cambiarOperador(){
+  var n = prompt('Ingresa tu nombre:', getOperador());
+  if(n && n.trim()){ localStorage.setItem('espagiria_operador', n.trim()); document.getElementById('op-chip').textContent='👤 '+n.trim(); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
@@ -542,7 +832,8 @@ async function registrarIngreso(){
     estanteria:document.getElementById('ing-est').value||'',
     posicion:document.getElementById('ing-pos').value||'',
     proveedor:document.getElementById('ing-prov').value||'',
-    observaciones:document.getElementById('ing-obs').value||''};
+    observaciones:document.getElementById('ing-obs').value||'',
+    operador:getOperador()};
   if(esNueva){
     data.nombre_inci=document.getElementById('ing-inci-new')?document.getElementById('ing-inci-new').value:'';
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
@@ -723,7 +1014,7 @@ async function registrarProd(){
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
   try{
-    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value})});
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:getOperador()})});
     var res=await r.json();
     var html='<div class="alert-success">'+res.message+'</div>';
     if(res.descuentos&&res.descuentos.length){
@@ -777,15 +1068,23 @@ async function loadMovimientos(){
     var tb=document.querySelector('#mov-table tbody');
     if(d.movimientos&&d.movimientos.length){
       tb.innerHTML=d.movimientos.map(function(m){
-        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">Entrada</span>':'<span style="color:#cc4444;font-weight:600;">Salida</span>';
-        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td style="font-size:0.82em;color:#888;">'+m.fecha+'</td><td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td></tr>';
+        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">↑ Entrada</span>':'<span style="color:#cc4444;font-weight:600;">↓ Salida</span>';
+        var op=m.operador?'<span style="background:#f0f0ff;color:#667eea;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+m.operador+'</span>':'<span style="color:#ccc;font-size:0.8em;">—</span>';
+        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td>'+op+'</td><td style="font-size:0.8em;color:#888;">'+m.fecha.substring(0,16).replace('T',' ')+'</td><td style="font-size:0.8em;color:#888;">'+m.observaciones+'</td></tr>';
       }).join('');
-    }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
+    }else{tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
   }catch(e){}
 }
 
 async function registrarMov(){
-  var data={material_id:document.getElementById('mov-id').value,material_nombre:document.getElementById('mov-nombre').value,cantidad:parseFloat(document.getElementById('mov-cant').value),tipo:document.getElementById('mov-tipo').value,observaciones:document.getElementById('mov-obs').value};
+  var data={
+    material_id:document.getElementById('mov-id').value,
+    material_nombre:document.getElementById('mov-nombre').value,
+    cantidad:parseFloat(document.getElementById('mov-cant').value),
+    tipo:document.getElementById('mov-tipo').value,
+    observaciones:document.getElementById('mov-obs').value,
+    operador:getOperador()
+  };
   try{
     var r=await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
@@ -844,7 +1143,7 @@ async function loadAlertasReabas(){
   }
 }
 
-window.onload=function(){loadDashboardCompleto();loadFormulas();};
+window.onload=function(){initOperador();loadDashboardCompleto();loadFormulas();};
 function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
   if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
@@ -889,7 +1188,36 @@ async function crearNuevaMP(){
 
 @app.route('/')
 def index():
+    return Response(HUB_HTML, mimetype="text/html")
+
+@app.route('/inventarios')
+def inventarios():
     return Response(DASHBOARD_HTML, mimetype="text/html")
+
+# ─── AUTH COMPRAS ──────────────────────────────────────────────────────────────
+@app.route('/login', methods=['GET','POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        username = request.form.get('username','').strip().lower()
+        password = request.form.get('password','').strip()
+        if username in COMPRAS_USERS and COMPRAS_USERS[username] == password:
+            session['compras_user'] = username
+            return redirect('/compras')
+        error = '<div class="err">Usuario o contraseña incorrectos.</div>'
+    return Response(LOGIN_HTML.replace('{error}', error), mimetype="text/html")
+
+@app.route('/logout')
+def logout():
+    session.pop('compras_user', None)
+    return redirect('/')
+
+@app.route('/compras')
+def compras():
+    if 'compras_user' not in session:
+        return redirect('/login')
+    # Módulo de compras — por construir, por ahora redirige al dashboard con tab compras
+    return redirect('/inventarios#tab-compras')
 
 @app.route('/api/health')
 def health():
@@ -956,17 +1284,18 @@ def handle_movimientos():
         data = request.json
         c.execute("""INSERT INTO movimientos
                      (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
-                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (data['material_id'], data['material_nombre'], data['cantidad'],
                    data['tipo'], datetime.now().isoformat(), data.get('observaciones',''),
                    data.get('lote',''), data.get('fecha_vencimiento',''),
                    data.get('estanteria',''), data.get('posicion',''),
-                   data.get('proveedor',''), data.get('estado_lote','VIGENTE')))
+                   data.get('proveedor',''), data.get('estado_lote','VIGENTE'),
+                   data.get('operador','')))
         conn.commit(); conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones FROM movimientos ORDER BY fecha DESC LIMIT 200')
-    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4]} for r in c.fetchall()]
+    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones, operador FROM movimientos ORDER BY fecha DESC LIMIT 200')
+    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4], 'operador': r[5] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
@@ -1002,14 +1331,14 @@ def handle_produccion():
                 if g_restante <= 0: break
                 lote_n, lote_v, lote_s = lrow
                 g_lote = round(min(g_restante, lote_s), 2)
-                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote) VALUES (?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
                           (mat_id, mat_nombre, g_lote, 'Salida', fecha,
-                           f'FEFO: {producto} x {cantidad_kg}kg', lote_n))
+                           f'FEFO: {producto} x {cantidad_kg}kg', lote_n, data.get('operador','')))
                 lotes_usados.append({'lote': lote_n, 'vence': str(lote_v)[:10] if lote_v else '', 'cantidad_g': g_lote})
                 g_restante = round(g_restante - g_lote, 2)
             if g_restante > 0:
-                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones) VALUES (?,?,?,?,?,?)",
-                          (mat_id, mat_nombre, g_restante, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg'))
+                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador) VALUES (?,?,?,?,?,?,?)",
+                          (mat_id, mat_nombre, g_restante, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg', data.get('operador','')))
                 lotes_usados.append({'lote': 'sin_lote', 'vence': '', 'cantidad_g': g_restante})
             descuentos.append({'material': mat_nombre, 'material_id': mat_id,
                                 'cantidad_g': g_total, 'lotes_fefo': lotes_usados})
@@ -1074,6 +1403,35 @@ def handle_alertas():
     conn.close()
     return jsonify({'alertas': alertas})
 
+
+@app.route('/api/alertas-reabastecimiento')
+def alertas_reabastecimiento():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Stock actual por MP (entradas - salidas)
+    c.execute("""SELECT m.material_id,
+                        COALESCE(mp.nombre_comercial, m.material_nombre) as nombre,
+                        COALESCE(mp.proveedor,'') as proveedor,
+                        COALESCE(mp.stock_minimo,0) as stock_minimo,
+                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_actual
+                 FROM movimientos m
+                 LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                 GROUP BY m.material_id
+                 HAVING stock_actual < stock_minimo AND stock_minimo > 0
+                 ORDER BY (stock_actual/stock_minimo) ASC""")
+    rows = c.fetchall(); conn.close()
+    alertas = []
+    for r in rows:
+        stock_actual = round(r[4] or 0, 1)
+        stock_minimo = round(r[3], 1)
+        alertas.append({
+            'codigo_mp': r[0] or '',
+            'nombre': r[1] or '',
+            'proveedor': r[2] or '',
+            'stock_minimo': stock_minimo,
+            'stock_actual': max(stock_actual, 0),
+            'deficit': round(max(stock_minimo - stock_actual, 0), 1)
+        })
+    return jsonify({'alertas': alertas, 'total': len(alertas)})
 
 @app.route('/api/stock')
 def get_stock():
@@ -1150,11 +1508,12 @@ def registrar_recepcion():
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
-                  lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (codigo,nombre,float(d.get('cantidad',0)),'Entrada',datetime.now().isoformat(),
                d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
-               d.get('estanteria',''),d.get('posicion',''),proveedor,'VIGENTE'))
+               d.get('estanteria',''),d.get('posicion',''),proveedor,'VIGENTE',
+               d.get('operador','')))
     conn.commit(); conn.close()
     return jsonify({'message': f'{nombre} ingresada. Lote: {lote}','lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0)}), 201
 
