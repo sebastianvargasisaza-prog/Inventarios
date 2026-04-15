@@ -634,6 +634,7 @@ async function loadCompras(){
   try{
     var r=await fetch('/api/ordenes-compra'), d=await r.json();
     var ocs=d.ordenes||[];
+    _ocsList=ocs;
     var el=document.getElementById('oc-list');
     if(!ocs.length){el.innerHTML='<p style="color:#999;">Sin ordenes de compra</p>';return;}
     el.innerHTML=ocs.map(function(oc){
@@ -648,7 +649,7 @@ async function loadCompras(){
       ocHtml+='<ul style="list-style:none;padding:0;margin:0 0 8px;">'+items_html+'</ul>';
       ocHtml+='<small style="color:#888;">'+oc.fecha.substring(0,10)+'</small>';
       if(oc.estado!=='Recibida'){
-        ocHtml+=' &nbsp;<button onclick="recibirOC(\'' +oc.numero_oc+ '\')" style="padding:4px 10px;font-size:0.82em;background:#27ae60;color:white;border:none;border-radius:4px;cursor:pointer;">Marcar Recibida</button>';
+        ocHtml+='<button onclick="recibirOC('+ocIdx+')" style="padding:4px 10px;font-size:0.82em;background:#27ae60;color:white;border:none;border-radius:4px;cursor:pointer;">Marcar Recibida</button>';
       }
       ocHtml+='</div>';
       return ocHtml;
@@ -657,9 +658,12 @@ async function loadCompras(){
   }catch(e){}
 }
 
-async function recibirOC(numero_oc){
+var _ocsList=[];
+async function recibirOC(idx){
+  var oc=_ocsList[idx];
+  if(!oc) return;
   try{
-    await fetch('/api/ordenes-compra/'+encodeURIComponent(numero_oc)+'/recibir',{method:'POST'});
+    await fetch('/api/ordenes-compra/'+encodeURIComponent(oc.numero_oc)+'/recibir',{method:'POST'});
     await loadCompras();
   }catch(e){}
 }
