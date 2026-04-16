@@ -1857,12 +1857,18 @@ def get_stock():
 def get_lotes():
     from datetime import date; hoy = date.today().isoformat()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("""SELECT m.material_id, m.material_nombre, m.lote, m.cantidad,
-                        m.fecha_vencimiento, m.estanteria, m.posicion, m.proveedor, m.estado_lote,
-                        COALESCE(mp.nombre_inci,'') as inci, COALESCE(mp.tipo,'') as tipo,
-                        COALESCE(mp.stock_minimo,0) as smin
+    c.execute("""SELECT m.material_id, m.material_nombre, m.lote,
+                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
+                        MAX(m.fecha_vencimiento) as fecha_vencimiento,
+                        MAX(m.estanteria) as estanteria, MAX(m.posicion) as posicion,
+                        MAX(m.proveedor) as proveedor, MAX(m.estado_lote) as estado_lote,
+                        COALESCE(MAX(mp.nombre_inci),'') as inci,
+                        COALESCE(MAX(mp.tipo),'') as tipo,
+                        COALESCE(MAX(mp.stock_minimo),0) as smin
                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                 WHERE m.tipo='Entrada' ORDER BY m.material_nombre ASC, m.fecha_vencimiento ASC""")
+                 GROUP BY m.material_id, m.lote
+                 HAVING stock_neto > -999999
+                 ORDER BY m.material_nombre ASC, fecha_vencimiento ASC""")
     rows = c.fetchall(); conn.close()
     result = []
     for r in rows:
