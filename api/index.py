@@ -75,6 +75,11 @@ def init_db():
                   numero TEXT, codigo_mp TEXT, nombre_mp TEXT,
                   cantidad_g REAL, unidad TEXT DEFAULT 'g', justificacion TEXT)""")
     conn.commit()
+    # Migracion: columna area en solicitudes_compra
+    try:
+        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN area TEXT DEFAULT 'Produccion'")
+    except: pass
+
     conn.close()
 
 init_db()
@@ -105,6 +110,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .badge-on{background:rgba(43,122,120,.1);color:#2B7A78;}
 .badge-lock{background:rgba(180,148,60,.1);color:#B5924A;}
 .badge-soon{background:#F0EEEA;color:#9C8B7A;}
+.badge-open{background:#d1fae5;color:#065f46;}
 .c-inv{--c:#2B7A78;}.c-buy{--c:#B5924A;}.c-trz{--c:#4A8B6A;}.c-sol{--c:#7A4A8B;}
 .footer{margin-top:52px;color:#9C8B7A;font-size:0.78em;text-align:center;border-top:1px solid #E8E4DE;width:100%;max-width:1080px;padding-top:20px;}
 .credit{margin-top:6px;color:#B5A898;font-size:0.72em;text-align:center;}
@@ -150,12 +156,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="card-desc">Registro de qué lotes de materias primas se usaron en cada producción. Cumplimiento BPM.</div>
     <span class="badge badge-soon">Próximamente</span>
   </a>
-  <a href="#" class="card c-sol disabled">
+  <a href="/solicitudes" class="card c-sol">
     <span class="card-icon">📋</span>
     <div class="card-title">Solicitudes</div>
     <div class="card-co">HHA Group</div>
     <div class="card-desc">Solicitudes de compra del equipo. Crea y haz seguimiento de tus pedidos internos.</div>
-    <span class="badge badge-soon">Próximamente</span>
+    <span class="badge badge-open">Abierto</span>
   </a>
 </div>
 <div class="footer">HHA Group © 2026 · Sistema interno de operaciones</div>
@@ -542,6 +548,287 @@ async function crearProveedor(){
 }
 
 window.onload=function(){loadDashboard();};
+</script>
+</body>
+</html>"""
+
+SOLICITUDES_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solicitudes de Compra - Espagiria</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f7;color:#1d1d1f;min-height:100vh}
+.topbar{background:#1a1a2e;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:12px}
+.topbar-logo{font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.topbar-sub{font-size:12px;opacity:0.6;margin-left:auto}
+.container{max-width:720px;margin:32px auto;padding:0 16px}
+h1{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{font-size:14px;color:#666;margin-bottom:28px}
+.card{background:#fff;border-radius:12px;padding:24px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card h2{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #f0f0f0}
+label{display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:4px}
+input,select,textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:9px 12px;font-size:14px;background:#fafafa;transition:border .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#7A4A8B;background:#fff}
+textarea{resize:vertical;min-height:72px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field{margin-bottom:14px}
+.urgencia-btns{display:flex;gap:8px;margin-top:2px}
+.urg-btn{flex:1;padding:9px;border:2px solid #ddd;border-radius:8px;background:#fff;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;text-align:center}
+.urg-btn.sel-normal{border-color:#2B7A78;background:#edf7f7;color:#2B7A78}
+.urg-btn.sel-urgente{border-color:#B5924A;background:#fdf6ec;color:#B5924A}
+.urg-btn.sel-critico{border-color:#dc2626;background:#fef2f2;color:#dc2626}
+.items-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}
+.items-table th{text-align:left;padding:7px 8px;background:#f9f9f9;font-weight:600;font-size:12px;color:#888;border-bottom:1px solid #eee}
+.items-table td{padding:6px 4px;vertical-align:middle}
+.items-table input,.items-table select{padding:7px 8px;font-size:13px}
+.btn-add{font-size:13px;color:#7A4A8B;background:none;border:none;cursor:pointer;padding:4px 0;font-weight:500}
+.btn-add:hover{text-decoration:underline}
+.btn-del{background:none;border:none;color:#ccc;cursor:pointer;font-size:16px;padding:4px 8px}
+.btn-del:hover{color:#dc2626}
+.btn-submit{width:100%;background:#7A4A8B;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px;transition:background .15s}
+.btn-submit:hover{background:#6a3a7b}
+.btn-submit:disabled{background:#ccc;cursor:not-allowed}
+.confirm-box{text-align:center;padding:32px 16px}
+.confirm-icon{font-size:56px;margin-bottom:16px}
+.confirm-sol{font-size:28px;font-weight:700;color:#7A4A8B;letter-spacing:1px;margin:8px 0}
+.confirm-msg{font-size:14px;color:#666;line-height:1.6}
+.confirm-new{display:inline-block;margin-top:20px;padding:10px 24px;background:#7A4A8B;color:#fff;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none}
+.lookup-row{display:flex;gap:8px}
+.lookup-row input{flex:1}
+.lookup-btn{padding:9px 18px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap}
+.status-box{margin-top:16px;display:none}
+.status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.s-pendiente{background:#fef3c7;color:#92400e}
+.s-aprobada{background:#d1fae5;color:#065f46}
+.s-rechazada{background:#fee2e2;color:#991b1b}
+.s-conoc,.s-enpago,.s-pagada{background:#dbeafe;color:#1e40af}
+.sol-detail{margin-top:12px;background:#fafafa;border-radius:8px;padding:14px;font-size:13px}
+.sol-detail table{width:100%;border-collapse:collapse}
+.sol-detail th{text-align:left;font-size:11px;color:#999;padding:4px 6px;border-bottom:1px solid #eee}
+.sol-detail td{padding:5px 6px;font-size:13px}
+.error-msg{color:#dc2626;font-size:13px;margin-top:8px;display:none}
+.footer{text-align:center;font-size:12px;color:#aaa;margin:40px 0 20px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-logo">&#128203; Espagiria Laboratorio</div>
+  <div class="topbar-sub">Sistema de Solicitudes de Compra</div>
+</div>
+<div class="container">
+  <h1>Solicitud de Compra</h1>
+  <p class="subtitle">Completa el formulario para solicitar materias primas o insumos al equipo de compras.</p>
+
+  <div class="card" id="form-card">
+    <h2>&#128221; Nueva Solicitud</h2>
+    <div class="row2">
+      <div class="field">
+        <label>Tu nombre *</label>
+        <input type="text" id="f-solicitante" placeholder="Ej: Maria Garcia" required>
+      </div>
+      <div class="field">
+        <label>Area / Proceso</label>
+        <select id="f-area">
+          <option value="Produccion">Produccion</option>
+          <option value="Control de Calidad">Control de Calidad</option>
+          <option value="Almacen">Almacen</option>
+          <option value="Administracion">Administracion</option>
+          <option value="Gerencia">Gerencia</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Urgencia</label>
+      <div class="urgencia-btns">
+        <button class="urg-btn sel-normal" onclick="setUrg('Normal',this)">&#128994; Normal</button>
+        <button class="urg-btn" onclick="setUrg('Urgente',this)">&#128993; Urgente</button>
+        <button class="urg-btn" onclick="setUrg('Critico',this)">&#128308; Critico</button>
+      </div>
+    </div>
+    <div class="field" style="margin-top:16px">
+      <label>Materiales solicitados *</label>
+      <table class="items-table">
+        <thead><tr>
+          <th style="width:22%">Codigo MP</th>
+          <th style="width:38%">Nombre / Descripcion *</th>
+          <th style="width:18%">Cantidad *</th>
+          <th style="width:14%">Unidad</th>
+          <th style="width:8%"></th>
+        </tr></thead>
+        <tbody id="items-body">
+          <tr id="item-0">
+            <td><input type="text" placeholder="MPXXX" id="i0-cod"></td>
+            <td><input type="text" placeholder="Nombre del material" id="i0-nom"></td>
+            <td><input type="number" placeholder="0" min="0" step="0.1" id="i0-cant"></td>
+            <td><select id="i0-uni"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>und</option></select></td>
+            <td><button class="btn-del" onclick="delItem(0)" title="Eliminar">&#10005;</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <button class="btn-add" onclick="addItem()">+ Agregar otro material</button>
+    </div>
+    <div class="field">
+      <label>Observaciones / Justificacion</label>
+      <textarea id="f-obs" placeholder="Motivo de la solicitud, urgencia adicional, especificaciones..."></textarea>
+    </div>
+    <button class="btn-submit" id="btn-enviar" onclick="enviarSolicitud()">Enviar Solicitud</button>
+  </div>
+
+  <div class="card" id="confirm-card" style="display:none">
+    <div class="confirm-box">
+      <div class="confirm-icon">&#9989;</div>
+      <div style="font-size:14px;color:#666;margin-bottom:4px">Tu solicitud fue registrada</div>
+      <div class="confirm-sol" id="confirm-sol-num">SOL-2026-0001</div>
+      <div class="confirm-msg">Guarda este numero para hacer seguimiento.<br>El equipo de compras revisara tu solicitud pronto.</div>
+      <button class="confirm-new" onclick="nuevaSolicitud()">+ Nueva Solicitud</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>&#128269; Consultar Estado</h2>
+    <div class="lookup-row">
+      <input type="text" id="sol-lookup" placeholder="Ej: SOL-2026-0001" maxlength="20">
+      <button class="lookup-btn" onclick="consultarSol()">Buscar</button>
+    </div>
+    <div class="error-msg" id="lookup-error">Solicitud no encontrada. Verifica el numero.</div>
+    <div class="status-box" id="status-box">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <strong id="sol-num-display" style="font-size:15px"></strong>
+        <span class="status-badge" id="sol-estado-badge"></span>
+        <span style="font-size:12px;color:#999;margin-left:auto" id="sol-fecha"></span>
+      </div>
+      <div class="sol-detail">
+        <div style="margin-bottom:8px">
+          <strong>Solicitante:</strong> <span id="sol-who"></span>
+          &nbsp;&#183;&nbsp;<strong>Area:</strong> <span id="sol-area"></span>
+          &nbsp;&#183;&nbsp;<strong>Urgencia:</strong> <span id="sol-urg"></span>
+        </div>
+        <table>
+          <thead><tr><th>Codigo</th><th>Material</th><th>Cantidad</th></tr></thead>
+          <tbody id="sol-items-body"></tbody>
+        </table>
+        <div id="sol-obs" style="margin-top:8px;color:#666;font-size:12px"></div>
+        <div id="sol-oc" style="margin-top:6px;font-size:12px;color:#1e40af;font-weight:600"></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">Espagiria Laboratorio SAS &middot; Sistema interno &middot; 2026</div>
+</div>
+<script>
+var itemCount=1,urg='Normal';
+function setUrg(v,el){
+  urg=v;
+  document.querySelectorAll('.urg-btn').forEach(function(b){b.className='urg-btn';});
+  var cls={'Normal':'sel-normal','Urgente':'sel-urgente','Critico':'sel-critico'};
+  el.className='urg-btn '+(cls[v]||'sel-normal');
+}
+function addItem(){
+  var n=itemCount++;
+  var tr=document.createElement('tr');tr.id='item-'+n;
+  tr.innerHTML='<td><input type="text" placeholder="MPXXX" id="i'+n+'-cod"></td>'+
+    '<td><input type="text" placeholder="Nombre del material" id="i'+n+'-nom"></td>'+
+    '<td><input type="number" placeholder="0" min="0" step="0.1" id="i'+n+'-cant"></td>'+
+    '<td><select id="i'+n+'-uni"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>und</option></select></td>'+
+    '<td><button class="btn-del" onclick="delItem('+n+')" title="Eliminar">&#10005;</button></td>';
+  document.getElementById('items-body').appendChild(tr);
+}
+function delItem(n){
+  var tr=document.getElementById('item-'+n);
+  if(tr&&document.getElementById('items-body').children.length>1)tr.remove();
+}
+async function enviarSolicitud(){
+  var sol=document.getElementById('f-solicitante').value.trim();
+  if(!sol){alert('Ingresa tu nombre');return;}
+  var items=[];
+  var rows=document.getElementById('items-body').children;
+  for(var i=0;i<rows.length;i++){
+    var id=rows[i].id.replace('item-','');
+    var nom=document.getElementById('i'+id+'-nom');
+    if(nom&&nom.value.trim()){
+      var cod=document.getElementById('i'+id+'-cod');
+      var cant=document.getElementById('i'+id+'-cant');
+      var uni=document.getElementById('i'+id+'-uni');
+      items.push({codigo_mp:cod?cod.value.trim():'',nombre_mp:nom.value.trim(),
+        cantidad_g:cant?parseFloat(cant.value)||0:0,unidad:uni?uni.value:'g',justificacion:''});
+    }
+  }
+  if(!items.length){alert('Agrega al menos un material');return;}
+  var btn=document.getElementById('btn-enviar');
+  btn.disabled=true;btn.textContent='Enviando...';
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({solicitante:sol,area:document.getElementById('f-area').value,
+        urgencia:urg,observaciones:document.getElementById('f-obs').value,items:items})});
+    var d=await r.json();
+    if(d.numero){
+      document.getElementById('confirm-sol-num').textContent=d.numero;
+      document.getElementById('form-card').style.display='none';
+      document.getElementById('confirm-card').style.display='block';
+      window.scrollTo(0,0);
+    }else{
+      alert('Error: '+(d.error||'Intenta de nuevo'));
+      btn.disabled=false;btn.textContent='Enviar Solicitud';
+    }
+  }catch(e){
+    alert('Error de conexion. Intenta de nuevo.');
+    btn.disabled=false;btn.textContent='Enviar Solicitud';
+  }
+}
+function nuevaSolicitud(){
+  document.getElementById('form-card').style.display='block';
+  document.getElementById('confirm-card').style.display='none';
+  document.getElementById('f-solicitante').value='';
+  document.getElementById('f-obs').value='';
+  document.getElementById('items-body').innerHTML=
+    '<tr id="item-0"><td><input type="text" placeholder="MPXXX" id="i0-cod"></td>'+
+    '<td><input type="text" placeholder="Nombre del material" id="i0-nom"></td>'+
+    '<td><input type="number" placeholder="0" min="0" step="0.1" id="i0-cant"></td>'+
+    '<td><select id="i0-uni"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>und</option></select></td>'+
+    '<td><button class="btn-del" onclick="delItem(0)" title="Eliminar">&#10005;</button></td></tr>';
+  itemCount=1;urg='Normal';
+  document.querySelectorAll('.urg-btn').forEach(function(b,i){
+    b.className=i===0?'urg-btn sel-normal':'urg-btn';
+  });
+  document.getElementById('btn-enviar').disabled=false;
+  document.getElementById('btn-enviar').textContent='Enviar Solicitud';
+}
+async function consultarSol(){
+  var num=document.getElementById('sol-lookup').value.trim().toUpperCase();
+  if(!num)return;
+  document.getElementById('lookup-error').style.display='none';
+  document.getElementById('status-box').style.display='none';
+  try{
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num));
+    if(r.status===404){document.getElementById('lookup-error').style.display='block';return;}
+    var d=await r.json();
+    var sol=d.solicitud;
+    document.getElementById('sol-num-display').textContent=sol.numero;
+    var eb=document.getElementById('sol-estado-badge');
+    eb.textContent=sol.estado;
+    var cls=(sol.estado||'').toLowerCase().replace(/ /g,'');
+    eb.className='status-badge s-'+cls;
+    document.getElementById('sol-fecha').textContent=(sol.fecha||'').slice(0,10);
+    document.getElementById('sol-who').textContent=sol.solicitante||'---';
+    document.getElementById('sol-area').textContent=sol.area||'---';
+    document.getElementById('sol-urg').textContent=sol.urgencia||'Normal';
+    document.getElementById('sol-obs').textContent=sol.observaciones?'Obs: '+sol.observaciones:'';
+    document.getElementById('sol-oc').textContent=sol.numero_oc?'OC asignada: '+sol.numero_oc:'';
+    var items=d.items||[];
+    document.getElementById('sol-items-body').innerHTML=items.length?items.map(function(it){
+      return '<tr><td>'+esc(it.codigo_mp||'---')+'</td><td>'+esc(it.nombre_mp)+'</td><td>'+(it.cantidad_g||0)+' '+(it.unidad||'g')+'</td></tr>';
+    }).join(''):'<tr><td colspan="3" style="color:#999">Sin items</td></tr>';
+    document.getElementById('status-box').style.display='block';
+  }catch(e){
+    document.getElementById('lookup-error').style.display='block';
+  }
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+document.getElementById('sol-lookup').addEventListener('keydown',function(e){if(e.key==='Enter')consultarSol();});
 </script>
 </body>
 </html>"""
@@ -2253,6 +2540,30 @@ def handle_solicitudes_compra():
                       (numero, it.get('codigo_mp',''), it.get('nombre_mp',''), it.get('cantidad_g',0), it.get('unidad','g'), it.get('justificacion','')))
         conn.commit(); conn.close()
         return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+
+@app.route('/api/solicitudes-compra/<numero>', methods=['GET'])
+def get_solicitud_estado(numero):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,numero_oc FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'No encontrada'}), 404
+    cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','numero_oc']
+    sol = dict(zip(cols, row))
+    try:
+        c.execute("SELECT area FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+        ar = c.fetchone()
+        if ar: sol['area'] = ar[0]
+    except: pass
+    c.execute("SELECT codigo_mp,nombre_mp,cantidad_g,unidad FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+    items = [dict(zip(['codigo_mp','nombre_mp','cantidad_g','unidad'], r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'solicitud': sol, 'items': items})
+
+@app.route('/solicitudes')
+def solicitudes_page():
+    return Response(SOLICITUDES_HTML, mimetype='text/html')
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
