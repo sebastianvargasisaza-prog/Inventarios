@@ -940,6 +940,10 @@ function abrirAjuste(mid,mn,lt,sa){
   document.getElementById('modal-ajuste').style.display='flex';
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+function abrirSolIdx(ri){
+  var a=(window._alertasData||[])[ri];if(!a)return;
+  abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
+}
 var _solMP={};
 function abrirSolicitudCompra(cod,nom,deficit){
   _solMP={cod:cod,nom:nom,deficit:deficit};
@@ -1540,7 +1544,8 @@ async function loadAlertasReabas(){
       return;
     }
     var h='';
-    alertas.forEach(function(a){
+    window._alertasData=alertas;
+    alertas.forEach(function(a,ri){
       var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
       var critico=pct<25;
       var urgente=pct>=25&&pct<50;
@@ -1556,8 +1561,8 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+'</td>';
       h+='<td style="text-align:center;">'+badge+' '+pct+'%</td>';
-      var _cod=a.codigo_mp,_nom=a.nombre.substring(0,40),_def=a.deficit;
-      h+='<td style="text-align:center;"><button onclick="abrirSolicitudCompra(\"'+_cod+'\",\"'+_nom+'\",'+_def+')" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Solicitar</button></td>';
+      var _cod=a.codigo_mp,_nom=a.nombre.substring(0,40),_def=a.deficit,_ri=ri;
+      h+='<td style="text-align:center;"><button onclick="abrirSolIdx('+_ri+')" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Solicitar</button></td>';
       h+='</tr>';
     });
     tb.innerHTML=h;
