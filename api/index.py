@@ -1472,6 +1472,20 @@ async function registrarMov(){
   }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error</div>';}
 }
 
+async function loadVenc30(){
+  try{
+    var r=await fetch('/api/lotes'),d=await r.json(),lotes=d.lotes||[];
+    var prox=lotes.filter(function(l){return l.dias_para_vencer!=null&&l.dias_para_vencer>=0&&l.dias_para_vencer<=30;});
+    var div=document.getElementById('venc30-content');if(!div)return;
+    if(!prox.length){div.innerHTML='<span style="color:#28a745;font-weight:600;">Sin lotes proximos a vencer en 30 dias.</span>';return;}
+    prox.sort(function(a,b){return a.dias_para_vencer-b.dias_para_vencer;});
+    div.innerHTML='<table class="table" style="margin-top:8px;"><thead><tr><th>Codigo</th><th>Material</th><th>Lote</th><th style="text-align:right;">Cantidad(g)</th><th>Vence</th><th style="text-align:center;">Dias</th></tr></thead><tbody>'+
+    prox.map(function(l){
+      var c2=l.dias_para_vencer<=7?'color:#cc0000;font-weight:700;':'color:#e65100;font-weight:600;';
+      return '<tr><td style="font-family:monospace;font-size:0.82em;">'+l.material_id+'</td><td style="font-weight:600;">'+l.material_nombre+'</td><td style="font-family:monospace;font-size:0.82em;">'+l.lote+'</td><td style="text-align:right;">'+l.cantidad_g.toLocaleString()+'</td><td>'+l.fecha_vencimiento+'</td><td style="text-align:center;'+c2+'">'+l.dias_para_vencer+'d</td></tr>';
+    }).join('')+'</tbody></table>';
+  }catch(e){}
+}
 async function loadAlertasReabas(){
   try{
     var r=await fetch('/api/alertas-reabastecimiento'), d=await r.json();
