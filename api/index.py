@@ -580,6 +580,7 @@ label { font-weight:600; font-size:0.88em; color:#444; }
 .alert-success { background:#d4edda; color:#155724; padding:10px; border-radius:6px; margin-top:8px; }
 .alert-error { background:#f8d7da; color:#721c24; padding:10px; border-radius:6px; margin-top:8px; }
 .chat-box { height:320px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; padding:12px; margin-bottom:12px; background:#f9f9f9; }
+.mp-item:hover { background:#f0f8ff !important; }
 .msg { margin-bottom:10px; padding:9px 13px; border-radius:8px; max-width:85%; }
 .msg.user { background:#667eea; color:white; margin-left:auto; }
 .msg.bot { background:white; border:1px solid #ddd; }
@@ -1193,9 +1194,7 @@ async function buscarMPIngreso(val){
       if(!matches.length){dd.style.display='none';}
       else{
         dd.style.display='block';
-        dd.innerHTML=matches.map(function(m,i){
-          return '<div style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])" onmouseover="this.style.background=\'#f0f8ff\'" onmouseout="this.style.background=\'white\'">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';
-        }).join('');
+        dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
       }
     }
     var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
