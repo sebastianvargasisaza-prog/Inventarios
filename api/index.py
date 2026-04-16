@@ -599,6 +599,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="oper-error" style="color:#cc0000;font-size:0.85em;margin-top:8px;display:none;">Por favor escribe tu nombre</div>
   </div>
 </div>
+<div id="modal-solicitud-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9996;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:32px;max-width:480px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <h2 style="color:#2B7A78;margin-bottom:4px;">&#128722; Solicitar Compra</h2>
+    <p id="sol-mp-info" style="color:#666;font-size:0.9em;margin-bottom:18px;"></p>
+    <div class="form-group"><label>Tu nombre *</label><input type="text" id="sol-nombre" placeholder="Ej: Alejandro, Catalina..."></div>
+    <div class="form-group"><label>Cantidad a pedir (g) *</label><input type="number" id="sol-cantidad" placeholder="0" step="0.01" min="1" style="border:2px solid #2B7A78;"></div>
+    <div class="form-group"><label>Urgencia</label><select id="sol-urgencia"><option value="Normal">Normal</option><option value="Urgente">Urgente</option><option value="Critica">Critica</option></select></div>
+    <div class="form-group"><label>Observacion</label><input type="text" id="sol-obs" placeholder="Opcional"></div>
+    <div id="sol-msg" style="margin-bottom:10px;"></div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="enviarSolicitudCompra()" style="flex:1;background:#2B7A78;">&#10003; Enviar Solicitud</button>
+      <button onclick="cerrarSolicitudCompra()" style="flex:1;background:#6c757d;">Cancelar</button>
+    </div>
+  </div>
+</div>
 <div id="modal-historial" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9997;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
@@ -863,7 +878,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
       <div id="alertas-reabas-tabla">
         <table class="table">
-          <thead><tr><th>Codigo</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Stock Min (g)</th><th style="text-align:right;">Stock Actual (g)</th><th style="text-align:right;">Deficit (g)</th><th style="text-align:center;">Criticidad</th></tr></thead>
+          <thead><tr><th>Codigo</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Stock Min (g)</th><th style="text-align:right;">Stock Actual (g)</th><th style="text-align:right;">Deficit (g)</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Accion</th></tr></thead>
           <tbody id="reabas-body"><tr><td colspan="7" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
         </table>
       </div>
@@ -925,6 +940,34 @@ function abrirAjuste(mid,mn,lt,sa){
   document.getElementById('modal-ajuste').style.display='flex';
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+var _solMP={};
+function abrirSolicitudCompra(cod,nom,deficit){
+  _solMP={cod:cod,nom:nom,deficit:deficit};
+  document.getElementById("modal-solicitud-compra").style.display="flex";
+  document.getElementById("sol-mp-info").textContent=cod+" - "+nom+" | Deficit: "+deficit.toLocaleString()+"g";
+  document.getElementById("sol-cantidad").value=deficit>0?deficit:"";
+  document.getElementById("sol-nombre").value=OPER_ACTUAL||"";
+  document.getElementById("sol-msg").innerHTML="";
+}
+function cerrarSolicitudCompra(){
+  document.getElementById("modal-solicitud-compra").style.display="none";
+}
+async function enviarSolicitudCompra(){
+  var nom=document.getElementById("sol-nombre").value.trim();
+  var cant=parseFloat(document.getElementById("sol-cantidad").value);
+  if(!nom){alert("Escribe tu nombre");return;}
+  if(!cant||cant<=0){alert("Ingresa una cantidad valida");return;}
+  var data={solicitante:nom,urgencia:document.getElementById("sol-urgencia").value,observaciones:document.getElementById("sol-obs").value,
+    items:[{codigo_mp:_solMP.cod,nombre_mp:_solMP.nom,cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
+  try{
+    var r=await fetch("/api/solicitudes-compra",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok){
+      document.getElementById("sol-msg").innerHTML='<div class="alert-success">&#10003; Solicitud '+res.numero+' creada correctamente.</div>';
+      setTimeout(function(){cerrarSolicitudCompra();},3000);
+    } else { document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error al crear solicitud</div>'; }
+  }catch(e){ document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error de conexion</div>'; }
+}
 function cerrarHistorial(){document.getElementById('modal-historial').style.display='none';}
 async function verHistorialLote(idx){
   var i=_lotes[idx];if(!i)return;
@@ -1513,6 +1556,8 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+'</td>';
       h+='<td style="text-align:center;">'+badge+' '+pct+'%</td>';
+      var _cod=a.codigo_mp,_nom=a.nombre.substring(0,40),_def=a.deficit;
+      h+='<td style="text-align:center;"><button onclick="abrirSolicitudCompra(\"'+_cod+'\",\"'+_nom+'\",'+_def+')" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Solicitar</button></td>';
       h+='</tr>';
     });
     tb.innerHTML=h;
