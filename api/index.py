@@ -598,6 +598,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="oper-error" style="color:#cc0000;font-size:0.85em;margin-top:8px;display:none;">Por favor escribe tu nombre</div>
   </div>
 </div>
+<div id="modal-historial" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9997;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:32px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="color:#2B7A78;margin:0;">&#128203; Historial del Lote</h2>
+      <button onclick="cerrarHistorial()" style="background:#6c757d;padding:6px 14px;">&#10005; Cerrar</button>
+    </div>
+    <p id="hist-lote-info" style="color:#666;font-size:0.9em;margin-bottom:16px;"></p>
+    <table class="table"><thead><tr><th>Tipo</th><th>Cantidad (g)</th><th>Fecha</th><th>Observaciones</th><th>Operador</th></tr></thead>
+    <tbody id="hist-lote-body"><tr><td colspan="5" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+  </div>
+</div>
 <div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <h2 style="color:#2B7A78;margin-bottom:4px;">&#9878; Ajustar Inventario</h2>
@@ -700,7 +711,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <th style="text-align:right;">Cantidad (g)</th>
         <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
         <th style="text-align:center;">Fecha Venc.</th>
-        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th>
+        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th><th style="text-align:center;">Historial</th>
       </tr></thead>
       <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
@@ -734,7 +745,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="form-group"><label>Codigo MP *</label><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." list="mp-sugerencias" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)"><datalist id="mp-sugerencias"></datalist><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
+        <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #2B7A78;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
@@ -841,6 +852,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="alertas" class="tab-content">
     <h2>&#9888; Alertas de Inventario</h2>
+    <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:10px;padding:18px;margin-bottom:20px;">
+      <h3 style="color:#e65100;margin-bottom:10px;">&#128197; Lotes que vencen en 30 dias o menos</h3>
+      <div id="venc30-content" style="color:#999;">Cargando...</div>
+    </div>
 
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:20px;">
       <h3 style="color:#856404;margin-bottom:10px;">&#128308; MPs bajo stock minimo (basado en plan anual)</h3>
@@ -909,6 +924,21 @@ function abrirAjuste(mid,mn,lt,sa){
   document.getElementById('modal-ajuste').style.display='flex';
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+function cerrarHistorial(){document.getElementById('modal-historial').style.display='none';}
+async function verHistorialLote(idx){
+  var i=_lotes[idx];if(!i)return;
+  document.getElementById('modal-historial').style.display='flex';
+  document.getElementById('hist-lote-info').textContent=i.material_id+' - '+i.material_nombre+' Lote:'+(i.lote||'S/L')+' Stock:'+i.cantidad_g+'g';
+  var tb=document.getElementById('hist-lote-body');
+  tb.innerHTML='<tr><td colspan=4 style=text-align:center>Cargando...</td></tr>';
+  try{
+    var r=await fetch('/api/movimientos'),d=await r.json();
+    var mv=(d.movimientos||[]).filter(function(m){return m.lote===i.lote&&m.material_id===i.material_id;});
+    if(!mv.length){tb.innerHTML='<tr><td colspan=5 style=text-align:center>Sin movimientos</td></tr>';return;}
+    tb.innerHTML=mv.map(function(m){var f=m.fecha?m.fecha.substring(0,16).replace("T"," "):"";return "<tr><td>"+m.tipo+"</td><td>"+m.cantidad+"</td><td>"+f+"</td><td>"+(m.observaciones||"")+"</td><td>"+(m.operador||"")+"</td></tr>";}).join("");
+  }catch(e){tb.innerHTML='<tr><td colspan=5>Error</td></tr>';}
+}
+
 async function confirmarAjuste(){
   var fis=parseFloat(document.getElementById('ajuste-fisico').value);
   if(isNaN(fis)||fis<0){alert('Cantidad inválida');return;}
@@ -1001,7 +1031,7 @@ function switchTab(n,btn){
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
-  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); }
+  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); }
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
 }
@@ -1108,6 +1138,7 @@ function renderStock(items){
     h+='<td style="text-align:right;'+dc+'">'+dias+'</td>';
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
     h+='<td style="text-align:center;"><button onclick="abrirAjusteIdx('+idx+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
+    h+='<td style="text-align:center;"><button onclick="verHistorialLote('+idx+')" style="padding:3px 9px;font-size:0.75em;background:#667eea;color:#fff;border-radius:4px;">Historial</button></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;
@@ -1129,49 +1160,53 @@ async function initIngreso(){
   }
   cargarHistIngreso();
 }
+function ocultarDropMP(){var d=document.getElementById('mp-dropdown');if(d)d.style.display='none';}
+function seleccionarMP(mp){
+  document.getElementById('ing-cod').value=mp.codigo_mp;
+  document.getElementById('ing-inci').value=mp.nombre_inci||'';
+  document.getElementById('ing-nombre').value=mp.nombre_comercial||'';
+  document.getElementById('ing-tipo').value=mp.tipo||'';
+  var p=document.getElementById('ing-prov');if(p&&!p.value)p.value=mp.proveedor||'';
+  var st=document.getElementById('ing-status');
+  if(st){st.textContent='✓ '+mp.nombre_comercial+' ('+mp.codigo_mp+')';st.style.color='#27ae60';}
+  var panel=document.getElementById('ing-nueva-mp');if(panel)panel.style.display='none';
+  ocultarDropMP();
+}
 async function buscarMPIngreso(val){
   val=(val||'').trim();
-  var st=document.getElementById('ing-status');
-  var panel=document.getElementById('ing-nueva-mp');
-  if(val.length<3){
+  var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp'),dd=document.getElementById('mp-dropdown');
+  if(val.length<2){
     if(st)st.textContent='';
     ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
     if(panel)panel.style.display='none';
+    if(dd)dd.style.display='none';
     return;
   }
-  if(st){st.textContent='Buscando...';st.style.color='#888';}
   try{
-    var r2=await fetch('/api/maestro-mps');
-    var d2=await r2.json();
-    var mps=d2.mps||[];
+    var r2=await fetch('/api/maestro-mps'),d2=await r2.json(),mps=d2.mps||[];
     var busq=val.toLowerCase();
+    var matches=mps.filter(function(m){
+      return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
+    }).slice(0,12);
+    window._mpMatches=matches;
+    if(dd){
+      if(!matches.length){dd.style.display='none';}
+      else{
+        dd.style.display='block';
+        dd.innerHTML=matches.map(function(m,i){
+          return '<div style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])" onmouseover="this.style.background=\'#f0f8ff\'" onmouseout="this.style.background=\'white\'">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';
+        }).join('');
+      }
+    }
     var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
-    if(!found) found=mps.find(function(m){
-      return (m.nombre_comercial||'').toLowerCase().includes(busq)||
-             (m.nombre_inci||'').toLowerCase().includes(busq);
-    });
-    var dl=document.getElementById('mp-sugerencias');
-    if(dl){
-      var matches=mps.filter(function(m){
-        return (m.codigo_mp||'').toLowerCase().includes(busq)||
-               (m.nombre_comercial||'').toLowerCase().includes(busq)||
-               (m.nombre_inci||'').toLowerCase().includes(busq);
-      }).slice(0,10);
-      dl.innerHTML=matches.map(function(m){return '<option value="'+m.codigo_mp+'">'+m.codigo_mp+' — '+m.nombre_comercial+'</option>';}).join('');
-    }
-    if(found){
-      document.getElementById('ing-cod').value=found.codigo_mp;
-      document.getElementById('ing-inci').value=found.nombre_inci||'';
-      document.getElementById('ing-nombre').value=found.nombre_comercial||'';
-      document.getElementById('ing-tipo').value=found.tipo||'';
-      var pEl=document.getElementById('ing-prov');if(pEl&&!pEl.value)pEl.value=found.proveedor||'';
-      if(st){st.textContent='✓ '+found.nombre_comercial+' ('+found.codigo_mp+')';st.style.color='#27ae60';}
-      if(panel)panel.style.display='none';
-    } else {
-      if(st){st.textContent='MP nueva — llena los datos para crearla';st.style.color='#e67e22';}
+    if(found){seleccionarMP(found);}
+    else if(!matches.length){
+      if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
       if(panel)panel.style.display='block';
+    } else {
+      if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
     }
-  }catch(e){if(st){st.textContent='Error buscando MP';st.style.color='#c0392b';}}
+  }catch(e){if(st){st.textContent='Error buscando';st.style.color='#c0392b';}}
 }
 
 async function registrarIngreso(){
@@ -1626,8 +1661,8 @@ def handle_movimientos():
                    data.get('operador','')))
         conn.commit(); conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute('SELECT material_nombre, cantidad, tipo, fecha, observaciones, operador FROM movimientos ORDER BY fecha DESC LIMIT 200')
-    movimientos = [{'material_nombre': r[0], 'cantidad': r[1], 'tipo': r[2], 'fecha': r[3], 'observaciones': r[4], 'operador': r[5] or ''} for r in c.fetchall()]
+    c.execute('SELECT material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote FROM movimientos ORDER BY fecha DESC LIMIT 500')
+    movimientos = [{'material_id': r[0] or '', 'material_nombre': r[1], 'cantidad': r[2], 'tipo': r[3], 'fecha': r[4], 'observaciones': r[5], 'operador': r[6] or '', 'lote': r[7] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
 
