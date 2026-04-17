@@ -2629,7 +2629,7 @@ def inventarios():
 def login():
     error = ''
     if request.method == 'POST':
-        username = request.form.get('username','').strip().lower().capitalize() if request.form.get('username','').strip() else ''
+        username = request.form.get('username','').strip().lower()
         
         password = request.form.get('password','').strip()
         if username in COMPRAS_USERS and COMPRAS_USERS[username] == password:
