@@ -1083,219 +1083,6 @@ async function consultarSol(){
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 document.getElementById('sol-lookup').addEventListener('keydown',function(e){if(e.key==='Enter')consultarSol();});
 
-/* ===== MEE FUNCTIONS ===== */
-var MEE_CATS=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Frasco','Contorno','Otro'];
-
-function switchIngreso(t){
-  document.getElementById('ing-panel-mp').style.display=t==='mp'?'block':'none';
-  document.getElementById('ing-panel-mee').style.display=t==='mee'?'block':'none';
-  document.getElementById('ing-tab-mp').style.background=t==='mp'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mp').style.color=t==='mp'?'white':'#555';
-  document.getElementById('ing-tab-mee').style.background=t==='mee'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mee').style.color=t==='mee'?'white':'#555';
-  if(t==='mee'){cargarSelectsMEE();loadHistMEE();}
-}
-async function cargarSelectsMEE(){
-  var r=await fetch('/api/mee'); var d=await r.json();
-  _meeData=d.items||[];
-  filtrarMEEIngreso();
-}
-function filtrarMEEIngreso(){
-  var cat=document.getElementById('mee-ing-cat').value;
-  var sel=document.getElementById('mee-ing-cod');
-  sel.innerHTML='<option value="">-- Selecciona --</option>';
-  _meeData.filter(function(x){return !cat||x.categoria===cat;}).forEach(function(x){
-    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
-  });
-}
-async function registrarIngresoMEE(){
-  var cod=document.getElementById('mee-ing-cod').value;
-  var cant=parseFloat(document.getElementById('mee-ing-cant').value);
-  var ref=document.getElementById('mee-ing-ref').value;
-  var obs=document.getElementById('mee-ing-obs').value;
-  if(!cod||!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
-  var r=await fetch('/api/movimientos-mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mee:cod,tipo:'entrada',cantidad:cant,referencia:ref,observaciones:obs,operador:OPER_ACTUAL})});
-  var d=await r.json();
-  if(r.ok){document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und</span>';limpiarIngresoMEE();loadHistMEE();loadMEE();}
-  else{document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
-}
-function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';document.getElementById('mee-ing-cant').value='';document.getElementById('mee-ing-ref').value='';document.getElementById('mee-ing-obs').value='';}
-async function loadHistMEE(){
-  var r=await fetch('/api/movimientos-mee?limit=20'); var d=await r.json();
-  var tb=document.getElementById('mee-hist-body');
-  if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin movimientos</td></tr>';return;}
-  tb.innerHTML=d.movimientos.map(function(m){
-    var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
-    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo_mee+'</td><td>'+m.descripcion+'</td><td><span style="color:'+col+';font-weight:600;">'+m.tipo+'</span></td><td style="text-align:right;font-weight:600;">'+m.cantidad+'</td><td>'+m.referencia+'</td><td>'+m.operador+'</td><td>'+m.fecha.substring(0,16)+'</td></tr>';
-  }).join('');
-}
-async function loadMEE(){
-  var cat=document.getElementById('mee-cat-filter')?document.getElementById('mee-cat-filter').value:'';
-  var q=document.getElementById('mee-search')?document.getElementById('mee-search').value:'';
-  var url='/api/mee?';if(cat)url+='cat='+encodeURIComponent(cat)+'&';if(q)url+='q='+encodeURIComponent(q);
-  var r=await fetch(url); var d=await r.json();
-  var tb=document.getElementById('mee-stock-body');
-  if(!d.items||!d.items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin materiales</td></tr>';return;}
-  tb.innerHTML=d.items.map(function(m){
-    var deficit=m.stock_actual-m.stock_minimo;
-    var est=deficit<0?'<span style="color:#e74c3c;font-weight:700;">BAJO</span>':deficit<m.stock_minimo*0.3?'<span style="color:#f39c12;font-weight:700;">ALERTA</span>':'<span style="color:#27ae60;font-weight:700;">OK</span>';
-    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td><td><span style="font-size:11px;background:#f0f4ff;padding:2px 8px;border-radius:10px;">'+m.categoria+'</span></td><td>'+m.proveedor+'</td>'
-    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
-    +'<td style="text-align:right;font-weight:700;">'+m.stock_actual+'</td>'
-    +'<td style="text-align:center;">'+est+'</td>'
-    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="abrirAjusteMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+')">Ajustar</button></td>'
-    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="verHistorialMEE(\''+m.codigo+'\')">Hist.</button></td>'
-    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
-    +'</tr>';
-  }).join('');
-}
-function abrirNuevoMEE(){document.getElementById('nuevo-mee-form').style.display='block';}
-async function crearMEE(){
-  var cod=document.getElementById('nmee-cod').value.trim().toUpperCase();
-  var desc=document.getElementById('nmee-desc').value.trim();
-  var cat=document.getElementById('nmee-cat').value;
-  var prov=document.getElementById('nmee-prov').value.trim();
-  var stock=parseFloat(document.getElementById('nmee-stock').value)||2000;
-  var smin=parseFloat(document.getElementById('nmee-min').value)||1000;
-  if(!cod||!desc){document.getElementById('nmee-msg').innerHTML='<span style="color:red;">Codigo y descripcion requeridos</span>';return;}
-  var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,descripcion:desc,categoria:cat,proveedor:prov,stock_actual:stock,stock_minimo:smin})});
-  var d=await r.json();
-  if(r.ok){document.getElementById('nmee-msg').innerHTML='<span style="color:green;">Creado exitosamente</span>';document.getElementById('nuevo-mee-form').style.display='none';loadMEE();}
-  else{document.getElementById('nmee-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
-}
-async function abrirAjusteMEE(cod,desc,stock){
-  if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
-  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\nStock actual: '+stock+' und\nNuevo valor:');
-  if(nuevo===null||nuevo==='')return;
-  var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
-  var obs=prompt('Motivo del ajuste:','Inventario fisico');
-  var r=await fetch('/api/mee/'+encodeURIComponent(cod)+'/ajuste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nuevo_stock:n,observaciones:obs||'Ajuste',operador:OPER_ACTUAL})});
-  var d=await r.json();
-  if(d.ok){alert('Ajuste registrado. Stock: '+d.nuevo_stock+' und');loadMEE();}
-  else alert('Error: '+(d.error||''));
-}
-async function verHistorialMEE(cod){
-  var r=await fetch('/api/movimientos-mee?codigo='+encodeURIComponent(cod)+'&limit=30');
-  var d=await r.json();
-  var rows=d.movimientos||[];
-  var html='<div style="max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
-    +'<thead style="background:#2B7A78;color:white;"><tr><th style="padding:7px;">Tipo</th><th>Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead><tbody>'
-    +rows.map(function(m){
-      var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
-      return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+m.referencia+'</td><td style="padding:6px;">'+m.operador+'</td><td style="padding:6px;font-size:11px;">'+m.fecha.substring(0,16)+'</td></tr>';
-    }).join('')+'</tbody></table></div>';
-  document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial — '+cod+'</h3>'+html+'</div>';
-  document.getElementById('modal-ajuste').style.display='flex';
-}
-async function solicitarCompraMEE(cod,desc,stock,smin){
-  var cant=prompt('Solicitar compra para: '+desc+'\nStock actual: '+stock+' und / Minimo: '+smin+' und\nCantidad a solicitar:');
-  if(!cant||isNaN(parseFloat(cant)))return;
-  var data={
-    solicitante:OPER_ACTUAL||'Sistema',
-    area:'Produccion',empresa:'Espagiria',categoria:'Envase y Empaque',tipo:'Compra',
-    urgencia:'Urgente',observaciones:'Solicitud automatica desde alerta MEE',
-    items:[{codigo_mp:cod,nombre_mp:desc,cantidad_g:parseFloat(cant),unidad:'und',valor_estimado:0}]
-  };
-  var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-  var d=await r.json();
-  if(r.ok)alert('Solicitud creada: '+d.numero+'\nVisible en modulo Compras > Solicitudes');
-  else alert('Error: '+(d.error||''));
-}
-async function loadAlertasMEE(){
-  var r=await fetch('/api/alertas-mee'); var d=await r.json();
-  var tb=document.getElementById('mee-alertas-body');
-  if(!d.alertas||!d.alertas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:green;padding:16px;">Todo el stock MEE por encima del minimo</td></tr>';return;}
-  tb.innerHTML=d.alertas.map(function(m){
-    var def=m.stock_actual-m.stock_minimo;
-    var niv=def<-m.stock_minimo?'<span style="color:#e74c3c;font-weight:700;">CRITICO</span>':'<span style="color:#f39c12;font-weight:700;">BAJO</span>';
-    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td>'
-    +'<td><span style="background:#f0f4ff;padding:2px 8px;border-radius:10px;font-size:11px;">'+m.categoria+'</span></td>'
-    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
-    +'<td style="text-align:right;font-weight:700;color:#e74c3c;">'+m.stock_actual+'</td>'
-    +'<td style="text-align:right;color:#e74c3c;font-weight:700;">'+def+'</td>'
-    +'<td style="text-align:center;">'+niv+'</td>'
-    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
-    +'</tr>';
-  }).join('');
-}
-async function generarOCsDesdeAlertasMEE(){
-  var r=await fetch('/api/alertas-mee'); var d=await r.json();
-  if(!d.alertas||!d.alertas.length){alert('No hay alertas MEE activas');return;}
-  var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,nombre_mp:m.descripcion,cantidad_g:Math.max(m.stock_minimo*2-m.stock_actual,1),precio_unitario:0};});
-  var r2=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:'Por asignar',observaciones:'OC automatica desde alertas MEE',items:items,creado_por:OPER_ACTUAL||'Sistema'})});
-  var d2=await r2.json();
-  if(r2.ok)alert('OC creada: '+d2.numero_oc+'\nVisible en Compras > Ordenes');
-  else alert('Error: '+(d2.error||''));
-}
-/* MEE en producción */
-async function iniciarRegistroProd(){
-  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
-  var kg=parseFloat(document.getElementById('prod-kg').value);
-  if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
-  // Registrar producción MP
-  var obs=document.getElementById('prod-obs').value;
-  var pres=document.getElementById('prod-presentacion').value;
-  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
-  var d=await r.json();
-  if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
-  _prodPendiente={lote:d.lote};
-  // Cargar MEE catalogos y mostrar panel
-  var rm=await fetch('/api/mee?limit=500'); var dm=await rm.json();
-  _meeData=dm.items||[];
-  renderMEEConsumoRows();
-  document.getElementById('mee-consumo-panel').style.display='block';
-  document.getElementById('mee-consumo-panel').scrollIntoView({behavior:'smooth'});
-}
-function renderMEEConsumoRows(){
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var html=cats.map(function(cat){
-    var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
-    if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
-    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
-    return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
-      +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
-      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(\''+cat+'\')" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
-      +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
-      +'</div>';
-  }).join('');
-  document.getElementById('mee-rows-container').innerHTML=html;
-}
-function toggleMEECant(cat){
-  var sel=document.getElementById('mee-cons-'+cat).value;
-  document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
-  if(sel!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
-}
-async function confirmarProdCompleta(){
-  if(!_prodPendiente){alert('No hay produccion pendiente');return;}
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var consumos=[];
-  for(var i=0;i<cats.length;i++){
-    var cat=cats[i];
-    var sel=document.getElementById('mee-cons-'+cat);
-    if(!sel)continue;
-    var cod=sel.value;
-    if(cod==='__NA__')continue;
-    var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
-    if(cod&&cant>0)consumos.push({codigo_mee:cod,cantidad:cant,referencia:_prodPendiente.lote});
-  }
-  if(consumos.length>0){
-    var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
-    var d=await r.json();
-    if(!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
-  }
-  document.getElementById('mee-consumo-panel').style.display='none';
-  document.getElementById('mee-consumo-msg').innerHTML='';
-  _prodPendiente=null;
-  var nm=consumos.length;
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;font-size:1em;">&#10003; Produccion completa: '+nm+' tipo(s) de MEE descontados.</span>';
-  cargarHistProd(); loadMEE();
-}
-function cancelarMEEConsumoProd(){
-  document.getElementById('mee-consumo-panel').style.display='none';
-  _prodPendiente=null;
-}
-
 </script>
 </body>
 </html>
@@ -1808,7 +1595,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
-var _lotes=[], _lotesFull=[];
+var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='';
 var _meeData=[], _prodPendiente=null;
 var _ajDat={};
@@ -2462,6 +2249,220 @@ async function loadAlertasReabas(){
     if(tb2) tb2.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Carga el catalogo maestro primero (python cargar_maestro.py)</td></tr>';
   }
 }
+
+/* ===== MEE FUNCTIONS ===== */
+var MEE_CATS=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Frasco','Contorno','Otro'];
+
+function switchIngreso(t){
+  document.getElementById('ing-panel-mp').style.display=t==='mp'?'block':'none';
+  document.getElementById('ing-panel-mee').style.display=t==='mee'?'block':'none';
+  document.getElementById('ing-tab-mp').style.background=t==='mp'?'#2B7A78':'#eee';
+  document.getElementById('ing-tab-mp').style.color=t==='mp'?'white':'#555';
+  document.getElementById('ing-tab-mee').style.background=t==='mee'?'#2B7A78':'#eee';
+  document.getElementById('ing-tab-mee').style.color=t==='mee'?'white':'#555';
+  if(t==='mee'){cargarSelectsMEE();loadHistMEE();}
+}
+async function cargarSelectsMEE(){
+  var r=await fetch('/api/mee'); var d=await r.json();
+  _meeData=d.items||[];
+  filtrarMEEIngreso();
+}
+function filtrarMEEIngreso(){
+  var cat=document.getElementById('mee-ing-cat').value;
+  var sel=document.getElementById('mee-ing-cod');
+  sel.innerHTML='<option value="">-- Selecciona --</option>';
+  _meeData.filter(function(x){return !cat||x.categoria===cat;}).forEach(function(x){
+    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
+  });
+}
+async function registrarIngresoMEE(){
+  var cod=document.getElementById('mee-ing-cod').value;
+  var cant=parseFloat(document.getElementById('mee-ing-cant').value);
+  var ref=document.getElementById('mee-ing-ref').value;
+  var obs=document.getElementById('mee-ing-obs').value;
+  if(!cod||!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
+  var r=await fetch('/api/movimientos-mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mee:cod,tipo:'entrada',cantidad:cant,referencia:ref,observaciones:obs,operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(r.ok){document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und</span>';limpiarIngresoMEE();loadHistMEE();loadMEE();}
+  else{document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+}
+function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';document.getElementById('mee-ing-cant').value='';document.getElementById('mee-ing-ref').value='';document.getElementById('mee-ing-obs').value='';}
+async function loadHistMEE(){
+  var r=await fetch('/api/movimientos-mee?limit=20'); var d=await r.json();
+  var tb=document.getElementById('mee-hist-body');
+  if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin movimientos</td></tr>';return;}
+  tb.innerHTML=d.movimientos.map(function(m){
+    var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo_mee+'</td><td>'+m.descripcion+'</td><td><span style="color:'+col+';font-weight:600;">'+m.tipo+'</span></td><td style="text-align:right;font-weight:600;">'+m.cantidad+'</td><td>'+m.referencia+'</td><td>'+m.operador+'</td><td>'+m.fecha.substring(0,16)+'</td></tr>';
+  }).join('');
+}
+async function loadMEE(){
+  var cat=document.getElementById('mee-cat-filter')?document.getElementById('mee-cat-filter').value:'';
+  var q=document.getElementById('mee-search')?document.getElementById('mee-search').value:'';
+  var url='/api/mee?';if(cat)url+='cat='+encodeURIComponent(cat)+'&';if(q)url+='q='+encodeURIComponent(q);
+  var r=await fetch(url); var d=await r.json();
+  var tb=document.getElementById('mee-stock-body');
+  if(!d.items||!d.items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin materiales</td></tr>';return;}
+  tb.innerHTML=d.items.map(function(m){
+    var deficit=m.stock_actual-m.stock_minimo;
+    var est=deficit<0?'<span style="color:#e74c3c;font-weight:700;">BAJO</span>':deficit<m.stock_minimo*0.3?'<span style="color:#f39c12;font-weight:700;">ALERTA</span>':'<span style="color:#27ae60;font-weight:700;">OK</span>';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td><td><span style="font-size:11px;background:#f0f4ff;padding:2px 8px;border-radius:10px;">'+m.categoria+'</span></td><td>'+m.proveedor+'</td>'
+    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
+    +'<td style="text-align:right;font-weight:700;">'+m.stock_actual+'</td>'
+    +'<td style="text-align:center;">'+est+'</td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="abrirAjusteMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+')">Ajustar</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="verHistorialMEE(\''+m.codigo+'\')">Hist.</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'</tr>';
+  }).join('');
+}
+function abrirNuevoMEE(){document.getElementById('nuevo-mee-form').style.display='block';}
+async function crearMEE(){
+  var cod=document.getElementById('nmee-cod').value.trim().toUpperCase();
+  var desc=document.getElementById('nmee-desc').value.trim();
+  var cat=document.getElementById('nmee-cat').value;
+  var prov=document.getElementById('nmee-prov').value.trim();
+  var stock=parseFloat(document.getElementById('nmee-stock').value)||2000;
+  var smin=parseFloat(document.getElementById('nmee-min').value)||1000;
+  if(!cod||!desc){document.getElementById('nmee-msg').innerHTML='<span style="color:red;">Codigo y descripcion requeridos</span>';return;}
+  var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,descripcion:desc,categoria:cat,proveedor:prov,stock_actual:stock,stock_minimo:smin})});
+  var d=await r.json();
+  if(r.ok){document.getElementById('nmee-msg').innerHTML='<span style="color:green;">Creado exitosamente</span>';document.getElementById('nuevo-mee-form').style.display='none';loadMEE();}
+  else{document.getElementById('nmee-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+}
+async function abrirAjusteMEE(cod,desc,stock){
+  if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
+  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\nStock actual: '+stock+' und\nNuevo valor:');
+  if(nuevo===null||nuevo==='')return;
+  var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
+  var obs=prompt('Motivo del ajuste:','Inventario fisico');
+  var r=await fetch('/api/mee/'+encodeURIComponent(cod)+'/ajuste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nuevo_stock:n,observaciones:obs||'Ajuste',operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(d.ok){alert('Ajuste registrado. Stock: '+d.nuevo_stock+' und');loadMEE();}
+  else alert('Error: '+(d.error||''));
+}
+async function verHistorialMEE(cod){
+  var r=await fetch('/api/movimientos-mee?codigo='+encodeURIComponent(cod)+'&limit=30');
+  var d=await r.json();
+  var rows=d.movimientos||[];
+  var html='<div style="max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +'<thead style="background:#2B7A78;color:white;"><tr><th style="padding:7px;">Tipo</th><th>Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead><tbody>'
+    +rows.map(function(m){
+      var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
+      return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+m.referencia+'</td><td style="padding:6px;">'+m.operador+'</td><td style="padding:6px;font-size:11px;">'+m.fecha.substring(0,16)+'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+  document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial — '+cod+'</h3>'+html+'</div>';
+  document.getElementById('modal-ajuste').style.display='flex';
+}
+async function solicitarCompraMEE(cod,desc,stock,smin){
+  var cant=prompt('Solicitar compra para: '+desc+'\nStock actual: '+stock+' und / Minimo: '+smin+' und\nCantidad a solicitar:');
+  if(!cant||isNaN(parseFloat(cant)))return;
+  var data={
+    solicitante:OPER_ACTUAL||'Sistema',
+    area:'Produccion',empresa:'Espagiria',categoria:'Envase y Empaque',tipo:'Compra',
+    urgencia:'Urgente',observaciones:'Solicitud automatica desde alerta MEE',
+    items:[{codigo_mp:cod,nombre_mp:desc,cantidad_g:parseFloat(cant),unidad:'und',valor_estimado:0}]
+  };
+  var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var d=await r.json();
+  if(r.ok)alert('Solicitud creada: '+d.numero+'\nVisible en modulo Compras > Solicitudes');
+  else alert('Error: '+(d.error||''));
+}
+async function loadAlertasMEE(){
+  var r=await fetch('/api/alertas-mee'); var d=await r.json();
+  var tb=document.getElementById('mee-alertas-body');
+  if(!d.alertas||!d.alertas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:green;padding:16px;">Todo el stock MEE por encima del minimo</td></tr>';return;}
+  tb.innerHTML=d.alertas.map(function(m){
+    var def=m.stock_actual-m.stock_minimo;
+    var niv=def<-m.stock_minimo?'<span style="color:#e74c3c;font-weight:700;">CRITICO</span>':'<span style="color:#f39c12;font-weight:700;">BAJO</span>';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td>'
+    +'<td><span style="background:#f0f4ff;padding:2px 8px;border-radius:10px;font-size:11px;">'+m.categoria+'</span></td>'
+    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
+    +'<td style="text-align:right;font-weight:700;color:#e74c3c;">'+m.stock_actual+'</td>'
+    +'<td style="text-align:right;color:#e74c3c;font-weight:700;">'+def+'</td>'
+    +'<td style="text-align:center;">'+niv+'</td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'</tr>';
+  }).join('');
+}
+async function generarOCsDesdeAlertasMEE(){
+  var r=await fetch('/api/alertas-mee'); var d=await r.json();
+  if(!d.alertas||!d.alertas.length){alert('No hay alertas MEE activas');return;}
+  var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,nombre_mp:m.descripcion,cantidad_g:Math.max(m.stock_minimo*2-m.stock_actual,1),precio_unitario:0};});
+  var r2=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:'Por asignar',observaciones:'OC automatica desde alertas MEE',items:items,creado_por:OPER_ACTUAL||'Sistema'})});
+  var d2=await r2.json();
+  if(r2.ok)alert('OC creada: '+d2.numero_oc+'\nVisible en Compras > Ordenes');
+  else alert('Error: '+(d2.error||''));
+}
+/* MEE en producción */
+async function iniciarRegistroProd(){
+  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
+  var kg=parseFloat(document.getElementById('prod-kg').value);
+  if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
+  // Registrar producción MP
+  var obs=document.getElementById('prod-obs').value;
+  var pres=document.getElementById('prod-presentacion').value;
+  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+  document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
+  _prodPendiente={lote:d.lote};
+  // Cargar MEE catalogos y mostrar panel
+  var rm=await fetch('/api/mee?limit=500'); var dm=await rm.json();
+  _meeData=dm.items||[];
+  renderMEEConsumoRows();
+  document.getElementById('mee-consumo-panel').style.display='block';
+  document.getElementById('mee-consumo-panel').scrollIntoView({behavior:'smooth'});
+}
+function renderMEEConsumoRows(){
+  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
+  var html=cats.map(function(cat){
+    var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
+    if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
+    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
+    return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
+      +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
+      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(\''+cat+'\')" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
+      +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
+      +'</div>';
+  }).join('');
+  document.getElementById('mee-rows-container').innerHTML=html;
+}
+function toggleMEECant(cat){
+  var sel=document.getElementById('mee-cons-'+cat).value;
+  document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
+  if(sel!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
+}
+async function confirmarProdCompleta(){
+  if(!_prodPendiente){alert('No hay produccion pendiente');return;}
+  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
+  var consumos=[];
+  for(var i=0;i<cats.length;i++){
+    var cat=cats[i];
+    var sel=document.getElementById('mee-cons-'+cat);
+    if(!sel)continue;
+    var cod=sel.value;
+    if(cod==='__NA__')continue;
+    var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
+    if(cod&&cant>0)consumos.push({codigo_mee:cod,cantidad:cant,referencia:_prodPendiente.lote});
+  }
+  if(consumos.length>0){
+    var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
+    var d=await r.json();
+    if(!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
+  }
+  document.getElementById('mee-consumo-panel').style.display='none';
+  document.getElementById('mee-consumo-msg').innerHTML='';
+  _prodPendiente=null;
+  var nm=consumos.length;
+  document.getElementById('prod-msg').innerHTML='<span style="color:green;font-size:1em;">&#10003; Produccion completa: '+nm+' tipo(s) de MEE descontados.</span>';
+  cargarHistProd(); loadMEE();
+}
+function cancelarMEEConsumoProd(){
+  document.getElementById('mee-consumo-panel').style.display='none';
+  _prodPendiente=null;
+}
+
 
 window.onload=function(){/* Data loads after operator confirms name */};
 function mostrarFormNuevaMP(){
