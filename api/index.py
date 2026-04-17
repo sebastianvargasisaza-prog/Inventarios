@@ -3099,8 +3099,8 @@ def handle_ordenes_compra():
                  FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc
                  GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 100""")
     cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones','creado_por','num_items']
-    conn.close()
-    return jsonify({'ordenes': [dict(zip(cols, r)) for r in c.fetchall()]})
+    rows = c.fetchall(); conn.close()
+    return jsonify({'ordenes': [dict(zip(cols, r)) for r in rows]})
 
 @app.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT'])
 def handle_oc_detalle(numero_oc):
@@ -3164,6 +3164,19 @@ def handle_solicitudes_compra():
                        it.get('justificacion',''), it.get('valor_estimado',0)))
         conn.commit(); conn.close()
         return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+    # GET: listar todas las solicitudes
+    filtro_estado = request.args.get('estado', '')
+    filtro_empresa = request.args.get('empresa', '')
+    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area FROM solicitudes_compra WHERE 1=1"
+    params = []
+    if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
+    if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
+    sql += " ORDER BY fecha DESC LIMIT 200"
+    c.execute(sql, params)
+    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area']
+    rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'solicitudes': rows_sol})
 
 
 @app.route('/api/solicitudes-compra/<numero>', methods=['GET'])
@@ -3194,7 +3207,7 @@ def solicitudes_page():
 
 @app.route('/api/solicitudes-compra/<numero>/estado', methods=['PATCH'])
 def actualizar_estado_solicitud(numero):
-    if 'usuario' not in session:
+    if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     d = request.get_json() or {}
     nuevo = d.get('estado', 'Aprobada')
@@ -3203,7 +3216,7 @@ def actualizar_estado_solicitud(numero):
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
     cur.execute("""UPDATE solicitudes_compra SET estado=?, aprobado_por=?, fecha_aprobacion=?
                  WHERE numero=?""",
-              (nuevo, session['usuario'], datetime.now().isoformat(), numero.upper()))
+              (nuevo, session.get('compras_user',''), datetime.now().isoformat(), numero.upper()))
     if numero_oc_param:
         cur.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?", (numero_oc_param, numero.upper()))
     if nuevo == 'Rechazada' and obs:
@@ -3220,7 +3233,7 @@ def actualizar_estado_solicitud(numero):
         cur.execute("""INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones, creado_por)
                      VALUES (?,?,?,?,?,?)""",
                   (oc_num, datetime.now().isoformat(), 'Borrador', proveedor_oc,
-                   f'Generado desde {numero.upper()}', session['usuario']))
+                   f'Generado desde {numero.upper()}', session.get('compras_user','')))
         for it in items_sol:
             cur.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
                       (oc_num, it[0], it[1], it[2]))
@@ -3231,7 +3244,7 @@ def actualizar_estado_solicitud(numero):
 
 @app.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
 def recibir_oc(numero_oc):
-    if 'usuario' not in session:
+    if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
     cur.execute("SELECT estado, proveedor FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
@@ -3247,7 +3260,7 @@ def recibir_oc(numero_oc):
         cur.execute("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, proveedor, operador)
                      VALUES (?,?,?,?,?,?,?,?)""",
                   (codigo, nombre, cantidad, 'ingreso', fecha,
-                   f'Recepcion OC {numero_oc}', prov_nombre, session['usuario']))
+                   f'Recepcion OC {numero_oc}', prov_nombre, session.get('compras_user','')))
     cur.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': len(items_oc)})
