@@ -1104,7 +1104,7 @@ function filtrarMEEIngreso(){
   var cat=document.getElementById('mee-ing-cat').value;
   var sel=document.getElementById('mee-ing-cod');
   sel.innerHTML='<option value="">-- Selecciona --</option>';
-  _meeData.filter(function(x){return \!cat||x.categoria===cat;}).forEach(function(x){
+  _meeData.filter(function(x){return !cat||x.categoria===cat;}).forEach(function(x){
     var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
   });
 }
@@ -1113,7 +1113,7 @@ async function registrarIngresoMEE(){
   var cant=parseFloat(document.getElementById('mee-ing-cant').value);
   var ref=document.getElementById('mee-ing-ref').value;
   var obs=document.getElementById('mee-ing-obs').value;
-  if(\!cod||\!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
+  if(!cod||!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
   var r=await fetch('/api/movimientos-mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mee:cod,tipo:'entrada',cantidad:cant,referencia:ref,observaciones:obs,operador:OPER_ACTUAL})});
   var d=await r.json();
   if(r.ok){document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und</span>';limpiarIngresoMEE();loadHistMEE();loadMEE();}
@@ -1123,7 +1123,7 @@ function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';doc
 async function loadHistMEE(){
   var r=await fetch('/api/movimientos-mee?limit=20'); var d=await r.json();
   var tb=document.getElementById('mee-hist-body');
-  if(\!d.movimientos||\!d.movimientos.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin movimientos</td></tr>';return;}
+  if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin movimientos</td></tr>';return;}
   tb.innerHTML=d.movimientos.map(function(m){
     var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
     return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo_mee+'</td><td>'+m.descripcion+'</td><td><span style="color:'+col+';font-weight:600;">'+m.tipo+'</span></td><td style="text-align:right;font-weight:600;">'+m.cantidad+'</td><td>'+m.referencia+'</td><td>'+m.operador+'</td><td>'+m.fecha.substring(0,16)+'</td></tr>';
@@ -1135,7 +1135,7 @@ async function loadMEE(){
   var url='/api/mee?';if(cat)url+='cat='+encodeURIComponent(cat)+'&';if(q)url+='q='+encodeURIComponent(q);
   var r=await fetch(url); var d=await r.json();
   var tb=document.getElementById('mee-stock-body');
-  if(\!d.items||\!d.items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin materiales</td></tr>';return;}
+  if(!d.items||!d.items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin materiales</td></tr>';return;}
   tb.innerHTML=d.items.map(function(m){
     var deficit=m.stock_actual-m.stock_minimo;
     var est=deficit<0?'<span style="color:#e74c3c;font-weight:700;">BAJO</span>':deficit<m.stock_minimo*0.3?'<span style="color:#f39c12;font-weight:700;">ALERTA</span>':'<span style="color:#27ae60;font-weight:700;">OK</span>';
@@ -1157,14 +1157,14 @@ async function crearMEE(){
   var prov=document.getElementById('nmee-prov').value.trim();
   var stock=parseFloat(document.getElementById('nmee-stock').value)||2000;
   var smin=parseFloat(document.getElementById('nmee-min').value)||1000;
-  if(\!cod||\!desc){document.getElementById('nmee-msg').innerHTML='<span style="color:red;">Codigo y descripcion requeridos</span>';return;}
+  if(!cod||!desc){document.getElementById('nmee-msg').innerHTML='<span style="color:red;">Codigo y descripcion requeridos</span>';return;}
   var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,descripcion:desc,categoria:cat,proveedor:prov,stock_actual:stock,stock_minimo:smin})});
   var d=await r.json();
   if(r.ok){document.getElementById('nmee-msg').innerHTML='<span style="color:green;">Creado exitosamente</span>';document.getElementById('nuevo-mee-form').style.display='none';loadMEE();}
   else{document.getElementById('nmee-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
 }
 async function abrirAjusteMEE(cod,desc,stock){
-  if(\!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
+  if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
   var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\nStock actual: '+stock+' und\nNuevo valor:');
   if(nuevo===null||nuevo==='')return;
   var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
@@ -1189,12 +1189,12 @@ async function verHistorialMEE(cod){
 }
 async function solicitarCompraMEE(cod,desc,stock,smin){
   var cant=prompt('Solicitar compra para: '+desc+'\nStock actual: '+stock+' und / Minimo: '+smin+' und\nCantidad a solicitar:');
-  if(\!cant||isNaN(parseFloat(cant)))return;
+  if(!cant||isNaN(parseFloat(cant)))return;
   var data={
     solicitante:OPER_ACTUAL||'Sistema',
     area:'Produccion',empresa:'Espagiria',categoria:'Envase y Empaque',tipo:'Compra',
     urgencia:'Urgente',observaciones:'Solicitud automatica desde alerta MEE',
-    items:[{codigo:cod,descripcion:desc,cantidad:parseFloat(cant),unidad:'und',valor_estimado:0}]
+    items:[{codigo_mp:cod,nombre_mp:desc,cantidad_g:parseFloat(cant),unidad:'und',valor_estimado:0}]
   };
   var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   var d=await r.json();
@@ -1204,7 +1204,7 @@ async function solicitarCompraMEE(cod,desc,stock,smin){
 async function loadAlertasMEE(){
   var r=await fetch('/api/alertas-mee'); var d=await r.json();
   var tb=document.getElementById('mee-alertas-body');
-  if(\!d.alertas||\!d.alertas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:green;padding:16px;">Todo el stock MEE por encima del minimo</td></tr>';return;}
+  if(!d.alertas||!d.alertas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:green;padding:16px;">Todo el stock MEE por encima del minimo</td></tr>';return;}
   tb.innerHTML=d.alertas.map(function(m){
     var def=m.stock_actual-m.stock_minimo;
     var niv=def<-m.stock_minimo?'<span style="color:#e74c3c;font-weight:700;">CRITICO</span>':'<span style="color:#f39c12;font-weight:700;">BAJO</span>';
@@ -1220,8 +1220,8 @@ async function loadAlertasMEE(){
 }
 async function generarOCsDesdeAlertasMEE(){
   var r=await fetch('/api/alertas-mee'); var d=await r.json();
-  if(\!d.alertas||\!d.alertas.length){alert('No hay alertas MEE activas');return;}
-  var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,cantidad_g:m.stock_minimo*2-m.stock_actual,precio_unitario:0};});
+  if(!d.alertas||!d.alertas.length){alert('No hay alertas MEE activas');return;}
+  var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,nombre_mp:m.descripcion,cantidad_g:Math.max(m.stock_minimo*2-m.stock_actual,1),precio_unitario:0};});
   var r2=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:'Por asignar',observaciones:'OC automatica desde alertas MEE',items:items,creado_por:OPER_ACTUAL||'Sistema'})});
   var d2=await r2.json();
   if(r2.ok)alert('OC creada: '+d2.numero_oc+'\nVisible en Compras > Ordenes');
@@ -1231,13 +1231,13 @@ async function generarOCsDesdeAlertasMEE(){
 async function iniciarRegistroProd(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
-  if(\!prod||\!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
+  if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
   // Registrar producción MP
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
-  var r=await fetch('/api/producciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
+  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
   var d=await r.json();
-  if(\!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+  if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
   document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
   _prodPendiente={lote:d.lote};
   // Cargar MEE catalogos y mostrar panel
@@ -1251,7 +1251,7 @@ function renderMEEConsumoRows(){
   var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
   var html=cats.map(function(cat){
     var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
-    if(cat\!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
+    if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
     var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
     return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
       +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
@@ -1264,16 +1264,16 @@ function renderMEEConsumoRows(){
 function toggleMEECant(cat){
   var sel=document.getElementById('mee-cons-'+cat).value;
   document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
-  if(sel\!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
+  if(sel!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
 }
 async function confirmarProdCompleta(){
-  if(\!_prodPendiente){alert('No hay produccion pendiente');return;}
+  if(!_prodPendiente){alert('No hay produccion pendiente');return;}
   var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
   var consumos=[];
   for(var i=0;i<cats.length;i++){
     var cat=cats[i];
     var sel=document.getElementById('mee-cons-'+cat);
-    if(\!sel)continue;
+    if(!sel)continue;
     var cod=sel.value;
     if(cod==='__NA__')continue;
     var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
@@ -1282,7 +1282,7 @@ async function confirmarProdCompleta(){
   if(consumos.length>0){
     var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
     var d=await r.json();
-    if(\!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
+    if(!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
   }
   document.getElementById('mee-consumo-panel').style.display='none';
   document.getElementById('mee-consumo-msg').innerHTML='';
@@ -1489,7 +1489,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </table>
     </div>
   
-  <\!-- MEE STOCK -->
+  <!-- MEE STOCK -->
   <div style="margin-top:32px;border-top:3px solid #2B7A78;padding-top:24px;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
       <h2 style="margin:0;">&#128230; Stock Materiales de Envase & Empaque</h2>
@@ -1577,7 +1577,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
       </div>
-      <div id="ing-nueva-mp" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
+      <div id="ing-nueva-mp-inline" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
         <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima — Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group"><label>Nombre INCI *</label><input type="text" id="ing-inci-new" placeholder="Ej: NIACINAMIDE"></div>
@@ -1605,7 +1605,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
       <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
     </table></div>
-    </div><\!-- end ing-panel-mp -->
+    </div><!-- end ing-panel-mp -->
     <div id="ing-panel-mee" style="display:none;">
       <h2>&#128230; Ingreso Materiales Envase & Empaque</h2>
       <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
@@ -1639,7 +1639,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <thead><tr><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th style="text-align:right;">Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead>
         <tbody id="mee-hist-body"><tr><td colspan="7" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
       </table></div>
-    </div><\!-- end ing-panel-mee -->
+    </div><!-- end ing-panel-mee -->
   </div>
 
   <div id="formulas" class="tab-content">
@@ -1755,7 +1755,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr></tbody>
     </table>
 
-    <\!-- ALERTAS MEE -->
+    <!-- ALERTAS MEE -->
     <div style="margin-top:28px;border-top:3px solid #2B7A78;padding-top:24px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <h3 style="color:#c0392b;margin:0;">&#128308; Materiales E&E bajo stock minimo</h3>
@@ -2107,12 +2107,12 @@ function seleccionarMP(mp){
   var p=document.getElementById('ing-prov');if(p&&!p.value)p.value=mp.proveedor||'';
   var st=document.getElementById('ing-status');
   if(st){st.textContent='✓ '+mp.nombre_comercial+' ('+mp.codigo_mp+')';st.style.color='#27ae60';}
-  var panel=document.getElementById('ing-nueva-mp');if(panel)panel.style.display='none';
+  var panel=document.getElementById('ing-nueva-mp-inline');if(panel)panel.style.display='none';
   ocultarDropMP();
 }
 async function buscarMPIngreso(val){
   val=(val||'').trim();
-  var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp'),dd=document.getElementById('mp-dropdown');
+  var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp-inline'),dd=document.getElementById('mp-dropdown');
   if(val.length<2){
     if(st)st.textContent='';
     ['ing-inci','ing-nombre','ing-tipo'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
@@ -2150,7 +2150,7 @@ async function registrarIngreso(){
   var cant=parseFloat(document.getElementById('ing-cant').value)||0;
   if(!cod){alert('Ingresa el codigo MP');return;}
   if(cant<=0){alert('Ingresa una cantidad valida');return;}
-  var esNueva=document.getElementById('ing-nueva-mp')&&document.getElementById('ing-nueva-mp').style.display!=='none';
+  var esNueva=document.getElementById('ing-nueva-mp-inline')&&document.getElementById('ing-nueva-mp-inline').style.display!=='none';
   var data={codigo_mp:cod,nombre_comercial:document.getElementById('ing-nombre').value||'',
     lote:document.getElementById('ing-lote').value||'',cantidad:cant,operador:OPER_ACTUAL,
     fecha_vencimiento:document.getElementById('ing-vence').value||'',
