@@ -1808,10 +1808,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
+var _lotes=[], _lotesFull=[];
 var OPER_ACTUAL='';
 var _meeData=[], _prodPendiente=null;
 var _ajDat={};
-function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;}
+function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;loadDashboardCompleto();loadFormulas();}
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
 function abrirAjusteIdx(idx){
   var i=_lotes[idx];
@@ -2462,7 +2463,7 @@ async function loadAlertasReabas(){
   }
 }
 
-window.onload=function(){loadDashboardCompleto();loadFormulas();};
+window.onload=function(){/* Data loads after operator confirms name */};
 function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
   if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
