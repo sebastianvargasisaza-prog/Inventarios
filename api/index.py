@@ -543,7 +543,7 @@ async function loadDashboard(){
     document.getElementById('k-provs').textContent=(rprov.proveedores||[]).length;
     var ocR=ocs.slice(0,5);
     document.getElementById('dash-oc-body').innerHTML=ocR.length?ocR.map(function(o){
-      return '<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')">Estado</button></td></tr>';
+      return '<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(&quot;'+o.numero_oc+'&quot;)">Estado</button></td></tr>';
     }).join(''):'<tr><td colspan="5" class="empty">Sin órdenes</td></tr>';
     var solR=sols.slice(0,5);
     document.getElementById('dash-sol-body').innerHTML=solR.length?solR.map(function(s){
@@ -583,8 +583,8 @@ async function loadOCs(){
     if(!d.ordenes||!d.ordenes.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>';return;}
     tb.innerHTML=d.ordenes.map(function(o){
       var pR=['En transito','Enviada'].indexOf(o.estado)>=0;
-      var bR=pR?'<button class="btn btn-sm" style="margin-left:6px;background:#2B7A78;" onclick="recibirOC(\''+o.numero_oc+'\')" >Recibir</button>':'';
-      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(\''+o.numero_oc+'\')" >Estado</button>'+bR+'</td></tr>';
+      var bR=pR?'<button class="btn btn-sm" style="margin-left:6px;background:#2B7A78;" onclick="recibirOC(&quot;'+o.numero_oc+'&quot;)" >Recibir</button>':'';
+      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(&quot;'+o.numero_oc+'&quot;)" >Estado</button>'+bR+'</td></tr>';
     }).join('');
   }catch(e){}
 }
@@ -617,7 +617,7 @@ async function cambiarEstadoOC(numero){
   var est={'Borrador':'btn-ghost','Aprobada':'btn','Enviada':'btn btn-gold','En transito':'btn btn-gold','Recibida':'btn','Pagada':'btn','Cancelada':'btn btn-danger'};
   document.getElementById('modal-oc-num').textContent=numero;
   document.getElementById('oc-estado-btns').innerHTML=estados.map(function(e){
-    return '<button class="btn '+(est[e]||'btn-ghost')+'" style="text-align:left;margin-bottom:2px;" onclick="setEstadoOC(\''+numero+'\',\''+e+'\')" >'+e+'</button>';
+    return '<button class="btn '+(est[e]||'btn-ghost')+'" style="text-align:left;margin-bottom:2px;" onclick="setEstadoOC(&quot;'+numero+'&quot;,&quot;'+e+'&quot;)" >'+e+'</button>';
   }).join('');
   openModal('modal-oc-estado');
 }
@@ -626,7 +626,7 @@ async function setEstadoOC(numero,nuevo){
   closeModal('modal-oc-estado');loadOCs();loadDashboard();
 }
 async function recibirOC(numero){
-  if(!confirm('Confirmar recepcion de '+numero+'?\nEsto creara ingresos de inventario.')) return;
+  if(!confirm('Confirmar recepcion de '+numero+'?\\nEsto creara ingresos de inventario.')) return;
   var r=await fetch('/api/ordenes-compra/'+numero+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   var d=await r.json();
   if(d.ok) alert('Recepcion OK. '+d.ingresos+' ingreso(s) en inventario.');
@@ -640,8 +640,8 @@ async function loadSolicitudes(){
     if(!d.solicitudes||!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
     tb.innerHTML=d.solicitudes.map(function(s){
       var eBadge=s.empresa&&s.empresa.indexOf('ANIMUS')>=0?'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#f3e8ff;color:#7A4A8B;font-weight:600;margin-right:4px;">AN</span>':'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#e8f4f0;color:#2B7A78;font-weight:600;margin-right:4px;">ESP</span>';
-      var acc='<button class="btn btn-ghost btn-sm" onclick="verSolicitud(\''+s.numero+'\')" >Ver</button>';
-      if(s.estado==='Pendiente') acc+=' <button class="btn btn-sm" style="font-size:11px;" onclick="verSolicitud(\''+s.numero+'\',true)">Gestionar</button>';
+      var acc='<button class="btn btn-ghost btn-sm" onclick="verSolicitud(&quot;'+s.numero+'&quot;)" >Ver</button>';
+      if(s.estado==='Pendiente') acc+=' <button class="btn btn-sm" style="font-size:11px;" onclick="verSolicitud(&quot;'+s.numero+'&quot;,true)">Gestionar</button>';
       return '<tr><td style="font-family:monospace;font-weight:600;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+eBadge+acc+'</td></tr>';
     }).join('');
   }catch(e){}
@@ -672,9 +672,9 @@ async function verSolicitud(numero,gestionar){
     h+='</tbody></table>';
     if(gestionar&&sol.estado==='Pendiente'){
       h+='<div style="margin-top:18px;padding-top:16px;border-top:1px solid #eee;"><div style="font-size:13px;font-weight:600;margin-bottom:10px;">Gestionar</div><div style="display:flex;gap:8px;flex-wrap:wrap;">';
-      h+='<button class="btn" onclick="aprobarSol(\''+numero+'\')">✓ Aprobar</button>';
-      h+='<button class="btn btn-gold" onclick="aprobarCrearOC(\''+numero+'\')">+ Aprobar y crear OC</button>';
-      h+='<button class="btn btn-danger" onclick="rechazarSol(\''+numero+'\')">✕ Rechazar</button>';
+      h+='<button class="btn" onclick="aprobarSol(&quot;'+numero+'&quot;)">✓ Aprobar</button>';
+      h+='<button class="btn btn-gold" onclick="aprobarCrearOC(&quot;'+numero+'&quot;)">+ Aprobar y crear OC</button>';
+      h+='<button class="btn btn-danger" onclick="rechazarSol(&quot;'+numero+'&quot;)">✕ Rechazar</button>';
       h+='</div></div>';
     }
     document.getElementById('modal-sol-content').innerHTML=h;
@@ -1600,6 +1600,7 @@ var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='';
 var _meeData=[], _prodPendiente=null;
 var _ajDat={};
+function _eq(s){return (s||'').split("'").join('&#39;');}
 function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;loadDashboardCompleto();loadFormulas();}
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
 function abrirAjusteIdx(idx){
@@ -2311,9 +2312,9 @@ async function loadMEE(){
     +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
     +'<td style="text-align:right;font-weight:700;">'+m.stock_actual+'</td>'
     +'<td style="text-align:center;">'+est+'</td>'
-    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="abrirAjusteMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+')">Ajustar</button></td>'
-    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="verHistorialMEE(\''+m.codigo+'\')">Hist.</button></td>'
-    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="abrirAjusteMEE(&quot;'+m.codigo+'&quot;,&quot;'+_eq(m.descripcion)+'&quot;,'+m.stock_actual+')">Ajustar</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="verHistorialMEE(&quot;'+m.codigo+'&quot;)">Hist.</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(&quot;'+m.codigo+'&quot;,&quot;'+_eq(m.descripcion)+'&quot;,'+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
     +'</tr>';
   }).join('');
 }
@@ -2333,7 +2334,7 @@ async function crearMEE(){
 }
 async function abrirAjusteMEE(cod,desc,stock){
   if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
-  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\nStock actual: '+stock+' und\nNuevo valor:');
+  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\\nStock actual: '+stock+' und\\nNuevo valor:');
   if(nuevo===null||nuevo==='')return;
   var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
   var obs=prompt('Motivo del ajuste:','Inventario fisico');
@@ -2356,7 +2357,7 @@ async function verHistorialMEE(cod){
   document.getElementById('modal-ajuste').style.display='flex';
 }
 async function solicitarCompraMEE(cod,desc,stock,smin){
-  var cant=prompt('Solicitar compra para: '+desc+'\nStock actual: '+stock+' und / Minimo: '+smin+' und\nCantidad a solicitar:');
+  var cant=prompt('Solicitar compra para: '+desc+'\\nStock actual: '+stock+' und / Minimo: '+smin+' und\\nCantidad a solicitar:');
   if(!cant||isNaN(parseFloat(cant)))return;
   var data={
     solicitante:OPER_ACTUAL||'Sistema',
@@ -2366,7 +2367,7 @@ async function solicitarCompraMEE(cod,desc,stock,smin){
   };
   var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   var d=await r.json();
-  if(r.ok)alert('Solicitud creada: '+d.numero+'\nVisible en modulo Compras > Solicitudes');
+  if(r.ok)alert('Solicitud creada: '+d.numero+'\\nVisible en modulo Compras > Solicitudes');
   else alert('Error: '+(d.error||''));
 }
 async function loadAlertasMEE(){
@@ -2382,7 +2383,7 @@ async function loadAlertasMEE(){
     +'<td style="text-align:right;font-weight:700;color:#e74c3c;">'+m.stock_actual+'</td>'
     +'<td style="text-align:right;color:#e74c3c;font-weight:700;">'+def+'</td>'
     +'<td style="text-align:center;">'+niv+'</td>'
-    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(&quot;'+m.codigo+'&quot;,&quot;'+_eq(m.descripcion)+'&quot;,'+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
     +'</tr>';
   }).join('');
 }
@@ -2392,7 +2393,7 @@ async function generarOCsDesdeAlertasMEE(){
   var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,nombre_mp:m.descripcion,cantidad_g:Math.max(m.stock_minimo*2-m.stock_actual,1),precio_unitario:0};});
   var r2=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:'Por asignar',observaciones:'OC automatica desde alertas MEE',items:items,creado_por:OPER_ACTUAL||'Sistema'})});
   var d2=await r2.json();
-  if(r2.ok)alert('OC creada: '+d2.numero_oc+'\nVisible en Compras > Ordenes');
+  if(r2.ok)alert('OC creada: '+d2.numero_oc+'\\nVisible en Compras > Ordenes');
   else alert('Error: '+(d2.error||''));
 }
 /* MEE en producción */
@@ -2423,7 +2424,7 @@ function renderMEEConsumoRows(){
     var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
     return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
       +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
-      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(\''+cat+'\')" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
+      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(&quot;'+cat+'&quot;)" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
       +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
       +'</div>';
   }).join('');
