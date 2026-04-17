@@ -14,7 +14,7 @@ COMPRAS_USERS = {
     'mayra':     os.environ.get('PASS_MAYRA',     'hha2026'),
 }
 ADMIN_USERS = {'sebastian', 'alejandro'}
-READONLY_USERS = {'mayra'}
+CONTADORA_USERS = {'mayra'}   # puede todo EXCEPTO Aprobar/Pagar OC
 
 
 DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
@@ -182,7 +182,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </html>"""
 
 # ─── LOGIN COMPRAS ────────────────────────────────────────────
-LOGIN_HTML = """"<!DOCTYPE html>
+LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -225,7 +225,7 @@ input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px s
 </html>"""
 
 # ─── MÓDULO COMPRAS ───────────────────────────────────────────
-COMPRAS_HTML = """"<!DOCTYPE html>
+COMPRAS_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -411,6 +411,7 @@ input:focus,select:focus{border-color:#4A6741;}
 
 <script>
 var USUARIO = '{usuario}';
+var ES_CONTADORA = {es_contadora};
 document.getElementById('user-label').textContent = '👤 ' + USUARIO;
 
 function goTo(id,btn){
@@ -516,7 +517,8 @@ async function crearOC(){
   }catch(e){document.getElementById('oc-msg').innerHTML='<div class="msg-err">Error</div>';}
 }
 async function cambiarEstadoOC(numero){
-  var estados=['Borrador','Aprobada','Enviada','En transito','Recibida','Pagada','Cancelada'];
+  var todoEstados=['Borrador','Aprobada','Enviada','En transito','Recibida','Pagada','Cancelada'];
+  var estados=ES_CONTADORA?todoEstados.filter(function(e){return e!=='Aprobada'&&e!=='Pagada';}):[...todoEstados];
   var est={'Borrador':'btn-ghost','Aprobada':'btn','Enviada':'btn btn-gold','En transito':'btn btn-gold','Recibida':'btn','Pagada':'btn','Cancelada':'btn btn-danger'};
   document.getElementById('modal-oc-num').textContent=numero;
   document.getElementById('oc-estado-btns').innerHTML=estados.map(function(e){
@@ -529,7 +531,7 @@ async function setEstadoOC(numero,nuevo){
   closeModal('modal-oc-estado');loadOCs();loadDashboard();
 }
 async function recibirOC(numero){
-  if(\!confirm('Confirmar recepcion de '+numero+'?\nEsto creara ingresos de inventario.')) return;
+  if(!confirm('Confirmar recepcion de '+numero+'?\nEsto creara ingresos de inventario.')) return;
   var r=await fetch('/api/ordenes-compra/'+numero+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
   var d=await r.json();
   if(d.ok) alert('Recepcion OK. '+d.ingresos+' ingreso(s) en inventario.');
@@ -540,7 +542,7 @@ async function loadSolicitudes(){
   try{
     var d=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
     var tb=document.getElementById('sol-body');
-    if(\!d.solicitudes||\!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
+    if(!d.solicitudes||!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
     tb.innerHTML=d.solicitudes.map(function(s){
       var eBadge=s.empresa&&s.empresa.indexOf('ANIMUS')>=0?'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#f3e8ff;color:#7A4A8B;font-weight:600;margin-right:4px;">AN</span>':'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#e8f4f0;color:#2B7A78;font-weight:600;margin-right:4px;">ESP</span>';
       var acc='<button class="btn btn-ghost btn-sm" onclick="verSolicitud(\''+s.numero+'\')" >Ver</button>';
@@ -584,7 +586,7 @@ async function verSolicitud(numero,gestionar){
   }catch(e){document.getElementById('modal-sol-content').innerHTML='<div style="color:#dc2626;padding:16px;">Error al cargar</div>';}
 }
 async function aprobarSol(numero){
-  if(\!confirm('Aprobar '+numero+'?')) return;
+  if(!confirm('Aprobar '+numero+'?')) return;
   var r=await fetch('/api/solicitudes-compra/'+numero+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Aprobada'})});
   var d=await r.json();
   if(d.ok){closeModal('modal-sol');loadSolicitudes();loadDashboard();}
@@ -634,14 +636,14 @@ async function crearProveedor(){
 
 window.onload=function(){loadDashboard();};
 </script>
-<\!-- Modal Solicitud -->
+<!-- Modal Solicitud -->
 <div id="modal-sol" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:flex-start;justify-content:center;padding-top:60px;">
   <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:640px;width:94%;max-height:78vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.2);">
     <button onclick="closeModal('modal-sol')" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:#bbb;">&#x2715;</button>
     <div id="modal-sol-content">Cargando...</div>
   </div>
 </div>
-<\!-- Modal Estado OC -->
+<!-- Modal Estado OC -->
 <div id="modal-oc-estado" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:380px;width:94%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.2);">
     <button onclick="closeModal('modal-oc-estado')" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:#bbb;">&#x2715;</button>
@@ -653,7 +655,7 @@ window.onload=function(){loadDashboard();};
 </body>
 </html>"""
 
-SOLICITUDES_HTML = """<\!DOCTYPE html>
+SOLICITUDES_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -903,7 +905,7 @@ function delItem(n){
 }
 async function enviarSolicitud(){
   var sol=document.getElementById('f-sol').value.trim();
-  if(\!sol){alert('Ingresa tu nombre');return;}
+  if(!sol){alert('Ingresa tu nombre');return;}
   var items=[],rows=document.getElementById('items-body').children;
   for(var i=0;i<rows.length;i++){
     var rid=rows[i].id.replace('ir-','');
@@ -918,7 +920,7 @@ async function enviarSolicitud(){
       });
     }
   }
-  if(\!items.length){alert('Agrega al menos un item');return;}
+  if(!items.length){alert('Agrega al menos un item');return;}
   var btn=document.getElementById('btn-enviar');
   btn.disabled=true;btn.textContent='Enviando...';
   try{
@@ -956,7 +958,7 @@ function nuevaSolicitud(){
 }
 async function consultarSol(){
   var num=document.getElementById('sol-lookup').value.trim().toUpperCase();
-  if(\!num)return;
+  if(!num)return;
   document.getElementById('lookup-err').style.display='none';
   document.getElementById('status-box').style.display='none';
   try{
@@ -2091,7 +2093,8 @@ def compras():
     if 'compras_user' not in session:
         return redirect('/login')
     usuario = session.get('compras_user', '').capitalize()
-    html = COMPRAS_HTML.replace('{usuario}', usuario)
+    es_contadora = 'true' if session.get('compras_user','') in CONTADORA_USERS else 'false'
+    html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
     return Response(html, mimetype='text/html')
 
 @app.route('/api/health')
@@ -2657,6 +2660,10 @@ def handle_oc_detalle(numero_oc):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'PUT':
         d = request.json
+        nuevo_estado = d.get('estado','')
+        usuario_actual = session.get('compras_user','')
+        if usuario_actual in CONTADORA_USERS and nuevo_estado in ('Aprobada','Pagada'):
+            conn.close(); return jsonify({'error':'Sin permiso para esta accion'}), 403
         if d.get('estado'): c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
         conn.commit(); conn.close(); return jsonify({'message': f'OC {numero_oc} actualizada'})
     c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
