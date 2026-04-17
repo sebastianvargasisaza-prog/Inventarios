@@ -90,6 +90,101 @@ def init_db():
     try:
         c.execute("ALTER TABLE solicitudes_compra_items ADD COLUMN valor_estimado REAL DEFAULT 0")
     except: pass
+    try:
+        c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
+    except: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS maestro_mee (
+        codigo TEXT PRIMARY KEY,
+        descripcion TEXT NOT NULL,
+        categoria TEXT DEFAULT 'Otro',
+        proveedor TEXT DEFAULT '',
+        fabricante TEXT DEFAULT '',
+        estado TEXT DEFAULT 'Activo',
+        stock_actual REAL DEFAULT 2000,
+        stock_minimo REAL DEFAULT 1000,
+        unidad TEXT DEFAULT 'und',
+        fecha_creacion TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS movimientos_mee (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo_mee TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        cantidad REAL NOT NULL,
+        referencia TEXT DEFAULT '',
+        observaciones TEXT DEFAULT '',
+        operador TEXT DEFAULT '',
+        fecha TEXT NOT NULL
+    )""")
+    # Seed MEE
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-SPRAY-100-01','TAPA SPRAY','Tapa','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-PL-PU-01','PLASTIC AIRLESS PUM','Tapa','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-PLATEADA-30-02','TAPA PLATEADA ENVASE BLANCO','Tapa','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-PLATEADA-30-01','TAPA PLATEADA ENVASE MATE','Tapa','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-PATO-120-01','TAPA PATO','Tapa','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('SERIG-VITAC-001','suero de vitamina c+','Serigrafia','TAMPOGRAFIC','TAMPOGRAFIC','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('SERIG-TRIACTIVE-001','Triactive + NAD','Serigrafia','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('SERIG-RENOVAC10-001','RENOVA C10','Serigrafia','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('SERIG-CRETINALD-001','Contorno de retinaldehido 0.05% etiqueta blanca','Serigrafia','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('SERIG-CCAFEINA-001','Contorno de cafeina','Serigrafia','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-TRX-001','Suero iluminador TRX','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-SRETINALDHIDO-001','Suero de retinaldehido 0.05%','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-SMULTIP-001','Suero multipeptidos','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-SAH-001','Suero hidratantre AH 1.5&','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-RETINAL-001','Suero retinal +','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-PHA-001','suero exfoliante PHA','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-NIA-001','Suero de niacinamida 5%','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-MAXLASH-001','Maxlash','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-BHA-001','Suero exfoliante BHA 2%','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('PLEG-AZ+B3-001','Suero AZ+B3','Plegable','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('GO-BLANCO-89-01','GOTERO BLANCO 89mm','Gotero','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('GO-BLANCO-72-01','GOTERO BLANCO 72mm','Gotero','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('GO-BLANCO-55-01','GOTERO BLANCO 55mm','Gotero','Mencriss','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('FR-NE-PL-050-1','PLASTIC JAR 50ml','Frasco','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-UREA-001','Crema hidratante de urea 10%','Etiqueta','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-TRX-001','Suero iluminador TRX con lote y fv sep','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SRET-001','Suero de retinaldehido 0.05%','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SNIA-001','Suero de niacinamida 5%','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SMULTIP-001','Suero multipeptidos','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SHIDRAH-001','Suero hidratante AH 1.5%','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SBHA-001','Suero exfoliente BHA 2%','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-SAH-001','Suero hidratante AH 1.5% con f.v y lote','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-RBODY-001','Crema corporal renova body','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-LKJ-001','Limpiador iluminador acido kojico','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-LIMPBHA-001','Limpiador facial BHA 2%','Etiqueta','Pacto','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-LAH-001','Etiqueta limpiador facial hidratante','Etiqueta','Megavisual','Megavisual','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-GHIDRAT-001','Gel hidratante','Etiqueta','Pacto','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-EMLIMPANT-001','Emulsion hidratante antioxidantwe','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-EMLIMP-001','Emulsion limpiadora','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-EILUM-001','Esencia iluminadora','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-CCENT-001','esencia de centella asiatica','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-CCAFEINA-001','contorno de cafeina','Etiqueta','Pacto','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-B3+BHA-002','Emulsion hidratante B3+BHA','Etiqueta','Pacto','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-B3+BHA-001','Emulsion hidratante B3+BHA','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-AZ+B3-001','Suero AZ + B3','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ETIQ-AHA+AH-001','Suero iluminador AHA+AH','Etiqueta','Megavisual','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-TRX-025','ENVASE TRX SERIGRAFIA','Envase','China','GUANGZHOU','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-SMUL-027','ENVASE SUERO MULTIPEPTIDOS','Envase','China','CHINA','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-OPAL-30-01','ENVASE OPALIZADO','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-NIA-026','ENVASE NIACINAMIDA SERIGRAFIA','Envase','China','GUANGZHOU JIAXING GLASS','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-NEG-30-SLOGO-01','ENVASE NEGRO MATE SIN LOGO','Envase','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-NEG-30-LOGO-01','ENVASE NEGRO MATE  LOGO','Envase','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-NEG-10-01','ENVASE NEGRO 10mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-NEG-100-01','ENVASE NEGRO 100mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-GOT-006','GOTERO 65mm','Envase','Mencriss','mencriss','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-COLGLOSS-15-01','Envase colapsible de 15 ml','Envase','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-BTAP-038','PLASTIC BOTTLE','Envase','China','GUANGZHOU','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-BLAN-LBHA-150','ENVASE BLANCO TAPA DISC TOP 150 ml','Envase','China','HEBEI YAYOUJIA PACKAGING','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AZUL-10-01','ENVASE AZUL mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AMBAR-50-01','ENVASE AMBAR A 18 50mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AMBAR-30-01','ENVASE AMBAR 30mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AMBAR-120-01','ENVASE AMBAR 125mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AMBAR-10-01','ENVASE AMBAR 10mL','Envase','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-AMB-10','ENVASE AMBAR 10ml','Envase','Cafarcol','N.A','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-30-PET-01','ENVASE CUADRADO 30mL','Envase','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('ENV-15-PET-01','ENVASE CUADRADO 15mL','Envase','China','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('EMP-ETIQ-021','ETIQUETA SUERO ILUMINADOR TRX','Etiqueta','Mencriss','MENCRISS','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('CONT-LIKARILESS-15-01','LIK AIRLESS X 15ML BL CONTORNO PUNTA ZINC PLTA','Contorno','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
+    c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('CA-PL-PU-01','PLASTIC CAP','Tapa','China','China','Activo',2000,1000,'und',datetime('now'))")
 
     conn.commit()
     conn.close()
@@ -987,6 +1082,220 @@ async function consultarSol(){
 }
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 document.getElementById('sol-lookup').addEventListener('keydown',function(e){if(e.key==='Enter')consultarSol();});
+
+/* ===== MEE FUNCTIONS ===== */
+var MEE_CATS=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Frasco','Contorno','Otro'];
+
+function switchIngreso(t){
+  document.getElementById('ing-panel-mp').style.display=t==='mp'?'block':'none';
+  document.getElementById('ing-panel-mee').style.display=t==='mee'?'block':'none';
+  document.getElementById('ing-tab-mp').style.background=t==='mp'?'#2B7A78':'#eee';
+  document.getElementById('ing-tab-mp').style.color=t==='mp'?'white':'#555';
+  document.getElementById('ing-tab-mee').style.background=t==='mee'?'#2B7A78':'#eee';
+  document.getElementById('ing-tab-mee').style.color=t==='mee'?'white':'#555';
+  if(t==='mee'){cargarSelectsMEE();loadHistMEE();}
+}
+async function cargarSelectsMEE(){
+  var r=await fetch('/api/mee'); var d=await r.json();
+  _meeData=d.items||[];
+  filtrarMEEIngreso();
+}
+function filtrarMEEIngreso(){
+  var cat=document.getElementById('mee-ing-cat').value;
+  var sel=document.getElementById('mee-ing-cod');
+  sel.innerHTML='<option value="">-- Selecciona --</option>';
+  _meeData.filter(function(x){return \!cat||x.categoria===cat;}).forEach(function(x){
+    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
+  });
+}
+async function registrarIngresoMEE(){
+  var cod=document.getElementById('mee-ing-cod').value;
+  var cant=parseFloat(document.getElementById('mee-ing-cant').value);
+  var ref=document.getElementById('mee-ing-ref').value;
+  var obs=document.getElementById('mee-ing-obs').value;
+  if(\!cod||\!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
+  var r=await fetch('/api/movimientos-mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mee:cod,tipo:'entrada',cantidad:cant,referencia:ref,observaciones:obs,operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(r.ok){document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und</span>';limpiarIngresoMEE();loadHistMEE();loadMEE();}
+  else{document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+}
+function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';document.getElementById('mee-ing-cant').value='';document.getElementById('mee-ing-ref').value='';document.getElementById('mee-ing-obs').value='';}
+async function loadHistMEE(){
+  var r=await fetch('/api/movimientos-mee?limit=20'); var d=await r.json();
+  var tb=document.getElementById('mee-hist-body');
+  if(\!d.movimientos||\!d.movimientos.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin movimientos</td></tr>';return;}
+  tb.innerHTML=d.movimientos.map(function(m){
+    var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo_mee+'</td><td>'+m.descripcion+'</td><td><span style="color:'+col+';font-weight:600;">'+m.tipo+'</span></td><td style="text-align:right;font-weight:600;">'+m.cantidad+'</td><td>'+m.referencia+'</td><td>'+m.operador+'</td><td>'+m.fecha.substring(0,16)+'</td></tr>';
+  }).join('');
+}
+async function loadMEE(){
+  var cat=document.getElementById('mee-cat-filter')?document.getElementById('mee-cat-filter').value:'';
+  var q=document.getElementById('mee-search')?document.getElementById('mee-search').value:'';
+  var url='/api/mee?';if(cat)url+='cat='+encodeURIComponent(cat)+'&';if(q)url+='q='+encodeURIComponent(q);
+  var r=await fetch(url); var d=await r.json();
+  var tb=document.getElementById('mee-stock-body');
+  if(\!d.items||\!d.items.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin materiales</td></tr>';return;}
+  tb.innerHTML=d.items.map(function(m){
+    var deficit=m.stock_actual-m.stock_minimo;
+    var est=deficit<0?'<span style="color:#e74c3c;font-weight:700;">BAJO</span>':deficit<m.stock_minimo*0.3?'<span style="color:#f39c12;font-weight:700;">ALERTA</span>':'<span style="color:#27ae60;font-weight:700;">OK</span>';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td><td><span style="font-size:11px;background:#f0f4ff;padding:2px 8px;border-radius:10px;">'+m.categoria+'</span></td><td>'+m.proveedor+'</td>'
+    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
+    +'<td style="text-align:right;font-weight:700;">'+m.stock_actual+'</td>'
+    +'<td style="text-align:center;">'+est+'</td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="abrirAjusteMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+')">Ajustar</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-ghost btn-sm" onclick="verHistorialMEE(\''+m.codigo+'\')">Hist.</button></td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'</tr>';
+  }).join('');
+}
+function abrirNuevoMEE(){document.getElementById('nuevo-mee-form').style.display='block';}
+async function crearMEE(){
+  var cod=document.getElementById('nmee-cod').value.trim().toUpperCase();
+  var desc=document.getElementById('nmee-desc').value.trim();
+  var cat=document.getElementById('nmee-cat').value;
+  var prov=document.getElementById('nmee-prov').value.trim();
+  var stock=parseFloat(document.getElementById('nmee-stock').value)||2000;
+  var smin=parseFloat(document.getElementById('nmee-min').value)||1000;
+  if(\!cod||\!desc){document.getElementById('nmee-msg').innerHTML='<span style="color:red;">Codigo y descripcion requeridos</span>';return;}
+  var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,descripcion:desc,categoria:cat,proveedor:prov,stock_actual:stock,stock_minimo:smin})});
+  var d=await r.json();
+  if(r.ok){document.getElementById('nmee-msg').innerHTML='<span style="color:green;">Creado exitosamente</span>';document.getElementById('nuevo-mee-form').style.display='none';loadMEE();}
+  else{document.getElementById('nmee-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+}
+async function abrirAjusteMEE(cod,desc,stock){
+  if(\!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
+  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\nStock actual: '+stock+' und\nNuevo valor:');
+  if(nuevo===null||nuevo==='')return;
+  var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
+  var obs=prompt('Motivo del ajuste:','Inventario fisico');
+  var r=await fetch('/api/mee/'+encodeURIComponent(cod)+'/ajuste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nuevo_stock:n,observaciones:obs||'Ajuste',operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(d.ok){alert('Ajuste registrado. Stock: '+d.nuevo_stock+' und');loadMEE();}
+  else alert('Error: '+(d.error||''));
+}
+async function verHistorialMEE(cod){
+  var r=await fetch('/api/movimientos-mee?codigo='+encodeURIComponent(cod)+'&limit=30');
+  var d=await r.json();
+  var rows=d.movimientos||[];
+  var html='<div style="max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +'<thead style="background:#2B7A78;color:white;"><tr><th style="padding:7px;">Tipo</th><th>Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead><tbody>'
+    +rows.map(function(m){
+      var col=m.tipo==='entrada'?'#27ae60':m.tipo==='ajuste'?'#f39c12':'#e74c3c';
+      return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+m.referencia+'</td><td style="padding:6px;">'+m.operador+'</td><td style="padding:6px;font-size:11px;">'+m.fecha.substring(0,16)+'</td></tr>';
+    }).join('')+'</tbody></table></div>';
+  document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial — '+cod+'</h3>'+html+'</div>';
+  document.getElementById('modal-ajuste').style.display='flex';
+}
+async function solicitarCompraMEE(cod,desc,stock,smin){
+  var cant=prompt('Solicitar compra para: '+desc+'\nStock actual: '+stock+' und / Minimo: '+smin+' und\nCantidad a solicitar:');
+  if(\!cant||isNaN(parseFloat(cant)))return;
+  var data={
+    solicitante:OPER_ACTUAL||'Sistema',
+    area:'Produccion',empresa:'Espagiria',categoria:'Envase y Empaque',tipo:'Compra',
+    urgencia:'Urgente',observaciones:'Solicitud automatica desde alerta MEE',
+    items:[{codigo:cod,descripcion:desc,cantidad:parseFloat(cant),unidad:'und',valor_estimado:0}]
+  };
+  var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var d=await r.json();
+  if(r.ok)alert('Solicitud creada: '+d.numero+'\nVisible en modulo Compras > Solicitudes');
+  else alert('Error: '+(d.error||''));
+}
+async function loadAlertasMEE(){
+  var r=await fetch('/api/alertas-mee'); var d=await r.json();
+  var tb=document.getElementById('mee-alertas-body');
+  if(\!d.alertas||\!d.alertas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:green;padding:16px;">Todo el stock MEE por encima del minimo</td></tr>';return;}
+  tb.innerHTML=d.alertas.map(function(m){
+    var def=m.stock_actual-m.stock_minimo;
+    var niv=def<-m.stock_minimo?'<span style="color:#e74c3c;font-weight:700;">CRITICO</span>':'<span style="color:#f39c12;font-weight:700;">BAJO</span>';
+    return '<tr><td style="font-family:monospace;font-size:11px;">'+m.codigo+'</td><td>'+m.descripcion+'</td>'
+    +'<td><span style="background:#f0f4ff;padding:2px 8px;border-radius:10px;font-size:11px;">'+m.categoria+'</span></td>'
+    +'<td style="text-align:right;">'+m.stock_minimo+'</td>'
+    +'<td style="text-align:right;font-weight:700;color:#e74c3c;">'+m.stock_actual+'</td>'
+    +'<td style="text-align:right;color:#e74c3c;font-weight:700;">'+def+'</td>'
+    +'<td style="text-align:center;">'+niv+'</td>'
+    +'<td style="text-align:center;"><button class="btn btn-sm" style="background:#4A6741;font-size:11px;" onclick="solicitarCompraMEE(\''+m.codigo+'\',\''+m.descripcion.replace(/'/g,"'")+'\','+m.stock_actual+','+m.stock_minimo+')">Solicitar</button></td>'
+    +'</tr>';
+  }).join('');
+}
+async function generarOCsDesdeAlertasMEE(){
+  var r=await fetch('/api/alertas-mee'); var d=await r.json();
+  if(\!d.alertas||\!d.alertas.length){alert('No hay alertas MEE activas');return;}
+  var items=d.alertas.map(function(m){return {codigo_mp:m.codigo,cantidad_g:m.stock_minimo*2-m.stock_actual,precio_unitario:0};});
+  var r2=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:'Por asignar',observaciones:'OC automatica desde alertas MEE',items:items,creado_por:OPER_ACTUAL||'Sistema'})});
+  var d2=await r2.json();
+  if(r2.ok)alert('OC creada: '+d2.numero_oc+'\nVisible en Compras > Ordenes');
+  else alert('Error: '+(d2.error||''));
+}
+/* MEE en producción */
+async function iniciarRegistroProd(){
+  var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
+  var kg=parseFloat(document.getElementById('prod-kg').value);
+  if(\!prod||\!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
+  // Registrar producción MP
+  var obs=document.getElementById('prod-obs').value;
+  var pres=document.getElementById('prod-presentacion').value;
+  var r=await fetch('/api/producciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
+  var d=await r.json();
+  if(\!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+  document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
+  _prodPendiente={lote:d.lote};
+  // Cargar MEE catalogos y mostrar panel
+  var rm=await fetch('/api/mee?limit=500'); var dm=await rm.json();
+  _meeData=dm.items||[];
+  renderMEEConsumoRows();
+  document.getElementById('mee-consumo-panel').style.display='block';
+  document.getElementById('mee-consumo-panel').scrollIntoView({behavior:'smooth'});
+}
+function renderMEEConsumoRows(){
+  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
+  var html=cats.map(function(cat){
+    var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
+    if(cat\!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
+    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
+    return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
+      +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
+      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(\''+cat+'\')" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
+      +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
+      +'</div>';
+  }).join('');
+  document.getElementById('mee-rows-container').innerHTML=html;
+}
+function toggleMEECant(cat){
+  var sel=document.getElementById('mee-cons-'+cat).value;
+  document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
+  if(sel\!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
+}
+async function confirmarProdCompleta(){
+  if(\!_prodPendiente){alert('No hay produccion pendiente');return;}
+  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
+  var consumos=[];
+  for(var i=0;i<cats.length;i++){
+    var cat=cats[i];
+    var sel=document.getElementById('mee-cons-'+cat);
+    if(\!sel)continue;
+    var cod=sel.value;
+    if(cod==='__NA__')continue;
+    var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
+    if(cod&&cant>0)consumos.push({codigo_mee:cod,cantidad:cant,referencia:_prodPendiente.lote});
+  }
+  if(consumos.length>0){
+    var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
+    var d=await r.json();
+    if(\!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
+  }
+  document.getElementById('mee-consumo-panel').style.display='none';
+  document.getElementById('mee-consumo-msg').innerHTML='';
+  _prodPendiente=null;
+  var nm=consumos.length;
+  document.getElementById('prod-msg').innerHTML='<span style="color:green;font-size:1em;">&#10003; Produccion completa: '+nm+' tipo(s) de MEE descontados.</span>';
+  cargarHistProd(); loadMEE();
+}
+function cancelarMEEConsumoProd(){
+  document.getElementById('mee-consumo-panel').style.display='none';
+  _prodPendiente=null;
+}
+
 </script>
 </body>
 </html>
@@ -1072,7 +1381,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <tbody id="hist-lote-body"><tr><td colspan="5" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
   </div>
 </div>
-<div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+<div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;"><div id="modal-ajuste-body" style="background:white;border-radius:16px;padding:0;max-width:700px;width:96%;max-height:90vh;overflow-y:auto;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <h2 style="color:#2B7A78;margin-bottom:4px;">&#9878; Ajustar Inventario</h2>
     <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:16px;"></p>
@@ -1179,9 +1488,63 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
+  
+  <\!-- MEE STOCK -->
+  <div style="margin-top:32px;border-top:3px solid #2B7A78;padding-top:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <h2 style="margin:0;">&#128230; Stock Materiales de Envase & Empaque</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="mee-cat-filter" onchange="loadMEE()" style="width:auto;margin:0;padding:7px 12px;font-size:0.88em;">
+          <option value="">Todas las categorias</option>
+          <option>Envase</option><option>Tapa</option><option>Etiqueta</option>
+          <option>Plegable</option><option>Serigrafia</option><option>Gotero</option>
+          <option>Frasco</option><option>Contorno</option><option>Otro</option>
+        </select>
+        <input type="text" id="mee-search" placeholder="Buscar..." oninput="loadMEE()" style="width:160px;margin:0;padding:7px 12px;font-size:0.88em;">
+        <button onclick="loadMEE()" style="padding:7px 14px;font-size:0.85em;">&#8635;</button>
+        <button onclick="abrirNuevoMEE()" style="background:#27ae60;padding:7px 14px;font-size:0.85em;">+ Nuevo</button>
+      </div>
+    </div>
+    <div id="nuevo-mee-form" style="display:none;background:#e8f5e9;border:2px solid #27ae60;border-radius:8px;padding:18px;margin-bottom:16px;">
+      <h4 style="color:#1b5e20;margin-bottom:12px;">+ Nuevo Material E&E</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Codigo *</label><input type="text" id="nmee-cod" placeholder="ENV-XXX-01" style="text-transform:uppercase;"></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Descripcion *</label><input type="text" id="nmee-desc" placeholder="Descripcion del material"></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Categoria *</label>
+          <select id="nmee-cat" style="width:100%;"><option>Envase</option><option>Tapa</option><option>Etiqueta</option><option>Plegable</option><option>Serigrafia</option><option>Gotero</option><option>Frasco</option><option>Contorno</option><option>Otro</option></select></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Proveedor</label><input type="text" id="nmee-prov" placeholder="Proveedor"></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Inicial (und)</label><input type="number" id="nmee-stock" value="2000"></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Minimo (und)</label><input type="number" id="nmee-min" value="1000"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px;">
+        <button onclick="crearMEE()" style="background:#1b5e20;">Crear</button>
+        <button onclick="document.getElementById('nuevo-mee-form').style.display='none'" style="background:#95a5a6;">Cancelar</button>
+      </div>
+      <div id="nmee-msg" style="margin-top:8px;"></div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="table" style="font-size:0.84em;">
+        <thead><tr>
+          <th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Proveedor</th>
+          <th style="text-align:right;">Stock Min</th>
+          <th style="text-align:right;">Stock Actual</th>
+          <th style="text-align:center;">Estado</th>
+          <th style="text-align:center;">Ajuste</th>
+          <th style="text-align:center;">Historial</th>
+          <th style="text-align:center;">Compra</th>
+        </tr></thead>
+        <tbody id="mee-stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
   </div>
 
   <div id="ingreso" class="tab-content">
+    <div style="display:flex;gap:0;margin-bottom:22px;border-bottom:2px solid #ddd;">
+      <button id="ing-tab-mp" onclick="switchIngreso('mp')" style="padding:11px 28px;border:none;background:#2B7A78;color:white;font-weight:700;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;">&#128230; Materia Prima</button>
+      <button id="ing-tab-mee" onclick="switchIngreso('mee')" style="padding:11px 28px;border:none;background:#eee;color:#555;font-weight:600;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;margin-left:4px;">&#128230; Envase & Empaque</button>
+    </div>
+    <div id="ing-panel-mp">
     <h2>&#128666; Ingreso de Materia Prima</h2>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
       <p style="color:#666;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
@@ -1242,6 +1605,41 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
       <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
     </table></div>
+    </div><\!-- end ing-panel-mp -->
+    <div id="ing-panel-mee" style="display:none;">
+      <h2>&#128230; Ingreso Materiales Envase & Empaque</h2>
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+          <div class="form-group"><label>Categoria</label>
+            <select id="mee-ing-cat" onchange="filtrarMEEIngreso()" style="width:100%;">
+              <option value="">Todas</option>
+              <option>Envase</option><option>Tapa</option><option>Etiqueta</option>
+              <option>Plegable</option><option>Serigrafia</option><option>Gotero</option>
+              <option>Frasco</option><option>Contorno</option><option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Material *</label>
+            <select id="mee-ing-cod" style="width:100%;"><option value="">-- Selecciona --</option></select>
+          </div>
+          <div class="form-group"><label>Cantidad recibida (unidades) *</label>
+            <input type="number" id="mee-ing-cant" placeholder="Ej: 500" min="1"></div>
+          <div class="form-group"><label>Proveedor / Referencia</label>
+            <input type="text" id="mee-ing-ref" placeholder="Factura, OC, remision..."></div>
+        </div>
+        <div class="form-group" style="margin-top:10px;"><label>Observaciones</label>
+          <input type="text" id="mee-ing-obs" placeholder="Opcional"></div>
+        <div style="display:flex;gap:10px;margin-top:14px;">
+          <button onclick="registrarIngresoMEE()" style="background:#27ae60;">&#10003; Registrar Entrada MEE</button>
+          <button onclick="limpiarIngresoMEE()" style="background:#95a5a6;">Limpiar</button>
+        </div>
+        <div id="mee-ing-msg" style="margin-top:10px;"></div>
+      </div>
+      <h3 style="margin-bottom:10px;">Ultimas Entradas MEE</h3>
+      <div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">
+        <thead><tr><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th style="text-align:right;">Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead>
+        <tbody id="mee-hist-body"><tr><td colspan="7" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
+      </table></div>
+    </div><\!-- end ing-panel-mee -->
   </div>
 
   <div id="formulas" class="tab-content">
@@ -1297,9 +1695,28 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <tbody id="prod-preview-body"></tbody>
       </table>
     </div>
+    <div class="form-group">
+      <label>Presentacion del producto</label>
+      <input type="text" id="prod-presentacion" placeholder="Ej: 15ml, 30ml, 50g..." list="pres-sugerencias">
+      <datalist id="pres-sugerencias">
+        <option value="10ml"><option value="15ml"><option value="20ml"><option value="30ml">
+        <option value="50ml"><option value="60ml"><option value="100ml"><option value="120ml">
+        <option value="150ml"><option value="50g"><option value="100g"><option value="250g">
+      </datalist>
+    </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="display:flex;gap:10px;"><button onclick="registrarProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
+    <div style="display:flex;gap:10px;"><button onclick="iniciarRegistroProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
+    <div id="mee-consumo-panel" style="display:none;margin-top:24px;background:#f0f9f0;border:2px solid #27ae60;border-radius:12px;padding:22px;">
+      <h3 style="color:#1b5e20;margin-bottom:6px;">&#128230; Paso 2: Consumo de Materiales E&E</h3>
+      <p style="font-size:0.88em;color:#555;margin-bottom:16px;">Completa el empaque usado en esta produccion. Marca <strong>No aplica</strong> si alguna categoria no corresponde.</p>
+      <div id="mee-rows-container"></div>
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button onclick="confirmarProdCompleta()" style="background:#1b5e20;font-size:1em;padding:11px 28px;">&#10003; Confirmar Produccion Completa</button>
+        <button onclick="cancelarMEEConsumoProd()" style="background:#95a5a6;">Cancelar</button>
+      </div>
+      <div id="mee-consumo-msg" style="margin-top:10px;"></div>
+    </div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3><button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button></div>
       <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
@@ -1337,6 +1754,30 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <thead><tr><th>Material</th><th>Stock Actual</th><th>Stock Minimo</th><th>Estado</th><th>Fecha</th></tr></thead>
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr></tbody>
     </table>
+
+    <\!-- ALERTAS MEE -->
+    <div style="margin-top:28px;border-top:3px solid #2B7A78;padding-top:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <h3 style="color:#c0392b;margin:0;">&#128308; Materiales E&E bajo stock minimo</h3>
+        <div style="display:flex;gap:8px;">
+          <button onclick="loadAlertasMEE()" style="padding:7px 14px;font-size:0.85em;">&#8635; Actualizar</button>
+          <button onclick="generarOCsDesdeAlertasMEE()" style="background:#4A6741;padding:7px 16px;font-size:0.85em;">&#9889; Generar OCs automaticas MEE</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table" style="font-size:0.85em;">
+          <thead><tr>
+            <th>Codigo</th><th>Descripcion</th><th>Categoria</th>
+            <th style="text-align:right;">Min (und)</th>
+            <th style="text-align:right;">Stock Actual (und)</th>
+            <th style="text-align:right;">Deficit</th>
+            <th style="text-align:center;">Nivel</th>
+            <th style="text-align:center;">Accion</th>
+          </tr></thead>
+          <tbody id="mee-alertas-body"><tr><td colspan="8" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   </div>
@@ -1368,6 +1809,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var OPER_ACTUAL='';
+var _meeData=[], _prodPendiente=null;
 var _ajDat={};
 function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;}
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
@@ -1386,7 +1828,7 @@ function abrirAjuste(mid,mn,lt,sa){
   document.getElementById('ajuste-msg').innerHTML='';
   document.getElementById('modal-ajuste').style.display='flex';
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';document.getElementById('modal-ajuste-body').innerHTML='';}
 function abrirSolIdx(ri){
   var a=(window._alertasData||[])[ri];if(!a)return;
   abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
@@ -1526,7 +1968,8 @@ function switchTab(n,btn){
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
-  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); }
+  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
+  if(n==='stock') loadMEE();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
 }
@@ -2183,12 +2626,15 @@ def handle_produccion():
     c = conn.cursor()
     if request.method == 'POST':
         data = request.json
-        producto = data['producto']
-        cantidad_kg = float(data['cantidad'])
+        producto = data.get('producto', data.get('producto',''))
+        presentacion = data.get('presentacion','')
+        cantidad_kg = float(data.get('cantidad_kg', data.get('cantidad', 0)))
         cantidad_g = cantidad_kg * 1000
         fecha = datetime.now().isoformat()
-        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, operador) VALUES (?,?,?,?,?,?)',
-                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', ''), data.get('operador', '')))
+        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, operador, presentacion) VALUES (?,?,?,?,?,?,?)',
+                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', ''), data.get('operador', ''), presentacion))
+        prod_id = c.lastrowid
+        lote_ref = f'PROD-{prod_id:05d}'
         c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (producto,))
         formula_items = c.fetchall()
         descuentos = []
@@ -2225,9 +2671,9 @@ def handle_produccion():
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
-        return jsonify({'message': msg, 'descuentos': descuentos}), 201
-    c.execute('SELECT producto, cantidad, fecha, estado, operador FROM producciones ORDER BY fecha DESC LIMIT 50')
-    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or ''} for r in c.fetchall()]
+        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
+    c.execute('SELECT producto, cantidad, fecha, estado, operador, COALESCE(presentacion,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
+    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or '', 'presentacion': r[5] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'producciones': prod})
 
@@ -2804,6 +3250,155 @@ def recibir_oc(numero_oc):
     cur.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': len(items_oc)})
+
+
+# ════════════════════════════════════════════
+# MEE — Materiales de Envase & Empaque
+# ════════════════════════════════════════════
+
+@app.route('/api/mee', methods=['GET','POST'])
+def handle_mee():
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json()
+        if not d.get('codigo') or not d.get('descripcion'):
+            conn.close(); return jsonify({'error':'codigo y descripcion requeridos'}), 400
+        try:
+            cur.execute("""INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (d['codigo'].upper().strip(), d['descripcion'].strip(),
+                 d.get('categoria','Otro'), d.get('proveedor',''), d.get('fabricante',''),
+                 'Activo', float(d.get('stock_actual',2000)), float(d.get('stock_minimo',1000)),
+                 'und', datetime.now().isoformat()))
+            conn.commit(); conn.close()
+            return jsonify({'message':f"MEE '{d['codigo']}' creado"}), 201
+        except Exception as e:
+            conn.close(); return jsonify({'error':str(e)}), 400
+    # GET
+    cat = request.args.get('cat','')
+    q   = request.args.get('q','')
+    lim = int(request.args.get('limit',500))
+    sql = "SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo,estado FROM maestro_mee WHERE estado='Activo'"
+    params = []
+    if cat: sql += " AND categoria=?"; params.append(cat)
+    if q:   sql += " AND (codigo LIKE ? OR descripcion LIKE ?)"; params += [f'%{q}%',f'%{q}%']
+    sql += " ORDER BY categoria,codigo LIMIT ?"
+    params.append(lim)
+    cur.execute(sql, params)
+    cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo','estado']
+    items=[dict(zip(cols,r)) for r in cur.fetchall()]
+    conn.close()
+    return jsonify({'items':items})
+
+@app.route('/api/mee/<codigo>', methods=['GET','PUT'])
+def handle_mee_item(codigo):
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    if request.method == 'PUT':
+        d = request.get_json()
+        fields=[]; vals=[]
+        for f in ['descripcion','categoria','proveedor','stock_minimo','estado']:
+            if f in d: fields.append(f'{f}=?'); vals.append(d[f])
+        if not fields: conn.close(); return jsonify({'error':'nada que actualizar'}), 400
+        vals.append(codigo)
+        cur.execute(f"UPDATE maestro_mee SET {','.join(fields)} WHERE codigo=?", vals)
+        conn.commit(); conn.close()
+        return jsonify({'message':'actualizado'})
+    cur.execute("SELECT * FROM maestro_mee WHERE codigo=?", (codigo,))
+    row=cur.fetchone(); conn.close()
+    if not row: return jsonify({'error':'no encontrado'}), 404
+    cols=[d[0] for d in cur.description]
+    return jsonify(dict(zip(cols,row)))
+
+@app.route('/api/mee/<codigo>/ajuste', methods=['POST'])
+def ajuste_mee(codigo):
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    d = request.get_json()
+    nuevo = float(d.get('nuevo_stock',0))
+    obs = d.get('observaciones','Ajuste manual')
+    oper = d.get('operador','Sistema')
+    cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (codigo,))
+    row=cur.fetchone()
+    if not row: conn.close(); return jsonify({'error':'MEE no encontrado'}), 404
+    anterior=row[0]
+    diff=nuevo-anterior
+    cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,codigo))
+    cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
+                (codigo,'ajuste',diff,'ajuste_manual',obs,oper,datetime.now().isoformat()))
+    conn.commit(); conn.close()
+    return jsonify({'ok':True,'nuevo_stock':nuevo})
+
+@app.route('/api/movimientos-mee', methods=['GET','POST'])
+def handle_movimientos_mee():
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json()
+        cod  = d.get('codigo_mee')
+        tipo = d.get('tipo','entrada')
+        cant = float(d.get('cantidad',0))
+        ref  = d.get('referencia','')
+        obs  = d.get('observaciones','')
+        oper = d.get('operador','')
+        if not cod or cant<=0: conn.close(); return jsonify({'error':'datos invalidos'}), 400
+        cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
+        row=cur.fetchone()
+        if not row: conn.close(); return jsonify({'error':'MEE no encontrado'}), 404
+        delta = cant if tipo=='entrada' else -cant
+        nuevo = row[0]+delta
+        if nuevo<0: conn.close(); return jsonify({'error':f'Stock insuficiente (actual: {row[0]})'}), 400
+        cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
+        cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
+                    (cod,tipo,cant,ref,obs,oper,datetime.now().isoformat()))
+        conn.commit(); conn.close()
+        return jsonify({'ok':True,'nuevo_stock':nuevo}), 201
+    # GET con filtros
+    codigo = request.args.get('codigo','')
+    tipo   = request.args.get('tipo','')
+    limit  = int(request.args.get('limit',50))
+    sql = """SELECT m.id,m.codigo_mee,mm.descripcion,m.tipo,m.cantidad,m.referencia,m.observaciones,m.operador,m.fecha
+             FROM movimientos_mee m LEFT JOIN maestro_mee mm ON m.codigo_mee=mm.codigo WHERE 1=1"""
+    params=[]
+    if codigo: sql+=" AND m.codigo_mee=?"; params.append(codigo)
+    if tipo:   sql+=" AND m.tipo=?"; params.append(tipo)
+    sql+=" ORDER BY m.fecha DESC LIMIT ?"; params.append(limit)
+    cur.execute(sql, params)
+    cols=['id','codigo_mee','descripcion','tipo','cantidad','referencia','observaciones','operador','fecha']
+    rows=[dict(zip(cols,r)) for r in cur.fetchall()]
+    conn.close()
+    return jsonify({'movimientos':rows})
+
+@app.route('/api/movimientos-mee/lote', methods=['POST'])
+def movimientos_mee_lote():
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    d = request.get_json()
+    movs = d.get('movimientos',[])
+    oper = d.get('operador','')
+    ref  = d.get('referencia','')
+    errores=[]
+    for m in movs:
+        cod=m.get('codigo_mee'); cant=float(m.get('cantidad',0))
+        if not cod or cant<=0: continue
+        cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
+        row=cur.fetchone()
+        if not row: errores.append(f'{cod} no encontrado'); continue
+        nuevo=row[0]-cant
+        if nuevo<0: nuevo=0
+        cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
+        cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
+                    (cod,'salida',cant,ref,'Consumo produccion',oper,datetime.now().isoformat()))
+    conn.commit(); conn.close()
+    if errores: return jsonify({'ok':True,'advertencias':errores})
+    return jsonify({'ok':True})
+
+@app.route('/api/alertas-mee', methods=['GET'])
+def alertas_mee():
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("""SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo
+                   FROM maestro_mee WHERE estado='Activo' AND stock_actual < stock_minimo
+                   ORDER BY (stock_actual - stock_minimo) ASC""")
+    cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo']
+    alertas=[dict(zip(cols,r)) for r in cur.fetchall()]
+    conn.close()
+    return jsonify({'alertas':alertas,'total':len(alertas)})
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
