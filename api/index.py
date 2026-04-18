@@ -2868,7 +2868,7 @@ async function autorizarOC(numero){
   closeModal('modal-oc');
   loadDashboard();
   if(r.remision_code){
-    alert('OC autorizada.\nC\u00f3digo de remisi\u00f3n: '+r.remision_code+'\n\nAbre el detalle de la OC para imprimir la remisi\u00f3n.');
+    alert('OC autorizada.\\nC\u00f3digo de remisi\u00f3n: '+r.remision_code+'\\n\\nAbre el detalle de la OC para imprimir la remisi\u00f3n.');
   }
 }
 
