@@ -2682,8 +2682,8 @@ async function loadDashboard(){
 }
 
 function renderCardAutorizar(oc){
-  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\''+oc.numero_oc+'\')">Ver detalle</button>';
-  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="autorizarOC(\''+oc.numero_oc+'\')">&#10003; Autorizar</button>';
+  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\\''+oc.numero_oc+'\\')">Ver detalle</button>';
+  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="autorizarOC(\\''+oc.numero_oc+'\\')">&#10003; Autorizar</button>';
   return '<div class="oc-card" style="border-left:4px solid #f59e0b;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
     +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
@@ -2695,8 +2695,8 @@ function renderCardAutorizar(oc){
 }
 
 function renderCardPagar(oc){
-  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\''+oc.numero_oc+'\')">Ver detalle</button>';
-  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="pedirPago(\''+oc.numero_oc+'\','+Number(oc.valor_total||0)+')">$ Marcar pagada</button>';
+  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\\''+oc.numero_oc+'\\')">Ver detalle</button>';
+  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="pedirPago(\\''+oc.numero_oc+'\\','+Number(oc.valor_total||0)+')">$ Marcar pagada</button>';
   return '<div class="oc-card" style="border-left:4px solid #22c55e;">'
     +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
     +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
@@ -2717,7 +2717,7 @@ async function loadOCs(categoria,containerId){
     var titulo=CAT_LABELS[categoria]||categoria;
     var html='<div class="section-bar">'
       +'<h2 style="font-size:15px;font-weight:700;">'+titulo+'</h2>'
-      +'<button class="btn btn-primary btn-sm" onclick="abrirNuevaOC(\''+categoria+'\')">+ Nueva OC</button></div>';
+      +'<button class="btn btn-primary btn-sm" onclick="abrirNuevaOC(\\''+categoria+'\\')">+ Nueva OC</button></div>';
     if(ocs.length===0){
       html+='<div class="empty-state" style="background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:40px;">Sin &oacute;rdenes para esta categor&iacute;a</div>';
     } else {
@@ -2732,7 +2732,7 @@ async function loadOCs(categoria,containerId){
             +'<td style="font-weight:700;">$'+fmtNum(o.valor_total)+'</td>'
             +'<td style="color:#888;font-size:12px;">'+fmtFecha(o.fecha)+'</td>'
             +'<td style="font-family:monospace;font-size:11px;color:#4A6741;">'+(o.remision_code||'&mdash;')+'</td>'
-            +'<td><button class="btn btn-ghost btn-sm" onclick="verOC(\''+o.numero_oc+'\')">Ver</button></td>'
+            +'<td><button class="btn btn-ghost btn-sm" onclick="verOC(\\''+o.numero_oc+'\\')">Ver</button></td>'
             +'</tr>';
         }).join('')
         +'</tbody></table></div>';
@@ -2783,16 +2783,16 @@ async function verOC(numero){
     }
     html+='<div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid #f0ede8;">';
     if(oc.estado==='Borrador'){
-      html+='<button class="btn btn-primary btn-sm" onclick="marcarRevisada(\''+numero+'\')">Enviar a autorizaci&oacute;n</button>';
+      html+='<button class="btn btn-primary btn-sm" onclick="marcarRevisada(\\''+numero+'\\')">Enviar a autorizaci&oacute;n</button>';
     }
     if(oc.estado==='Revisada' && !ES_CONTADORA){
-      html+='<button class="btn btn-success btn-sm" onclick="autorizarOC(\''+numero+'\')">&#10003; Autorizar y generar REM</button>';
+      html+='<button class="btn btn-success btn-sm" onclick="autorizarOC(\\''+numero+'\\')">&#10003; Autorizar y generar REM</button>';
     }
     if(oc.estado==='Autorizada'){
-      html+='<button class="btn btn-outline btn-sm" onclick="verRemision(\''+numero+'\')">Imprimir remisi&oacute;n</button>';
+      html+='<button class="btn btn-outline btn-sm" onclick="verRemision(\\''+numero+'\\')">Imprimir remisi&oacute;n</button>';
     }
     if(oc.estado==='Recibida' && !ES_CONTADORA){
-      html+='<button class="btn btn-success btn-sm" onclick="pedirPago(\''+numero+'\','+(oc.valor_total||0)+')">$ Marcar pagada</button>';
+      html+='<button class="btn btn-success btn-sm" onclick="pedirPago(\\''+numero+'\\','+(oc.valor_total||0)+')">$ Marcar pagada</button>';
     }
     html+='</div>';
     document.getElementById('modal-oc-body').innerHTML=html;
@@ -2927,7 +2927,7 @@ async function buscarRemision(){
         }).join('')
         +'</tbody></table>';
     }
-    html+='<button class="btn btn-success" style="width:100%;padding:12px;" onclick="confirmarRecepcion(\''+oc.numero_oc+'\')">Confirmar llegada de este pedido</button>';
+    html+='<button class="btn btn-success" style="width:100%;padding:12px;" onclick="confirmarRecepcion(\\''+oc.numero_oc+'\\')">Confirmar llegada de este pedido</button>';
   } else {
     html+='<div class="alert-warn">Estado actual: '+oc.estado+'. Solo se pueden confirmar OCs en estado Autorizada.</div>';
   }
