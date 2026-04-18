@@ -94,6 +94,26 @@ def init_db():
         c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
     except: pass
 
+    # ── CC Review table (COC-PRO-001 digital) ────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS cc_reviews (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 mov_id INTEGER NOT NULL,
+                 lote TEXT NOT NULL,
+                 codigo_mp TEXT NOT NULL,
+                 coa_ok INTEGER DEFAULT 0,
+                 lote_coincide INTEGER DEFAULT 0,
+                 coa_vigente INTEGER DEFAULT 0,
+                 ficha_ok INTEGER DEFAULT 0,
+                 solubilidad TEXT DEFAULT \'\',
+                 resultado_aql TEXT DEFAULT \'\',
+                 observaciones_aql TEXT DEFAULT \'\',
+                 muestra_retencion INTEGER DEFAULT 0,
+                 observaciones TEXT DEFAULT \'\',
+                 firmante TEXT NOT NULL,
+                 estado_final TEXT NOT NULL,
+                 fecha TEXT DEFAULT \'\',
+                 ip TEXT DEFAULT \'\')""")
+
     # ── Inventario v2: costos, OC receipt, cuarentena, conteo ────
     for _col in [
         "precio_kg REAL DEFAULT 0",
@@ -1768,50 +1788,120 @@ async function importarOCs(){
 
 // Init
 
+var _ccLoteActual = null;
+
 async function cargarCuarentena(){
   try{
     var r=await fetch('/api/lotes/cuarentena');
     var data=await r.json();
     var tb=document.getElementById('cuar-tbody');
-    if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;">Sin lotes en cuarentena</td></tr>';return;}
+    if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin lotes pendientes de revision QC</td></tr>';return;}
     var h='';
     data.forEach(function(l){
-      var esSuperUser=('{{ session.get("compras_user","") }}'==='sebastian'||'{{ session.get("compras_user","") }}'==='alejandro');
+      var esAdmin=(OPER_ACTUAL==='sebastian'||OPER_ACTUAL==='alejandro'||OPER_ACTUAL==='hernando');
+      var estadoColor=l.estado_lote==='CUARENTENA'?'#e67e22':l.estado_lote==='CUARENTENA_EXTENDIDA'?'#c0392b':'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
-      h+='<td style="font-size:0.8em;color:#555;">'+( l.nombre_inci||'')+'</td>';
+      h+='<td style="font-size:0.8em;color:#555;">'+(l.nombre_inci||'')+'</td>';
       h+='<td>'+l.nombre+'</td>';
-      h+='<td style="font-family:monospace;">'+l.lote+'</td>';
+      h+='<td style="font-family:monospace;font-weight:600;">'+l.lote+'</td>';
       h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+'</td>';
       h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
-      h+='<td style="font-size:0.85em;">'+(l.numero_factura||'')+'</td>';
-      h+='<td style="font-size:0.85em;">'+(l.numero_oc||'')+'</td>';
+      h+='<td style="font-size:0.82em;">'+(l.numero_oc||'')+'</td>';
       h+='<td style="font-size:0.82em;">'+l.fecha.substring(0,10)+'</td>';
+      h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
-      if(OPER_ACTUAL==='sebastian'||OPER_ACTUAL==='alejandro'){
-        h+='<button onclick="liberarLote('+l.id+','APROBAR')" style="margin-right:4px;padding:4px 10px;background:#27ae60;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.82em;">Aprobar</button>';
-        h+='<button onclick="liberarLote('+l.id+','RECHAZAR')" style="padding:4px 10px;background:#e74c3c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.82em;">Rechazar</button>';
+      if(esAdmin){
+        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
-        h+='<span style="color:#999;font-size:0.82em;">Solo admin</span>';
+        h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
       h+='</td></tr>';
     });
     tb.innerHTML=h;
   }catch(e){console.error(e);}
 }
-async function liberarLote(id, accion){
-  if(!confirm('Confirmar '+accion+' del lote?')) return;
+
+function abrirCCModal(lote){
+  _ccLoteActual=lote;
+  document.getElementById('cc-modal-lote').textContent=lote.lote+' -- '+lote.nombre;
+  document.getElementById('cc-firmante').textContent=OPER_ACTUAL;
+  document.getElementById('cc-lote-info').innerHTML=
+    '<div><b>Codigo:</b> '+lote.codigo_mp+'</div>'+
+    '<div><b>INCI:</b> '+(lote.nombre_inci||'--')+'</div>'+
+    '<div><b>Cantidad:</b> '+Number(lote.cantidad).toLocaleString()+' g</div>'+
+    '<div><b>Proveedor:</b> '+(lote.proveedor||'--')+'</div>'+
+    '<div><b>Factura:</b> '+(lote.numero_factura||'--')+'</div>'+
+    '<div><b>OC:</b> '+(lote.numero_oc||'--')+'</div>';
+  ['cc-coa-ok','cc-lote-coincide','cc-coa-vigente','cc-ficha-ok','cc-muestra-ret'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.checked=false;
+  });
+  ['cc-solub-ok','cc-solub-fail','cc-aql-ok','cc-aql-fail','cc-aql-ext'].forEach(function(id){
+    var el=document.getElementById(id); if(el) el.checked=false;
+  });
+  document.getElementById('cc-aql-obs').value='';
+  document.getElementById('cc-obs-final').value='';
+  document.getElementById('cc-modal-msg').innerHTML='';
+  document.getElementById('cc-modal').style.display='flex';
+}
+
+function cerrarCCModal(){
+  document.getElementById('cc-modal').style.display='none';
+  _ccLoteActual=null;
+}
+
+async function enviarRevisionCC(){
+  if(!_ccLoteActual){return;}
+  var coaOk=document.getElementById('cc-coa-ok').checked;
+  var loteCoincide=document.getElementById('cc-lote-coincide').checked;
+  var coaVigente=document.getElementById('cc-coa-vigente').checked;
+  var fichaOk=document.getElementById('cc-ficha-ok').checked;
+  var solubResult=document.querySelector('input[name="cc-solub"]:checked');
+  var aqlResult=document.querySelector('input[name="cc-aql"]:checked');
+  var aqlObs=document.getElementById('cc-aql-obs').value.trim();
+  var muestraRet=document.getElementById('cc-muestra-ret').checked;
+  var obsFinal=document.getElementById('cc-obs-final').value.trim();
+  var msg=document.getElementById('cc-modal-msg');
+  if(!solubResult){msg.innerHTML='<div class="alert-error">Selecciona resultado de solubilidad</div>';return;}
+  if(!aqlResult){msg.innerHTML='<div class="alert-error">Selecciona resultado AQL</div>';return;}
+  if((aqlResult.value==='NO_CONFORME'||aqlResult.value==='CUARENTENA_EXTENDIDA')&&!aqlObs){
+    msg.innerHTML='<div class="alert-error">Las observaciones son obligatorias para este resultado</div>';return;
+  }
+  var payload={
+    mov_id:_ccLoteActual.id,
+    lote:_ccLoteActual.lote,
+    codigo_mp:_ccLoteActual.codigo_mp,
+    coa_ok:coaOk,
+    lote_coincide:loteCoincide,
+    coa_vigente:coaVigente,
+    ficha_ok:fichaOk,
+    solubilidad:solubResult.value,
+    resultado_aql:aqlResult.value,
+    observaciones_aql:aqlObs,
+    muestra_retencion:muestraRet,
+    observaciones:obsFinal,
+    firmante:OPER_ACTUAL
+  };
   try{
-    var r=await fetch('/api/lotes/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,accion:accion})});
+    document.getElementById('cc-submit-btn').disabled=true;
+    document.getElementById('cc-submit-btn').textContent='Registrando...';
+    var r=await fetch('/api/lotes/cc-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     var res=await r.json();
     if(r.ok){
-      document.getElementById('cuar-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
-      await cargarCuarentena();
-    } else {
-      document.getElementById('cuar-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';
+      msg.innerHTML='<div class="alert-success">'+res.message+'</div>';
+      document.getElementById('cuar-msg').innerHTML='<div class="alert-success">Revision CC registrada -- '+res.estado+' -- Lote: '+payload.lote+'</div>';
+      setTimeout(function(){cerrarCCModal();cargarCuarentena();},1800);
+    }else{
+      msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>';
     }
-  }catch(e){document.getElementById('cuar-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+  }catch(e){
+    msg.innerHTML='<div class="alert-error">Error: '+e.message+'</div>';
+  }finally{
+    document.getElementById('cc-submit-btn').disabled=false;
+    document.getElementById('cc-submit-btn').textContent='Firmar y Registrar';
+  }
 }
+
 async function buscarTrazabilidad(){
   var lote=(document.getElementById('trz-lote').value||'').trim();
   if(!lote){alert('Ingresa un numero de lote');return;}
@@ -3347,13 +3437,105 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </table>
 
   <div id="cuarentena" class="tab-content">
-    <h2>&#128274; Lotes en Cuarentena</h2>
-    <p style="color:#777;margin-bottom:18px;">Lotes recibidos pendientes de aprobacion QC. Solo administradores pueden Aprobar o Rechazar.</p>
+    <h2>&#128274; Control de Calidad — Recepcion de Materiales</h2>
+    <p style="color:#777;margin-bottom:12px;">Flujo CC conforme a COC-PRO-001. Cada lote debe completar la revision antes de liberarse a produccion. Firma digital queda en audit_log.</p>
     <div id="cuar-msg"></div>
+
+    <!-- Tabla de lotes pendientes -->
     <table class="table" id="cuar-table">
-      <thead><tr><th>Codigo MP</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cantidad (g)</th><th>Proveedor</th><th>Factura</th><th>OC</th><th>Fecha ingreso</th><th>Accion</th></tr></thead>
+      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cant. (g)</th><th>Proveedor</th><th>OC</th><th>Fecha ingreso</th><th>Estado</th><th>Accion</th></tr></thead>
       <tbody id="cuar-tbody"><tr><td colspan="10" style="text-align:center;color:#999;">Sin lotes en cuarentena</td></tr></tbody>
     </table>
+
+    <!-- Modal de revision CC -->
+    <div id="cc-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:14px;padding:32px;max-width:680px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <h3 style="color:#1C2B30;margin:0;">&#128203; Revision CC — <span id="cc-modal-lote"></span></h3>
+          <button onclick="cerrarCCModal()" style="background:none;border:none;font-size:1.4em;cursor:pointer;color:#999;">&#x2715;</button>
+        </div>
+        <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.88em;">
+          <strong>COC-PRO-001 v03</strong> — Todos los campos son obligatorios. La firma queda registrada con timestamp en el sistema y no puede modificarse.
+        </div>
+
+        <!-- Info del lote -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;background:#f8f9ff;border-radius:8px;padding:14px;margin-bottom:20px;font-size:0.88em;" id="cc-lote-info"></div>
+
+        <!-- Checklist COC-PRO-001 -->
+        <div style="margin-bottom:20px;">
+          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">6. Revision Documental</h4>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
+              <input type="checkbox" id="cc-coa-ok" style="width:18px;height:18px;">
+              <span>COA del proveedor presente y correspondiente al lote recibido</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
+              <input type="checkbox" id="cc-lote-coincide" style="width:18px;height:18px;">
+              <span>Numero de lote del COA coincide exactamente con el lote del empaque</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
+              <input type="checkbox" id="cc-coa-vigente" style="width:18px;height:18px;">
+              <span>COA vigente — no vencido segun politica de re-analisis</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
+              <input type="checkbox" id="cc-ficha-ok" style="width:18px;height:18px;">
+              <span>Ficha tecnica del proveedor disponible en archivo CC</span>
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">9. Prueba de Solubilidad / Compatibilidad</h4>
+          <div style="display:flex;gap:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
+              <input type="radio" name="cc-solub" value="ACEPTACION" id="cc-solub-ok"> <span style="color:#27ae60;">ACEPTACION</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
+              <input type="radio" name="cc-solub" value="RECHAZO" id="cc-solub-fail"> <span style="color:#e74c3c;">RECHAZO</span>
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <h4 style="color:#2c3e50;margin-bottom:10px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">Resultado AQL / Inspeccion organolectica</h4>
+          <div style="display:flex;gap:12px;margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
+              <input type="radio" name="cc-aql" value="CONFORME" id="cc-aql-ok"> <span style="color:#27ae60;">CONFORME</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
+              <input type="radio" name="cc-aql" value="NO_CONFORME" id="cc-aql-fail"> <span style="color:#e74c3c;">NO CONFORME</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
+              <input type="radio" name="cc-aql" value="CUARENTENA_EXTENDIDA" id="cc-aql-ext"> <span style="color:#e67e22;">CUARENTENA EXTENDIDA</span>
+            </label>
+          </div>
+          <input type="text" id="cc-aql-obs" placeholder="Observaciones AQL (requerido si NO CONFORME o CUARENTENA EXTENDIDA)" style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;font-size:0.88em;">
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <h4 style="color:#2c3e50;margin-bottom:10px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">Muestra de retencion tomada</h4>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
+            <input type="checkbox" id="cc-muestra-ret" style="width:18px;height:18px;">
+            <span>Se tomo muestra de retencion y quedo identificada en laboratorio CC</span>
+          </label>
+        </div>
+
+        <div style="margin-bottom:24px;">
+          <label style="display:block;font-weight:600;margin-bottom:6px;font-size:0.9em;color:#555;">Observaciones adicionales</label>
+          <textarea id="cc-obs-final" rows="3" placeholder="Condiciones especiales, hallazgos, acciones tomadas..." style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;font-size:0.88em;resize:vertical;"></textarea>
+        </div>
+
+        <!-- Decision final -->
+        <div style="background:#f8f9ff;border-radius:8px;padding:14px;margin-bottom:20px;">
+          <p style="font-size:0.88em;color:#555;margin-bottom:10px;"><strong>Decision final:</strong> Se determina automaticamente por el resultado AQL y solubilidad. Firmante: <strong id="cc-firmante"></strong></p>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button onclick="cerrarCCModal()" style="padding:10px 20px;background:#f0f0f0;color:#555;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Cancelar</button>
+            <button onclick="enviarRevisionCC()" id="cc-submit-btn" style="padding:10px 28px;background:#2B7A78;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.95em;">Firmar y Registrar</button>
+          </div>
+        </div>
+        <div id="cc-modal-msg"></div>
+      </div>
+    </div>
   </div>
 
   <div id="trazabilidad" class="tab-content">
@@ -4549,6 +4731,7 @@ def handle_produccion():
                                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
                          GROUP BY lote HAVING stock > 0
                          ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento=''
                                   THEN '9999' ELSE fecha_vencimiento END ASC""", (mat_id,))
@@ -4843,6 +5026,63 @@ def trazabilidad_lote(lote):
         'total_producciones': len(producciones)
     }
     return jsonify(result)
+
+@app.route('/api/lotes/cc-review', methods=['POST'])
+def cc_review():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    user = session.get('compras_user', '')
+    allowed = set(ADMIN_USERS) | {'hernando'}
+    if user not in allowed:
+        return jsonify({'error': 'Solo CC o administradores'}), 401
+    d = request.json or {}
+    mov_id = d.get('mov_id')
+    if not mov_id:
+        return jsonify({'error': 'mov_id requerido'}), 400
+    solubilidad = d.get('solubilidad', '')
+    resultado_aql = d.get('resultado_aql', '')
+    if solubilidad == 'RECHAZO' or resultado_aql == 'NO_CONFORME':
+        estado_final = 'RECHAZADO'
+    elif resultado_aql == 'CUARENTENA_EXTENDIDA':
+        estado_final = 'CUARENTENA_EXTENDIDA'
+    else:
+        estado_final = 'APROBADO'
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT id, material_id, lote, estado_lote FROM movimientos WHERE id=?", (mov_id,))
+    mov = c.fetchone()
+    if not mov:
+        conn.close(); return jsonify({'error': 'Lote no encontrado'}), 404
+    if mov[3] not in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+        conn.close(); return jsonify({'error': 'Lote no esta en cuarentena'}), 400
+    c.execute(
+        "INSERT INTO cc_reviews (mov_id,lote,codigo_mp,coa_ok,lote_coincide,coa_vigente,ficha_ok,"
+        "solubilidad,resultado_aql,observaciones_aql,muestra_retencion,observaciones,firmante,estado_final,fecha,ip) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?)",
+        (mov_id, d.get('lote',''), d.get('codigo_mp',''),
+         1 if d.get('coa_ok') else 0, 1 if d.get('lote_coincide') else 0,
+         1 if d.get('coa_vigente') else 0, 1 if d.get('ficha_ok') else 0,
+         solubilidad, resultado_aql, d.get('observaciones_aql',''),
+         1 if d.get('muestra_retencion') else 0, d.get('observaciones',''),
+         d.get('firmante', user), estado_final, request.remote_addr))
+    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (estado_final, mov_id))
+    c.execute(
+        "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
+        (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+d.get('firmante',user),
+         request.remote_addr))
+    if estado_final == 'RECHAZADO':
+        try:
+            c.execute(
+                "INSERT INTO solicitudes_compra (material_codigo,material_nombre,cantidad,unidad,justificacion,estado,empresa,area,solicitante,fecha) "
+                "VALUES (?,?,0,'kg',?,'PENDIENTE','Espagiria','Calidad',?,datetime('now'))",
+                (d.get('codigo_mp',''), d.get('lote',''),
+                 'LOTE RECHAZADO QC - Devolucion proveedor. Lote: '+d.get('lote',''), user))
+        except: pass
+    conn.commit(); conn.close()
+    msgs = {'APROBADO': 'Lote APROBADO. Disponible para produccion.',
+            'RECHAZADO': 'Lote RECHAZADO. Notificacion creada en Compras.',
+            'CUARENTENA_EXTENDIDA': 'CUARENTENA EXTENDIDA. Maximo 5 dias para definicion.'}
+    return jsonify({'message': msgs.get(estado_final,''), 'estado': estado_final})
 
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
