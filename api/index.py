@@ -560,6 +560,55 @@ def init_db():
         fecha TEXT DEFAULT (date('now')),
         usuario TEXT DEFAULT ''
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS empleados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo TEXT UNIQUE, nombre TEXT, apellido TEXT, cedula TEXT UNIQUE,
+        cargo TEXT, area TEXT, empresa TEXT DEFAULT 'Espagiria',
+        tipo_contrato TEXT DEFAULT 'Indefinido', fecha_ingreso TEXT,
+        fecha_fin_contrato TEXT, estado TEXT DEFAULT 'Activo',
+        salario_base REAL DEFAULT 0, eps TEXT, afp TEXT, arl TEXT,
+        caja_compensacion TEXT, email TEXT, telefono TEXT,
+        nivel_riesgo INTEGER DEFAULT 1, observaciones TEXT,
+        creado_en TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS nomina_registros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        periodo TEXT, empleado_id INTEGER, salario_base REAL,
+        dias_trabajados INTEGER DEFAULT 30, horas_extras REAL DEFAULT 0,
+        valor_horas_extras REAL DEFAULT 0, subsidio_transporte REAL DEFAULT 0,
+        bonificaciones REAL DEFAULT 0, descuento_salud REAL DEFAULT 0,
+        descuento_pension REAL DEFAULT 0, otros_descuentos REAL DEFAULT 0,
+        salario_neto REAL DEFAULT 0, estado TEXT DEFAULT 'Generada',
+        UNIQUE(periodo,empleado_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS ausencias (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empleado_id INTEGER, tipo TEXT, fecha_inicio TEXT, fecha_fin TEXT,
+        dias INTEGER DEFAULT 0, estado TEXT DEFAULT 'Pendiente',
+        observaciones TEXT, aprobado_por TEXT,
+        creado_en TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS capacitaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT, tipo TEXT, fecha TEXT, duracion_horas REAL DEFAULT 1,
+        instructor TEXT, empresa TEXT, obligatoria INTEGER DEFAULT 0,
+        creado_en TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS capacitaciones_empleados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        capacitacion_id INTEGER, empleado_id INTEGER,
+        completado INTEGER DEFAULT 0, fecha_completado TEXT, calificacion REAL,
+        UNIQUE(capacitacion_id,empleado_id))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS evaluaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empleado_id INTEGER, periodo TEXT, evaluador TEXT,
+        puntaje_total REAL, puntaje_calidad REAL, puntaje_asistencia REAL,
+        puntaje_actitud REAL, puntaje_conocimiento REAL,
+        puntaje_productividad REAL, comentarios TEXT,
+        estado TEXT DEFAULT 'Borrador',
+        creado_en TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS sgsst_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        categoria TEXT, descripcion TEXT, frecuencia TEXT DEFAULT 'Anual',
+        ultimo_cumplimiento TEXT, proximo_vencimiento TEXT,
+        responsable TEXT, estado TEXT DEFAULT 'Pendiente',
+        creado_en TEXT DEFAULT (datetime('now')))""")
     conn.commit()
     conn.close()
 
