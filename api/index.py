@@ -2402,6 +2402,7 @@ tbody tr:hover{background:#fafaf8;}
 <body>
 <header>
   <div class="header-top">
+    <a href="/" style="font-size:12px;color:#888;text-decoration:none;margin-right:12px;">&#8592; Hub</a>
     <h1>Compras &mdash; Espagiria</h1>
     <span class="user-chip">{usuario}</span>
   </div>
@@ -2413,6 +2414,7 @@ tbody tr:hover{background:#fafaf8;}
     <button class="tab" onclick="goTo('influencers',this)">Influencers</button>
     <button class="tab" onclick="goTo('recepcion',this)">Recepci&oacute;n</button>
     <button class="tab" onclick="goTo('proveedores',this)">Proveedores</button>
+    <button class="tab" onclick="window.location='/recepcion'" style="margin-left:auto;font-size:11px;color:#4A6741;">Panel Recepci&oacute;n &#8599;</button>
   </nav>
 </header>
 <main>
