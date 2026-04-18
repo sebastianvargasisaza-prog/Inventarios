@@ -6695,14 +6695,6 @@ def conteo_detalle(cid):
     conn.close()
     return jsonify({'header':{'id':h[0],'numero':h[1],'estado':h[4],'responsable':h[5],'total':h[7],'diffs':h[8]},'items':items})
 
-@app.route('/api/lotes/cuarentena', methods=['GET'])
-def lotes_cuarentena():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("""SELECT id,material_id,material_nombre,cantidad,lote,fecha,proveedor,numero_factura,numero_oc,operador
-                 FROM movimientos WHERE estado_lote='CUARENTENA' ORDER BY fecha DESC""")
-    rows = [{'id':r[0],'codigo':r[1],'nombre':r[2],'cantidad_g':r[3],'lote':r[4],'fecha':r[5],
-             'proveedor':r[6],'factura':r[7],'oc':r[8],'operador':r[9]} for r in c.fetchall()]
-    conn.close(); return jsonify(rows)
 
 @app.route('/api/lotes/cuarentena/<int:mov_id>/liberar', methods=['POST'])
 def liberar_cuarentena(mov_id):
