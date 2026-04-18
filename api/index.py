@@ -2884,8 +2884,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         </div>
         <div class="form-group" style="margin-top:10px;"><label>Observaciones</label>
           <input type="text" id="mee-ing-obs" placeholder="Opcional"></div>
-        <div style="display:flex;gap:10px;margin-top:14px;">
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
           <button onclick="registrarIngresoMEE()" style="background:#27ae60;">&#10003; Registrar Entrada MEE</button>
+          <button onclick="generarRotuloMEE()" style="background:#2980b9;" id="btn-rotulo-mee">&#128209; Generar Rotulo + Codigo de Barras</button>
           <button onclick="limpiarIngresoMEE()" style="background:#95a5a6;">Limpiar</button>
         </div>
         <div id="mee-ing-msg" style="margin-top:10px;"></div>
@@ -3785,8 +3786,17 @@ async function registrarIngresoMEE(){
   if(!cod||!cant){document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">Selecciona material y cantidad</span>';return;}
   var r=await fetch('/api/movimientos-mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mee:cod,tipo:'entrada',cantidad:cant,referencia:ref,observaciones:obs,operador:OPER_ACTUAL})});
   var d=await r.json();
-  if(r.ok){document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und</span>';limpiarIngresoMEE();loadHistMEE();loadMEE();}
-  else{document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+  if(r.ok){
+    _ultimoMEE={codigo:cod,cant:cant,ref:ref};
+    document.getElementById('mee-ing-msg').innerHTML='<span style="color:green;">Entrada registrada. Stock: '+d.nuevo_stock+' und &nbsp;<button onclick="generarRotuloMEE()" style="background:#2980b9;color:white;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.85em;">&#128209; Rotulo</button></span>';
+    document.getElementById('btn-rotulo-mee').disabled=false;
+    loadHistMEE();loadMEE();
+  }else{document.getElementById('mee-ing-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';}
+}
+var _ultimoMEE=null;
+function generarRotuloMEE(){
+  if(\!_ultimoMEE){alert('Primero registra una entrada MEE');return;}
+  window.open('/rotulo-recepcion-mee/'+encodeURIComponent(_ultimoMEE.codigo)+'/'+(parseFloat(_ultimoMEE.cant)||0),'_blank');
 }
 function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';document.getElementById('mee-ing-cant').value='';document.getElementById('mee-ing-ref').value='';document.getElementById('mee-ing-obs').value='';}
 async function loadHistMEE(){
@@ -4453,30 +4463,103 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '.l{background:#ecf0f1;font-weight:bold;font-size:8.5pt;width:35%;}'
        '@media print{.ph{display:none;}body{background:white;padding:0;}}'
        '</style></head><body>')
-    h+=('<div class="ph"><b>Rotulo de Recepcion</b><button class="pb" onclick="window.print()">Imprimir</button></div>'
-        '<div class="r"><div class="rh"><span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:3px;">ROTULO DE INGRESO DE MATERIA PRIMA</span>'
-        '<span style="font-size:7.5pt;opacity:0.8;">Espagiria Laboratorios | PRD-REC-001 | '+hoy+'</span></div>'
+    h+=('<div class="ph"><b>Rotulo de Recepcion — Materia Prima</b><button class="pb" onclick="window.print()">Imprimir</button></div>'
+        '<div class="r"><div class="rh">'
+        '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIA PRIMA</span>'
+        '<span style="font-size:7.5pt;opacity:0.85;">Espagiria Laboratorios &nbsp;|&nbsp; COC-PRO-002-F07 &nbsp;|&nbsp; '+hoy+'</span>'
+        '</div>'
         '<div class="lote"><div style="font-size:9pt;color:#888;margin-bottom:4px;">NUMERO DE LOTE — CODIGO DE BARRAS</div>'
         '<div class="lnum">'+lote+'</div>'
         '<svg id="bc" style="margin-top:6px;"></svg>'
         '<div style="font-size:7pt;color:#888;margin-top:2px;">'+bv+'</div>'
         '</div><table>'
         '<tr><td class="l">Codigo MP:</td><td style="font-weight:700;">'+codigo+'</td></tr>'
-        '<tr><td class="l">Nombre INCI:</td><td style="font-size:0.9em;color:#444;">'+ni+'</td></tr>'
+        '<tr><td class="l">Nombre INCI:</td><td style="font-size:0.9em;color:#1a5276;">'+ni+'</td></tr>'
         '<tr><td class="l">Nombre Comercial:</td><td style="font-weight:700;">'+nc+'</td></tr>'
-        '<tr><td class="l">Tipo:</td><td>'+tp+'</td></tr>'
+        '<tr><td class="l">Tipo / Funcion:</td><td>'+tp+'</td></tr>'
         '<tr><td class="l">Proveedor:</td><td style="font-weight:700;">'+pv+'</td></tr>'
-        '<tr><td class="l">Cantidad:</td><td style="color:#27ae60;font-weight:700;">'+f"{cantidad:,.0f} g"+'</td></tr>'
-        '<tr><td class="l">Vencimiento:</td><td style="color:#c0392b;font-weight:700;">'+fv+'</td></tr>'
+        '<tr><td class="l">Cantidad recibida:</td><td style="color:#27ae60;font-weight:700;">'+f"{cantidad:,.0f} g"+'</td></tr>'
+        '<tr><td class="l">Fecha de recepcion:</td><td style="font-weight:700;">'+hoy+'</td></tr>'
+        '<tr><td class="l">Fecha de vencimiento:</td><td style="color:#c0392b;font-weight:700;">'+fv+'</td></tr>'
+        '<tr><td class="l">Fecha de analisis:</td><td style="height:28px;background:#fffde7;"></td></tr>'
+        '<tr style="background:#e8f5e9;"><td class="l" style="color:#1b5e20;font-weight:800;">Estado de calidad:</td>'
+        '<td style="height:28px;"><span style="margin-right:18px;">&#9744; Aprobado</span><span style="margin-right:18px;">&#9744; En cuarentena</span><span>&#9744; Rechazado</span></td></tr>'
         '<tr><td class="l">Ubicacion:</td><td>Est. '+ub+'</td></tr>'
-        '<tr><td class="l">N Recepcion:</td><td>'+nr+'</td></tr>'
+        '<tr><td class="l">N de Recepcion:</td><td>'+nr+'</td></tr>'
         '<tr><td class="l">Recibido por:</td><td style="height:30px;"></td></tr>'
-        '<tr><td class="l">Verificado por:</td><td style="height:30px;"></td></tr>'
+        '<tr><td class="l">Analizado / Aprobado por:</td><td style="height:30px;"></td></tr>'
         '</table>'
-        '<div style="background:#ecf0f1;padding:4px 10px;font-size:7.5pt;color:#888;text-align:center;">Ingreso registrado al sistema | '+hoy+'</div>'
+        '<div style="background:#ecf0f1;padding:4px 10px;font-size:7.5pt;color:#888;text-align:center;">'
+        'COC-PRO-002-F07 &nbsp;|&nbsp; Ingreso registrado al sistema &nbsp;|&nbsp; '+hoy
+        +'</div>'
         '</div>'
         '<script>window.onload=function(){try{JsBarcode("#bc","'+bv+'",{format:"CODE128",width:1.5,height:45,displayValue:false,margin:0});}catch(e){}}</script>'
         '</body></html>')
+    return h
+
+
+@app.route('/rotulo-recepcion-mee/<codigo>/<cantidad_str>')
+def rotulo_recepcion_mee(codigo, cantidad_str):
+    try: cantidad = int(float(cantidad_str))
+    except: return "<h2>Cantidad invalida</h2>", 400
+    from datetime import date; import urllib.parse
+    hoy = date.today().strftime('%d-%b-%Y').upper()
+    codigo = urllib.parse.unquote(codigo)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT descripcion, categoria, proveedor FROM mee WHERE codigo=?", (codigo,))
+    mee = c.fetchone()
+    c.execute("SELECT referencia, operador, fecha FROM movimientos_mee WHERE codigo_mee=? AND tipo='entrada' ORDER BY id DESC LIMIT 1", (codigo,))
+    mov = c.fetchone(); conn.close()
+    desc = mee[0] if mee else codigo; cat = mee[1] if mee else ''; prov = mee[2] if mee else ''
+    ref  = mov[0] if mov else ''; oper = mov[1] if mov else ''
+    nr   = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
+    bv   = codigo; prov_display = ref or prov
+    h = ('<\!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+         '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+         '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}'
+         '.ph{background:#1a3a5c;color:white;padding:10px 16px;display:flex;justify-content:space-between;margin-bottom:10px;}'
+         '.pb{background:#2980b9;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}'
+         '.r{background:white;border:3px solid #1a3a5c;border-radius:5px;max-width:520px;margin:auto;}'
+         '.rh{background:#1a3a5c;color:white;padding:8px 12px;text-align:center;}'
+         '.lote{background:#e8f4fd;border:2px solid #2980b9;padding:10px;text-align:center;margin:10px;}'
+         '.lnum{font-size:16pt;font-weight:bold;color:#1a3a5c;letter-spacing:2px;}'
+         'table{width:100%;border-collapse:collapse;}td{border:1px solid #ccc;padding:6px 8px;}'
+         '.l{background:#ecf0f1;font-weight:bold;font-size:8.5pt;width:38%;}'
+         '.calidad{background:#e8f5e9;}'
+         '@media print{.ph{display:none;}body{background:white;padding:0;}}'
+         '</style></head><body>')
+    h += ('<div class="ph"><b>Rótulo de Recepción — Material E&E</b>'
+          '<button class="pb" onclick="window.print()">Imprimir</button></div>'
+          '<div class="r"><div class="rh">'
+          '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIAL E&E</span>'
+          '<span style="font-size:7.5pt;opacity:0.85;">Espagiria Laboratorios &nbsp;|&nbsp; COC-PRO-002-F07 &nbsp;|&nbsp; ' + hoy + '</span>'
+          '</div>'
+          '<div class="lote">'
+          '<div style="font-size:9pt;color:#666;margin-bottom:4px;">CODIGO MATERIAL — CODIGO DE BARRAS</div>'
+          '<div class="lnum">' + codigo + '</div>'
+          '<svg id="bc" style="margin-top:6px;"></svg>'
+          '</div><table>'
+          '<tr><td class="l">Código MEE:</td><td style="font-weight:700;">' + codigo + '</td></tr>'
+          '<tr><td class="l">Descripción:</td><td style="font-weight:700;">' + desc + '</td></tr>'
+          '<tr><td class="l">Categoría:</td><td>' + cat + '</td></tr>'
+          '<tr><td class="l">Proveedor / Ref. compra:</td><td style="font-weight:700;">' + prov_display + '</td></tr>'
+          '<tr><td class="l">Cantidad recibida:</td><td style="color:#27ae60;font-weight:700;">' + f"{cantidad:,}" + ' unidades</td></tr>'
+          '<tr><td class="l">Fecha de recepción:</td><td style="font-weight:700;">' + hoy + '</td></tr>'
+          '<tr><td class="l">Fecha de análisis / inspección:</td><td style="height:28px;background:#fffde7;"></td></tr>'
+          '<tr><td class="l">Piezas inspeccionadas (AQL):</td><td style="height:28px;"></td></tr>'
+          '<tr class="calidad"><td class="l calidad" style="color:#1b5e20;font-weight:800;">Estado de calidad:</td>'
+          '<td style="height:28px;"><span style="margin-right:14px;">&#9744; Aprobado</span>'
+          '<span style="margin-right:14px;">&#9744; En cuarentena</span>'
+          '<span>&#9744; Rechazado</span></td></tr>'
+          '<tr><td class="l">Número de recepción:</td><td>' + nr + '</td></tr>'
+          '<tr><td class="l">Recibido por:</td><td style="height:30px;">' + oper + '</td></tr>'
+          '<tr><td class="l">Aprobado por (Calidad):</td><td style="height:30px;"></td></tr>'
+          '</table>'
+          '<div style="background:#dde8f0;padding:4px 10px;font-size:7.5pt;color:#555;text-align:center;">'
+          'COC-PRO-002-F07 &nbsp;|&nbsp; Material Envase & Empaque &nbsp;|&nbsp; ' + hoy + '</div>'
+          '</div>'
+          '<script>window.onload=function(){try{JsBarcode("#bc","' + bv + '",{format:"CODE128",width:1.5,height:45,displayValue:false,margin:0});}catch(e){}}</script>'
+          '</body></html>')
     return h
 
 
