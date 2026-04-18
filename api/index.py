@@ -93,6 +93,65 @@ def init_db():
     try:
         c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
     except: pass
+
+    # ── Inventario v2: costos, OC receipt, cuarentena, conteo ────
+    for _col in [
+        "precio_kg REAL DEFAULT 0",
+        "numero_factura TEXT DEFAULT ''",
+        "numero_oc TEXT DEFAULT ''",
+        "valor_total REAL DEFAULT 0",
+        "zona TEXT DEFAULT 'Almacen'",
+    ]:
+        try: c.execute(f"ALTER TABLE movimientos ADD COLUMN {_col}")
+        except: pass
+    for _col in [
+        "precio_referencia REAL DEFAULT 0",
+        "unidad_compra TEXT DEFAULT 'kg'",
+        "lead_time_dias INTEGER DEFAULT 7",
+        "ultima_act_precio TEXT DEFAULT ''",
+    ]:
+        try: c.execute(f"ALTER TABLE maestro_mps ADD COLUMN {_col}")
+        except: pass
+    for _col in [
+        "fecha_recepcion TEXT DEFAULT ''",
+        "recibido_por TEXT DEFAULT ''",
+        "numero_factura_proveedor TEXT DEFAULT ''",
+    ]:
+        try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_col}")
+        except: pass
+    for _col in [
+        "precio_unitario_real REAL DEFAULT 0",
+        "cantidad_recibida_g REAL DEFAULT 0",
+        "lote_asignado TEXT DEFAULT ''",
+    ]:
+        try: c.execute(f"ALTER TABLE ordenes_compra_items ADD COLUMN {_col}")
+        except: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS conteos_fisicos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero TEXT UNIQUE,
+                 fecha_inicio TEXT, fecha_cierre TEXT,
+                 estado TEXT DEFAULT 'Abierto',
+                 responsable TEXT DEFAULT '',
+                 observaciones TEXT DEFAULT '',
+                 total_items INTEGER DEFAULT 0,
+                 items_diferencia INTEGER DEFAULT 0,
+                 aprobado_por TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS conteo_items (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 conteo_id INTEGER NOT NULL,
+                 codigo_mp TEXT NOT NULL, nombre_mp TEXT,
+                 stock_sistema REAL DEFAULT 0,
+                 stock_fisico REAL DEFAULT NULL,
+                 diferencia REAL DEFAULT 0,
+                 lote TEXT DEFAULT '', zona TEXT DEFAULT '',
+                 ajuste_aplicado INTEGER DEFAULT 0,
+                 observaciones TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS precios_mp_historico (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 codigo_mp TEXT NOT NULL, proveedor TEXT NOT NULL,
+                 precio_kg REAL NOT NULL, fecha TEXT NOT NULL,
+                 numero_oc TEXT DEFAULT '', numero_factura TEXT DEFAULT '',
+                 origen TEXT DEFAULT 'ingreso', observaciones TEXT DEFAULT '')""")
     c.execute("""CREATE TABLE IF NOT EXISTS maestro_mee (
         codigo TEXT PRIMARY KEY,
         descripcion TEXT NOT NULL,
@@ -1708,11 +1767,95 @@ async function importarOCs(){
 }
 
 // Init
+
+async function cargarCuarentena(){
+  try{
+    var r=await fetch('/api/lotes/cuarentena');
+    var data=await r.json();
+    var tb=document.getElementById('cuar-tbody');
+    if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;">Sin lotes en cuarentena</td></tr>';return;}
+    var h='';
+    data.forEach(function(l){
+      var esSuperUser=('{{ session.get("compras_user","") }}'==='sebastian'||'{{ session.get("compras_user","") }}'==='alejandro');
+      h+='<tr>';
+      h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
+      h+='<td style="font-size:0.8em;color:#555;">'+( l.nombre_inci||'')+'</td>';
+      h+='<td>'+l.nombre+'</td>';
+      h+='<td style="font-family:monospace;">'+l.lote+'</td>';
+      h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+'</td>';
+      h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
+      h+='<td style="font-size:0.85em;">'+(l.numero_factura||'')+'</td>';
+      h+='<td style="font-size:0.85em;">'+(l.numero_oc||'')+'</td>';
+      h+='<td style="font-size:0.82em;">'+l.fecha.substring(0,10)+'</td>';
+      h+='<td>';
+      if(OPER_ACTUAL==='sebastian'||OPER_ACTUAL==='alejandro'){
+        h+='<button onclick="liberarLote('+l.id+','APROBAR')" style="margin-right:4px;padding:4px 10px;background:#27ae60;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.82em;">Aprobar</button>';
+        h+='<button onclick="liberarLote('+l.id+','RECHAZAR')" style="padding:4px 10px;background:#e74c3c;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:0.82em;">Rechazar</button>';
+      }else{
+        h+='<span style="color:#999;font-size:0.82em;">Solo admin</span>';
+      }
+      h+='</td></tr>';
+    });
+    tb.innerHTML=h;
+  }catch(e){console.error(e);}
+}
+async function liberarLote(id, accion){
+  if(!confirm('Confirmar '+accion+' del lote?')) return;
+  try{
+    var r=await fetch('/api/lotes/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,accion:accion})});
+    var res=await r.json();
+    if(r.ok){
+      document.getElementById('cuar-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+      await cargarCuarentena();
+    } else {
+      document.getElementById('cuar-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';
+    }
+  }catch(e){document.getElementById('cuar-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
+async function buscarTrazabilidad(){
+  var lote=(document.getElementById('trz-lote').value||'').trim();
+  if(!lote){alert('Ingresa un numero de lote');return;}
+  try{
+    var r=await fetch('/api/trazabilidad/'+encodeURIComponent(lote));
+    var data=await r.json();
+    if(!data.ingreso){
+      document.getElementById('trz-msg').innerHTML='<div class="alert-error">Lote no encontrado: '+lote+'</div>';
+      document.getElementById('trz-result').style.display='none';
+      return;
+    }
+    document.getElementById('trz-msg').innerHTML='';
+    document.getElementById('trz-result').style.display='block';
+    var ing=data.ingreso;
+    document.getElementById('trz-ingreso').innerHTML=
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
+      '<div><b>Codigo:</b> '+ing.codigo_mp+'</div>'+
+      '<div><b>Nombre:</b> '+ing.nombre+'</div>'+
+      '<div><b>INCI:</b> '+(ing.nombre_inci||'—')+'</div>'+
+      '<div><b>Cantidad:</b> '+Number(ing.cantidad_g).toLocaleString()+' g</div>'+
+      '<div><b>Proveedor:</b> '+(ing.proveedor||'—')+'</div>'+
+      '<div><b>Factura:</b> '+(ing.factura||'—')+'</div>'+
+      '<div><b>OC:</b> '+(ing.orden_compra||'—')+'</div>'+
+      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'—')+'</div>'+
+      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'—')+'</div>'+
+      '</div>';
+    document.getElementById('trz-nprod').textContent=data.total_producciones;
+    var tb=document.getElementById('trz-prod-tbody');
+    if(!data.producciones.length){
+      tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:#999;">Este lote no ha sido usado en produccion</td></tr>';
+    } else {
+      var h='';
+      data.producciones.forEach(function(p){
+        h+='<tr><td>'+p.producto+'</td><td>'+p.fecha.substring(0,10)+'</td><td>'+p.operador+'</td><td style="text-align:right;">'+Number(p.cantidad_g).toLocaleString()+'</td></tr>';
+      });
+      tb.innerHTML=h;
+    }
+  }catch(e){document.getElementById('trz-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+}
 document.addEventListener('DOMContentLoaded',function(){
   var hoy=new Date().toISOString().substring(0,10);
-  document.getElementById('ing-fecha').value=hoy;
-  document.getElementById('egr-fecha').value=hoy;
-  loadConfig().then(function(){loadDashboard();});
+  var ingFecha=document.getElementById('ing-fecha');if(ingFecha)ingFecha.value=hoy;
+  var egrFecha=document.getElementById('egr-fecha');if(egrFecha)egrFecha.value=hoy;
+  loadConfig().then(function(){loadDashboard();cargarOCsPendientes();});
 });
 </script>
 </body>
@@ -2748,6 +2891,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
     <button class="tab-button" onclick="switchTab('alertas',this)">&#9888; Alertas</button>
     <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
+    <button class="tab-button" onclick="switchTab('cuarentena',this)">&#128274; Cuarentena</button>
+    <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
@@ -2928,6 +3073,38 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
         <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
+      </div>
+      <!-- OC Receipt + Costos + Cuarentena -->
+      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px;margin:12px 0;">
+        <div style="font-size:0.82em;font-weight:700;color:#e65100;margin-bottom:10px;">&#128230; VINCULAR A ORDEN DE COMPRA (opcional)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label>OC Pendiente</label>
+            <select id="ing-oc-sel" onchange="autocompletarDesdeOC()" style="width:100%;">
+              <option value="">-- Ingreso libre (sin OC) --</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>N° Factura / Remision</label>
+            <input type="text" id="ing-factura" placeholder="Ej: FAC-2026-1234">
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="form-group" style="margin:0;">
+          <label>Precio compra (COP/kg)</label>
+          <input type="number" id="ing-precio-kg" placeholder="Ej: 45000" min="0" oninput="calcularValorTotal()">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>Valor total entrada</label>
+          <input type="text" id="ing-valor-total" placeholder="Se calcula automatico" readonly style="background:#f5f5f5;color:#2B7A78;font-weight:700;">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
+        <input type="checkbox" id="ing-cuarentena" style="width:18px;height:18px;">
+        <label for="ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;">
+          &#128274; Ingresar en CUARENTENA (pendiente aprobacion de calidad)
+        </label>
       </div>
       <div class="form-group" style="margin-top:10px;"><label>Observaciones</label><input type="text" id="ing-obs" placeholder="Opcional"></div>
       <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;">
@@ -3168,6 +3345,40 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
     </table>
+
+  <div id="cuarentena" class="tab-content">
+    <h2>&#128274; Lotes en Cuarentena</h2>
+    <p style="color:#777;margin-bottom:18px;">Lotes recibidos pendientes de aprobacion QC. Solo administradores pueden Aprobar o Rechazar.</p>
+    <div id="cuar-msg"></div>
+    <table class="table" id="cuar-table">
+      <thead><tr><th>Codigo MP</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cantidad (g)</th><th>Proveedor</th><th>Factura</th><th>OC</th><th>Fecha ingreso</th><th>Accion</th></tr></thead>
+      <tbody id="cuar-tbody"><tr><td colspan="10" style="text-align:center;color:#999;">Sin lotes en cuarentena</td></tr></tbody>
+    </table>
+  </div>
+
+  <div id="trazabilidad" class="tab-content">
+    <h2>&#128269; Trazabilidad de Lotes</h2>
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;display:flex;gap:12px;align-items:flex-end;">
+      <div style="flex:1;">
+        <label style="display:block;font-weight:600;margin-bottom:4px;color:#555;">Numero de Lote</label>
+        <input type="text" id="trz-lote" placeholder="Ej: ESP260417ACE" style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;font-size:1em;">
+      </div>
+      <button onclick="buscarTrazabilidad()" style="padding:10px 24px;background:#667eea;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Buscar</button>
+    </div>
+    <div id="trz-result" style="display:none;">
+      <div style="background:#fff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:16px;">
+        <h3 style="color:#2c3e50;margin:0 0 12px;">Ingreso del Lote</h3>
+        <div id="trz-ingreso"></div>
+      </div>
+      <div style="background:#fff;border:1px solid #dde;border-radius:10px;padding:20px;">
+        <h3 style="color:#2c3e50;margin:0 0 12px;">Uso en Produccion (<span id="trz-nprod">0</span> registros)</h3>
+        <table class="table"><thead><tr><th>Producto</th><th>Fecha</th><th>Operador</th><th>Cantidad usada (g)</th></tr></thead>
+        <tbody id="trz-prod-tbody"></tbody></table>
+      </div>
+    </div>
+    <div id="trz-msg"></div>
+  </div>
+
   </div>
 
 </div>
@@ -3361,6 +3572,7 @@ function switchTab(n,btn){
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='cuarentena') cargarCuarentena();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
@@ -3540,19 +3752,80 @@ async function buscarMPIngreso(val){
   }catch(e){if(st){st.textContent='Error buscando';st.style.color='#c0392b';}}
 }
 
+
+async function cargarOCsPendientes(){
+  try{
+    var r=await fetch('/api/ordenes-compra/pendientes-recepcion');
+    if(!r.ok) return;
+    var ocs=await r.json();
+    var sel=document.getElementById('ing-oc-sel');
+    if(!sel) return;
+    // clear existing options except first placeholder
+    while(sel.options.length>1) sel.remove(1);
+    (ocs||[]).forEach(function(oc){
+      (oc.items||[]).forEach(function(item){
+        var opt=document.createElement('option');
+        opt.value=oc.numero_oc+'|'+item.codigo_mp;
+        var kg=(item.cantidad_pendiente_g/1000).toFixed(2);
+        opt.textContent=oc.numero_oc+' — '+item.nombre_mp+' ('+kg+' kg pendientes)';
+        opt.dataset.codigo=item.codigo_mp;
+        opt.dataset.nombre=item.nombre_mp;
+        opt.dataset.inci=item.nombre_inci||'';
+        opt.dataset.proveedor=oc.proveedor||'';
+        opt.dataset.precio=item.precio_unitario||'';
+        sel.appendChild(opt);
+      });
+    });
+  }catch(e){}
+}
+function autocompletarDesdeOC(){
+  var sel=document.getElementById('ing-oc-sel');
+  if(!sel||sel.selectedIndex<1) return;
+  var opt=sel.options[sel.selectedIndex];
+  if(!opt.dataset.codigo) return;
+  var cod=document.getElementById('ing-cod');
+  var nom=document.getElementById('ing-nombre');
+  var inci=document.getElementById('ing-inci');
+  var prov=document.getElementById('ing-prov');
+  var precio=document.getElementById('ing-precio-kg');
+  if(cod) cod.value=opt.dataset.codigo;
+  if(nom) nom.value=opt.dataset.nombre||'';
+  if(inci) inci.value=opt.dataset.inci||'';
+  if(prov) prov.value=opt.dataset.proveedor||'';
+  if(precio && opt.dataset.precio) precio.value=opt.dataset.precio;
+  // trigger lookup & valor total
+  if(cod) cod.dispatchEvent(new Event('input'));
+  calcularValorTotal();
+}
+function calcularValorTotal(){
+  var cant=parseFloat(document.getElementById('ing-cant')?document.getElementById('ing-cant').value:0)||0;
+  var precio=parseFloat(document.getElementById('ing-precio-kg')?document.getElementById('ing-precio-kg').value:0)||0;
+  var vt=document.getElementById('ing-valor-total');
+  if(!vt) return;
+  var val=(cant/1000)*precio;
+  vt.value=val>0?'$'+val.toLocaleString('es-CO',{maximumFractionDigits:0}):'';
+}
 async function registrarIngreso(){
   var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
   var cant=parseFloat(document.getElementById('ing-cant').value)||0;
   if(!cod){alert('Ingresa el codigo MP');return;}
   if(cant<=0){alert('Ingresa una cantidad valida');return;}
   var esNueva=document.getElementById('ing-nueva-mp-inline')&&document.getElementById('ing-nueva-mp-inline').style.display!=='none';
+  var ocSel=document.getElementById('ing-oc-sel');
+  var ocVal=ocSel&&ocSel.value?ocSel.value:'';
+  var numOC=ocVal?ocVal.split('|')[0]:'';
+  var enCuarentena=document.getElementById('ing-cuarentena')&&document.getElementById('ing-cuarentena').checked;
   var data={codigo_mp:cod,nombre_comercial:document.getElementById('ing-nombre').value||'',
     lote:document.getElementById('ing-lote').value||'',cantidad:cant,operador:OPER_ACTUAL,
     fecha_vencimiento:document.getElementById('ing-vence').value||'',
     estanteria:document.getElementById('ing-est').value||'',
     posicion:document.getElementById('ing-pos').value||'',
     proveedor:document.getElementById('ing-prov').value||'',
-    observaciones:document.getElementById('ing-obs').value||''};
+    observaciones:document.getElementById('ing-obs').value||'',
+    precio_kg:parseFloat(document.getElementById('ing-precio-kg')?document.getElementById('ing-precio-kg').value:0)||0,
+    numero_factura:document.getElementById('ing-factura')?document.getElementById('ing-factura').value.trim():'',
+    numero_oc:numOC,
+    cuarentena:enCuarentena};
   if(esNueva){
     data.nombre_inci=document.getElementById('ing-inci-new')?document.getElementById('ing-inci-new').value:'';
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
@@ -3563,8 +3836,9 @@ async function registrarIngreso(){
     var res=await r.json();
     if(r.ok){
       _ultimoIng=res;
-      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+'</div>';
       await cargarHistIngreso();
+      await cargarOCsPendientes();
     } else {document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';}
   }catch(e){document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
@@ -3573,7 +3847,10 @@ function generarRotuloIngreso(){
   window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(parseFloat(_ultimoIng.cantidad)||0).toFixed(1),'_blank');
 }
 function limpiarIngreso(){
-  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});ocultarFormNuevaMP();
+  ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg','ing-valor-total'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+  var ocSel=document.getElementById('ing-oc-sel');if(ocSel)ocSel.selectedIndex=0;
+  var cuar=document.getElementById('ing-cuarentena');if(cuar)cuar.checked=false;
+  ocultarFormNuevaMP();
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';
 }
@@ -4453,24 +4730,119 @@ def registrar_recepcion():
     mp = c.fetchone()
     nombre = d.get('nombre_comercial','') or (mp[1] if mp else codigo)
     proveedor = d.get('proveedor','') or (mp[3] if mp else '')
+    precio_kg = float(d.get('precio_kg') or 0)
+    numero_factura = (d.get('numero_factura') or '').strip()
+    numero_oc = (d.get('numero_oc') or '').strip()
+    cuarentena = bool(d.get('cuarentena', False))
+    estado_lote = 'CUARENTENA' if cuarentena else 'VIGENTE'
     # Si la MP es nueva y viene con datos, crearla en el catalogo
     if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):
         c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
                   (codigo, d.get('nombre_inci',''), nombre, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
         conn.commit()
+    # Actualizar precio_referencia en maestro_mps si viene precio
+    if precio_kg > 0:
+        try:
+            c.execute("UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now') WHERE codigo_mp=?", (precio_kg, codigo))
+        except: pass
     lote = (d.get('lote') or '').strip()
     if not lote or lote.upper()=='AUTO':
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
-                  lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador,
+                  precio_kg,numero_factura,numero_oc)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (codigo,nombre,float(d.get('cantidad',0)),'Entrada',datetime.now().isoformat(),
                d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
-               d.get('estanteria',''),d.get('posicion',''),proveedor,'VIGENTE',
-               d.get('operador','')))
+               d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
+               d.get('operador',''),precio_kg,numero_factura,numero_oc))
+    mov_id = c.lastrowid
+    # Log precio historico
+    if precio_kg > 0:
+        try:
+            c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now'))",
+                      (codigo, precio_kg, numero_factura, proveedor))
+        except: pass
+    # Cerrar OC si se referencia una
+    if numero_oc:
+        try:
+            c.execute("UPDATE ordenes_compra_items SET cantidad_recibida_g=cantidad_recibida_g+?,lote_asignado=? WHERE numero_oc=? AND codigo_mp=?",
+                      (float(d.get('cantidad',0)), lote, numero_oc, codigo))
+            # verificar si todos los items de la OC estan recibidos
+            c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_solicitada_g - cantidad_recibida_g) > 1", (numero_oc,))
+            pendientes = c.fetchone()[0]
+            if pendientes == 0:
+                c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now'),recibido_por=? WHERE numero_oc=?",
+                          (d.get('operador',''), numero_oc))
+        except: pass
     conn.commit(); conn.close()
-    return jsonify({'message': f'{nombre} ingresada. Lote: {lote}','lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0)}), 201
+    msg = f'{nombre} ingresada. Lote: {lote}'
+    if cuarentena: msg += ' — En CUARENTENA (pendiente aprobacion QC)'
+    if numero_oc: msg += f' | OC {numero_oc} actualizada'
+    return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0),'cuarentena':cuarentena}), 201
+
+@app.route('/api/lotes/cuarentena', methods=['GET'])
+def lotes_cuarentena():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.lote, m.cantidad,
+                      m.fecha, m.proveedor, m.numero_factura, m.numero_oc, m.observaciones,
+                      mp.nombre_inci
+               FROM movimientos m
+               LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+               WHERE m.estado_lote='CUARENTENA' AND m.tipo='Entrada'
+               ORDER BY m.fecha DESC""")
+    rows = c.fetchall()
+    conn.close()
+    cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci']
+    return jsonify([dict(zip(cols,r)) for r in rows])
+
+@app.route('/api/lotes/liberar', methods=['POST'])
+def liberar_lote():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo administradores pueden liberar lotes'}), 401
+    d = request.json or {}
+    mov_id = d.get('id')
+    accion = (d.get('accion') or 'APROBAR').upper()
+    if accion not in ('APROBAR','RECHAZAR'):
+        return jsonify({'error': 'Accion debe ser APROBAR o RECHAZAR'}), 400
+    nuevo_estado = 'VIGENTE' if accion == 'APROBAR' else 'RECHAZADO'
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=? AND estado_lote='CUARENTENA'", (nuevo_estado, mov_id))
+    if c.rowcount == 0:
+        conn.close()
+        return jsonify({'error': 'Lote no encontrado o ya procesado'}), 404
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (session.get('compras_user','?'), f'LOTE_{accion}', 'movimientos',
+               str(mov_id), f'Lote liberado: {accion}', request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Lote {accion.lower()}ado correctamente', 'estado': nuevo_estado})
+
+@app.route('/api/trazabilidad/<lote>', methods=['GET'])
+def trazabilidad_lote(lote):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Ingreso del lote
+    c.execute("""SELECT m.material_id, m.material_nombre, m.cantidad, m.fecha,
+                      m.proveedor, m.numero_factura, m.numero_oc, m.precio_kg
+               FROM movimientos m WHERE m.lote=? AND m.tipo='Entrada' LIMIT 1""", (lote,))
+    ingreso = c.fetchone()
+    # Consumos en produccion
+    c.execute("""SELECT p.nombre_producto, p.fecha_inicio, p.operador, pm.cantidad_usada_g, pm.lote_mp
+               FROM produccion p JOIN produccion_materiales pm ON p.id=pm.produccion_id
+               WHERE pm.lote_mp=? ORDER BY p.fecha_inicio""", (lote,))
+    producciones = c.fetchall()
+    conn.close()
+    result = {
+        'lote': lote,
+        'ingreso': {'codigo_mp': ingreso[0], 'nombre': ingreso[1], 'cantidad_g': ingreso[2],
+                    'fecha': ingreso[3], 'proveedor': ingreso[4], 'factura': ingreso[5],
+                    'orden_compra': ingreso[6], 'precio_kg': ingreso[7]} if ingreso else None,
+        'producciones': [{'producto': p[0], 'fecha': p[1], 'operador': p[2],
+                          'cantidad_g': p[3], 'lote_mp': p[4]} for p in producciones],
+        'total_producciones': len(producciones)
+    }
+    return jsonify(result)
 
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
@@ -5514,6 +5886,186 @@ def financiero_importar_ocs():
             importadas += 1
     conn.commit(); conn.close()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
+
+
+# ===============================================================
+# INVENTARIO v2 - NUEVOS ENDPOINTS
+# ===============================================================
+
+@app.route('/api/ordenes-compra/pendientes-recepcion')
+def ocs_pendientes_recepcion():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total,
+                        oci.codigo_mp, oci.nombre_mp, oci.cantidad_g, oci.precio_unitario
+                 FROM ordenes_compra oc
+                 JOIN ordenes_compra_items oci ON oc.numero_oc = oci.numero_oc
+                 WHERE oc.estado IN ('Aprobada','Enviada','Parcial')
+                 ORDER BY oc.fecha DESC""")
+    rows = c.fetchall(); conn.close()
+    ocs = {}
+    for r in rows:
+        num = r[0]
+        if num not in ocs:
+            ocs[num] = {'numero_oc': num, 'proveedor': r[1], 'fecha': r[2],
+                        'valor_total': r[3], 'items': []}
+        ocs[num]['items'].append({'codigo_mp': r[4], 'nombre_mp': r[5],
+                                   'cantidad_g': r[6], 'precio_unitario': r[7]})
+    return jsonify(list(ocs.values()))
+
+@app.route('/api/trazabilidad/lote/<path:lote>')
+def trazabilidad_lote(lote):
+    import urllib.parse; lote = urllib.parse.unquote(lote)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT id, material_id, material_nombre, cantidad, tipo, fecha,
+                        observaciones, proveedor, precio_kg, numero_factura, numero_oc
+                 FROM movimientos WHERE lote=? ORDER BY fecha""", (lote,))
+    cols = [d[0] for d in c.description]
+    movs = [dict(zip(cols, r)) for r in c.fetchall()]
+    c.execute("""SELECT id, producto, cantidad, fecha, observaciones, operador
+                 FROM producciones WHERE observaciones LIKE ? ORDER BY fecha""", (f'%{lote}%',))
+    cols2 = [d[0] for d in c.description]
+    prods = [dict(zip(cols2, r)) for r in c.fetchall()]
+    c.execute("""SELECT d.numero, cl.nombre, d.fecha, d.estado
+                 FROM despachos d LEFT JOIN clientes cl ON d.cliente_id=cl.id
+                 WHERE d.observaciones LIKE ?""", (f'%{lote}%',))
+    cols3 = [d[0] for d in c.description]
+    desps = [dict(zip(cols3, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'lote': lote, 'movimientos': movs, 'producciones': prods, 'despachos': desps})
+
+@app.route('/api/mp/<codigo>/historial-precios')
+def historial_precios_mp(codigo):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT fecha, proveedor, precio_kg, valor_total, numero_factura, numero_oc
+                 FROM movimientos WHERE material_id=? AND tipo='Entrada' AND precio_kg>0
+                 ORDER BY fecha DESC LIMIT 24""", (codigo,))
+    hist = [{'fecha':r[0],'proveedor':r[1],'precio_kg':r[2],'valor_total':r[3],'factura':r[4],'oc':r[5]} for r in c.fetchall()]
+    c.execute("SELECT precio_referencia, proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    mp = c.fetchone(); conn.close()
+    return jsonify({'codigo': codigo, 'precio_referencia': mp[0] if mp else 0,
+                    'proveedor_habitual': mp[1] if mp else '', 'historial': hist})
+
+@app.route('/api/mp/<codigo>/consumo-historico')
+def consumo_historico_mp(codigo):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT substr(fecha,1,7) as mes,
+                        SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END) as consumo_g,
+                        COUNT(CASE WHEN tipo='Salida' THEN 1 END) as n_salidas
+                 FROM movimientos WHERE material_id=?
+                 GROUP BY substr(fecha,1,7) ORDER BY mes DESC LIMIT 12""", (codigo,))
+    meses = [{'mes':r[0],'consumo_g':r[1],'n_salidas':r[2]} for r in c.fetchall()]
+    consumos = [m['consumo_g'] for m in meses if m['consumo_g'] and m['consumo_g'] > 0]
+    promedio = sum(consumos)/len(consumos) if consumos else 0
+    c.execute("SELECT lead_time_dias, stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    mp = c.fetchone(); conn.close()
+    lead = (mp[0] if mp and mp[0] else 7)
+    stock_min = (mp[1] if mp and mp[1] else 0)
+    punto_reorden = (promedio/30) * lead + stock_min
+    return jsonify({'codigo': codigo, 'meses': meses,
+                    'promedio_mes_g': round(promedio, 0),
+                    'consumo_diario_g': round(promedio/30, 1),
+                    'lead_time_dias': lead,
+                    'punto_reorden_g': round(punto_reorden, 0)})
+
+@app.route('/api/conteos', methods=['GET','POST'])
+def conteos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        num = 'CNT-' + datetime.now().strftime('%Y%m%d-%H%M')
+        c.execute("""INSERT INTO conteos_fisicos (numero,fecha_inicio,estado,responsable,observaciones)
+                     VALUES (?,?,'Abierto',?,?)""",
+                  (num, datetime.now().isoformat(), d.get('responsable',''), d.get('observaciones','')))
+        cid = c.lastrowid
+        c.execute("""SELECT mp.codigo_mp, mp.nombre_comercial,
+                            COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
+                                         WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0)
+                     FROM maestro_mps mp
+                     LEFT JOIN movimientos m ON mp.codigo_mp=m.material_id
+                     WHERE mp.activo=1 GROUP BY mp.codigo_mp""")
+        mps = c.fetchall()
+        for mp in mps:
+            c.execute("INSERT INTO conteo_items (conteo_id,codigo_mp,nombre_mp,stock_sistema) VALUES (?,?,?,?)",
+                      (cid, mp[0], mp[1], max(0, mp[2])))
+        c.execute("UPDATE conteos_fisicos SET total_items=? WHERE id=?", (len(mps), cid))
+        conn.commit(); conn.close()
+        return jsonify({'numero': num, 'id': cid, 'total_items': len(mps)}), 201
+    c.execute("SELECT id,numero,fecha_inicio,estado,responsable,total_items,items_diferencia FROM conteos_fisicos ORDER BY fecha_inicio DESC LIMIT 20")
+    rows = [{'id':r[0],'numero':r[1],'fecha':r[2],'estado':r[3],'responsable':r[4],'total':r[5],'diffs':r[6]} for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/conteos/<int:cid>', methods=['GET','PATCH'])
+def conteo_detalle(cid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'PATCH':
+        d = request.json or {}; accion = d.get('accion')
+        if accion == 'registrar_fisico':
+            sf = float(d.get('stock_fisico', 0))
+            c.execute("""UPDATE conteo_items SET stock_fisico=?,diferencia=?-stock_sistema,observaciones=?
+                         WHERE conteo_id=? AND codigo_mp=?""",
+                      (sf, sf, d.get('observaciones',''), cid, d.get('codigo_mp')))
+            c.execute("""UPDATE conteos_fisicos SET
+                         items_diferencia=(SELECT COUNT(*) FROM conteo_items
+                                          WHERE conteo_id=? AND stock_fisico IS NOT NULL AND ABS(diferencia)>0.1)
+                         WHERE id=?""", (cid, cid))
+        elif accion == 'cerrar':
+            c.execute("UPDATE conteos_fisicos SET estado='Cerrado',fecha_cierre=?,aprobado_por=? WHERE id=?",
+                      (datetime.now().isoformat(), d.get('aprobado_por',''), cid))
+        elif accion == 'aplicar_ajustes':
+            c.execute("SELECT codigo_mp,nombre_mp,diferencia FROM conteo_items WHERE conteo_id=? AND ABS(diferencia)>0.1 AND ajuste_aplicado=0", (cid,))
+            for cod, nom, dif in c.fetchall():
+                tipo = 'Entrada' if dif > 0 else 'Salida'
+                c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,estado_lote,operador)
+                             VALUES (?,?,?,?,?,?,'VIGENTE',?)""",
+                          (cod, nom, abs(dif), tipo, datetime.now().isoformat(), f'Ajuste conteo {cid}', d.get('responsable','')))
+                c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE conteo_id=? AND codigo_mp=?", (cid, cod))
+        conn.commit()
+        c.execute("SELECT id,numero,estado,total_items,items_diferencia FROM conteos_fisicos WHERE id=?", (cid,))
+        r = c.fetchone(); conn.close()
+        return jsonify({'id':r[0],'numero':r[1],'estado':r[2],'total':r[3],'diffs':r[4]})
+    c.execute("SELECT * FROM conteos_fisicos WHERE id=?", (cid,)); h = c.fetchone()
+    if not h: conn.close(); return jsonify({'error':'No encontrado'}), 404
+    c.execute("SELECT codigo_mp,nombre_mp,stock_sistema,stock_fisico,diferencia,ajuste_aplicado,observaciones FROM conteo_items WHERE conteo_id=? ORDER BY nombre_mp", (cid,))
+    items = [{'codigo':r[0],'nombre':r[1],'sistema':r[2],'fisico':r[3],'diff':r[4],'ajustado':r[5],'obs':r[6]} for r in c.fetchall()]
+    conn.close()
+    return jsonify({'header':{'id':h[0],'numero':h[1],'estado':h[4],'responsable':h[5],'total':h[7],'diffs':h[8]},'items':items})
+
+@app.route('/api/lotes/cuarentena', methods=['GET'])
+def lotes_cuarentena():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT id,material_id,material_nombre,cantidad,lote,fecha,proveedor,numero_factura,numero_oc,operador
+                 FROM movimientos WHERE estado_lote='CUARENTENA' ORDER BY fecha DESC""")
+    rows = [{'id':r[0],'codigo':r[1],'nombre':r[2],'cantidad_g':r[3],'lote':r[4],'fecha':r[5],
+             'proveedor':r[6],'factura':r[7],'oc':r[8],'operador':r[9]} for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/lotes/cuarentena/<int:mov_id>/liberar', methods=['POST'])
+def liberar_cuarentena(mov_id):
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error':'Solo admins pueden liberar cuarentena'}), 401
+    d = request.json or {}; decision = d.get('decision','Aprobado')
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
+    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (nuevo_estado, mov_id))
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (session['compras_user'], f'{decision.upper()}_CUARENTENA', 'movimientos',
+               str(mov_id), d.get('observaciones',''), request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'ok':True, 'decision':decision, 'estado':nuevo_estado})
+
+@app.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
+def actualizar_precio_mp(codigo):
+    d = request.json or {}; precio = float(d.get('precio_kg', 0))
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE maestro_mps SET precio_referencia=?,ultima_act_precio=? WHERE codigo_mp=?",
+              (precio, datetime.now().isoformat()[:10], codigo))
+    c.execute("""INSERT INTO precios_mp_historico (codigo_mp,proveedor,precio_kg,fecha,origen,observaciones)
+                 VALUES (?,?,?,?,?,?)""",
+              (codigo, d.get('proveedor',''), precio, datetime.now().isoformat()[:10],
+               d.get('origen','manual'), d.get('observaciones','')))
+    conn.commit(); conn.close()
+    return jsonify({'ok':True, 'precio_kg':precio})
 
 
 if __name__ == '__main__':
