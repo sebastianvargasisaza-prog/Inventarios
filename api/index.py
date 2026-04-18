@@ -2060,7 +2060,7 @@ async function loadClientes(){
         +'<td style="text-align:center;">'+(cl.total_pedidos||0)+'</td>'
         +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(cl.facturado_total)+'</td>'
         +'<td style="color:#999;font-size:0.85em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
-        +'<td><button class="btn btn-ghost btn-sm" onclick="verHistorialCliente('+cl.id+',\''+cl.nombre+'\')">Historial</button></td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verHistorialCliente('+cl.id+',\\''+cl.nombre+'\\')">Historial</button></td>'
         +'</tr>';
     }).join('');
   }catch(e){console.error(e);}
@@ -2096,7 +2096,7 @@ async function loadPedidos(estado){
         +'<td style="color:#999;font-size:0.85em;">'+(p.fecha_entrega_est||'—')+'</td>'
         +'<td>'+badgePed(p.estado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmt(p.valor_total)+'</td>'
-        +'<td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoPedido(\''+p.numero+'\')">Estado</button></td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoPedido(\\''+p.numero+'\\')">Estado</button></td>'
         +'</tr>';
     }).join('');
   }catch(e){console.error(e);}
