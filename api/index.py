@@ -1,11 +1,20 @@
 import os
 import json
 import sqlite3
-from datetime import datetime
+import hmac
+import time
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, Response, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
 COMPRAS_USERS = {
     'sebastian': os.environ.get('PASS_SEBASTIAN', 'hha2026'),
     'alejandro': os.environ.get('PASS_ALEJANDRO', 'hha2026'),
@@ -609,8 +618,115 @@ def init_db():
         ultimo_cumplimiento TEXT, proximo_vencimiento TEXT,
         responsable TEXT, estado TEXT DEFAULT 'Pendiente',
         creado_en TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS security_events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 ts        TEXT NOT NULL,
+                 event     TEXT NOT NULL,
+                 username  TEXT,
+                 ip        TEXT,
+                 user_agent TEXT,
+                 details   TEXT)""")
+    # ── MIGRACIÓN: ampliar schema proveedores ──────────────────────────────
+    for _pc in ['nit TEXT','id_interno TEXT','direccion TEXT',
+                'num_cuenta TEXT','tipo_cuenta TEXT','banco TEXT','cert_bancario TEXT',
+                'estado_lpa TEXT','ultima_evaluacion TEXT','vencimiento_docs TEXT',
+                'acuerdo_calidad TEXT','rut INTEGER DEFAULT 0','camara_comercio INTEGER DEFAULT 0',
+                'concepto_compra TEXT']:
+        try: c.execute(f'ALTER TABLE proveedores ADD COLUMN {_pc}')
+        except Exception: pass
+
+    # ── SEED: 67 proveedores del Listado Oficial ────────────────────────────
+    _provs = [{'nombre': 'PRESQUIM SAS', 'nit': '800.167.047-5', 'direccion': 'Carrera 13 N° 90 – 36 Of. 702 bogota', 'telefono': '318 4155087', 'correo': 'ventas1@presquim.com', 'contacto': 'ANDRES PAVA', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '473469991912', 'tipo_cuenta': 'CORRIENTE', 'banco': 'DAVIVIENDA', 'cert_bancario': None, 'id_interno': 'PROV-001', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-20', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'MEGA DISTRIBUCIONES', 'nit': '1130665584', 'direccion': 'Carrera 3 # 12-59 Pereira Risaralda', 'telefono': '320 4126407', 'correo': 'contactenos@megadistribuciones.co', 'contacto': 'VALENTINA', 'concepto': 'INSUMOS DE EPP', 'num_cuenta': '127300065852', 'tipo_cuenta': 'AHORROS DAMAS', 'banco': 'DAVIVIENDA', 'cert_bancario': None, 'id_interno': 'PROV-002', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-09', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'VARIEDADES E IMPORTACIONES', 'nit': '901675287', 'direccion': 'calle 13 paso ancho # 43-52', 'telefono': '300 4649945', 'correo': 'ROBINSONSOLI12@GMAIL.COM', 'contacto': 'ROBINSON', 'concepto': 'MATERIAL DE ENVASE', 'num_cuenta': '20500004705', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-003', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-05-16', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'ALEJANDRO GIRALDO TORREZ (MEGA VISUAL)', 'nit': '1107097226', 'direccion': 'Cra. 4 #18-69, COMUNA 3, Cali, Valle del Cauca', 'telefono': '317 5168170', 'correo': 'alejandrogiraldotorrez@gmail.com', 'contacto': 'BRAYAN', 'concepto': 'ACONDICIONAMIENTO', 'num_cuenta': '73605958351', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-004', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-17', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'AGENQUIMICOS', 'nit': '800032931', 'direccion': 'calle 18 # 5-60 b/ san nicolas', 'telefono': '322 6815561', 'correo': 'venta4@agenquimicos.com', 'contacto': 'ERIKA CARDONA', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '062-032931-00', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-005', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-21', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'EVACOL SAS', 'nit': '900062992', 'direccion': 'CR 23 13 40 Y 13 100 BRR ARROYOHONDO', 'telefono': '310 2102738', 'correo': 'jgerentecontabilidad@evacol.com', 'contacto': 'LILIANA', 'concepto': 'ZAPATOS', 'num_cuenta': '80327543789', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-006', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-11', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'LIMPIASEO DISTRIBUCIONES CALI SAS', 'nit': '901285074', 'direccion': 'Calle 7 # 25-05 Barrio el Cedro', 'telefono': '314 6819571', 'correo': 'limpiaseodistribuciones@hotmail.com', 'contacto': 'BAYRON JANSANSOY', 'concepto': 'ASEO', 'num_cuenta': '75000000844', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-007', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-07', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'CFC CAFARCOL SAS', 'nit': '860047379', 'direccion': 'calle 13 paso ancho # 43-52', 'telefono': '300 4649945', 'correo': 'cali@mencris.com', 'contacto': 'ROBINSON', 'concepto': 'MATERIAL DE ENVASE 2', 'num_cuenta': '23791226921', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-008', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-16', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'TWO GLASS SAS BIC', 'nit': '9018126525', 'direccion': 'Calle 13 # 27a - 05', 'telefono': '305 4591891', 'correo': 'twoglasssitioweb@gmail.com', 'contacto': 'ANGELICA ALEJO', 'concepto': 'ACONDICIONAMIENTO SERIGRAFIA', 'num_cuenta': '24136806040', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCO CAJA SOCIAL', 'cert_bancario': None, 'id_interno': 'PROV-009', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-14', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'PACTO IMPRESOS SAS', 'nit': '901131621', 'direccion': 'Calle 45 N° 2N - 68', 'telefono': '318 4905322', 'correo': 'Comercial@pactoimpresores.com', 'contacto': 'CAROLINA VELEZ', 'concepto': 'ACONDICIONAMIENTO', 'num_cuenta': '06200005487', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-010', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-05', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'MICROLAB', 'nit': '805019040', 'direccion': 'AV 2 G NORTE 51 N 71 BRR LA MERCED', 'telefono': '320 6802368', 'correo': 'impuestosmicrolab@gmail.com', 'contacto': None, 'concepto': 'ANALISIS MICROBIOLOGICOS', 'num_cuenta': '83600003511', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-011', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-30', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'SOS NATURAL COLOMBIA SAS', 'nit': '901587640', 'direccion': 'FINCA MIS ANOS DORADOS VEREDA EL HOGAR', 'telefono': '314 3751521', 'correo': 'info.sosnatural@gmail.com', 'contacto': 'ANDREA', 'concepto': 'MATERIA PRIMA VERDE ARMONIA', 'num_cuenta': '06400003041', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-012', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-17', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'TIENDA HAIKU', 'nit': '900983721', 'direccion': 'Cra 58 # 169a - 55 LC 131 bogota', 'telefono': '314 2229116', 'correo': 'ventas@tiendahaiku.com', 'contacto': None, 'concepto': 'MATERIA PRIMA VERDE ARMONIA Y PRODUCCION AGOSTO', 'num_cuenta': '22300007095', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-013', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-26', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ALARMAR LTDA', 'nit': '8909192674', 'direccion': 'CALLE 24 N  8N-10', 'telefono': '3168781340', 'correo': 'angele.padilla@alarmar.com.co', 'contacto': 'ANGELE PADILLA', 'concepto': 'ALARMA', 'num_cuenta': '391437829', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCO DE BOGOTA', 'cert_bancario': None, 'id_interno': 'PROV-014', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-02', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'POCHTECA COLOMBIA', 'nit': '900161367', 'direccion': 'CRA 19 # 82 - 85 OFICINA 305', 'telefono': '3123799010', 'correo': 'mcardenasm@pochteca.net', 'contacto': 'JOHANA', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '69935569787', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-015', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-08', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SUMINISTROS DE LABORATORIO KASALAB S.A.S', 'nit': '900745087', 'direccion': 'Cra. 1 No. 49-35', 'telefono': '317 4961234', 'correo': 'brianobregon@kasalab.com', 'contacto': 'BRIAN STIVEN OBREGON MEJIA', 'concepto': 'MORTEROS', 'num_cuenta': '27427058846', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-016', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-26', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ANA MARISOL SALDARRIAGA (LIDER DISTRIBUCIONES)', 'nit': '66870504', 'direccion': 'CALLE 23  31  39 BARRIO SANTA MONICA', 'telefono': '3206641705', 'correo': 'liderdistribucionescali@gmail.com', 'contacto': 'Ana', 'concepto': 'ENVASES', 'num_cuenta': '06501042995', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-017', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-05-19', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'COMPAÑIA COLOMBIANA DE QUIMICOS', 'nit': '860049957', 'direccion': 'CALLE 12  38-62 BOGOTA', 'telefono': '321 4903630', 'correo': 'nicolle.villamil@colquimicos.com', 'contacto': 'NICOLLE VILLAMIL', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '03100057271', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-018', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-02', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'CHEMY JAM COLOMBIA SAS', 'nit': '901180048', 'direccion': 'Calle 1C 40D79Bogota', 'telefono': '310 2180922', 'correo': 'chemy.jamcol@gmail.com', 'contacto': 'Alexandra', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '046101192', 'tipo_cuenta': 'AHORROS', 'banco': 'AV VILLAS', 'cert_bancario': None, 'id_interno': 'PROV-019', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-04', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'YANETH VARGAS RUEDA', 'nit': '66777565', 'direccion': 'KR 1 #32', 'telefono': '313 6864461', 'correo': 'qf.yanethvargasrueda@gmail.com', 'contacto': 'YANETH VARGAS RUEDA', 'concepto': 'INSPECCIONES', 'num_cuenta': '103848813', 'tipo_cuenta': 'AHORROS', 'banco': 'AV VILLAS', 'cert_bancario': None, 'id_interno': 'PROV-020', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-08', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'TIAN IPS SALUD OCUPACIONAL MEDICINA ALTE', 'nit': '900293402', 'direccion': 'CLL 47N # 3F-56 B/ VIPASA', 'telefono': '317 7687630', 'correo': 'servicliente@tianips.com', 'contacto': None, 'concepto': 'EXAMENES MEDICOS', 'num_cuenta': '06656365232', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-021', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-16', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'RODOLFO ANDRES SANCHEZ CONCHA (COMPETRI)', 'nit': '1130665584', 'direccion': 'CR 36 4 B 63', 'telefono': '3124035294', 'correo': 'COMPETRI@OUTLOOK.COM', 'contacto': 'ANDRES RODOLFO SANCHEZ', 'concepto': 'EPP', 'num_cuenta': '74510642809', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-022', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-13', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'IN CHEMICAL SAS', 'nit': '900653299', 'direccion': 'Calle 69 A # 88 A - 32', 'telefono': '350 7533246', 'correo': 'SERVICLIENTE@INCHEMICAL.COM', 'contacto': 'DIANA', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '24113130143', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-023', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-05-16', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'DISTRIBUIDORA CORDOBA S A S', 'nit': '860000615', 'direccion': 'Carrera 8 N° 49-64', 'telefono': '323 254 0422', 'correo': 'contacto@discordoba.com', 'contacto': 'PAOLA ANDREA RAMIREZ', 'concepto': 'ENVASES AMBAR 50ML', 'num_cuenta': '22769151361', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-024', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-30', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'TAPETES Y PISOS DEL PACIFICO SAS', 'nit': '805007745', 'direccion': 'AV 5 B NORTE 22 N 18', 'telefono': '316 5289374', 'correo': 'contabilidad@tapetesypisos.com.co', 'contacto': 'GILMA OSSA', 'concepto': 'TAPETE', 'num_cuenta': '82500001444', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-025', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-30', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'LEVER ASESORES SAS', 'nit': '901910221', 'direccion': 'AV ESTACION 45 BN 127 OF201', 'telefono': '301 7296448', 'correo': 'Santiago.laharenas@leverlegal.com.co', 'contacto': 'SANTIAGO', 'concepto': 'FACTURA AGOSTO ABOGADOS', 'num_cuenta': '74900006437', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-026', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-23', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'CONNPLANTS', 'nit': '900473144-6', 'direccion': 'Cra. 6a #30-12, COMUNA 4, Cali, Valle del Cauca, Colombia', 'telefono': '300 7258390', 'correo': 'andres.ramirez@connplants.com', 'contacto': 'ANDRES RAMIREZ', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '82396710626', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-027', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-05', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'SERPROASEO', 'nit': '900104742', 'direccion': 'CR 98 B 42 29', 'telefono': '310 6125805', 'correo': 'serproaseocontable@gmail.com', 'contacto': 'Laura hoyos', 'concepto': 'ASEO', 'num_cuenta': '146122759', 'tipo_cuenta': 'CORRIENTE', 'banco': 'AV VILLAS', 'cert_bancario': None, 'id_interno': 'PROV-028', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-26', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ASEO DEL SUROCCIDENTE S.A. ESP', 'nit': '900414483-6', 'direccion': 'CL 11A # 32 - 108 YUMBO', 'telefono': '315 4106896', 'correo': 'admon.suraseo@gmail.com', 'contacto': None, 'concepto': 'RECOLECCION RESIDUOS', 'num_cuenta': '51470270380', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-029', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-25', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ALMADINA SAS', 'nit': '901274606', 'direccion': 'CALLE 41 # 74 - 59', 'telefono': '300 5058181', 'correo': 'contacto@almadina.com.co', 'contacto': 'MARCELA', 'concepto': 'ENVASES LIP GLOSS', 'num_cuenta': '29800024887', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-030', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-07', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'IMCD COLOMBIA SAS', 'nit': '800134597', 'direccion': 'Cra 19 #95-20, Bogotá, Colombia', 'telefono': '318 2473413', 'correo': 'nicolas.lugo@imcdcolombia.com', 'contacto': 'ALEJANDRA', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '20018798278', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-031', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-01', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'AVA CHEMICAL SAS', 'nit': '9004485872', 'direccion': 'CALLE 17 103B 37 BOGOTA', 'telefono': None, 'correo': None, 'contacto': 'LYDA PATRICIA VANEGAS', 'concepto': 'MATERIA PRIMA ALEJANDRO', 'num_cuenta': '188725116', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-032', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-07', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'MERCADEO VALLE SAS', 'nit': '900777239', 'direccion': 'CR 85 A 17 83 P 1', 'telefono': '301 7901807', 'correo': 'mercadeovallecali@gmail.com', 'contacto': None, 'concepto': 'ESTELIRIZADOR DE AGUA', 'num_cuenta': '73632624309', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-033', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-21', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'PALMERA JUNIOR S.A.S.', 'nit': '900.405.705-8', 'direccion': 'AV 3N 45N 10 BRR LA MERCED', 'telefono': '315 3351762', 'correo': 'cartera2@palmerajunior.com', 'contacto': 'IBARRA VELASQUEZ EMMANUEL', 'concepto': 'FUMIGACION', 'num_cuenta': '06470292758', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-034', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-12-03', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'HANDLER SAS', 'nit': '900677390', 'direccion': 'CRA 97 # 24C-23 Bodega 3,', 'telefono': '3244118931', 'correo': 'sguzman@handlercolombia.com', 'contacto': 'santiago guzman alonson', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '237252022-31', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-035', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-12-18', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'LUISA DE MARILLAC GIRALDO OSPINA', 'nit': '42062642', 'direccion': 'calle 18 #4-79', 'telefono': '319 2197419', 'correo': None, 'contacto': 'GERARDO', 'concepto': 'CAJAS PLEGADIZAS', 'num_cuenta': '51402263591', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-036', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-05-12', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SCIENTIFIC PRODUCTS', 'nit': '805014913', 'direccion': 'Cra. 4b #36a-71, Cali,', 'telefono': '3176461543', 'correo': 'VENTAS7@SPLTAD.COM', 'contacto': 'HENERSON RAMIREZ', 'concepto': 'PICNOMETRO', 'num_cuenta': '07700007741', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-037', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-20', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ANAYCO SAS', 'nit': '811004746', 'direccion': 'Cra. 84 #37 - 61 Medellín Santa Monica', 'telefono': '312 4926639', 'correo': 'ventas@anayco.net', 'contacto': None, 'concepto': 'PIE DE REY', 'num_cuenta': '07200093339', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-038', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-12-02', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'DIEMPAQUES SAS', 'nit': '900048343', 'direccion': 'Carrera 59 # 14 - 79 Bogotá', 'telefono': '320 8995397', 'correo': 'serviclientes5@diempaques.com', 'contacto': 'PATRICIA AVILA', 'concepto': 'MATERIAL ENVASE', 'num_cuenta': '18623963661', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-039', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-19', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SAA LAB SAS', 'nit': '901848807', 'direccion': 'carrera 47 # 64-70', 'telefono': '3007758234', 'correo': 'saalabsas@gmail.com', 'contacto': 'Liliana castrillon', 'concepto': 'ESTUDIOS DE ESTABILIDAD', 'num_cuenta': '58000009082', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-040', 'categoria': None, 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-04', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'SUMIQUIM', 'nit': '805002736', 'direccion': 'Calle 15 No. 35-75 Bodega 2A / Parque Empresarial Servicomex Express / Acopi Yumbo', 'telefono': '316 7488717', 'correo': 'kamelhernandez@sumiquim.com', 'contacto': 'Kamel Andrez Hernández', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '83606734524', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-041', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-26', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SU PROVEEDOR QUIMICO PREFERIDO SAS', 'nit': '805023874', 'direccion': 'Carrera 4 # 22 - 59', 'telefono': '304 4209373', 'correo': 'suproquimltda@hotmail.com', 'contacto': 'Stephanie', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '06120211617', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-042', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-05', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'CROMAROMA SAS', 'nit': '860533213', 'direccion': 'Transversal 93 # 53-32 Bodega 52 Parque Empresarial El Dorado', 'telefono': '313 4213746', 'correo': 'ruby.millan@cromaroma.com.co', 'contacto': 'Ruby Millan', 'concepto': 'FRAGANCIA', 'num_cuenta': '20787774582', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-043', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-21', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'JULIAN ANDRES QUICENO VALENCIA', 'nit': '1053786250', 'direccion': 'Carrera 43A # 45SUR - 55 B/ Primavera.', 'telefono': '300 3046652', 'correo': 'ventas@bolsasyempaquescolombia.com', 'contacto': 'JULIAN ANDRES QUICENO VALENCIA', 'concepto': 'BOLSAS ZIPLOC', 'num_cuenta': '50651916574', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-044', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-18', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'IDENTIFIK TECNOLOGIA SAS', 'nit': '901191042', 'direccion': 'AV 5 AN DN 68 PASARELA LOCAL 232', 'telefono': '3192880714', 'correo': 'info@identifik.com.co', 'contacto': None, 'concepto': 'ROLLOS DE IMPRESORA', 'num_cuenta': '82595595092', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-045', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-04', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'G & M QUIMICA SAS', 'nit': '900023607', 'direccion': 'CALLE 33 No 9-47', 'telefono': '311 7390527', 'correo': 'ventas3@gmquimica.com', 'contacto': 'Gonzalez Suarez', 'concepto': 'MATERIA PRIMA', 'num_cuenta': '82388090710', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-046', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-21', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'RUBIELA RESTREPO DIAZ (ITALPLAST)', 'nit': '29.899.054-1', 'direccion': 'CALLE 18 No. 8 39', 'telefono': '3117198086', 'correo': 'italplastcali@hotmail.com', 'contacto': 'Juan Alberto Ossa', 'concepto': 'CINTA', 'num_cuenta': '80375991181', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-047', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-04', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'CI BALANZAS DE COLOMBIA LTDA', 'nit': '805023451', 'direccion': 'CL 23   17 D   43', 'telefono': '317 6369154', 'correo': 'auxiliar2@cibalanzasdecolombia.com', 'contacto': None, 'concepto': 'ADAPTADOR', 'num_cuenta': '83712557288', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-048', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-05', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SIILP SAS', 'nit': '901.005.198-0', 'direccion': 'CALLE 43 # 111-45 401A, Cali', 'telefono': '315 5389307', 'correo': 'jsobregon@siilp.com', 'contacto': 'JUAN SEBASTIAN', 'concepto': 'SEGURIDAD Y SALUD EN EL TRABAJO', 'num_cuenta': '015700036070', 'tipo_cuenta': 'AHORROS', 'banco': 'DAVIVIENDA', 'cert_bancario': None, 'id_interno': 'PROV-049', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-02', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'VELCO INGENIERÍA Y SERVICIOS S.A.S', 'nit': '901827384-1', 'direccion': 'Carrera 23 A Bis No. 26 - 105 Cali Valle', 'telefono': '315 974 4777', 'correo': 'velcoingenieriayservicios@gmail.com', 'contacto': 'Luis Felipe Velasco', 'concepto': 'MANTENIMIENTO', 'num_cuenta': '76000003535', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-050', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-15', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'INDUSTRIAS IMPERIO RIAÑOS SAS', 'nit': '901356657', 'direccion': 'Calle 16 #14-37', 'telefono': '3113494475', 'correo': 'industriasimperio2018@gmail.com', 'contacto': None, 'concepto': 'ESTANTERIAS', 'num_cuenta': '81500000624', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-051', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-03', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'ALUMINIO Y VIDRIOS', 'nit': '9006329412', 'direccion': 'Calle 9 No. 10 - 111 Barrio San Bosco', 'telefono': '316 471 0070', 'correo': 'contabilidad@vidriospormetro.com', 'contacto': 'Nidia gutierrez', 'concepto': 'ADECUACIONES LUZ', 'num_cuenta': None, 'tipo_cuenta': None, 'banco': None, 'cert_bancario': 'https://checkout.wompi.co/l/VPOS_guWoHx', 'id_interno': 'PROV-052', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-11', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'LUIS MIGUEL MEZA', 'nit': '1143961591', 'direccion': 'CALLE 13 #10-53', 'telefono': '3185597565', 'correo': 'alejito115m@gmail.com', 'contacto': 'LUIS MIGUEL MEZA', 'concepto': 'INSTALACION ESTANTERIAS', 'num_cuenta': '81579850761', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-053', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-12-12', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'SEGURITA SG S.A.S', 'nit': '901342162', 'direccion': 'CALLE 34 #1-64', 'telefono': '301 2613222', 'correo': 'seguritas@gmail.com', 'contacto': 'Daniela', 'concepto': 'TARROS DE BASURA', 'num_cuenta': '80700004928', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-054', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-06', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'SU PROVEEDOR QUIMICO PREFERIDO SAS', 'nit': '805023874', 'direccion': 'Carrera 4 # 22 - 59', 'telefono': '304 4209373', 'correo': 'suproquimltda@hotmail.com', 'contacto': 'Stephanie', 'concepto': 'MATERIA PRIMA  2', 'num_cuenta': '06120211617', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-055', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-10-13', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'GOLDEN BUSINESS CLASS SA', 'nit': '900299296', 'direccion': 'Autopista via bogota-Medellin KM 2,5', 'telefono': '3107891300', 'correo': 'ventas4@goldengbc.com', 'contacto': 'Gina Liliana', 'concepto': 'MICAS', 'num_cuenta': '65078825979', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-056', 'categoria': '🔴 Crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-07-16', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'TRS PARTES SA', 'nit': '900013663', 'direccion': 'Cra. 1 No. 49-35', 'telefono': '317 4961234', 'correo': 'julian.benavides@trspartes.com', 'contacto': 'JULIAN', 'concepto': 'FILTROS AIRES', 'num_cuenta': '30685260722', 'tipo_cuenta': 'AHORROS', 'banco': '74510642809', 'cert_bancario': None, 'id_interno': 'PROV-057', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-12-02', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'PAPELERIA UNIVERSAL\nDISTRIBUIDORA SAS', 'nit': '901.160.842-9', 'direccion': 'CRA 9 11 04', 'telefono': '315 8155803', 'correo': 'distribuidorauniversaldigital@gmail.com', 'contacto': 'CARDONA FERNANDEZ DIDALIA', 'concepto': 'PAPELERIA', 'num_cuenta': '017069991945', 'tipo_cuenta': 'CORRIENTE', 'banco': 'DAVIVIENDA', 'cert_bancario': None, 'id_interno': 'PROV-058', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-05-21', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'MUPRO INTERNACIONAL SAS', 'nit': '901803010', 'direccion': 'CALLE 7ª 24-25 San Nicolas', 'telefono': '317 7604440', 'correo': 'ANDRESSARRIADORADO@GMAIL.COM', 'contacto': 'ANDRES SARRIA DORADO', 'concepto': 'MESA PARA ACONDICIONAMIENTO', 'num_cuenta': '82100007872', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-059', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-11-12', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'SIAMED', 'nit': '9017515033', 'direccion': None, 'telefono': '320 6931797', 'correo': 'gerenciatecnica@amedasesorias.com', 'contacto': 'JORGE CHARRY', 'concepto': 'CALIBRACIÓN', 'num_cuenta': '0550108900617151', 'tipo_cuenta': 'AHORROS DAMAS', 'banco': 'DAVIVIENDA', 'cert_bancario': None, 'id_interno': 'PROV-060', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-04', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'HENRY DELGADO NAVAS (MERCURIO)', 'nit': '16583442', 'direccion': 'CRA 5 #18-74', 'telefono': '313 5784211', 'correo': 'graficasmercurio@gmail.com', 'contacto': 'LUZ MARINA PRADO', 'concepto': 'TINTAS Y SELOS', 'num_cuenta': '06213774889', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-061', 'categoria': '🟢 No crítico', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-09-24', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'UNIVERSIDAD SANTIAGO DE CALI', 'nit': '8903037971', 'direccion': 'Cl. 5 #62-00, Cuarto de Legua, Cali,', 'telefono': '314 8901580', 'correo': 'comercialmetrologia@usc.edu.co', 'contacto': 'Ingrid Galeano', 'concepto': 'CALIBRACIÓN BALANZA', 'num_cuenta': '484467436', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCO DE BOGOTA', 'cert_bancario': None, 'id_interno': 'PROV-062', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-06-10', 'venc_docs': None, 'acuerdo_calidad': None, 'rut': 0, 'cam_com': 0}, {'nombre': 'CODIFICACION & ETIQUETADO S A', 'nit': '830116638', 'direccion': 'Calle 23 116 31 Bodega 5 Bogota', 'telefono': '318 4999402', 'correo': 'paola.soto@coditeq.com', 'contacto': None, 'concepto': 'INYET', 'num_cuenta': '63830606281', 'tipo_cuenta': 'CORRIENTE', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-063', 'categoria': '🟠 Mayor', 'estado_lpa': 'Aprobado', 'ultima_eval': '2025-08-14', 'venc_docs': None, 'acuerdo_calidad': '⏳ Pendiente', 'rut': 0, 'cam_com': 0}, {'nombre': 'Hebei Yayoujia Packaging Products Co., Ltd.', 'nit': '91130402MAE4JBHG94', 'direccion': 'Room 913, Building B, No.18 Hanqi Building, Dongliu West Street, Hanshan District, Handan City, Hebei Province', 'telefono': '0086 17703203040', 'correo': 'yayoujia_sarah@163.com', 'contacto': 'Sarah Li', 'concepto': 'ENVASES CHINA', 'num_cuenta': None, 'tipo_cuenta': None, 'banco': None, 'cert_bancario': None, 'id_interno': 'PROV-064', 'categoria': '🔴 Crítico', 'estado_lpa': 'En Calificación', 'ultima_eval': 'Pendiente', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'Shaanxi Yuantai Biological Technology Co., Ltd', 'nit': '916101323337510488', 'direccion': "No.801, Building3, Dahua Stock Smart Industrial Park,\nTiangu 6th Road, Yanta District, Xi ''an, Shaanxi, China", 'telefono': '(+)86 180 9215 6330', 'correo': 'allen@sxytbio.com', 'contacto': 'ICEY', 'concepto': 'MATERIA PRIMA CHINA', 'num_cuenta': None, 'tipo_cuenta': None, 'banco': None, 'cert_bancario': None, 'id_interno': 'PROV-065', 'categoria': '🔴 Crítico', 'estado_lpa': 'En Calificación', 'ultima_eval': 'Pendiente', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'Shanghai Kaijin Packaging Products Co., Ltd.', 'nit': '91310117MA1J1KY537', 'direccion': 'Edificio A874, No. 2, Carril 158, Calle Gangye, Pueblo de Xiaokunshan, Distrito de Songjiang, Shanghái.', 'telefono': '(+)86 158 6832 7130', 'correo': None, 'contacto': 'ELLA', 'concepto': 'ENVASES CHINA', 'num_cuenta': None, 'tipo_cuenta': None, 'banco': None, 'cert_bancario': None, 'id_interno': 'PROV-066', 'categoria': '🔴 Crítico', 'estado_lpa': 'En Calificación', 'ultima_eval': 'Pendiente', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}, {'nombre': 'GERMAN ALZATE RAMIREZ (GALILEO)', 'nit': '16774136', 'direccion': 'CR 4 18 01 LC 04', 'telefono': '311 3472771', 'correo': None, 'contacto': 'German Alzate', 'concepto': 'ACONDICIONAMIENTO ETIQUETAS', 'num_cuenta': '06225334402', 'tipo_cuenta': 'AHORROS', 'banco': 'BANCOLOMBIA', 'cert_bancario': None, 'id_interno': 'PROV-067', 'categoria': '🟠 Mayor', 'estado_lpa': 'En Calificación', 'ultima_eval': 'Pendiente', 'venc_docs': None, 'acuerdo_calidad': '✅ Firmado', 'rut': 0, 'cam_com': 0}]
+    for _p in _provs:
+        try:
+            c.execute('''INSERT OR IGNORE INTO proveedores
+                (nombre,contacto,email,telefono,categoria,nit,direccion,num_cuenta,
+                 tipo_cuenta,banco,cert_bancario,id_interno,estado_lpa,
+                 ultima_evaluacion,vencimiento_docs,acuerdo_calidad,rut,camara_comercio,concepto_compra,fecha_creacion)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime("now"))''',
+                (_p['nombre'],_p['contacto'],_p['correo'],_p['telefono'],_p['categoria'],
+                 _p['nit'],_p['direccion'],_p['num_cuenta'],_p['tipo_cuenta'],_p['banco'],
+                 _p['cert_bancario'],_p['id_interno'],_p['estado_lpa'],_p['ultima_eval'],
+                 _p['venc_docs'],_p['acuerdo_calidad'],_p['rut'],_p['cam_com'],_p['concepto']))
+        except Exception: pass
+
+    # ── SEED: 19 OCs Abril 2026 — estado Borrador (pendiente autorización) ─
+    _ocs_abr = [('OC-260401', '2026-02-25', 'Revisada', 'CFC CAFARCOL SAS', 551781.0, 'Gotero blanco pipeta x520 para Fernando Meza — pago límite 14 abr', 'sistema', '2026-04-14', 'Envase'), ('OC-260304', '2026-03-04', 'Revisada', 'POCHTECA COLOMBIA', 197540.0, 'Materia prima — pago límite 14 abr', 'sistema', '2026-04-14', 'MPs'), ('OC-260402-ESP', '2026-04-14', 'Revisada', 'AGENQUIMICOS', 885999.99, 'Materia prima — pago límite 14 abr', 'sistema', '2026-04-14', 'MPs'), ('OC-260307', '2026-03-07', 'Revisada', 'IN CHEMICAL SAS', 702100.0, 'Materia prima — pago límite 14 abr', 'sistema', '2026-04-14', 'MPs'), ('OC-260202', '2026-02-02', 'Revisada', 'GYM QUIMICA', 250376.0, 'Materia prima — pago límite 16 abr', 'sistema', '2026-04-16', 'MPs'), ('OC-260301', '2026-03-01', 'Revisada', 'CHEMY JAM COLOMBIA SAS', 1203090.0, 'LEXFEEL WOW — pago límite 16 abr', 'sistema', '2026-04-16', 'MPs'), ('OC-260403', '2026-04-20', 'Revisada', 'SU PROVEEDOR QUIMICO PREFERIDO SAS', 530000.01, 'Propilenglicol — pago límite 20 abr', 'sistema', '2026-04-20', 'MPs'), ('OC-260406', '2026-04-17', 'Revisada', 'FLOW CHEM SAS', 202800.0, 'Detergentes BIOACID + PURE ACID MAX + PURE ALCA FORTE + flete', 'alejandro', '', 'Insumos'), ('OC-260402-ETQ', '2026-04-13', 'Revisada', 'CODIFICACION & ETIQUETADO S A', 1149730.0, 'Inject / codificación — pago límite 13 abr', 'sistema', '2026-04-13', 'Insumos'), ('OC-260320', '2026-03-20', 'Revisada', 'DUQUE SALDARRIAGA Y CIA SAS', 37100.63, 'Envases MRP — pago límite 17 abr', 'sistema', '2026-04-17', 'Envase'), ('OC-260313', '2026-03-13', 'Revisada', 'PLASTIVALLE SAS', 91159.95, 'Envase plástico — pago límite 13 abr', 'sistema', '2026-04-13', 'Envase'), ('OC-260317', '2026-03-17', 'Revisada', 'ALARMAR LTDA', 183837.71, 'Alarma mes de marzo — pago límite 15 abr', 'sistema', '2026-04-15', 'Servicios'), ('OC-260316', '2026-03-16', 'Revisada', 'MICROLAB', 2850706.72, 'Análisis microbiológicos — pago límite 18 abr', 'sistema', '2026-04-18', 'Análisis'), ('OC-260207', '2026-02-07', 'Revisada', 'PAPELERIA UNIVERSA SAS', 164600.21, 'Insumos papelería — pago límite 22 abr', 'sistema', '2026-04-22', 'Insumos'), ('OC-260309', '2026-03-09', 'Revisada', 'MOL LABS LTDA', 164220.0, 'Buffer pH — pago límite 22 abr', 'sistema', '2026-04-22', 'Análisis'), ('OC-260312', '2026-03-12', 'Revisada', 'CIEL TECHNOLOGY SAS', 1244850.0, 'Software CIEL — pago límite 22 abr', 'sistema', '2026-04-22', 'Servicios'), ('OC-251209', '2025-12-09', 'Revisada', 'DE LA PAVA Y COMPANIA SAS', 809200.0, 'Seguridad — pago límite 24 abr', 'sistema', '2026-04-24', 'Servicios'), ('OC-251216', '2025-12-16', 'Revisada', 'ARMEPLAS PRODALCA SAS', 2527322.0, 'Acondicionamiento / cañitas — pago límite 24 abr', 'sistema', '2026-04-24', 'Acondicionamiento'), ('OC-260127', '2026-01-27', 'Revisada', 'RACKETBALL SA', 389699.99, 'Laboratorios — pago límite 25 abr', 'sistema', '2026-04-25', 'Análisis')]
+    for _oc in _ocs_abr:
+        try:
+            c.execute('''INSERT OR IGNORE INTO ordenes_compra
+                (numero_oc,fecha,estado,proveedor,valor_total,observaciones,creado_por,fecha_entrega_est,categoria)
+                VALUES(?,?,?,?,?,?,?,?,?)''', _oc)
+        except Exception: pass
+    # Actualizar OCs ya sembradas como Borrador → Revisada (pendiente autorización CEO)
+    _oc_nums = ['OC-260401','OC-260304','OC-260402-ESP','OC-260307','OC-260202',
+                'OC-260301','OC-260403','OC-260406','OC-260402-ETQ','OC-260320',
+                'OC-260313','OC-260317','OC-260316','OC-260207','OC-260309',
+                'OC-260312','OC-251209','OC-251216','OC-260127']
+    try:
+        c.executemany("UPDATE ordenes_compra SET estado='Revisada' WHERE numero_oc=? AND estado='Borrador'",
+                      [(n,) for n in _oc_nums])
+    except Exception: pass
+
+    # ── SEED: Nóminas 1Q Abril 2026 ─────────────────────────────────────────
+    _nominas = [
+        ('2026-04-15','ANIMUS','Nómina personal ÁNIMUS Lab — 1Q Abril 2026',
+         'Nómina',12651985.0,'2026-04','nomina','NOM-ANIMUS-1Q-ABR26','sistema',
+         '8 empleados — Denis Alejandro Morales Restrepo + 7'),
+        ('2026-04-15','ESPAGIRIA','Nómina personal Espagiria — 1Q Abril 2026',
+         'Nómina',17339902.0,'2026-04','nomina','NOM-ESP-1Q-ABR26','sistema',
+         '11 empleados — Hernando Acevedo + Luis Dorronsoro + 9'),
+    ]
+    for _n in _nominas:
+        try:
+            if not c.execute('SELECT 1 FROM flujo_egresos WHERE referencia=?',(_n[7],)).fetchone():
+                c.execute('''INSERT INTO flujo_egresos
+                    (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por,observaciones)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''', _n)
+        except Exception: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS compromisos
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  descripcion TEXT NOT NULL,
+                  responsable TEXT DEFAULT '',
+                  area TEXT DEFAULT '',
+                  fecha_limite TEXT DEFAULT '',
+                  estado TEXT DEFAULT 'Pendiente',
+                  prioridad TEXT DEFAULT 'Normal',
+                  origen TEXT DEFAULT '',
+                  empresa TEXT DEFAULT 'Espagiria',
+                  fecha_creacion TEXT,
+                  fecha_cierre TEXT DEFAULT '',
+                  notas TEXT DEFAULT '')""")
+    seed_compromisos(c)
     conn.commit()
     conn.close()
+
+
+def seed_compromisos(c):
+    items = [
+        ('Revisar procedimiento limpieza con Fredy — definicion aseo profundo','Miguel Valencia','Calidad','2026-04-17','Completado','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Solicitar certificados calibracion viscosimetros a Catalina','Miguel Valencia','Calidad','2026-04-17','Pendiente','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Confirmar calibracion viscosimetros con Catalina','Sebastian Vargas','Gerencia','2026-04-17','Pendiente','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Enviar correo a Hernando para visto bueno de cronogramas SGD','Sebastian Vargas','Gerencia','2026-04-17','En Proceso','Critico','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Crear eventos calendario para seguimiento cronogramas SGD','Sebastian Vargas','Gerencia','2026-04-18','Pendiente','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Enviar listado de equipos pendientes de rotular','Miguel Valencia','Produccion','2026-04-17','Pendiente','Normal','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Diligenciar reporte retrospectivo reproceso Renova C10','Laura Gonzalez','Calidad','2026-04-17','Pendiente','Alta','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Abrir desviacion formalmente y compartir plan de accion','Laura Gonzalez','Calidad','2026-04-18','Pendiente','Critico','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Enviar rango de llenado real Renova C10 a gerencia','Laura Gonzalez','Calidad','2026-04-17','Pendiente','Alta','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Revisar procedimiento desviaciones/reprocesos','Laura Gonzalez','Calidad','2026-04-20','Pendiente','Normal','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Analisis de Causa Raiz formal Renova C10','Fredy Mantilla','Produccion','2026-04-20','Pendiente','Alta','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Consultar a Hernando que proveedores requieren contrato','Sebastian Vargas','Gerencia','2026-04-19','Pendiente','Alta','ACTA-ESP-2026-04-15-002','Espagiria'),
+        ('Corregir sistema generacion rotulos de produccion','Sebastian Vargas','Sistemas','2026-04-20','En Proceso','Alta','ACTA-ESP-2026-04-15-001','Espagiria'),
+        ('Reunirse con Fredy y Hernando para ajustar procedimiento desviaciones','Miguel Valencia','Calidad','2026-04-21','Pendiente','Normal','ACTA-ESP-2026-04-14-002','Espagiria'),
+        ('Preguntar a Yul sobre coordinacion cronograma sanitizantes','Miguel Valencia','Produccion','2026-04-17','Pendiente','Normal','ACTA-ESP-2026-04-14-001','Espagiria'),
+        ('Solicitar a Hernando visto bueno cronograma capacitaciones','Miguel Valencia','Calidad','2026-04-17','Pendiente','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
+    ]
+    for it in items:
+        try:
+            c.execute("""INSERT OR IGNORE INTO compromisos
+                (descripcion,responsable,area,fecha_limite,estado,prioridad,origen,empresa,fecha_creacion)
+                VALUES (?,?,?,?,?,?,?,?,date('now'))""", it)
+        except: pass
 
 
 def seed_rrhh(c):
@@ -824,7 +940,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 <body>
 <header>
   <div class="header-top">
-    <a href="/">&#8592; Hub</a>
+    <a href="/">&#8592; Inicio</a>
     <h1>&#128101; Recursos Humanos &mdash; HHA Group</h1>
     <span class="user-chip">{usuario}</span>
   </div>
@@ -1647,122 +1763,526 @@ loadEmpleados();
 """
 
 # ─── HUB HHA GROUP ────────────────────────────────────────────
+COMPROMISOS_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Compromisos — HHA Group</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-size:14px;}
+.topbar{background:#1e293b;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
+.topbar h1{font-size:17px;font-weight:600;}
+.tb-right{margin-left:auto;display:flex;gap:12px;font-size:13px;}
+.tb-right a{color:#94a3b8;text-decoration:none;}
+.tb-right a:hover{color:#fff;}
+.content{padding:20px;max-width:1200px;margin:0 auto;}
+.filter-bar{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.filter-bar select,.filter-bar input{padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
+.stats-row{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.stat-pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;}
+.sp-crit{background:#fee2e2;color:#991b1b;}
+.sp-alta{background:#fef3c7;color:#92400e;}
+.sp-pend{background:#dbeafe;color:#1e40af;}
+.sp-done{background:#dcfce7;color:#166534;}
+.comp-list{display:flex;flex-direction:column;gap:10px;}
+.comp-card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px;}
+.comp-card:hover{border-color:#a8a29e;}
+.comp-card.crit{border-left:4px solid #dc2626;}
+.comp-card.alta{border-left:4px solid #d97706;}
+.comp-card.norm{border-left:4px solid #3b82f6;}
+.comp-card.done{border-left:4px solid #16a34a;opacity:.7;}
+.comp-check{flex-shrink:0;width:22px;height:22px;border-radius:50%;border:2px solid #d6d3d1;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;margin-top:2px;}
+.comp-check.done{background:#16a34a;border-color:#16a34a;color:#fff;}
+.comp-body{flex:1;}
+.comp-desc{font-size:14px;font-weight:600;color:#1C1917;margin-bottom:4px;}
+.comp-card.done .comp-desc{text-decoration:line-through;color:#78716c;}
+.comp-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#78716c;margin-bottom:4px;}
+.badge-prior{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;}
+.pr-c{background:#fee2e2;color:#991b1b;}
+.pr-a{background:#fef3c7;color:#92400e;}
+.pr-n{background:#f3f4f6;color:#6b7280;}
+.pr-b{background:#f0fdf4;color:#166534;}
+.est-badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+.est-pend{background:#dbeafe;color:#1e40af;}
+.est-proc{background:#fef3c7;color:#92400e;}
+.est-comp{background:#dcfce7;color:#166534;}
+.est-canc{background:#f3f4f6;color:#6b7280;}
+.vencido-tag{color:#dc2626;font-weight:700;font-size:10px;}
+.comp-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.btn{padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;border:none;cursor:pointer;}
+.btn-prim{background:#1e293b;color:#fff;}
+.btn-succ{background:#16a34a;color:#fff;}
+.btn-warn{background:#d97706;color:#fff;}
+.btn-outl{background:#fff;color:#374151;border:1px solid #d6d3d1;}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:540px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.mh{padding:16px 20px;border-bottom:1px solid #e7e5e4;display:flex;align-items:center;justify-content:space-between;}
+.mh h3{font-size:15px;font-weight:700;}
+.mc{padding:20px;display:flex;flex-direction:column;gap:12px;}
+.mf{padding:12px 20px;border-top:1px solid #e7e5e4;display:flex;gap:8px;justify-content:flex-end;}
+.fg label{display:block;font-size:11px;font-weight:600;color:#44403c;margin-bottom:4px;}
+.fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.fab{position:fixed;bottom:20px;right:20px;background:#1e293b;color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
+.hidden{display:none;}
+.empty{text-align:center;padding:40px;color:#78716c;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>&#x1F4CB; Compromisos — HHA Group</h1>
+  <div class="tb-right">
+    <a href="/">&#x2190; Hub</a>
+    <a href="/gerencia">Gerencia</a>
+  </div>
+</div>
+<div class="content">
+  <div class="filter-bar">
+    <select id="f-estado" onchange="load()">
+      <option value="Todos">Todos los estados</option>
+      <option value="Pendiente" selected>Pendiente</option>
+      <option value="En Proceso">En Proceso</option>
+      <option value="Completado">Completado</option>
+    </select>
+    <select id="f-empresa" onchange="load()">
+      <option value="">Ambas empresas</option>
+      <option value="Espagiria">Espagiria</option>
+      <option value="ANIMUS">ANIMUS Lab</option>
+    </select>
+    <input id="f-q" type="text" placeholder="Buscar..." oninput="render()" style="min-width:180px;">
+    <button class="btn btn-prim" onclick="abrirModal()">+ Nuevo Compromiso</button>
+  </div>
+  <div id="stats" class="stats-row"></div>
+  <div id="list" class="comp-list"><div class="empty">Cargando...</div></div>
+</div>
+
+<button class="fab" onclick="abrirModal()">+</button>
+
+<div id="modal" class="modal-backdrop hidden">
+<div class="modal">
+  <div class="mh"><h3>Nuevo Compromiso</h3><button onclick="cerrar()" style="background:none;border:none;font-size:18px;cursor:pointer;">&times;</button></div>
+  <div class="mc">
+    <div class="fg"><label>Descripcion *</label><textarea id="n-desc" rows="2" placeholder="Que se comprometio a hacer..."></textarea></div>
+    <div class="grid2">
+      <div class="fg"><label>Responsable</label><input id="n-resp" placeholder="Nombre"></div>
+      <div class="fg"><label>Area</label><input id="n-area" placeholder="Calidad, Produccion..."></div>
+    </div>
+    <div class="grid2">
+      <div class="fg"><label>Fecha limite</label><input type="date" id="n-fecha"></div>
+      <div class="fg"><label>Prioridad</label>
+        <select id="n-prior"><option>Normal</option><option>Alta</option><option>Critico</option><option>Baja</option></select>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="fg"><label>Empresa</label>
+        <select id="n-emp"><option>Espagiria</option><option>ANIMUS</option><option>HHA Group</option></select>
+      </div>
+      <div class="fg"><label>Origen (acta/reunion)</label><input id="n-origen" placeholder="ACTA-ESP-..."></div>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn btn-outl" onclick="cerrar()">Cancelar</button>
+    <button class="btn btn-prim" onclick="guardar()">Guardar</button>
+  </div>
+</div>
+</div>
+
+<script>
+var _DATA = [];
+var hoy = new Date().toISOString().substring(0,10);
+
+function priClass(p){ return p==='Critico'?'crit':p==='Alta'?'alta':'norm'; }
+function priBadge(p){ var c={'Critico':'pr-c','Alta':'pr-a','Normal':'pr-n','Baja':'pr-b'}[p]||'pr-n'; return '<span class="badge-prior '+c+'">'+p+'</span>'; }
+function estBadge(e){ var c={'Pendiente':'est-pend','En Proceso':'est-proc','Completado':'est-comp','Cancelado':'est-canc'}[e]||'est-pend'; return '<span class="est-badge '+c+'">'+e+'</span>'; }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function isVencido(c){ return c.estado!=='Completado'&&c.estado!=='Cancelado'&&c.fecha_limite&&c.fecha_limite<hoy; }
+
+async function load(){
+  var estado = document.getElementById('f-estado').value;
+  var empresa = document.getElementById('f-empresa').value;
+  var url = '/api/compromisos?estado='+encodeURIComponent(estado)+(empresa?'&empresa='+encodeURIComponent(empresa):'');
+  var r = await fetch(url);
+  var d = await r.json();
+  _DATA = d.compromisos||[];
+  render();
+}
+
+function render(){
+  var q = document.getElementById('f-q').value.toLowerCase();
+  var filtered = q ? _DATA.filter(function(c){ return (c.descripcion||'').toLowerCase().indexOf(q)>=0||(c.responsable||'').toLowerCase().indexOf(q)>=0; }) : _DATA;
+  // Stats
+  var crit=filtered.filter(function(c){return c.prioridad==='Critico'&&c.estado!=='Completado';}).length;
+  var alta=filtered.filter(function(c){return c.prioridad==='Alta'&&c.estado!=='Completado';}).length;
+  var pend=filtered.filter(function(c){return c.estado==='Pendiente'||c.estado==='En Proceso';}).length;
+  var done=filtered.filter(function(c){return c.estado==='Completado';}).length;
+  var venc=filtered.filter(isVencido).length;
+  document.getElementById('stats').innerHTML =
+    (crit?'<span class="stat-pill sp-crit">&#x1F534; '+crit+' critico(s)</span>':'')+
+    (venc?'<span class="stat-pill sp-crit">&#x23F0; '+venc+' vencido(s)</span>':'')+
+    (alta?'<span class="stat-pill sp-alta">&#x1F7E1; '+alta+' alta prioridad</span>':'')+
+    '<span class="stat-pill sp-pend">&#x1F535; '+pend+' pendientes</span>'+
+    '<span class="stat-pill sp-done">&#x2705; '+done+' completados</span>';
+  if(!filtered.length){
+    document.getElementById('list').innerHTML='<div class="empty">No hay compromisos con estos filtros</div>';
+    return;
+  }
+  document.getElementById('list').innerHTML = filtered.map(function(c){
+    var isDone = c.estado==='Completado';
+    var isVenc = isVencido(c);
+    var cardCls = isDone?'done':priClass(c.prioridad);
+    var checkCls = isDone?'done':'';
+    var checkIcon = isDone?'&#x2713;':'';
+    return '<div class="comp-card '+cardCls+'">' +
+      '<div class="comp-check '+checkCls+'" onclick="toggleDone('+c.id+','+isDone+')">'+checkIcon+'</div>'+
+      '<div class="comp-body">'+
+        '<div class="comp-desc">'+esc(c.descripcion)+'</div>'+
+        '<div class="comp-meta">'+
+          priBadge(c.prioridad)+' '+estBadge(c.estado)+
+          (c.responsable?'<span>&#x1F464; '+esc(c.responsable)+'</span>':'')+
+          (c.area?'<span>&#x1F3E2; '+esc(c.area)+'</span>':'')+
+          (c.fecha_limite?'<span>'+(isVenc?'<span class="vencido-tag">VENCIDO </span>':'&#x1F4C5; ')+c.fecha_limite+'</span>':'')+
+          (c.empresa?'<span>&#x1F3ED; '+esc(c.empresa)+'</span>':'')+
+          (c.origen?'<span>&#x1F4CB; '+esc(c.origen)+'</span>':'')+
+        '</div>'+
+        (c.notas?'<div style="font-size:11px;color:#78716c;font-style:italic;margin-top:4px;">'+esc(c.notas)+'</div>':'')+
+        '<div class="comp-actions">'+
+          (!isDone?'<button class="btn btn-succ" onclick="marcar('+c.id+','Completado')">Completado</button>':'') +
+          (c.estado==='Pendiente'?'<button class="btn btn-warn" onclick="marcar('+c.id+','En Proceso')">En Proceso</button>':'')+
+          '<button class="btn btn-outl" onclick="promptNota('+c.id+')">Nota</button>'+
+        '</div>'+
+      '</div></div>';
+  }).join('');
+}
+
+async function toggleDone(id, wasDone){
+  var nuevoEstado = wasDone ? 'Pendiente' : 'Completado';
+  await fetch('/api/compromisos/'+id, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevoEstado})});
+  load();
+}
+async function marcar(id, estado){
+  await fetch('/api/compromisos/'+id, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:estado})});
+  load();
+}
+async function promptNota(id){
+  var nota = prompt('Agregar nota:');
+  if(!nota) return;
+  await fetch('/api/compromisos/'+id, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({notas:nota})});
+  load();
+}
+
+function abrirModal(){
+  ['n-desc','n-resp','n-area','n-origen'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('n-prior').value='Normal';
+  document.getElementById('n-emp').value='Espagiria';
+  document.getElementById('n-fecha').value='';
+  document.getElementById('modal').classList.remove('hidden');
+}
+function cerrar(){document.getElementById('modal').classList.add('hidden');}
+async function guardar(){
+  var desc=document.getElementById('n-desc').value.trim();
+  if(!desc){alert('Descripcion requerida');return;}
+  var body={
+    descripcion:desc,responsable:document.getElementById('n-resp').value,
+    area:document.getElementById('n-area').value,fecha_limite:document.getElementById('n-fecha').value,
+    prioridad:document.getElementById('n-prior').value,empresa:document.getElementById('n-emp').value,
+    origen:document.getElementById('n-origen').value
+  };
+  await fetch('/api/compromisos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  cerrar(); load();
+}
+
+document.getElementById('modal').addEventListener('click',function(e){if(e.target===this)cerrar();});
+load();
+</script>
+</body>
+</html>"""
+
+HOME_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HHA Group</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-height:100vh;}
+.hdr{background:#1C1917;color:#fff;padding:18px 28px;display:flex;align-items:center;gap:16px;}
+.hdr-logo{font-size:22px;font-weight:900;}
+.hdr-sub{font-size:12px;color:#a8a29e;margin-top:2px;}
+.hdr-right{margin-left:auto;font-size:12px;color:#78716c;}
+.wrap{max-width:960px;margin:40px auto;padding:0 20px;}
+.greeting{font-size:24px;font-weight:800;margin-bottom:6px;}
+.greeting-sub{font-size:14px;color:#78716c;margin-bottom:32px;}
+.sect{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#a8a29e;margin-bottom:12px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:14px;margin-bottom:32px;}
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:7px;text-decoration:none;color:#1C1917;transition:.15s;}
+.card:hover{border-color:#a8a29e;box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-2px);}
+.card-icon{font-size:28px;}
+.card-name{font-size:13px;font-weight:700;text-align:center;}
+.card-desc{font-size:11px;color:#78716c;text-align:center;}
+.card.ceo{border-color:#292524;background:#1C1917;color:#fff;}
+.card.ceo .card-desc{color:#a8a29e;}
+.card.ceo:hover{background:#292524;}
+.note{text-align:center;font-size:12px;color:#a8a29e;margin-top:8px;}
+.note a{color:#292524;font-weight:600;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="hdr"><div><div class="hdr-logo">HHA Group</div><div class="hdr-sub">Espagiria &middot; ANIMUS Lab</div></div><div class="hdr-right">Sistema de Gestion Interna</div></div>
+<div class="wrap">
+  <div class="greeting">&#128075; Bienvenido</div>
+  <div class="greeting-sub">Selecciona el modulo al que deseas acceder.</div>
+  <div class="sect">Produccion &amp; Inventario</div>
+  <div class="grid">
+    <a href="/inventarios" class="card"><div class="card-icon">&#128230;</div><div class="card-name">Inventario</div><div class="card-desc">Stock, lotes, trazabilidad</div></a>
+    <a href="/recepcion" class="card"><div class="card-icon">&#128666;</div><div class="card-name">Recepcion</div><div class="card-desc">Ingreso de MP y MEE</div></a>
+    <a href="/hub-salida" class="card"><div class="card-icon">&#128664;</div><div class="card-name">Despachos</div><div class="card-desc">Salidas y remisiones</div></a>
+    <a href="/maquila" class="card"><div class="card-icon">&#127981;</div><div class="card-name">Maquila</div><div class="card-desc">Produccion por encargo</div></a>
+  </div>
+  <div class="sect">Comercial &amp; Compras</div>
+  <div class="grid">
+    <a href="/compras" class="card"><div class="card-icon">&#128722;</div><div class="card-name">Compras</div><div class="card-desc">OC, proveedores, pagos</div></a>
+    <a href="/clientes" class="card"><div class="card-icon">&#128101;</div><div class="card-name">Clientes</div><div class="card-desc">Pedidos y despachos</div></a>
+  </div>
+  <div class="sect">Gerencia</div>
+  <div class="grid">
+    <a href="/gerencia" class="card ceo"><div class="card-icon">&#127759;</div><div class="card-name">Centro de Comando</div><div class="card-desc">Alertas, KPIs, decisiones</div></a>
+    <a href="/gerencia-financiero" class="card ceo"><div class="card-icon">&#128200;</div><div class="card-name">Financiero</div><div class="card-desc">P&amp;L, flujo de caja, WC</div></a>
+    <a href="/compromisos" class="card ceo"><div class="card-icon">&#128203;</div><div class="card-name">Compromisos</div><div class="card-desc">Actas y seguimiento</div></a>
+    <a href="/rrhh" class="card ceo"><div class="card-icon">&#128101;</div><div class="card-name">RRHH</div><div class="card-desc">Nomina y empleados</div></a>
+  </div>
+  <div class="note">Los modulos oscuros requieren <a href="/login">iniciar sesion como CEO</a></div>
+</div>
+</body>
+</html>"""
+
 HUB_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>HHA Group — Portal Interno</title>
+<title>HHA Group — Centro de Comando</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:50px 20px;}
-.logo-wrap{text-align:center;margin-bottom:52px;}
-.logo-badge{display:inline-block;background:#2B7A78;border-radius:16px;padding:16px 40px;margin-bottom:14px;box-shadow:0 4px 20px rgba(43,122,120,0.25);}
-.logo-text{font-size:2.2em;font-weight:900;color:white;letter-spacing:6px;text-transform:uppercase;}
-.logo-sub{color:#7A9E9C;font-size:0.82em;letter-spacing:3px;text-transform:uppercase;margin-top:6px;}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;max-width:1080px;width:100%;}
-.card{background:#fff;border:1px solid #DDE8E8;border-radius:14px;padding:32px 26px;text-decoration:none;display:block;position:relative;overflow:hidden;transition:all 0.25s ease;}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--c);border-radius:14px 14px 0 0;}
-.card:hover:not(.disabled){transform:translateY(-4px);border-color:var(--c);box-shadow:0 12px 32px rgba(43,122,120,0.12);}
-.card.disabled{opacity:0.4;cursor:not-allowed;pointer-events:none;}
-.card-icon{font-size:2.4em;margin-bottom:16px;display:block;}
-.card-title{font-size:1.25em;font-weight:700;color:#1C2B30;margin-bottom:4px;}
-.card-co{font-size:0.72em;color:var(--c);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:12px;}
-.card-desc{font-size:0.87em;color:#5C7A7A;line-height:1.65;margin-bottom:20px;}
-.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:0.72em;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
-.badge-on{background:rgba(43,122,120,.1);color:#2B7A78;}
-.badge-lock{background:rgba(180,148,60,.1);color:#B5924A;}
-.badge-soon{background:#F0EEEA;color:#9C8B7A;}
-.badge-open{background:#d1fae5;color:#065f46;}
-.c-inv{--c:#2B7A78;}.c-buy{--c:#B5924A;}.c-trz{--c:#4A8B6A;}.c-sol{--c:#7A4A8B;}
-.footer{margin-top:52px;color:#9C8B7A;font-size:0.78em;text-align:center;border-top:1px solid #E8E4DE;width:100%;max-width:1080px;padding-top:20px;}
-.credit{margin-top:6px;color:#B5A898;font-size:0.72em;text-align:center;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
+.header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 20px;display:flex;align-items:center;gap:12px;}
+.header-logo{font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.5px;}
+.header-sub{font-size:12px;color:#94a3b8;margin-top:1px;}
+.header-right{margin-left:auto;text-align:right;font-size:12px;color:#94a3b8;}
+.header-right strong{display:block;color:#fff;font-size:13px;}
+.alert-bar{padding:10px 20px;display:flex;gap:10px;align-items:center;background:#1e293b;border-bottom:1px solid #334155;flex-wrap:wrap;}
+.al-pill{display:flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;}
+.al-crit{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;}
+.al-aten{background:#451a03;color:#fcd34d;border:1px solid #78350f;}
+.al-ok{background:#052e16;color:#86efac;border:1px solid #14532d;}
+.al-pulse{width:8px;height:8px;border-radius:50%;animation:pulse 1.5s infinite;}
+.al-crit .al-pulse{background:#ef4444;}
+.al-aten .al-pulse{background:#f59e0b;}
+.al-ok .al-pulse{background:#22c55e;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.main{padding:20px;max-width:1400px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:768px){.main{grid-template-columns:1fr;}}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;}
+.card-title{font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.card-full{grid-column:1/-1;}
+.alert-item{display:flex;align-items:flex-start;gap:10px;padding:10px;border-radius:8px;margin-bottom:8px;background:#0f172a;border:1px solid #1e293b;}
+.alert-item.crit{border-left:3px solid #ef4444;}
+.alert-item.aten{border-left:3px solid #f59e0b;}
+.al-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.al-body{flex:1;}
+.al-title{font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:2px;}
+.al-detail{font-size:11px;color:#94a3b8;line-height:1.4;}
+.al-action{display:inline-block;margin-top:5px;padding:3px 10px;background:#334155;color:#e2e8f0;border-radius:4px;font-size:10px;text-decoration:none;font-weight:600;}
+.al-action:hover{background:#475569;}
+.kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.kpi{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;}
+.kpi-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.kpi-val{font-size:22px;font-weight:800;color:#f1f5f9;}
+.kpi-val.warn{color:#fb923c;}
+.kpi-val.crit{color:#f87171;}
+.kpi-val.good{color:#4ade80;}
+.kpi-sub{font-size:11px;color:#64748b;margin-top:2px;}
+.module-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
+.mod-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 10px;background:#0f172a;border:1px solid #334155;border-radius:10px;text-decoration:none;color:#e2e8f0;transition:.15s;cursor:pointer;}
+.mod-btn:hover{background:#1e293b;border-color:#475569;}
+.mod-icon{font-size:24px;}
+.mod-name{font-size:12px;font-weight:600;text-align:center;}
+.mod-badge{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700;}
+.mb-warn{background:#451a03;color:#fcd34d;}
+.mb-ok{background:#052e16;color:#86efac;}
+.mb-neutral{background:#1e293b;color:#94a3b8;}
+.comp-mini{display:flex;flex-direction:column;gap:6px;}
+.comp-mini-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0f172a;border-radius:6px;border:1px solid #1e293b;}
+.comp-mini-item.crit{border-left:2px solid #ef4444;}
+.comp-mini-item.alta{border-left:2px solid #f59e0b;}
+.comp-mini-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.dot-crit{background:#ef4444;}
+.dot-alta{background:#f59e0b;}
+.dot-norm{background:#3b82f6;}
+.comp-mini-text{font-size:12px;color:#cbd5e1;flex:1;line-height:1.3;}
+.comp-mini-meta{font-size:10px;color:#64748b;margin-left:auto;text-align:right;white-space:nowrap;}
+.section-hdr{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px;}
+.loading{color:#64748b;font-size:12px;text-align:center;padding:20px;}
+.spinner-txt{animation:pulse 1.5s infinite;}
 </style>
 </head>
 <body>
-<div class="logo-wrap">
-  <div class="logo-badge">
-    <div class="logo-text">HHA Group</div>
-    <div style="font-size:0.7em;font-weight:400;letter-spacing:2px;opacity:0.85;margin-top:5px;">TRANSFORMAMOS CIENCIA EN CUIDADO</div>
+<div class="header">
+  <div>
+    <div class="header-logo">HHA Group</div>
+    <div class="header-sub">Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
   </div>
-  <div class="logo-sub" style="margin-bottom:22px;">Sistema Operativo Interno</div>
-  <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:8px;">
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
-      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ÁNIMUS LAB</div>
-      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Autocuidado consciente</div>
+  <div class="header-right">
+    <strong id="fecha-hoy"></strong>
+    <span>Centro de Comando</span>
+  </div>
+</div>
+
+<div class="alert-bar" id="alert-bar">
+  <span class="spinner-txt" style="font-size:12px;color:#64748b;">Calculando alertas...</span>
+</div>
+
+<div class="main">
+  <!-- ALERTAS ACTIVAS -->
+  <div class="card">
+    <div class="card-title">&#x26A0; Requiere tu decision</div>
+    <div id="alertas-list"><div class="loading spinner-txt">Cargando...</div></div>
+  </div>
+
+  <!-- PULSO FINANCIERO -->
+  <div class="card">
+    <div class="card-title">&#x1F4B0; Pulso Financiero</div>
+    <div class="kpi-grid" id="kpi-fin">
+      <div class="loading spinner-txt" style="grid-column:1/-1;">Cargando...</div>
     </div>
-    <div style="background:#fff;border:1px solid #DDE8E8;border-radius:12px;padding:14px 28px;text-align:center;box-shadow:0 2px 8px rgba(43,122,120,0.07);min-width:180px;">
-      <div style="font-weight:800;font-size:0.95em;color:#1C2B30;letter-spacing:2px;">ESPAGIRIA</div>
-      <div style="font-size:0.72em;color:#7A9E9C;letter-spacing:1px;margin-top:3px;">Ciencia que crea</div>
+  </div>
+
+  <!-- COMPROMISOS CRITICOS -->
+  <div class="card">
+    <div class="card-title">&#x1F4CB; Compromisos criticos &amp; vencidos</div>
+    <div id="comp-list"><div class="loading spinner-txt">Cargando...</div></div>
+    <a href="/compromisos" style="display:block;text-align:center;margin-top:10px;font-size:12px;color:#64748b;text-decoration:none;">Ver todos los compromisos &rarr;</a>
+  </div>
+
+  <!-- MODULOS -->
+  <div class="card">
+    <div class="card-title">&#x1F5C4; Modulos del sistema</div>
+    <div class="module-grid" id="mod-grid">
+      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
+      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
+      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
+      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
+      <a class="mod-btn" href="/maquila"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
     </div>
   </div>
 </div>
-<div class="grid">
-  <a href="/inventarios" class="card c-inv">
-    <span class="card-icon">📦</span>
-    <div class="card-title">Inventarios</div>
-    <div class="card-co">Espagiria Laboratorios</div>
-    <div class="card-desc">Control de stock, recepción por lotes, FEFO, alertas de reabastecimiento y órdenes de compra automáticas.</div>
-    <span class="badge badge-on">● Activo</span>
-  </a>
-  <a href="/compras" class="card c-buy">
-    <span class="card-icon">🛒</span>
-    <div class="card-title">Compras</div>
-    <div class="card-co">HHA Group</div>
-    <div class="card-desc">Gestión de órdenes de compra, proveedores, aprobaciones y seguimiento de pedidos. Acceso restringido.</div>
-    <span class="badge badge-lock">🔒 Acceso restringido</span>
-  </a>
-  <a href="#" class="card c-trz disabled">
-    <span class="card-icon">🔬</span>
-    <div class="card-title">Trazabilidad</div>
-    <div class="card-co">Espagiria Laboratorios</div>
-    <div class="card-desc">Registro de qué lotes de materias primas se usaron en cada producción. Cumplimiento BPM.</div>
-    <span class="badge badge-soon">Próximamente</span>
-  </a>
-  <a href="/solicitudes" class="card c-sol">
-    <span class="card-icon">📋</span>
-    <div class="card-title">Solicitudes</div>
-    <div class="card-co">HHA Group</div>
-    <div class="card-desc">Solicitudes de compra del equipo. Crea y haz seguimiento de tus pedidos internos.</div>
-    <span class="badge badge-open">Abierto</span>
-  </a>
-  <a href="/clientes" class="card" style="--c:#7A4A8B">
-    <span class="card-icon">👥</span>
-    <div class="card-title">Clientes</div>
-    <div class="card-co">ÁNIMUS Lab · Espagiria</div>
-    <div class="card-desc">Pedidos de clientes, stock de producto terminado, despachos y trazabilidad comercial.</div>
-    <span class="badge badge-on">● Activo</span>
-  </a>
-  <a href="/gerencia" class="card" style="--c:#1C2B30">
-    <span class="card-icon">📊</span>
-    <div class="card-title">Gerencia HQ</div>
-    <div class="card-co">HHA Group · Panel CEO</div>
-    <div class="card-desc">KPIs en tiempo real, alertas críticas, flujo de caja y estado operacional consolidado.</div>
-    <span class="badge badge-lock">🔒 Admin</span>
-  </a>
-  <a href="/financiero" class="card" style="--c:#B5924A">
-    <span class="card-icon">💰</span>
-    <div class="card-title">Financiero</div>
-    <div class="card-co">HHA Group · Flujo de Caja</div>
-    <div class="card-desc">Ingresos, egresos, flujo de caja mensual y proyección vs presupuesto.</div>
-    <span class="badge badge-lock">🔒 Admin</span>
-  </a>
-  <a href="/rrhh" class="card" style="--c:#6d28d9">
-    <span class="card-icon">👥</span>
-    <div class="card-title">Recursos Humanos</div>
-    <div class="card-co">HHA Group</div>
-    <div class="card-desc">Empleados, nómina con cálculos colombianos, ausencias, capacitaciones BPM, evaluaciones y SGSST.</div>
-    <span class="badge badge-lock">🔒 Acceso restringido</span>
-  </a>
-  <a href="/recepcion" class="card" style="--c:#0e7490">
-    <span class="card-icon">📥</span>
-    <div class="card-title">Recepción</div>
-    <div class="card-co">Espagiria Laboratorios</div>
-    <div class="card-desc">Verifica ítem por ítem la mercancía que llega contra la OC. Registra cantidades, daños y observaciones.</div>
-    <span class="badge badge-open">Abierto</span>
-  </a>
-</div>
-<div class="footer">HHA Group © 2026 · Sistema interno de operaciones</div>
-<div class="credit">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
+
+<script>
+document.getElementById('fecha-hoy').textContent = new Date().toLocaleDateString('es-CO',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+function fmt(n){ return '$'+parseFloat(n||0).toLocaleString('es-CO',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+
+async function loadAll(){
+  try{
+    var [ra, rr] = await Promise.all([fetch('/api/hub/alertas'), fetch('/api/hub/resumen')]);
+    var alertas = await ra.json();
+    var resumen = await rr.json();
+    renderAlerts(alertas);
+    renderKpis(resumen);
+    updateModuleBadges(alertas.resumen, resumen);
+  }catch(e){ console.error(e); }
+  try{
+    var rc = await fetch('/api/compromisos?estado=Todos');
+    var dc = await rc.json();
+    renderCompromisos(dc.compromisos||[]);
+  }catch(e){}
+}
+
+function renderAlerts(data){
+  var alertas = data.alertas||[];
+  var res = data.resumen||{};
+  // Update alert bar
+  var barHtml = '';
+  if(res.critico>0) barHtml += '<div class="al-pill al-crit"><span class="al-pulse"></span>'+res.critico+' urgente'+(res.critico>1?'s':'')+'</div>';
+  if(res.atencion>0) barHtml += '<div class="al-pill al-aten"><span class="al-pulse"></span>'+res.atencion+' atencion</div>';
+  if(!res.critico && !res.atencion) barHtml = '<div class="al-pill al-ok"><span class="al-pulse"></span>Todo en orden</div>';
+  document.getElementById('alert-bar').innerHTML = barHtml;
+  // Alertas list
+  if(!alertas.length){
+    document.getElementById('alertas-list').innerHTML='<div class="loading" style="color:#4ade80;">&#x2705; Sin alertas activas</div>';
+    return;
+  }
+  document.getElementById('alertas-list').innerHTML = alertas.slice(0,8).map(function(a){
+    var icon = a.nivel==='critico' ? '&#x1F534;' : '&#x1F7E1;';
+    return '<div class="alert-item '+a.nivel+'">'+
+      '<span class="al-icon">'+icon+'</span>'+
+      '<div class="al-body">'+
+        '<div class="al-title">'+a.titulo+'</div>'+
+        '<div class="al-detail">'+a.detalle+'</div>'+
+        (a.accion?'<a class="al-action" href="'+a.accion+'">Ver &rarr;</a>':'')+
+      '</div></div>';
+  }).join('');
+}
+
+function renderKpis(r){
+  var ocs = r.ocs||{};
+  var comps = r.compromisos||{};
+  document.getElementById('kpi-fin').innerHTML =
+    mkKpi('Por autorizar', ocs.por_autorizar+' OCs', fmt(ocs.valor_autorizar||0), ocs.por_autorizar>0?'warn':'')+
+    mkKpi('Por pagar', ocs.por_pagar+' OCs', fmt(ocs.valor_pagar||0), ocs.por_pagar>0?'warn':'')+
+    mkKpi('Pagado esta semana', '',''+fmt(r.pagado_semana||0), 'good')+
+    mkKpi('Stock critico', r.stock_critico+' materiales', 'bajo minimo', r.stock_critico>5?'crit':r.stock_critico>0?'warn':'')+
+    mkKpi('Compromisos pendientes', comps.pendientes+' items', comps.vencidos+' vencidos', comps.vencidos>0?'crit':'')+
+    mkKpi('Clientes activos', r.clientes||0,'en sistema','');
+}
+
+function mkKpi(label,val,sub,cls){
+  return '<div class="kpi"><div class="kpi-label">'+label+'</div><div class="kpi-val'+(cls?' '+cls:'')+'" >'+val+'</div><div class="kpi-sub">'+sub+'</div></div>';
+}
+
+function renderCompromisos(items){
+  var hoy = new Date().toISOString().substring(0,10);
+  var urgent = items.filter(function(c){
+    return c.estado!=='Completado'&&c.estado!=='Cancelado'&&(c.prioridad==='Critico'||(c.fecha_limite&&c.fecha_limite<hoy));
+  }).slice(0,6);
+  if(!urgent.length){
+    document.getElementById('comp-list').innerHTML='<div class="loading" style="color:#4ade80;">&#x2705; Sin compromisos urgentes</div>';
+    return;
+  }
+  document.getElementById('comp-list').innerHTML = urgent.map(function(c){
+    var isVenc = c.fecha_limite && c.fecha_limite < hoy;
+    var cls = c.prioridad==='Critico'?'crit':'alta';
+    var dotCls = c.prioridad==='Critico'?'dot-crit':'dot-alta';
+    return '<div class="comp-mini-item '+cls+'">'+
+      '<span class="comp-mini-dot '+dotCls+'"></span>'+
+      '<span class="comp-mini-text">'+c.descripcion.substring(0,55)+'</span>'+
+      '<span class="comp-mini-meta">'+(isVenc?'<span style="color:#f87171;">VENC</span> ':'')+c.responsable+'<br>'+(c.fecha_limite||'')+'</span>'+
+    '</div>';
+  }).join('');
+}
+
+function updateModuleBadges(alRes, r){
+  var compBadge = document.getElementById('mb-comp');
+  if(compBadge){
+    var cnt = (r.ocs||{}).por_autorizar||0;
+    compBadge.textContent = cnt>0 ? cnt+' pendiente'+(cnt>1?'s':'') : 'ok';
+    compBadge.className = 'mod-badge '+(cnt>0?'mb-warn':'mb-ok');
+  }
+  var cliBadge = document.getElementById('mb-cli');
+  if(cliBadge){ cliBadge.textContent = r.clientes+' activos'; }
+  var comp2 = document.getElementById('mb-comp2');
+  if(comp2){
+    var cv = (r.compromisos||{}).vencidos||0;
+    comp2.textContent = cv>0?cv+' vencidos':'ok';
+    comp2.className = 'mod-badge '+(cv>0?'mb-warn':'mb-ok');
+  }
+}
+
+loadAll();
+setInterval(loadAll, 60000);
+</script>
 </body>
 </html>"""
 
@@ -1832,8 +2352,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="topbar">
-  <span class="topbar-title">👥 CLIENTES — HHA Group</span>
-  <a href="/">← Hub</a>
+  <a href="/" class="hha-back">&#8592; Inicio</a>
+  <span class="topbar-title">&#128101; CLIENTES — HHA Group</span>
 </div>
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-dash',this)">📊 Dashboard</div>
@@ -2123,7 +2643,7 @@ async function crearPedido(){
     var desc=row.querySelector('.ped-desc').value.trim();
     var cant=parseInt(row.querySelector('.ped-cant').value)||0;
     var precio=parseFloat(row.querySelector('.ped-precio').value)||0;
-    if((sku||desc)&&cant>0) items.push({sku:sku,descripcion:desc,cantidad:cant,precio_unitario:precio});
+    if((sku||desc)&&cant>0) items.push({sku:sku,descripcion:desc,cantidad:cant,precio_unitario:precio,subtotal:cant*precio});
   });
   if(!items.length){alert('Agrega al menos un ítem');return;}
   var data={cliente_id:parseInt(cid),fecha_entrega_est:document.getElementById('ped-fecha-ent').value,
@@ -2292,6 +2812,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 <body>
 <div class="topbar">
   <div class="topbar-left">
+    <a href="/" style="color:#a8a29e;text-decoration:none;font-size:12px;margin-right:4px;">&#8592; Inicio</a>
     <span class="logo">HHA GROUP</span>
     <span class="badge-ceo">PANEL GERENCIAL</span>
     <span class="periodo-badge" id="periodo-label">Cargando...</span>
@@ -2299,7 +2820,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div style="display:flex;align-items:center;gap:12px;">
     <button class="refresh-btn" onclick="loadKPIs()">⟳ Actualizar</button>
     <span class="ultima-act" id="ultima-actualizacion"></span>
-    <a href="/">← Hub</a>
+    <a href="/" style="font-size:12px;color:#a8a29e;text-decoration:none;">&#8592; Inicio</a>
   </div>
 </div>
 
@@ -2388,6 +2909,77 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="inp-group" style="margin-bottom:14px;"><label>Notas del período</label><input type="text" id="inp-notas" placeholder="Ej: Mes de lanzamiento NIAC, pago nómina atrasado..."></div>
     <button class="btn-save" onclick="guardarInputs()">💾 Guardar inputs del mes</button>
     <div id="inp-msg"></div>
+  </div>
+
+  <!-- FLUJO OPERACIONAL -->
+  <div class="section-title" style="margin-top:32px;">🔄 Flujo Operacional — Vista Ejecutiva</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;">
+    <div class="panel">
+      <div class="panel-title">📦 Compras pendientes de recibir
+        <a href="/recepcion" style="margin-left:auto;font-size:0.75em;color:#7ACFCC;text-decoration:none;font-weight:600;">→ Recepción</a>
+      </div>
+      <div id="g-ocs-transito"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">⚠ Recepciones con discrepancias</div>
+      <div id="g-disc"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">🚚 Pedidos listos para despachar
+        <a href="/hub-salida" style="margin-left:auto;font-size:0.75em;color:#7ACFCC;text-decoration:none;font-weight:600;">→ Hub Salida</a>
+      </div>
+      <div id="g-pedidos-listos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">✅ Despachos recientes</div>
+      <div id="g-despachos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+
+  <!-- QUICK NAV -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
+    <a href="/recepcion" style="background:rgba(43,122,120,0.2);border:1px solid rgba(43,122,120,0.4);color:#7ACFCC;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
+    <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
+    <a href="/compras" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
+    <a href="/clientes" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
+    <a href="/financiero" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">💰 Financiero</a>
+  </div>
+
+
+
+  <!-- INDICADORES EJECUTIVOS -->
+  <div class="section-title" style="margin-top:32px;">📊 Indicadores Ejecutivos — Tiempo Real</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
+    <div class="panel">
+      <div class="panel-title">💰 Ingresos del mes (real)</div>
+      <div id="gx-ingresos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📥 Cuentas por cobrar (AR)</div>
+      <div id="gx-ar"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📤 Cuentas por pagar (AP)</div>
+      <div id="gx-ap"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">🏭 Pipeline Maquila activo</div>
+      <div id="gx-maquila"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:28px;">
+    <div class="panel">
+      <div class="panel-title">⚠ Stock Critico — MPs bajo minimo</div>
+      <div id="gx-stock"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">✅ SGSST — Proximos vencimientos</div>
+      <div id="gx-sgsst"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">🔒 Accesos recientes</div>
+      <div id="gx-sec"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
   </div>
 
 </div><!-- /main -->
@@ -2517,10 +3109,163 @@ async function guardarInputs(){
   }catch(e){document.getElementById('inp-msg').innerHTML='<div class="msg-err-dark">Error</div>';}
 }
 
+async function loadFlujoOperacional() {
+  try {
+    var d = await fetch('/api/gerencia/flujo-operacional').then(function(r){ return r.json(); });
+    var nil = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin datos</div>';
+
+    // OCs en tránsito
+    var elt = document.getElementById('g-ocs-transito');
+    if (elt) {
+      var ocs = d.ocs_transito || [];
+      if (!ocs.length) { elt.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin OCs pendientes ✓</div>'; }
+      else {
+        elt.innerHTML = ocs.slice(0,4).map(function(o) {
+          return '<div class="data-row"><span class="data-lbl">' + o.numero_oc + ' — ' + (o.proveedor||'') + '</span>'
+            + '<span class="data-val amarillo">' + (o.dias_transito||0) + 'd</span></div>';
+        }).join('') + (ocs.length > 4 ? '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:6px 0;">+' + (ocs.length-4) + ' más</div>' : '');
+      }
+    }
+
+    // Discrepancias
+    var eld = document.getElementById('g-disc');
+    if (eld) {
+      var discs = d.recepciones_disc || [];
+      if (!discs.length) { eld.innerHTML = '<div style="color:#6ee7b7;font-size:0.85em;">Sin discrepancias ✓</div>'; }
+      else {
+        eld.innerHTML = discs.slice(0,4).map(function(r) {
+          return '<div class="data-row"><span class="data-lbl">' + r.numero_oc + '</span>'
+            + '<span class="data-val rojo">DISC</span></div>';
+        }).join('');
+      }
+    }
+
+    // Pedidos listos
+    var elp = document.getElementById('g-pedidos-listos');
+    if (elp) {
+      var peds = d.pedidos_listos || [];
+      if (!peds.length) { elp.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin pedidos pendientes</div>'; }
+      else {
+        elp.innerHTML = peds.slice(0,4).map(function(p) {
+          return '<div class="data-row"><span class="data-lbl">' + p.numero + ' — ' + (p.cliente||'') + '</span>'
+            + '<span class="data-val amarillo">$' + Number(p.valor_total||0).toLocaleString() + '</span></div>';
+        }).join('') + (peds.length > 4 ? '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:6px 0;">+' + (peds.length-4) + ' más</div>' : '');
+      }
+    }
+
+    // Despachos recientes
+    var elsp = document.getElementById('g-despachos');
+    if (elsp) {
+      var desps = d.despachos_recientes || [];
+      if (!desps.length) { elsp.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin despachos recientes</div>'; }
+      else {
+        elsp.innerHTML = desps.slice(0,4).map(function(ds) {
+          return '<div class="data-row"><span class="data-lbl">' + ds.numero + ' — ' + (ds.cliente||'') + '</span>'
+            + '<span class="data-val verde">' + (ds.fecha||'').slice(0,10) + '</span></div>';
+        }).join('');
+      }
+    }
+  } catch(e) { console.error('loadFlujoOperacional:', e); }
+}
+
 // Cargar al iniciar
 loadKPIs();
+loadFlujoOperacional();
 // Auto-refresh cada 5 minutos
 setInterval(loadKPIs, 300000);
+setInterval(loadFlujoOperacional, 300000);
+
+async function loadGerenciaExtra() {
+  try {
+    var d = await fetch('/api/gerencia/dashboard-extra').then(function(r){ return r.json(); });
+    var nil = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin datos</div>';
+    var fmtV = function(n){ return n==null?'—':'$'+Number(n).toLocaleString('es-CO',{maximumFractionDigits:0}); };
+    var clr = function(v,warn,danger){ return v>=danger?'rojo':(v>=warn?'amarillo':'verde'); };
+
+    // Ingresos del mes
+    var ig = d.ingresos_mes||{};
+    var elI = document.getElementById('gx-ingresos');
+    if(elI) elI.innerHTML =
+      '<div class="data-row"><span class="data-lbl">ANIMUS</span><span class="data-val verde">'+fmtV(ig.animus)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
+      +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+
+    // AR
+    var ar = d.ar||{};
+    var elAR = document.getElementById('gx-ar');
+    var arClr = ar.total>0?'amarillo':'verde';
+    if(elAR) elAR.innerHTML =
+      '<div class="data-row"><span class="data-lbl">Total</span><span class="data-val '+arClr+'">'+fmtV(ar.total)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl"># Pedidos</span><span class="data-val">'+( ar.count||0)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl">> 30 dias</span><span class="data-val '+(ar.vencido_30>0?'rojo':'verde')+'">'+fmtV(ar.vencido_30)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl">> 60 dias</span><span class="data-val '+(ar.vencido_60>0?'rojo':'verde')+'">'+fmtV(ar.vencido_60)+'</span></div>';
+
+    // AP
+    var ap = d.ap||{};
+    var elAP = document.getElementById('gx-ap');
+    var apClr = ap.total>500000?'amarillo':'verde';
+    if(elAP) elAP.innerHTML =
+      '<div class="data-row"><span class="data-lbl">Total</span><span class="data-val '+apClr+'">'+fmtV(ap.total)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl"># OCs</span><span class="data-val">'+( ap.count||0)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl">> 30 dias</span><span class="data-val '+(ap.vencido_30>0?'rojo':'verde')+'">'+fmtV(ap.vencido_30)+'</span></div>'
+      +'<div class="data-row"><span class="data-lbl">> 60 dias</span><span class="data-val '+(ap.vencido_60>0?'rojo':'verde')+'">'+fmtV(ap.vencido_60)+'</span></div>';
+
+    // Maquila pipeline
+    var mqs = d.maquila_pipeline||[];
+    var elM = document.getElementById('gx-maquila');
+    if(elM){
+      if(!mqs.length){ elM.innerHTML='<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin ordenes activas</div>'; }
+      else{
+        elM.innerHTML = mqs.slice(0,4).map(function(m){
+          return '<div class="data-row"><span class="data-lbl">'+m.numero+' — '+(m.cliente_nombre||'')+'</span><span class="data-val amarillo">'+fmtV(m.precio_lote)+'</span></div>';
+        }).join('');
+        if(mqs.length>4) elM.innerHTML += '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:4px 0;">+'+(mqs.length-4)+' mas</div>';
+      }
+    }
+
+    // Stock critico
+    var sc = d.stock_critico||[];
+    var elSC = document.getElementById('gx-stock');
+    if(elSC){
+      if(!sc.length){ elSC.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Stock OK en todos los MPs</div>'; }
+      else{
+        elSC.innerHTML = sc.slice(0,6).map(function(mp){
+          var pct = mp.stock_minimo>0?Math.round(mp.stock_actual/mp.stock_minimo*100):0;
+          return '<div class="data-row"><span class="data-lbl">'+mp.codigo_mp+' '+mp.nombre+'</span>'
+            +'<span class="data-val rojo">'+mp.stock_actual.toFixed(0)+'/'+mp.stock_minimo.toFixed(0)+' g ('+pct+'%)</span></div>';
+        }).join('');
+        if(sc.length>6) elSC.innerHTML += '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;">+'+(sc.length-6)+' MPs mas</div>';
+      }
+    }
+
+    // SGSST
+    var ss = d.sgsst_proximos||[];
+    var elSS = document.getElementById('gx-sgsst');
+    if(elSS){
+      if(!ss.length){ elSS.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Sin vencimientos proximos</div>'; }
+      else{
+        elSS.innerHTML = ss.slice(0,5).map(function(s){
+          var c=s.dias_restantes<=15?'rojo':(s.dias_restantes<=30?'amarillo':'verde');
+          return '<div class="data-row"><span class="data-lbl">'+s.descripcion.slice(0,30)+'</span><span class="data-val '+c+'">'+s.dias_restantes+'d</span></div>';
+        }).join('');
+      }
+    }
+
+    // Security
+    var sec = d.security||{};
+    var elSec = document.getElementById('gx-sec');
+    if(elSec){
+      var secH = '<div class="data-row"><span class="data-lbl">Logins exitosos (7d)</span><span class="data-val verde">'+(sec.success_7d||0)+'</span></div>';
+      secH += '<div class="data-row"><span class="data-lbl">Intentos fallidos (7d)</span><span class="data-val '+(sec.fail_7d>5?'rojo':(sec.fail_7d>0?'amarillo':'verde'))+'">'+( sec.fail_7d||0)+'</span></div>';
+      if(sec.last_event) secH += '<div class="data-row"><span class="data-lbl">Ultimo evento</span><span class="data-val" style="font-size:0.75em;">'+(sec.last_event||'').slice(0,16)+'</span></div>';
+      elSec.innerHTML = secH;
+    }
+
+  } catch(e){ console.error('loadGerenciaExtra:', e); }
+}
+
+loadGerenciaExtra();
+setInterval(loadGerenciaExtra, 300000);
 </script>
 </body>
 </html>"""
@@ -2577,6 +3322,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="topbar">
+  <a href="/" style="color:#a8a29e;text-decoration:none;font-size:13px;margin-right:8px;">&#8592; Inicio</a>
   <div class="topbar-title">💰 FINANCIERO — HHA GROUP</div>
   <div style="display:flex;gap:12px;align-items:center;">
     <span id="periodo-label" style="font-size:0.85em;opacity:0.85;"></span>
@@ -2589,6 +3335,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div class="tab" onclick="goTab('ingresos',this)">📈 Ingresos</div>
   <div class="tab" onclick="goTab('egresos',this)">📉 Egresos</div>
   <div class="tab" onclick="goTab('flujo',this)">🗓️ Flujo Mensual</div>
+  <div class="tab" onclick="goTab('ar',this)">📬 Por Cobrar</div>
+  <div class="tab" onclick="goTab('ap',this)">📤 Por Pagar</div>
+  <div class="tab" onclick="goTab('pnl',this)">📊 P&amp;L</div>
+  <div class="tab" onclick="goTab('wc',this)">💼 Capital</div>
   <div class="tab" onclick="goTab('config',this)">⚙️ Supuestos</div>
 </div>
 <div class="content">
@@ -2756,6 +3506,49 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
+<!-- AR AGING -->
+<div id="page-ar" class="page">
+  <div class="card">
+    <div class="section-title">📬 Cuentas por Cobrar — AR Aging</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Pedidos activos con saldo pendiente, agrupados por antigüedad.</p>
+    <div id="ar-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;"></div>
+    <div id="ar-table"></div>
+  </div>
+</div>
+
+<!-- AP AGING -->
+<div id="page-ap" class="page">
+  <div class="card">
+    <div class="section-title">📤 Cuentas por Pagar — AP Aging</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Órdenes de compra autorizadas/recibidas sin registrar pago, agrupadas por antigüedad.</p>
+    <div id="ap-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;"></div>
+    <div id="ap-table"></div>
+  </div>
+</div>
+
+<!-- P&L -->
+<div id="page-pnl" class="page">
+  <div class="card">
+    <div class="section-title">📊 P&amp;L — Estado de Resultados</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Ingresos, egresos y margen operacional por empresa y consolidado. Actualización mensual.</p>
+    <div id="pnl-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;"></div>
+    <div id="pnl-brands" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;"></div>
+    <div class="section-title" style="font-size:0.9em;margin-bottom:8px;">📈 Histórico 6 meses</div>
+    <canvas id="pnl-chart" height="100"></canvas>
+  </div>
+</div>
+
+<!-- WORKING CAPITAL -->
+<div id="page-wc" class="page">
+  <div class="card">
+    <div class="section-title">💼 Capital de Trabajo &amp; CCC</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Working capital, ciclo de conversión de efectivo (CCC), burn rate y runway.</p>
+    <div id="wc-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;"></div>
+    <div id="wc-ccc" style="margin-bottom:20px;"></div>
+    <div id="wc-equation"></div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -2784,6 +3577,10 @@ function goTab(id,el){
   if(id==='egresos')loadEgresos();
   if(id==='flujo')loadFlujo();
   if(id==='config'){loadConfig();loadPreciosMayorista();}
+  if(id==='ar')loadARaging();
+  if(id==='ap')loadAPaging();
+  if(id==='pnl')loadPNL();
+  if(id==='wc')loadWorkingCapital();
 }
 
 async function loadDashboard(){
@@ -3409,733 +4206,679 @@ input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px s
 COMPRAS_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Compras — Espagiria</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
-header{background:#fff;border-bottom:1px solid #e5e3e0;padding:0 24px;position:sticky;top:0;z-index:100;}
-.header-top{display:flex;align-items:center;justify-content:space-between;padding:12px 0 0;}
-.header-top h1{font-size:17px;font-weight:700;color:#1C1917;}
-.user-chip{font-size:12px;background:#f0ede8;padding:4px 10px;border-radius:20px;color:#666;}
-nav{display:flex;gap:0;overflow-x:auto;margin-top:4px;}
-.tab{padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:13px;color:#888;white-space:nowrap;font-weight:500;}
-.tab:hover{color:#1C1917;}
-.tab.active{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}
-main{max-width:1100px;margin:0 auto;padding:24px 16px;}
-.page{display:none;}
-.page.active{display:block;}
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
-.kpi{background:#fff;border-radius:10px;padding:16px;border:1px solid #e8e5e0;}
-.kpi-val{font-size:28px;font-weight:800;color:#1C1917;line-height:1;}
-.kpi-lbl{font-size:11px;color:#888;margin-top:4px;}
-.kpi.warn .kpi-val{color:#f59e0b;}
-.kpi.ok .kpi-val{color:#22c55e;}
-.kpi.alert .kpi-val{color:#ef4444;}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
-.panel{background:#fff;border-radius:10px;border:1px solid #e8e5e0;overflow:hidden;}
-.panel-hd{padding:14px 16px;border-bottom:1px solid #f0ede8;display:flex;align-items:center;justify-content:space-between;}
-.panel-hd h2{font-size:13px;font-weight:700;color:#1C1917;}
-.panel-body{padding:8px;}
-.oc-card{border:1px solid #e8e5e0;border-radius:8px;padding:12px;margin-bottom:8px;background:#fafaf9;}
-.oc-card:last-child{margin-bottom:0;}
-.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;color:#fff;}
-.cat-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;margin-right:4px;}
-.btn{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s;}
-.btn:active{opacity:.8;}
-.btn-primary{background:#4A6741;color:#fff;}
-.btn-primary:hover{background:#3d5636;}
-.btn-success{background:#16a34a;color:#fff;}
-.btn-success:hover{background:#15803d;}
-.btn-outline{background:#fff;color:#4A6741;border:1.5px solid #4A6741;}
-.btn-danger{background:#ef4444;color:#fff;}
-.btn-sm{padding:5px 10px;font-size:12px;}
-.btn-ghost{background:none;color:#888;border:1px solid #e0ddd8;}
-.table-wrap{overflow-x:auto;}
-table{width:100%;border-collapse:collapse;}
-thead th{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;padding:8px 10px;border-bottom:2px solid #f0ede8;text-align:left;}
-tbody td{padding:10px 10px;border-bottom:1px solid #f7f5f2;font-size:13px;vertical-align:middle;}
-tbody tr:hover{background:#fafaf8;}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.form-group{display:flex;flex-direction:column;gap:4px;}
-.form-group label{font-size:12px;font-weight:600;color:#555;}
-.form-group input,.form-group select,.form-group textarea{padding:8px 10px;border:1.5px solid #e0ddd8;border-radius:6px;font-size:13px;font-family:inherit;}
-.form-group input:focus,.form-group select:focus{outline:none;border-color:#4A6741;}
-.card{background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:20px;margin-bottom:16px;}
-.section-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:flex-start;justify-content:center;padding-top:50px;overflow-y:auto;}
-.modal-overlay.open{display:flex;}
-.modal{background:#fff;border-radius:12px;width:90%;max-width:660px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);}
-.modal-hd{padding:18px 20px;border-bottom:1px solid #f0ede8;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;}
-.modal-hd h3{font-size:15px;font-weight:700;}
-.modal-body{padding:20px;}
-.remision-print{font-family:monospace;background:#fafaf6;border:1px solid #ddd;border-radius:8px;padding:20px;font-size:12px;line-height:1.8;}
-.empty-state{text-align:center;padding:32px;color:#aaa;font-size:13px;}
-.alert-ok{background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#065f46;}
-.alert-warn{background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#92400e;}
-.recep-wrap{max-width:600px;}
-.recep-input{display:flex;gap:8px;margin-bottom:20px;}
-.recep-input input{flex:1;padding:12px 14px;border:2px solid #e0ddd8;border-radius:8px;font-size:15px;font-family:monospace;letter-spacing:1px;}
-.recep-input input:focus{outline:none;border-color:#4A6741;}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
-.info-cell{background:#f7f5f2;border-radius:6px;padding:10px 12px;}
-.info-cell .lbl{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px;}
-.info-cell .val{font-size:13px;font-weight:600;}
-@media(max-width:700px){
-  .kpi-grid{grid-template-columns:1fr 1fr;}
-  .two-col{grid-template-columns:1fr;}
-  .form-grid{grid-template-columns:1fr;}
-}
-@media print{
-  header,nav,.btn{display:none !important;}
-  .modal-overlay{position:static;display:block;padding:0;background:none;}
-  .modal{box-shadow:none;max-height:none;}
-}
+body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-size:14px;}
+.topbar{background:#292524;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
+.topbar h1{font-size:17px;font-weight:600;flex:1;}
+.topbar a{color:#d6d3d1;text-decoration:none;font-size:13px;}
+.topbar a:hover{color:#fff;}
+.tab-nav{background:#fff;border-bottom:2px solid #e7e5e4;display:flex;gap:0;overflow-x:auto;white-space:nowrap;}
+.tn{padding:11px 14px;font-size:13px;font-weight:500;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tn:hover{color:#292524;background:#fafaf9;}
+.tn.on{color:#292524;border-bottom-color:#292524;font-weight:700;}
+.pane{display:none;padding:18px 20px;max-width:1400px;margin:0 auto;}
+.pane.on{display:block;}
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
+.kpi{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
+.kpi-l{font-size:10px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.kpi-v{font-size:22px;font-weight:800;color:#292524;}
+.kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
+.kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
+/* Cards */
+.bar{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.bar input,.bar select{padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;color:#292524;}
+.bar input{min-width:190px;}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151;}
+.pill.y{background:#fef3c7;color:#92400e;} .pill.b{background:#dbeafe;color:#1e40af;} .pill.g{background:#dcfce7;color:#166534;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:7px;}
+.card:hover{border-color:#a8a29e;}
+.ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+.cnum{font-weight:700;font-size:13px;} .cprov{font-size:12px;color:#57534e;margin-top:1px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+.b-bor{background:#f3f4f6;color:#6b7280;} .b-rev{background:#fef3c7;color:#92400e;}
+.b-aut{background:#dbeafe;color:#1e40af;} .b-pag{background:#dcfce7;color:#166534;}
+.b-rec{background:#f0fdf4;color:#14532d;border:1px solid #bbf7d0;}
+.cmeta{font-size:11px;color:#78716c;display:flex;gap:10px;flex-wrap:wrap;}
+.cval{font-size:15px;font-weight:800;color:#292524;}
+.cobs{font-size:11px;color:#78716c;font-style:italic;}
+.acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:3px;}
+.btn{padding:6px 13px;border-radius:6px;font-size:12px;font-weight:600;border:none;cursor:pointer;}
+.bp{background:#292524;color:#fff;} .bp:hover{background:#44403c;}
+.bg{background:#16a34a;color:#fff;} .bg:hover{background:#15803d;}
+.bw{background:#d97706;color:#fff;} .bw:hover{background:#b45309;}
+.bi{background:#2563eb;color:#fff;} .bi:hover{background:#1d4ed8;}
+.bo{background:#fff;color:#292524;border:1px solid #d6d3d1;} .bo:hover{background:#f5f4f2;}
+.bs{padding:4px 10px;font-size:11px;}
+.empty{text-align:center;padding:36px;color:#78716c;font-size:13px;}
+.err{text-align:center;padding:20px;color:#dc2626;font-size:13px;}
+/* Prov */
+.pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;}
+.pc{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
+.pn{font-weight:700;font-size:14px;margin-bottom:3px;}
+.pnit{font-size:11px;color:#78716c;margin-bottom:8px;}
+.pd{font-size:12px;color:#57534e;display:flex;flex-direction:column;gap:2px;}
+/* Queue */
+.queue-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+@media(max-width:700px){.queue-row{grid-template-columns:1fr;}}
+.qbox{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
+.qtit{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#78716c;margin-bottom:10px;}
+/* Modal */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:none;align-items:center;justify-content:center;padding:16px;}
+.ov.on{display:flex;}
+.mdl{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.mdl-lg{max-width:700px;}
+.mh{padding:16px 20px;border-bottom:1px solid #e7e5e4;display:flex;align-items:center;justify-content:space-between;}
+.mh h3{font-size:15px;font-weight:700;}
+.mx{background:none;border:none;font-size:20px;cursor:pointer;color:#78716c;line-height:1;}
+.mb{padding:18px 20px;display:flex;flex-direction:column;gap:12px;}
+.mf{padding:12px 20px;border-top:1px solid #e7e5e4;display:flex;gap:8px;justify-content:flex-end;}
+.fg label{display:block;font-size:11px;font-weight:600;color:#44403c;margin-bottom:4px;}
+.fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
+.fg textarea{min-height:65px;resize:vertical;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.ibox{background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:12px;color:#57534e;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
+.ibox .lbl{color:#78716c;font-weight:600;white-space:nowrap;}
+.itbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
+.itbl th{background:#f5f4f2;padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:#44403c;}
+.itbl td{padding:5px 7px;border-bottom:1px solid #f3f4f6;}
+.itbl input{width:100%;border:1px solid #e7e5e4;border-radius:4px;padding:3px 6px;font-size:12px;}
+.total-row{text-align:right;margin-top:10px;font-size:15px;font-weight:700;}
+.fab{position:fixed;bottom:22px;right:22px;background:#292524;color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
 </style>
 </head>
 <body>
-<header>
-  <div class="header-top">
-    <a href="/" style="font-size:12px;color:#888;text-decoration:none;margin-right:12px;">&#8592; Hub</a>
-    <h1>Compras &mdash; Espagiria</h1>
-    <span class="user-chip">{usuario}</span>
-  </div>
-  <nav>
-    <button class="tab active" onclick="goTo('dashboard',this)">Dashboard</button>
-    <button class="tab" onclick="goTo('mp',this)">Materias Primas</button>
-    <button class="tab" onclick="goTo('mee',this)">Empaque</button>
-    <button class="tab" onclick="goTo('admin',this)">Pagos Admin</button>
-    <button class="tab" onclick="goTo('influencers',this)">Influencers</button>
-    <button class="tab" onclick="goTo('proveedores',this)">Proveedores</button>
-    <button class="tab" onclick="window.location='/recepcion'" style="margin-left:auto;font-size:11px;color:#4A6741;">Panel Recepci&oacute;n &#8599;</button>
-  </nav>
-</header>
-<main>
+<div class="topbar">
+  <h1>&#x1F6D2; Compras &mdash; Espagiria</h1>
+  <span style="font-size:13px;color:#a8a29e;">&#x1F464; {usuario}</span>&nbsp;&nbsp;
+  <a href="/">&#x2190; Hub</a>
+</div>
 
-<!-- DASHBOARD -->
-<div id="dashboard" class="page active">
-  <div class="kpi-grid">
-    <div class="kpi warn">
-      <div class="kpi-val" id="k-autorizar">—</div>
-      <div class="kpi-lbl">Por autorizar</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-val" id="k-transito">—</div>
-      <div class="kpi-lbl">En tr&aacute;nsito</div>
-    </div>
-    <div class="kpi ok">
-      <div class="kpi-val" id="k-pagar">—</div>
-      <div class="kpi-lbl">Por pagar</div>
-    </div>
-    <div class="kpi alert">
-      <div class="kpi-val" id="k-alertas">—</div>
-      <div class="kpi-lbl">Alertas stock</div>
-    </div>
-  </div>
-  <div class="two-col">
-    <div class="panel">
-      <div class="panel-hd">
-        <h2>&#9201; Para autorizar</h2>
-        <span style="font-size:11px;color:#888;">Solo Alejandro</span>
-      </div>
-      <div class="panel-body" id="lista-autorizar">
-        <div class="empty-state">Cargando...</div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-hd">
-        <h2>&#128181; Para pagar</h2>
-        <span style="font-size:11px;color:#888;">Ya recibido</span>
-      </div>
-      <div class="panel-body" id="lista-pagar">
-        <div class="empty-state">Cargando...</div>
-      </div>
-    </div>
-  </div>
-  <div class="panel">
-    <div class="panel-hd">
-      <h2>&#9888; Alertas de reabastecimiento</h2>
-      <button class="btn btn-ghost btn-sm" onclick="goTo('mp',document.querySelector('.tab:nth-child(2)'))">Ver MPs</button>
-    </div>
-    <div class="panel-body" id="alertas-mini" style="padding:4px 8px;">
-      <div class="empty-state">Cargando...</div>
-    </div>
+<div class="tab-nav">
+  <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
+  <button class="tn"     data-tab="mp">&#x1F9EA; Mat. Primas</button>
+  <button class="tn"     data-tab="mee">&#x1F4E6; Empaque</button>
+  <button class="tn"     data-tab="svc">&#x1F527; Servicios</button>
+  <button class="tn"     data-tab="adm">&#x1F4CB; Administrativo</button>
+  <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
+  <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
+  <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
+</div>
+
+<!-- PANES -->
+<div id="pane-dash" class="pane on">
+  <div id="kpi-area" class="kpis"></div>
+  <div class="queue-row">
+    <div class="qbox"><div class="qtit">&#x23F3; Para Autorizar</div><div id="q-aut"></div></div>
+    <div class="qbox"><div class="qtit">&#x1F4B8; Para Pagar</div><div id="q-pag"></div></div>
   </div>
 </div>
 
-<!-- CATEGORY PAGES -->
-<div id="mp" class="page"><div id="oc-list-mp"></div></div>
-<div id="mee" class="page"><div id="oc-list-mee"></div></div>
-<div id="admin" class="page"><div id="oc-list-admin"></div></div>
-<div id="influencers" class="page"><div id="oc-list-influencers"></div></div>
-
-<!-- RECEPCION -->
-<div id="recepcion" class="page">
-  <div class="card recep-wrap">
-    <h2 style="font-size:15px;font-weight:700;margin-bottom:6px;">Confirmar llegada de pedido</h2>
-    <p style="font-size:13px;color:#666;margin-bottom:20px;">Ingresa el c&oacute;digo de remisi&oacute;n del documento que acompa&ntilde;a el paquete.</p>
-    <div class="recep-input">
-      <input type="text" id="rem-input" placeholder="REM-ESP-20260418-001" oninput="this.value=this.value.toUpperCase()">
-      <button class="btn btn-primary" onclick="buscarRemision()">Buscar</button>
-    </div>
-    <div id="rem-result"></div>
+<div id="pane-mp"  class="pane">
+  <div class="bar">
+    <input type="text" id="q-mp" placeholder="Buscar..." oninput="renderCat('mp')">
+    <select id="s-mp" onchange="renderCat('mp')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
+    <button class="btn bp" onclick="openNuevaOC('MP')">+ Nueva OC</button>
   </div>
+  <div id="pills-mp" class="pills"></div>
+  <div id="grid-mp" class="grid"></div>
 </div>
 
-<!-- PROVEEDORES -->
-<div id="proveedores" class="page">
-  <div class="section-bar">
-    <h2 style="font-size:15px;font-weight:700;">Proveedores</h2>
-    <button class="btn btn-primary btn-sm" onclick="toggleFormProv()">+ Nuevo proveedor</button>
+<div id="pane-mee" class="pane">
+  <div class="bar">
+    <input type="text" id="q-mee" placeholder="Buscar..." oninput="renderCat('mee')">
+    <select id="s-mee" onchange="renderCat('mee')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
+    <button class="btn bp" onclick="openNuevaOC('MEE')">+ Nueva OC</button>
   </div>
-  <div id="form-prov-wrap" style="display:none;" class="card">
-    <h3 style="font-size:13px;font-weight:700;margin-bottom:14px;">Nuevo proveedor</h3>
-    <div class="form-grid">
-      <div class="form-group"><label>Nombre *</label><input id="pv-nombre" placeholder="Nombre empresa"></div>
-      <div class="form-group"><label>Contacto</label><input id="pv-contacto" placeholder="Nombre contacto"></div>
-      <div class="form-group"><label>Email</label><input id="pv-email" type="email" placeholder="email@empresa.com"></div>
-      <div class="form-group"><label>Tel&eacute;fono</label><input id="pv-tel" placeholder="301 000 0000"></div>
-      <div class="form-group"><label>Categor&iacute;a</label>
-        <select id="pv-cat"><option>MPs</option><option>MEE</option><option>Admin</option><option>General</option></select>
-      </div>
-      <div class="form-group"><label>Condiciones de pago</label><input id="pv-pago" placeholder="30 d&iacute;as, contado..."></div>
-    </div>
-    <div style="margin-top:14px;display:flex;gap:8px;">
-      <button class="btn btn-primary btn-sm" onclick="crearProveedor()">Guardar</button>
-      <button class="btn btn-ghost btn-sm" onclick="toggleFormProv()">Cancelar</button>
-    </div>
-    <div id="prov-msg" style="margin-top:8px;font-size:13px;"></div>
-  </div>
-  <div id="tabla-proveedores"></div>
+  <div id="pills-mee" class="pills"></div>
+  <div id="grid-mee" class="grid"></div>
 </div>
 
-</main>
-
-<!-- MODAL: OC DETALLE -->
-<div class="modal-overlay" id="modal-oc">
-  <div class="modal">
-    <div class="modal-hd">
-      <h3 id="modal-oc-titulo">Orden de Compra</h3>
-      <button onclick="closeModal('modal-oc')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
-    </div>
-    <div class="modal-body" id="modal-oc-body">Cargando...</div>
+<div id="pane-svc" class="pane">
+  <div class="bar">
+    <input type="text" id="q-svc" placeholder="Buscar..." oninput="renderCat('svc')">
+    <select id="s-svc" onchange="renderCat('svc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
+    <button class="btn bp" onclick="openNuevaOC('SVC')">+ Nueva OC</button>
   </div>
+  <div id="pills-svc" class="pills"></div>
+  <div id="grid-svc" class="grid"></div>
 </div>
 
-<!-- MODAL: NUEVA OC -->
-<div class="modal-overlay" id="modal-nueva-oc">
-  <div class="modal">
-    <div class="modal-hd">
-      <h3 id="modal-nueva-titulo">Nueva Orden de Compra</h3>
-      <button onclick="closeModal('modal-nueva-oc')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid" style="margin-bottom:14px;">
-        <div class="form-group"><label>Proveedor *</label><input id="noc-proveedor" placeholder="Nombre del proveedor"></div>
-        <div class="form-group"><label>Categor&iacute;a</label>
-          <select id="noc-categoria">
-            <option value="MP">Materias Primas</option>
-            <option value="MEE">Empaque / MEE</option>
-            <option value="Admin">Pago Administrativo</option>
-            <option value="Influencer">Influencer</option>
-          </select>
-        </div>
-        <div class="form-group"><label>Fecha entrega estimada</label><input id="noc-fecha" type="date"></div>
-        <div class="form-group"><label>Observaciones</label><input id="noc-obs" placeholder="Notas adicionales..."></div>
-      </div>
-      <div id="noc-items-section">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <label style="font-size:12px;font-weight:700;color:#555;">&Iacute;tems del pedido</label>
-          <button class="btn btn-ghost btn-sm" onclick="addItemNoc()">+ A&ntilde;adir &iacute;tem</button>
-        </div>
-        <div id="noc-items-list"></div>
-      </div>
-      <div id="noc-total" style="text-align:right;font-weight:700;margin-top:8px;font-size:14px;color:#4A6741;"></div>
-      <div style="margin-top:16px;display:flex;gap:8px;">
-        <button class="btn btn-primary" onclick="crearOC()">Crear OC en Borrador</button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-nueva-oc')">Cancelar</button>
-      </div>
-      <div id="noc-msg" style="margin-top:8px;font-size:13px;"></div>
-    </div>
+<div id="pane-adm" class="pane">
+  <div class="bar">
+    <input type="text" id="q-adm" placeholder="Buscar..." oninput="renderCat('adm')">
+    <select id="s-adm" onchange="renderCat('adm')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
+    <button class="btn bp" onclick="openNuevaOC('ADM')">+ Nueva OC</button>
   </div>
+  <div id="pills-adm" class="pills"></div>
+  <div id="grid-adm" class="grid"></div>
 </div>
 
-<!-- MODAL: PAGO -->
-<div class="modal-overlay" id="modal-pago">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-hd">
-      <h3>Registrar pago</h3>
-      <button onclick="closeModal('modal-pago')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
-    </div>
-    <div class="modal-body">
-      <p style="color:#666;font-size:13px;margin-bottom:16px;">Esta acci&oacute;n marca la OC como pagada y registra el egreso en el m&oacute;dulo financiero.</p>
-      <div class="form-group" style="margin-bottom:12px;">
-        <label>Monto pagado (COP)</label>
-        <input type="number" id="pago-monto" placeholder="0" style="font-size:18px;font-weight:700;">
-      </div>
-      <div class="form-group" style="margin-bottom:12px;">
-        <label>Medio de pago</label>
-        <select id="pago-medio"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>Otro</option></select>
-      </div>
-      <div class="form-group" style="margin-bottom:16px;">
-        <label>Observaciones / comprobante</label>
-        <input id="pago-obs" placeholder="N&uacute;m. transacci&oacute;n, banco...">
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-success" onclick="confirmarPago()">Confirmar pago</button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
-      </div>
-      <div id="pago-msg" style="margin-top:8px;font-size:13px;"></div>
-    </div>
+<div id="pane-inf" class="pane">
+  <div class="bar">
+    <input type="text" id="q-inf" placeholder="Buscar..." oninput="renderCat('inf')">
+    <select id="s-inf" onchange="renderCat('inf')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
+    <button class="btn bp" onclick="openNuevaOC('INF')">+ Nueva OC</button>
   </div>
+  <div id="pills-inf" class="pills"></div>
+  <div id="grid-inf" class="grid"></div>
 </div>
 
-<!-- MODAL: REMISION IMPRIMIBLE -->
-<div class="modal-overlay" id="modal-remision">
-  <div class="modal" style="max-width:580px;">
-    <div class="modal-hd">
-      <h3>Remisi&oacute;n de Compra</h3>
-      <button onclick="closeModal('modal-remision')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div id="remision-content"></div>
-      <div style="margin-top:16px;display:flex;gap:8px;" class="no-print">
-        <button class="btn btn-primary" onclick="window.print()">Imprimir</button>
-        <button class="btn btn-ghost" onclick="closeModal('modal-remision')">Cerrar</button>
+<div id="pane-cc" class="pane">
+  <div class="bar">
+    <input type="text" id="q-cc" placeholder="Buscar..." oninput="renderCat('cc')">
+    <select id="s-cc" onchange="renderCat('cc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
+    <button class="btn bp" onclick="openNuevaOC('CC')">+ Nueva OC</button>
+  </div>
+  <div id="pills-cc" class="pills"></div>
+  <div id="grid-cc" class="grid"></div>
+</div>
+
+<div id="pane-prov" class="pane">
+  <div class="bar">
+    <input type="text" id="q-prov" placeholder="Buscar proveedor..." oninput="renderProv()">
+    <button class="btn bp" onclick="openModal('m-nprov')">+ Nuevo Proveedor</button>
+  </div>
+  <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
+</div>
+
+<!-- MODAL: Nueva OC -->
+<div id="m-noc" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#x1F4DD; Nueva Orden de Compra</h3><button class="mx" onclick="closeModal('m-noc')">&times;</button></div>
+  <div class="mb">
+    <div class="g2">
+      <div class="fg"><label>Categoria</label>
+        <select id="noc-cat">
+          <option value="MP">Materias Primas</option><option value="MEE">Empaque &amp; Envase</option>
+          <option value="SVC">Servicios</option><option value="ADM">Administrativo</option>
+          <option value="INF">Infraestructura</option><option value="CC">Cuenta de Cobro</option>
+        </select>
       </div>
+      <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
     </div>
+    <div class="fg">
+      <label>Proveedor</label>
+      <select id="noc-prov" onchange="fillProv('noc-prov','noc-ibox')"><option value="">-- Seleccionar --</option></select>
+      <div id="noc-ibox" class="ibox" style="display:none"></div>
+    </div>
+    <div class="fg"><label>Concepto / Observaciones</label><textarea id="noc-obs" placeholder="Descripcion del pedido..."></textarea></div>
+    <div>
+      <label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
+      <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
+      <tbody id="noc-tbody"></tbody></table>
+      <button class="btn bo bs" style="margin-top:8px;" onclick="addRow()">+ Item</button>
+    </div>
+    <div class="total-row">Total: <span id="noc-tot">$0</span></div>
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
+    <button class="btn bp" onclick="crearOC()">Crear OC</button>
   </div>
 </div>
+</div>
+
+<!-- MODAL: Revisar y Asignar -->
+<div id="m-rev" class="ov">
+<div class="mdl">
+  <div class="mh"><h3>&#x270F; Revisar &amp; Asignar</h3><button class="mx" onclick="closeModal('m-rev')">&times;</button></div>
+  <div class="mb">
+    <div id="rev-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div class="fg">
+      <label>Proveedor / Beneficiario</label>
+      <select id="rev-prov" onchange="fillProv('rev-prov','rev-ibox')"><option value="">-- Seleccionar --</option></select>
+      <div id="rev-ibox" class="ibox" style="display:none"></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>Valor Total ($)</label><input type="number" id="rev-val" min="0" step="0.01" placeholder="0"></div>
+      <div class="fg"><label>Fecha entrega</label><input type="date" id="rev-fent"></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="rev-obs" placeholder="Notas de revision..."></textarea></div>
+    <input type="hidden" id="rev-num">
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-rev')">Cancelar</button>
+    <button class="btn bw" onclick="confirmarRev()">Marcar Revisada</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Registrar Pago -->
+<div id="m-pago" class="ov">
+<div class="mdl">
+  <div class="mh"><h3>&#x1F4B8; Registrar Pago</h3><button class="mx" onclick="closeModal('m-pago')">&times;</button></div>
+  <div class="mb">
+    <div id="pago-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div class="g2">
+      <div class="fg"><label>Monto Pagado ($)</label><input type="number" id="pago-monto" min="0" step="0.01" placeholder="0"></div>
+      <div class="fg"><label>Medio de Pago</label>
+        <select id="pago-medio"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>PSE</option><option>Nequi</option></select>
+      </div>
+    </div>
+    <div class="fg"><label>Comprobante / Referencia</label><textarea id="pago-obs" rows="2" placeholder="No. transaccion, referencia..."></textarea></div>
+    <input type="hidden" id="pago-num">
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-pago')">Cancelar</button>
+    <button class="btn bg" onclick="confirmarPago()">Registrar Pago</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Nuevo Proveedor -->
+<div id="m-nprov" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#x1F3ED; Nuevo Proveedor</h3><button class="mx" onclick="closeModal('m-nprov')">&times;</button></div>
+  <div class="mb">
+    <div class="g2">
+      <div class="fg"><label>Nombre / Razon Social *</label><input id="np-nom" placeholder="EMPRESA SAS"></div>
+      <div class="fg"><label>NIT / CC</label><input id="np-nit" placeholder="800.000.000-0"></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>Categoria</label><select id="np-cat"><option value="MP">Mat. Primas</option><option value="MEE">Empaque</option><option value="Servicios">Servicios</option><option value="General">General</option></select></div>
+      <div class="fg"><label>Condiciones de Pago</label><select id="np-cond"><option>Contado</option><option>15 dias</option><option>30 dias</option><option>45 dias</option><option>60 dias</option></select></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>Contacto</label><input id="np-ctc" placeholder="Nombre representante"></div>
+      <div class="fg"><label>Telefono</label><input id="np-tel" placeholder="300 000 0000"></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>Email</label><input id="np-email" type="email" placeholder="ventas@empresa.co"></div>
+      <div class="fg"><label>Direccion</label><input id="np-dir" placeholder="Calle / Carrera..."></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>Banco</label><input id="np-banco" placeholder="Bancolombia..."></div>
+      <div class="fg"><label>Tipo Cuenta</label><select id="np-tcta"><option>Ahorros</option><option>Corriente</option></select></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label>No. Cuenta</label><input id="np-ncta" placeholder="000-000000-00"></div>
+      <div class="fg"><label>Concepto habitual</label><input id="np-conc" placeholder="Compra materias primas..."></div>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-nprov')">Cancelar</button>
+    <button class="btn bp" onclick="crearProv()">Guardar</button>
+  </div>
+</div>
+</div>
+
+<button class="fab" id="fab-btn" onclick="openNuevaOC('')" title="Nueva OC">+</button>
 
 <script>
-var ES_CONTADORA = {es_contadora};
-var USUARIO = '{usuario}';
-var _ocPagoActual = null;
-var _nocItems = [];
+// ─── Estado global ────────────────────────────────────────────────
+var OCS = [];
+var PROVS = [];
+var ES_C = {es_contadora};
+var ITMS = 0;
 
-var CAT_LABELS = {'MP':'Materias Primas','MEE':'Empaque / MEE','Admin':'Pagos Admin','Influencer':'Influencers'};
-var CAT_COLORS = {'MP':'#4A6741','MEE':'#2B7A78','Admin':'#6366f1','Influencer':'#ec4899'};
-var EST_COLORS = {'Borrador':'#94a3b8','Revisada':'#3b82f6','Autorizada':'#f59e0b','Recibida':'#8b5cf6','Pagada':'#22c55e','Cancelada':'#ef4444','Pendiente':'#94a3b8','Aprobada':'#16a34a'};
-var CAT_IDS = {'MP':'oc-list-mp','MEE':'oc-list-mee','Admin':'oc-list-admin','Influencer':'oc-list-influencers'};
+// Mapa categoria → grupos de strings
+var CMAP = {
+  mp:  ['MPs','MP','Materia Prima','Materias Primas'],
+  mee: ['Envase','Insumos','MEE','Empaque'],
+  svc: ['Servicios','Analisis','Acondicionamiento','SVC','Servicio'],
+  adm: ['Admin','Nomina','ADM','Administrativo'],
+  inf: ['Infraestructura','INF'],
+  cc:  ['CC','Cuenta de Cobro','Cuentas de Cobro']
+};
+// Acepta tildes normalizando
+function inGroup(cat, grp){
+  var c = (cat||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  var list = CMAP[grp]||[];
+  for(var i=0;i<list.length;i++){
+    if(list[i].normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()===c) return true;
+  }
+  return false;
+}
 
-/* ——— UTILS ——— */
-function fmtNum(n){return Math.round(n||0).toLocaleString('es-CO');}
-function fmtFecha(s){return s?(s+'').substring(0,10):'';}
-function badgeEstado(e){
-  return '<span class="badge" style="background:'+(EST_COLORS[e]||'#888')+'">'+e+'</span>';
+// ─── Utilidades ───────────────────────────────────────────────────
+function fmt(n){ return '$'+parseFloat(n||0).toLocaleString('es-CO',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function fdate(d){ if(!d) return '-'; var p=d.substring(0,10).split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:d.substring(0,10); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function badge(e){
+  var m={'Borrador':'b-bor','Revisada':'b-rev','Autorizada':'b-aut','Pagada':'b-pag','Recibida':'b-rec'};
+  return '<span class="badge '+(m[e]||'b-bor')+'">'+e+'</span>';
 }
-function catBadge(c){
-  if(!c) return '';
-  return '<span class="cat-badge" style="background:'+(CAT_COLORS[c]||'#888')+'">'+c+'</span>';
-}
-function openModal(id){document.getElementById(id).classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.addEventListener('keydown',function(e){
-  if(e.key==='Escape'){document.querySelectorAll('.modal-overlay.open').forEach(function(m){m.classList.remove('open');});}
+
+// ─── Tabs ─────────────────────────────────────────────────────────
+document.querySelectorAll('.tn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var tab = this.getAttribute('data-tab');
+    document.querySelectorAll('.tn').forEach(function(b){ b.classList.remove('on'); });
+    document.querySelectorAll('.pane').forEach(function(p){ p.classList.remove('on'); });
+    this.classList.add('on');
+    var pane = document.getElementById('pane-'+tab);
+    if(pane) pane.classList.add('on');
+    if(tab==='dash') renderDash();
+    else if(tab==='prov') renderProv();
+    else renderCat(tab);
+    var fab = document.getElementById('fab-btn');
+    if(tab==='prov'){ fab.style.display='none'; }
+    else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
+  });
 });
 
-/* ——— NAVIGATION ——— */
-function goTo(id,btn){
-  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
-  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
-  document.getElementById(id).classList.add('active');
-  if(btn) btn.classList.add('active');
-  var loaders={
-    'dashboard':loadDashboard,
-    'mp':function(){loadOCs('MP','oc-list-mp');},
-    'mee':function(){loadOCs('MEE','oc-list-mee');},
-    'admin':function(){loadOCs('Admin','oc-list-admin');},
-    'influencers':function(){loadOCs('Influencer','oc-list-influencers');},
-    'proveedores':loadProveedores,
-    'recepcion':function(){}
-  };
-  if(loaders[id]) loaders[id]();
-}
-
-/* ——— DASHBOARD ——— */
-async function loadDashboard(){
+// ─── Carga de datos ───────────────────────────────────────────────
+async function loadData(){
   try{
-    var res = await fetch('/api/ordenes-compra').then(function(r){return r.json();});
-    var ocs = res.ordenes||[];
-    var alertas = [];
-    try{var _ar=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();}); alertas=Array.isArray(_ar)?_ar:(_ar.alertas||[]);}catch(e){}
-    var porAutorizar = ocs.filter(function(o){return o.estado==='Revisada';});
-    var porPagar = ocs.filter(function(o){return o.estado==='Recibida';});
-    var enTransito = ocs.filter(function(o){return o.estado==='Autorizada';});
-    document.getElementById('k-autorizar').textContent=porAutorizar.length;
-    document.getElementById('k-transito').textContent=enTransito.length;
-    document.getElementById('k-pagar').textContent=porPagar.length;
-    document.getElementById('k-alertas').textContent=alertas.length||0;
-    document.getElementById('lista-autorizar').innerHTML=porAutorizar.length===0
-      ?'<div class="empty-state">Todo al d&iacute;a &#10003;</div>'
-      :porAutorizar.map(renderCardAutorizar).join('');
-    document.getElementById('lista-pagar').innerHTML=porPagar.length===0
-      ?'<div class="empty-state">Sin pagos pendientes &#10003;</div>'
-      :porPagar.map(renderCardPagar).join('');
-    document.getElementById('alertas-mini').innerHTML=alertas.length===0
-      ?'<div class="empty-state">Sin alertas de stock</div>'
-      :alertas.slice(0,6).map(function(a){
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 8px;border-bottom:1px solid #f5f3f0;">'
-            +'<span style="font-size:12px;">'+(a.nombre_mp||a.nombre||'')+'</span>'
-            +'<span style="font-size:12px;color:#ef4444;font-weight:600;">'+(a.stock_actual||0)+'g &lt; '+(a.stock_minimo||0)+'g</span>'
-            +'</div>';
-        }).join('');
-  }catch(err){console.error(err);}
-}
-
-function renderCardAutorizar(oc){
-  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\\''+oc.numero_oc+'\\')">Ver detalle</button>';
-  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="autorizarOC(\\''+oc.numero_oc+'\\')">&#10003; Autorizar</button>';
-  return '<div class="oc-card" style="border-left:4px solid #f59e0b;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-    +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
-    +'<div style="font-size:12px;color:#555;margin-top:3px;">'+catBadge(oc.categoria)+(oc.proveedor||'Sin proveedor')+'</div>'
-    +'<div style="font-size:11px;color:#aaa;margin-top:2px;">'+fmtFecha(oc.fecha)+'</div></div>'
-    +'<div style="text-align:right;"><div style="font-size:16px;font-weight:800;">$'+fmtNum(oc.valor_total)+'</div>'
-    +'<div style="font-size:11px;color:#aaa;">'+(oc.num_items||0)+' item(s)</div></div></div>'
-    +'<div style="margin-top:10px;display:flex;gap:6px;">'+btns+'</div></div>';
-}
-
-function renderCardPagar(oc){
-  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\\''+oc.numero_oc+'\\')">Ver detalle</button>';
-  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="pedirPago(\\''+oc.numero_oc+'\\','+Number(oc.valor_total||0)+')">$ Marcar pagada</button>';
-  return '<div class="oc-card" style="border-left:4px solid #22c55e;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-    +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
-    +(oc.remision_code?'<div style="font-size:11px;font-family:monospace;color:#4A6741;margin-top:1px;">'+oc.remision_code+'</div>':'')
-    +'<div style="font-size:12px;color:#555;margin-top:2px;">'+catBadge(oc.categoria)+(oc.proveedor||'')+'</div></div>'
-    +'<div style="text-align:right;"><div style="font-size:16px;font-weight:800;">$'+fmtNum(oc.valor_total)+'</div></div></div>'
-    +'<div style="margin-top:10px;display:flex;gap:6px;">'+btns+'</div></div>';
-}
-
-/* ——— OC LIST BY CATEGORY ——— */
-async function loadOCs(categoria,containerId){
-  var el=document.getElementById(containerId);
-  if(!el) return;
-  el.innerHTML='<div class="empty-state">Cargando...</div>';
+    var r = await fetch('/api/ordenes-compra');
+    if(!r.ok) throw new Error('OC API '+r.status);
+    var d = await r.json();
+    OCS = d.ordenes||[];
+  }catch(e){ console.error('OC load error:',e); OCS=[]; }
   try{
-    var res=await fetch('/api/ordenes-compra?categoria='+encodeURIComponent(categoria)).then(function(r){return r.json();});
-    var ocs=res.ordenes||[];
-    var titulo=CAT_LABELS[categoria]||categoria;
-    var html='<div class="section-bar">'
-      +'<h2 style="font-size:15px;font-weight:700;">'+titulo+'</h2>'
-      +'<button class="btn btn-primary btn-sm" onclick="abrirNuevaOC(\\''+categoria+'\\')">+ Nueva OC</button></div>';
-    if(ocs.length===0){
-      html+='<div class="empty-state" style="background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:40px;">Sin &oacute;rdenes para esta categor&iacute;a</div>';
-    } else {
-      html+='<div class="table-wrap"><table><thead><tr>'
-        +'<th>N&ordm; OC</th><th>Proveedor</th><th>Estado</th><th>Valor total</th><th>Fecha</th><th>C&oacute;d. REM</th><th></th>'
-        +'</tr></thead><tbody>'
-        +ocs.map(function(o){
-          return '<tr>'
-            +'<td style="font-family:monospace;font-weight:700;">'+o.numero_oc+'</td>'
-            +'<td>'+(o.proveedor||'&mdash;')+'</td>'
-            +'<td>'+badgeEstado(o.estado)+'</td>'
-            +'<td style="font-weight:700;">$'+fmtNum(o.valor_total)+'</td>'
-            +'<td style="color:#888;font-size:12px;">'+fmtFecha(o.fecha)+'</td>'
-            +'<td style="font-family:monospace;font-size:11px;color:#4A6741;">'+(o.remision_code||'&mdash;')+'</td>'
-            +'<td><button class="btn btn-ghost btn-sm" onclick="verOC(\\''+o.numero_oc+'\\')">Ver</button></td>'
-            +'</tr>';
-        }).join('')
-        +'</tbody></table></div>';
-    }
-    el.innerHTML=html;
-  }catch(err){el.innerHTML='<div class="empty-state">Error al cargar</div>'; console.error(err);}
+    var r2 = await fetch('/api/proveedores-compras');
+    if(!r2.ok) throw new Error('Prov API '+r2.status);
+    var d2 = await r2.json();
+    PROVS = d2.proveedores||[];
+  }catch(e){ console.error('Prov load error:',e); PROVS=[]; }
+  renderDash();
 }
 
-/* ——— OC DETAIL MODAL ——— */
-async function verOC(numero){
-  openModal('modal-oc');
-  document.getElementById('modal-oc-titulo').textContent='OC '+numero;
-  document.getElementById('modal-oc-body').innerHTML='<div class="empty-state">Cargando...</div>';
-  try{
-    var res=await fetch('/api/ordenes-compra/'+numero).then(function(r){return r.json();});
-    if(res.error){document.getElementById('modal-oc-body').innerHTML='<p style="color:red">'+res.error+'</p>'; return;}
-    var oc=res.oc; var items=res.items||[];
-    var html='<div class="info-grid">'
-      +'<div class="info-cell"><div class="lbl">Estado</div><div class="val">'+badgeEstado(oc.estado)+'</div></div>'
-      +'<div class="info-cell"><div class="lbl">Categor&iacute;a</div><div class="val">'+catBadge(oc.categoria)+(oc.categoria||'&mdash;')+'</div></div>'
-      +'<div class="info-cell"><div class="lbl">Proveedor</div><div class="val">'+(oc.proveedor||'&mdash;')+'</div></div>'
-      +'<div class="info-cell"><div class="lbl">Valor total</div><div class="val" style="color:#4A6741;font-size:16px;">$'+fmtNum(oc.valor_total)+'</div></div>'
-      +(oc.remision_code?'<div class="info-cell"><div class="lbl">C&oacute;digo REM</div><div class="val" style="font-family:monospace;color:#4A6741;">'+oc.remision_code+'</div></div>':'')
-      +(oc.autorizado_por?'<div class="info-cell"><div class="lbl">Autorizado por</div><div class="val">'+oc.autorizado_por+'</div></div>':'')
-      +(oc.fecha_autorizacion?'<div class="info-cell"><div class="lbl">Fecha autorizaci&oacute;n</div><div class="val">'+fmtFecha(oc.fecha_autorizacion)+'</div></div>':'')
-      +(oc.pagado_por?'<div class="info-cell"><div class="lbl">Pagado por</div><div class="val">'+oc.pagado_por+'</div></div>':'')
-      +'</div>';
-    if(oc.observaciones){html+='<p style="font-size:12px;color:#666;margin-bottom:12px;"><strong>Obs:</strong> '+oc.observaciones+'</p>';}
-    if(items.length>0){
-      html+='<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">'
-        +'<thead><tr>'
-        +'<th style="text-align:left;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">C&oacute;digo</th>'
-        +'<th style="text-align:left;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">&Iacute;tem</th>'
-        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Cantidad</th>'
-        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Precio/g</th>'
-        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Subtotal</th>'
-        +'</tr></thead><tbody>'
-        +items.map(function(it){
-          return '<tr>'
-            +'<td style="font-family:monospace;font-size:11px;padding:7px 4px;">'+(it[2]||'')+'</td>'
-            +'<td style="padding:7px 4px;">'+(it[3]||it[2]||'')+'</td>'
-            +'<td style="text-align:right;padding:7px 4px;">'+(it[4]||0)+'g</td>'
-            +'<td style="text-align:right;padding:7px 4px;color:#888;">$'+fmtNum(it[5])+'</td>'
-            +'<td style="text-align:right;padding:7px 4px;font-weight:600;">$'+fmtNum(it[6])+'</td>'
-            +'</tr>';
-        }).join('')
-        +'</tbody></table>';
-    }
-    html+='<div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid #f0ede8;">';
-    if(oc.estado==='Borrador'){
-      html+='<button class="btn btn-primary btn-sm" onclick="marcarRevisada(\\''+numero+'\\')">Enviar a autorizaci&oacute;n</button>';
-    }
-    if(oc.estado==='Revisada' && !ES_CONTADORA){
-      html+='<button class="btn btn-success btn-sm" onclick="autorizarOC(\\''+numero+'\\')">&#10003; Autorizar y generar REM</button>';
-    }
-    if(oc.estado==='Autorizada'){
-      html+='<button class="btn btn-outline btn-sm" onclick="verRemision(\\''+numero+'\\')">Imprimir remisi&oacute;n</button>';
-    }
-    if(oc.estado==='Recibida' && !ES_CONTADORA){
-      html+='<button class="btn btn-success btn-sm" onclick="pedirPago(\\''+numero+'\\','+(oc.valor_total||0)+')">$ Marcar pagada</button>';
-    }
-    html+='</div>';
-    document.getElementById('modal-oc-body').innerHTML=html;
-  }catch(err){document.getElementById('modal-oc-body').innerHTML='<p style="color:red">Error cargando OC</p>'; console.error(err);}
+// ─── Dashboard ────────────────────────────────────────────────────
+function renderDash(){
+  var autList = OCS.filter(function(o){ return o.estado==='Revisada'; });
+  var pagList = OCS.filter(function(o){ return o.estado==='Autorizada'; });
+  var recList = OCS.filter(function(o){ return o.estado==='Pagada'; });
+  var vAut = autList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var vPag = pagList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var mes = new Date().toISOString().substring(0,7);
+  var pagMes = OCS.filter(function(o){ return o.estado==='Pagada'&&(o.fecha_pago||o.fecha||'').startsWith(mes); });
+  var vMes = pagMes.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  document.getElementById('kpi-area').innerHTML =
+    mkKpi('Por Autorizar', autList.length+' OCs', fmt(vAut), autList.length>0?'w':'')+
+    mkKpi('Por Pagar', pagList.length+' OCs', fmt(vPag), pagList.length>0?'w':'')+
+    mkKpi('Pagado este mes', pagMes.length+' OCs', fmt(vMes), 'g')+
+    mkKpi('Pend. Recepcion', recList.length+' OCs', 'fisicos pagados', '');
+  document.getElementById('q-aut').innerHTML = autList.length
+    ? autList.map(function(o){ return miniCard(o); }).join('')
+    : '<div class="empty">Sin OCs pendientes</div>';
+  document.getElementById('q-pag').innerHTML = pagList.length
+    ? pagList.map(function(o){ return miniCard(o); }).join('')
+    : '<div class="empty">Sin OCs pendientes</div>';
+}
+function mkKpi(l,v,s,c){
+  return '<div class="kpi"><div class="kpi-l">'+l+'</div><div class="kpi-v'+(c?' '+c:'')+'" >'+v+'</div><div class="kpi-s">'+s+'</div></div>';
+}
+function miniCard(o){
+  var btns='';
+  if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
+  if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
+  return '<div class="card" style="margin-bottom:8px;">'+
+    '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
+    '<div class="cval">'+fmt(o.valor_total)+'</div>'+
+    '<div class="cmeta"><span>'+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'</div>'+
+    (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
 
-/* ——— CREAR OC ——— */
-function abrirNuevaOC(cat){
-  _nocItems=[];
-  document.getElementById('modal-nueva-titulo').textContent='Nueva OC &mdash; '+(CAT_LABELS[cat]||cat);
-  document.getElementById('noc-categoria').value=cat||'MP';
-  document.getElementById('noc-proveedor').value='';
-  document.getElementById('noc-obs').value='';
-  document.getElementById('noc-fecha').value='';
-  document.getElementById('noc-msg').textContent='';
-  document.getElementById('noc-items-section').style.display=(cat==='MP'||cat==='MEE')?'block':'none';
-  renderNocItems();
-  openModal('modal-nueva-oc');
-}
-function addItemNoc(){
-  _nocItems.push({codigo_mp:'',nombre_mp:'',cantidad_g:0,precio_unitario:0});
-  renderNocItems();
-}
-function renderNocItems(){
-  var el=document.getElementById('noc-items-list');
-  if(_nocItems.length===0){
-    el.innerHTML='<p style="font-size:12px;color:#aaa;padding:8px 0;">Sin &iacute;tems a&uacute;n.</p>';
-    document.getElementById('noc-total').textContent='';
-    return;
+// ─── Por categoria ────────────────────────────────────────────────
+function renderCat(grp){
+  var q=(document.getElementById('q-'+grp)||{value:''}).value.toLowerCase();
+  var st=(document.getElementById('s-'+grp)||{value:''}).value;
+  var list = OCS.filter(function(o){
+    if(!inGroup(o.categoria,grp)) return false;
+    if(st && o.estado!==st) return false;
+    if(q && (o.numero_oc||'').toLowerCase().indexOf(q)<0 && (o.proveedor||'').toLowerCase().indexOf(q)<0 && (o.observaciones||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  var counts={total:list.length};
+  ['Borrador','Revisada','Autorizada','Pagada','Recibida'].forEach(function(e){ counts[e]=list.filter(function(o){ return o.estado===e; }).length; });
+  var vTotal=list.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var pills='<span class="pill">'+list.length+' OCs</span>';
+  if(counts.Borrador) pills+='<span class="pill">Borrador: '+counts.Borrador+'</span>';
+  if(counts.Revisada) pills+='<span class="pill y">Revisada: '+counts.Revisada+'</span>';
+  if(counts.Autorizada) pills+='<span class="pill b">Autorizada: '+counts.Autorizada+'</span>';
+  if(counts.Pagada) pills+='<span class="pill g">Pagada: '+counts.Pagada+'</span>';
+  pills+='<span class="pill" style="background:#e7e5e4;">'+fmt(vTotal)+'</span>';
+  document.getElementById('pills-'+grp).innerHTML=pills;
+  if(!list.length){
+    document.getElementById('grid-'+grp).innerHTML='<div class="empty">No hay OCs en esta categoria</div>'; return;
   }
-  el.innerHTML=_nocItems.map(function(it,i){
-    return '<div style="display:grid;grid-template-columns:90px 1fr 80px 90px 22px;gap:6px;margin-bottom:6px;align-items:center;">'
-      +'<input placeholder="C&oacute;d. MP" value="'+(it.codigo_mp||'')+'" oninput="_nocItems['+i+'].codigo_mp=this.value" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;font-family:monospace;">'
-      +'<input placeholder="Descripci&oacute;n / nombre" value="'+(it.nombre_mp||'')+'" oninput="_nocItems['+i+'].nombre_mp=this.value" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
-      +'<input type="number" placeholder="Cant (g)" value="'+(it.cantidad_g||'')+'" oninput="_nocItems['+i+'].cantidad_g=parseFloat(this.value)||0;calcNocTotal()" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
-      +'<input type="number" placeholder="$/g" value="'+(it.precio_unitario||'')+'" oninput="_nocItems['+i+'].precio_unitario=parseFloat(this.value)||0;calcNocTotal()" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
-      +'<button onclick="_nocItems.splice('+i+',1);renderNocItems();" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;">&times;</button>'
-      +'</div>';
-  }).join('');
-  calcNocTotal();
+  document.getElementById('grid-'+grp).innerHTML=list.map(function(o){ return fullCard(o,grp); }).join('');
 }
-function calcNocTotal(){
-  var total=_nocItems.reduce(function(s,it){return s+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
-  document.getElementById('noc-total').textContent=total>0?'Total estimado: $'+fmtNum(total):'';
+function fullCard(o,grp){
+  var btns='';
+  if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
+  if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
+  if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
+  if(o.estado==='Pagada'&&!ES_C&&(grp==='mp'||grp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
+  return '<div class="card">'+
+    '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
+    '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span></div>'+
+    (o.observaciones?'<div class="cobs">'+esc((o.observaciones||'').substring(0,90))+'</div>':'')+
+    '<div class="cval">'+fmt(o.valor_total)+'</div>'+
+    (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
+}
+
+// ─── Proveedores ──────────────────────────────────────────────────
+function renderProv(){
+  var q=(document.getElementById('q-prov')||{value:''}).value.toLowerCase();
+  var list=PROVS.filter(function(p){ return !q||(p.nombre||'').toLowerCase().indexOf(q)>=0||(p.nit||'').toLowerCase().indexOf(q)>=0; });
+  if(!list.length){ document.getElementById('prov-grid').innerHTML='<div class="empty">No hay proveedores</div>'; return; }
+  document.getElementById('prov-grid').innerHTML=list.map(function(p){
+    return '<div class="pc"><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+(p.nit||'-')+'</div><div class="pd">'+
+      (p.contacto?'<span>&#x1F464; '+esc(p.contacto)+'</span>':'')+
+      (p.telefono?'<span>&#x1F4F1; '+esc(p.telefono)+'</span>':'')+
+      (p.email?'<span>&#x1F4E7; '+esc(p.email)+'</span>':'')+
+      (p.banco?'<span>&#x1F3E6; '+esc(p.banco)+' '+esc(p.tipo_cuenta||'')+'</span>':'')+
+      (p.num_cuenta?'<span>&#x1F4B3; '+esc(p.num_cuenta)+'</span>':'')+
+    '</div></div>';
+  }).join('');
+}
+
+// ─── Proveedor autofill ────────────────────────────────────────────
+function fillProvSelect(selId){
+  var sel=document.getElementById(selId); if(!sel) return;
+  var cur=sel.value;
+  sel.innerHTML='<option value="">-- Seleccionar proveedor --</option>';
+  PROVS.forEach(function(p){ var o=document.createElement('option'); o.value=p.nombre; o.textContent=p.nombre; sel.appendChild(o); });
+  if(cur) sel.value=cur;
+}
+function fillProv(selId, boxId){
+  var nombre=document.getElementById(selId).value;
+  var box=document.getElementById(boxId);
+  var p=PROVS.find(function(x){ return x.nombre===nombre; });
+  if(!p||!nombre){ box.style.display='none'; return; }
+  var rows=[['NIT',p.nit],['Tel',p.telefono],['Email',p.email],['Contacto',p.contacto],['Banco',p.banco],['Cuenta',(p.tipo_cuenta||'')+' '+(p.num_cuenta||'')],['Concepto',p.concepto_compra],['Direccion',p.direccion]];
+  box.innerHTML=rows.filter(function(r){ return r[1]; }).map(function(r){ return '<span class="lbl">'+r[0]+'</span><span>'+esc(r[1])+'</span>'; }).join('');
+  box.style.display='grid';
+}
+
+// ─── Modal helpers ─────────────────────────────────────────────────
+function openModal(id){ document.getElementById(id).classList.add('on'); }
+function closeModal(id){ document.getElementById(id).classList.remove('on'); }
+document.querySelectorAll('.ov').forEach(function(ov){ ov.addEventListener('click',function(e){ if(e.target===ov) ov.classList.remove('on'); }); });
+
+// ─── Nueva OC ─────────────────────────────────────────────────────
+var _catMap={'mp':'MP','mee':'MEE','svc':'SVC','adm':'ADM','inf':'INF','cc':'CC'};
+function openNuevaOC(catCode){
+  var cat=_catMap[catCode]||catCode||'MP';
+  document.getElementById('noc-cat').value=cat;
+  document.getElementById('noc-fent').value='';
+  document.getElementById('noc-obs').value='';
+  document.getElementById('noc-ibox').style.display='none';
+  document.getElementById('noc-tot').textContent='$0';
+  document.getElementById('noc-tbody').innerHTML='';
+  ITMS=0;
+  fillProvSelect('noc-prov');
+  document.getElementById('noc-prov').value='';
+  addRow(); addRow();
+  openModal('m-noc');
+}
+function addRow(){
+  ITMS++;
+  var n=ITMS;
+  var tr=document.createElement('tr');
+  tr.id='ir'+n;
+  tr.innerHTML='<td><input id="ic'+n+'" placeholder="COD" style="width:65px"></td>'+
+    '<td><input id="in'+n+'" placeholder="Descripcion" style="width:150px"></td>'+
+    '<td><input id="iq'+n+'" type="number" value="1" min="0" oninput="calcTot()" style="width:55px"></td>'+
+    '<td><input id="ip'+n+'" type="number" value="0" min="0" step="0.01" oninput="calcTot()" style="width:75px"></td>'+
+    '<td id="is'+n+'" style="white-space:nowrap">$0</td>'+
+    '<td><button class="btn bo" style="padding:2px 7px;font-size:11px;" onclick="rmRow('+n+')">x</button></td>';
+  document.getElementById('noc-tbody').appendChild(tr);
+}
+function rmRow(n){var e=document.getElementById('ir'+n);if(e)e.remove();calcTot();}
+function calcTot(){
+  var tot=0;
+  for(var i=1;i<=ITMS;i++){
+    var q=document.getElementById('iq'+i),p=document.getElementById('ip'+i);
+    if(!q||!p) continue;
+    var s=parseFloat(q.value||0)*parseFloat(p.value||0);
+    var el=document.getElementById('is'+i); if(el) el.textContent=fmt(s);
+    tot+=s;
+  }
+  document.getElementById('noc-tot').textContent=fmt(tot);
 }
 async function crearOC(){
-  var prov=document.getElementById('noc-proveedor').value.trim();
-  var cat=document.getElementById('noc-categoria').value;
-  if(!prov){document.getElementById('noc-msg').innerHTML='<span style="color:red;">Proveedor requerido</span>'; return;}
-  var items=_nocItems.filter(function(it){return it.nombre_mp||it.codigo_mp;}).map(function(it){
-    return {codigo_mp:it.codigo_mp,nombre_mp:it.nombre_mp,cantidad_g:it.cantidad_g,precio_unitario:it.precio_unitario,subtotal:(it.cantidad_g||0)*(it.precio_unitario||0)};
-  });
-  var body={proveedor:prov,categoria:cat,observaciones:document.getElementById('noc-obs').value,fecha_entrega_est:document.getElementById('noc-fecha').value,items:items,creado_por:USUARIO};
-  var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(x){return x.json();});
-  if(r.error){document.getElementById('noc-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
-  closeModal('modal-nueva-oc');
-  loadDashboard();
-  if(CAT_IDS[cat]) loadOCs(cat,CAT_IDS[cat]);
-}
-
-/* ——— WORKFLOW ——— */
-async function marcarRevisada(numero){
-  var r=await fetch('/api/ordenes-compra/'+numero+'/revisar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
-  if(r.error){alert(r.error); return;}
-  closeModal('modal-oc');
-  loadDashboard();
-}
-
-async function autorizarOC(numero){
-  if(!confirm('Autorizar OC '+numero+'? Se generar\u00e1 el c\u00f3digo de remisi\u00f3n para imprimir.')) return;
-  var r=await fetch('/api/ordenes-compra/'+numero+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
-  if(r.error){alert(r.error); return;}
-  closeModal('modal-oc');
-  loadDashboard();
-  if(r.remision_code){
-    alert('OC autorizada.\\nC\u00f3digo de remisi\u00f3n: '+r.remision_code+'\\n\\nAbre el detalle de la OC para imprimir la remisi\u00f3n.');
+  var prov=document.getElementById('noc-prov').value;
+  var cat=document.getElementById('noc-cat').value;
+  var obs=document.getElementById('noc-obs').value;
+  var fent=document.getElementById('noc-fent').value;
+  if(!prov){ alert('Selecciona un proveedor'); return; }
+  var items=[];
+  for(var i=1;i<=ITMS;i++){
+    var n=document.getElementById('in'+i);
+    if(!n||(n.value||'').trim()==='') continue;
+    items.push({codigo_mp:(document.getElementById('ic'+i)||{value:''}).value,nombre_mp:n.value.trim(),
+      cantidad_g:parseFloat((document.getElementById('iq'+i)||{value:1}).value||1),
+      precio_unitario:parseFloat((document.getElementById('ip'+i)||{value:0}).value||0)});
   }
+  if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
+  try{
+    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,items:items,creado_por:'{usuario}'})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-noc');
+    await loadData();
+    renderCat(_catMap[Object.keys(_catMap).find(function(k){ return _catMap[k]===cat; })||'']||'mp');
+    alert('Creada: '+d.numero_oc);
+  }catch(e){ alert('Error de conexion: '+e); }
 }
 
-function pedirPago(numero,monto){
-  _ocPagoActual=numero;
-  document.getElementById('pago-monto').value=Math.round(monto||0);
+// ─── Revisar ──────────────────────────────────────────────────────
+function openRev(num,prov,val,obs){
+  document.getElementById('rev-num').value=num;
+  document.getElementById('rev-info').innerHTML='<strong>'+num+'</strong><br><span style="color:#78716c;">'+esc(obs||'-')+'</span>';
+  document.getElementById('rev-val').value=val||'';
+  document.getElementById('rev-obs').value='';
+  document.getElementById('rev-fent').value='';
+  document.getElementById('rev-ibox').style.display='none';
+  fillProvSelect('rev-prov');
+  document.getElementById('rev-prov').value=prov;
+  if(prov) fillProv('rev-prov','rev-ibox');
+  openModal('m-rev');
+}
+async function confirmarRev(){
+  var num=document.getElementById('rev-num').value;
+  var prov=document.getElementById('rev-prov').value;
+  var val=document.getElementById('rev-val').value;
+  var obs=document.getElementById('rev-obs').value;
+  var fent=document.getElementById('rev-fent').value;
+  if(!prov){ alert('Selecciona proveedor'); return; }
+  if(!val||parseFloat(val)<=0){ alert('Ingresa el valor total'); return; }
+  try{
+    var body={proveedor:prov,valor_total:parseFloat(val),observaciones:obs};
+    if(fent) body.fecha_entrega_est=fent;
+    var r=await fetch('/api/ordenes-compra/'+num+'/revisar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-rev');
+    await loadData();
+  }catch(e){ alert('Error: '+e); }
+}
+
+// ─── Autorizar ────────────────────────────────────────────────────
+async function autorizarOC(num){
+  if(!confirm('Autorizar OC '+num+'?')) return;
+  try{
+    var r=await fetch('/api/ordenes-compra/'+num+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    await loadData();
+    renderDash();
+  }catch(e){ alert('Error: '+e); }
+}
+
+// ─── Pagar ────────────────────────────────────────────────────────
+function openPago(num,val,prov){
+  document.getElementById('pago-num').value=num;
+  document.getElementById('pago-monto').value=val||'';
   document.getElementById('pago-obs').value='';
-  document.getElementById('pago-msg').textContent='';
-  openModal('modal-pago');
+  document.getElementById('pago-info').innerHTML='<strong>'+num+'</strong> &mdash; '+esc(prov)+'<br>Valor autorizado: <strong>'+fmt(val)+'</strong>';
+  openModal('m-pago');
 }
-
 async function confirmarPago(){
-  var monto=parseFloat(document.getElementById('pago-monto').value)||0;
-  if(!monto){document.getElementById('pago-msg').innerHTML='<span style="color:red;">Ingresa el monto</span>'; return;}
-  var body={monto:monto,medio:document.getElementById('pago-medio').value,observaciones:document.getElementById('pago-obs').value};
-  var r=await fetch('/api/ordenes-compra/'+_ocPagoActual+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(x){return x.json();});
-  if(r.error){document.getElementById('pago-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
-  closeModal('modal-pago');
-  closeModal('modal-oc');
-  loadDashboard();
-  alert('Pago registrado. El egreso fue guardado en el m\u00f3dulo financiero.');
+  var num=document.getElementById('pago-num').value;
+  var monto=document.getElementById('pago-monto').value;
+  var medio=document.getElementById('pago-medio').value;
+  var obs=document.getElementById('pago-obs').value;
+  if(!monto||parseFloat(monto)<=0){ alert('Ingresa el monto'); return; }
+  try{
+    var r=await fetch('/api/ordenes-compra/'+num+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({monto:parseFloat(monto),medio:medio,observaciones:obs})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-pago');
+    await loadData();
+    renderDash();
+  }catch(e){ alert('Error: '+e); }
 }
 
-/* ——— RECEPCION ——— */
-async function buscarRemision(){
-  var code=document.getElementById('rem-input').value.trim();
-  var el=document.getElementById('rem-result');
-  if(!code){el.innerHTML=''; return;}
-  el.innerHTML='<div class="empty-state">Buscando...</div>';
-  var r=await fetch('/api/compras/buscar-remision/'+encodeURIComponent(code)).then(function(x){return x.json();});
-  if(r.error){
-    el.innerHTML='<div class="alert-warn">No se encontr\u00f3 ninguna OC con ese c\u00f3digo. Verifica e intenta de nuevo.</div>';
-    return;
-  }
-  var oc=r.oc; var items=r.items||[];
-  var html='<div class="card" style="border-color:#4A6741;">'
-    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
-    +'<div><div style="font-weight:700;font-size:14px;">'+oc.numero_oc+'</div>'
-    +'<div style="font-size:12px;color:#666;margin-top:2px;">'+catBadge(oc.categoria)+(oc.proveedor||'')+'</div>'
-    +'<div style="font-size:11px;font-family:monospace;color:#4A6741;margin-top:2px;">'+code+'</div></div>'
-    +'<div>'+badgeEstado(oc.estado)+'</div></div>';
-  if(oc.estado==='Recibida'||oc.estado==='Pagada'){
-    html+='<div class="alert-ok">Este pedido ya fue confirmado como recibido el '+fmtFecha(oc.fecha_recepcion||oc.fecha)+'.</div>';
-  } else if(oc.estado==='Autorizada'){
-    if(items.length>0){
-      html+='<table style="width:100%;border-collapse:collapse;margin-bottom:14px;">'
-        +'<thead><tr>'
-        +'<th style="text-align:left;font-size:10px;color:#888;padding:5px 4px;border-bottom:1px solid #f0f0f0;">&Iacute;tem</th>'
-        +'<th style="text-align:right;font-size:10px;color:#888;padding:5px 4px;border-bottom:1px solid #f0f0f0;">Cantidad</th>'
-        +'</tr></thead><tbody>'
-        +items.map(function(it){
-          return '<tr>'
-            +'<td style="padding:7px 4px;font-size:13px;">'+(it[3]||it[2]||'')+'</td>'
-            +'<td style="text-align:right;padding:7px 4px;font-size:13px;font-weight:600;">'+(it[4]||0)+'g</td>'
-            +'</tr>';
-        }).join('')
-        +'</tbody></table>';
-    }
-    html+='<button class="btn btn-success" style="width:100%;padding:12px;" onclick="confirmarRecepcion(\\''+oc.numero_oc+'\\')">Confirmar llegada de este pedido</button>';
-  } else {
-    html+='<div class="alert-warn">Estado actual: '+oc.estado+'. Solo se pueden confirmar OCs en estado Autorizada.</div>';
-  }
-  html+='</div>';
-  el.innerHTML=html;
+// ─── Recibir ──────────────────────────────────────────────────────
+async function marcarRecibida(num){
+  if(!confirm('Marcar '+num+' como Recibida?')) return;
+  try{
+    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    await loadData();
+  }catch(e){ alert('Error: '+e); }
 }
 
-async function confirmarRecepcion(numero){
-  var r=await fetch('/api/ordenes-compra/'+numero+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
-  if(r.error){alert(r.error); return;}
-  document.getElementById('rem-input').value='';
-  document.getElementById('rem-result').innerHTML=
-    '<div class="card" style="border-color:#22c55e;background:#f0fdf4;text-align:center;padding:30px;">'
-    +'<div style="font-size:36px;margin-bottom:8px;">&#10003;</div>'
-    +'<div style="font-weight:700;color:#16a34a;font-size:16px;">Recepci\u00f3n confirmada</div>'
-    +'<div style="font-size:13px;color:#666;margin-top:6px;">'+(r.ingresos||0)+' movimiento(s) registrado(s) en inventario</div>'
-    +'</div>';
-  loadDashboard();
+// ─── Nuevo proveedor ──────────────────────────────────────────────
+async function crearProv(){
+  var nom=document.getElementById('np-nom').value.trim();
+  if(!nom){ alert('Nombre requerido'); return; }
+  var body={nombre:nom,nit:document.getElementById('np-nit').value,
+    categoria:document.getElementById('np-cat').value,condiciones_pago:document.getElementById('np-cond').value,
+    contacto:document.getElementById('np-ctc').value,telefono:document.getElementById('np-tel').value,
+    email:document.getElementById('np-email').value,direccion:document.getElementById('np-dir').value,
+    banco:document.getElementById('np-banco').value,tipo_cuenta:document.getElementById('np-tcta').value,
+    num_cuenta:document.getElementById('np-ncta').value,concepto_compra:document.getElementById('np-conc').value};
+  try{
+    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-nprov');
+    await loadData();
+    renderProv();
+    alert('Proveedor creado: '+nom);
+  }catch(e){ alert('Error: '+e); }
 }
 
-/* ——— REMISION IMPRIMIBLE ——— */
-async function verRemision(numero){
-  var r=await fetch('/api/ordenes-compra/'+numero).then(function(x){return x.json();});
-  if(r.error) return;
-  var oc=r.oc; var items=r.items||[];
-  var html='<div class="remision-print">'
-    +'<div style="text-align:center;margin-bottom:16px;border-bottom:2px solid #333;padding-bottom:12px;">'
-    +'<strong style="font-size:16px;display:block;">ESPAGIRIA LABORATORIO</strong>'
-    +'<span style="font-size:13px;">REMISI\u00d3N DE COMPRA</span></div>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px;">'
-    +'<div><strong>C\u00f3digo REM:</strong> '+(oc.remision_code||'N/A')+'</div>'
-    +'<div><strong>OC N\u00ba:</strong> '+oc.numero_oc+'</div>'
-    +'<div><strong>Proveedor:</strong> '+(oc.proveedor||'')+'</div>'
-    +'<div><strong>Fecha:</strong> '+fmtFecha(oc.fecha)+'</div>'
-    +'<div><strong>Categor\u00eda:</strong> '+(oc.categoria||'')+'</div>'
-    +'<div><strong>Autorizado por:</strong> '+(oc.autorizado_por||'')+'</div>'
-    +'</div>'
-    +(items.length>0
-      ?'<table style="width:100%;border-collapse:collapse;">'
-        +'<thead><tr>'
-        +'<th style="border:1px solid #999;padding:5px 8px;text-align:left;background:#f5f5f0;">&Iacute;tem</th>'
-        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Cantidad</th>'
-        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Valor/g</th>'
-        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Subtotal</th>'
-        +'</tr></thead><tbody>'
-        +items.map(function(it){
-          return '<tr>'
-            +'<td style="border:1px solid #ccc;padding:5px 8px;">'+(it[3]||it[2]||'')+'</td>'
-            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;">'+(it[4]||0)+'g</td>'
-            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;">$'+fmtNum(it[5])+'</td>'
-            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;font-weight:bold;">$'+fmtNum(it[6])+'</td>'
-            +'</tr>';
-        }).join('')
-        +'</tbody></table>'
-        +'<div style="text-align:right;margin-top:10px;font-weight:bold;font-size:14px;">TOTAL: $'+fmtNum(oc.valor_total)+'</div>'
-      :'<div style="padding:10px 0;"><strong>Concepto:</strong> '+(oc.observaciones||'Pago')+'<br><strong>Valor:</strong> $'+fmtNum(oc.valor_total)+'</div>')
-    +'<div style="margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:60px;">'
-    +'<div style="border-top:1px solid #666;padding-top:6px;text-align:center;font-size:11px;">Firma autoriza</div>'
-    +'<div style="border-top:1px solid #666;padding-top:6px;text-align:center;font-size:11px;">Firma recibe</div>'
-    +'</div></div>';
-  document.getElementById('remision-content').innerHTML=html;
-  openModal('modal-remision');
-}
+// ─── Event delegation para botones de OC ────────────────────────
+document.addEventListener('click',function(e){
+  var btn=e.target.closest('[data-act]');
+  if(!btn) return;
+  var act=btn.getAttribute('data-act');
+  var oc=btn.getAttribute('data-oc');
+  if(act==='aut') autorizarOC(oc);
+  else if(act==='pago') openPago(oc,parseFloat(btn.getAttribute('data-val')||0),btn.getAttribute('data-prov')||'');
+  else if(act==='rev') openRev(oc,btn.getAttribute('data-prov')||'',parseFloat(btn.getAttribute('data-val')||0),btn.getAttribute('data-obs')||'');
+  else if(act==='rec') marcarRecibida(oc);
+});
 
-/* ——— PROVEEDORES ——— */
-async function loadProveedores(){
-  var r=await fetch('/api/proveedores-compras').then(function(x){return x.json();});
-  var provs=r.proveedores||[];
-  if(provs.length===0){
-    document.getElementById('tabla-proveedores').innerHTML='<div class="empty-state" style="background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:40px;">Sin proveedores registrados</div>';
-    return;
-  }
-  document.getElementById('tabla-proveedores').innerHTML='<div class="table-wrap"><table><thead><tr>'
-    +'<th>Nombre</th><th>Contacto</th><th>Email</th><th>Tel</th><th>Categor&iacute;a</th><th>Pago</th>'
-    +'</tr></thead><tbody>'
-    +provs.map(function(p){
-      return '<tr>'
-        +'<td style="font-weight:600;">'+(p.nombre||'')+'</td>'
-        +'<td>'+(p.contacto||'&mdash;')+'</td>'
-        +'<td style="font-size:12px;">'+(p.email||'&mdash;')+'</td>'
-        +'<td>'+(p.telefono||'&mdash;')+'</td>'
-        +'<td>'+catBadge(p.categoria)+(p.categoria||'')+'</td>'
-        +'<td style="font-size:12px;color:#666;">'+(p.condiciones_pago||'&mdash;')+'</td>'
-        +'</tr>';
-    }).join('')
-    +'</tbody></table></div>';
-}
-function toggleFormProv(){
-  var el=document.getElementById('form-prov-wrap');
-  el.style.display=el.style.display==='none'?'block':'none';
-}
-async function crearProveedor(){
-  var n=document.getElementById('pv-nombre').value.trim();
-  if(!n){document.getElementById('prov-msg').innerHTML='<span style="color:red;">Nombre requerido</span>'; return;}
-  var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:n,contacto:document.getElementById('pv-contacto').value,email:document.getElementById('pv-email').value,telefono:document.getElementById('pv-tel').value,categoria:document.getElementById('pv-cat').value,condiciones_pago:document.getElementById('pv-pago').value})}).then(function(x){return x.json();});
-  if(r.error){document.getElementById('prov-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
-  toggleFormProv();
-  loadProveedores();
-}
-
-loadDashboard();
+// ─── Init ─────────────────────────────────────────────────────────
+loadData();
 </script>
 </body>
-</html>
-"""
+</html>"""
 
 RECEPCION_HTML = r"""
 <!DOCTYPE html>
@@ -4143,7 +4886,7 @@ RECEPCION_HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Recepcion - Espagiria</title>
+<title>Recepcion de Mercancia - Espagiria</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
@@ -4151,9 +4894,18 @@ body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-siz
 .topbar h1{font-size:18px;font-weight:600;}
 .topbar a{color:#a8a29e;text-decoration:none;font-size:13px;}
 .topbar a:hover{color:#fff;}
+.topbar .hub-link{background:#4A6741;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
+.topbar .hub-link:hover{background:#3a5331;}
 .container{max-width:1100px;margin:0 auto;padding:20px;}
 .card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px;margin-bottom:20px;}
-.card h2{font-size:16px;font-weight:600;margin-bottom:16px;color:#292524;}
+.card h2{font-size:16px;font-weight:600;margin-bottom:14px;color:#292524;display:flex;align-items:center;gap:8px;}
+.oc-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px;}
+.oc-card{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;}
+.oc-card:hover{border-color:#57534e;background:#f5f5f4;}
+.oc-card .oc-num{font-weight:700;font-size:13px;color:#292524;}
+.oc-card .oc-prov{font-size:12px;color:#78716c;margin-top:2px;}
+.oc-card .oc-val{font-size:12px;color:#4A6741;font-weight:600;margin-top:4px;}
+.oc-card .oc-dias{font-size:11px;color:#a8a29e;}
 .search-row{display:flex;gap:10px;align-items:center;margin-bottom:16px;}
 .search-row input{flex:1;max-width:320px;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:14px;}
 .search-row input:focus{outline:none;border-color:#57534e;}
@@ -4162,6 +4914,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-siz
 .btn-primary:hover{background:#1c1917;}
 .btn-success{background:#16a34a;color:#fff;}
 .btn-success:hover{background:#15803d;}
+.btn-print{background:#1e40af;color:#fff;}
+.btn-print:hover{background:#1d4ed8;}
 .oc-info{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
 .oc-info .lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;}
 .oc-info .val{font-size:14px;font-weight:600;color:#292524;margin-top:2px;}
@@ -4174,18 +4928,21 @@ table{width:100%;border-collapse:collapse;font-size:13px;}
 th{background:#f5f5f4;padding:9px 12px;text-align:left;font-weight:600;color:#57534e;border-bottom:1px solid #e7e5e4;}
 td{padding:8px 12px;border-bottom:1px solid #f5f5f4;vertical-align:middle;}
 tr:hover td{background:#fafaf9;}
-td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
+td input[type=number]{width:100px;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
 td input[type=number]:focus{outline:none;border-color:#57534e;}
 td select{padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;background:#fff;}
 td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
+.row-ok td{background:#f0fdf4;}
+.row-disc td{background:#fff7ed;}
+.row-falta td{background:#fef2f2;}
 .obs-row{margin-top:12px;}
 .obs-row label{font-size:13px;font-weight:600;display:block;margin-bottom:6px;color:#292524;}
 .obs-row textarea{width:100%;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;min-height:72px;}
 .receptor-row{display:flex;gap:12px;align-items:center;margin-top:12px;}
 .receptor-row label{font-size:13px;font-weight:600;white-space:nowrap;color:#292524;}
 .receptor-row input{flex:1;max-width:260px;padding:8px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
-.submit-row{margin-top:16px;display:flex;align-items:center;gap:12px;}
-.msg{font-size:13px;padding:8px 14px;border-radius:6px;display:none;}
+.submit-row{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.msg{font-size:13px;padding:8px 14px;border-radius:6px;}
 .msg-ok{background:#d1fae5;color:#065f46;}
 .msg-err{background:#fee2e2;color:#991b1b;}
 .tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e7e5e4;}
@@ -4198,33 +4955,45 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 .cnt-badge{display:inline-block;background:#292524;color:#fff;border-radius:20px;font-size:11px;padding:1px 7px;margin-left:4px;}
 .disc{color:#dc2626;font-weight:600;}
 .valor{font-family:'Courier New',monospace;font-size:12px;}
+.progress-bar{background:#e7e5e4;border-radius:4px;height:6px;margin-top:4px;}
+.progress-fill{background:#16a34a;height:6px;border-radius:4px;transition:width .3s;}
+.item-pct{font-size:11px;color:#78716c;margin-top:2px;}
+.icon-ok{color:#16a34a;font-size:16px;}
+.icon-disc{color:#d97706;font-size:16px;}
+.icon-falta{color:#dc2626;font-size:16px;}
 </style>
 </head>
 <body>
 <div class="topbar">
-  <h1>Recepcion de Mercancia</h1>
-  <a href="/compras">Modulo de Compras</a>
+  <a href="/" class="hub-link">&#8592; Inicio</a>
+  <h1>&#128230; Recepcion de Mercancia</h1>
 </div>
 <div class="container">
 
   <div class="card">
-    <h2>Registrar Recepcion de OC</h2>
+    <h2>&#9203; OCs Pendientes de Recepcion</h2>
+    <div id="queue-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
+  </div>
+
+  <div class="card">
+    <h2>&#128269; Registrar Recepcion</h2>
     <div class="search-row">
       <input type="text" id="oc-input" placeholder="Numero de OC (ej: OC-2026-001)" onkeydown="if(event.key==='Enter')buscarOC()">
-      <button class="btn btn-primary" onclick="buscarOC()">Buscar</button>
+      <button class="btn btn-primary" onclick="buscarOC()">Buscar OC</button>
     </div>
-    <div id="oc-msg" class="msg"></div>
+    <div id="oc-msg"></div>
 
     <div id="oc-section" style="display:none">
       <div class="oc-info" id="oc-header"></div>
-
       <div style="overflow-x:auto;">
         <table>
           <thead>
             <tr>
+              <th style="width:36px;"></th>
               <th>Material</th>
               <th>Solicitado</th>
               <th>Cantidad Recibida</th>
+              <th>% Cumpl.</th>
               <th>Estado</th>
               <th>Notas</th>
             </tr>
@@ -4239,19 +5008,19 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
       </div>
 
       <div class="obs-row">
-        <label>Observaciones generales (danos, faltantes, condicion del paquete, etc.):</label>
+        <label>Observaciones generales:</label>
         <textarea id="obs-input" placeholder="Ej: Caja exterior golpeada pero producto en buen estado. Falto 1 item."></textarea>
       </div>
 
       <div class="submit-row">
-        <button class="btn btn-success" onclick="registrarRecepcion()">Registrar Recepcion</button>
-        <div id="submit-msg" class="msg"></div>
+        <button class="btn btn-success" onclick="registrarRecepcion()">&#10003; Registrar Recepcion</button>
+        <div id="submit-msg"></div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <h2>Monitoreo: Pagado - Llego?</h2>
+    <h2>&#128202; Monitoreo: Pagado - Llego?</h2>
     <div class="tabs">
       <button class="tab-btn active" id="tab-btn-transito" onclick="showTab('transito')">
         En Transito <span class="cnt-badge" id="cnt-transito">0</span>
@@ -4272,69 +5041,135 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 <script>
 var currentOC = null;
 
+async function loadQueue() {
+  try {
+    var r = await fetch('/api/recepcion/seguimiento');
+    var all = await r.json();
+    if (!Array.isArray(all)) all = [];
+    var pendientes = all.filter(function(x) {
+      return x.estado === 'Autorizada' && (!x.fecha_recepcion || x.fecha_recepcion.length < 3);
+    });
+    var el = document.getElementById('queue-list');
+    if (pendientes.length === 0) {
+      el.innerHTML = '<p style="color:#a8a29e;font-size:13px;">Sin OCs pendientes de recepcion.</p>';
+      return;
+    }
+    var today = new Date();
+    var html = '<div class="oc-queue">';
+    pendientes.forEach(function(oc) {
+      var dt = oc.fecha ? new Date(oc.fecha) : null;
+      var dias = dt ? Math.floor((today - dt) / 86400000) : 0;
+      html += '<div class="oc-card" onclick="cargarOC(\'' + oc.numero_oc + '\')">'
+        + '<div class="oc-num">' + oc.numero_oc + '</div>'
+        + '<div class="oc-prov">' + (oc.proveedor || '') + '</div>'
+        + '<div class="oc-val">$' + Number(oc.valor_total||0).toLocaleString() + '</div>'
+        + '<div class="oc-dias">' + (dias > 0 ? dias + 'd en transito' : 'Reciente') + '</div>'
+        + '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+function cargarOC(num) {
+  document.getElementById('oc-input').value = num;
+  buscarOC();
+  document.getElementById('oc-section').scrollIntoView({behavior:'smooth'});
+}
+
 async function buscarOC() {
   var num = document.getElementById('oc-input').value.trim().toUpperCase();
-  if (num.length === 0) return;
-  showMsg('oc-msg','','');
+  if (!num) return;
+  showMsg('oc-msg', '', '');
   try {
     var r = await fetch('/api/recepcion/detalle/' + encodeURIComponent(num));
     var d = await r.json();
-    if (r.ok === false || d.error) {
+    if (!r.ok || d.error) {
       showMsg('oc-msg', d.error || 'OC no encontrada', 'err');
-      document.getElementById('oc-section').style.display='none';
+      document.getElementById('oc-section').style.display = 'none';
       return;
     }
     currentOC = d;
     renderOC(d);
-    document.getElementById('oc-section').style.display='block';
-  } catch(e) { showMsg('oc-msg','Error de red: '+e.message,'err'); }
+    document.getElementById('oc-section').style.display = 'block';
+  } catch(e) { showMsg('oc-msg', 'Error de red: ' + e.message, 'err'); }
+}
+
+function getItemIcon(est, pct) {
+  if (est === 'OK' && pct >= 100) return '<span class="icon-ok">&#10003;</span>';
+  if (est === 'Danado' || est === 'NoLlego') return '<span class="icon-falta">&#10007;</span>';
+  if (pct < 100 || est !== 'OK') return '<span class="icon-disc">&#9888;</span>';
+  return '';
 }
 
 function renderOC(d) {
   var badgeCls = 'badge-' + (d.estado||'').toLowerCase();
   document.getElementById('oc-header').innerHTML =
-    '<div><div class="lbl">OC</div><div class="val">'+d.numero_oc+'</div></div>' +
-    '<div><div class="lbl">Proveedor</div><div class="val">'+d.proveedor+'</div></div>' +
-    '<div><div class="lbl">Fecha</div><div class="val">'+(d.fecha||'').slice(0,10)+'</div></div>' +
-    '<div><div class="lbl">Estado</div><div class="val"><span class="badge '+badgeCls+'">'+d.estado+'</span></div></div>' +
-    '<div><div class="lbl">Valor Total</div><div class="val">$'+Number(d.valor_total||0).toLocaleString()+'</div></div>' +
-    '<div><div class="lbl">Categoria</div><div class="val">'+(d.categoria||'MP')+'</div></div>';
+    '<div><div class="lbl">OC</div><div class="val">' + d.numero_oc + '</div></div>' +
+    '<div><div class="lbl">Proveedor</div><div class="val">' + d.proveedor + '</div></div>' +
+    '<div><div class="lbl">Fecha</div><div class="val">' + (d.fecha||'').slice(0,10) + '</div></div>' +
+    '<div><div class="lbl">Estado</div><div class="val"><span class="badge ' + badgeCls + '">' + d.estado + '</span></div></div>' +
+    '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(d.valor_total||0).toLocaleString() + '</div></div>' +
+    '<div><div class="lbl">Categoria</div><div class="val">' + (d.categoria||'MP') + '</div></div>';
 
   var tbody = document.getElementById('items-body');
   tbody.innerHTML = '';
   var items = d.items || [];
   for (var idx = 0; idx < items.length; idx++) {
-    var it = items[idx];
-    var unidad = (d.categoria === 'MEE') ? 'uds' : 'g';
-    var prevRec = (it.cantidad_recibida_g > 0) ? it.cantidad_recibida_g : it.cantidad_g;
-    var tr = document.createElement('tr');
-    tr.innerHTML =
-      '<td><strong>'+it.nombre_mp+'</strong><br><small style="color:#78716c">'+it.codigo_mp+'</small></td>' +
-      '<td class="valor">'+Number(it.cantidad_g||0).toLocaleString()+' '+unidad+'</td>' +
-      '<td><input type="number" id="cant-'+idx+'" data-codigo="'+it.codigo_mp+'" value="'+prevRec+'" min="0" step="0.01"></td>' +
-      '<td><select id="est-'+idx+'">' +
-        '<option value="OK">OK - Conforme</option>' +
-        '<option value="Incompleto">Incompleto</option>' +
-        '<option value="Danado">Danado</option>' +
-        '<option value="NoLlego">No llego</option>' +
-      '</select></td>' +
-      '<td><input type="text" id="nota-'+idx+'" placeholder="Observacion opcional"></td>';
-    tbody.appendChild(tr);
+    (function(i, it) {
+      var unidad = (d.categoria === 'MEE') ? 'uds' : 'g';
+      var prevRec = (it.cantidad_recibida_g > 0) ? it.cantidad_recibida_g : it.cantidad_g;
+      var pct = it.cantidad_g > 0 ? Math.round(prevRec / it.cantidad_g * 100) : 100;
+      var tr = document.createElement('tr');
+      tr.id = 'item-row-' + i;
+      tr.innerHTML =
+        '<td style="text-align:center;">' + getItemIcon('OK', pct) + '</td>' +
+        '<td><strong>' + it.nombre_mp + '</strong><br><small style="color:#78716c">' + it.codigo_mp + '</small></td>' +
+        '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
+        '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '" min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
+        '<td><div class="progress-bar"><div class="progress-fill" id="prog-' + i + '" style="width:' + Math.min(pct,100) + '%"></div></div><div class="item-pct" id="pct-' + i + '">' + pct + '%</div></td>' +
+        '<td><select id="est-' + i + '" onchange="updateRow(' + i + ')">' +
+          '<option value="OK">OK - Conforme</option>' +
+          '<option value="Incompleto">Incompleto</option>' +
+          '<option value="Danado">Danado</option>' +
+          '<option value="NoLlego">No llego</option>' +
+        '</select></td>' +
+        '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>';
+      tbody.appendChild(tr);
+      updateRow(i);
+    })(idx, items[idx]);
   }
 }
 
+function updateRow(i) {
+  var cantEl = document.getElementById('cant-' + i);
+  var estEl = document.getElementById('est-' + i);
+  var progEl = document.getElementById('prog-' + i);
+  var pctEl = document.getElementById('pct-' + i);
+  var row = document.getElementById('item-row-' + i);
+  if (!cantEl) return;
+  var sol = parseFloat(cantEl.dataset.sol) || 0;
+  var rec = parseFloat(cantEl.value) || 0;
+  var est = estEl ? estEl.value : 'OK';
+  var pct = sol > 0 ? Math.round(rec / sol * 100) : 100;
+  if (progEl) { progEl.style.width = Math.min(pct,100) + '%'; progEl.style.background = pct >= 100 ? '#16a34a' : pct > 50 ? '#d97706' : '#dc2626'; }
+  if (pctEl) pctEl.textContent = pct + '%';
+  if (row) { row.className = (est === 'OK' && pct >= 100) ? 'row-ok' : (est === 'Danado' || est === 'NoLlego' || pct === 0) ? 'row-falta' : 'row-disc'; }
+}
+
 async function registrarRecepcion() {
-  if (currentOC === null) return;
+  if (!currentOC) return;
   var obs = document.getElementById('obs-input').value.trim();
   var receptor = document.getElementById('receptor-input').value.trim();
+  if (!receptor) { showMsg('submit-msg', 'Ingresa quien recibe la mercancia', 'err'); return; }
   var items = [];
   var discrepancias = false;
   var ocItems = currentOC.items || [];
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
-    var cantEl = document.getElementById('cant-'+idx);
-    var estEl = document.getElementById('est-'+idx);
-    var notaEl = document.getElementById('nota-'+idx);
+    var cantEl = document.getElementById('cant-' + idx);
+    var estEl = document.getElementById('est-' + idx);
+    var notaEl = document.getElementById('nota-' + idx);
     var cant = cantEl ? (parseFloat(cantEl.value) || 0) : 0;
     var est = estEl ? estEl.value : 'OK';
     var nota = notaEl ? notaEl.value.trim() : '';
@@ -4350,65 +5185,113 @@ async function registrarRecepcion() {
   showMsg('submit-msg', 'Registrando...', '');
   try {
     var r = await fetch('/api/ordenes-compra/' + encodeURIComponent(currentOC.numero_oc) + '/recibir', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
     });
     var d = await r.json();
     if (d.ok) {
-      showMsg('submit-msg', 'Recepcion registrada. ' + (d.ingresos||0) + ' item(s) ingresado(s).', 'ok');
+      var discMsg = discrepancias ? ' ⚠ Con discrepancias.' : '';
+      showMsg('submit-msg', 'Recepcion registrada. ' + (d.ingresos||0) + ' item(s) ingresado(s).' + discMsg, 'ok');
+      var submitRow = document.querySelector('.submit-row');
+      if (submitRow) {
+        var printBtn = document.createElement('button');
+        printBtn.className = 'btn btn-print';
+        printBtn.textContent = '🖨 Imprimir Acta de Recepcion';
+        printBtn.onclick = function() { imprimirActaRecepcion(currentOC, payload, d); };
+        submitRow.appendChild(printBtn);
+      }
       document.getElementById('oc-section').style.display = 'none';
       currentOC = null;
       document.getElementById('oc-input').value = '';
       document.getElementById('obs-input').value = '';
       loadMonitoreo();
+      loadQueue();
     } else {
       showMsg('submit-msg', d.error || 'Error al registrar', 'err');
     }
-  } catch(e) { showMsg('submit-msg', 'Error de red: '+e.message, 'err'); }
+  } catch(e) { showMsg('submit-msg', 'Error de red: ' + e.message, 'err'); }
+}
+
+function imprimirActaRecepcion(oc, payload, result) {
+  var w = window.open('', '_blank', 'width=760,height=900,toolbar=0,scrollbars=1,resizable=1');
+  var hoy = new Date().toLocaleString('es-CO');
+  var itemsHtml = (payload.items_recepcion || []).map(function(it) {
+    var cls = it.estado === 'OK' ? 'color:#16a34a' : 'color:#dc2626';
+    return '<tr><td>' + it.codigo_mp + '</td><td>' + it.cantidad_recibida.toLocaleString() + '</td><td style="' + cls + ';font-weight:600;">' + it.estado + '</td><td>' + (it.notas||'—') + '</td></tr>';
+  }).join('');
+  var discBanner = payload.tiene_discrepancias
+    ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;margin-bottom:16px;color:#92400e;font-weight:600;">⚠ Esta recepcion contiene discrepancias. Requiere revision.</div>'
+    : '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:12px;margin-bottom:16px;color:#166534;font-weight:600;">✓ Recepcion conforme sin discrepancias.</div>';
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Acta Recepcion</title>'
+    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#1C1917;}'
+    + 'h2{color:#292524;margin-bottom:4px;}h3{color:#57534e;margin:20px 0 10px;}'
+    + '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}'
+    + 'table{width:100%;border-collapse:collapse;margin-bottom:16px;}'
+    + 'th{background:#f5f5f4;padding:8px 10px;text-align:left;font-size:11px;color:#57534e;border:1px solid #e7e5e4;}'
+    + 'td{padding:7px 10px;border:1px solid #e7e5e4;}'
+    + '.meta{background:#fafaf9;border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
+    + '.meta .lbl{font-size:10px;color:#78716c;text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
+    + '.firma{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px;}'
+    + '.firma-box{border-top:1px solid #292524;padding-top:8px;font-size:11px;color:#78716c;text-align:center;}'
+    + '.noPrint{text-align:center;margin-bottom:20px;} @media print{.noPrint{display:none!important;}}'
+    + '</style></head><body>'
+    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#292524;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
+    + '<div class="header"><div><h2>ACTA DE RECEPCION DE MERCANCIA</h2><p style="color:#78716c;font-size:12px;">Espagiria Laboratorio — COC-PRO-002-F07</p></div>'
+    + '<div style="text-align:right;font-size:11px;color:#78716c;"><div>Fecha: ' + hoy + '</div></div></div>'
+    + discBanner
+    + '<div class="meta">'
+    + '<div><div class="lbl">No. OC</div><div class="val">' + (oc ? oc.numero_oc : '—') + '</div></div>'
+    + '<div><div class="lbl">Proveedor</div><div class="val">' + (oc ? oc.proveedor : '—') + '</div></div>'
+    + '<div><div class="lbl">Categoria</div><div class="val">' + (oc ? (oc.categoria||'MP') : '—') + '</div></div>'
+    + '<div><div class="lbl">Valor Total OC</div><div class="val">$' + Number((oc ? oc.valor_total : 0)||0).toLocaleString() + '</div></div>'
+    + '</div>'
+    + '<h3>Detalle de items recibidos</h3>'
+    + '<table><thead><tr><th>Codigo MP</th><th>Cant. Recibida</th><th>Estado</th><th>Notas</th></tr></thead><tbody>' + itemsHtml + '</tbody></table>'
+    + '<h3>Observaciones</h3>'
+    + '<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:6px;padding:12px;min-height:60px;">' + (payload.observaciones_recepcion||'Sin observaciones adicionales.') + '</div>'
+    + '<div class="firma">'
+    + '<div class="firma-box">Recibido por<br><br><strong>' + payload.receptor_nombre + '</strong></div>'
+    + '<div class="firma-box">Control de Calidad<br><br>&nbsp;</div>'
+    + '</div>'
+    + '</body></html>');
+  w.document.close();
 }
 
 function showMsg(id, text, type) {
   var el = document.getElementById(id);
-  if (el === null) return;
+  if (!el) return;
   el.textContent = text;
   el.className = 'msg' + (type==='ok' ? ' msg-ok' : type==='err' ? ' msg-err' : '');
   el.style.display = text ? 'block' : 'none';
 }
 
 function showTab(name) {
-  var tabs = ['transito','recibidas','disc'];
-  for (var i = 0; i < tabs.length; i++) {
-    var t = tabs[i];
-    document.getElementById('tab-'+t).classList.toggle('active', t === name);
-    document.getElementById('tab-btn-'+t).classList.toggle('active', t === name);
-  }
+  ['transito','recibidas','disc'].forEach(function(t) {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
+  });
 }
 
-function fmtDate(s) { return s ? String(s).slice(0,10) : '-'; }
+function fmtDate(s) { return s ? String(s).slice(0,10) : '—'; }
 function fmtVal(v) { return '$' + Number(v||0).toLocaleString(); }
 
 function buildTable(rows) {
-  if (rows.length === 0) return '<div class="empty">Sin registros</div>';
-  var h = '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>OC</th><th>Proveedor</th><th>Cat.</th><th>Valor</th>' +
-    '<th>Fecha OC</th><th>F. Aut.</th><th>F. Pago</th><th>F. Recepcion</th><th>Observaciones</th>' +
-    '</tr></thead><tbody>';
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    var disc = row.tiene_discrepancias ? '<span class="disc"> DISC</span>' : '';
-    h += '<tr>' +
-      '<td><strong>'+row.numero_oc+'</strong>'+disc+'</td>' +
-      '<td>'+row.proveedor+'</td>' +
-      '<td>'+row.categoria+'</td>' +
-      '<td class="valor">'+fmtVal(row.valor_total)+'</td>' +
-      '<td>'+fmtDate(row.fecha)+'</td>' +
-      '<td>'+fmtDate(row.fecha_autorizacion)+'</td>' +
-      '<td>'+fmtDate(row.fecha_pago)+'</td>' +
-      '<td>'+(row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:#d97706">Pendiente</span>')+'</td>' +
-      '<td style="max-width:200px;color:#57534e">'+(row.observaciones||'-')+'</td>' +
-      '</tr>';
-  }
+  if (!rows.length) return '<div class="empty">Sin registros</div>';
+  var h = '<div style="overflow-x:auto"><table><thead><tr>'
+    + '<th>OC</th><th>Proveedor</th><th>Cat.</th><th>Valor</th>'
+    + '<th>Fecha OC</th><th>F. Aut.</th><th>F. Pago</th><th>F. Recepcion</th><th>Observaciones</th>'
+    + '</tr></thead><tbody>';
+  rows.forEach(function(row) {
+    var disc = row.tiene_discrepancias ? '<span class="disc"> &#9888; DISC</span>' : '';
+    h += '<tr><td><strong>' + row.numero_oc + '</strong>' + disc + '</td>'
+      + '<td>' + row.proveedor + '</td><td>' + row.categoria + '</td>'
+      + '<td class="valor">' + fmtVal(row.valor_total) + '</td>'
+      + '<td>' + fmtDate(row.fecha) + '</td>'
+      + '<td>' + fmtDate(row.fecha_autorizacion) + '</td>'
+      + '<td>' + fmtDate(row.fecha_pago) + '</td>'
+      + '<td>' + (row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:#d97706">Pendiente</span>') + '</td>'
+      + '<td style="max-width:200px;color:#57534e">' + (row.observaciones||'—') + '</td>'
+      + '</tr>';
+  });
   h += '</tbody></table></div>';
   return h;
 }
@@ -4417,22 +5300,400 @@ async function loadMonitoreo() {
   try {
     var r = await fetch('/api/recepcion/seguimiento');
     var all = await r.json();
-    if (Array.isArray(all) === false) all = [];
-    var transito = all.filter(function(x){ return x.estado === 'Autorizada' && (x.fecha_recepcion === '' || x.fecha_recepcion === null); });
-    var recibidas = all.filter(function(x){ return x.fecha_recepcion && x.fecha_recepcion.length > 2; });
-    var disc = all.filter(function(x){ return x.tiene_discrepancias; });
+    if (!Array.isArray(all)) all = [];
+    var transito = all.filter(function(x) { return x.estado === 'Autorizada' && (!x.fecha_recepcion || x.fecha_recepcion.length < 3); });
+    var recibidas = all.filter(function(x) { return x.fecha_recepcion && x.fecha_recepcion.length > 2; });
+    var disc = all.filter(function(x) { return x.tiene_discrepancias; });
     document.getElementById('cnt-transito').textContent = transito.length;
     document.getElementById('cnt-recibidas').textContent = recibidas.length;
     document.getElementById('cnt-disc').textContent = disc.length;
     document.getElementById('tab-transito').innerHTML = buildTable(transito);
     document.getElementById('tab-recibidas').innerHTML = buildTable(recibidas);
     document.getElementById('tab-disc').innerHTML = buildTable(disc);
-  } catch(e) {
-    console.error('Error cargando monitoreo:', e);
+  } catch(e) { console.error(e); }
+}
+
+loadQueue();
+loadMonitoreo();
+</script>
+</body>
+</html>
+"""
+
+SALIDA_HTML = r"""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Hub de Salida - ANIMUS Lab</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
+.topbar{background:#1C1917;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
+.topbar h1{font-size:18px;font-weight:600;}
+.topbar a{color:#a8a29e;text-decoration:none;font-size:13px;}
+.topbar a:hover{color:#fff;}
+.topbar .rec-link{background:#292524;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
+.container{max-width:1100px;margin:0 auto;padding:20px;}
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px;margin-bottom:20px;}
+.card h2{font-size:16px;font-weight:600;margin-bottom:14px;color:#292524;}
+.ped-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;margin-bottom:8px;}
+.ped-card{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;border-left:3px solid #4A6741;}
+.ped-card:hover{border-color:#292524;background:#f5f5f4;}
+.ped-card.selected{border-left-color:#1e40af;background:#eff6ff;}
+.ped-card .pn{font-weight:700;font-size:13px;}
+.ped-card .pc{font-size:12px;color:#78716c;margin-top:2px;}
+.ped-card .pv{font-size:12px;color:#4A6741;font-weight:600;margin-top:4px;}
+.ped-card .pe{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#fef3c7;color:#92400e;margin-top:4px;}
+.ped-card .pe.prep{background:#dbeafe;color:#1e40af;}
+.btn{padding:9px 18px;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500;}
+.btn-primary{background:#292524;color:#fff;}
+.btn-primary:hover{background:#1c1917;}
+.btn-success{background:#4A6741;color:#fff;}
+.btn-success:hover{background:#3a5331;}
+.btn-print{background:#1e40af;color:#fff;}
+.btn-print:hover{background:#1d4ed8;}
+.btn-sm{padding:5px 12px;font-size:12px;}
+.ped-info{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+.ped-info .lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;}
+.ped-info .val{font-size:14px;font-weight:600;color:#292524;margin-top:2px;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{background:#f5f5f4;padding:9px 12px;text-align:left;font-weight:600;color:#57534e;border-bottom:1px solid #e7e5e4;}
+td{padding:8px 12px;border-bottom:1px solid #f5f5f4;vertical-align:middle;}
+tr:hover td{background:#fafaf9;}
+td input[type=number]{width:100px;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
+td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
+.stock-ok{color:#16a34a;font-weight:600;}
+.stock-low{color:#d97706;font-weight:600;}
+.stock-zero{color:#dc2626;font-weight:600;}
+.submit-row{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.msg{font-size:13px;padding:8px 14px;border-radius:6px;}
+.msg-ok{background:#d1fae5;color:#065f46;}
+.msg-err{background:#fee2e2;color:#991b1b;}
+.empty{text-align:center;padding:32px;color:#a8a29e;font-size:13px;}
+.tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e7e5e4;}
+.tab-btn{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:500;color:#78716c;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
+.tab-btn.active{color:#292524;border-bottom-color:#292524;}
+.tab-btn:hover{color:#292524;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+.cnt-badge{display:inline-block;background:#292524;color:#fff;border-radius:20px;font-size:11px;padding:1px 7px;margin-left:4px;}
+.section-title{font-size:13px;font-weight:600;color:#57534e;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="rec-link">&#8592; Inicio</a>
+  <h1>&#128666; Hub de Salida — Despachos</h1>
+</div>
+<div class="container">
+
+  <div class="card">
+    <h2>&#128203; Pedidos Listos para Despachar</h2>
+    <div id="ped-queue"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
+  </div>
+
+  <div class="card" id="despacho-form-card" style="display:none;">
+    <h2>&#128230; Preparar Despacho</h2>
+    <div class="ped-info" id="ped-header"></div>
+
+    <div class="section-title">Items del Pedido</div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Descripcion</th>
+            <th>Cant. Pedida</th>
+            <th>Stock Disp.</th>
+            <th>Cant. a Despachar</th>
+            <th>Lote PT</th>
+          </tr>
+        </thead>
+        <tbody id="despacho-body"></tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:16px;">
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Observaciones del despacho:</label>
+      <textarea id="despacho-obs" style="width:100%;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;min-height:60px;" placeholder="Condiciones de entrega, instrucciones especiales..."></textarea>
+    </div>
+
+    <div class="submit-row">
+      <button class="btn btn-success" onclick="registrarDespacho()">&#10003; Confirmar Despacho</button>
+      <button class="btn btn-print" onclick="previsualizarActa()">&#128438; Vista Previa Acta</button>
+      <button class="btn btn-primary" onclick="cancelarDespacho()">Cancelar</button>
+      <div id="despacho-msg"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>&#128202; Historial de Despachos</h2>
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-btn-recientes" onclick="showTab('recientes')">
+        Recientes <span class="cnt-badge" id="cnt-recientes">0</span>
+      </button>
+      <button class="tab-btn" id="tab-btn-pendientes" onclick="showTab('pendientes')">
+        Pedidos Pendientes <span class="cnt-badge" id="cnt-pendientes">0</span>
+      </button>
+    </div>
+    <div id="tab-recientes" class="tab-content active"></div>
+    <div id="tab-pendientes" class="tab-content"></div>
+  </div>
+
+</div>
+<script>
+var currentPed = null;
+var stockCache = {};
+
+async function loadPedQueue() {
+  try {
+    var r = await fetch('/api/hub-salida/pedidos-pendientes');
+    var d = await r.json();
+    var peds = d.pedidos || [];
+    var el = document.getElementById('ped-queue');
+    if (!peds.length) {
+      el.innerHTML = '<p style="color:#a8a29e;font-size:13px;">Sin pedidos listos para despachar.</p>';
+      return;
+    }
+    var html = '<div class="ped-queue">';
+    peds.forEach(function(p) {
+      var estCls = (p.estado||'').toLowerCase().includes('prep') ? 'prep' : '';
+      html += '<div class="ped-card" onclick="cargarPedido(\'' + p.numero + '\')" id="pc-' + p.numero + '">'
+        + '<div class="pn">' + p.numero + '</div>'
+        + '<div class="pc">' + (p.cliente||'Sin cliente') + '</div>'
+        + '<div class="pv">$' + Number(p.valor_total||0).toLocaleString() + '</div>'
+        + '<div><span class="pe ' + estCls + '">' + p.estado + '</span></div>'
+        + '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function cargarPedido(num) {
+  document.querySelectorAll('.ped-card').forEach(function(c) { c.classList.remove('selected'); });
+  var card = document.getElementById('pc-' + num);
+  if (card) card.classList.add('selected');
+  try {
+    var r = await fetch('/api/hub-salida/pedido/' + encodeURIComponent(num));
+    var d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    currentPed = d;
+    await renderDespachoForm(d);
+    document.getElementById('despacho-form-card').style.display = 'block';
+    document.getElementById('despacho-form-card').scrollIntoView({behavior:'smooth'});
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function renderDespachoForm(d) {
+  document.getElementById('ped-header').innerHTML =
+    '<div><div class="lbl">Pedido</div><div class="val">' + d.numero + '</div></div>' +
+    '<div><div class="lbl">Cliente</div><div class="val">' + (d.cliente||'—') + '</div></div>' +
+    '<div><div class="lbl">Fecha</div><div class="val">' + (d.fecha||'').slice(0,10) + '</div></div>' +
+    '<div><div class="lbl">Estado</div><div class="val">' + (d.estado||'—') + '</div></div>' +
+    '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(d.valor_total||0).toLocaleString() + '</div></div>';
+
+  var tbody = document.getElementById('despacho-body');
+  tbody.innerHTML = '';
+  var items = d.items || [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var stockData = await fetchStock(it.sku);
+    var stockUds = stockData.total || 0;
+    var stockCls = stockUds <= 0 ? 'stock-zero' : stockUds < it.cantidad ? 'stock-low' : 'stock-ok';
+    var loteOpts = (stockData.lotes || []).map(function(l) {
+      return '<option value="' + l.lote + '">' + l.lote + ' (' + l.disponible + ' uds)</option>';
+    }).join('');
+    if (!loteOpts) loteOpts = '<option value="">Sin lotes disponibles</option>';
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><strong>' + it.sku + '</strong></td>' +
+      '<td>' + (it.descripcion||'—') + '</td>' +
+      '<td>' + it.cantidad + ' uds</td>' +
+      '<td class="' + stockCls + '">' + stockUds + ' uds</td>' +
+      '<td><input type="number" id="dsp-cant-' + i + '" value="' + Math.min(it.cantidad, stockUds) + '" min="0" max="' + stockUds + '" step="1" data-sku="' + it.sku + '" data-desc="' + (it.descripcion||'') + '" data-precio="' + (it.precio_unitario||0) + '"></td>' +
+      '<td><select id="dsp-lote-' + i + '">' + loteOpts + '</select></td>';
+    tbody.appendChild(tr);
   }
 }
 
-loadMonitoreo();
+async function fetchStock(sku) {
+  if (stockCache[sku]) return stockCache[sku];
+  try {
+    var r = await fetch('/api/hub-salida/stock/' + encodeURIComponent(sku));
+    var d = await r.json();
+    stockCache[sku] = d;
+    return d;
+  } catch(e) { return {total: 0, lotes: []}; }
+}
+
+function previsualizarActa() {
+  if (!currentPed) return;
+  var items = buildDespachoItems();
+  imprimirActaEntrega(currentPed, items, null, true);
+}
+
+function buildDespachoItems() {
+  var items = [];
+  var rows = document.querySelectorAll('#despacho-body tr');
+  rows.forEach(function(tr, i) {
+    var cantEl = document.getElementById('dsp-cant-' + i);
+    var loteEl = document.getElementById('dsp-lote-' + i);
+    if (!cantEl) return;
+    items.push({
+      sku: cantEl.dataset.sku,
+      descripcion: cantEl.dataset.desc,
+      cantidad: parseInt(cantEl.value) || 0,
+      precio_unitario: parseFloat(cantEl.dataset.precio) || 0,
+      lote_pt: loteEl ? loteEl.value : ''
+    });
+  });
+  return items;
+}
+
+async function registrarDespacho() {
+  if (!currentPed) return;
+  var items = buildDespachoItems();
+  var obs = document.getElementById('despacho-obs').value.trim();
+  if (!items.length || items.every(function(it) { return it.cantidad <= 0; })) {
+    showMsg('despacho-msg', 'Ingresa al menos un item con cantidad > 0', 'err'); return;
+  }
+  showMsg('despacho-msg', 'Registrando despacho...', '');
+  try {
+    var r = await fetch('/api/hub-salida/despachar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({numero_pedido: currentPed.numero, cliente_id: currentPed.cliente_id, items: items, observaciones: obs})
+    });
+    var d = await r.json();
+    if (d.numero) {
+      showMsg('despacho-msg', 'Despacho ' + d.numero + ' registrado correctamente.', 'ok');
+      imprimirActaEntrega(currentPed, items, d.numero, false);
+      setTimeout(function() {
+        document.getElementById('despacho-form-card').style.display = 'none';
+        currentPed = null;
+        stockCache = {};
+        loadPedQueue();
+        loadHistorial();
+      }, 1200);
+    } else {
+      showMsg('despacho-msg', d.error || 'Error al registrar', 'err');
+    }
+  } catch(e) { showMsg('despacho-msg', 'Error: ' + e.message, 'err'); }
+}
+
+function imprimirActaEntrega(ped, items, numDespacho, preview) {
+  var w = window.open('', '_blank', 'width=760,height=900,toolbar=0,scrollbars=1,resizable=1');
+  var hoy = new Date().toLocaleString('es-CO');
+  var totalUds = items.reduce(function(a, it) { return a + it.cantidad; }, 0);
+  var totalVal = items.reduce(function(a, it) { return a + it.cantidad * it.precio_unitario; }, 0);
+  var itemsHtml = items.filter(function(it) { return it.cantidad > 0; }).map(function(it) {
+    var sub = it.cantidad * it.precio_unitario;
+    return '<tr><td>' + it.sku + '</td><td>' + (it.descripcion||'—') + '</td>'
+      + '<td style="text-align:center;">' + it.cantidad + '</td>'
+      + '<td>' + (it.lote_pt||'—') + '</td>'
+      + '<td style="text-align:right;">$' + Number(it.precio_unitario||0).toLocaleString() + '</td>'
+      + '<td style="text-align:right;font-weight:600;">$' + Number(sub||0).toLocaleString() + '</td></tr>';
+  }).join('');
+  var previewBanner = preview
+    ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;margin-bottom:16px;color:#92400e;font-size:12px;font-weight:600;">BORRADOR — Vista previa. El despacho aun no ha sido confirmado en el sistema.</div>'
+    : '';
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Acta de Entrega</title>'
+    + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#1C1917;}'
+    + 'h2{color:#1C1917;margin-bottom:4px;}h3{color:#57534e;margin:20px 0 10px;}'
+    + '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}'
+    + 'table{width:100%;border-collapse:collapse;margin-bottom:16px;}'
+    + 'th{background:#f5f5f4;padding:8px 10px;text-align:left;font-size:11px;color:#57534e;border:1px solid #e7e5e4;}'
+    + 'td{padding:7px 10px;border:1px solid #e7e5e4;}'
+    + '.meta{background:#fafaf9;border-radius:6px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}'
+    + '.meta .lbl{font-size:10px;color:#78716c;text-transform:uppercase;} .meta .val{font-size:13px;font-weight:600;}'
+    + '.total-row td{background:#f5f5f4;font-weight:700;}'
+    + '.firma{display:grid;grid-template-columns:1fr 1fr 1fr;gap:30px;margin-top:40px;}'
+    + '.firma-box{border-top:1px solid #292524;padding-top:8px;font-size:11px;color:#78716c;text-align:center;}'
+    + '.noPrint{text-align:center;margin-bottom:20px;} @media print{.noPrint{display:none!important;}}'
+    + '</style></head><body>'
+    + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#1C1917;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
+    + previewBanner
+    + '<div class="header">'
+    + '<div><h2>ACTA DE ENTREGA / REMISION</h2><p style="color:#78716c;font-size:12px;">ANIMUS Lab — HHA Group</p></div>'
+    + '<div style="text-align:right;font-size:11px;color:#78716c;">'
+    + '<div>No. Despacho: <strong>' + (numDespacho||'BORRADOR') + '</strong></div>'
+    + '<div>Fecha: ' + hoy + '</div></div></div>'
+    + '<div class="meta">'
+    + '<div><div class="lbl">No. Pedido</div><div class="val">' + (ped ? ped.numero : '—') + '</div></div>'
+    + '<div><div class="lbl">Cliente</div><div class="val">' + (ped ? (ped.cliente||'—') : '—') + '</div></div>'
+    + '<div><div class="lbl">Total Unidades</div><div class="val">' + totalUds + ' uds</div></div>'
+    + '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(totalVal).toLocaleString() + '</div></div>'
+    + '</div>'
+    + '<h3>Detalle del despacho</h3>'
+    + '<table><thead><tr><th>SKU</th><th>Descripcion</th><th style="text-align:center;">Cant.</th><th>Lote PT</th><th style="text-align:right;">P. Unit.</th><th style="text-align:right;">Subtotal</th></tr></thead>'
+    + '<tbody>' + itemsHtml + '</tbody>'
+    + '<tfoot><tr class="total-row"><td colspan="5" style="text-align:right;">TOTAL</td><td style="text-align:right;">$' + Number(totalVal).toLocaleString() + '</td></tr></tfoot>'
+    + '</table>'
+    + '<div class="firma">'
+    + '<div class="firma-box">Despachado por<br><br>&nbsp;</div>'
+    + '<div class="firma-box">Recibido por / Transportista<br><br>&nbsp;</div>'
+    + '<div class="firma-box">Control de Calidad<br><br>&nbsp;</div>'
+    + '</div>'
+    + '</body></html>');
+  w.document.close();
+}
+
+function cancelarDespacho() {
+  currentPed = null;
+  document.getElementById('despacho-form-card').style.display = 'none';
+  document.querySelectorAll('.ped-card').forEach(function(c) { c.classList.remove('selected'); });
+}
+
+function showMsg(id, text, type) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'msg' + (type==='ok' ? ' msg-ok' : type==='err' ? ' msg-err' : '');
+  el.style.display = text ? 'block' : 'none';
+}
+
+function showTab(name) {
+  ['recientes','pendientes'].forEach(function(t) {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('tab-btn-' + t).classList.toggle('active', t === name);
+  });
+}
+
+async function loadHistorial() {
+  try {
+    var r = await fetch('/api/despachos');
+    var d = await r.json();
+    var desps = (d.despachos || []).slice(0, 20);
+    var el = document.getElementById('tab-recientes');
+    document.getElementById('cnt-recientes').textContent = desps.length;
+    if (!desps.length) { el.innerHTML = '<div class="empty">Sin despachos registrados</div>'; return; }
+    var h = '<div style="overflow-x:auto"><table><thead><tr><th>No. Despacho</th><th>Cliente</th><th>Pedido</th><th>Operador</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>';
+    desps.forEach(function(d) {
+      h += '<tr><td><strong>' + d.numero + '</strong></td><td>' + (d.cliente||'—') + '</td><td>' + (d.numero_pedido||'—') + '</td><td>' + (d.operador||'—') + '</td><td>' + (d.fecha||'').slice(0,10) + '</td><td>' + (d.estado||'—') + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    el.innerHTML = h;
+
+    var r2 = await fetch('/api/hub-salida/pedidos-pendientes');
+    var d2 = await r2.json();
+    var pend = d2.pedidos || [];
+    document.getElementById('cnt-pendientes').textContent = pend.length;
+    var el2 = document.getElementById('tab-pendientes');
+    if (!pend.length) { el2.innerHTML = '<div class="empty">Sin pedidos pendientes</div>'; return; }
+    var h2 = '<div style="overflow-x:auto"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Valor</th><th>Estado</th><th>Fecha</th><th>Accion</th></tr></thead><tbody>';
+    pend.forEach(function(p) {
+      h2 += '<tr><td><strong>' + p.numero + '</strong></td><td>' + (p.cliente||'—') + '</td><td>$' + Number(p.valor_total||0).toLocaleString() + '</td><td>' + p.estado + '</td><td>' + (p.fecha||'').slice(0,10) + '</td><td><button class="btn btn-primary btn-sm" onclick="cargarPedido(\'' + p.numero + '\')">Despachar</button></td></tr>';
+    });
+    h2 += '</tbody></table></div>';
+    el2.innerHTML = h2;
+  } catch(e) { console.error(e); }
+}
+
+loadPedQueue();
+loadHistorial();
 </script>
 </body>
 </html>
@@ -4509,7 +5770,7 @@ textarea{resize:vertical;min-height:80px}
 </head>
 <body>
 <div class="topbar">
-  <a href="/" class="hha-back">&#8592; HHA</a>
+  <a href="/" class="hha-back">&#8592; Inicio</a>
   <div class="topbar-logo">&#128203; Compras &amp; Pagos</div>
   <div class="topbar-sub">Nueva Solicitud</div>
 </div>
@@ -6997,23 +8258,104 @@ async function cargarHistorialConteos(){
 
 @app.route('/')
 def index():
-    return Response(HUB_HTML, mimetype='text/html')
+    return Response(HOME_HTML, mimetype='text/html')
 
 @app.route('/inventarios')
 def inventarios():
     return Response(DASHBOARD_HTML, mimetype='text/html')
 
+# ── Security: rate limiter ──────────────────────────────────────────────
+_LOGIN_ATTEMPTS = {}
+_MAX_ATTEMPTS   = 5
+_LOCKOUT_SECS   = 900
+
+def _client_ip():
+    hdr = request.headers.get('X-Forwarded-For', request.remote_addr or '0.0.0.0')
+    return hdr.split(',')[0].strip()
+
+def _is_locked(ip):
+    rec = _LOGIN_ATTEMPTS.get(ip)
+    if not rec: return False
+    if time.time() < rec['locked_until']: return True
+    _LOGIN_ATTEMPTS.pop(ip, None)
+    return False
+
+def _record_failure(ip):
+    rec = _LOGIN_ATTEMPTS.setdefault(ip, {'count': 0, 'locked_until': 0.0})
+    rec['count'] += 1
+    if rec['count'] >= _MAX_ATTEMPTS:
+        rec['locked_until'] = time.time() + _LOCKOUT_SECS
+
+def _clear_attempts(ip):
+    _LOGIN_ATTEMPTS.pop(ip, None)
+
+def _log_sec(event, username=None, ip=None, details=None):
+    try:
+        ua = request.headers.get("User-Agent", "")[:200]
+        ts = datetime.utcnow().isoformat() + "Z"
+        conn2 = sqlite3.connect(DB_PATH)
+        conn2.execute(
+            "INSERT INTO security_events(ts,event,username,ip,user_agent,details)"
+            " VALUES(?,?,?,?,?,?)",
+            (ts, event, username, ip, ua, details or "")
+        )
+        conn2.commit(); conn2.close()
+    except Exception:
+        pass
+
+# ── Security: session timeout ───────────────────────────────────────────────
+@app.before_request
+def check_session_timeout():
+    if session.get('compras_user'):
+        if time.time() - session.get('login_time', 0) > 8 * 3600:
+            session.clear()
+            return redirect('/login')
+
+# ── Security: headers ───────────────────────────────────────────────────────────
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options']           = 'SAMEORIGIN'
+    response.headers['X-Content-Type-Options']    = 'nosniff'
+    response.headers['Referrer-Policy']           = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection']          = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    csp = ("default-src 'self'; "
+           "script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; "
+           "style-src 'self' 'unsafe-inline' fonts.googleapis.com cdnjs.cloudflare.com; "
+           "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
+           "img-src 'self' data:; connect-src 'self';")
+    response.headers['Content-Security-Policy'] = csp
+    return response
+
 @app.route('/login', methods=['GET','POST'])
 def login():
     error = ''
     if request.method == 'POST':
-        username = request.form.get('username','').strip().lower()
-        
-        password = request.form.get('password','').strip()
-        if username in COMPRAS_USERS and COMPRAS_USERS[username] == password:
+        ip = _client_ip()
+        if _is_locked(ip):
+            error = '<div class="err">Demasiados intentos. Espera 15 min.</div>'
+            return Response(LOGIN_HTML.replace('{error}', error), mimetype='text/html')
+        username = request.form.get('username', '').strip().lower()
+        password = request.form.get('password', '').strip()
+        expected = COMPRAS_USERS.get(username, '')
+        # Soporte PBKDF2 (env var con hash) y plaintext legacy
+        if expected and expected.startswith('pbkdf2:'):
+            match = check_password_hash(expected, password)
+        else:
+            match = bool(expected) and hmac.compare_digest(expected, password)
+        if match:
+            _clear_attempts(ip)
+            _log_sec("login_success", username, ip)
+            session.clear()
+            session.permanent = True
             session['compras_user'] = username
-            next_url = request.args.get('next', '/compras')
-            return redirect(next_url)
+            session['login_time']   = time.time()
+            nxt = request.args.get('next', '/compras')
+            if not nxt.startswith('/') or nxt.startswith('//'):
+                nxt = '/compras'
+            return redirect(nxt)
+        _record_failure(ip)
+        _log_sec("login_failure", username, ip)
         error = '<div class="err">Usuario o contraseña incorrectos.</div>'
     return Response(LOGIN_HTML.replace('{error}', error), mimetype='text/html')
 
@@ -7030,6 +8372,149 @@ def compras():
     es_contadora = 'true' if session.get('compras_user','') in CONTADORA_USERS else 'false'
     html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
     return Response(html, mimetype='text/html')
+
+
+@app.route('/api/hub/resumen')
+def hub_resumen():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # OCs
+    c.execute("SELECT estado, COUNT(*), COALESCE(SUM(valor_total),0) FROM ordenes_compra GROUP BY estado")
+    oc_data = {r[0]:{'count':r[1],'valor':r[2]} for r in c.fetchall()}
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    semana_ini = (datetime.now() - __import__('datetime').timedelta(days=7)).strftime('%Y-%m-%d')
+    # Pagado esta semana
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra WHERE estado='Pagada' AND fecha_pago >= ?", (semana_ini,))
+    pag_semana = c.fetchone()[0] or 0
+    # Por pagar (Autorizada)
+    val_por_pagar = oc_data.get('Autorizada',{}).get('valor',0)
+    cnt_por_pagar = oc_data.get('Autorizada',{}).get('count',0)
+    val_por_autorizar = oc_data.get('Revisada',{}).get('valor',0)
+    cnt_por_autorizar = oc_data.get('Revisada',{}).get('count',0)
+    # Stock crítico
+    c.execute("""SELECT COUNT(*) FROM (
+        SELECT m.material_id, COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0) as stock,
+               mp.stock_minimo FROM movimientos m
+        LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+        GROUP BY m.material_id HAVING stock < COALESCE(mp.stock_minimo,0) AND COALESCE(mp.stock_minimo,0)>0
+    )""")
+    stock_crit = c.fetchone()[0] or 0
+    # Compromisos
+    c.execute("SELECT estado, prioridad, COUNT(*) FROM compromisos GROUP BY estado, prioridad")
+    comp_rows = c.fetchall()
+    comp_vencidos = 0
+    c.execute("SELECT COUNT(*) FROM compromisos WHERE estado NOT IN ('Completado','Cancelado') AND fecha_limite != '' AND fecha_limite < ?", (hoy,))
+    comp_vencidos = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM compromisos WHERE estado NOT IN ('Completado','Cancelado')")
+    comp_pendientes = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM compromisos WHERE prioridad='Critico' AND estado NOT IN ('Completado','Cancelado')")
+    comp_criticos = c.fetchone()[0] or 0
+    # Clientes activos
+    c.execute("SELECT COUNT(*) FROM clientes WHERE activo=1")
+    clientes_activos = c.fetchone()[0] or 0
+    conn.close()
+    return jsonify({
+        'ocs': {'por_autorizar': cnt_por_autorizar, 'por_pagar': cnt_por_pagar,
+                'valor_autorizar': val_por_autorizar, 'valor_pagar': val_por_pagar},
+        'stock_critico': stock_crit,
+        'pagado_semana': pag_semana,
+        'compromisos': {'pendientes': comp_pendientes, 'vencidos': comp_vencidos, 'criticos': comp_criticos},
+        'clientes': clientes_activos
+    })
+
+@app.route('/api/hub/alertas')
+def hub_alertas():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    alertas = []
+    # OCs Revisadas sin autorizar (> 2 dias)
+    hace2 = (datetime.now() - __import__('datetime').timedelta(days=2)).isoformat()
+    c.execute("SELECT numero_oc, proveedor, valor_total, fecha FROM ordenes_compra WHERE estado='Revisada' ORDER BY fecha ASC LIMIT 10")
+    for row in c.fetchall():
+        num, prov, val, fecha = row
+        dias = max(0, (datetime.now() - datetime.fromisoformat(fecha[:19])).days) if fecha else 0
+        nivel = 'critico' if dias >= 3 else 'atencion'
+        alertas.append({'nivel':nivel,'tipo':'oc_autorizar','titulo':'OC pendiente de autorizar',
+            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — {dias}d sin autorizar',
+            'accion':'/compras','oc_num':num,'valor':val})
+    # OCs Autorizadas con fecha vencida
+    c.execute("SELECT numero_oc, proveedor, valor_total, fecha_entrega_est FROM ordenes_compra WHERE estado='Autorizada' AND fecha_entrega_est != '' AND fecha_entrega_est < ? ORDER BY fecha_entrega_est ASC", (hoy,))
+    for row in c.fetchall():
+        num, prov, val, fecha = row
+        alertas.append({'nivel':'critico','tipo':'pago_vencido','titulo':'Pago vencido',
+            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — vencio {fecha}',
+            'accion':'/compras','oc_num':num,'valor':val})
+    # OCs Autorizadas proximas a vencer (3 dias)
+    en3 = (datetime.now() + __import__('datetime').timedelta(days=3)).strftime('%Y-%m-%d')
+    c.execute("SELECT numero_oc, proveedor, valor_total, fecha_entrega_est FROM ordenes_compra WHERE estado='Autorizada' AND fecha_entrega_est BETWEEN ? AND ? ORDER BY fecha_entrega_est ASC", (hoy, en3))
+    for row in c.fetchall():
+        num, prov, val, fecha = row
+        alertas.append({'nivel':'atencion','tipo':'pago_proximo','titulo':'Pago proximo',
+            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — vence {fecha}',
+            'accion':'/compras','oc_num':num,'valor':val})
+    # Compromisos vencidos
+    c.execute("SELECT descripcion, responsable, fecha_limite, prioridad FROM compromisos WHERE estado NOT IN ('Completado','Cancelado') AND fecha_limite != '' AND fecha_limite < ? ORDER BY prioridad DESC, fecha_limite ASC LIMIT 5", (hoy,))
+    for row in c.fetchall():
+        desc, resp, fecha, prior = row
+        nivel = 'critico' if prior == 'Critico' else 'atencion'
+        alertas.append({'nivel':nivel,'tipo':'compromiso_vencido','titulo':'Compromiso vencido',
+            'detalle':f'{desc[:60]} — {resp} — vencio {fecha}',
+            'accion':'/compromisos'})
+    # Sort: critico first
+    orden = {'critico':0,'atencion':1,'info':2}
+    alertas.sort(key=lambda x: orden.get(x['nivel'],2))
+    resumen = {'critico': sum(1 for a in alertas if a['nivel']=='critico'),
+               'atencion': sum(1 for a in alertas if a['nivel']=='atencion'),
+               'info': sum(1 for a in alertas if a['nivel']=='info')}
+    conn.close()
+    return jsonify({'alertas': alertas[:15], 'resumen': resumen})
+
+@app.route('/api/compromisos', methods=['GET','POST'])
+def handle_compromisos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('descripcion'): conn.close(); return jsonify({'error':'Descripcion requerida'}),400
+        c.execute("""INSERT INTO compromisos (descripcion,responsable,area,fecha_limite,estado,prioridad,origen,empresa,fecha_creacion)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (d['descripcion'],d.get('responsable',''),d.get('area',''),d.get('fecha_limite',''),
+                   d.get('estado','Pendiente'),d.get('prioridad','Normal'),d.get('origen',''),
+                   d.get('empresa','Espagiria'),datetime.now().strftime('%Y-%m-%d')))
+        conn.commit(); conn.close()
+        return jsonify({'ok':True,'id':c.lastrowid}), 201
+    estado_f = request.args.get('estado','')
+    empresa_f = request.args.get('empresa','')
+    sql = "SELECT id,descripcion,responsable,area,fecha_limite,estado,prioridad,origen,empresa,fecha_creacion,notas FROM compromisos"
+    clauses=[]; params=[]
+    if estado_f and estado_f != 'Todos': clauses.append("estado=?"); params.append(estado_f)
+    if empresa_f: clauses.append("empresa=?"); params.append(empresa_f)
+    if clauses: sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY CASE prioridad WHEN 'Critico' THEN 0 WHEN 'Alta' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, fecha_limite ASC"
+    c.execute(sql, params)
+    cols = ['id','descripcion','responsable','area','fecha_limite','estado','prioridad','origen','empresa','fecha_creacion','notas']
+    rows = [dict(zip(cols,r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'compromisos': rows})
+
+@app.route('/api/compromisos/<int:cid>', methods=['PATCH'])
+def update_compromiso(cid):
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    sets=[]; params=[]
+    for field in ['estado','notas','fecha_limite','responsable','prioridad']:
+        if field in d: sets.append(f"{field}=?"); params.append(d[field])
+    if d.get('estado') == 'Completado':
+        sets.append("fecha_cierre=?"); params.append(datetime.now().strftime('%Y-%m-%d'))
+    if not sets: conn.close(); return jsonify({'error':'Nada que actualizar'}),400
+    params.append(cid)
+    c.execute(f"UPDATE compromisos SET {', '.join(sets)} WHERE id=?", params)
+    conn.commit(); conn.close()
+    return jsonify({'ok':True})
+
+@app.route('/compromisos')
+def compromisos_page():
+    if 'compras_user' not in session:
+        return redirect('/login')
+    return Response(COMPROMISOS_HTML, mimetype='text/html')
 
 @app.route('/api/health')
 def health():
@@ -7363,7 +8848,7 @@ def registrar_recepcion():
             c.execute("UPDATE ordenes_compra_items SET cantidad_recibida_g=cantidad_recibida_g+?,lote_asignado=? WHERE numero_oc=? AND codigo_mp=?",
                       (float(d.get('cantidad',0)), lote, numero_oc, codigo))
             # verificar si todos los items de la OC estan recibidos
-            c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_solicitada_g - cantidad_recibida_g) > 1", (numero_oc,))
+            c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_g - cantidad_recibida_g) > 1", (numero_oc,))
             pendientes = c.fetchone()[0]
             if pendientes == 0:
                 c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now'),recibido_por=? WHERE numero_oc=?",
@@ -8064,14 +9549,23 @@ def handle_proveedores_compras():
         d = request.json
         if not d.get('nombre'): conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
         try:
-            c.execute("INSERT INTO proveedores (nombre,contacto,email,telefono,categoria,condiciones_pago,fecha_creacion) VALUES (?,?,?,?,?,?,?)",
-                      (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
-                       d.get('categoria',''),d.get('condiciones_pago',''),datetime.now().isoformat()))
+            c.execute("""INSERT INTO proveedores
+                (nombre,contacto,email,telefono,categoria,condiciones_pago,
+                 nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra,fecha_creacion)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
+                 d.get('categoria',''),d.get('condiciones_pago','30 dias'),
+                 d.get('nit',''),d.get('direccion',''),d.get('num_cuenta',''),
+                 d.get('tipo_cuenta',''),d.get('banco',''),d.get('concepto_compra',d.get('concepto','')),
+                 datetime.now().isoformat()))
             conn.commit(); conn.close()
             return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
         except Exception as e: conn.close(); return jsonify({'error': str(e)}), 400
-    c.execute("SELECT nombre,contacto,email,telefono,categoria,condiciones_pago FROM proveedores WHERE activo=1 ORDER BY nombre")
-    cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago']
+    c.execute("""SELECT nombre,contacto,email,telefono,categoria,condiciones_pago,
+                       nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra
+                FROM proveedores WHERE activo=1 ORDER BY nombre""")
+    cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago',
+            'nit','direccion','num_cuenta','tipo_cuenta','banco','concepto_compra']
     provs = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
     return jsonify({'proveedores': provs})
 
@@ -8236,8 +9730,17 @@ def recibir_oc(numero_oc):
 def revisar_oc(numero_oc):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
-    cur.execute("UPDATE ordenes_compra SET estado='Revisada' WHERE numero_oc=?", (numero_oc,))
+    sets = ["estado='Revisada'"]; params = []
+    if d.get('proveedor'):
+        sets.append('proveedor=?'); params.append(str(d['proveedor']))
+    if d.get('valor_total') not in (None, '', 0):
+        sets.append('valor_total=?'); params.append(float(d['valor_total'] or 0))
+    if d.get('observaciones'):
+        sets.append('observaciones=?'); params.append(str(d['observaciones']))
+    params.append(numero_oc)
+    cur.execute(f"UPDATE ordenes_compra SET {', '.join(sets)} WHERE numero_oc=?", params)
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'estado': 'Revisada'})
 
@@ -8284,7 +9787,7 @@ def pagar_oc(numero_oc):
     categoria = row[1] or 'MP'
     proveedor = row[2] or ''
     if not monto: monto = float(row[3] or 0)
-    cat_map = {'MP': 'MPs', 'MEE': 'MEE', 'Admin': 'Administrativo', 'Influencer': 'Marketing'}
+    cat_map = {'MPs':'MPs','MP':'MPs','Envase':'MEE','Insumos':'MEE','MEE':'MEE','Servicios':'Servicios','Analisis':'Servicios','Ánalisis':'Servicios','Acondicionamiento':'Servicios','Admin':'Administrativo','Nomina':'Administrativo','ADM':'Administrativo','Infraestructura':'Infraestructura','INF':'Infraestructura','CC':'Cuentas de Cobro'}
     cat_egreso = cat_map.get(categoria, 'Compras')
     fecha_pago = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=? WHERE numero_oc=?",
@@ -8630,6 +10133,12 @@ def handle_despachos():
 def gerencia_page():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return redirect(url_for('login'))
+    return Response(HUB_HTML, mimetype='text/html')
+
+@app.route('/gerencia-financiero')
+def gerencia_financiero_page():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return redirect(url_for('login'))
     return Response(GERENCIA_HTML, mimetype='text/html')
 
 @app.route('/api/gerencia/kpis')
@@ -8674,6 +10183,261 @@ def gerencia_kpis():
                                    'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes},
                     'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
                     'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
+
+@app.route('/api/gerencia/flujo-operacional')
+def gerencia_flujo_operacional():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date
+    today = date.today()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # OCs en tránsito (Autorizada, sin recepción)
+    c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total
+                 FROM ordenes_compra oc
+                 WHERE oc.estado = 'Autorizada'
+                 AND (oc.fecha_recepcion IS NULL OR oc.fecha_recepcion = '')
+                 ORDER BY oc.fecha ASC LIMIT 20""")
+    oc_cols = ['numero_oc','proveedor','fecha','valor_total']
+    ocs_transito = []
+    for r in c.fetchall():
+        row = dict(zip(oc_cols, r))
+        try:
+            fd = date.fromisoformat(str(r[2])[:10])
+            row['dias_transito'] = (today - fd).days
+        except Exception:
+            row['dias_transito'] = 0
+        ocs_transito.append(row)
+    # Recepciones con discrepancias
+    c.execute("""SELECT numero_oc, proveedor, fecha_recepcion
+                 FROM ordenes_compra
+                 WHERE tiene_discrepancias = 1
+                 ORDER BY fecha_recepcion DESC LIMIT 10""")
+    recepciones_disc = [{'numero_oc': r[0], 'proveedor': r[1], 'fecha': r[2]} for r in c.fetchall()]
+    # Pedidos listos para despachar
+    c.execute("""SELECT p.numero, cl.nombre as cliente, p.fecha, p.valor_total, p.estado
+                 FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id
+                 WHERE p.estado IN ('Confirmado','En preparacion','En Produccion','Aprobado','Listo')
+                 ORDER BY p.fecha ASC LIMIT 20""")
+    ped_cols = ['numero','cliente','fecha','valor_total','estado']
+    pedidos_listos = [dict(zip(ped_cols, r)) for r in c.fetchall()]
+    # Despachos recientes (last 10)
+    c.execute("""SELECT d.numero, cl.nombre as cliente, d.fecha, d.numero_pedido, d.estado
+                 FROM despachos d LEFT JOIN clientes cl ON d.cliente_id=cl.id
+                 ORDER BY d.fecha DESC LIMIT 10""")
+    dsp_cols = ['numero','cliente','fecha','numero_pedido','estado']
+    despachos_recientes = [dict(zip(dsp_cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({
+        'ocs_transito': ocs_transito,
+        'recepciones_disc': recepciones_disc,
+        'pedidos_listos': pedidos_listos,
+        'despachos_recientes': despachos_recientes
+    })
+
+@app.route('/api/admin/security-log')
+def admin_security_log():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 401
+    limit  = min(int(request.args.get('limit', 200)), 500)
+    event  = request.args.get('event', '')
+    conn   = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if event:
+        c.execute('SELECT * FROM security_events WHERE event=? ORDER BY id DESC LIMIT ?', (event, limit))
+    else:
+        c.execute('SELECT * FROM security_events ORDER BY id DESC LIMIT ?', (limit,))
+    cols = ['id','ts','event','username','ip','user_agent','details']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    # Summary counts
+    c.execute('SELECT event, COUNT(*) FROM security_events GROUP BY event')
+    summary = {r[0]: r[1] for r in c.fetchall()}
+    conn.close()
+    return jsonify({'events': rows, 'summary': summary})
+
+@app.route('/api/admin/generate-hash', methods=['POST'])
+def admin_generate_hash():
+    """Utility: generate a PBKDF2 hash for a plaintext password.
+    Use this to pre-hash passwords before storing them in env vars.
+    POST {password: 'xxx'} -> {hash: 'pbkdf2:...'}
+    """
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 401
+    d = request.get_json() or {}
+    pw = d.get('password', '')
+    if not pw:
+        return jsonify({'error': 'Falta password'}), 400
+    from werkzeug.security import generate_password_hash
+    h = generate_password_hash(pw, method='pbkdf2:sha256', salt_length=16)
+    return jsonify({'hash': h, 'note': 'Guarda este hash en la env var correspondiente'})
+
+@app.route('/api/gerencia/dashboard-extra')
+def gerencia_dashboard_extra():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date, timedelta
+    today    = date.today()
+    mes_str  = today.strftime('%Y-%m')
+    year_str = today.strftime('%Y')
+    cutoff7  = (today - timedelta(days=7)).isoformat()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    # Ingresos del mes desde transacciones reales
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
+              "WHERE fecha LIKE ? AND estado NOT IN ('Cancelado')"
+              " AND (empresa='ANIMUS' OR empresa IS NULL OR empresa='')",
+              (mes_str+'%',))
+    ing_animus = c.fetchone()[0] or 0
+    try:
+        c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes "
+                  "WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')",
+                  (mes_str+'%',))
+        ing_maquila = c.fetchone()[0] or 0
+    except Exception:
+        ing_maquila = 0
+    ingresos_mes = {'animus': ing_animus, 'maquila': ing_maquila, 'total': ing_animus + ing_maquila}
+
+    # AR — cuentas por cobrar
+    c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM pedidos "
+              "WHERE estado NOT IN ('Cancelado','Despachado') AND valor_total > 0")
+    ar_row = c.fetchone()
+    ar_total, ar_count = (ar_row[0] or 0), (ar_row[1] or 0)
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
+              "WHERE estado NOT IN ('Cancelado','Despachado') "
+              "AND valor_total > 0 AND fecha <= ?",
+              ((today - timedelta(days=30)).isoformat(),))
+    ar_v30 = c.fetchone()[0] or 0
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
+              "WHERE estado NOT IN ('Cancelado','Despachado') "
+              "AND valor_total > 0 AND fecha <= ?",
+              ((today - timedelta(days=60)).isoformat(),))
+    ar_v60 = c.fetchone()[0] or 0
+    ar = {'total': ar_total, 'count': ar_count, 'vencido_30': ar_v30, 'vencido_60': ar_v60}
+
+    # AP — cuentas por pagar
+    c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM ordenes_compra "
+              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
+              "AND (pagado_por IS NULL OR pagado_por='')")
+    ap_row = c.fetchone()
+    ap_total, ap_count = (ap_row[0] or 0), (ap_row[1] or 0)
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
+              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
+              "AND (pagado_por IS NULL OR pagado_por='') AND fecha <= ?",
+              ((today - timedelta(days=30)).isoformat(),))
+    ap_v30 = c.fetchone()[0] or 0
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
+              "WHERE estado IN ('Autorizada','Recibida','Parcial') "
+              "AND (pagado_por IS NULL OR pagado_por='') AND fecha <= ?",
+              ((today - timedelta(days=60)).isoformat(),))
+    ap_v60 = c.fetchone()[0] or 0
+    ap = {'total': ap_total, 'count': ap_count, 'vencido_30': ap_v30, 'vencido_60': ap_v60}
+
+    # Maquila pipeline activo
+    try:
+        c.execute("SELECT numero, cliente_nombre, producto, precio_lote, estado "
+                  "FROM maquila_ordenes "
+                  "WHERE estado NOT IN ('Cotizacion','Cancelada','Entregada') "
+                  "ORDER BY fecha_orden DESC LIMIT 10")
+        maquila_pipeline = [{'numero': r[0], 'cliente_nombre': r[1],
+                              'producto': r[2], 'precio_lote': r[3],
+                              'estado': r[4]} for r in c.fetchall()]
+    except Exception:
+        maquila_pipeline = []
+
+    # Stock critico — MPs con stock < stock_minimo
+    c.execute("""
+        SELECT m.codigo_mp,
+               COALESCE(m.nombre_comercial, m.nombre_inci,'') as nombre,
+               m.stock_minimo,
+               COALESCE(SUM(CASE WHEN mv.tipo='Entrada' THEN mv.cantidad
+                                 WHEN mv.tipo='Salida'  THEN -mv.cantidad
+                                 ELSE 0 END), 0) as stock_actual
+        FROM maestro_mps m
+        LEFT JOIN movimientos mv ON m.codigo_mp = mv.material_id
+        WHERE m.activo=1 AND m.stock_minimo > 0
+        GROUP BY m.codigo_mp
+        HAVING stock_actual < m.stock_minimo
+        ORDER BY (stock_actual / m.stock_minimo) ASC
+        LIMIT 15
+    """)
+    stock_critico = [{'codigo_mp': r[0], 'nombre': r[1],
+                       'stock_minimo': r[2], 'stock_actual': max(r[3], 0)}
+                     for r in c.fetchall()]
+
+    # SGSST — proximos vencimientos (60 dias)
+    cutoff_sgsst = (today + timedelta(days=60)).isoformat()
+    try:
+        c.execute("""
+            SELECT descripcion, proximo_vencimiento, responsable, estado
+            FROM sgsst_items
+            WHERE proximo_vencimiento IS NOT NULL
+              AND proximo_vencimiento != ''
+              AND proximo_vencimiento <= ?
+              AND estado != 'Cumplido'
+            ORDER BY proximo_vencimiento ASC LIMIT 8
+        """, (cutoff_sgsst,))
+        sgsst_rows = c.fetchall()
+        sgsst_proximos = []
+        for r in sgsst_rows:
+            try:
+                venc = date.fromisoformat(str(r[1])[:10])
+                dias = (venc - today).days
+            except Exception:
+                dias = 999
+            sgsst_proximos.append({'descripcion': r[0], 'proximo_vencimiento': r[1],
+                                   'responsable': r[2], 'estado': r[3], 'dias_restantes': dias})
+    except Exception:
+        sgsst_proximos = []
+
+    # Security summary — last 7 days
+    try:
+        c.execute("SELECT COUNT(*) FROM security_events WHERE event='login_success' AND ts >= ?",
+                  (cutoff7+'T00:00:00Z',))
+        succ7 = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM security_events WHERE event='login_failure' AND ts >= ?",
+                  (cutoff7+'T00:00:00Z',))
+        fail7 = c.fetchone()[0] or 0
+        c.execute("SELECT ts FROM security_events ORDER BY id DESC LIMIT 1")
+        last_ev = c.fetchone()
+        last_event_ts = last_ev[0] if last_ev else None
+        security = {'success_7d': succ7, 'fail_7d': fail7, 'last_event': last_event_ts}
+    except Exception:
+        security = {'success_7d': 0, 'fail_7d': 0, 'last_event': None}
+
+    conn.close()
+    return jsonify({
+        'ingresos_mes': ingresos_mes,
+        'ar': ar, 'ap': ap,
+        'maquila_pipeline': maquila_pipeline,
+        'stock_critico': stock_critico,
+        'sgsst_proximos': sgsst_proximos,
+        'security': security,
+    })
+@app.route('/api/admin/cleanup-test-data', methods=['POST'])
+def admin_cleanup_test_data():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 401
+    d = request.get_json() or {}
+    if not d.get('confirm'):
+        return jsonify({'error': 'Enviar confirm:true para confirmar'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    deleted = {}
+    # Test OCs from audit
+    test_oc_nums = ['OC-2026-0002','OC-2026-0003']
+    for num in test_oc_nums:
+        c.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (num,))
+        c.execute("DELETE FROM ordenes_compra WHERE numero_oc=? AND proveedor LIKE '%test%' OR numero_oc=?", (num, num))
+    deleted['ocs'] = len(test_oc_nums)
+    # Test solicitudes
+    c.execute("DELETE FROM solicitudes WHERE numero='SOL-2026-0001' OR proveedor LIKE '%test%' OR proveedor LIKE '%prueba%'")
+    deleted['solicitudes'] = c.rowcount
+    # Test pedidos
+    c.execute("DELETE FROM pedidos_items WHERE numero_pedido='PED-2026-0001'")
+    c.execute("DELETE FROM pedidos WHERE numero='PED-2026-0001'")
+    deleted['pedidos'] = c.rowcount
+    # Test lotes
+    c.execute("DELETE FROM lotes WHERE codigo_lote LIKE '%AUDIT%' OR codigo_lote LIKE '%TEST%' OR codigo_lote LIKE '%-test-%'")
+    deleted['lotes'] = c.rowcount
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'deleted': deleted, 'message': 'Test data cleaned up'})
 
 @app.route('/api/gerencia/input-manual', methods=['POST'])
 def gerencia_input_manual():
@@ -8866,6 +10630,218 @@ def update_precio_mayorista(sku):
     c.execute("UPDATE sku_precios SET precio_mayorista=? WHERE sku=?", (precio, sku))
     conn.commit(); conn.close()
     return jsonify({'message': f'Precio actualizado para {sku}'})
+
+@app.route('/api/financiero/ar-aging')
+def financiero_ar_aging():
+    from datetime import date
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    today = date.today()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT numero_pedido, cliente, fecha, valor_total
+                 FROM pedidos
+                 WHERE estado NOT IN ('Cancelado','Facturado','Entregado')
+                 AND valor_total > 0""")
+    rows = c.fetchall(); conn.close()
+    buckets = {
+        'corriente': {'total': 0, 'count': 0},
+        'dias_30':   {'total': 0, 'count': 0},
+        'dias_60':   {'total': 0, 'count': 0},
+        'dias_90':   {'total': 0, 'count': 0},
+    }
+    pedidos = []
+    ar_total = 0
+    for r in rows:
+        num, cliente, fecha_str, valor = r
+        try:
+            fd = date.fromisoformat(fecha_str[:10])
+        except Exception:
+            fd = today
+        dias = (today - fd).days
+        ar_total += (valor or 0)
+        if dias <= 30:
+            b = 'corriente'
+        elif dias <= 60:
+            b = 'dias_30'
+        elif dias <= 90:
+            b = 'dias_60'
+        else:
+            b = 'dias_90'
+        buckets[b]['total'] += (valor or 0)
+        buckets[b]['count'] += 1
+        pedidos.append({'numero_pedido': num, 'cliente': cliente, 'fecha': fecha_str[:10] if fecha_str else '', 'dias': dias, 'valor_total': valor or 0})
+    pedidos.sort(key=lambda x: x['dias'], reverse=True)
+    return jsonify({'ar_total': ar_total, 'count': len(pedidos), 'buckets': buckets, 'pedidos': pedidos})
+
+@app.route('/api/financiero/ap-aging')
+def financiero_ap_aging():
+    from datetime import date
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    today = date.today()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT numero_oc, proveedor, fecha, valor_total
+                 FROM ordenes_compra
+                 WHERE estado IN ('Autorizada','Recibida','Parcial')
+                 AND (pagado_por IS NULL OR pagado_por = '')""")
+    rows = c.fetchall(); conn.close()
+    buckets = {
+        'corriente': {'total': 0, 'count': 0},
+        'dias_30':   {'total': 0, 'count': 0},
+        'dias_60':   {'total': 0, 'count': 0},
+        'dias_90':   {'total': 0, 'count': 0},
+    }
+    ocs = []
+    ap_total = 0
+    for r in rows:
+        num, prov, fecha_str, valor = r
+        try:
+            fd = date.fromisoformat(fecha_str[:10])
+        except Exception:
+            fd = today
+        dias = (today - fd).days
+        ap_total += (valor or 0)
+        if dias <= 30:
+            b = 'corriente'
+        elif dias <= 60:
+            b = 'dias_30'
+        elif dias <= 90:
+            b = 'dias_60'
+        else:
+            b = 'dias_90'
+        buckets[b]['total'] += (valor or 0)
+        buckets[b]['count'] += 1
+        ocs.append({'numero_oc': num, 'proveedor': prov, 'fecha': fecha_str[:10] if fecha_str else '', 'dias': dias, 'valor_total': valor or 0})
+    ocs.sort(key=lambda x: x['dias'], reverse=True)
+    return jsonify({'ap_total': ap_total, 'count': len(ocs), 'buckets': buckets, 'ocs': ocs})
+
+@app.route('/api/financiero/working-capital')
+def financiero_working_capital():
+    from datetime import date, timedelta
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    today = date.today()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # AR
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE estado NOT IN ('Cancelado','Facturado','Entregado') AND valor_total > 0")
+    ar_total = c.fetchone()[0] or 0
+    # AP
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra WHERE estado IN ('Autorizada','Recibida','Parcial') AND (pagado_por IS NULL OR pagado_por='')")
+    ap_total = c.fetchone()[0] or 0
+    # Cash from gerencia_inputs
+    try:
+        c.execute("SELECT valor FROM gerencia_inputs WHERE clave='saldo_caja' ORDER BY fecha DESC LIMIT 1")
+        row = c.fetchone()
+        cash = float(row[0]) if row else 0.0
+    except Exception:
+        cash = 0.0
+    # Inventory value: lotes activos valorados a precio promedio por MP
+    try:
+        c.execute("""SELECT l.codigo_mp, l.cantidad_g,
+                            COALESCE((SELECT AVG(oci.precio_unitario)
+                                      FROM ordenes_compra_items oci
+                                      WHERE oci.codigo_mp=l.codigo_mp AND oci.precio_unitario>0),0)
+                     FROM lotes l WHERE l.estado='activo' AND l.cantidad_g>0""")
+        inv_rows = c.fetchall()
+        inventory_value = sum((r[1] or 0) * (r[2] or 0) for r in inv_rows)
+    except Exception:
+        inventory_value = 0.0
+    # 90-day flows for DSO/DIO/DPO
+    cutoff90 = (today - timedelta(days=90)).isoformat()
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE fecha >= ? AND estado NOT IN ('Cancelado')", (cutoff90,))
+    ventas_90 = c.fetchone()[0] or 1
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra WHERE fecha >= ? AND estado NOT IN ('Pendiente','Cancelada')", (cutoff90,))
+    compras_90 = c.fetchone()[0] or 1
+    c.execute("SELECT COALESCE(SUM(fi.cantidad * fi.precio_unitario),0) FROM flujo_egresos fi WHERE fi.fecha >= ? AND fi.categoria IN ('MP','Materia Prima','Insumo')", (cutoff90,))
+    cogs_90 = c.fetchone()[0] or 1
+    # Burn rate: promedio mensual de OCs pagadas (últimos 3 meses)
+    cutoff3m = (today - timedelta(days=90)).isoformat()
+    c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
+              "WHERE fecha >= ? AND estado NOT IN ('Pendiente','Cancelada','Borrador')",
+              (cutoff3m,))
+    egr3m = c.fetchone()[0] or 0
+    burn_rate = max(egr3m / 3.0, 1.0)
+    conn.close()
+    dso = (ar_total / (ventas_90 / 90.0)) if ventas_90 > 0 else 0
+    dpo = (ap_total / (compras_90 / 90.0)) if compras_90 > 0 else 0
+    dio = (inventory_value / (cogs_90 / 90.0)) if cogs_90 > 0 else 0
+    ccc = dio + dso - dpo
+    working_capital = cash + inventory_value + ar_total - ap_total
+    runway_meses = (cash / burn_rate) if burn_rate > 0 else 0
+    return jsonify({
+        'ar_total': ar_total, 'ap_total': ap_total, 'cash': cash,
+        'inventory_value': inventory_value, 'working_capital': working_capital,
+        'dso': dso, 'dpo': dpo, 'dio': dio, 'ccc': ccc,
+        'burn_rate': burn_rate, 'runway_meses': runway_meses
+    })
+
+@app.route('/api/financiero/pnl')
+def financiero_pnl():
+    """P&L real: ingresos desde pedidos + maquila, egresos desde ordenes_compra."""
+    from datetime import date, timedelta
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    today   = date.today()
+    mes_str = today.strftime('%Y-%m')
+    year_str= today.strftime('%Y')
+    periodo = today.strftime('%b %Y')
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    def ing_animus(periodo_like):
+        c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
+                  "WHERE fecha LIKE ? AND estado NOT IN ('Cancelado')"
+                  " AND (empresa='ANIMUS' OR empresa IS NULL OR empresa='')",
+                  (periodo_like+'%',))
+        return c.fetchone()[0] or 0
+
+    def ing_maquila(periodo_like):
+        try:
+            c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes "
+                      "WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')",
+                      (periodo_like+'%',))
+            return c.fetchone()[0] or 0
+        except Exception:
+            return 0
+
+    def egr_total(periodo_like):
+        c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra "
+                  "WHERE fecha LIKE ? AND estado NOT IN ('Pendiente','Cancelada','Borrador')",
+                  (periodo_like+'%',))
+        return c.fetchone()[0] or 0
+
+    # Mes actual
+    animus_ing  = ing_animus(mes_str)
+    maqui_ing   = ing_maquila(mes_str)
+    total_ing   = animus_ing + maqui_ing
+    total_egr   = egr_total(mes_str)
+    margen      = total_ing - total_egr
+    margen_pct  = round((margen / total_ing * 100), 1) if total_ing > 0 else 0
+    # YTD
+    ytd_ing = ing_animus(year_str) + ing_maquila(year_str)
+    ytd_egr = egr_total(year_str)
+    empresas = {
+        'ANIMUS':    {'ingresos': animus_ing, 'egresos': 0, 'margen': animus_ing,
+                      'margen_pct': 100, 'ingresos_ytd': ing_animus(year_str),
+                      'egresos_ytd': 0, 'ebitda': animus_ing},
+        'ESPAGIRIA': {'ingresos': maqui_ing, 'egresos': 0, 'margen': maqui_ing,
+                      'margen_pct': 100, 'ingresos_ytd': ing_maquila(year_str),
+                      'egresos_ytd': 0, 'ebitda': maqui_ing},
+        'TOTAL':     {'ingresos': total_ing, 'egresos': total_egr, 'margen': margen,
+                      'margen_pct': margen_pct, 'ingresos_ytd': ytd_ing,
+                      'egresos_ytd': ytd_egr, 'ebitda': margen},
+    }
+    # Histórico 6 meses
+    historico = []
+    for i in range(5, -1, -1):
+        ref   = today.replace(day=1) - timedelta(days=i * 28)
+        p     = ref.strftime('%Y-%m')
+        label = ref.strftime('%b %y')
+        h_ing = ing_animus(p) + ing_maquila(p)
+        h_egr = egr_total(p)
+        historico.append({'periodo': label, 'ingresos': h_ing,
+                          'egresos': h_egr, 'margen': h_ing - h_egr})
+    conn.close()
+    return jsonify({'empresas': empresas, 'historico': historico, 'periodo': periodo})
 
 # ===============================================================
 # INVENTARIO v2 - NUEVOS ENDPOINTS
@@ -9350,6 +11326,96 @@ def recall_ejecutar():
 
 # ─── Panel de Recepcion — rutas standalone ────────────────────────────────────
 
+
+@app.route('/hub-salida')
+def hub_salida_page():
+    if 'compras_user' not in session:
+        return redirect(url_for('login'))
+    return Response(SALIDA_HTML, mimetype='text/html')
+
+@app.route('/api/hub-salida/pedidos-pendientes')
+def hub_pedidos_pendientes():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, p.valor_total
+                 FROM pedidos p
+                 LEFT JOIN clientes cl ON p.cliente_id = cl.id
+                 WHERE p.estado IN ('Confirmado','En preparacion','En Produccion','Aprobado','Listo')
+                 ORDER BY p.fecha DESC""")
+    cols = ['numero','cliente_id','cliente','fecha','estado','valor_total']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'pedidos': rows})
+
+@app.route('/api/hub-salida/pedido/<numero>')
+def hub_pedido_detalle(numero):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, p.valor_total
+                 FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id
+                 WHERE p.numero=?""", (numero,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Pedido no encontrado'}), 404
+    ped = dict(zip(['numero','cliente_id','cliente','fecha','estado','valor_total'], row))
+    c.execute("""SELECT sku, descripcion, cantidad, precio_unitario
+                 FROM pedidos_items WHERE numero_pedido=?""", (numero,))
+    ped['items'] = [dict(zip(['sku','descripcion','cantidad','precio_unitario'], r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify(ped)
+
+@app.route('/api/hub-salida/stock/<sku>')
+def hub_stock_sku(sku):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT lote_pt, unidades_disponible, fecha_produccion
+                 FROM stock_pt WHERE sku=? AND estado='Disponible' AND unidades_disponible>0
+                 ORDER BY fecha_produccion ASC""", (sku,))
+    lotes = [{'lote': r[0], 'disponible': r[1], 'fecha': r[2]} for r in c.fetchall()]
+    total = sum(l['disponible'] for l in lotes)
+    conn.close()
+    return jsonify({'sku': sku, 'total': total, 'lotes': lotes})
+
+@app.route('/api/hub-salida/despachar', methods=['POST'])
+def hub_despachar():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json() or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM despachos"); n = (c.fetchone()[0] or 0) + 1
+    numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
+    c.execute("""INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado)
+                 VALUES (?,?,?,datetime('now'),?,?,?)""",
+              (numero, d.get('numero_pedido',''), d.get('cliente_id'),
+               session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
+    for it in (d.get('items') or []):
+        if int(it.get('cantidad',0)) <= 0:
+            continue
+        c.execute("""INSERT INTO despachos_items (numero_despacho,sku,descripcion,lote_pt,cantidad,precio_unitario)
+                     VALUES (?,?,?,?,?,?)""",
+                  (numero, it.get('sku',''), it.get('descripcion',''), it.get('lote_pt',''),
+                   int(it.get('cantidad',0)), float(it.get('precio_unitario',0))))
+        lote = it.get('lote_pt','')
+        if lote:
+            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
+                         WHERE sku=? AND lote_pt=?""",
+                      (int(it.get('cantidad',0)), it.get('sku',''), lote))
+        else:
+            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
+                         WHERE sku=? AND unidades_disponible>0
+                         ORDER BY fecha_produccion ASC LIMIT 1""",
+                      (int(it.get('cantidad',0)), it.get('sku','')))
+    num_ped = d.get('numero_pedido','')
+    if num_ped:
+        c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (num_ped,))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
+
+
 @app.route('/recepcion')
 def recepcion_panel():
     return Response(RECEPCION_HTML, mimetype='text/html')
@@ -9621,5 +11687,16 @@ def rrhh_sgsst_upd(sid):
     c.execute("UPDATE sgsst_items SET estado='Cumplido',ultimo_cumplimiento=?,proximo_vencimiento=? WHERE id=?", (hoy,prox,sid))
     conn.commit(); conn.close(); return jsonify({"ok":True})
 
+@app.errorhandler(404)
+def not_found(e):
+    h = '<html><body style="background:#0d1117;color:#fff;font-family:sans-serif;text-align:center;padding-top:10vh"><h1>404</h1><p>Pagina no encontrada.</p><a href="/compras" style="color:#7ACFCC;">Volver</a></body></html>'
+    return Response(h, status=404, mimetype='text/html')
+
+@app.errorhandler(500)
+def server_error(e):
+    h = '<html><body style="background:#0d1117;color:#fff;font-family:sans-serif;text-align:center;padding-top:10vh"><h1>500</h1><p>Error interno del servidor.</p><a href="/compras" style="color:#7ACFCC;">Volver</a></body></html>'
+    return Response(h, status=500, mimetype='text/html')
+
 if __name__ == '__main__':
+
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
