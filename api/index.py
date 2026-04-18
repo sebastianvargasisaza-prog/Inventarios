@@ -3612,7 +3612,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="abc" class="tab-content">
     <h2>&#128200; Analisis ABC de Inventario</h2>
-    <button onclick="loadABC()">Generar Analisis</button>
+    <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:16px 20px;margin-bottom:18px;font-size:0.9em;color:#1a4a6b;">
+      <strong>&#8505; Para que sirve este modulo:</strong> Clasifica todas las materias primas segun el valor de stock que representan (Pareto 80/20).
+      <ul style="margin:8px 0 0 16px;padding:0;">
+        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> — Top 80% del stock total. Son las MPs mas criticas: maxima atencion en control y reorden.</li>
+        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> — 80-95% acumulado. Control intermedio.</li>
+        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> — 95-100%. Son muchos items pero representan poco stock. Control basico.</li>
+      </ul>
+      <p style="margin:8px 0 0;"><strong>Uso practico:</strong> Las MPs clase A son las que nunca pueden quedarse sin stock. Usar para definir frecuencia de conteo fisico y prioridad de compra.</p>
+    </div>
+    <button onclick="loadABC()" style="padding:9px 22px;background:#667eea;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">&#128257; Actualizar Analisis</button>
     <div id="abc-results" style="margin-top:18px;"></div>
   </div>
 
@@ -3692,7 +3701,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="cuarentena" class="tab-content">
     <h2>&#128274; Control de Calidad — Recepcion de Materiales</h2>
-    <p style="color:#777;margin-bottom:12px;">Flujo CC conforme a COC-PRO-001. Cada lote debe completar la revision antes de liberarse a produccion. Firma digital queda en audit_log.</p>
+    <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
+      <strong>&#8505; Como funciona:</strong> Cuando recibes una MP en la pestana <strong>Ingreso MP</strong> y marcas el checkbox <strong>"Poner en cuarentena"</strong>, ese lote aparece aqui hasta que alguien con rol admin lo revise y apruebe o rechace conforme a COC-PRO-001. Mientras esta en cuarentena, el sistema NO permite usarlo en produccion.<br>
+      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC — es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
+    </div>
     <div id="cuar-msg"></div>
 
     <!-- Tabla de lotes pendientes -->
@@ -3794,6 +3806,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="trazabilidad" class="tab-content">
     <h2>&#128269; Trazabilidad de Lotes</h2>
+    <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
+      <strong>&#8505; Herramienta de busqueda — no es un dashboard.</strong> Escribe el numero de lote de una MP (el codigo que aparece en la etiqueta de recepcion, ej: <code style="background:#d0eaf9;padding:1px 5px;border-radius:4px;">ESP260417ACE</code>) y el sistema muestra: quien recibio ese lote, de que proveedor, en que fecha, y en que producciones fue utilizado. Util para auditorias, reclamos de proveedor y trazabilidad BPM.
+    </div>
+    <div id="trz-msg"></div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;display:flex;gap:12px;align-items:flex-end;">
       <div style="flex:1;">
         <label style="display:block;font-weight:600;margin-bottom:4px;color:#555;">Numero de Lote</label>
@@ -3812,13 +3828,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <tbody id="trz-prod-tbody"></tbody></table>
       </div>
     </div>
-    <div id="trz-msg"></div>
   </div>
 
 
   <div id="conteo" class="tab-content">
     <h2>&#9989; Conteo Fisico Ciclico — BDG-FOR-003</h2>
-    <p style="color:#777;margin-bottom:16px;">Inventario ciclico diario por estanteria (BDG-PRO-002). Diferencias &gt;5% del valor del lote requieren aprobacion Gerencia General antes de ajustar.</p>
+    <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
+      <strong>&#8505; Para que sirve:</strong> Permite verificar fisicamente el stock de una estanteria contra lo que dice el sistema. El operario cuenta los gramos reales, los ingresa, y el sistema calcula diferencias. Si la diferencia es mayor al 5% del valor, requiere aprobacion de gerencia antes de ajustar. Queda registro firmado conforme a BDG-PRO-002.<br>
+      <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica — igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
+    </div>
 
     <!-- Selector de estanteria -->
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:20px;display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:end;">
@@ -4073,6 +4091,7 @@ function switchTab(n,btn){
   if(n==='cuarentena') cargarCuarentena();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
+  if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
   if(n==='produccion') cargarHistProd();
