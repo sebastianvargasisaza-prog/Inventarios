@@ -78,6 +78,19 @@ def init_db():
     try:
         c.execute("ALTER TABLE solicitudes_compra ADD COLUMN area TEXT DEFAULT 'Produccion'")
     except: pass
+    # Compras redesign migrations
+    for _col in [
+        "categoria TEXT DEFAULT 'MP'",
+        "remision_code TEXT DEFAULT ''",
+        "autorizado_por TEXT DEFAULT ''",
+        "fecha_autorizacion TEXT DEFAULT ''",
+        "pagado_por TEXT DEFAULT ''",
+        "fecha_pago TEXT DEFAULT ''",
+        "fecha_recepcion TEXT DEFAULT ''"
+    ]:
+        try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_col}")
+        except: pass
+
     try:
         c.execute("ALTER TABLE solicitudes_compra ADD COLUMN empresa TEXT DEFAULT 'Espagiria'")
     except: pass
@@ -2294,432 +2307,732 @@ input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px s
 COMPRAS_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Compras — HHA Group</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Compras — Espagiria</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#FAF8F5;color:#1C1917;min-height:100vh;}
-.topbar{background:#fff;border-bottom:1px solid #E8E4DE;padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;}
-.brand{display:flex;align-items:center;gap:10px;}
-.brand-dot{width:10px;height:10px;background:#4A6741;border-radius:50%;}
-.brand-name{font-weight:700;font-size:1em;color:#1C1917;}
-.brand-mod{font-size:0.78em;color:#9C8B7A;margin-left:4px;}
-.topbar-right{display:flex;align-items:center;gap:16px;}
-.user-chip{background:#FAF8F5;border:1px solid #E8E4DE;padding:5px 14px;border-radius:20px;font-size:0.82em;color:#4A6741;font-weight:600;}
-.btn-logout{background:none;border:none;color:#9C8B7A;font-size:0.82em;cursor:pointer;text-decoration:underline;}
-.nav{display:flex;border-bottom:1px solid #E8E4DE;background:#fff;padding:0 32px;overflow-x:auto;}
-.nav-btn{padding:14px 20px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:0.88em;font-weight:500;color:#9C8B7A;white-space:nowrap;transition:all 0.2s;}
-.nav-btn:hover{color:#1C1917;}
-.nav-btn.active{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}
-.page{display:none;padding:28px 32px;max-width:1200px;margin:0 auto;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
+header{background:#fff;border-bottom:1px solid #e5e3e0;padding:0 24px;position:sticky;top:0;z-index:100;}
+.header-top{display:flex;align-items:center;justify-content:space-between;padding:12px 0 0;}
+.header-top h1{font-size:17px;font-weight:700;color:#1C1917;}
+.user-chip{font-size:12px;background:#f0ede8;padding:4px 10px;border-radius:20px;color:#666;}
+nav{display:flex;gap:0;overflow-x:auto;margin-top:4px;}
+.tab{padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;font-size:13px;color:#888;white-space:nowrap;font-weight:500;}
+.tab:hover{color:#1C1917;}
+.tab.active{color:#4A6741;border-bottom-color:#4A6741;font-weight:700;}
+main{max-width:1100px;margin:0 auto;padding:24px 16px;}
+.page{display:none;}
 .page.active{display:block;}
-h2{font-size:1.2em;font-weight:700;margin-bottom:4px;}
-.page-sub{color:#9C8B7A;font-size:0.85em;margin-bottom:24px;}
-.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px;}
-.kpi{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:18px 20px;}
-.kpi-label{font-size:0.75em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
-.kpi-val{font-size:1.7em;font-weight:700;}
-.kpi-val.green{color:#4A6741;}.kpi-val.gold{color:#B5924A;}.kpi-val.red{color:#B54A4A;}
-.card{background:#fff;border:1px solid #E8E4DE;border-radius:10px;padding:22px;margin-bottom:16px;}
-.card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
-.btn{background:#4A6741;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-size:0.88em;font-weight:600;cursor:pointer;}
-.btn:hover{opacity:0.85;}
-.btn-gold{background:#B5924A;}
-.btn-ghost{background:none;border:1px solid #E8E4DE;color:#1C1917;}
-.btn-ghost:hover{background:#FAF8F5;}
-.btn-sm{padding:5px 12px;font-size:0.8em;}
-.btn-danger{background:#B54A4A;}
-table{width:100%;border-collapse:collapse;font-size:0.87em;}
-th{background:#FAF8F5;color:#9C8B7A;font-weight:600;font-size:0.78em;text-transform:uppercase;letter-spacing:0.4px;padding:10px 12px;text-align:left;border-bottom:1px solid #E8E4DE;}
-td{padding:11px 12px;border-bottom:1px solid #F0EDE8;}
-tr:hover td{background:#FDFCFB;}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.75em;font-weight:600;}
-.badge-pend{background:#FFF3E0;color:#B5924A;}.badge-aprov{background:#E8F5E9;color:#4A6741;}
-.badge-env{background:#E3F2FD;color:#1565C0;}.badge-rec{background:#E8F5E9;color:#2E7D32;}
-.badge-rech{background:#FFEBEE;color:#B54A4A;}.badge-bor{background:#F5F5F5;color:#9C8B7A;}
-label{font-size:0.82em;font-weight:600;display:block;margin-bottom:4px;}
-input,select,textarea{width:100%;padding:9px 12px;border:1px solid #E8E4DE;border-radius:7px;font-size:0.9em;color:#1C1917;background:#fff;outline:none;}
-input:focus,select:focus{border-color:#4A6741;}
-.fg{margin-bottom:14px;}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
-.msg-ok{background:#E8F5E9;color:#2E7D32;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}
-.msg-err{background:#FFEBEE;color:#B54A4A;padding:10px 14px;border-radius:7px;font-size:0.87em;margin-top:10px;}
-.empty{text-align:center;color:#9C8B7A;padding:32px;font-size:0.9em;}
-.divider{height:1px;background:#E8E4DE;margin:20px 0;}
-.footer-credit{text-align:center;color:#C5BDB5;font-size:0.75em;padding:24px 0 16px;}
-.footer-credit a{color:#B5924A;text-decoration:none;}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+.kpi{background:#fff;border-radius:10px;padding:16px;border:1px solid #e8e5e0;}
+.kpi-val{font-size:28px;font-weight:800;color:#1C1917;line-height:1;}
+.kpi-lbl{font-size:11px;color:#888;margin-top:4px;}
+.kpi.warn .kpi-val{color:#f59e0b;}
+.kpi.ok .kpi-val{color:#22c55e;}
+.kpi.alert .kpi-val{color:#ef4444;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+.panel{background:#fff;border-radius:10px;border:1px solid #e8e5e0;overflow:hidden;}
+.panel-hd{padding:14px 16px;border-bottom:1px solid #f0ede8;display:flex;align-items:center;justify-content:space-between;}
+.panel-hd h2{font-size:13px;font-weight:700;color:#1C1917;}
+.panel-body{padding:8px;}
+.oc-card{border:1px solid #e8e5e0;border-radius:8px;padding:12px;margin-bottom:8px;background:#fafaf9;}
+.oc-card:last-child{margin-bottom:0;}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;color:#fff;}
+.cat-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;margin-right:4px;}
+.btn{padding:8px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s;}
+.btn:active{opacity:.8;}
+.btn-primary{background:#4A6741;color:#fff;}
+.btn-primary:hover{background:#3d5636;}
+.btn-success{background:#16a34a;color:#fff;}
+.btn-success:hover{background:#15803d;}
+.btn-outline{background:#fff;color:#4A6741;border:1.5px solid #4A6741;}
+.btn-danger{background:#ef4444;color:#fff;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-ghost{background:none;color:#888;border:1px solid #e0ddd8;}
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+thead th{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;padding:8px 10px;border-bottom:2px solid #f0ede8;text-align:left;}
+tbody td{padding:10px 10px;border-bottom:1px solid #f7f5f2;font-size:13px;vertical-align:middle;}
+tbody tr:hover{background:#fafaf8;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.form-group{display:flex;flex-direction:column;gap:4px;}
+.form-group label{font-size:12px;font-weight:600;color:#555;}
+.form-group input,.form-group select,.form-group textarea{padding:8px 10px;border:1.5px solid #e0ddd8;border-radius:6px;font-size:13px;font-family:inherit;}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:#4A6741;}
+.card{background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:20px;margin-bottom:16px;}
+.section-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:flex-start;justify-content:center;padding-top:50px;overflow-y:auto;}
+.modal-overlay.open{display:flex;}
+.modal{background:#fff;border-radius:12px;width:90%;max-width:660px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-hd{padding:18px 20px;border-bottom:1px solid #f0ede8;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:1;}
+.modal-hd h3{font-size:15px;font-weight:700;}
+.modal-body{padding:20px;}
+.remision-print{font-family:monospace;background:#fafaf6;border:1px solid #ddd;border-radius:8px;padding:20px;font-size:12px;line-height:1.8;}
+.empty-state{text-align:center;padding:32px;color:#aaa;font-size:13px;}
+.alert-ok{background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#065f46;}
+.alert-warn{background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:12px;font-size:13px;color:#92400e;}
+.recep-wrap{max-width:600px;}
+.recep-input{display:flex;gap:8px;margin-bottom:20px;}
+.recep-input input{flex:1;padding:12px 14px;border:2px solid #e0ddd8;border-radius:8px;font-size:15px;font-family:monospace;letter-spacing:1px;}
+.recep-input input:focus{outline:none;border-color:#4A6741;}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+.info-cell{background:#f7f5f2;border-radius:6px;padding:10px 12px;}
+.info-cell .lbl{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px;}
+.info-cell .val{font-size:13px;font-weight:600;}
+@media(max-width:700px){
+  .kpi-grid{grid-template-columns:1fr 1fr;}
+  .two-col{grid-template-columns:1fr;}
+  .form-grid{grid-template-columns:1fr;}
+}
+@media print{
+  header,nav,.btn{display:none !important;}
+  .modal-overlay{position:static;display:block;padding:0;background:none;}
+  .modal{box-shadow:none;max-height:none;}
+}
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div class="brand"><div class="brand-dot"></div><span class="brand-name">HHA Group <span class="brand-mod">/ Compras</span></span></div>
-  <div class="topbar-right">
-    <span class="user-chip" id="user-label">...</span>
-    <a href="/" style="font-size:0.82em;color:#9C8B7A;text-decoration:none;margin-right:8px;">← HHA</a>
-    <button class="btn-logout" onclick="location.href='/logout'">Cerrar sesión</button>
+<header>
+  <div class="header-top">
+    <h1>Compras &mdash; Espagiria</h1>
+    <span class="user-chip">{usuario}</span>
   </div>
-</div>
-<div class="nav">
-  <button class="nav-btn active" onclick="goTo('dashboard',this)">Dashboard</button>
-  <button class="nav-btn" onclick="goTo('alertas',this)">Alertas de compra</button>
-  <button class="nav-btn" onclick="goTo('ordenes',this)">Órdenes de compra</button>
-  <button class="nav-btn" onclick="goTo('solicitudes',this)">Solicitudes</button>
-  <button class="nav-btn" onclick="goTo('proveedores',this)">Proveedores</button>
-</div>
+  <nav>
+    <button class="tab active" onclick="goTo('dashboard',this)">Dashboard</button>
+    <button class="tab" onclick="goTo('mp',this)">Materias Primas</button>
+    <button class="tab" onclick="goTo('mee',this)">Empaque</button>
+    <button class="tab" onclick="goTo('admin',this)">Pagos Admin</button>
+    <button class="tab" onclick="goTo('influencers',this)">Influencers</button>
+    <button class="tab" onclick="goTo('recepcion',this)">Recepci&oacute;n</button>
+    <button class="tab" onclick="goTo('proveedores',this)">Proveedores</button>
+  </nav>
+</header>
+<main>
 
+<!-- DASHBOARD -->
 <div id="dashboard" class="page active">
-  <h2>Resumen de Compras</h2><p class="page-sub">Estado actual del módulo de compras HHA Group</p>
-  <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">MPs bajo mínimo</div><div class="kpi-val red" id="k-alertas">—</div></div>
-    <div class="kpi"><div class="kpi-label">OCs pendientes</div><div class="kpi-val gold" id="k-oc-pend">—</div></div>
-    <div class="kpi"><div class="kpi-label">OCs en tránsito</div><div class="kpi-val" id="k-oc-trans">—</div></div>
-    <div class="kpi"><div class="kpi-label">Solicitudes pendientes</div><div class="kpi-val" id="k-sol-pend">—</div></div>
-    <div class="kpi"><div class="kpi-label">Proveedores activos</div><div class="kpi-val green" id="k-provs">—</div></div>
-  </div>
-  <div class="card">
-    <div class="card-head"><strong>Órdenes recientes</strong><button class="btn btn-sm" onclick="goTo('ordenes',document.querySelectorAll('.nav-btn')[2])">Ver todas</button></div>
-    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Estado</th><th>Acción</th></tr></thead>
-    <tbody id="dash-oc-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-  <div class="card">
-    <div class="card-head"><strong>Solicitudes recientes</strong><button class="btn btn-sm btn-ghost" onclick="goTo('solicitudes',document.querySelectorAll('.nav-btn')[3])">Ver todas</button></div>
-    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th></tr></thead>
-    <tbody id="dash-sol-body"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<div id="alertas" class="page">
-  <h2>Alertas de reabastecimiento</h2><p class="page-sub">Materias primas bajo stock mínimo</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="generarOCAutomatica()">⚡ Generar OCs automáticas</button>
-    <button class="btn btn-ghost" onclick="loadAlertas()">↻ Actualizar</button>
-  </div>
-  <div id="alertas-msg"></div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Código</th><th>Materia Prima</th><th>Proveedor</th><th>Stock mín.</th><th>Stock actual</th><th>Déficit</th><th>Nivel</th></tr></thead>
-    <tbody id="alertas-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
-  </div>
-</div>
-
-<div id="ordenes" class="page">
-  <h2>Órdenes de Compra</h2><p class="page-sub">Gestión completa de órdenes</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="showFormOC()">+ Nueva OC</button>
-    <button class="btn btn-ghost" onclick="loadOCs()">↻ Actualizar</button>
-  </div>
-  <div id="form-oc" style="display:none;" class="card">
-    <div class="card-head"><strong>Nueva Orden de Compra</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-oc').style.display='none'">✕</button></div>
-    <div class="grid2">
-      <div class="fg"><label>Proveedor *</label><input type="text" id="oc-prov" placeholder="Nombre del proveedor"></div>
-      <div class="fg"><label>Fecha entrega estimada</label><input type="date" id="oc-fecha-ent"></div>
+  <div class="kpi-grid">
+    <div class="kpi warn">
+      <div class="kpi-val" id="k-autorizar">—</div>
+      <div class="kpi-lbl">Por autorizar</div>
     </div>
-    <div class="fg"><label>Observaciones</label><textarea id="oc-obs" rows="2" placeholder="Condiciones, notas..."></textarea></div>
-    <div class="divider"></div>
-    <strong style="font-size:0.88em;">Items</strong>
-    <div style="margin-top:12px;">
-      <div class="grid3" style="margin-bottom:8px;font-size:0.78em;font-weight:700;color:#9C8B7A;text-transform:uppercase;"><span>Código MP</span><span>Cantidad (g)</span><span>Precio unit. ($)</span></div>
-      <div id="oc-items-list">
-        <div class="grid3 oc-item-row" style="margin-bottom:8px;"><input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01"></div>
+    <div class="kpi">
+      <div class="kpi-val" id="k-transito">—</div>
+      <div class="kpi-lbl">En tr&aacute;nsito</div>
+    </div>
+    <div class="kpi ok">
+      <div class="kpi-val" id="k-pagar">—</div>
+      <div class="kpi-lbl">Por pagar</div>
+    </div>
+    <div class="kpi alert">
+      <div class="kpi-val" id="k-alertas">—</div>
+      <div class="kpi-lbl">Alertas stock</div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>&#9201; Para autorizar</h2>
+        <span style="font-size:11px;color:#888;">Solo Alejandro</span>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="addItemOC()">+ Agregar ítem</button>
+      <div class="panel-body" id="lista-autorizar">
+        <div class="empty-state">Cargando...</div>
+      </div>
     </div>
-    <div style="margin-top:16px;display:flex;gap:10px;">
-      <button class="btn" onclick="crearOC()">Guardar OC</button>
-      <button class="btn btn-ghost" onclick="document.getElementById('form-oc').style.display='none'">Cancelar</button>
+    <div class="panel">
+      <div class="panel-hd">
+        <h2>&#128181; Para pagar</h2>
+        <span style="font-size:11px;color:#888;">Ya recibido</span>
+      </div>
+      <div class="panel-body" id="lista-pagar">
+        <div class="empty-state">Cargando...</div>
+      </div>
     </div>
-    <div id="oc-msg"></div>
   </div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Número OC</th><th>Proveedor</th><th>Fecha</th><th>Entrega est.</th><th>Estado</th><th>Items</th><th>Acción</th></tr></thead>
-    <tbody id="oc-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+  <div class="panel">
+    <div class="panel-hd">
+      <h2>&#9888; Alertas de reabastecimiento</h2>
+      <button class="btn btn-ghost btn-sm" onclick="goTo('mp',document.querySelector('.tab:nth-child(2)'))">Ver MPs</button>
+    </div>
+    <div class="panel-body" id="alertas-mini" style="padding:4px 8px;">
+      <div class="empty-state">Cargando...</div>
+    </div>
   </div>
 </div>
 
-<div id="solicitudes" class="page">
-  <h2>Solicitudes de Compra</h2><p class="page-sub">Solicitudes del equipo pendientes de aprobación</p>
-  <div style="margin-bottom:20px;"><button class="btn btn-ghost" onclick="loadSolicitudes()">↻ Actualizar</button></div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Número</th><th>Solicitante</th><th>Fecha</th><th>Urgencia</th><th>Estado</th><th>Acción</th></tr></thead>
-    <tbody id="sol-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+<!-- CATEGORY PAGES -->
+<div id="mp" class="page"><div id="oc-list-mp"></div></div>
+<div id="mee" class="page"><div id="oc-list-mee"></div></div>
+<div id="admin" class="page"><div id="oc-list-admin"></div></div>
+<div id="influencers" class="page"><div id="oc-list-influencers"></div></div>
+
+<!-- RECEPCION -->
+<div id="recepcion" class="page">
+  <div class="card recep-wrap">
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:6px;">Confirmar llegada de pedido</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:20px;">Ingresa el c&oacute;digo de remisi&oacute;n del documento que acompa&ntilde;a el paquete.</p>
+    <div class="recep-input">
+      <input type="text" id="rem-input" placeholder="REM-ESP-20260418-001" oninput="this.value=this.value.toUpperCase()">
+      <button class="btn btn-primary" onclick="buscarRemision()">Buscar</button>
+    </div>
+    <div id="rem-result"></div>
   </div>
 </div>
 
+<!-- PROVEEDORES -->
 <div id="proveedores" class="page">
-  <h2>Proveedores</h2><p class="page-sub">Directorio de proveedores activos</p>
-  <div style="display:flex;gap:10px;margin-bottom:20px;">
-    <button class="btn" onclick="showFormProv()">+ Nuevo proveedor</button>
-    <button class="btn btn-ghost" onclick="loadProveedores()">↻ Actualizar</button>
+  <div class="section-bar">
+    <h2 style="font-size:15px;font-weight:700;">Proveedores</h2>
+    <button class="btn btn-primary btn-sm" onclick="toggleFormProv()">+ Nuevo proveedor</button>
   </div>
-  <div id="form-prov" style="display:none;" class="card">
-    <div class="card-head"><strong>Nuevo Proveedor</strong><button class="btn btn-ghost btn-sm" onclick="document.getElementById('form-prov').style.display='none'">✕</button></div>
-    <div class="grid2">
-      <div class="fg"><label>Nombre *</label><input type="text" id="p-nombre" placeholder="Nombre del proveedor"></div>
-      <div class="fg"><label>Contacto</label><input type="text" id="p-contacto" placeholder="Nombre del contacto"></div>
-      <div class="fg"><label>Email</label><input type="email" id="p-email" placeholder="correo@empresa.com"></div>
-      <div class="fg"><label>Teléfono</label><input type="tel" id="p-tel" placeholder="+57..."></div>
-      <div class="fg"><label>Categoría</label><select id="p-cat"><option>Materias primas</option><option>Material de empaque</option><option>Insumos generales</option><option>Servicios</option></select></div>
-      <div class="fg"><label>Condiciones de pago</label><input type="text" id="p-pago" placeholder="30 días, contado..."></div>
+  <div id="form-prov-wrap" style="display:none;" class="card">
+    <h3 style="font-size:13px;font-weight:700;margin-bottom:14px;">Nuevo proveedor</h3>
+    <div class="form-grid">
+      <div class="form-group"><label>Nombre *</label><input id="pv-nombre" placeholder="Nombre empresa"></div>
+      <div class="form-group"><label>Contacto</label><input id="pv-contacto" placeholder="Nombre contacto"></div>
+      <div class="form-group"><label>Email</label><input id="pv-email" type="email" placeholder="email@empresa.com"></div>
+      <div class="form-group"><label>Tel&eacute;fono</label><input id="pv-tel" placeholder="301 000 0000"></div>
+      <div class="form-group"><label>Categor&iacute;a</label>
+        <select id="pv-cat"><option>MPs</option><option>MEE</option><option>Admin</option><option>General</option></select>
+      </div>
+      <div class="form-group"><label>Condiciones de pago</label><input id="pv-pago" placeholder="30 d&iacute;as, contado..."></div>
     </div>
-    <div style="display:flex;gap:10px;margin-top:8px;">
-      <button class="btn" onclick="crearProveedor()">Guardar</button>
-      <button class="btn btn-ghost" onclick="document.getElementById('form-prov').style.display='none'">Cancelar</button>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" onclick="crearProveedor()">Guardar</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleFormProv()">Cancelar</button>
     </div>
-    <div id="prov-msg"></div>
+    <div id="prov-msg" style="margin-top:8px;font-size:13px;"></div>
   </div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <table><thead><tr><th>Nombre</th><th>Contacto</th><th>Email</th><th>Teléfono</th><th>Categoría</th><th>Pago</th></tr></thead>
-    <tbody id="prov-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  <div id="tabla-proveedores"></div>
+</div>
+
+</main>
+
+<!-- MODAL: OC DETALLE -->
+<div class="modal-overlay" id="modal-oc">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3 id="modal-oc-titulo">Orden de Compra</h3>
+      <button onclick="closeModal('modal-oc')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-oc-body">Cargando...</div>
   </div>
 </div>
 
-<div class="footer-credit">Desarrollado por <a href="#">Sebastián Vargas Isaza</a> · HHA Group Sistema Operativo Interno · 2026</div>
+<!-- MODAL: NUEVA OC -->
+<div class="modal-overlay" id="modal-nueva-oc">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3 id="modal-nueva-titulo">Nueva Orden de Compra</h3>
+      <button onclick="closeModal('modal-nueva-oc')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" style="margin-bottom:14px;">
+        <div class="form-group"><label>Proveedor *</label><input id="noc-proveedor" placeholder="Nombre del proveedor"></div>
+        <div class="form-group"><label>Categor&iacute;a</label>
+          <select id="noc-categoria">
+            <option value="MP">Materias Primas</option>
+            <option value="MEE">Empaque / MEE</option>
+            <option value="Admin">Pago Administrativo</option>
+            <option value="Influencer">Influencer</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Fecha entrega estimada</label><input id="noc-fecha" type="date"></div>
+        <div class="form-group"><label>Observaciones</label><input id="noc-obs" placeholder="Notas adicionales..."></div>
+      </div>
+      <div id="noc-items-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <label style="font-size:12px;font-weight:700;color:#555;">&Iacute;tems del pedido</label>
+          <button class="btn btn-ghost btn-sm" onclick="addItemNoc()">+ A&ntilde;adir &iacute;tem</button>
+        </div>
+        <div id="noc-items-list"></div>
+      </div>
+      <div id="noc-total" style="text-align:right;font-weight:700;margin-top:8px;font-size:14px;color:#4A6741;"></div>
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="crearOC()">Crear OC en Borrador</button>
+        <button class="btn btn-ghost" onclick="closeModal('modal-nueva-oc')">Cancelar</button>
+      </div>
+      <div id="noc-msg" style="margin-top:8px;font-size:13px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PAGO -->
+<div class="modal-overlay" id="modal-pago">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-hd">
+      <h3>Registrar pago</h3>
+      <button onclick="closeModal('modal-pago')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:#666;font-size:13px;margin-bottom:16px;">Esta acci&oacute;n marca la OC como pagada y registra el egreso en el m&oacute;dulo financiero.</p>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Monto pagado (COP)</label>
+        <input type="number" id="pago-monto" placeholder="0" style="font-size:18px;font-weight:700;">
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>Medio de pago</label>
+        <select id="pago-medio"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>Otro</option></select>
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label>Observaciones / comprobante</label>
+        <input id="pago-obs" placeholder="N&uacute;m. transacci&oacute;n, banco...">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-success" onclick="confirmarPago()">Confirmar pago</button>
+        <button class="btn btn-ghost" onclick="closeModal('modal-pago')">Cancelar</button>
+      </div>
+      <div id="pago-msg" style="margin-top:8px;font-size:13px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: REMISION IMPRIMIBLE -->
+<div class="modal-overlay" id="modal-remision">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-hd">
+      <h3>Remisi&oacute;n de Compra</h3>
+      <button onclick="closeModal('modal-remision')" style="background:none;border:none;cursor:pointer;font-size:22px;color:#888;line-height:1;">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="remision-content"></div>
+      <div style="margin-top:16px;display:flex;gap:8px;" class="no-print">
+        <button class="btn btn-primary" onclick="window.print()">Imprimir</button>
+        <button class="btn btn-ghost" onclick="closeModal('modal-remision')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
-var USUARIO = '{usuario}';
 var ES_CONTADORA = {es_contadora};
-document.getElementById('user-label').textContent = '👤 ' + USUARIO;
+var USUARIO = '{usuario}';
+var _ocPagoActual = null;
+var _nocItems = [];
 
+var CAT_LABELS = {'MP':'Materias Primas','MEE':'Empaque / MEE','Admin':'Pagos Admin','Influencer':'Influencers'};
+var CAT_COLORS = {'MP':'#4A6741','MEE':'#2B7A78','Admin':'#6366f1','Influencer':'#ec4899'};
+var EST_COLORS = {'Borrador':'#94a3b8','Revisada':'#3b82f6','Autorizada':'#f59e0b','Recibida':'#8b5cf6','Pagada':'#22c55e','Cancelada':'#ef4444','Pendiente':'#94a3b8','Aprobada':'#16a34a'};
+var CAT_IDS = {'MP':'oc-list-mp','MEE':'oc-list-mee','Admin':'oc-list-admin','Influencer':'oc-list-influencers'};
+
+/* ——— UTILS ——— */
+function fmtNum(n){return Math.round(n||0).toLocaleString('es-CO');}
+function fmtFecha(s){return s?(s+'').substring(0,10):'';}
+function badgeEstado(e){
+  return '<span class="badge" style="background:'+(EST_COLORS[e]||'#888')+'">'+e+'</span>';
+}
+function catBadge(c){
+  if(!c) return '';
+  return '<span class="cat-badge" style="background:'+(CAT_COLORS[c]||'#888')+'">'+c+'</span>';
+}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){document.querySelectorAll('.modal-overlay.open').forEach(function(m){m.classList.remove('open');});}
+});
+
+/* ——— NAVIGATION ——— */
 function goTo(id,btn){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
-  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(b){b.classList.remove('active');});
   document.getElementById(id).classList.add('active');
   if(btn) btn.classList.add('active');
-  if(id==='dashboard') loadDashboard();
-  if(id==='alertas') loadAlertas();
-  if(id==='ordenes') loadOCs();
-  if(id==='solicitudes') loadSolicitudes();
-  if(id==='proveedores') loadProveedores();
+  var loaders={
+    'dashboard':loadDashboard,
+    'mp':function(){loadOCs('MP','oc-list-mp');},
+    'mee':function(){loadOCs('MEE','oc-list-mee');},
+    'admin':function(){loadOCs('Admin','oc-list-admin');},
+    'influencers':function(){loadOCs('Influencer','oc-list-influencers');},
+    'proveedores':loadProveedores,
+    'recepcion':function(){}
+  };
+  if(loaders[id]) loaders[id]();
 }
 
-function badgeEstado(e){
-  var map={'Borrador':'badge-bor','Pendiente':'badge-pend','Aprobada':'badge-aprov',
-           'Enviada':'badge-env','En tránsito':'badge-env','Recibida':'badge-rec',
-           'Rechazada':'badge-rech','Normal':'badge-bor','Urgente':'badge-pend','Crítico':'badge-rech'};
-  return '<span class="badge '+(map[e]||'badge-bor')+'">'+e+'</span>';
-}
-
+/* ——— DASHBOARD ——— */
 async function loadDashboard(){
   try{
-    var ra=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});
-    var roc=await fetch('/api/ordenes-compra').then(function(r){return r.json();});
-    var rsol=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
-    var rprov=await fetch('/api/proveedores-compras').then(function(r){return r.json();});
-    document.getElementById('k-alertas').textContent=(ra.alertas||[]).length;
-    var ocs=roc.ordenes||[];
-    document.getElementById('k-oc-pend').textContent=ocs.filter(function(o){return o.estado==='Pendiente';}).length;
-    document.getElementById('k-oc-trans').textContent=ocs.filter(function(o){return o.estado==='En tránsito';}).length;
-    var sols=rsol.solicitudes||[];
-    document.getElementById('k-sol-pend').textContent=sols.filter(function(s){return s.estado==='Pendiente';}).length;
-    document.getElementById('k-provs').textContent=(rprov.proveedores||[]).length;
-    var ocR=ocs.slice(0,5);
-    document.getElementById('dash-oc-body').innerHTML=ocR.length?ocR.map(function(o){
-      return '<tr><td style="font-family:monospace;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+badgeEstado(o.estado)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(&quot;'+o.numero_oc+'&quot;)">Estado</button></td></tr>';
-    }).join(''):'<tr><td colspan="5" class="empty">Sin órdenes</td></tr>';
-    var solR=sols.slice(0,5);
-    document.getElementById('dash-sol-body').innerHTML=solR.length?solR.map(function(s){
-      return '<tr><td style="font-family:monospace;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td></tr>';
-    }).join(''):'<tr><td colspan="5" class="empty">Sin solicitudes</td></tr>';
-  }catch(e){console.error(e);}
+    var res = await fetch('/api/ordenes-compra').then(function(r){return r.json();});
+    var ocs = res.ordenes||[];
+    var alertas = [];
+    try{alertas = await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});}catch(e){}
+    var porAutorizar = ocs.filter(function(o){return o.estado==='Revisada';});
+    var porPagar = ocs.filter(function(o){return o.estado==='Recibida';});
+    var enTransito = ocs.filter(function(o){return o.estado==='Autorizada';});
+    document.getElementById('k-autorizar').textContent=porAutorizar.length;
+    document.getElementById('k-transito').textContent=enTransito.length;
+    document.getElementById('k-pagar').textContent=porPagar.length;
+    document.getElementById('k-alertas').textContent=alertas.length||0;
+    document.getElementById('lista-autorizar').innerHTML=porAutorizar.length===0
+      ?'<div class="empty-state">Todo al d&iacute;a &#10003;</div>'
+      :porAutorizar.map(renderCardAutorizar).join('');
+    document.getElementById('lista-pagar').innerHTML=porPagar.length===0
+      ?'<div class="empty-state">Sin pagos pendientes &#10003;</div>'
+      :porPagar.map(renderCardPagar).join('');
+    document.getElementById('alertas-mini').innerHTML=alertas.length===0
+      ?'<div class="empty-state">Sin alertas de stock</div>'
+      :alertas.slice(0,6).map(function(a){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 8px;border-bottom:1px solid #f5f3f0;">'
+            +'<span style="font-size:12px;">'+(a.nombre_mp||a.nombre||'')+'</span>'
+            +'<span style="font-size:12px;color:#ef4444;font-weight:600;">'+(a.stock_actual||0)+'g &lt; '+(a.stock_minimo||0)+'g</span>'
+            +'</div>';
+        }).join('');
+  }catch(err){console.error(err);}
 }
 
-async function loadAlertas(){
+function renderCardAutorizar(oc){
+  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\''+oc.numero_oc+'\')">Ver detalle</button>';
+  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="autorizarOC(\''+oc.numero_oc+'\')">&#10003; Autorizar</button>';
+  return '<div class="oc-card" style="border-left:4px solid #f59e0b;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+    +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
+    +'<div style="font-size:12px;color:#555;margin-top:3px;">'+catBadge(oc.categoria)+(oc.proveedor||'Sin proveedor')+'</div>'
+    +'<div style="font-size:11px;color:#aaa;margin-top:2px;">'+fmtFecha(oc.fecha)+'</div></div>'
+    +'<div style="text-align:right;"><div style="font-size:16px;font-weight:800;">$'+fmtNum(oc.valor_total)+'</div>'
+    +'<div style="font-size:11px;color:#aaa;">'+(oc.num_items||0)+' item(s)</div></div></div>'
+    +'<div style="margin-top:10px;display:flex;gap:6px;">'+btns+'</div></div>';
+}
+
+function renderCardPagar(oc){
+  var btns='<button class="btn btn-outline btn-sm" onclick="verOC(\''+oc.numero_oc+'\')">Ver detalle</button>';
+  if(!ES_CONTADORA) btns+=' <button class="btn btn-success btn-sm" onclick="pedirPago(\''+oc.numero_oc+'\','+Number(oc.valor_total||0)+')">$ Marcar pagada</button>';
+  return '<div class="oc-card" style="border-left:4px solid #22c55e;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+    +'<div><div style="font-family:monospace;font-weight:700;font-size:13px;">'+oc.numero_oc+'</div>'
+    +(oc.remision_code?'<div style="font-size:11px;font-family:monospace;color:#4A6741;margin-top:1px;">'+oc.remision_code+'</div>':'')
+    +'<div style="font-size:12px;color:#555;margin-top:2px;">'+catBadge(oc.categoria)+(oc.proveedor||'')+'</div></div>'
+    +'<div style="text-align:right;"><div style="font-size:16px;font-weight:800;">$'+fmtNum(oc.valor_total)+'</div></div></div>'
+    +'<div style="margin-top:10px;display:flex;gap:6px;">'+btns+'</div></div>';
+}
+
+/* ——— OC LIST BY CATEGORY ——— */
+async function loadOCs(categoria,containerId){
+  var el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='<div class="empty-state">Cargando...</div>';
   try{
-    var d=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});
-    var tb=document.getElementById('alertas-body');
-    if(!d.alertas||!d.alertas.length){tb.innerHTML='<tr><td colspan="7" class="empty">✓ Todo el stock está sobre el mínimo</td></tr>';return;}
-    tb.innerHTML=d.alertas.map(function(a){
-      var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
-      var nivel=pct<25?'Crítico':pct<50?'Urgente':'Bajo';
-      var badge=pct<25?'badge-rech':pct<50?'badge-pend':'badge-bor';
-      return '<tr><td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td><td style="font-weight:600;">'+a.nombre+'</td><td style="color:#9C8B7A;">'+a.proveedor+'</td><td style="text-align:right;">'+a.stock_minimo.toLocaleString()+' g</td><td style="text-align:right;color:#B54A4A;font-weight:700;">'+a.stock_actual.toLocaleString()+' g</td><td style="text-align:right;font-weight:700;">'+a.deficit.toLocaleString()+' g</td><td><span class="badge '+badge+'">'+nivel+' ('+pct+'%)</span></td></tr>';
-    }).join('');
-  }catch(e){}
+    var res=await fetch('/api/ordenes-compra?categoria='+encodeURIComponent(categoria)).then(function(r){return r.json();});
+    var ocs=res.ordenes||[];
+    var titulo=CAT_LABELS[categoria]||categoria;
+    var html='<div class="section-bar">'
+      +'<h2 style="font-size:15px;font-weight:700;">'+titulo+'</h2>'
+      +'<button class="btn btn-primary btn-sm" onclick="abrirNuevaOC(\''+categoria+'\')">+ Nueva OC</button></div>';
+    if(ocs.length===0){
+      html+='<div class="empty-state" style="background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:40px;">Sin &oacute;rdenes para esta categor&iacute;a</div>';
+    } else {
+      html+='<div class="table-wrap"><table><thead><tr>'
+        +'<th>N&ordm; OC</th><th>Proveedor</th><th>Estado</th><th>Valor total</th><th>Fecha</th><th>C&oacute;d. REM</th><th></th>'
+        +'</tr></thead><tbody>'
+        +ocs.map(function(o){
+          return '<tr>'
+            +'<td style="font-family:monospace;font-weight:700;">'+o.numero_oc+'</td>'
+            +'<td>'+(o.proveedor||'&mdash;')+'</td>'
+            +'<td>'+badgeEstado(o.estado)+'</td>'
+            +'<td style="font-weight:700;">$'+fmtNum(o.valor_total)+'</td>'
+            +'<td style="color:#888;font-size:12px;">'+fmtFecha(o.fecha)+'</td>'
+            +'<td style="font-family:monospace;font-size:11px;color:#4A6741;">'+(o.remision_code||'&mdash;')+'</td>'
+            +'<td><button class="btn btn-ghost btn-sm" onclick="verOC(\''+o.numero_oc+'\')">Ver</button></td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    }
+    el.innerHTML=html;
+  }catch(err){el.innerHTML='<div class="empty-state">Error al cargar</div>'; console.error(err);}
 }
 
-async function generarOCAutomatica(){
-  document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">Generando OCs...</div>';
+/* ——— OC DETAIL MODAL ——— */
+async function verOC(numero){
+  openModal('modal-oc');
+  document.getElementById('modal-oc-titulo').textContent='OC '+numero;
+  document.getElementById('modal-oc-body').innerHTML='<div class="empty-state">Cargando...</div>';
   try{
-    var r=await fetch('/api/generar-oc-automatica',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    var d=await r.json();
-    document.getElementById('alertas-msg').innerHTML='<div class="msg-ok">'+d.message+'</div>';
-    loadAlertas();loadOCs();
-  }catch(e){document.getElementById('alertas-msg').innerHTML='<div class="msg-err">Error al generar OCs</div>';}
+    var res=await fetch('/api/ordenes-compra/'+numero).then(function(r){return r.json();});
+    if(res.error){document.getElementById('modal-oc-body').innerHTML='<p style="color:red">'+res.error+'</p>'; return;}
+    var oc=res.oc; var items=res.items||[];
+    var html='<div class="info-grid">'
+      +'<div class="info-cell"><div class="lbl">Estado</div><div class="val">'+badgeEstado(oc.estado)+'</div></div>'
+      +'<div class="info-cell"><div class="lbl">Categor&iacute;a</div><div class="val">'+catBadge(oc.categoria)+(oc.categoria||'&mdash;')+'</div></div>'
+      +'<div class="info-cell"><div class="lbl">Proveedor</div><div class="val">'+(oc.proveedor||'&mdash;')+'</div></div>'
+      +'<div class="info-cell"><div class="lbl">Valor total</div><div class="val" style="color:#4A6741;font-size:16px;">$'+fmtNum(oc.valor_total)+'</div></div>'
+      +(oc.remision_code?'<div class="info-cell"><div class="lbl">C&oacute;digo REM</div><div class="val" style="font-family:monospace;color:#4A6741;">'+oc.remision_code+'</div></div>':'')
+      +(oc.autorizado_por?'<div class="info-cell"><div class="lbl">Autorizado por</div><div class="val">'+oc.autorizado_por+'</div></div>':'')
+      +(oc.fecha_autorizacion?'<div class="info-cell"><div class="lbl">Fecha autorizaci&oacute;n</div><div class="val">'+fmtFecha(oc.fecha_autorizacion)+'</div></div>':'')
+      +(oc.pagado_por?'<div class="info-cell"><div class="lbl">Pagado por</div><div class="val">'+oc.pagado_por+'</div></div>':'')
+      +'</div>';
+    if(oc.observaciones){html+='<p style="font-size:12px;color:#666;margin-bottom:12px;"><strong>Obs:</strong> '+oc.observaciones+'</p>';}
+    if(items.length>0){
+      html+='<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">'
+        +'<thead><tr>'
+        +'<th style="text-align:left;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">C&oacute;digo</th>'
+        +'<th style="text-align:left;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">&Iacute;tem</th>'
+        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Cantidad</th>'
+        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Precio/g</th>'
+        +'<th style="text-align:right;font-size:10px;color:#888;padding:6px 4px;border-bottom:2px solid #f0f0f0;">Subtotal</th>'
+        +'</tr></thead><tbody>'
+        +items.map(function(it){
+          return '<tr>'
+            +'<td style="font-family:monospace;font-size:11px;padding:7px 4px;">'+(it[2]||'')+'</td>'
+            +'<td style="padding:7px 4px;">'+(it[3]||it[2]||'')+'</td>'
+            +'<td style="text-align:right;padding:7px 4px;">'+(it[4]||0)+'g</td>'
+            +'<td style="text-align:right;padding:7px 4px;color:#888;">$'+fmtNum(it[5])+'</td>'
+            +'<td style="text-align:right;padding:7px 4px;font-weight:600;">$'+fmtNum(it[6])+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table>';
+    }
+    html+='<div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px solid #f0ede8;">';
+    if(oc.estado==='Borrador'){
+      html+='<button class="btn btn-primary btn-sm" onclick="marcarRevisada(\''+numero+'\')">Enviar a autorizaci&oacute;n</button>';
+    }
+    if(oc.estado==='Revisada' && !ES_CONTADORA){
+      html+='<button class="btn btn-success btn-sm" onclick="autorizarOC(\''+numero+'\')">&#10003; Autorizar y generar REM</button>';
+    }
+    if(oc.estado==='Autorizada'){
+      html+='<button class="btn btn-outline btn-sm" onclick="verRemision(\''+numero+'\')">Imprimir remisi&oacute;n</button>';
+    }
+    if(oc.estado==='Recibida' && !ES_CONTADORA){
+      html+='<button class="btn btn-success btn-sm" onclick="pedirPago(\''+numero+'\','+(oc.valor_total||0)+')">$ Marcar pagada</button>';
+    }
+    html+='</div>';
+    document.getElementById('modal-oc-body').innerHTML=html;
+  }catch(err){document.getElementById('modal-oc-body').innerHTML='<p style="color:red">Error cargando OC</p>'; console.error(err);}
 }
 
-async function loadOCs(){
-  try{
-    var d=await fetch('/api/ordenes-compra').then(function(r){return r.json();});
-    var tb=document.getElementById('oc-body');
-    if(!d.ordenes||!d.ordenes.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin órdenes de compra</td></tr>';return;}
-    tb.innerHTML=d.ordenes.map(function(o){
-      var pR=['En transito','Enviada'].indexOf(o.estado)>=0;
-      var bR=pR?'<button class="btn btn-sm" style="margin-left:6px;background:#2B7A78;" onclick="recibirOC(&quot;'+o.numero_oc+'&quot;)" >Recibir</button>':'';
-      return '<tr><td style="font-family:monospace;font-weight:600;">'+o.numero_oc+'</td><td>'+o.proveedor+'</td><td>'+o.fecha.substring(0,10)+'</td><td>'+(o.fecha_entrega_est||'—')+'</td><td>'+badgeEstado(o.estado)+'</td><td style="text-align:center;">'+(o.num_items||0)+'</td><td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoOC(&quot;'+o.numero_oc+'&quot;)" >Estado</button>'+bR+'</td></tr>';
-    }).join('');
-  }catch(e){}
+/* ——— CREAR OC ——— */
+function abrirNuevaOC(cat){
+  _nocItems=[];
+  document.getElementById('modal-nueva-titulo').textContent='Nueva OC &mdash; '+(CAT_LABELS[cat]||cat);
+  document.getElementById('noc-categoria').value=cat||'MP';
+  document.getElementById('noc-proveedor').value='';
+  document.getElementById('noc-obs').value='';
+  document.getElementById('noc-fecha').value='';
+  document.getElementById('noc-msg').textContent='';
+  document.getElementById('noc-items-section').style.display=(cat==='MP'||cat==='MEE')?'block':'none';
+  renderNocItems();
+  openModal('modal-nueva-oc');
 }
-
-function showFormOC(){var f=document.getElementById('form-oc');f.style.display=f.style.display==='none'?'block':'none';}
-function addItemOC(){
-  var div=document.createElement('div');div.className='grid3 oc-item-row';div.style.marginBottom='8px';
-  div.innerHTML='<input type="text" class="oc-cod" placeholder="MP00001"><input type="number" class="oc-cant" placeholder="0" step="0.01"><input type="number" class="oc-precio" placeholder="0" step="0.01">';
-  document.getElementById('oc-items-list').appendChild(div);
+function addItemNoc(){
+  _nocItems.push({codigo_mp:'',nombre_mp:'',cantidad_g:0,precio_unitario:0});
+  renderNocItems();
+}
+function renderNocItems(){
+  var el=document.getElementById('noc-items-list');
+  if(_nocItems.length===0){
+    el.innerHTML='<p style="font-size:12px;color:#aaa;padding:8px 0;">Sin &iacute;tems a&uacute;n.</p>';
+    document.getElementById('noc-total').textContent='';
+    return;
+  }
+  el.innerHTML=_nocItems.map(function(it,i){
+    return '<div style="display:grid;grid-template-columns:90px 1fr 80px 90px 22px;gap:6px;margin-bottom:6px;align-items:center;">'
+      +'<input placeholder="C&oacute;d. MP" value="'+(it.codigo_mp||'')+'" oninput="_nocItems['+i+'].codigo_mp=this.value" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;font-family:monospace;">'
+      +'<input placeholder="Descripci&oacute;n / nombre" value="'+(it.nombre_mp||'')+'" oninput="_nocItems['+i+'].nombre_mp=this.value" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
+      +'<input type="number" placeholder="Cant (g)" value="'+(it.cantidad_g||'')+'" oninput="_nocItems['+i+'].cantidad_g=parseFloat(this.value)||0;calcNocTotal()" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
+      +'<input type="number" placeholder="$/g" value="'+(it.precio_unitario||'')+'" oninput="_nocItems['+i+'].precio_unitario=parseFloat(this.value)||0;calcNocTotal()" style="padding:6px 8px;border:1.5px solid #e0ddd8;border-radius:5px;font-size:12px;">'
+      +'<button onclick="_nocItems.splice('+i+',1);renderNocItems();" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:18px;line-height:1;">&times;</button>'
+      +'</div>';
+  }).join('');
+  calcNocTotal();
+}
+function calcNocTotal(){
+  var total=_nocItems.reduce(function(s,it){return s+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
+  document.getElementById('noc-total').textContent=total>0?'Total estimado: $'+fmtNum(total):'';
 }
 async function crearOC(){
-  var items=[];
-  document.querySelectorAll('.oc-item-row').forEach(function(row){
-    var cod=row.querySelector('.oc-cod').value.trim();
-    var cant=parseFloat(row.querySelector('.oc-cant').value)||0;
-    var precio=parseFloat(row.querySelector('.oc-precio').value)||0;
-    if(cod&&cant>0) items.push({codigo_mp:cod,cantidad_g:cant,precio_unitario:precio});
+  var prov=document.getElementById('noc-proveedor').value.trim();
+  var cat=document.getElementById('noc-categoria').value;
+  if(!prov){document.getElementById('noc-msg').innerHTML='<span style="color:red;">Proveedor requerido</span>'; return;}
+  var items=_nocItems.filter(function(it){return it.nombre_mp||it.codigo_mp;}).map(function(it){
+    return {codigo_mp:it.codigo_mp,nombre_mp:it.nombre_mp,cantidad_g:it.cantidad_g,precio_unitario:it.precio_unitario,subtotal:(it.cantidad_g||0)*(it.precio_unitario||0)};
   });
-  var data={proveedor:document.getElementById('oc-prov').value,fecha_entrega_est:document.getElementById('oc-fecha-ent').value,observaciones:document.getElementById('oc-obs').value,items:items,creado_por:USUARIO};
-  try{
-    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    var res=await r.json();
-    if(r.ok){document.getElementById('oc-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>';loadOCs();}
-    else{document.getElementById('oc-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>';}
-  }catch(e){document.getElementById('oc-msg').innerHTML='<div class="msg-err">Error</div>';}
-}
-async function cambiarEstadoOC(numero){
-  var todoEstados=['Borrador','Aprobada','Enviada','En transito','Recibida','Pagada','Cancelada'];
-  var estados=ES_CONTADORA?todoEstados.filter(function(e){return e!=='Aprobada'&&e!=='Pagada';}):[...todoEstados];
-  var est={'Borrador':'btn-ghost','Aprobada':'btn','Enviada':'btn btn-gold','En transito':'btn btn-gold','Recibida':'btn','Pagada':'btn','Cancelada':'btn btn-danger'};
-  document.getElementById('modal-oc-num').textContent=numero;
-  document.getElementById('oc-estado-btns').innerHTML=estados.map(function(e){
-    return '<button class="btn '+(est[e]||'btn-ghost')+'" style="text-align:left;margin-bottom:2px;" onclick="setEstadoOC(&quot;'+numero+'&quot;,&quot;'+e+'&quot;)" >'+e+'</button>';
-  }).join('');
-  openModal('modal-oc-estado');
-}
-async function setEstadoOC(numero,nuevo){
-  await fetch('/api/ordenes-compra/'+numero,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
-  closeModal('modal-oc-estado');loadOCs();loadDashboard();
-}
-async function recibirOC(numero){
-  if(!confirm('Confirmar recepcion de '+numero+'?\\nEsto creara ingresos de inventario.')) return;
-  var r=await fetch('/api/ordenes-compra/'+numero+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-  var d=await r.json();
-  if(d.ok) alert('Recepcion OK. '+d.ingresos+' ingreso(s) en inventario.');
-  else alert('Error: '+(d.error||''));
-  loadOCs();loadDashboard();
-}
-async function loadSolicitudes(){
-  try{
-    var d=await fetch('/api/solicitudes-compra').then(function(r){return r.json();});
-    var tb=document.getElementById('sol-body');
-    if(!d.solicitudes||!d.solicitudes.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin solicitudes</td></tr>';return;}
-    tb.innerHTML=d.solicitudes.map(function(s){
-      var eBadge=s.empresa&&s.empresa.indexOf('ANIMUS')>=0?'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#f3e8ff;color:#7A4A8B;font-weight:600;margin-right:4px;">AN</span>':'<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;background:#e8f4f0;color:#2B7A78;font-weight:600;margin-right:4px;">ESP</span>';
-      var acc='<button class="btn btn-ghost btn-sm" onclick="verSolicitud(&quot;'+s.numero+'&quot;)" >Ver</button>';
-      if(s.estado==='Pendiente') acc+=' <button class="btn btn-sm" style="font-size:11px;" onclick="verSolicitud(&quot;'+s.numero+'&quot;,true)">Gestionar</button>';
-      return '<tr><td style="font-family:monospace;font-weight:600;">'+s.numero+'</td><td>'+s.solicitante+'</td><td>'+s.fecha.substring(0,10)+'</td><td>'+badgeEstado(s.urgencia)+'</td><td>'+badgeEstado(s.estado)+'</td><td>'+eBadge+acc+'</td></tr>';
-    }).join('');
-  }catch(e){}
+  var body={proveedor:prov,categoria:cat,observaciones:document.getElementById('noc-obs').value,fecha_entrega_est:document.getElementById('noc-fecha').value,items:items,creado_por:USUARIO};
+  var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(x){return x.json();});
+  if(r.error){document.getElementById('noc-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
+  closeModal('modal-nueva-oc');
+  loadDashboard();
+  if(CAT_IDS[cat]) loadOCs(cat,CAT_IDS[cat]);
 }
 
-async function verSolicitud(numero,gestionar){
-  openModal('modal-sol');
-  document.getElementById('modal-sol-content').innerHTML='<div style="padding:20px;text-align:center;color:#999;">Cargando...</div>';
-  try{
-    var d=await fetch('/api/solicitudes-compra/'+numero).then(function(r){return r.json();});
-    var sol=d.solicitud||{}; var items=d.items||[];
-    var urgCls={'Normal':'badge-bor','Urgente':'badge-pend','Critico':'badge-rech'};
-    var h='<h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">'+numero+'</h3>';
-    if(sol.empresa) h+='<div style="font-size:12px;color:#888;margin-bottom:10px;">'+sol.empresa+(sol.categoria?' &middot; '+sol.categoria:'')+(sol.tipo?' &middot; '+sol.tipo:'')+'</div>';
-    h+='<div style="margin-bottom:12px;display:flex;gap:8px;">'+badgeEstado(sol.estado)+'<span class="badge '+(urgCls[sol.urgencia]||'badge-bor')+'">'+(sol.urgencia||'Normal')+'</span></div>';
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px;">';
-    h+='<div><strong>Solicitante:</strong><br>'+(sol.solicitante||'&mdash;')+'</div>';
-    h+='<div><strong>Area:</strong><br>'+(sol.area||'&mdash;')+'</div>';
-    h+='<div><strong>Fecha:</strong><br>'+(sol.fecha||'').substring(0,10)+'</div>';
-    if(sol.numero_oc) h+='<div><strong>OC:</strong><br><span style="font-family:monospace;color:#4A6741;font-weight:700;">'+sol.numero_oc+'</span></div>';
-    if(sol.aprobado_por) h+='<div><strong>Aprobado por:</strong><br>'+sol.aprobado_por+'</div>';
-    h+='</div>';
-    if(sol.observaciones) h+='<div style="background:#fafafa;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px;"><strong>Obs:</strong> '+sol.observaciones+'</div>';
-    h+='<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr>';
-    h+='<th style="text-align:left;padding:5px 8px;background:#f5f5f5;font-size:11px;color:#888;">Cod.</th><th style="text-align:left;padding:5px 8px;background:#f5f5f5;font-size:11px;color:#888;">Descripcion</th><th style="text-align:right;padding:5px 8px;background:#f5f5f5;font-size:11px;color:#888;">Cant.</th><th style="text-align:right;padding:5px 8px;background:#f5f5f5;font-size:11px;color:#888;">Valor est.</th>';
-    h+='</tr></thead><tbody>';
-    items.forEach(function(it){h+='<tr><td style="padding:5px 8px;font-family:monospace;font-size:12px;color:#666;">'+(it.codigo_mp||'&mdash;')+'</td><td style="padding:5px 8px;">'+it.nombre_mp+'</td><td style="padding:5px 8px;text-align:right;">'+(it.cantidad_g||0)+' '+(it.unidad||'g')+'</td><td style="padding:5px 8px;text-align:right;">'+(it.valor_estimado?'$'+it.valor_estimado:'&mdash;')+'</td></tr>';});
-    h+='</tbody></table>';
-    if(gestionar&&sol.estado==='Pendiente'){
-      h+='<div style="margin-top:18px;padding-top:16px;border-top:1px solid #eee;"><div style="font-size:13px;font-weight:600;margin-bottom:10px;">Gestionar</div><div style="display:flex;gap:8px;flex-wrap:wrap;">';
-      h+='<button class="btn" onclick="aprobarSol(&quot;'+numero+'&quot;)">✓ Aprobar</button>';
-      h+='<button class="btn btn-gold" onclick="aprobarCrearOC(&quot;'+numero+'&quot;)">+ Aprobar y crear OC</button>';
-      h+='<button class="btn btn-danger" onclick="rechazarSol(&quot;'+numero+'&quot;)">✕ Rechazar</button>';
-      h+='</div></div>';
+/* ——— WORKFLOW ——— */
+async function marcarRevisada(numero){
+  var r=await fetch('/api/ordenes-compra/'+numero+'/revisar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
+  if(r.error){alert(r.error); return;}
+  closeModal('modal-oc');
+  loadDashboard();
+}
+
+async function autorizarOC(numero){
+  if(!confirm('Autorizar OC '+numero+'? Se generar\u00e1 el c\u00f3digo de remisi\u00f3n para imprimir.')) return;
+  var r=await fetch('/api/ordenes-compra/'+numero+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
+  if(r.error){alert(r.error); return;}
+  closeModal('modal-oc');
+  loadDashboard();
+  if(r.remision_code){
+    alert('OC autorizada.\nC\u00f3digo de remisi\u00f3n: '+r.remision_code+'\n\nAbre el detalle de la OC para imprimir la remisi\u00f3n.');
+  }
+}
+
+function pedirPago(numero,monto){
+  _ocPagoActual=numero;
+  document.getElementById('pago-monto').value=Math.round(monto||0);
+  document.getElementById('pago-obs').value='';
+  document.getElementById('pago-msg').textContent='';
+  openModal('modal-pago');
+}
+
+async function confirmarPago(){
+  var monto=parseFloat(document.getElementById('pago-monto').value)||0;
+  if(!monto){document.getElementById('pago-msg').innerHTML='<span style="color:red;">Ingresa el monto</span>'; return;}
+  var body={monto:monto,medio:document.getElementById('pago-medio').value,observaciones:document.getElementById('pago-obs').value};
+  var r=await fetch('/api/ordenes-compra/'+_ocPagoActual+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(x){return x.json();});
+  if(r.error){document.getElementById('pago-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
+  closeModal('modal-pago');
+  closeModal('modal-oc');
+  loadDashboard();
+  alert('Pago registrado. El egreso fue guardado en el m\u00f3dulo financiero.');
+}
+
+/* ——— RECEPCION ——— */
+async function buscarRemision(){
+  var code=document.getElementById('rem-input').value.trim();
+  var el=document.getElementById('rem-result');
+  if(!code){el.innerHTML=''; return;}
+  el.innerHTML='<div class="empty-state">Buscando...</div>';
+  var r=await fetch('/api/compras/buscar-remision/'+encodeURIComponent(code)).then(function(x){return x.json();});
+  if(r.error){
+    el.innerHTML='<div class="alert-warn">No se encontr\u00f3 ninguna OC con ese c\u00f3digo. Verifica e intenta de nuevo.</div>';
+    return;
+  }
+  var oc=r.oc; var items=r.items||[];
+  var html='<div class="card" style="border-color:#4A6741;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">'
+    +'<div><div style="font-weight:700;font-size:14px;">'+oc.numero_oc+'</div>'
+    +'<div style="font-size:12px;color:#666;margin-top:2px;">'+catBadge(oc.categoria)+(oc.proveedor||'')+'</div>'
+    +'<div style="font-size:11px;font-family:monospace;color:#4A6741;margin-top:2px;">'+code+'</div></div>'
+    +'<div>'+badgeEstado(oc.estado)+'</div></div>';
+  if(oc.estado==='Recibida'||oc.estado==='Pagada'){
+    html+='<div class="alert-ok">Este pedido ya fue confirmado como recibido el '+fmtFecha(oc.fecha_recepcion||oc.fecha)+'.</div>';
+  } else if(oc.estado==='Autorizada'){
+    if(items.length>0){
+      html+='<table style="width:100%;border-collapse:collapse;margin-bottom:14px;">'
+        +'<thead><tr>'
+        +'<th style="text-align:left;font-size:10px;color:#888;padding:5px 4px;border-bottom:1px solid #f0f0f0;">&Iacute;tem</th>'
+        +'<th style="text-align:right;font-size:10px;color:#888;padding:5px 4px;border-bottom:1px solid #f0f0f0;">Cantidad</th>'
+        +'</tr></thead><tbody>'
+        +items.map(function(it){
+          return '<tr>'
+            +'<td style="padding:7px 4px;font-size:13px;">'+(it[3]||it[2]||'')+'</td>'
+            +'<td style="text-align:right;padding:7px 4px;font-size:13px;font-weight:600;">'+(it[4]||0)+'g</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table>';
     }
-    document.getElementById('modal-sol-content').innerHTML=h;
-  }catch(e){document.getElementById('modal-sol-content').innerHTML='<div style="color:#dc2626;padding:16px;">Error al cargar</div>';}
+    html+='<button class="btn btn-success" style="width:100%;padding:12px;" onclick="confirmarRecepcion(\''+oc.numero_oc+'\')">Confirmar llegada de este pedido</button>';
+  } else {
+    html+='<div class="alert-warn">Estado actual: '+oc.estado+'. Solo se pueden confirmar OCs en estado Autorizada.</div>';
+  }
+  html+='</div>';
+  el.innerHTML=html;
 }
-async function aprobarSol(numero){
-  if(!confirm('Aprobar '+numero+'?')) return;
-  var r=await fetch('/api/solicitudes-compra/'+numero+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Aprobada'})});
-  var d=await r.json();
-  if(d.ok){closeModal('modal-sol');loadSolicitudes();loadDashboard();}
-  else alert('Error: '+(d.error||''));
-}
-async function aprobarCrearOC(numero){
-  var prov=prompt('Proveedor (Enter=Por definir):');
-  if(prov===null) return;
-  var r=await fetch('/api/solicitudes-compra/'+numero+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Aprobada',crear_oc:true,proveedor:prov||'Por definir'})});
-  var d=await r.json();
-  if(d.ok){closeModal('modal-sol');if(d.numero_oc)alert('OC creada: '+d.numero_oc);loadSolicitudes();loadOCs();loadDashboard();}
-  else alert('Error: '+(d.error||''));
-}
-async function rechazarSol(numero){
-  var motivo=prompt('Motivo (opcional):');
-  if(motivo===null) return;
-  var r=await fetch('/api/solicitudes-compra/'+numero+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Rechazada',observaciones:motivo||''})});
-  var d=await r.json();
-  if(d.ok){closeModal('modal-sol');loadSolicitudes();loadDashboard();}
-  else alert('Error: '+(d.error||''));
-}
-function openModal(id){document.getElementById(id).style.display='flex';}
-function closeModal(id){document.getElementById(id).style.display='none';}
-document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeModal('modal-sol');closeModal('modal-oc-estado');}});
 
+async function confirmarRecepcion(numero){
+  var r=await fetch('/api/ordenes-compra/'+numero+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(function(x){return x.json();});
+  if(r.error){alert(r.error); return;}
+  document.getElementById('rem-input').value='';
+  document.getElementById('rem-result').innerHTML=
+    '<div class="card" style="border-color:#22c55e;background:#f0fdf4;text-align:center;padding:30px;">'
+    +'<div style="font-size:36px;margin-bottom:8px;">&#10003;</div>'
+    +'<div style="font-weight:700;color:#16a34a;font-size:16px;">Recepci\u00f3n confirmada</div>'
+    +'<div style="font-size:13px;color:#666;margin-top:6px;">'+(r.ingresos||0)+' movimiento(s) registrado(s) en inventario</div>'
+    +'</div>';
+  loadDashboard();
+}
+
+/* ——— REMISION IMPRIMIBLE ——— */
+async function verRemision(numero){
+  var r=await fetch('/api/ordenes-compra/'+numero).then(function(x){return x.json();});
+  if(r.error) return;
+  var oc=r.oc; var items=r.items||[];
+  var html='<div class="remision-print">'
+    +'<div style="text-align:center;margin-bottom:16px;border-bottom:2px solid #333;padding-bottom:12px;">'
+    +'<strong style="font-size:16px;display:block;">ESPAGIRIA LABORATORIO</strong>'
+    +'<span style="font-size:13px;">REMISI\u00d3N DE COMPRA</span></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px;">'
+    +'<div><strong>C\u00f3digo REM:</strong> '+(oc.remision_code||'N/A')+'</div>'
+    +'<div><strong>OC N\u00ba:</strong> '+oc.numero_oc+'</div>'
+    +'<div><strong>Proveedor:</strong> '+(oc.proveedor||'')+'</div>'
+    +'<div><strong>Fecha:</strong> '+fmtFecha(oc.fecha)+'</div>'
+    +'<div><strong>Categor\u00eda:</strong> '+(oc.categoria||'')+'</div>'
+    +'<div><strong>Autorizado por:</strong> '+(oc.autorizado_por||'')+'</div>'
+    +'</div>'
+    +(items.length>0
+      ?'<table style="width:100%;border-collapse:collapse;">'
+        +'<thead><tr>'
+        +'<th style="border:1px solid #999;padding:5px 8px;text-align:left;background:#f5f5f0;">&Iacute;tem</th>'
+        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Cantidad</th>'
+        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Valor/g</th>'
+        +'<th style="border:1px solid #999;padding:5px 8px;text-align:right;background:#f5f5f0;">Subtotal</th>'
+        +'</tr></thead><tbody>'
+        +items.map(function(it){
+          return '<tr>'
+            +'<td style="border:1px solid #ccc;padding:5px 8px;">'+(it[3]||it[2]||'')+'</td>'
+            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;">'+(it[4]||0)+'g</td>'
+            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;">$'+fmtNum(it[5])+'</td>'
+            +'<td style="border:1px solid #ccc;padding:5px 8px;text-align:right;font-weight:bold;">$'+fmtNum(it[6])+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table>'
+        +'<div style="text-align:right;margin-top:10px;font-weight:bold;font-size:14px;">TOTAL: $'+fmtNum(oc.valor_total)+'</div>'
+      :'<div style="padding:10px 0;"><strong>Concepto:</strong> '+(oc.observaciones||'Pago')+'<br><strong>Valor:</strong> $'+fmtNum(oc.valor_total)+'</div>')
+    +'<div style="margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:60px;">'
+    +'<div style="border-top:1px solid #666;padding-top:6px;text-align:center;font-size:11px;">Firma autoriza</div>'
+    +'<div style="border-top:1px solid #666;padding-top:6px;text-align:center;font-size:11px;">Firma recibe</div>'
+    +'</div></div>';
+  document.getElementById('remision-content').innerHTML=html;
+  openModal('modal-remision');
+}
+
+/* ——— PROVEEDORES ——— */
 async function loadProveedores(){
-  try{
-    var d=await fetch('/api/proveedores-compras').then(function(r){return r.json();});
-    var tb=document.getElementById('prov-body');
-    if(!d.proveedores||!d.proveedores.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin proveedores</td></tr>';return;}
-    tb.innerHTML=d.proveedores.map(function(p){
-      return '<tr><td style="font-weight:600;">'+p.nombre+'</td><td>'+(p.contacto||'—')+'</td><td>'+(p.email||'—')+'</td><td>'+(p.telefono||'—')+'</td><td>'+(p.categoria||'—')+'</td><td>'+(p.condiciones_pago||'—')+'</td></tr>';
-    }).join('');
-  }catch(e){}
+  var r=await fetch('/api/proveedores-compras').then(function(x){return x.json();});
+  var provs=r.proveedores||[];
+  if(provs.length===0){
+    document.getElementById('tabla-proveedores').innerHTML='<div class="empty-state" style="background:#fff;border:1px solid #e8e5e0;border-radius:10px;padding:40px;">Sin proveedores registrados</div>';
+    return;
+  }
+  document.getElementById('tabla-proveedores').innerHTML='<div class="table-wrap"><table><thead><tr>'
+    +'<th>Nombre</th><th>Contacto</th><th>Email</th><th>Tel</th><th>Categor&iacute;a</th><th>Pago</th>'
+    +'</tr></thead><tbody>'
+    +provs.map(function(p){
+      return '<tr>'
+        +'<td style="font-weight:600;">'+(p.nombre||'')+'</td>'
+        +'<td>'+(p.contacto||'&mdash;')+'</td>'
+        +'<td style="font-size:12px;">'+(p.email||'&mdash;')+'</td>'
+        +'<td>'+(p.telefono||'&mdash;')+'</td>'
+        +'<td>'+catBadge(p.categoria)+(p.categoria||'')+'</td>'
+        +'<td style="font-size:12px;color:#666;">'+(p.condiciones_pago||'&mdash;')+'</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>';
 }
-function showFormProv(){var f=document.getElementById('form-prov');f.style.display=f.style.display==='none'?'block':'none';}
+function toggleFormProv(){
+  var el=document.getElementById('form-prov-wrap');
+  el.style.display=el.style.display==='none'?'block':'none';
+}
 async function crearProveedor(){
-  var data={nombre:document.getElementById('p-nombre').value,contacto:document.getElementById('p-contacto').value,email:document.getElementById('p-email').value,telefono:document.getElementById('p-tel').value,categoria:document.getElementById('p-cat').value,condiciones_pago:document.getElementById('p-pago').value};
-  if(!data.nombre){document.getElementById('prov-msg').innerHTML='<div class="msg-err">El nombre es requerido</div>';return;}
-  try{
-    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    var res=await r.json();
-    if(r.ok){document.getElementById('prov-msg').innerHTML='<div class="msg-ok">'+res.message+'</div>';loadProveedores();document.getElementById('form-prov').style.display='none';}
-    else{document.getElementById('prov-msg').innerHTML='<div class="msg-err">'+(res.error||'Error')+'</div>';}
-  }catch(e){document.getElementById('prov-msg').innerHTML='<div class="msg-err">Error</div>';}
+  var n=document.getElementById('pv-nombre').value.trim();
+  if(!n){document.getElementById('prov-msg').innerHTML='<span style="color:red;">Nombre requerido</span>'; return;}
+  var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nombre:n,contacto:document.getElementById('pv-contacto').value,email:document.getElementById('pv-email').value,telefono:document.getElementById('pv-tel').value,categoria:document.getElementById('pv-cat').value,condiciones_pago:document.getElementById('pv-pago').value})}).then(function(x){return x.json();});
+  if(r.error){document.getElementById('prov-msg').innerHTML='<span style="color:red;">'+r.error+'</span>'; return;}
+  toggleFormProv();
+  loadProveedores();
 }
 
-window.onload=function(){loadDashboard();};
+loadDashboard();
 </script>
-<!-- Modal Solicitud -->
-<div id="modal-sol" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:flex-start;justify-content:center;padding-top:60px;">
-  <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:640px;width:94%;max-height:78vh;overflow-y:auto;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.2);">
-    <button onclick="closeModal('modal-sol')" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:#bbb;">&#x2715;</button>
-    <div id="modal-sol-content">Cargando...</div>
-  </div>
-</div>
-<!-- Modal Estado OC -->
-<div id="modal-oc-estado" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:380px;width:94%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.2);">
-    <button onclick="closeModal('modal-oc-estado')" style="position:absolute;top:14px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:#bbb;">&#x2715;</button>
-    <h3 style="margin-bottom:6px;font-size:15px;font-weight:700;">Cambiar estado OC</h3>
-    <p id="modal-oc-num" style="font-family:monospace;font-weight:700;color:#4A6741;margin-bottom:18px;font-size:14px;"></p>
-    <div style="display:flex;flex-direction:column;gap:8px;" id="oc-estado-btns"></div>
-  </div>
-</div>
 </body>
-</html>"""
+</html>
+"""
 
 SOLICITUDES_HTML = """<!DOCTYPE html>
 <html lang="es">
@@ -6286,21 +6599,37 @@ def handle_ordenes_compra():
         if not d.get('proveedor'): conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
         c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
         numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
-        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est) VALUES (?,?,?,?,?,?,?)",
-                  (numero_oc, datetime.now().isoformat(), 'Pendiente', d['proveedor'],
-                   d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est','')))
+        categoria = d.get('categoria', 'MP')
+        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
+                  (numero_oc, datetime.now().isoformat(), 'Borrador', d['proveedor'],
+                   d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est',''), categoria))
         for it in (d.get('items') or []):
             subtotal = round((it.get('cantidad_g',0)) * (it.get('precio_unitario',0)), 2)
             c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
                       (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
                        it.get('cantidad_g',0), it.get('precio_unitario',0), subtotal))
+        valor_total_calc = sum(
+            round((it.get('cantidad_g',0))*(it.get('precio_unitario',0)),2)
+            for it in (d.get('items') or [])
+        )
+        if valor_total_calc > 0:
+            c.execute("UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?", (valor_total_calc, numero_oc))
         conn.commit(); conn.close()
         return jsonify({'message': f'OC {numero_oc} creada', 'numero_oc': numero_oc}), 201
-    c.execute("""SELECT o.numero_oc, o.fecha, o.estado, o.proveedor, o.fecha_entrega_est,
-                        o.observaciones, o.creado_por, COUNT(i.id) as num_items
-                 FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc
-                 GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 100""")
-    cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones','creado_por','num_items']
+    cat_filter = request.args.get('categoria', '')
+    _sql = (
+        "SELECT o.numero_oc, o.fecha, o.estado, o.proveedor, o.fecha_entrega_est,"
+        " o.observaciones, o.creado_por, COUNT(i.id) as num_items,"
+        " o.categoria, o.remision_code, o.autorizado_por,"
+        " COALESCE(o.valor_total, 0) as valor_total"
+        " FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc"
+    )
+    if cat_filter:
+        c.execute(_sql + " WHERE o.categoria=? GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 300", (cat_filter,))
+    else:
+        c.execute(_sql + " GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 300")
+    cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones',
+            'creado_por','num_items','categoria','remision_code','autorizado_por','valor_total']
     rows = c.fetchall(); conn.close()
     return jsonify({'ordenes': [dict(zip(cols, r)) for r in rows]})
 
@@ -6316,11 +6645,12 @@ def handle_oc_detalle(numero_oc):
         if d.get('estado'): c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
         conn.commit(); conn.close(); return jsonify({'message': f'OC {numero_oc} actualizada'})
     c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
-    oc = c.fetchone()
+    oc_row = c.fetchone()
+    oc_cols = [d[0] for d in c.description] if c.description else []
     c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items = c.fetchall(); conn.close()
-    if not oc: return jsonify({'error': 'OC no encontrada'}), 404
-    return jsonify({'oc': oc, 'items': items})
+    if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
+    return jsonify({'oc': dict(zip(oc_cols, oc_row)), 'items': items})
 
 @app.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
@@ -6449,23 +6779,118 @@ def recibir_oc(numero_oc):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
-    cur.execute("SELECT estado, proveedor FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT estado, proveedor, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc_row = cur.fetchone()
     if not oc_row:
         conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
     prov_nombre = oc_row[1] or ''
+    categoria = oc_row[2] or 'MP'
     cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
     fecha = datetime.now().isoformat()
+    operador = session.get('compras_user', '')
+    ingresos = 0
     for item in items_oc:
         codigo, nombre, cantidad = item
-        cur.execute("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, proveedor, operador)
-                     VALUES (?,?,?,?,?,?,?,?)""",
-                  (codigo, nombre, cantidad, 'Entrada', fecha,
-                   f'Recepcion OC {numero_oc}', prov_nombre, session.get('compras_user','')))
-    cur.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
+        if categoria == 'MEE':
+            cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
+            cur.execute("INSERT INTO movimientos_mee (codigo_mee, tipo, cantidad, referencia, observaciones, operador, fecha) VALUES (?,?,?,?,?,?,?)",
+                       (codigo, 'entrada', cantidad, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
+        else:
+            cur.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, proveedor, operador) VALUES (?,?,?,?,?,?,?,?)",
+                       (codigo, nombre, cantidad, 'Entrada', fecha, f'Recepcion OC {numero_oc}', prov_nombre, operador))
+        ingresos += 1
+    cur.execute("UPDATE ordenes_compra SET estado='Recibida', fecha_recepcion=? WHERE numero_oc=?", (fecha, numero_oc))
     conn.commit(); conn.close()
-    return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': len(items_oc)})
+    return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos})
+
+# ============================================================
+# Compras — Flujo de autorizacion y pago
+# ============================================================
+
+@app.route('/api/ordenes-compra/<numero_oc>/revisar', methods=['PATCH'])
+def revisar_oc(numero_oc):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("UPDATE ordenes_compra SET estado='Revisada' WHERE numero_oc=?", (numero_oc,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'estado': 'Revisada'})
+
+@app.route('/api/ordenes-compra/<numero_oc>/autorizar', methods=['PATCH'])
+def autorizar_oc(numero_oc):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario_actual = session.get('compras_user', '')
+    if usuario_actual in CONTADORA_USERS:
+        return jsonify({'error': 'Sin permiso para autorizar OCs'}), 403
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    row = cur.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    fecha_hoy = datetime.now().strftime('%Y%m%d')
+    cur.execute("SELECT remision_code FROM ordenes_compra WHERE remision_code LIKE ? ORDER BY remision_code DESC LIMIT 1",
+                (f'REM-ESP-{fecha_hoy}-%',))
+    last = cur.fetchone()
+    n = int(last[0].split('-')[-1]) + 1 if last and last[0] else 1
+    remision_code = f'REM-ESP-{fecha_hoy}-{n:03d}'
+    fecha_aut = datetime.now().isoformat()
+    cur.execute("UPDATE ordenes_compra SET estado='Autorizada', remision_code=?, autorizado_por=?, fecha_autorizacion=? WHERE numero_oc=?",
+                (remision_code, usuario_actual, fecha_aut, numero_oc))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'estado': 'Autorizada', 'remision_code': remision_code})
+
+@app.route('/api/ordenes-compra/<numero_oc>/pagar', methods=['PATCH'])
+def pagar_oc(numero_oc):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario_actual = session.get('compras_user', '')
+    if usuario_actual in CONTADORA_USERS:
+        return jsonify({'error': 'Sin permiso para registrar pagos'}), 403
+    d = request.get_json() or {}
+    monto = float(d.get('monto', 0) or 0)
+    medio = d.get('medio', 'Transferencia')
+    obs = d.get('observaciones', '')
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("SELECT estado, categoria, proveedor, valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    row = cur.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    categoria = row[1] or 'MP'
+    proveedor = row[2] or ''
+    if not monto: monto = float(row[3] or 0)
+    cat_map = {'MP': 'MPs', 'MEE': 'MEE', 'Admin': 'Administrativo', 'Influencer': 'Marketing'}
+    cat_egreso = cat_map.get(categoria, 'Compras')
+    fecha_pago = datetime.now().isoformat()
+    cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=? WHERE numero_oc=?",
+                (usuario_actual, fecha_pago, numero_oc))
+    try:
+        cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                   (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
+                    cat_egreso, monto, datetime.now().strftime('%Y-%m'),
+                    'compras', numero_oc, usuario_actual, f'{medio}. {obs}'))
+    except Exception:
+        pass
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'estado': 'Pagada', 'monto': monto})
+
+@app.route('/api/compras/buscar-remision/<remision_code>')
+def buscar_remision(remision_code):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("SELECT * FROM ordenes_compra WHERE remision_code=?", (remision_code,))
+    oc_row = cur.fetchone()
+    oc_cols = [d[0] for d in cur.description] if cur.description else []
+    if not oc_row:
+        conn.close(); return jsonify({'error': 'No encontrado'}), 404
+    oc = dict(zip(oc_cols, oc_row))
+    cur.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (oc['numero_oc'],))
+    items = cur.fetchall()
+    conn.close()
+    return jsonify({'oc': oc, 'items': items})
+
 
 
 # ════════════════════════════════════════════
