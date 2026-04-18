@@ -474,6 +474,45 @@ def init_db():
     for clave, valor, desc in maquila_configs:
         c.execute("INSERT OR IGNORE INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?)", (clave, valor, desc))
 
+    # ── maquila tables ──────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_prospectos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa TEXT NOT NULL,
+        contacto TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        telefono TEXT DEFAULT '',
+        producto_tipo TEXT DEFAULT '',
+        etapa TEXT DEFAULT 'Contacto',
+        notas TEXT DEFAULT '',
+        valor_estimado REAL DEFAULT 0,
+        fecha_contacto TEXT DEFAULT (date('now')),
+        usuario TEXT DEFAULT ''
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_ordenes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa TEXT NOT NULL,
+        producto TEXT NOT NULL,
+        batch_size_kg REAL DEFAULT 0,
+        fecha_inicio TEXT DEFAULT '',
+        fecha_entrega TEXT DEFAULT '',
+        estado TEXT DEFAULT 'Pendiente',
+        valor_total REAL DEFAULT 0,
+        observaciones TEXT DEFAULT '',
+        fecha_creacion TEXT DEFAULT (date('now')),
+        usuario TEXT DEFAULT ''
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_cotizaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        empresa TEXT DEFAULT '',
+        producto_tipo TEXT DEFAULT '',
+        batch_size_kg REAL DEFAULT 0,
+        costo_mp REAL DEFAULT 0,
+        costo_proceso REAL DEFAULT 0,
+        margen_pct REAL DEFAULT 0,
+        valor_total REAL DEFAULT 0,
+        fecha TEXT DEFAULT (date('now')),
+        usuario TEXT DEFAULT ''
+    )""")
     conn.commit()
     conn.close()
 
@@ -5261,21 +5300,20 @@ def trazabilidad_lote(lote):
                FROM movimientos m WHERE m.lote=? AND m.tipo='Entrada' LIMIT 1""", (lote,))
     ingreso = c.fetchone()
     # Consumos en produccion
-    c.execute("""SELECT p.nombre_producto, p.fecha_inicio, p.operador, pm.cantidad_usada_g, pm.lote_mp
-               FROM produccion p JOIN produccion_materiales pm ON p.id=pm.produccion_id
-               WHERE pm.lote_mp=? ORDER BY p.fecha_inicio""", (lote,))
+    # consumos: buscar en producciones que mencionen el lote en observaciones
+    c.execute("""SELECT producto, fecha, operador, cantidad
+               FROM producciones WHERE observaciones LIKE ? ORDER BY fecha""", (f'%{lote}%',))
     producciones = c.fetchall()
     conn.close()
-    result = {
+    return jsonify({
         'lote': lote,
         'ingreso': {'codigo_mp': ingreso[0], 'nombre': ingreso[1], 'cantidad_g': ingreso[2],
                     'fecha': ingreso[3], 'proveedor': ingreso[4], 'factura': ingreso[5],
                     'orden_compra': ingreso[6], 'precio_kg': ingreso[7]} if ingreso else None,
         'producciones': [{'producto': p[0], 'fecha': p[1], 'operador': p[2],
-                          'cantidad_g': p[3], 'lote_mp': p[4]} for p in producciones],
+                          'cantidad_g': p[3]} for p in producciones],
         'total_producciones': len(producciones)
-    }
-    return jsonify(result)
+    })
 
 # ── CONTEO CICLICO BDG-PRO-002 ──────────────────────────────────
 @app.route('/api/conteo/estanterias', methods=['GET'])
@@ -6578,7 +6616,7 @@ def ocs_pendientes_recepcion():
     return jsonify(list(ocs.values()))
 
 @app.route('/api/trazabilidad/lote/<path:lote>')
-def trazabilidad_lote(lote):
+def trazabilidad_lote_path(lote):
     import urllib.parse; lote = urllib.parse.unquote(lote)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT id, material_id, material_nombre, cantidad, tipo, fecha,
@@ -6725,5 +6763,131 @@ def actualizar_precio_mp(codigo):
     return jsonify({'ok':True, 'precio_kg':precio})
 
 
+# ═══════════════════════════════════════════════
+#  MAQUILA 360 — API
+# ═══════════════════════════════════════════════
+@app.route('/api/maquila/prospectos', methods=['GET','POST'])
+def api_maquila_prospectos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        empresa = (d.get('empresa') or '').strip()
+        if not empresa:
+            conn.close(); return jsonify({'error':'Empresa requerida'}), 400
+        c.execute('''INSERT INTO maquila_prospectos
+                     (empresa,contacto,email,whatsapp,categoria_producto,etapa,
+                      observaciones,valor_estimado_lote,creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?)''',
+                  (empresa, d.get('contacto',''), d.get('email',''),
+                   d.get('telefono',''), d.get('producto_tipo',''),
+                   d.get('etapa','Contacto'), d.get('notas',''),
+                   float(d.get('valor_estimado',0)),
+                   session.get('compras_user') or d.get('operador','sistema')))
+        conn.commit(); pid = c.lastrowid; conn.close()
+        return jsonify({'id': pid}), 201
+    c.execute('''SELECT id, empresa, contacto, email,
+                        COALESCE(whatsapp,'') as telefono,
+                        COALESCE(categoria_producto,'') as producto_tipo,
+                        etapa,
+                        COALESCE(observaciones,'') as notas,
+                        COALESCE(valor_estimado_lote,0) as valor_estimado,
+                        fecha_creacion as fecha_contacto
+                 FROM maquila_prospectos ORDER BY id DESC''')
+    cols=['id','empresa','contacto','email','telefono','producto_tipo',
+          'etapa','notas','valor_estimado','fecha_contacto']
+    rows=[dict(zip(cols,r)) for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/maquila/prospectos/<int:pid>', methods=['PATCH'])
+def api_maquila_prospecto_patch(pid):
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if 'etapa' in d:
+        c.execute('UPDATE maquila_prospectos SET etapa=? WHERE id=?', (d['etapa'], pid))
+    if 'valor_estimado' in d:
+        c.execute('UPDATE maquila_prospectos SET valor_estimado_lote=? WHERE id=?',
+                  (float(d['valor_estimado']), pid))
+    if 'notas' in d:
+        c.execute('UPDATE maquila_prospectos SET observaciones=? WHERE id=?', (d['notas'], pid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/maquila/ordenes', methods=['GET','POST'])
+def api_maquila_ordenes():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        empresa = (d.get('empresa') or '').strip()
+        producto = (d.get('producto') or '').strip()
+        if not empresa or not producto:
+            conn.close(); return jsonify({'error':'Empresa y producto requeridos'}), 400
+        c.execute('''INSERT INTO maquila_ordenes
+                     (cliente_nombre,producto,lote_kg,fecha_orden,
+                      fecha_entrega_est,estado,precio_lote,observaciones,creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?)''',
+                  (empresa, producto, float(d.get('batch_size_kg',0)),
+                   d.get('fecha_inicio',''), d.get('fecha_entrega',''),
+                   d.get('estado','Cotizacion'), float(d.get('valor_total',0)),
+                   d.get('observaciones',''),
+                   session.get('compras_user') or d.get('operador','sistema')))
+        conn.commit(); oid=c.lastrowid; conn.close()
+        return jsonify({'id': oid}), 201
+    c.execute('''SELECT id,
+                        COALESCE(cliente_nombre,'') as empresa,
+                        producto,
+                        COALESCE(lote_kg,0) as batch_size_kg,
+                        COALESCE(fecha_orden,'') as fecha_inicio,
+                        COALESCE(fecha_entrega_est,'') as fecha_entrega,
+                        estado,
+                        COALESCE(precio_lote,0) as valor_total,
+                        COALESCE(observaciones,'') as observaciones,
+                        fecha_creacion
+                 FROM maquila_ordenes ORDER BY fecha_creacion DESC''')
+    cols=['id','empresa','producto','batch_size_kg','fecha_inicio','fecha_entrega',
+          'estado','valor_total','observaciones','fecha_creacion']
+    rows=[dict(zip(cols,r)) for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/maquila/ordenes/<int:oid>', methods=['PATCH'])
+def api_maquila_orden_patch(oid):
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if 'estado' in d:
+        c.execute('UPDATE maquila_ordenes SET estado=? WHERE id=?', (d['estado'], oid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/maquila/cotizar', methods=['POST'])
+def api_maquila_cotizar():
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute('''INSERT INTO maquila_cotizaciones
+                 (empresa,producto_tipo,batch_size_kg,costo_mp,costo_proceso,margen_pct,valor_total,usuario)
+                 VALUES (?,?,?,?,?,?,?,?)''',
+              (d.get('empresa',''), d.get('producto_tipo',''),
+               float(d.get('batch_size_kg',0)), float(d.get('costo_mp',0)),
+               float(d.get('costo_proceso',0)), float(d.get('margen_pct',0)),
+               float(d.get('valor_total',0)),
+               session.get('compras_user') or d.get('operador','sistema')))
+    conn.commit(); cid=c.lastrowid; conn.close()
+    return jsonify({'id': cid}), 201
+
+@app.route('/api/maquila/kpis', methods=['GET'])
+def api_maquila_kpis():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM maquila_prospectos WHERE etapa NOT IN ('Activo','Perdido') AND estado='Activo'")
+    prosp = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM maquila_ordenes WHERE estado IN ('Cotizacion','Orden','En proceso','Produccion')")
+    ords = c.fetchone()[0]
+    c.execute("SELECT COALESCE(SUM(valor_estimado_lote),0) FROM maquila_prospectos WHERE estado='Activo'")
+    valor = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM maquila_prospectos WHERE etapa IN ('Negociacion','Cierre') AND estado='Activo'")
+    cierre = c.fetchone()[0]
+    conn.close()
+    return jsonify({'prospectos_activos':prosp,'ordenes_activas':ords,
+                    'valor_pipeline':valor,'en_cierre':cierre})
+
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
