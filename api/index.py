@@ -5129,10 +5129,14 @@ def get_analisis_abc():
     cumulative = 0
     abc = []
     for mat, qty in items:
+        prev_pct = (cumulative / total) * 100   # % acumulado ANTES de este item
         cumulative += qty
-        pct = (cumulative / total) * 100
+        pct = (cumulative / total) * 100         # % acumulado DESPUÉS
+        # Clasificacion basada en donde EMPIEZA el item (estandar Pareto)
+        # Un item es A si al agregarlo aun no hemos superado el 80% previo
+        clasificacion = 'A' if prev_pct < 80 else ('B' if prev_pct < 95 else 'C')
         abc.append({'material': mat, 'cantidad': qty, 'valor': f'{pct:.1f}%',
-                    'clasificacion': 'A' if pct <= 80 else ('B' if pct <= 95 else 'C')})
+                    'clasificacion': clasificacion})
     return jsonify({'items': abc})
 
 @app.route('/api/alertas', methods=['GET', 'POST'])
@@ -6355,7 +6359,8 @@ def handle_pedidos():
     q += " ORDER BY p.fecha DESC LIMIT 100"
     c.execute(q, params)
     cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est']
-    conn.close(); return jsonify({'pedidos': [dict(zip(cols, r)) for r in c.fetchall()]})
+    rows = c.fetchall(); conn.close()
+    return jsonify({'pedidos': [dict(zip(cols, r)) for r in rows]})
 
 @app.route('/api/pedidos/<numero>', methods=['GET','PATCH'])
 def handle_pedido_detalle(numero):
@@ -6391,7 +6396,9 @@ def handle_stock_pt():
         return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds"}), 201
     c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
     cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base']
-    conn.close(); return jsonify({'stock_pt': [dict(zip(cols, r)) for r in c.fetchall()]})
+    rows = c.fetchall()
+    conn.close()
+    return jsonify({'stock_pt': [dict(zip(cols, r)) for r in rows]})
 
 @app.route('/api/despachos', methods=['GET','POST'])
 def handle_despachos():
@@ -6413,7 +6420,8 @@ def handle_despachos():
         return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
     c.execute("SELECT d.numero,cl.nombre as cliente,d.fecha,d.numero_pedido,d.estado,d.operador FROM despachos d LEFT JOIN clientes cl ON d.cliente_id=cl.id ORDER BY d.fecha DESC LIMIT 100")
     cols = ['numero','cliente','fecha','numero_pedido','estado','operador']
-    conn.close(); return jsonify({'despachos': [dict(zip(cols, r)) for r in c.fetchall()]})
+    rows = c.fetchall(); conn.close()
+    return jsonify({'despachos': [dict(zip(cols, r)) for r in rows]})
 
 # ─── MÓDULO GERENCIA — Rutas ──────────────────────────────────
 @app.route('/gerencia')
