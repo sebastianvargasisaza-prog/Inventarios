@@ -1633,6 +1633,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button class="btn btn-ghost" onclick="importarOCs()">📦 Importar OCs recibidas como egresos</button>
     <div id="import-msg" style="margin-top:10px;"></div>
   </div>
+  <div class="card">
+    <div class="section-title">💲 Precios Mayorista por SKU</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Precio de venta mayorista en COP por unidad. Solo visible para administración — no aparece en el módulo de operarios.</p>
+    <div id="precios-list"><p style="color:#9C8B7A;font-size:0.88em;">Cargando...</p></div>
+    <div id="precios-msg" style="margin-top:10px;"></div>
+  </div>
 </div>
 
 </div>
@@ -1662,7 +1668,7 @@ function goTab(id,el){
   if(id==='ingresos')loadIngresos();
   if(id==='egresos')loadEgresos();
   if(id==='flujo')loadFlujo();
-  if(id==='config')loadConfig();
+  if(id==='config'){loadConfig();loadPreciosMayorista();}
 }
 
 async function loadDashboard(){
@@ -1868,6 +1874,44 @@ async function importarOCs(){
   var d=await r.json();
   document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok)loadEgresos();
+}
+
+async function loadPreciosMayorista(){
+  try{
+    var r=await fetch('/api/financiero/precios-mayorista');
+    var data=await r.json();
+    if(!data.length){document.getElementById('precios-list').innerHTML='<p style="color:#9C8B7A;font-size:0.88em;">Sin SKUs registrados.</p>';return;}
+    var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
+    h+='<thead><tr style="border-bottom:2px solid #eee;">';
+    h+='<th style="text-align:left;padding:8px 6px;color:#555;">SKU</th>';
+    h+='<th style="text-align:left;padding:8px 6px;color:#555;">Producto</th>';
+    h+='<th style="text-align:right;padding:8px 6px;color:#555;">Precio Mayorista (COP)</th>';
+    h+='<th style="text-align:center;padding:8px 6px;color:#555;">Unidad</th>';
+    h+='<th style="padding:8px 6px;"></th>';
+    h+='</tr></thead><tbody>';
+    data.forEach(function(s){
+      h+='<tr style="border-bottom:1px solid #f0f0f0;">';
+      h+='<td style="padding:8px 6px;font-family:monospace;color:#2B7A78;font-weight:700;">'+s.sku+'</td>';
+      h+='<td style="padding:8px 6px;">'+s.descripcion+'</td>';
+      h+='<td style="padding:8px 6px;text-align:right;"><input type="number" id="pm-'+s.sku+'" value="'+(s.precio_mayorista||0)+'" min="0" step="100" style="width:120px;padding:5px 8px;border:1px solid #dde;border-radius:6px;text-align:right;font-size:0.95em;"></td>';
+      h+='<td style="padding:8px 6px;text-align:center;color:#888;">'+s.unidad+'</td>';
+      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(\''+s.sku+'\')" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table>';
+    document.getElementById('precios-list').innerHTML=h;
+  }catch(e){document.getElementById('precios-list').innerHTML='<p style="color:red;">Error cargando precios.</p>';}
+}
+
+async function guardarPrecio(sku){
+  var input=document.getElementById('pm-'+sku);
+  if(!input)return;
+  var precio=parseFloat(input.value)||0;
+  var r=await fetch('/api/financiero/precios-mayorista/'+encodeURIComponent(sku),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({precio_mayorista:precio})});
+  var d=await r.json();
+  var msg=document.getElementById('precios-msg');
+  msg.innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  setTimeout(function(){msg.innerHTML='';},2500);
 }
 
 // Init
@@ -3583,10 +3627,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <div class="form-group" style="margin:0;">
             <label>Unidades producidas</label>
             <input type="number" id="prod-uds-pt" placeholder="Ej: 500" min="1">
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label>Precio mayorista (COP)</label>
-            <input type="number" id="prod-precio-pt" placeholder="Ej: 29400" min="0">
           </div>
         </div>
       </div>
@@ -6967,6 +7007,26 @@ def financiero_importar_ocs():
     conn.commit(); conn.close()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
+
+@app.route('/api/financiero/precios-mayorista', methods=['GET'])
+def get_precios_mayorista():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT sku, descripcion, precio_base, precio_mayorista, unidad FROM sku_precios ORDER BY sku")
+    rows = c.fetchall(); conn.close()
+    return jsonify([{'sku':r[0],'descripcion':r[1],'precio_base':r[2],'precio_mayorista':r[3],'unidad':r[4]} for r in rows])
+
+@app.route('/api/financiero/precios-mayorista/<sku>', methods=['POST'])
+def update_precio_mayorista(sku):
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins pueden editar precios'}), 401
+    d = request.get_json()
+    precio = float(d.get('precio_mayorista', 0) or 0)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE sku_precios SET precio_mayorista=? WHERE sku=?", (precio, sku))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Precio actualizado para {sku}'})
 
 # ===============================================================
 # INVENTARIO v2 - NUEVOS ENDPOINTS
