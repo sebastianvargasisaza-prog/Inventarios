@@ -166,6 +166,24 @@ def init_db():
                  lote TEXT DEFAULT '', zona TEXT DEFAULT '',
                  ajuste_aplicado INTEGER DEFAULT 0,
                  observaciones TEXT DEFAULT '')""")
+    # Columnas extra para conteo ciclico con escalonamiento
+    for _col in [
+        "estanteria TEXT DEFAULT ''",
+        "causa_diferencia TEXT DEFAULT ''",
+        "valor_diferencia REAL DEFAULT 0",
+        "requiere_gerencia INTEGER DEFAULT 0",
+        "aprobado_gerencia INTEGER DEFAULT 0",
+        "aprobado_gerencia_por TEXT DEFAULT ''",
+    ]:
+        try: c.execute(f"ALTER TABLE conteo_items ADD COLUMN {_col}")
+        except: pass
+    for _col in [
+        "estanteria TEXT DEFAULT ''",
+        "tipo_conteo TEXT DEFAULT 'Ciclico'",
+    ]:
+        try: c.execute(f"ALTER TABLE conteos_fisicos ADD COLUMN {_col}")
+        except: pass
+
     c.execute("""CREATE TABLE IF NOT EXISTS precios_mp_historico (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  codigo_mp TEXT NOT NULL, proveedor TEXT NOT NULL,
@@ -1941,6 +1959,175 @@ async function buscarTrazabilidad(){
     }
   }catch(e){document.getElementById('trz-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
+
+var _conteoActivo = null;
+var _conteoItems = [];
+
+async function cargarEstanterias(){
+  try{
+    var r = await fetch('/api/conteo/estanterias');
+    var data = await r.json();
+    var sel = document.getElementById('cnt-est-sel');
+    if(!sel) return;
+    while(sel.options.length > 1) sel.remove(1);
+    data.forEach(function(e){
+      var opt = document.createElement('option');
+      opt.value = e.estanteria;
+      opt.textContent = e.estanteria + ' (' + e.total_mps + ' MPs, ' + (e.stock_total/1000).toFixed(1) + ' kg)';
+      sel.appendChild(opt);
+    });
+  }catch(e){}
+}
+
+async function iniciarConteo(){
+  var est = document.getElementById('cnt-est-sel').value;
+  var resp = document.getElementById('cnt-responsable').value.trim() || OPER_ACTUAL;
+  if(!est){alert('Selecciona una estanteria'); return;}
+  try{
+    var r = await fetch('/api/conteo/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({estanteria:est,responsable:resp})});
+    var res = await r.json();
+    if(!r.ok){alert(res.error||'Error'); return;}
+    _conteoActivo = {id: res.conteo_id, numero: res.numero, estanteria: est};
+    document.getElementById('cnt-numero').textContent = res.numero;
+    document.getElementById('cnt-est-label').textContent = est;
+    document.getElementById('cnt-panel').style.display = 'block';
+    await cargarItemsConteo(est);
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function cargarItemsConteo(est){
+  try{
+    var r = await fetch('/api/conteo/materiales?estanteria='+encodeURIComponent(est));
+    _conteoItems = await r.json();
+    var causas = ['Error de conteo','Consumo no descargado','Ingreso no registrado','Error unidad de medida','Merma justificada','Traslado no registrado','Material no identificado','Otro'];
+    var causaOpts = causas.map(function(c){return '<option>'+c+'</option>';}).join('');
+    var h = '';
+    _conteoItems.forEach(function(mp, i){
+      h += '<tr id="cnt-row-'+i+'">';
+      h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'</td>';
+      h += '<td style="font-size:0.78em;color:#555;">'+(mp.inci||'')+'</td>';
+      h += '<td style="font-size:0.88em;">'+mp.nombre+'</td>';
+      h += '<td style="text-align:right;font-weight:600;font-family:monospace;">'+Number(mp.stock_sistema).toLocaleString()+'</td>';
+      h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid #dde;border-radius:6px;text-align:right;font-family:monospace;"></td>';
+      h += '<td id="cnt-diff-'+i+'" style="text-align:right;font-family:monospace;font-weight:700;">--</td>';
+      h += '<td id="cnt-pct-'+i+'" style="font-size:0.85em;">--</td>';
+      h += '<td id="cnt-val-'+i+'" style="font-size:0.82em;color:#888;">--</td>';
+      h += '<td><select id="cnt-causa-'+i+'" style="width:150px;padding:5px;border:1px solid #dde;border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
+      h += '<td id="cnt-adj-'+i+'"></td>';
+      h += '</tr>';
+    });
+    document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria</td></tr>';
+  }catch(e){console.error(e);}
+}
+
+function calcDiff(i, stockSis, precioRef){
+  var fis = parseFloat(document.getElementById('cnt-fis-'+i).value);
+  var diffEl = document.getElementById('cnt-diff-'+i);
+  var pctEl = document.getElementById('cnt-pct-'+i);
+  var valEl = document.getElementById('cnt-val-'+i);
+  var row = document.getElementById('cnt-row-'+i);
+  if(isNaN(fis)){diffEl.textContent='--';pctEl.textContent='--';valEl.textContent='--';return;}
+  var diff = fis - stockSis;
+  var pct = stockSis > 0 ? Math.abs(diff/stockSis)*100 : 0;
+  var valDiff = Math.abs(diff/1000) * precioRef;
+  diffEl.textContent = (diff >= 0 ? '+' : '') + diff.toLocaleString('es-CO',{maximumFractionDigits:1});
+  diffEl.style.color = diff === 0 ? '#27ae60' : diff > 0 ? '#2980b9' : '#e74c3c';
+  pctEl.textContent = pct.toFixed(1) + '%';
+  if(pct > 5){
+    pctEl.style.color = '#e74c3c';
+    pctEl.textContent += ' ⚠ GERENCIA';
+    row.style.background = '#fff5f5';
+  } else {
+    pctEl.style.color = pct > 2 ? '#e67e22' : '#27ae60';
+    row.style.background = '';
+  }
+  valEl.textContent = valDiff > 0 ? '$'+valDiff.toLocaleString('es-CO',{maximumFractionDigits:0}) : '--';
+}
+
+async function guardarConteo(){
+  if(!_conteoActivo){alert('Inicia un conteo primero'); return;}
+  var items = [];
+  _conteoItems.forEach(function(mp, i){
+    var fisEl = document.getElementById('cnt-fis-'+i);
+    if(!fisEl || fisEl.value === '') return;
+    items.push({
+      codigo_mp: mp.codigo_mp,
+      nombre: mp.nombre,
+      stock_sistema: mp.stock_sistema,
+      stock_fisico: parseFloat(fisEl.value),
+      precio_ref: mp.precio_ref,
+      estanteria: mp.estanteria,
+      causa_diferencia: document.getElementById('cnt-causa-'+i).value
+    });
+  });
+  try{
+    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/guardar',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({items:items})});
+    var res = await r.json();
+    if(r.ok){
+      var msg = 'Guardado. ';
+      if(res.items_con_diferencia > 0) msg += res.items_con_diferencia+' item(s) con diferencias.';
+      document.getElementById('cnt-resumen').style.display = 'block';
+      document.getElementById('cnt-resumen').innerHTML = msg + ' Revisa los items marcados con ⚠ GERENCIA antes de cerrar.';
+      await cargarHistorialConteos();
+    }
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function cerrarConteo(){
+  if(!_conteoActivo) return;
+  if(!confirm('Cerrar el conteo? Ya no se podran editar los conteos fisicos.')) return;
+  try{
+    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/cerrar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var res = await r.json();
+    document.getElementById('cnt-msg').innerHTML = '<div class="alert-success">'+res.message+'</div>';
+    document.getElementById('cnt-panel').style.display = 'none';
+    _conteoActivo = null;
+    await cargarHistorialConteos();
+    await cargarEstanterias();
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function aplicarAjuste(itemId){
+  if(!confirm('Aplicar ajuste de inventario? Se registrara un movimiento de correccion en el sistema.')) return;
+  try{
+    var r = await fetch('/api/conteo/0/ajustar',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({item_id:itemId})});
+    var res = await r.json();
+    if(r.ok){
+      document.getElementById('cnt-msg').innerHTML = '<div class="alert-success">'+res.message+'</div>';
+    }else{
+      document.getElementById('cnt-msg').innerHTML = '<div class="alert-error">'+(res.error||'Error')+'</div>';
+    }
+  }catch(e){}
+}
+
+async function cargarHistorialConteos(){
+  try{
+    var r = await fetch('/api/conteo/historial');
+    var data = await r.json();
+    var tb = document.getElementById('cnt-hist-tbody');
+    if(!data.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin conteos</td></tr>';return;}
+    var h = '';
+    data.forEach(function(c){
+      var estadoColor = c.estado === 'Cerrado' ? '#27ae60' : '#e67e22';
+      h += '<tr>';
+      h += '<td style="font-family:monospace;font-size:0.85em;">'+c.numero+'</td>';
+      h += '<td>'+(c.estanteria||'')+'</td>';
+      h += '<td style="font-size:0.82em;">'+(c.fecha_inicio?c.fecha_inicio.substring(0,10):'')+'</td>';
+      h += '<td>'+(c.responsable||'')+'</td>';
+      h += '<td><span style="color:'+estadoColor+';font-weight:700;">'+c.estado+'</span></td>';
+      h += '<td style="text-align:center;">'+c.total_items+'</td>';
+      h += '<td style="text-align:center;color:'+(c.items_diferencia>0?'#e74c3c':'#27ae60')+';">'+c.items_diferencia+'</td>';
+      h += '<td style="text-align:center;">';
+      if(c.items_gerencia > 0) h += '<span style="color:#e74c3c;font-weight:700;">'+c.items_gerencia+' ⚠</span>';
+      else h += '<span style="color:#27ae60;">OK</span>';
+      h += '</td></tr>';
+    });
+    tb.innerHTML = h;
+  }catch(e){}
+}
 document.addEventListener('DOMContentLoaded',function(){
   var hoy=new Date().toISOString().substring(0,10);
   var ingFecha=document.getElementById('ing-fecha');if(ingFecha)ingFecha.value=hoy;
@@ -2983,6 +3170,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
     <button class="tab-button" onclick="switchTab('cuarentena',this)">&#128274; Cuarentena</button>
     <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
+    <button class="tab-button" onclick="switchTab('conteo',this)">&#9989; Conteo Ciclico</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
@@ -3559,6 +3747,68 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
     <div id="trz-msg"></div>
+  </div>
+
+
+  <div id="conteo" class="tab-content">
+    <h2>&#9989; Conteo Fisico Ciclico — BDG-FOR-003</h2>
+    <p style="color:#777;margin-bottom:16px;">Inventario ciclico diario por estanteria (BDG-PRO-002). Diferencias &gt;5% del valor del lote requieren aprobacion Gerencia General antes de ajustar.</p>
+
+    <!-- Selector de estanteria -->
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:20px;display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:end;">
+      <div>
+        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Estanteria / Seccion a contar</label>
+        <select id="cnt-est-sel" style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;">
+          <option value="">-- Selecciona estanteria --</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Responsable</label>
+        <input type="text" id="cnt-responsable" placeholder="Nombre operario" style="padding:10px;border:1px solid #dde;border-radius:8px;">
+      </div>
+      <button onclick="iniciarConteo()" style="padding:10px 22px;background:#2B7A78;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Iniciar Conteo</button>
+    </div>
+
+    <!-- Panel de conteo activo -->
+    <div id="cnt-panel" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div>
+          <span id="cnt-numero" style="font-family:monospace;font-weight:700;font-size:1.1em;color:#2B7A78;"></span>
+          <span style="margin-left:12px;font-size:0.85em;color:#888;">Estanteria: <strong id="cnt-est-label"></strong></span>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button onclick="guardarConteo()" style="padding:8px 18px;background:#27ae60;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Guardar</button>
+          <button onclick="cerrarConteo()" style="padding:8px 18px;background:#e67e22;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Cerrar Conteo</button>
+        </div>
+      </div>
+
+      <div id="cnt-resumen" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:0.88em;"></div>
+
+      <table class="table" id="cnt-tabla">
+        <thead>
+          <tr>
+            <th>Codigo</th><th>INCI</th><th>Material</th>
+            <th style="text-align:right;">Stock Sistema (g)</th>
+            <th style="text-align:right;width:130px;">Stock Fisico (g)</th>
+            <th style="text-align:right;">Diferencia</th>
+            <th>%</th><th>Valor diff</th>
+            <th style="width:160px;">Causa</th>
+            <th>Ajuste</th>
+          </tr>
+        </thead>
+        <tbody id="cnt-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Historial de conteos -->
+    <div style="margin-top:28px;">
+      <h3 style="color:#2c3e50;margin-bottom:12px;">Historial de Conteos</h3>
+      <div id="cnt-msg"></div>
+      <table class="table">
+        <thead><tr><th>Numero</th><th>Estanteria</th><th>Fecha</th><th>Responsable</th><th>Estado</th><th>Total MPs</th><th>Con diferencia</th><th>Pend. Gerencia</th></tr></thead>
+        <tbody id="cnt-hist-tbody"><tr><td colspan="8" style="text-align:center;color:#999;">Sin conteos registrados</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   </div>
@@ -5026,6 +5276,181 @@ def trazabilidad_lote(lote):
         'total_producciones': len(producciones)
     }
     return jsonify(result)
+
+# ── CONTEO CICLICO BDG-PRO-002 ──────────────────────────────────
+@app.route('/api/conteo/estanterias', methods=['GET'])
+def conteo_estanterias():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est,
+                        COUNT(DISTINCT material_id) as total_mps,
+                        SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_total
+                 FROM movimientos GROUP BY est ORDER BY est""")
+    rows = c.fetchall()
+    conn.close()
+    return jsonify([{'estanteria': r[0], 'total_mps': r[1], 'stock_total': round(r[2] or 0, 1)} for r in rows])
+
+@app.route('/api/conteo/materiales', methods=['GET'])
+def conteo_materiales_estanteria():
+    est = request.args.get('estanteria', '')
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if est and est != 'Sin estanteria':
+        c.execute("""SELECT m.material_id, m.material_nombre,
+                            COALESCE(mp.nombre_inci,'') as inci,
+                            COALESCE(mp.precio_referencia,0) as precio_ref,
+                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
+                            MAX(m.estanteria) as estanteria
+                     FROM movimientos m
+                     LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                     WHERE m.estanteria=?
+                     GROUP BY m.material_id HAVING stock_sistema > 0
+                     ORDER BY m.material_nombre""", (est,))
+    else:
+        c.execute("""SELECT m.material_id, m.material_nombre,
+                            COALESCE(mp.nombre_inci,'') as inci,
+                            COALESCE(mp.precio_referencia,0) as precio_ref,
+                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
+                            '' as estanteria
+                     FROM movimientos m
+                     LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                     WHERE (m.estanteria IS NULL OR m.estanteria='')
+                     GROUP BY m.material_id HAVING stock_sistema > 0
+                     ORDER BY m.material_nombre""")
+    rows = c.fetchall()
+    conn.close()
+    cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema','estanteria']
+    return jsonify([dict(zip(cols, r)) for r in rows])
+
+@app.route('/api/conteo/iniciar', methods=['POST'])
+def conteo_iniciar():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    est = d.get('estanteria', '')
+    responsable = d.get('responsable', session.get('compras_user',''))
+    from datetime import date
+    numero = 'CNT-' + date.today().strftime('%Y%m%d') + '-' + est.replace(' ','')[:6].upper()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        c.execute("INSERT INTO conteos_fisicos (numero,fecha_inicio,estado,responsable,estanteria,tipo_conteo) VALUES (?,datetime('now'),'Abierto',?,?,'Ciclico')",
+                  (numero, responsable, est))
+        conteo_id = c.lastrowid
+        conn.commit(); conn.close()
+        return jsonify({'conteo_id': conteo_id, 'numero': numero, 'message': 'Conteo iniciado'})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/conteo/<int:conteo_id>/guardar', methods=['POST'])
+def conteo_guardar(conteo_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    items = d.get('items', [])
+    UMBRAL_ESCALA = 0.05  # 5% -> escala a gerencia (BDG-PRO-002 num 8)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT estado FROM conteos_fisicos WHERE id=?", (conteo_id,))
+    row = c.fetchone()
+    if not row or row[0] != 'Abierto':
+        conn.close(); return jsonify({'error': 'Conteo no encontrado o ya cerrado'}), 400
+
+    items_con_diff = 0
+    for item in items:
+        codigo = item.get('codigo_mp','')
+        stock_sis = float(item.get('stock_sistema', 0))
+        stock_fis = item.get('stock_fisico')
+        if stock_fis is None or stock_fis == '': continue
+        stock_fis = float(stock_fis)
+        diff = stock_fis - stock_sis
+        precio_ref = float(item.get('precio_ref', 0))
+        valor_diff = abs(diff / 1000) * precio_ref  # diff en g, precio en /kg
+        pct_diff = abs(diff / stock_sis) if stock_sis > 0 else 0
+        requiere_gerencia = 1 if pct_diff > UMBRAL_ESCALA else 0
+        causa = item.get('causa_diferencia', '')
+        if abs(diff) > 0: items_con_diff += 1
+        c.execute("""INSERT OR REPLACE INTO conteo_items
+                     (conteo_id,codigo_mp,nombre_mp,stock_sistema,stock_fisico,diferencia,
+                      estanteria,causa_diferencia,valor_diferencia,requiere_gerencia,observaciones)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                  (conteo_id, codigo, item.get('nombre',''), stock_sis, stock_fis, diff,
+                   item.get('estanteria',''), causa, round(valor_diff,0), requiere_gerencia,
+                   item.get('observaciones','')))
+    c.execute("UPDATE conteos_fisicos SET items_diferencia=?,total_items=? WHERE id=?",
+              (items_con_diff, len(items), conteo_id))
+    conn.commit(); conn.close()
+    return jsonify({'message': 'Conteo guardado', 'items_con_diferencia': items_con_diff})
+
+@app.route('/api/conteo/<int:conteo_id>/cerrar', methods=['POST'])
+def conteo_cerrar(conteo_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM conteo_items WHERE conteo_id=? AND requiere_gerencia=1 AND aprobado_gerencia=0", (conteo_id,))
+    pendientes_gerencia = c.fetchone()[0]
+    c.execute("UPDATE conteos_fisicos SET estado='Cerrado',fecha_cierre=datetime('now') WHERE id=?", (conteo_id,))
+    conn.commit(); conn.close()
+    msg = 'Conteo cerrado.'
+    if pendientes_gerencia:
+        msg += f' ATENCION: {pendientes_gerencia} item(s) con diferencia >5% pendientes de aprobacion Gerencia General antes de ajustar (BDG-PRO-002 num 8).'
+    return jsonify({'message': msg, 'pendientes_gerencia': pendientes_gerencia})
+
+@app.route('/api/conteo/<int:conteo_id>/ajustar', methods=['POST'])
+def conteo_ajustar(conteo_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    user = session.get('compras_user','')
+    d = request.json or {}
+    item_id = d.get('item_id')
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT ci.*, cf.estado FROM conteo_items ci JOIN conteos_fisicos cf ON ci.conteo_id=cf.id WHERE ci.id=?", (item_id,))
+    item = c.fetchone()
+    if not item:
+        conn.close(); return jsonify({'error': 'Item no encontrado'}), 404
+    cols = [desc[0] for desc in c.description]
+    it = dict(zip(cols, item))
+    if it['requiere_gerencia'] and not it['aprobado_gerencia']:
+        if user not in ADMIN_USERS:
+            conn.close()
+            return jsonify({'error': 'Diferencia >5% requiere aprobacion Gerencia General (BDG-PRO-002)'}), 403
+        c.execute("UPDATE conteo_items SET aprobado_gerencia=1,aprobado_gerencia_por=? WHERE id=?", (user, item_id))
+    diff = float(it['diferencia'])
+    if diff == 0:
+        conn.close(); return jsonify({'message': 'Sin diferencia, no se requiere ajuste'})
+    tipo_mov = 'Entrada' if diff > 0 else 'Salida'
+    obs = f'Ajuste inventario ciclico #{conteo_id} - {it.get("causa_diferencia","Sin causa")} - Aprobado: {user}'
+    c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
+                 VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
+              (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
+               'AJUSTE-'+str(conteo_id), it.get('estanteria',''), user))
+    c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (item_id,))
+    c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
+              (user, 'AJUSTE_INVENTARIO', 'conteo_items', str(item_id),
+               f'MP:{it["codigo_mp"]} Diff:{diff}g Causa:{it.get("causa_diferencia","")}',
+               request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Ajuste aplicado: {tipo_mov} de {abs(diff):.0f}g para {it["nombre_mp"]}'})
+
+@app.route('/api/conteo/historial', methods=['GET'])
+def conteo_historial():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT cf.id, cf.numero, cf.estanteria, cf.fecha_inicio, cf.fecha_cierre,
+                        cf.estado, cf.responsable, cf.total_items, cf.items_diferencia,
+                        COUNT(CASE WHEN ci.requiere_gerencia=1 THEN 1 END) as items_gerencia
+                 FROM conteos_fisicos cf
+                 LEFT JOIN conteo_items ci ON cf.id=ci.conteo_id
+                 GROUP BY cf.id ORDER BY cf.fecha_inicio DESC LIMIT 50""")
+    rows = c.fetchall()
+    conn.close()
+    cols = ['id','numero','estanteria','fecha_inicio','fecha_cierre','estado','responsable','total_items','items_diferencia','items_gerencia']
+    return jsonify([dict(zip(cols, r)) for r in rows])
+
+@app.route('/api/conteo/<int:conteo_id>/items', methods=['GET'])
+def conteo_get_items(conteo_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT * FROM conteo_items WHERE conteo_id=? ORDER BY codigo_mp", (conteo_id,))
+    rows = c.fetchall()
+    cols = [d[0] for d in c.description]
+    conn.close()
+    return jsonify([dict(zip(cols, r)) for r in rows])
 
 @app.route('/api/lotes/cc-review', methods=['POST'])
 def cc_review():
