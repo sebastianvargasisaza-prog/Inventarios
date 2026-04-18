@@ -3478,16 +3478,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           </div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div class="form-group" style="margin:0;">
-          <label>Precio compra (COP/kg)</label>
-          <input type="number" id="ing-precio-kg" placeholder="Ej: 45000" min="0" oninput="calcularValorTotal()">
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label>Valor total entrada</label>
-          <input type="text" id="ing-valor-total" placeholder="Se calcula automatico" readonly style="background:#f5f5f5;color:#2B7A78;font-weight:700;">
-        </div>
-      </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
         <input type="checkbox" id="ing-cuarentena" style="width:18px;height:18px;">
         <label for="ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;">
