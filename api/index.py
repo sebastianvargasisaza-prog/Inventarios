@@ -186,6 +186,64 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('CONT-LIKARILESS-15-01','LIK AIRLESS X 15ML BL CONTORNO PUNTA ZINC PLTA','Contorno','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")
     c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('CA-PL-PU-01','PLASTIC CAP','Tapa','China','China','Activo',2000,1000,'und',datetime('now'))")
 
+
+    # ── audit_log (Capa 0) ────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 usuario TEXT, accion TEXT, tabla TEXT, registro_id TEXT,
+                 detalle TEXT, ip TEXT, fecha TEXT)""")
+
+    # ── Clientes + Producto Terminado (Capa 2) ────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS clientes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 codigo TEXT UNIQUE, nombre TEXT NOT NULL,
+                 empresa TEXT DEFAULT 'ANIMUS', tipo TEXT DEFAULT 'Distribuidor',
+                 contacto TEXT DEFAULT '', email TEXT DEFAULT '',
+                 telefono TEXT DEFAULT '', nit TEXT DEFAULT '',
+                 condiciones_pago TEXT DEFAULT '30 dias', descuento_pct REAL DEFAULT 0,
+                 activo INTEGER DEFAULT 1, fecha_creacion TEXT, observaciones TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS pedidos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero TEXT UNIQUE, cliente_id INTEGER REFERENCES clientes(id),
+                 fecha TEXT, fecha_entrega_est TEXT, estado TEXT DEFAULT 'Confirmado',
+                 empresa TEXT DEFAULT 'ANIMUS', valor_total REAL DEFAULT 0,
+                 observaciones TEXT DEFAULT '', creado_por TEXT DEFAULT '',
+                 fecha_despacho TEXT DEFAULT '', numero_factura TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS pedidos_items (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero_pedido TEXT, sku TEXT, descripcion TEXT,
+                 cantidad INTEGER DEFAULT 0, precio_unitario REAL DEFAULT 0,
+                 subtotal REAL DEFAULT 0, lote_pt TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS stock_pt (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 sku TEXT NOT NULL, descripcion TEXT DEFAULT '',
+                 lote_produccion TEXT DEFAULT '', fecha_produccion TEXT,
+                 unidades_inicial INTEGER DEFAULT 0, unidades_disponible INTEGER DEFAULT 0,
+                 precio_base REAL DEFAULT 0, empresa TEXT DEFAULT 'ANIMUS',
+                 estado TEXT DEFAULT 'Disponible', observaciones TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS despachos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero TEXT UNIQUE, numero_pedido TEXT DEFAULT '',
+                 cliente_id INTEGER, fecha TEXT, operador TEXT DEFAULT '',
+                 observaciones TEXT DEFAULT '', estado TEXT DEFAULT 'Completado')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS despachos_items (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero_despacho TEXT, sku TEXT, descripcion TEXT,
+                 lote_pt TEXT, cantidad INTEGER DEFAULT 0, precio_unitario REAL DEFAULT 0)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS gerencia_inputs (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, periodo TEXT UNIQUE,
+                 saldo_caja REAL DEFAULT 0, ingresos_animus REAL DEFAULT 0,
+                 ingresos_maquila REAL DEFAULT 0, notas TEXT DEFAULT '', fecha TEXT)""")
+
+    # Seed clientes iniciales
+    c.execute("""INSERT OR IGNORE INTO clientes
+                 (codigo,nombre,empresa,tipo,contacto,email,condiciones_pago,descuento_pct,fecha_creacion)
+                 VALUES
+                 ('CLI-001','ANIMUS Lab','ANIMUS','Interno','Sebastian Vargas',
+                  'sebastianvargasisaza@gmail.com','Inmediato',0,datetime('now')),
+                 ('CLI-002','Fernando Mesa','ANIMUS','Distribuidor','Fernando Mesa',
+                  '','30 dias',0,datetime('now'))""")
+
     conn.commit()
     conn.close()
 
@@ -270,6 +328,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="card-desc">Solicitudes de compra del equipo. Crea y haz seguimiento de tus pedidos internos.</div>
     <span class="badge badge-open">Abierto</span>
   </a>
+  <a href="/clientes" class="card" style="--c:#7A4A8B">
+    <span class="card-icon">👥</span>
+    <div class="card-title">Clientes</div>
+    <div class="card-co">ÁNIMUS Lab · Espagiria</div>
+    <div class="card-desc">Pedidos de clientes, stock de producto terminado, despachos y trazabilidad comercial.</div>
+    <span class="badge badge-on">● Activo</span>
+  </a>
+  <a href="/gerencia" class="card" style="--c:#1C2B30">
+    <span class="card-icon">📊</span>
+    <div class="card-title">Gerencia HQ</div>
+    <div class="card-co">HHA Group · Panel CEO</div>
+    <div class="card-desc">KPIs en tiempo real, alertas críticas, flujo de caja y estado operacional consolidado.</div>
+    <span class="badge badge-lock">🔒 Admin</span>
+  </a>
 </div>
 <div class="footer">HHA Group © 2026 · Sistema interno de operaciones</div>
 <div class="credit">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
@@ -277,6 +349,764 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </html>"""
 
 # ─── LOGIN COMPRAS ────────────────────────────────────────────
+# ─── MÓDULO CLIENTES ──────────────────────────────────────────
+CLIENTES_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Clientes — HHA Group</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:100vh;}
+.topbar{background:#2B7A78;color:white;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(43,122,120,0.3);}
+.topbar-title{font-size:1.1em;font-weight:800;letter-spacing:2px;}
+.topbar a{color:rgba(255,255,255,0.75);text-decoration:none;font-size:0.82em;padding:6px 14px;border:1px solid rgba(255,255,255,0.25);border-radius:6px;transition:all 0.2s;}
+.topbar a:hover{background:rgba(255,255,255,0.15);color:white;}
+.tabs{background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;}
+.tab{padding:14px 22px;cursor:pointer;font-size:0.88em;font-weight:600;color:#7A9E9C;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
+.tab.active{color:#2B7A78;border-bottom-color:#2B7A78;}
+.tab:hover:not(.active){color:#2B7A78;background:#f5fafa;}
+.content{padding:28px;max-width:1200px;margin:0 auto;}
+.page{display:none;}.page.active{display:block;}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
+.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:20px 22px;border-left:4px solid var(--c,#2B7A78);}
+.kpi-val{font-size:2em;font-weight:900;color:var(--c,#2B7A78);line-height:1;}
+.kpi-lbl{font-size:0.78em;color:#7A9E9C;text-transform:uppercase;letter-spacing:1px;margin-top:6px;}
+.kpi-sub{font-size:0.82em;color:#9C8B7A;margin-top:4px;}
+.tbl{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
+.tbl thead th{background:#f8fafa;color:#5C7A7A;font-size:0.78em;text-transform:uppercase;letter-spacing:0.8px;padding:10px 14px;text-align:left;border-bottom:1px solid #E8E4DE;}
+.tbl tbody td{padding:11px 14px;border-bottom:1px solid #F0EEEA;font-size:0.88em;vertical-align:middle;}
+.tbl tbody tr:hover{background:#fafcfc;}
+.tbl tbody tr:last-child td{border-bottom:none;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:8px;cursor:pointer;font-size:0.88em;font-weight:600;transition:all 0.2s;background:#2B7A78;color:white;}
+.btn:hover{background:#1d5c5a;transform:translateY(-1px);}
+.btn-ghost{background:white;color:#2B7A78;border:1.5px solid #2B7A78;}
+.btn-ghost:hover{background:#f0f9f9;}
+.btn-sm{padding:5px 12px;font-size:0.8em;}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.badge-verde{background:#d1fae5;color:#065f46;}
+.badge-amarillo{background:#fef3c7;color:#92400e;}
+.badge-rojo{background:#fee2e2;color:#991b1b;}
+.badge-gris{background:#f3f4f6;color:#374151;}
+.badge-azul{background:#dbeafe;color:#1e40af;}
+.empty{text-align:center;color:#aaa;padding:32px;font-size:0.9em;}
+.msg-ok{background:#d1fae5;color:#065f46;padding:10px 14px;border-radius:8px;margin:8px 0;font-size:0.88em;}
+.msg-err{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px;margin:8px 0;font-size:0.88em;}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.section-header h2{font-size:1.1em;font-weight:700;color:#1C2B30;}
+.form-panel{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:24px;margin-bottom:20px;display:none;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.form-row.single{grid-template-columns:1fr;}
+.form-row.triple{grid-template-columns:1fr 1fr 1fr;}
+.form-group label{display:block;font-size:0.8em;font-weight:600;color:#5C7A7A;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 12px;border:1.5px solid #D8E4E4;border-radius:7px;font-size:0.88em;background:#fafcfc;transition:border 0.2s;}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#2B7A78;background:white;}
+.semaforo{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;}
+.sem-verde{background:#10b981;}.sem-amarillo{background:#f59e0b;}.sem-rojo{background:#ef4444;}
+.stock-bar{height:6px;border-radius:3px;background:#E8E4DE;overflow:hidden;margin-top:4px;}
+.stock-bar-fill{height:100%;border-radius:3px;background:#2B7A78;transition:width 0.4s;}
+.kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
+.kanban-col{background:#f8fafa;border-radius:10px;padding:14px;}
+.kanban-col-title{font-size:0.78em;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#5C7A7A;margin-bottom:10px;}
+.kanban-card{background:white;border:1px solid #E8E4DE;border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;}
+.kanban-card:hover{border-color:#2B7A78;box-shadow:0 2px 8px rgba(43,122,120,0.1);}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="topbar-title">👥 CLIENTES — HHA Group</span>
+  <a href="/">← Hub</a>
+</div>
+<div class="tabs">
+  <div class="tab active" onclick="goTab('tab-dash',this)">📊 Dashboard</div>
+  <div class="tab" onclick="goTab('tab-clientes',this)">🏢 Clientes</div>
+  <div class="tab" onclick="goTab('tab-pedidos',this)">📋 Pedidos</div>
+  <div class="tab" onclick="goTab('tab-stock',this)">📦 Stock PT</div>
+  <div class="tab" onclick="goTab('tab-despachos',this)">🚚 Despachos</div>
+</div>
+
+<div class="content">
+
+<!-- DASHBOARD -->
+<div id="tab-dash" class="page active">
+  <div class="kpi-grid" id="kpi-clientes">
+    <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="kpi-uds">—</div><div class="kpi-lbl">Unidades PT disponibles</div></div>
+    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-ped-act">—</div><div class="kpi-lbl">Pedidos activos</div><div class="kpi-sub" id="kpi-ped-val">—</div></div>
+    <div class="kpi" style="--c:#4A8B6A"><div class="kpi-val" id="kpi-skus">—</div><div class="kpi-lbl">SKUs con stock</div></div>
+    <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-fm-dias">—</div><div class="kpi-lbl">Días último pedido FM</div><div class="kpi-sub">Ciclo normal: ~62 días</div></div>
+  </div>
+  <div style="background:white;border:1px solid #E8E4DE;border-radius:12px;padding:20px;margin-bottom:20px;">
+    <h3 style="font-size:0.95em;font-weight:700;color:#1C2B30;margin-bottom:14px;">Stock PT por SKU</h3>
+    <table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th>Disponible</th><th>Total producido</th><th>Lotes</th><th>Estado</th></tr></thead>
+    <tbody id="stock-dash-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+  </div>
+  <div id="alertas-clientes"></div>
+</div>
+
+<!-- CLIENTES -->
+<div id="tab-clientes" class="page">
+  <div class="section-header">
+    <h2>Clientes registrados</h2>
+    <button class="btn btn-ghost" onclick="toggleForm('form-nuevo-cliente')">+ Nuevo cliente</button>
+  </div>
+  <div class="form-panel" id="form-nuevo-cliente">
+    <h3 style="margin-bottom:16px;font-size:0.95em;font-weight:700;">Nuevo cliente</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Nombre *</label><input type="text" id="cli-nombre" placeholder="Nombre del cliente"></div>
+      <div class="form-group"><label>Empresa</label><select id="cli-empresa"><option value="ANIMUS">ÁNIMUS Lab</option><option value="Espagiria">Espagiria</option></select></div>
+    </div>
+    <div class="form-row triple">
+      <div class="form-group"><label>Tipo</label><select id="cli-tipo"><option value="Distribuidor">Distribuidor</option><option value="Retail">Retail</option><option value="DTC">DTC</option><option value="Maquila">Maquila</option><option value="Interno">Interno</option></select></div>
+      <div class="form-group"><label>Condiciones de pago</label><input type="text" id="cli-pago" placeholder="30 días" value="30 días"></div>
+      <div class="form-group"><label>NIT</label><input type="text" id="cli-nit" placeholder="900.000.000-0"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Contacto</label><input type="text" id="cli-contacto" placeholder="Nombre del contacto"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="cli-email" placeholder="email@empresa.com"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-ghost" onclick="toggleForm('form-nuevo-cliente')">Cancelar</button>
+      <button class="btn" onclick="crearCliente()">Guardar cliente</button>
+    </div>
+    <div id="cli-msg"></div>
+  </div>
+  <table class="tbl"><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Empresa</th><th>Pedidos</th><th>Facturado total</th><th>Último pedido</th><th>Acción</th></tr></thead>
+  <tbody id="clientes-body"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody></table>
+</div>
+
+<!-- PEDIDOS -->
+<div id="tab-pedidos" class="page">
+  <div class="section-header">
+    <h2>Pedidos</h2>
+    <button class="btn btn-ghost" onclick="toggleForm('form-nuevo-pedido')">+ Nuevo pedido</button>
+  </div>
+  <div class="form-panel" id="form-nuevo-pedido">
+    <h3 style="margin-bottom:16px;font-size:0.95em;font-weight:700;">Nuevo pedido</h3>
+    <div class="form-row">
+      <div class="form-group"><label>Cliente *</label><select id="ped-cliente"><option value="">Seleccionar...</option></select></div>
+      <div class="form-group"><label>Fecha entrega estimada</label><input type="date" id="ped-fecha-ent"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px;"><label>Observaciones</label><textarea id="ped-obs" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #D8E4E4;border-radius:7px;font-size:0.88em;"></textarea></div>
+    <div style="margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;font-size:11px;color:#888;font-weight:700;margin-bottom:4px;padding:0 2px;">
+        <span>SKU</span><span>Descripción *</span><span>Cant.</span><span>Precio unit. $</span><span></span>
+      </div>
+      <div id="ped-items-list">
+        <div class="ped-item-row" style="display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;margin-bottom:6px;align-items:center;">
+          <input type="text" class="ped-sku" placeholder="TRX-120" style="font-family:monospace;padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">
+          <input type="text" class="ped-desc" placeholder="Nombre del producto" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">
+          <input type="number" class="ped-cant" placeholder="500" min="1" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">
+          <input type="number" class="ped-precio" placeholder="31933" min="0" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">
+          <button onclick="this.parentElement.remove()" style="padding:5px;background:#fee2e2;border:none;border-radius:4px;cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addItemPedido()" style="margin-top:4px;">+ Agregar línea</button>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="toggleForm('form-nuevo-pedido')">Cancelar</button>
+      <button class="btn" onclick="crearPedido()">Guardar pedido</button>
+    </div>
+    <div id="ped-msg"></div>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="btn btn-ghost btn-sm" onclick="loadPedidos('')">Todos</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadPedidos('Confirmado')">Confirmados</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadPedidos('Produciendo')">Produciendo</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadPedidos('Listo')">Listos para despachar</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadPedidos('Despachado')">Despachados</button>
+  </div>
+  <table class="tbl"><thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th>Entrega est.</th><th>Estado</th><th style="text-align:right;">Valor</th><th>Acción</th></tr></thead>
+  <tbody id="pedidos-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+</div>
+
+<!-- STOCK PT -->
+<div id="tab-stock" class="page">
+  <div class="section-header">
+    <h2>Inventario Producto Terminado</h2>
+    <button class="btn" onclick="toggleForm('form-ingreso-pt')">+ Registrar PT</button>
+  </div>
+  <div class="form-panel" id="form-ingreso-pt">
+    <h3 style="margin-bottom:16px;font-size:0.95em;font-weight:700;">Registrar ingreso a Stock PT</h3>
+    <div class="form-row triple">
+      <div class="form-group"><label>SKU *</label><input type="text" id="pt-sku" placeholder="TRX-120-FM" style="text-transform:uppercase;"></div>
+      <div class="form-group"><label>Descripción</label><input type="text" id="pt-desc" placeholder="Trébol x 120ml"></div>
+      <div class="form-group"><label>Unidades *</label><input type="number" id="pt-uds" placeholder="500" min="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lote de producción</label><input type="text" id="pt-lote" placeholder="PROD-00001"></div>
+      <div class="form-group"><label>Precio base (unitario)</label><input type="number" id="pt-precio" placeholder="31933" min="0"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="toggleForm('form-ingreso-pt')">Cancelar</button>
+      <button class="btn" onclick="registrarPT()">Registrar</button>
+    </div>
+    <div id="pt-msg"></div>
+  </div>
+  <table class="tbl"><thead><tr><th>SKU</th><th>Descripción</th><th>Empresa</th><th style="text-align:right;">Disponible</th><th style="text-align:right;">Total</th><th>Lotes</th><th>Estado</th></tr></thead>
+  <tbody id="stock-pt-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
+</div>
+
+<!-- DESPACHOS -->
+<div id="tab-despachos" class="page">
+  <div class="section-header">
+    <h2>Historial de despachos</h2>
+  </div>
+  <table class="tbl"><thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Pedido</th><th>Operador</th><th>Estado</th></tr></thead>
+  <tbody id="despachos-body"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody></table>
+</div>
+
+</div><!-- /content -->
+
+<script>
+function goTab(id,btn){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById(id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='tab-dash') loadDashboardClientes();
+  if(id==='tab-clientes') loadClientes();
+  if(id==='tab-pedidos') loadPedidos('');
+  if(id==='tab-stock') loadStockPT();
+  if(id==='tab-despachos') loadDespachos();
+}
+function toggleForm(id){var f=document.getElementById(id);f.style.display=f.style.display==='block'?'none':'block';}
+function fmt(n){return n?('$'+parseFloat(n).toLocaleString('es-CO')):'—';}
+function badgePed(e){
+  var m={'Confirmado':'badge-azul','Produciendo':'badge-amarillo','Listo':'badge-verde',
+         'Despachado':'badge-gris','Facturado':'badge-gris','Cancelado':'badge-rojo','Borrador':'badge-gris'};
+  return '<span class="badge '+(m[e]||'badge-gris')+'">'+e+'</span>';
+}
+
+async function loadDashboardClientes(){
+  try{
+    var [st,pd]=await Promise.all([
+      fetch('/api/stock-pt').then(function(r){return r.json();}),
+      fetch('/api/pedidos').then(function(r){return r.json();})
+    ]);
+    var stock=st.stock_pt||[]; var peds=pd.pedidos||[];
+    var uds=stock.reduce(function(a,s){return a+(s.disponible||0);},0);
+    var skus=stock.filter(function(s){return s.disponible>0;}).length;
+    var pedAct=peds.filter(function(p){return ['Confirmado','Produciendo','Listo'].includes(p.estado);});
+    var valAct=pedAct.reduce(function(a,p){return a+(p.valor_total||0);},0);
+    document.getElementById('kpi-uds').textContent=uds.toLocaleString('es-CO');
+    document.getElementById('kpi-ped-act').textContent=pedAct.length;
+    document.getElementById('kpi-ped-val').textContent=fmt(valAct);
+    document.getElementById('kpi-skus').textContent=skus;
+    // FM dias
+    try{
+      var fm=peds.filter(function(p){return p.cliente_codigo==='CLI-002'&&p.estado!='Cancelado';});
+      if(fm.length){
+        var ult=fm.sort(function(a,b){return b.fecha>a.fecha?1:-1;})[0];
+        var dias=Math.floor((Date.now()-new Date(ult.fecha))/86400000);
+        var el=document.getElementById('kpi-fm-dias');
+        el.textContent=dias;
+        el.style.color=dias>55?'#ef4444':'#2B7A78';
+      }
+    }catch(e){}
+    // Tabla stock
+    var tb=document.getElementById('stock-dash-body');
+    if(!stock.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin stock PT registrado</td></tr>';return;}
+    tb.innerHTML=stock.map(function(s){
+      var pct=s.total>0?Math.round((s.disponible/s.total)*100):0;
+      var color=pct>50?'#2B7A78':(pct>20?'#f59e0b':'#ef4444');
+      var badge=pct>50?'badge-verde':(pct>20?'badge-amarillo':'badge-rojo');
+      return '<tr><td style="font-family:monospace;font-weight:700;">'+s.sku+'</td>'
+        +'<td>'+s.descripcion+'</td>'
+        +'<td><span class="badge badge-gris">'+s.empresa+'</span></td>'
+        +'<td style="text-align:right;font-weight:700;font-size:1.05em;">'+s.disponible.toLocaleString('es-CO')+'</td>'
+        +'<td style="text-align:right;color:#999;">'+s.total.toLocaleString('es-CO')+'</td>'
+        +'<td style="text-align:center;">'+s.lotes+'</td>'
+        +'<td><span class="badge '+badge+'">'+pct+'% disponible</span>'
+        +'<div class="stock-bar"><div class="stock-bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div></td></tr>';
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+async function loadClientes(){
+  try{
+    var d=await fetch('/api/clientes').then(function(r){return r.json();});
+    var tb=document.getElementById('clientes-body');
+    var cls=d.clientes||[];
+    if(!cls.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin clientes</td></tr>';return;}
+    // Cargar también select de pedidos
+    var sel=document.getElementById('ped-cliente');
+    sel.innerHTML='<option value="">Seleccionar...</option>';
+    cls.forEach(function(cl){sel.innerHTML+='<option value="'+cl.id+'">'+cl.nombre+' ('+cl.codigo+')</option>';});
+    tb.innerHTML=cls.map(function(cl){
+      var badge=cl.tipo==='Distribuidor'?'badge-azul':(cl.tipo==='Interno'?'badge-gris':'badge-amarillo');
+      return '<tr>'
+        +'<td style="font-family:monospace;font-size:0.82em;color:#888;">'+cl.codigo+'</td>'
+        +'<td style="font-weight:600;">'+cl.nombre+'</td>'
+        +'<td><span class="badge '+badge+'">'+cl.tipo+'</span></td>'
+        +'<td><span class="badge badge-gris">'+cl.empresa+'</span></td>'
+        +'<td style="text-align:center;">'+(cl.total_pedidos||0)+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(cl.facturado_total)+'</td>'
+        +'<td style="color:#999;font-size:0.85em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verHistorialCliente('+cl.id+',\''+cl.nombre+'\')">Historial</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+async function crearCliente(){
+  var nombre=document.getElementById('cli-nombre').value.trim();
+  if(!nombre){alert('Nombre requerido');return;}
+  var data={nombre:nombre,empresa:document.getElementById('cli-empresa').value,
+    tipo:document.getElementById('cli-tipo').value,contacto:document.getElementById('cli-contacto').value,
+    email:document.getElementById('cli-email').value,nit:document.getElementById('cli-nit').value,
+    condiciones_pago:document.getElementById('cli-pago').value};
+  try{
+    var r=await fetch('/api/clientes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('cli-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
+    if(r.ok){loadClientes();document.getElementById('cli-nombre').value='';}
+  }catch(e){document.getElementById('cli-msg').innerHTML='<div class="msg-err">Error</div>';}
+}
+
+async function loadPedidos(estado){
+  try{
+    var url='/api/pedidos'+(estado?'?estado='+estado:'');
+    var d=await fetch(url).then(function(r){return r.json();});
+    var tb=document.getElementById('pedidos-body');
+    var peds=d.pedidos||[];
+    if(!peds.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin pedidos'+(estado?' en estado '+estado:'')+'</td></tr>';return;}
+    tb.innerHTML=peds.map(function(p){
+      return '<tr>'
+        +'<td style="font-family:monospace;font-weight:700;">'+p.numero+'</td>'
+        +'<td style="font-weight:600;">'+(p.cliente||'—')+'</td>'
+        +'<td style="color:#999;font-size:0.85em;">'+(p.fecha||'').substring(0,10)+'</td>'
+        +'<td style="color:#999;font-size:0.85em;">'+(p.fecha_entrega_est||'—')+'</td>'
+        +'<td>'+badgePed(p.estado)+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmt(p.valor_total)+'</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoPedido(\''+p.numero+'\')">Estado</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+function addItemPedido(){
+  var div=document.createElement('div');
+  div.className='ped-item-row';
+  div.style.cssText='display:grid;grid-template-columns:15% 1fr 10% 15% 5%;gap:6px;margin-bottom:6px;align-items:center;';
+  div.innerHTML='<input type="text" class="ped-sku" placeholder="SKU" style="font-family:monospace;padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">'
+    +'<input type="text" class="ped-desc" placeholder="Descripción" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">'
+    +'<input type="number" class="ped-cant" placeholder="0" min="1" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">'
+    +'<input type="number" class="ped-precio" placeholder="0" min="0" style="padding:7px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.85em;">'
+    +'<button onclick="this.parentElement.remove()" style="padding:5px;background:#fee2e2;border:none;border-radius:4px;cursor:pointer;">✕</button>';
+  document.getElementById('ped-items-list').appendChild(div);
+}
+
+async function crearPedido(){
+  var cid=document.getElementById('ped-cliente').value;
+  if(!cid){alert('Selecciona un cliente');return;}
+  var items=[];
+  document.querySelectorAll('.ped-item-row').forEach(function(row){
+    var sku=row.querySelector('.ped-sku').value.trim();
+    var desc=row.querySelector('.ped-desc').value.trim();
+    var cant=parseInt(row.querySelector('.ped-cant').value)||0;
+    var precio=parseFloat(row.querySelector('.ped-precio').value)||0;
+    if((sku||desc)&&cant>0) items.push({sku:sku,descripcion:desc,cantidad:cant,precio_unitario:precio});
+  });
+  if(!items.length){alert('Agrega al menos un ítem');return;}
+  var data={cliente_id:parseInt(cid),fecha_entrega_est:document.getElementById('ped-fecha-ent').value,
+    observaciones:document.getElementById('ped-obs').value,items:items};
+  try{
+    var r=await fetch('/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('ped-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
+    if(r.ok){loadPedidos('');toggleForm('form-nuevo-pedido');}
+  }catch(e){document.getElementById('ped-msg').innerHTML='<div class="msg-err">Error</div>';}
+}
+
+async function cambiarEstadoPedido(numero){
+  var estados=['Confirmado','Produciendo','Listo','Despachado','Facturado','Cancelado'];
+  var nuevo=prompt('Nuevo estado para '+numero+':\n'+estados.join(', '));
+  if(!nuevo||!estados.includes(nuevo)) return;
+  await fetch('/api/pedidos/'+numero,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
+  loadPedidos('');
+}
+
+async function loadStockPT(){
+  try{
+    var d=await fetch('/api/stock-pt').then(function(r){return r.json();});
+    var tb=document.getElementById('stock-pt-body');
+    var stock=d.stock_pt||[];
+    if(!stock.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin stock PT registrado</td></tr>';return;}
+    tb.innerHTML=stock.map(function(s){
+      var pct=s.total>0?Math.round((s.disponible/s.total)*100):0;
+      var badge=pct>50?'badge-verde':(pct>20?'badge-amarillo':'badge-rojo');
+      return '<tr>'
+        +'<td style="font-family:monospace;font-weight:700;color:#2B7A78;">'+s.sku+'</td>'
+        +'<td>'+(s.descripcion||'—')+'</td>'
+        +'<td><span class="badge badge-gris">'+s.empresa+'</span></td>'
+        +'<td style="text-align:right;font-weight:900;font-size:1.1em;">'+(s.disponible||0).toLocaleString('es-CO')+' uds</td>'
+        +'<td style="text-align:right;color:#999;">'+(s.total||0).toLocaleString('es-CO')+' uds</td>'
+        +'<td style="text-align:center;">'+(s.lotes||0)+'</td>'
+        +'<td><span class="badge '+badge+'">'+pct+'% disponible</span></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+async function registrarPT(){
+  var sku=(document.getElementById('pt-sku').value||'').trim().toUpperCase();
+  var uds=parseInt(document.getElementById('pt-uds').value)||0;
+  if(!sku||uds<=0){alert('SKU y unidades requeridos');return;}
+  var data={sku:sku,descripcion:document.getElementById('pt-desc').value,
+    unidades:uds,lote_produccion:document.getElementById('pt-lote').value,
+    precio_base:parseFloat(document.getElementById('pt-precio').value)||0};
+  try{
+    var r=await fetch('/api/stock-pt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('pt-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
+    if(r.ok){loadStockPT();document.getElementById('pt-sku').value='';document.getElementById('pt-uds').value='';}
+  }catch(e){document.getElementById('pt-msg').innerHTML='<div class="msg-err">Error</div>';}
+}
+
+async function loadDespachos(){
+  try{
+    var d=await fetch('/api/despachos').then(function(r){return r.json();});
+    var tb=document.getElementById('despachos-body');
+    var desps=d.despachos||[];
+    if(!desps.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin despachos registrados</td></tr>';return;}
+    tb.innerHTML=desps.map(function(d){
+      return '<tr>'
+        +'<td style="font-family:monospace;font-weight:700;">'+d.numero+'</td>'
+        +'<td style="color:#999;font-size:0.85em;">'+(d.fecha||'').substring(0,10)+'</td>'
+        +'<td style="font-weight:600;">'+(d.cliente||'—')+'</td>'
+        +'<td style="font-family:monospace;font-size:0.82em;color:#888;">'+(d.numero_pedido||'—')+'</td>'
+        +'<td>'+(d.operador||'—')+'</td>'
+        +'<td><span class="badge badge-verde">'+d.estado+'</span></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){console.error(e);}
+}
+
+async function verHistorialCliente(id,nombre){
+  var d=await fetch('/api/clientes/'+id+'/historial').then(function(r){return r.json();});
+  var h='<b>Historial: '+nombre+'</b><br><br>';
+  if(d.pedidos&&d.pedidos.length){
+    h+='<b>Pedidos:</b><table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;">';
+    h+='<tr style="background:#f5f5f5;"><th style="padding:5px;text-align:left;">Número</th><th>Estado</th><th style="text-align:right;">Valor</th><th>Despacho</th></tr>';
+    d.pedidos.forEach(function(p){
+      h+='<tr><td style="padding:5px;font-family:monospace;">'+p.numero+'</td><td>'+badgePed(p.estado)+'</td><td style="text-align:right;">'+fmt(p.valor_total)+'</td><td style="color:#999;font-size:0.85em;">'+(p.fecha_despacho||'—').substring(0,10)+'</td></tr>';
+    });
+    h+='</table>';
+  } else { h+='Sin pedidos registrados.'; }
+  var panel=document.createElement('div');
+  panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  panel.innerHTML='<div style="background:white;border-radius:14px;padding:28px;max-width:600px;width:92%;max-height:80vh;overflow-y:auto;position:relative;">'
+    +'<button onclick="this.closest(\'div[style]\').remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>'
+    +h+'</div>';
+  document.body.appendChild(panel);
+}
+
+// Auto-cargar dashboard al iniciar
+loadDashboardClientes();
+</script>
+</body>
+</html>"""
+
+# ─── MÓDULO HQ GERENCIA ────────────────────────────────────────
+GERENCIA_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Gerencia — HHA Group</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:100vh;color:white;}
+.topbar{background:rgba(0,0,0,0.3);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1);}
+.topbar-left{display:flex;align-items:center;gap:16px;}
+.logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:white;}
+.badge-ceo{background:rgba(43,122,120,0.5);color:#7ACFCC;padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
+.topbar a{color:rgba(255,255,255,0.5);text-decoration:none;font-size:0.8em;padding:6px 14px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;}
+.topbar a:hover{color:white;border-color:rgba(255,255,255,0.4);}
+.periodo-badge{background:rgba(43,122,120,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:#7ACFCC;}
+.main{padding:28px;max-width:1300px;margin:0 auto;}
+.section-title{font-size:0.72em;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);margin-bottom:14px;margin-top:28px;}
+.section-title:first-child{margin-top:0;}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:8px;}
+.kpi{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px 22px;position:relative;overflow:hidden;transition:all 0.2s;}
+.kpi:hover{background:rgba(255,255,255,0.08);transform:translateY(-2px);}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,#2B7A78);}
+.kpi.rojo::before{background:#ef4444;}.kpi.amarillo::before{background:#f59e0b;}.kpi.verde::before{background:#10b981;}
+.kpi-val{font-size:2.2em;font-weight:900;line-height:1;color:white;}
+.kpi-val.rojo{color:#fca5a5;}.kpi-val.amarillo{color:#fcd34d;}.kpi-val.verde{color:#6ee7b7;}
+.kpi-lbl{font-size:0.72em;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
+.kpi-sub{font-size:0.8em;color:rgba(255,255,255,0.3);margin-top:4px;}
+.sem{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+.sem.verde{background:#10b981;box-shadow:0 0 8px #10b981;}.sem.amarillo{background:#f59e0b;box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:#ef4444;box-shadow:0 0 8px #ef4444;}
+.alertas-panel{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;margin-bottom:28px;display:none;}
+.alertas-panel.visible{display:block;}
+.alerta-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(239,68,68,0.15);}
+.alerta-item:last-child{border-bottom:none;}
+.alerta-icon{font-size:1.2em;margin-top:1px;}
+.alerta-texto{font-size:0.88em;color:rgba(255,255,255,0.8);line-height:1.5;}
+.two-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}
+.panel{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:22px;}
+.panel-title{font-size:0.82em;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.data-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.data-row:last-child{border-bottom:none;}
+.data-lbl{font-size:0.85em;color:rgba(255,255,255,0.5);}
+.data-val{font-size:0.92em;font-weight:700;color:white;}
+.data-val.rojo{color:#fca5a5;}.data-val.amarillo{color:#fcd34d;}.data-val.verde{color:#6ee7b7;}
+.input-panel{background:rgba(43,122,120,0.1);border:1px solid rgba(43,122,120,0.3);border-radius:12px;padding:22px;margin-top:20px;}
+.input-panel-title{font-size:0.85em;font-weight:700;color:#7ACFCC;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.inp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
+.inp-group label{display:block;font-size:0.72em;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
+.inp-group input{width:100%;padding:9px 12px;background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.15);border-radius:7px;color:white;font-size:0.9em;transition:border 0.2s;}
+.inp-group input:focus{outline:none;border-color:#2B7A78;background:rgba(255,255,255,0.12);}
+.inp-group input::placeholder{color:rgba(255,255,255,0.25);}
+.btn-save{background:#2B7A78;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.btn-save:hover{background:#1d5c5a;transform:translateY(-1px);}
+.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.finanzas-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px;}
+.fin-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:16px 18px;text-align:center;}
+.fin-val{font-size:1.6em;font-weight:900;color:#7ACFCC;}
+.fin-lbl{font-size:0.72em;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
+.refresh-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
+.refresh-btn:hover{background:rgba(255,255,255,0.15);color:white;}
+.ultima-act{font-size:0.72em;color:rgba(255,255,255,0.25);margin-left:10px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="logo">HHA GROUP</span>
+    <span class="badge-ceo">PANEL GERENCIAL</span>
+    <span class="periodo-badge" id="periodo-label">Cargando...</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <button class="refresh-btn" onclick="loadKPIs()">⟳ Actualizar</button>
+    <span class="ultima-act" id="ultima-actualizacion"></span>
+    <a href="/">← Hub</a>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ALERTAS CRÍTICAS -->
+  <div class="alertas-panel" id="alertas-panel">
+    <div style="font-size:0.82em;font-weight:700;color:#fca5a5;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">⚠ Alertas que requieren acción</div>
+    <div id="alertas-list"></div>
+  </div>
+
+  <!-- FINANCIERO (inputs manuales) -->
+  <div class="section-title">💰 Financiero del mes</div>
+  <div class="finanzas-grid">
+    <div class="fin-card"><div class="fin-val" id="fin-caja">—</div><div class="fin-lbl">Saldo de caja</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-animus">—</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-maquila">—</div><div class="fin-lbl">Ingresos Maquila</div></div>
+  </div>
+
+  <!-- ESPAGIRIA -->
+  <div class="section-title">🏭 Espagiria Laboratorios</div>
+  <div class="kpi-grid">
+    <div class="kpi" id="kpi-mps-bajos">
+      <div class="kpi-val" id="val-mps-bajos">—</div>
+      <div class="kpi-lbl">MPs bajo mínimo</div>
+      <div class="kpi-sub" id="sub-deficit">—</div>
+    </div>
+    <div class="kpi" id="kpi-vencen30">
+      <div class="kpi-val" id="val-vencen30">—</div>
+      <div class="kpi-lbl">Lotes vencen en 30 días</div>
+      <div class="kpi-sub" id="sub-vencen60">—</div>
+    </div>
+    <div class="kpi" id="kpi-produccion">
+      <div class="kpi-val" id="val-lotes-mes">—</div>
+      <div class="kpi-lbl">Lotes producción mes</div>
+      <div class="kpi-sub" id="sub-kg-mes">—</div>
+    </div>
+    <div class="kpi" id="kpi-ocs">
+      <div class="kpi-val" id="val-ocs">—</div>
+      <div class="kpi-lbl">OCs pendientes aprobación</div>
+      <div class="kpi-sub" id="sub-ocs-val">—</div>
+    </div>
+  </div>
+
+  <!-- ÁNIMUS -->
+  <div class="section-title">✨ ÁNIMUS Lab</div>
+  <div class="kpi-grid">
+    <div class="kpi verde">
+      <div class="kpi-val verde" id="val-uds-pt">—</div>
+      <div class="kpi-lbl">Unidades PT disponibles</div>
+      <div class="kpi-sub" id="sub-skus-pt">—</div>
+    </div>
+    <div class="kpi" id="kpi-pedidos-act">
+      <div class="kpi-val" id="val-pedidos-act">—</div>
+      <div class="kpi-lbl">Pedidos activos</div>
+      <div class="kpi-sub" id="sub-pedidos-val">—</div>
+    </div>
+    <div class="kpi" id="kpi-fm">
+      <div class="kpi-val" id="val-fm-dias">—</div>
+      <div class="kpi-lbl">Días desde último pedido FM</div>
+      <div class="kpi-sub">Ciclo promedio: ~62 días</div>
+    </div>
+  </div>
+
+  <!-- DETALLE DOS COLUMNAS -->
+  <div class="two-cols">
+    <div class="panel">
+      <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Inventario Espagiria</div>
+      <div id="detalle-inventario"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title"><span class="sem verde" id="sem-animus"></span>ÁNIMUS Lab</div>
+      <div id="detalle-animus"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+
+  <!-- INPUT MANUAL MENSUAL -->
+  <div class="input-panel">
+    <div class="input-panel-title">📝 Input manual mensual <span style="font-weight:400;color:rgba(255,255,255,0.3);font-size:0.85em;">— actualizar en 5 minutos al inicio de cada mes</span></div>
+    <div class="inp-grid">
+      <div class="inp-group"><label>Saldo de caja ($COP)</label><input type="number" id="inp-caja" placeholder="354800000"></div>
+      <div class="inp-group"><label>Ingresos ÁNIMUS mes ($COP)</label><input type="number" id="inp-animus" placeholder="189000000"></div>
+      <div class="inp-group"><label>Ingresos Maquila mes ($COP)</label><input type="number" id="inp-maquila" placeholder="30000000"></div>
+      <div class="inp-group"><label>Nómina total mes ($COP)</label><input type="number" id="inp-nomina" placeholder="16100000"></div>
+    </div>
+    <div class="inp-group" style="margin-bottom:14px;"><label>Notas del período</label><input type="text" id="inp-notas" placeholder="Ej: Mes de lanzamiento NIAC, pago nómina atrasado..."></div>
+    <button class="btn-save" onclick="guardarInputs()">💾 Guardar inputs del mes</button>
+    <div id="inp-msg"></div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+function fmt(n,prefix){if(n==null||n===undefined)return '—';var v=Math.abs(parseFloat(n));var s=v>=1000000?(v/1000000).toFixed(1)+'M':(v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO'));return (prefix||'$')+s;}
+function fmtN(n){return n!=null?parseFloat(n).toLocaleString('es-CO'):'—';}
+function setSemaforo(id,color){var el=document.getElementById(id);if(el){el.className='sem '+color;}}
+function setKPIColor(kpiId,valId,color){
+  var k=document.getElementById(kpiId),v=document.getElementById(valId);
+  if(k) k.className='kpi '+(color||'');
+  if(v) v.className='kpi-val '+(color||'');
+}
+
+async function loadKPIs(){
+  try{
+    var d=await fetch('/api/gerencia/kpis').then(function(r){return r.json();});
+    if(d.error){document.querySelector('.main').innerHTML='<div style="color:#fca5a5;padding:40px;text-align:center;">'+d.error+'</div>';return;}
+
+    var e=d.espagiria||{}; var a=d.animus||{}; var f=d.inputs_manuales||{}; var sem=d.semaforos||{};
+
+    // Periodo
+    document.getElementById('periodo-label').textContent=d.periodo||'';
+    document.getElementById('ultima-actualizacion').textContent='Actualizado: '+new Date().toLocaleTimeString('es-CO');
+
+    // Financiero
+    document.getElementById('fin-caja').textContent=fmt(f.saldo_caja);
+    document.getElementById('fin-animus').textContent=fmt(f.ingresos_animus);
+    document.getElementById('fin-maquila').textContent=fmt(f.ingresos_maquila);
+
+    // Espagiria KPIs
+    var mpsBajos=e.mps_bajo_minimo||0;
+    document.getElementById('val-mps-bajos').textContent=mpsBajos;
+    document.getElementById('sub-deficit').textContent='Déficit: '+((e.deficit_total_kg||0).toFixed(1))+' kg';
+    setKPIColor('kpi-mps-bajos','val-mps-bajos',mpsBajos>5?'rojo':(mpsBajos>0?'amarillo':'verde'));
+
+    var v30=e.lotes_vencen_30d||0;
+    document.getElementById('val-vencen30').textContent=v30;
+    document.getElementById('sub-vencen60').textContent='En 60 días: '+(e.lotes_vencen_60d||0)+' lotes';
+    setKPIColor('kpi-vencen30','val-vencen30',v30>0?'rojo':'verde');
+
+    document.getElementById('val-lotes-mes').textContent=e.lotes_produccion_mes||0;
+    document.getElementById('sub-kg-mes').textContent=(e.kg_producidos_mes||0)+' kg producidos';
+
+    var ocs=e.ocs_pendientes_aprobacion||0;
+    document.getElementById('val-ocs').textContent=ocs;
+    document.getElementById('sub-ocs-val').textContent='Valor: '+fmt(e.valor_ocs_pendientes||0);
+    setKPIColor('kpi-ocs','val-ocs',ocs>3?'amarillo':'verde');
+
+    // ÁNIMUS KPIs
+    document.getElementById('val-uds-pt').textContent=fmtN(a.unidades_pt_disponibles||0);
+    document.getElementById('sub-skus-pt').textContent=(a.skus_con_stock_pt||0)+' SKUs con stock';
+
+    var pedAct=a.pedidos_activos||0;
+    document.getElementById('val-pedidos-act').textContent=pedAct;
+    document.getElementById('sub-pedidos-val').textContent='Valor: '+fmt(a.valor_pedidos_activos||0);
+
+    var diasFM=a.dias_desde_ultimo_pedido_fm;
+    var diasFMEl=document.getElementById('val-fm-dias');
+    diasFMEl.textContent=diasFM!=null?diasFM+' días':'Sin pedidos';
+    setKPIColor('kpi-fm','val-fm-dias',diasFM>62?'amarillo':'verde');
+
+    // Semáforos
+    setSemaforo('sem-inv',sem.inventario||'verde');
+    setSemaforo('sem-animus',sem.fm||'verde');
+
+    // Detalle inventario
+    var di='';
+    di+='<div class="data-row"><span class="data-lbl">MPs bajo mínimo</span><span class="data-val '+(mpsBajos>0?'rojo':'verde')+'">'+mpsBajos+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Déficit total</span><span class="data-val '+(e.deficit_total_kg>0?'amarillo':'verde')+'">'+((e.deficit_total_kg||0).toFixed(1))+' kg</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 30d</span><span class="data-val '+(v30>0?'rojo':'verde')+'">'+v30+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vencen_60d>0?'amarillo':'verde')+'">'+(e.lotes_vencen_60d||0)+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+(e.lotes_produccion_mes||0)+' lotes / '+(e.kg_producidos_mes||0)+' kg</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
+    document.getElementById('detalle-inventario').innerHTML=di;
+
+    // Detalle ÁNIMUS
+    var da='';
+    da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.unidades_pt_disponibles||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_con_stock_pt||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+' ('+fmt(a.valor_pedidos_activos||0)+')</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Último pedido FM</span><span class="data-val">'+(a.ultimo_pedido_fm||'Sin datos')+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'—')+'</span></div>';
+    document.getElementById('detalle-animus').innerHTML=da;
+
+    // Alertas
+    var alertas=[];
+    if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' MPs bajo mínimo</strong> — Déficit total: '+((e.deficit_total_kg||0).toFixed(1))+' kg. Generar OC desde Compras.'});
+    if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> — Revisar y usar en próximas producciones (FEFO).'});
+    if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
+    if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
+    if(f.saldo_caja>0&&f.nomina_total>0&&f.saldo_caja<f.nomina_total*2) alertas.push({icon:'🔴',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nóminas.'});
+
+    var panel=document.getElementById('alertas-panel');
+    if(alertas.length>0){
+      panel.classList.add('visible');
+      document.getElementById('alertas-list').innerHTML=alertas.map(function(a){
+        return '<div class="alerta-item"><span class="alerta-icon">'+a.icon+'</span><span class="alerta-texto">'+a.txt+'</span></div>';
+      }).join('');
+    } else {
+      panel.classList.remove('visible');
+    }
+
+    // Pre-cargar inputs en el formulario
+    if(f.saldo_caja) document.getElementById('inp-caja').value=f.saldo_caja;
+    if(f.ingresos_animus) document.getElementById('inp-animus').value=f.ingresos_animus;
+    if(f.ingresos_maquila) document.getElementById('inp-maquila').value=f.ingresos_maquila;
+    if(f.nomina_total) document.getElementById('inp-nomina').value=f.nomina_total;
+    if(f.notas) document.getElementById('inp-notas').value=f.notas;
+
+  }catch(e){console.error(e);}
+}
+
+async function guardarInputs(){
+  var data={
+    saldo_caja:parseFloat(document.getElementById('inp-caja').value)||0,
+    ingresos_animus:parseFloat(document.getElementById('inp-animus').value)||0,
+    ingresos_maquila:parseFloat(document.getElementById('inp-maquila').value)||0,
+    nomina_total:parseFloat(document.getElementById('inp-nomina').value)||0,
+    notas:document.getElementById('inp-notas').value
+  };
+  try{
+    var r=await fetch('/api/gerencia/input-manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    document.getElementById('inp-msg').innerHTML=r.ok?'<div class="msg-ok-dark">'+res.message+'</div>':'<div class="msg-err-dark">'+(res.error||'Error')+'</div>';
+    if(r.ok) setTimeout(loadKPIs,500);
+  }catch(e){document.getElementById('inp-msg').innerHTML='<div class="msg-err-dark">Error</div>';}
+}
+
+// Cargar al iniciar
+loadKPIs();
+// Auto-refresh cada 5 minutos
+setInterval(loadKPIs, 300000);
+</script>
+</body>
+</html>"""
+
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -2944,9 +3774,19 @@ def registrar_recepcion():
 
 @app.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado. Solo administradores.'}), 401
+    d = request.json or {}
+    if d.get('confirmacion','').upper() != 'BORRAR':
+        return jsonify({'error': 'Debes enviar confirmacion="BORRAR"'}), 400
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM movimientos"); conn.commit(); conn.close()
-    return jsonify({'message': 'Borrado'})
+    c.execute("DELETE FROM movimientos")
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (session.get('compras_user','?'), 'RESET_MOVIMIENTOS', 'movimientos',
+               'ALL', 'Borrado total de movimientos autorizado', request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'message': 'Movimientos borrados. Accion registrada en audit_log.'})
 
 @app.route('/rotulos/<producto_nombre>/<cantidad_str>')
 def generar_rotulos(producto_nombre, cantidad_str):
@@ -3153,8 +3993,8 @@ def generar_oc_automatica():
         c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
                   (numero_oc, datetime.now().isoformat(), 'Pendiente', prov, 'Generada automaticamente por stock bajo minimo'))
         for item in items:
-            c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_solicitada, unidad) VALUES (?,?,?,?,?)",
-                      (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_pedir'], 'g'))
+            c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
+                      (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_pedir']))
         # Generar cuerpo del email
         sep = '-' * 50
         fecha_str = datetime.now().strftime('%d/%m/%Y')
@@ -3370,7 +4210,7 @@ def recibir_oc(numero_oc):
         codigo, nombre, cantidad = item
         cur.execute("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, proveedor, operador)
                      VALUES (?,?,?,?,?,?,?,?)""",
-                  (codigo, nombre, cantidad, 'ingreso', fecha,
+                  (codigo, nombre, cantidad, 'Entrada', fecha,
                    f'Recepcion OC {numero_oc}', prov_nombre, session.get('compras_user','')))
     cur.execute("UPDATE ordenes_compra SET estado='Recibida' WHERE numero_oc=?", (numero_oc,))
     conn.commit(); conn.close()
@@ -3524,6 +4364,230 @@ def alertas_mee():
     alertas=[dict(zip(cols,r)) for r in cur.fetchall()]
     conn.close()
     return jsonify({'alertas':alertas,'total':len(alertas)})
+
+# ─── MÓDULO CLIENTES — Rutas ──────────────────────────────────
+@app.route('/clientes')
+def clientes_page():
+    if 'compras_user' not in session:
+        return redirect(url_for('login'))
+    return Response(CLIENTES_HTML, mimetype='text/html')
+
+@app.route('/api/clientes', methods=['GET','POST'])
+def handle_clientes():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('nombre'):
+            conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
+        c.execute("SELECT COUNT(*) FROM clientes"); n = (c.fetchone()[0] or 0) + 1
+        codigo = d.get('codigo') or f"CLI-{n:03d}"
+        try:
+            c.execute("""INSERT INTO clientes
+                         (codigo,nombre,empresa,tipo,contacto,email,telefono,nit,
+                          condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?)""",
+                      (codigo, d['nombre'], d.get('empresa','ANIMUS'), d.get('tipo','Distribuidor'),
+                       d.get('contacto',''), d.get('email',''), d.get('telefono',''),
+                       d.get('nit',''), d.get('condiciones_pago','30 dias'),
+                       float(d.get('descuento_pct',0)), d.get('observaciones','')))
+            conn.commit(); conn.close()
+            return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
+        except Exception as e:
+            conn.close(); return jsonify({'error': str(e)}), 400
+    c.execute("SELECT id,codigo,nombre,empresa,tipo,contacto,email,telefono,condiciones_pago,descuento_pct,activo,fecha_creacion FROM clientes WHERE activo=1 ORDER BY nombre")
+    cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono','condiciones_pago','descuento_pct','activo','fecha_creacion']
+    clientes = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close(); return jsonify({'clientes': clientes})
+
+@app.route('/api/clientes/<int:cid>', methods=['GET','PUT'])
+def handle_cliente_detalle(cid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'PUT':
+        d = request.json or {}
+        campos = ['nombre','empresa','tipo','contacto','email','telefono','nit','condiciones_pago','descuento_pct','observaciones','activo']
+        sets = []; vals = []
+        for campo in campos:
+            if campo in d: sets.append(f"{campo}=?"); vals.append(d[campo])
+        if sets:
+            vals.append(cid)
+            c.execute(f"UPDATE clientes SET {','.join(sets)} WHERE id=?", vals)
+            conn.commit()
+        conn.close(); return jsonify({'message': 'Cliente actualizado'})
+    c.execute("SELECT id,codigo,nombre,empresa,tipo,contacto,email,telefono,nit,condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones FROM clientes WHERE id=?", (cid,))
+    row = c.fetchone(); conn.close()
+    if not row: return jsonify({'error': 'No encontrado'}), 404
+    cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono','nit','condiciones_pago','descuento_pct','activo','fecha_creacion','observaciones']
+    return jsonify({'cliente': dict(zip(cols, row))})
+
+@app.route('/api/clientes/<int:cid>/historial')
+def handle_cliente_historial(cid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT numero,fecha,estado,valor_total,fecha_despacho FROM pedidos WHERE cliente_id=? ORDER BY fecha DESC LIMIT 50", (cid,))
+    cols = ['numero','fecha','estado','valor_total','fecha_despacho']
+    pedidos = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close(); return jsonify({'pedidos': pedidos})
+
+@app.route('/api/clientes/<int:cid>/stats')
+def handle_cliente_stats(cid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*), COALESCE(SUM(valor_total),0), MAX(fecha) FROM pedidos WHERE cliente_id=?", (cid,))
+    row = c.fetchone(); conn.close()
+    return jsonify({'total_pedidos': row[0], 'valor_total': row[1], 'ultimo_pedido': row[2]})
+
+@app.route('/api/pedidos', methods=['GET','POST'])
+def handle_pedidos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('cliente_id'):
+            conn.close(); return jsonify({'error': 'cliente_id requerido'}), 400
+        c.execute("SELECT COUNT(*) FROM pedidos"); n = (c.fetchone()[0] or 0) + 1
+        numero = f"PED-{datetime.now().strftime('%Y')}-{n:04d}"
+        valor_total = sum(float(it.get('subtotal', float(it.get('cantidad',0))*float(it.get('precio_unitario',0)))) for it in (d.get('items') or []))
+        c.execute("""INSERT INTO pedidos (numero,cliente_id,fecha,fecha_entrega_est,estado,empresa,valor_total,observaciones,creado_por)
+                     VALUES (?,?,datetime('now'),?,?,?,?,?,?)""",
+                  (numero, d['cliente_id'], d.get('fecha_entrega_est',''), d.get('estado','Confirmado'),
+                   d.get('empresa','ANIMUS'), valor_total, d.get('observaciones',''), session.get('compras_user','sistema')))
+        for it in (d.get('items') or []):
+            subtotal = float(it.get('subtotal', float(it.get('cantidad',0))*float(it.get('precio_unitario',0))))
+            c.execute("INSERT INTO pedidos_items (numero_pedido,sku,descripcion,cantidad,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
+                      (numero, it.get('sku',''), it.get('descripcion',''), int(it.get('cantidad',0)), float(it.get('precio_unitario',0)), subtotal))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'Pedido {numero} creado', 'numero': numero}), 201
+    estado = request.args.get('estado')
+    q = "SELECT p.numero,c.nombre,p.fecha,p.estado,p.valor_total,p.empresa,p.fecha_entrega_est FROM pedidos p LEFT JOIN clientes c ON p.cliente_id=c.id"
+    params = []
+    if estado: q += " WHERE p.estado=?"; params.append(estado)
+    q += " ORDER BY p.fecha DESC LIMIT 100"
+    c.execute(q, params)
+    cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est']
+    conn.close(); return jsonify({'pedidos': [dict(zip(cols, r)) for r in c.fetchall()]})
+
+@app.route('/api/pedidos/<numero>', methods=['GET','PATCH'])
+def handle_pedido_detalle(numero):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'PATCH':
+        d = request.json or {}
+        if d.get('estado'):
+            c.execute("UPDATE pedidos SET estado=? WHERE numero=?", (d['estado'], numero))
+            conn.commit()
+        conn.close(); return jsonify({'message': f'Pedido {numero} actualizado'})
+    c.execute("SELECT p.*,cl.nombre as cliente_nombre FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id WHERE p.numero=?", (numero,))
+    row = c.fetchone()
+    if not row: conn.close(); return jsonify({'error': 'No encontrado'}), 404
+    cols = [d[0] for d in c.description]
+    pedido = dict(zip(cols, row))
+    c.execute("SELECT sku,descripcion,cantidad,precio_unitario,subtotal,lote_pt FROM pedidos_items WHERE numero_pedido=?", (numero,))
+    items = [dict(zip(['sku','descripcion','cantidad','precio_unitario','subtotal','lote_pt'], r)) for r in c.fetchall()]
+    conn.close(); return jsonify({'pedido': pedido, 'items': items})
+
+@app.route('/api/stock-pt', methods=['GET','POST'])
+def handle_stock_pt():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('sku'):
+            conn.close(); return jsonify({'error': 'SKU requerido'}), 400
+        unidades = int(d.get('unidades_inicial', d.get('unidades_disponible', 0)))
+        c.execute("""INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones)
+                     VALUES (?,?,?,datetime('now'),?,?,?,?,?,?)""",
+                  (d['sku'], d.get('descripcion',''), d.get('lote_produccion',''), unidades, unidades,
+                   float(d.get('precio_base',0)), d.get('empresa','ANIMUS'), 'Disponible', d.get('observaciones','')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds"}), 201
+    c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
+    cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base']
+    conn.close(); return jsonify({'stock_pt': [dict(zip(cols, r)) for r in c.fetchall()]})
+
+@app.route('/api/despachos', methods=['GET','POST'])
+def handle_despachos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        c.execute("SELECT COUNT(*) FROM despachos"); n = (c.fetchone()[0] or 0) + 1
+        numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
+        c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now'),?,?,?)",
+                  (numero, d.get('numero_pedido',''), d.get('cliente_id'), session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
+        for it in (d.get('items') or []):
+            c.execute("INSERT INTO despachos_items (numero_despacho,sku,descripcion,lote_pt,cantidad,precio_unitario) VALUES (?,?,?,?,?,?)",
+                      (numero, it.get('sku',''), it.get('descripcion',''), it.get('lote_pt',''), int(it.get('cantidad',0)), float(it.get('precio_unitario',0))))
+            c.execute("UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?) WHERE sku=? AND unidades_disponible>0 ORDER BY fecha_produccion ASC LIMIT 1",
+                      (int(it.get('cantidad',0)), it.get('sku','')))
+        if d.get('numero_pedido'):
+            c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (d['numero_pedido'],))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
+    c.execute("SELECT d.numero,cl.nombre as cliente,d.fecha,d.numero_pedido,d.estado,d.operador FROM despachos d LEFT JOIN clientes cl ON d.cliente_id=cl.id ORDER BY d.fecha DESC LIMIT 100")
+    cols = ['numero','cliente','fecha','numero_pedido','estado','operador']
+    conn.close(); return jsonify({'despachos': [dict(zip(cols, r)) for r in c.fetchall()]})
+
+# ─── MÓDULO GERENCIA — Rutas ──────────────────────────────────
+@app.route('/gerencia')
+def gerencia_page():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return redirect(url_for('login'))
+    return Response(GERENCIA_HTML, mimetype='text/html')
+
+@app.route('/api/gerencia/kpis')
+def gerencia_kpis():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
+    mps_bajo_minimo = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now','+30 days') AND fecha_vencimiento>=date('now')")
+    lotes_vence_30 = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now','+60 days') AND fecha_vencimiento>=date('now','+30 days')")
+    lotes_vence_60 = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now','start of month')")
+    prod_mes = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Pendiente','Aprobada','Enviada')")
+    ocs_pendientes = c.fetchone()[0] or 0
+    c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE estado='Disponible'")
+    uds_pt = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Confirmado','En preparacion')")
+    pedidos_activos = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(DISTINCT sku) FROM stock_pt WHERE unidades_disponible>0 AND estado='Disponible'")
+    skus_stock = c.fetchone()[0] or 0
+    c.execute("SELECT MAX(fecha) FROM pedidos WHERE cliente_id=(SELECT id FROM clientes WHERE codigo='CLI-002' LIMIT 1)")
+    ult_fm = c.fetchone()[0]; dias_fm = None
+    if ult_fm:
+        from datetime import date as _d
+        try: dt = datetime.fromisoformat(ult_fm[:10]); dias_fm = (_d.today() - dt.date()).days
+        except: pass
+    c.execute("SELECT periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
+    row = c.fetchone()
+    cols_inp = ['periodo','saldo_caja','ingresos_animus','ingresos_maquila','notas','fecha']
+    inputs_manuales = dict(zip(cols_inp, row)) if row else {}
+    conn.close()
+    semaforos = {
+        'mps': 'rojo' if mps_bajo_minimo > 5 else ('amarillo' if mps_bajo_minimo > 0 else 'verde'),
+        'vencimientos': 'rojo' if lotes_vence_30 > 0 else ('amarillo' if lotes_vence_60 > 0 else 'verde'),
+        'pt': 'rojo' if uds_pt < 100 else ('amarillo' if uds_pt < 500 else 'verde'),
+        'pedidos': 'amarillo' if pedidos_activos > 0 else 'verde',
+    }
+    return jsonify({'espagiria': {'mps_bajo_minimo': mps_bajo_minimo, 'lotes_vence_30': lotes_vence_30,
+                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes},
+                    'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
+                    'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
+
+@app.route('/api/gerencia/input-manual', methods=['POST'])
+def gerencia_input_manual():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    periodo = d.get('periodo', datetime.now().strftime('%Y-%m'))
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""INSERT INTO gerencia_inputs (periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha)
+                    VALUES (?,?,?,?,?,datetime('now'))
+                    ON CONFLICT(periodo) DO UPDATE SET saldo_caja=excluded.saldo_caja,
+                    ingresos_animus=excluded.ingresos_animus, ingresos_maquila=excluded.ingresos_maquila,
+                    notas=excluded.notas, fecha=excluded.fecha""",
+                 (periodo, float(d.get('saldo_caja',0)), float(d.get('ingresos_animus',0)),
+                  float(d.get('ingresos_maquila',0)), d.get('notas','')))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Inputs de {periodo} guardados'})
+
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
