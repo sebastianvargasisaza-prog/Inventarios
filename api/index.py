@@ -296,6 +296,87 @@ def init_db():
                  ('CLI-002','Fernando Mesa','ANIMUS','Distribuidor','Fernando Mesa',
                   '','30 dias',0,datetime('now'))""")
 
+    # ── MAQUILA 360 ──────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_prospectos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero_brief TEXT DEFAULT '',
+                 fecha TEXT, kam TEXT DEFAULT '',
+                 empresa TEXT NOT NULL, contacto TEXT DEFAULT '',
+                 cargo TEXT DEFAULT '', whatsapp TEXT DEFAULT '',
+                 email TEXT DEFAULT '', ciudad TEXT DEFAULT '',
+                 canal_origen TEXT DEFAULT '',
+                 categoria_producto TEXT DEFAULT '',
+                 descripcion_producto TEXT DEFAULT '',
+                 claims TEXT DEFAULT '',
+                 restricciones TEXT DEFAULT '',
+                 estado_formula TEXT DEFAULT 'Sin formular',
+                 volumen_lote TEXT DEFAULT '',
+                 frecuencia TEXT DEFAULT '',
+                 empaque TEXT DEFAULT '',
+                 mercado TEXT DEFAULT 'Nacional',
+                 nso TEXT DEFAULT 'No tiene',
+                 presupuesto TEXT DEFAULT '',
+                 etapa TEXT DEFAULT 'Contacto',
+                 nivel_recomendado TEXT DEFAULT '',
+                 viabilidad TEXT DEFAULT '',
+                 riesgos TEXT DEFAULT '',
+                 valor_estimado_lote REAL DEFAULT 0,
+                 ticket_mes REAL DEFAULT 0,
+                 proxima_accion TEXT DEFAULT '',
+                 observaciones TEXT DEFAULT '',
+                 estado TEXT DEFAULT 'Activo',
+                 creado_por TEXT DEFAULT '',
+                 fecha_creacion TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_ordenes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 numero TEXT UNIQUE,
+                 prospecto_id INTEGER,
+                 cliente_nombre TEXT NOT NULL,
+                 producto TEXT NOT NULL,
+                 categoria TEXT DEFAULT '',
+                 formato_ml REAL DEFAULT 30,
+                 lote_kg REAL DEFAULT 30,
+                 unidades_lote REAL DEFAULT 1000,
+                 costo_mp_kg REAL DEFAULT 0,
+                 costo_envase_ud REAL DEFAULT 2000,
+                 dias_acondicionamiento INTEGER DEFAULT 1,
+                 costo_mo_lote REAL DEFAULT 0,
+                 cf_prorateados REAL DEFAULT 0,
+                 costo_micro REAL DEFAULT 2000000,
+                 costo_total_lote REAL DEFAULT 0,
+                 costo_por_unidad REAL DEFAULT 0,
+                 margen REAL DEFAULT 0.35,
+                 precio_ud REAL DEFAULT 0,
+                 precio_lote REAL DEFAULT 0,
+                 estado TEXT DEFAULT 'Cotizacion',
+                 fecha_orden TEXT,
+                 fecha_entrega_est TEXT DEFAULT '',
+                 fecha_entrega_real TEXT DEFAULT '',
+                 facturado INTEGER DEFAULT 0,
+                 monto_facturado REAL DEFAULT 0,
+                 fecha_factura TEXT DEFAULT '',
+                 observaciones TEXT DEFAULT '',
+                 creado_por TEXT DEFAULT '',
+                 fecha_creacion TEXT DEFAULT (datetime('now')))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS maquila_ingredientes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 orden_id INTEGER NOT NULL,
+                 ingrediente TEXT NOT NULL,
+                 porcentaje REAL DEFAULT 0,
+                 precio_mp_kg REAL DEFAULT 0,
+                 aporte_kg REAL DEFAULT 0)""")
+    maquila_configs = [
+        ('maquila_nomina_mes', '39100000', 'Nomina produccion directa Espagiria/mes'),
+        ('maquila_dias_lab', '22', 'Dias laborales por mes'),
+        ('maquila_cf_lote', '998742', 'CF operativos prorateados por lote (COP)'),
+        ('maquila_micro', '2000000', 'Costo microbiologia estandar por lote (COP)'),
+        ('maquila_margen', '0.35', 'Margen Espagiria 35%'),
+        ('maquila_trm', '4200', 'TRM COP/USD'),
+        ('maquila_envase_basico', '2000', 'Costo envase basico/ud (COP)'),
+    ]
+    for clave, valor, desc in maquila_configs:
+        c.execute("INSERT OR IGNORE INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?)", (clave, valor, desc))
+
     conn.commit()
     conn.close()
 
@@ -1167,7 +1248,7 @@ setInterval(loadKPIs, 300000);
 </html>"""
 
 # ─── MÓDULO FINANCIERO ────────────────────────────────────────
-FINANCIERO_HTML = """<\!DOCTYPE html>
+FINANCIERO_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -1234,7 +1315,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 <div class="content">
 
-<\!-- ─── DASHBOARD ─── -->
+<!-- ─── DASHBOARD ─── -->
 <div id="page-dashboard" class="page active">
   <div class="kpi-grid" id="kpi-financiero">
     <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="kpi-ing-mes">—</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
@@ -1258,7 +1339,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
-<\!-- ─── INGRESOS ─── -->
+<!-- ─── INGRESOS ─── -->
 <div id="page-ingresos" class="page">
   <div class="card">
     <div class="section-title">+ Registrar Ingreso</div>
@@ -1302,7 +1383,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
-<\!-- ─── EGRESOS ─── -->
+<!-- ─── EGRESOS ─── -->
 <div id="page-egresos" class="page">
   <div class="card">
     <div class="section-title">+ Registrar Egreso</div>
@@ -1350,7 +1431,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
-<\!-- ─── FLUJO MENSUAL ─── -->
+<!-- ─── FLUJO MENSUAL ─── -->
 <div id="page-flujo" class="page">
   <div class="card">
     <div class="section-title">🗓️ Flujo de Caja Mensual</div>
@@ -1374,7 +1455,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
-<\!-- ─── SUPUESTOS ─── -->
+<!-- ─── SUPUESTOS ─── -->
 <div id="page-config" class="page">
   <div class="card">
     <div class="section-title">⚙️ Supuestos y Configuración</div>
@@ -1398,14 +1479,14 @@ var _chartIngEgr=null, _chartFlujo=null;
 var _config={};
 
 function fmt(n){
-  if(\!n&&n\!==0) return '—';
+  if(!n&&n!==0) return '—';
   var abs=Math.abs(n);
   if(abs>=1000000) return (n<0?'-':'')+'$'+(abs/1000000).toFixed(1)+'M';
   if(abs>=1000) return (n<0?'-':'')+'$'+(abs/1000).toFixed(0)+'K';
   return (n<0?'-':'')+'$'+abs.toLocaleString('es-CO');
 }
 function fmtFull(n){
-  if(\!n&&n\!==0) return '—';
+  if(!n&&n!==0) return '—';
   return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('es-CO');
 }
 
@@ -1455,7 +1536,7 @@ async function loadDashboard(){
     var metaCaja=parseFloat(_config.meta_caja_min||50000000);
     if((d.saldo_caja||0)<metaCaja) alertas+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🟡 Saldo de caja ($'+fmt(d.saldo_caja||0)+') está por debajo del mínimo ($'+fmt(metaCaja)+')</div>';
     if(flujo<0) alertas+='<div style="background:#fde8e8;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🔴 Flujo neto negativo este mes: '+fmt(flujo)+'</div>';
-    if(\!alertas) alertas='<div style="color:#2B7A78;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
+    if(!alertas) alertas='<div style="color:#2B7A78;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
     document.getElementById('alertas-fin').innerHTML=alertas;
     // Chart
     if(d.historico&&d.historico.length){
@@ -1489,7 +1570,7 @@ async function loadIngresos(){
     }
     var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
     var h='';
-    if(\!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin ingresos registrados</td></tr>';}
+    if(!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin ingresos registrados</td></tr>';}
     rows.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-ing">'+r.empresa+'</span></td>';
@@ -1516,7 +1597,7 @@ async function loadEgresos(){
     }
     var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
     var h='';
-    if(\!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin egresos registrados</td></tr>';}
+    if(!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin egresos registrados</td></tr>';}
     rows.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-egr">'+r.empresa+'</span></td>';
@@ -1536,7 +1617,7 @@ async function loadFlujo(){
     var meses=d.meses||[];
     var acum=0;
     var h='';
-    if(\!meses.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin datos de flujo</td></tr>';}
+    if(!meses.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin datos de flujo</td></tr>';}
     meses.forEach(function(m){
       var flujo=(m.ingresos||0)-(m.egresos||0);
       acum+=flujo;
@@ -1596,8 +1677,8 @@ async function guardarIngreso(){
   var concepto=document.getElementById('ing-concepto').value.trim();
   var monto=parseFloat(document.getElementById('ing-monto').value)||0;
   var ref=document.getElementById('ing-ref').value.trim();
-  if(\!concepto||\!monto){alert('Concepto y monto son requeridos');return;}
-  if(\!fecha){fecha=new Date().toISOString().substring(0,10);}
+  if(!concepto||!monto){alert('Concepto y monto son requeridos');return;}
+  if(!fecha){fecha=new Date().toISOString().substring(0,10);}
   var r=await fetch('/api/financiero/ingresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
   var d=await r.json();
   document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
@@ -1611,8 +1692,8 @@ async function guardarEgreso(){
   var concepto=document.getElementById('egr-concepto').value.trim();
   var monto=parseFloat(document.getElementById('egr-monto').value)||0;
   var ref=document.getElementById('egr-ref').value.trim();
-  if(\!concepto||\!monto){alert('Concepto y monto son requeridos');return;}
-  if(\!fecha){fecha=new Date().toISOString().substring(0,10);}
+  if(!concepto||!monto){alert('Concepto y monto son requeridos');return;}
+  if(!fecha){fecha=new Date().toISOString().substring(0,10);}
   var r=await fetch('/api/financiero/egresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
   var d=await r.json();
   document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:#c0392b;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
@@ -3094,10 +3175,38 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='';
+// Auto-login por localStorage (recordar operador por dispositivo)
+(function(){
+  try{
+    var saved=localStorage.getItem('espagiria_operador');
+    if(saved&&saved.trim()){
+      OPER_ACTUAL=saved.trim();
+      document.addEventListener('DOMContentLoaded',function(){
+        var modal=document.getElementById('modal-operador');
+        if(modal) modal.style.display='none';
+        var c=document.getElementById('oper-chip');
+        if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
+        loadDashboardCompleto();loadFormulas();
+      });
+    }
+  }catch(e){}
+})();
 var _meeData=[], _prodPendiente=null;
 var _ajDat={};
 function _eq(s){return (s||'').split("'").join('&#39;');}
-function selOper(n){OPER_ACTUAL=n;document.getElementById('modal-operador').style.display='none';var c=document.getElementById('oper-chip');if(c)c.textContent='Operador: '+n;loadDashboardCompleto();loadFormulas();}
+function selOper(n){
+  OPER_ACTUAL=n;
+  try{localStorage.setItem('espagiria_operador',n);}catch(e){}
+  document.getElementById('modal-operador').style.display='none';
+  var c=document.getElementById('oper-chip');if(c)c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+n+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
+  loadDashboardCompleto();loadFormulas();
+}
+function cambiarOperador(){
+  try{localStorage.removeItem('espagiria_operador');}catch(e){}
+  document.getElementById('oper-input').value=OPER_ACTUAL||'';
+  document.getElementById('modal-operador').style.display='flex';
+  setTimeout(function(){document.getElementById('oper-input').focus();},100);
+}
 function confirmarOper(){var inp=document.getElementById('oper-input');var n=(inp?inp.value:'').trim();if(!n){var e=document.getElementById('oper-error');if(e)e.style.display='block';return;}selOper(n);}
 function abrirAjusteIdx(idx){
   var i=_lotes[idx];
@@ -3795,7 +3904,7 @@ async function registrarIngresoMEE(){
 }
 var _ultimoMEE=null;
 function generarRotuloMEE(){
-  if(\!_ultimoMEE){alert('Primero registra una entrada MEE');return;}
+  if(!_ultimoMEE){alert('Primero registra una entrada MEE');return;}
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(_ultimoMEE.codigo)+'/'+(parseFloat(_ultimoMEE.cant)||0),'_blank');
 }
 function limpiarIngresoMEE(){document.getElementById('mee-ing-cod').value='';document.getElementById('mee-ing-cant').value='';document.getElementById('mee-ing-ref').value='';document.getElementById('mee-ing-obs').value='';}
@@ -4514,7 +4623,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     ref  = mov[0] if mov else ''; oper = mov[1] if mov else ''
     nr   = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
     bv   = codigo; prov_display = ref or prov
-    h = ('<\!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    h = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
          '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}'
          '.ph{background:#1a3a5c;color:white;padding:10px 16px;display:flex;justify-content:space-between;margin-bottom:10px;}'
