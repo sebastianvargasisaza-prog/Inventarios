@@ -332,6 +332,33 @@ def init_db():
                  saldo_caja REAL DEFAULT 0, ingresos_animus REAL DEFAULT 0,
                  ingresos_maquila REAL DEFAULT 0, notas TEXT DEFAULT '', fecha TEXT)""")
 
+    # ── ANIMUS PT reorder + recall ──────────────────────────────────────
+    try: c.execute("ALTER TABLE stock_pt ADD COLUMN stock_minimo_ud INTEGER DEFAULT 0")
+    except: pass
+    try: c.execute("ALTER TABLE stock_pt ADD COLUMN dias_reposicion INTEGER DEFAULT 15")
+    except: pass
+    c.execute("""CREATE TABLE IF NOT EXISTS solicitudes_produccion (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT NOT NULL, descripcion TEXT DEFAULT '',
+        unidades_solicitadas INTEGER DEFAULT 0,
+        motivo TEXT DEFAULT 'Stock bajo',
+        estado TEXT DEFAULT 'Pendiente',
+        prioridad TEXT DEFAULT 'Normal',
+        fecha_solicitud TEXT DEFAULT (date('now')),
+        fecha_requerida TEXT DEFAULT '',
+        solicitado_por TEXT DEFAULT 'sistema',
+        observaciones TEXT DEFAULT ''
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS recall_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        lote_pt TEXT NOT NULL,
+        sku TEXT, motivo TEXT,
+        total_despachos INTEGER DEFAULT 0,
+        total_unidades INTEGER DEFAULT 0,
+        fecha_recall TEXT DEFAULT (datetime('now')),
+        ejecutado_por TEXT,
+        estado TEXT DEFAULT 'Simulacion'
+    )""")
     # ── Financiero (Capa 4) ──────────────────────────────────────────
     c.execute("""CREATE TABLE IF NOT EXISTS flujo_ingresos (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6886,6 +6913,188 @@ def api_maquila_kpis():
     conn.close()
     return jsonify({'prospectos_activos':prosp,'ordenes_activas':ords,
                     'valor_pipeline':valor,'en_cierre':cierre})
+
+
+# ═══════════════════════════════════════════════════════
+#  ÁNIMUS — Auto Producción + Recall Engine COC-PRO-016
+# ═══════════════════════════════════════════════════════
+@app.route('/api/animus/alertas-stock', methods=['GET'])
+def animus_alertas_stock():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT sku, descripcion, empresa,
+                        SUM(unidades_disponible) as disponible,
+                        stock_minimo_ud, dias_reposicion, precio_base
+                 FROM stock_pt
+                 WHERE empresa='ANIMUS' AND estado='Disponible'
+                 GROUP BY sku
+                 HAVING disponible < stock_minimo_ud AND stock_minimo_ud > 0
+                 ORDER BY (disponible*1.0/NULLIF(stock_minimo_ud,0)) ASC""")
+    cols=['sku','descripcion','empresa','disponible','stock_minimo_ud','dias_reposicion','precio_base']
+    alertas=[dict(zip(cols,r)) for r in c.fetchall()]
+    # Check pending solicitudes
+    for a in alertas:
+        c.execute("""SELECT COUNT(*) FROM solicitudes_produccion
+                     WHERE sku=? AND estado='Pendiente'""", (a['sku'],))
+        a['solicitud_pendiente'] = c.fetchone()[0] > 0
+        a['deficit'] = max(0, a['stock_minimo_ud'] - a['disponible'])
+        a['cobertura_dias'] = round(a['disponible'] / max(a['stock_minimo_ud']/30, 1), 0)
+    conn.close()
+    return jsonify({'alertas': alertas, 'total': len(alertas)})
+
+@app.route('/api/animus/solicitar-produccion', methods=['POST'])
+def animus_solicitar_produccion():
+    d = request.json or {}
+    sku = d.get('sku','').strip()
+    if not sku:
+        return jsonify({'error': 'SKU requerido'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Get current stock info
+    c.execute("SELECT descripcion, SUM(unidades_disponible), stock_minimo_ud FROM stock_pt WHERE sku=? AND empresa='ANIMUS' AND estado='Disponible' GROUP BY sku", (sku,))
+    row = c.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'SKU no encontrado en stock ANIMUS'}), 404
+    desc, disponible, minimo = row[0], row[1] or 0, row[2] or 0
+    # Check if there's already a pending solicitud
+    c.execute("SELECT id FROM solicitudes_produccion WHERE sku=? AND estado='Pendiente'", (sku,))
+    existente = c.fetchone()
+    if existente:
+        conn.close(); return jsonify({'warning': 'Ya existe una solicitud pendiente para este SKU', 'id': existente[0]}), 200
+    unidades = int(d.get('unidades', max(minimo - disponible, minimo)))
+    prioridad = 'Alta' if disponible == 0 else ('Normal' if disponible > minimo * 0.5 else 'Alta')
+    c.execute("""INSERT INTO solicitudes_produccion
+                 (sku, descripcion, unidades_solicitadas, motivo, estado,
+                  prioridad, fecha_requerida, solicitado_por, observaciones)
+                 VALUES (?,?,?,?,?,?,?,?,?)""",
+              (sku, desc, unidades,
+               f'Stock bajo: {disponible} uds disponibles (mínimo {minimo})',
+               'Pendiente', prioridad,
+               d.get('fecha_requerida',''),
+               session.get('compras_user') or d.get('operador','sistema'),
+               d.get('observaciones','')))
+    sid = c.lastrowid
+    # Audit log
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (session.get('compras_user','sistema'), 'SOLICITUD_PRODUCCION',
+               'solicitudes_produccion', str(sid),
+               f'{sku} — {unidades} uds — Stock: {disponible}/{minimo}',
+               request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'id': sid, 'sku': sku, 'unidades': unidades, 'prioridad': prioridad}), 201
+
+@app.route('/api/animus/solicitudes-produccion', methods=['GET'])
+def animus_solicitudes_produccion():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT id,sku,descripcion,unidades_solicitadas,motivo,
+                        estado,prioridad,fecha_solicitud,fecha_requerida,
+                        solicitado_por,observaciones
+                 FROM solicitudes_produccion ORDER BY
+                 CASE prioridad WHEN 'Urgente' THEN 1 WHEN 'Alta' THEN 2 ELSE 3 END,
+                 fecha_solicitud DESC""")
+    cols=['id','sku','descripcion','unidades','motivo','estado','prioridad',
+          'fecha_solicitud','fecha_requerida','solicitado_por','observaciones']
+    rows=[dict(zip(cols,r)) for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+@app.route('/api/animus/solicitudes-produccion/<int:sid>', methods=['PATCH'])
+def animus_update_solicitud(sid):
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if 'estado' in d:
+        c.execute("UPDATE solicitudes_produccion SET estado=? WHERE id=?", (d['estado'], sid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/stock-pt/<sku>/reorden', methods=['POST'])
+def actualizar_reorden_pt(sku):
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE stock_pt SET stock_minimo_ud=?, dias_reposicion=? WHERE sku=?",
+              (int(d.get('stock_minimo_ud', 0)),
+               int(d.get('dias_reposicion', 15)), sku))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+# ── Recall Engine COC-PRO-016 ──────────────────────────────────────────
+@app.route('/api/recall/simular/<path:lote_pt>', methods=['GET'])
+def recall_simular(lote_pt):
+    import urllib.parse; lote_pt = urllib.parse.unquote(lote_pt)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Find all dispatch items with this lote_pt
+    c.execute("""SELECT di.numero_despacho, di.sku, di.descripcion,
+                        di.cantidad, di.lote_pt,
+                        d.fecha, d.estado,
+                        cl.nombre as cliente, cl.email, cl.telefono
+                 FROM despachos_items di
+                 LEFT JOIN despachos d ON di.numero_despacho=d.numero
+                 LEFT JOIN clientes cl ON d.cliente_id=cl.id
+                 WHERE di.lote_pt=?
+                 ORDER BY d.fecha DESC""", (lote_pt,))
+    cols=['despacho','sku','descripcion','cantidad','lote_pt','fecha','estado_desp',
+          'cliente','email','telefono']
+    items=[dict(zip(cols,r)) for r in c.fetchall()]
+    # Aggregates
+    total_uds = sum(i['cantidad'] for i in items)
+    clientes_afectados = list({i['cliente'] for i in items if i['cliente']})
+    despachos_afectados = list({i['despacho'] for i in items})
+    # Also check stock_pt (units still in warehouse)
+    c.execute("SELECT SUM(unidades_disponible) FROM stock_pt WHERE lote_produccion=? AND estado='Disponible'", (lote_pt,))
+    en_bodega = c.fetchone()[0] or 0
+    conn.close()
+    return jsonify({
+        'lote_pt': lote_pt,
+        'impacto': {
+            'unidades_despachadas': total_uds,
+            'unidades_en_bodega': en_bodega,
+            'total_afectadas': total_uds + en_bodega,
+            'despachos': len(despachos_afectados),
+            'clientes': len(clientes_afectados)
+        },
+        'despachos_detalle': items,
+        'clientes_afectados': clientes_afectados,
+        'alerta': 'ALTO' if (total_uds + en_bodega) > 500 else ('MEDIO' if (total_uds + en_bodega) > 100 else 'BAJO')
+    })
+
+@app.route('/api/recall/ejecutar', methods=['POST'])
+def recall_ejecutar():
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo administradores pueden ejecutar un recall'}), 401
+    d = request.json or {}
+    lote_pt = d.get('lote_pt','').strip()
+    motivo  = d.get('motivo','').strip()
+    if not lote_pt or not motivo:
+        return jsonify({'error': 'lote_pt y motivo son requeridos'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Count impact
+    c.execute("SELECT COUNT(*), SUM(di.cantidad) FROM despachos_items di WHERE di.lote_pt=?", (lote_pt,))
+    n_desp, total_uds = c.fetchone(); total_uds = total_uds or 0
+    # Block remaining stock in bodega
+    c.execute("UPDATE stock_pt SET estado='Recall' WHERE lote_produccion=?", (lote_pt,))
+    bloqueadas = c.rowcount
+    # Log to recall_log
+    c.execute("""INSERT INTO recall_log
+                 (lote_pt,sku,motivo,total_despachos,total_unidades,ejecutado_por,estado)
+                 VALUES (?,?,?,?,?,?,?)""",
+              (lote_pt, d.get('sku',''), motivo,
+               n_desp or 0, total_uds,
+               session['compras_user'], 'Ejecutado'))
+    rid = c.lastrowid
+    # Audit log — immutable
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (session['compras_user'], 'RECALL_EJECUTADO', 'stock_pt',
+               str(rid),
+               f'Lote {lote_pt} — Motivo: {motivo} — {total_uds} uds en {n_desp} despachos — {bloqueadas} lotes bloqueados en bodega',
+               request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({
+        'recall_id': rid,
+        'lote_pt': lote_pt,
+        'unidades_despachadas': total_uds,
+        'despachos': n_desp,
+        'lotes_bloqueados_bodega': bloqueadas,
+        'estado': 'Ejecutado'
+    }), 201
 
 
 if __name__ == '__main__':
