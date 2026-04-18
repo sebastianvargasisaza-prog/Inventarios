@@ -665,6 +665,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="card-desc">Ingresos, egresos, flujo de caja mensual y proyección vs presupuesto.</div>
     <span class="badge badge-lock">🔒 Admin</span>
   </a>
+  <a href="/recepcion" class="card" style="--c:#0e7490">
+    <span class="card-icon">📥</span>
+    <div class="card-title">Recepción</div>
+    <div class="card-co">Espagiria Laboratorios</div>
+    <div class="card-desc">Verifica ítem por ítem la mercancía que llega contra la OC. Registra cantidades, daños y observaciones.</div>
+    <span class="badge badge-open">Abierto</span>
+  </a>
 </div>
 <div class="footer">HHA Group © 2026 · Sistema interno de operaciones</div>
 <div class="credit">Diseñado y desarrollado por <strong>Sebastián Vargas Isaza</strong></div>
@@ -2412,7 +2419,6 @@ tbody tr:hover{background:#fafaf8;}
     <button class="tab" onclick="goTo('mee',this)">Empaque</button>
     <button class="tab" onclick="goTo('admin',this)">Pagos Admin</button>
     <button class="tab" onclick="goTo('influencers',this)">Influencers</button>
-    <button class="tab" onclick="goTo('recepcion',this)">Recepci&oacute;n</button>
     <button class="tab" onclick="goTo('proveedores',this)">Proveedores</button>
     <button class="tab" onclick="window.location='/recepcion'" style="margin-left:auto;font-size:11px;color:#4A6741;">Panel Recepci&oacute;n &#8599;</button>
   </nav>
