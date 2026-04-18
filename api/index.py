@@ -235,6 +235,58 @@ def init_db():
                  saldo_caja REAL DEFAULT 0, ingresos_animus REAL DEFAULT 0,
                  ingresos_maquila REAL DEFAULT 0, notas TEXT DEFAULT '', fecha TEXT)""")
 
+    # ── Financiero (Capa 4) ──────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS flujo_ingresos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 fecha TEXT, empresa TEXT DEFAULT 'HHA',
+                 concepto TEXT NOT NULL, categoria TEXT DEFAULT 'Ventas',
+                 monto REAL DEFAULT 0, periodo TEXT,
+                 fuente TEXT DEFAULT 'manual', referencia TEXT DEFAULT '',
+                 creado_por TEXT DEFAULT '', observaciones TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS flujo_egresos (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 fecha TEXT, empresa TEXT DEFAULT 'HHA',
+                 concepto TEXT NOT NULL, categoria TEXT DEFAULT 'MPs',
+                 monto REAL DEFAULT 0, periodo TEXT,
+                 fuente TEXT DEFAULT 'manual', referencia TEXT DEFAULT '',
+                 creado_por TEXT DEFAULT '', observaciones TEXT DEFAULT '')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS flujo_config (
+                 clave TEXT PRIMARY KEY, valor TEXT, descripcion TEXT)""")
+    # Seed config supuestos
+    configs = [
+        ('trm_usd', '4100', 'TRM COP/USD'),
+        ('meta_caja_min', '50000000', 'Saldo mínimo de caja alerta (COP)'),
+        ('cmv_pct_animus', '35', 'CMV % objetivo ÁNIMUS Lab'),
+        ('cmv_pct_espagiria', '40', 'CMV % objetivo Espagiria'),
+        ('nomina_mensual', '15000000', 'Nómina mensual estimada HHA Group (COP)'),
+    ]
+    for clave, valor, desc in configs:
+        c.execute("INSERT OR IGNORE INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?)", (clave, valor, desc))
+
+    # ── SKUs Fernando Mesa con precios mayorista ──────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS sku_precios (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 sku TEXT NOT NULL, descripcion TEXT,
+                 precio_base REAL DEFAULT 0,
+                 precio_mayorista REAL DEFAULT 0,
+                 unidad TEXT DEFAULT 'unidad',
+                 empresa TEXT DEFAULT 'ANIMUS',
+                 activo INTEGER DEFAULT 1)""")
+    fm_skus = [
+        ('LBHA-30', 'Limpiador Balanceador HA 30ml', 42000, 29400, 'unidad'),
+        ('TRX-15', 'Tónico Reparador 15ml', 38000, 26600, 'unidad'),
+        ('NIAC-30', 'Sérum Niacinamida 30ml', 55000, 38500, 'unidad'),
+        ('AZHC-30', 'Sérum AZ+HC 30ml', 52000, 36400, 'unidad'),
+        ('SBHA-30', 'Sérum Salicílico BHA 30ml', 48000, 33600, 'unidad'),
+        ('ECEN-30', 'Sérum Encapsulado Centella 30ml', 58000, 40600, 'unidad'),
+        ('EILU-30', 'Emulsión Iluminadora 30ml', 45000, 31500, 'unidad'),
+        ('CUREA-50', 'Crema Urea 50ml', 40000, 28000, 'unidad'),
+        ('GELH-120', 'Gel Hidratante 120ml', 35000, 24500, 'unidad'),
+    ]
+    for sku, desc, precio, mayorista, unidad in fm_skus:
+        c.execute("INSERT OR IGNORE INTO sku_precios (sku,descripcion,precio_base,precio_mayorista,unidad,empresa) VALUES (?,?,?,?,?,?)",
+                  (sku, desc, precio, mayorista, unidad, 'ANIMUS'))
+
     # Seed clientes iniciales
     c.execute("""INSERT OR IGNORE INTO clientes
                  (codigo,nombre,empresa,tipo,contacto,email,condiciones_pago,descuento_pct,fecha_creacion)
@@ -340,6 +392,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="card-title">Gerencia HQ</div>
     <div class="card-co">HHA Group · Panel CEO</div>
     <div class="card-desc">KPIs en tiempo real, alertas críticas, flujo de caja y estado operacional consolidado.</div>
+    <span class="badge badge-lock">🔒 Admin</span>
+  </a>
+  <a href="/financiero" class="card" style="--c:#B5924A">
+    <span class="card-icon">💰</span>
+    <div class="card-title">Financiero</div>
+    <div class="card-co">HHA Group · Flujo de Caja</div>
+    <div class="card-desc">Ingresos, egresos, flujo de caja mensual y proyección vs presupuesto.</div>
     <span class="badge badge-lock">🔒 Admin</span>
   </a>
 </div>
@@ -1103,6 +1162,477 @@ async function guardarInputs(){
 loadKPIs();
 // Auto-refresh cada 5 minutos
 setInterval(loadKPIs, 300000);
+</script>
+</body>
+</html>"""
+
+# ─── MÓDULO FINANCIERO ────────────────────────────────────────
+FINANCIERO_HTML = """<\!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Financiero — HHA Group</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:100vh;}
+.topbar{background:#B5924A;color:white;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(181,146,74,0.3);}
+.topbar-title{font-size:1.1em;font-weight:800;letter-spacing:2px;}
+.topbar a{color:rgba(255,255,255,0.8);text-decoration:none;font-size:0.82em;padding:6px 14px;border:1px solid rgba(255,255,255,0.3);border-radius:6px;}
+.tabs{background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;}
+.tab{padding:14px 22px;cursor:pointer;font-size:0.88em;font-weight:600;color:#9C8B7A;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
+.tab.active{color:#B5924A;border-bottom-color:#B5924A;}
+.tab:hover:not(.active){color:#B5924A;background:#fdf9f4;}
+.content{padding:28px;max-width:1200px;margin:0 auto;}
+.page{display:none;}.page.active{display:block;}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
+.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:20px 22px;border-left:4px solid var(--c,#B5924A);}
+.kpi-val{font-size:1.8em;font-weight:900;color:var(--c,#B5924A);line-height:1;}
+.kpi-lbl{font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:1px;margin-top:6px;}
+.kpi-sub{font-size:0.82em;color:#9C8B7A;margin-top:4px;}
+.kpi-delta{font-size:0.82em;margin-top:6px;font-weight:700;}
+.kpi-delta.up{color:#2B7A78;}.kpi-delta.down{color:#c0392b;}
+.tbl{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
+.tbl thead th{background:#fdf9f4;color:#9C8B7A;font-size:0.78em;text-transform:uppercase;letter-spacing:0.8px;padding:10px 14px;text-align:left;border-bottom:1px solid #E8E4DE;}
+.tbl tbody td{padding:11px 14px;border-bottom:1px solid #F5F0EA;font-size:0.88em;vertical-align:middle;}
+.tbl tbody tr:hover{background:#fdf9f4;}
+.tbl tbody tr:last-child td{border-bottom:none;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:8px;cursor:pointer;font-size:0.88em;font-weight:600;transition:all 0.2s;background:#B5924A;color:white;}
+.btn:hover{background:#9a7a3e;}
+.btn-ghost{background:white;color:#B5924A;border:1.5px solid #B5924A;}
+.btn-red{background:#c0392b;}.btn-green{background:#2B7A78;}
+.card{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
+.section-title{font-size:1em;font-weight:800;color:#1C2B30;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px;}
+.fg label{display:block;font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:5px;}
+.fg input,.fg select,.fg textarea{width:100%;padding:9px 12px;border:1.5px solid #E8E4DE;border-radius:8px;font-size:0.9em;background:white;outline:none;transition:border-color 0.2s;}
+.fg input:focus,.fg select:focus{border-color:#B5924A;}
+.badge-ing{background:rgba(43,122,120,.1);color:#2B7A78;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.badge-egr{background:rgba(192,57,43,.1);color:#c0392b;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.chart-wrap{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
+.flujo-pos{color:#2B7A78;font-weight:700;}
+.flujo-neg{color:#c0392b;font-weight:700;}
+.bar-container{width:100%;background:#f0eeea;border-radius:4px;height:8px;margin-top:6px;}
+.bar-fill{height:8px;border-radius:4px;background:var(--bc,#B5924A);transition:width 0.5s;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-title">💰 FINANCIERO — HHA GROUP</div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <span id="periodo-label" style="font-size:0.85em;opacity:0.85;"></span>
+    <a href="/gerencia">← Gerencia</a>
+    <a href="/">Portal</a>
+  </div>
+</div>
+<div class="tabs">
+  <div class="tab active" onclick="goTab('dashboard',this)">📊 Dashboard</div>
+  <div class="tab" onclick="goTab('ingresos',this)">📈 Ingresos</div>
+  <div class="tab" onclick="goTab('egresos',this)">📉 Egresos</div>
+  <div class="tab" onclick="goTab('flujo',this)">🗓️ Flujo Mensual</div>
+  <div class="tab" onclick="goTab('config',this)">⚙️ Supuestos</div>
+</div>
+<div class="content">
+
+<\!-- ─── DASHBOARD ─── -->
+<div id="page-dashboard" class="page active">
+  <div class="kpi-grid" id="kpi-financiero">
+    <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="kpi-ing-mes">—</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
+    <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">—</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
+    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">—</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
+    <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">—</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+    <div class="chart-wrap">
+      <div class="section-title">Ingresos vs Egresos — Últimos 6 meses</div>
+      <canvas id="chart-ing-egr" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="section-title">📋 Desglose del mes</div>
+      <div id="desglose-mes"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">⚠️ Alertas financieras</div>
+    <div id="alertas-fin"></div>
+  </div>
+</div>
+
+<\!-- ─── INGRESOS ─── -->
+<div id="page-ingresos" class="page">
+  <div class="card">
+    <div class="section-title">+ Registrar Ingreso</div>
+    <div class="form-grid">
+      <div class="fg"><label>Fecha</label><input type="date" id="ing-fecha"></div>
+      <div class="fg"><label>Empresa</label>
+        <select id="ing-empresa">
+          <option value="ANIMUS">ÁNIMUS Lab</option>
+          <option value="ESPAGIRIA">Espagiria</option>
+          <option value="HHA">HHA Group</option>
+        </select>
+      </div>
+      <div class="fg"><label>Categoría</label>
+        <select id="ing-cat">
+          <option value="Ventas directas">Ventas directas</option>
+          <option value="Maquila">Maquila</option>
+          <option value="Distribuidor">Distribuidor (FM)</option>
+          <option value="E-commerce">E-commerce</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Concepto</label><input type="text" id="ing-concepto" placeholder="Ej: Pedido FM Abril"></div>
+      <div class="fg"><label>Monto (COP)</label><input type="number" id="ing-monto" placeholder="0"></div>
+      <div class="fg"><label>Referencia</label><input type="text" id="ing-ref" placeholder="Nro factura, pedido..."></div>
+    </div>
+    <button class="btn btn-green" onclick="guardarIngreso()">+ Registrar Ingreso</button>
+    <div id="ing-msg" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="section-title" style="margin:0;">Historial de Ingresos</div>
+      <select id="ing-filtro-mes" onchange="loadIngresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+        <option value="">Todos los meses</option>
+      </select>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
+      <tbody id="ing-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+    </table>
+    <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#2B7A78;"></div>
+  </div>
+</div>
+
+<\!-- ─── EGRESOS ─── -->
+<div id="page-egresos" class="page">
+  <div class="card">
+    <div class="section-title">+ Registrar Egreso</div>
+    <div class="form-grid">
+      <div class="fg"><label>Fecha</label><input type="date" id="egr-fecha"></div>
+      <div class="fg"><label>Empresa</label>
+        <select id="egr-empresa">
+          <option value="ESPAGIRIA">Espagiria</option>
+          <option value="ANIMUS">ÁNIMUS Lab</option>
+          <option value="HHA">HHA Group</option>
+        </select>
+      </div>
+      <div class="fg"><label>Categoría</label>
+        <select id="egr-cat">
+          <option value="MPs">Materias Primas</option>
+          <option value="MEE">Material Empaque/Envase</option>
+          <option value="Nomina">Nómina</option>
+          <option value="Arrendamiento">Arrendamiento</option>
+          <option value="Servicios">Servicios públicos</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Logistica">Logística</option>
+          <option value="Regulatorio">Regulatorio / INVIMA</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Concepto</label><input type="text" id="egr-concepto" placeholder="Ej: Compra MPs Abril"></div>
+      <div class="fg"><label>Monto (COP)</label><input type="number" id="egr-monto" placeholder="0"></div>
+      <div class="fg"><label>Referencia</label><input type="text" id="egr-ref" placeholder="Nro OC, factura..."></div>
+    </div>
+    <button class="btn btn-red" onclick="guardarEgreso()">+ Registrar Egreso</button>
+    <div id="egr-msg" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="section-title" style="margin:0;">Historial de Egresos</div>
+      <select id="egr-filtro-mes" onchange="loadEgresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+        <option value="">Todos los meses</option>
+      </select>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
+      <tbody id="egr-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+    </table>
+    <div id="egr-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#c0392b;"></div>
+  </div>
+</div>
+
+<\!-- ─── FLUJO MENSUAL ─── -->
+<div id="page-flujo" class="page">
+  <div class="card">
+    <div class="section-title">🗓️ Flujo de Caja Mensual</div>
+    <div style="overflow-x:auto;">
+    <table class="tbl" id="flujo-tbl">
+      <thead><tr>
+        <th>Período</th>
+        <th style="text-align:right;color:#2B7A78;">Ingresos</th>
+        <th style="text-align:right;color:#c0392b;">Egresos</th>
+        <th style="text-align:right;">Flujo Neto</th>
+        <th style="text-align:right;">Acumulado</th>
+        <th>Estado</th>
+      </tr></thead>
+      <tbody id="flujo-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+  <div class="chart-wrap">
+    <div class="section-title">Flujo Neto Mensual</div>
+    <canvas id="chart-flujo" height="180"></canvas>
+  </div>
+</div>
+
+<\!-- ─── SUPUESTOS ─── -->
+<div id="page-config" class="page">
+  <div class="card">
+    <div class="section-title">⚙️ Supuestos y Configuración</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:20px;">Parámetros base del modelo financiero. Actualizar cuando cambien las condiciones del negocio.</p>
+    <div id="config-list"></div>
+    <button class="btn" onclick="guardarConfig()" style="margin-top:16px;">Guardar cambios</button>
+    <div id="config-msg" style="margin-top:10px;"></div>
+  </div>
+  <div class="card">
+    <div class="section-title">📤 Importar desde OCs (egresos automáticos)</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Importa las órdenes de compra recibidas como egresos de MPs automáticamente.</p>
+    <button class="btn btn-ghost" onclick="importarOCs()">📦 Importar OCs recibidas como egresos</button>
+    <div id="import-msg" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+var _chartIngEgr=null, _chartFlujo=null;
+var _config={};
+
+function fmt(n){
+  if(\!n&&n\!==0) return '—';
+  var abs=Math.abs(n);
+  if(abs>=1000000) return (n<0?'-':'')+'$'+(abs/1000000).toFixed(1)+'M';
+  if(abs>=1000) return (n<0?'-':'')+'$'+(abs/1000).toFixed(0)+'K';
+  return (n<0?'-':'')+'$'+abs.toLocaleString('es-CO');
+}
+function fmtFull(n){
+  if(\!n&&n\!==0) return '—';
+  return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('es-CO');
+}
+
+function goTab(id,el){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('page-'+id).classList.add('active');
+  if(el)el.classList.add('active');
+  if(id==='dashboard')loadDashboard();
+  if(id==='ingresos')loadIngresos();
+  if(id==='egresos')loadEgresos();
+  if(id==='flujo')loadFlujo();
+  if(id==='config')loadConfig();
+}
+
+async function loadDashboard(){
+  try{
+    var d=await fetch('/api/financiero/kpis').then(function(r){return r.json();});
+    var hoy=new Date();
+    document.getElementById('periodo-label').textContent=hoy.toLocaleString('es',{month:'long',year:'numeric'});
+    document.getElementById('kpi-ing-mes').textContent=fmt(d.ing_mes||0);
+    document.getElementById('kpi-ing-sub').textContent=(d.ing_count||0)+' transacciones';
+    document.getElementById('kpi-egr-mes').textContent=fmt(d.egr_mes||0);
+    document.getElementById('kpi-egr-sub').textContent=(d.egr_count||0)+' transacciones';
+    var flujo=(d.ing_mes||0)-(d.egr_mes||0);
+    var kflujo=document.getElementById('kpi-flujo-mes');
+    kflujo.textContent=fmt(flujo);
+    kflujo.style.color=flujo>=0?'#2B7A78':'#c0392b';
+    document.getElementById('kpi-flujo-sub').textContent=flujo>=0?'Superávit':'Déficit';
+    document.getElementById('kpi-caja').textContent=fmt(d.saldo_caja||0);
+    var meta=parseFloat(_config.meta_caja_min||50000000);
+    document.getElementById('kpi-caja-sub').textContent=(d.saldo_caja||0)>=meta?'✓ Por encima del mínimo':'⚠️ Bajo el mínimo ($'+fmt(meta)+')';
+    // Desglose
+    var des='<table style="width:100%;font-size:0.88em;">';
+    if(d.desglose_ing&&d.desglose_ing.length){
+      des+='<tr><td colspan="2" style="font-weight:700;color:#2B7A78;padding:6px 0;">INGRESOS</td></tr>';
+      d.desglose_ing.forEach(function(r){des+='<tr><td style="color:#666;">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
+    }
+    if(d.desglose_egr&&d.desglose_egr.length){
+      des+='<tr><td colspan="2" style="font-weight:700;color:#c0392b;padding:6px 0;padding-top:14px;">EGRESOS</td></tr>';
+      d.desglose_egr.forEach(function(r){des+='<tr><td style="color:#666;">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
+    }
+    des+='</table>';
+    document.getElementById('desglose-mes').innerHTML=des;
+    // Alertas
+    var alertas='';
+    var metaCaja=parseFloat(_config.meta_caja_min||50000000);
+    if((d.saldo_caja||0)<metaCaja) alertas+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🟡 Saldo de caja ($'+fmt(d.saldo_caja||0)+') está por debajo del mínimo ($'+fmt(metaCaja)+')</div>';
+    if(flujo<0) alertas+='<div style="background:#fde8e8;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🔴 Flujo neto negativo este mes: '+fmt(flujo)+'</div>';
+    if(\!alertas) alertas='<div style="color:#2B7A78;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
+    document.getElementById('alertas-fin').innerHTML=alertas;
+    // Chart
+    if(d.historico&&d.historico.length){
+      var labels=d.historico.map(function(h){return h.periodo;});
+      var ings=d.historico.map(function(h){return h.ingresos||0;});
+      var egrs=d.historico.map(function(h){return h.egresos||0;});
+      if(_chartIngEgr)_chartIngEgr.destroy();
+      _chartIngEgr=new Chart(document.getElementById('chart-ing-egr'),{
+        type:'bar',
+        data:{labels:labels,datasets:[
+          {label:'Ingresos',data:ings,backgroundColor:'rgba(43,122,120,0.7)',borderRadius:4},
+          {label:'Egresos',data:egrs,backgroundColor:'rgba(192,57,43,0.7)',borderRadius:4}
+        ]},
+        options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:function(v){return fmt(v);}}}}}
+      });
+    }
+  }catch(e){console.error(e);}
+}
+
+async function loadIngresos(){
+  var mes=document.getElementById('ing-filtro-mes')&&document.getElementById('ing-filtro-mes').value||'';
+  try{
+    var url='/api/financiero/ingresos'+(mes?'?mes='+mes:'');
+    var d=await fetch(url).then(function(r){return r.json();});
+    var rows=d.ingresos||[];
+    // populate mes filter
+    var sel=document.getElementById('ing-filtro-mes');
+    if(sel&&sel.options.length<=1){
+      var meses=[...new Set(rows.map(function(r){return(r.periodo||r.fecha||'').substring(0,7);}))].sort().reverse();
+      meses.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
+    }
+    var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+    var h='';
+    if(\!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin ingresos registrados</td></tr>';}
+    rows.forEach(function(r){
+      h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
+      h+='<td><span class="badge-ing">'+r.empresa+'</span></td>';
+      h+='<td>'+r.categoria+'</td>';
+      h+='<td>'+r.concepto+'</td>';
+      h+='<td style="color:#888;font-size:0.85em;">'+(r.referencia||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmtFull(r.monto)+'</td></tr>';
+    });
+    document.getElementById('ing-tbody').innerHTML=h;
+    document.getElementById('ing-total').textContent='Total: '+fmtFull(total);
+  }catch(e){console.error(e);}
+}
+
+async function loadEgresos(){
+  var mes=document.getElementById('egr-filtro-mes')&&document.getElementById('egr-filtro-mes').value||'';
+  try{
+    var url='/api/financiero/egresos'+(mes?'?mes='+mes:'');
+    var d=await fetch(url).then(function(r){return r.json();});
+    var rows=d.egresos||[];
+    var sel=document.getElementById('egr-filtro-mes');
+    if(sel&&sel.options.length<=1){
+      var meses=[...new Set(rows.map(function(r){return(r.periodo||r.fecha||'').substring(0,7);}))].sort().reverse();
+      meses.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
+    }
+    var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+    var h='';
+    if(\!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin egresos registrados</td></tr>';}
+    rows.forEach(function(r){
+      h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
+      h+='<td><span class="badge-egr">'+r.empresa+'</span></td>';
+      h+='<td>'+r.categoria+'</td>';
+      h+='<td>'+r.concepto+'</td>';
+      h+='<td style="color:#888;font-size:0.85em;">'+(r.referencia||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:700;color:#c0392b;">'+fmtFull(r.monto)+'</td></tr>';
+    });
+    document.getElementById('egr-tbody').innerHTML=h;
+    document.getElementById('egr-total').textContent='Total egresos: '+fmtFull(total);
+  }catch(e){console.error(e);}
+}
+
+async function loadFlujo(){
+  try{
+    var d=await fetch('/api/financiero/flujo-mensual').then(function(r){return r.json();});
+    var meses=d.meses||[];
+    var acum=0;
+    var h='';
+    if(\!meses.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin datos de flujo</td></tr>';}
+    meses.forEach(function(m){
+      var flujo=(m.ingresos||0)-(m.egresos||0);
+      acum+=flujo;
+      var cls=flujo>=0?'flujo-pos':'flujo-neg';
+      var acls=acum>=0?'flujo-pos':'flujo-neg';
+      h+='<tr><td style="font-weight:600;">'+m.periodo+'</td>';
+      h+='<td style="text-align:right;color:#2B7A78;font-weight:700;">'+fmtFull(m.ingresos||0)+'</td>';
+      h+='<td style="text-align:right;color:#c0392b;font-weight:700;">'+fmtFull(m.egresos||0)+'</td>';
+      h+='<td style="text-align:right;" class="'+cls+'">'+fmtFull(flujo)+'</td>';
+      h+='<td style="text-align:right;" class="'+acls+'">'+fmtFull(acum)+'</td>';
+      h+='<td><span style="background:'+(flujo>=0?'rgba(43,122,120,.1)':'rgba(192,57,43,.1)')+';color:'+(flujo>=0?'#2B7A78':'#c0392b')+';padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;">'+(flujo>=0?'Superávit':'Déficit')+'</span></td></tr>';
+    });
+    document.getElementById('flujo-tbody').innerHTML=h;
+    // Chart
+    if(meses.length){
+      var labels=meses.map(function(m){return m.periodo;});
+      var flujos=meses.map(function(m){return(m.ingresos||0)-(m.egresos||0);});
+      var colors=flujos.map(function(f){return f>=0?'rgba(43,122,120,0.7)':'rgba(192,57,43,0.7)';});
+      if(_chartFlujo)_chartFlujo.destroy();
+      _chartFlujo=new Chart(document.getElementById('chart-flujo'),{
+        type:'bar',data:{labels:labels,datasets:[{label:'Flujo Neto',data:flujos,backgroundColor:colors,borderRadius:4}]},
+        options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:function(v){return fmt(v);}}}}}
+      });
+    }
+  }catch(e){console.error(e);}
+}
+
+async function loadConfig(){
+  try{
+    var d=await fetch('/api/financiero/config').then(function(r){return r.json();});
+    _config=d.config||{};
+    var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">';
+    Object.entries(_config).forEach(function([k,v]){
+      h+='<div class="fg"><label>'+k.replace(/_/g,' ').toUpperCase()+'</label>';
+      h+='<input type="text" id="cfg-'+k+'" value="'+v+'"></div>';
+    });
+    h+='</div>';
+    document.getElementById('config-list').innerHTML=h;
+  }catch(e){}
+}
+
+async function guardarConfig(){
+  var updates={};
+  document.querySelectorAll('[id^="cfg-"]').forEach(function(el){
+    var key=el.id.replace('cfg-','');
+    updates[key]=el.value;
+  });
+  var r=await fetch('/api/financiero/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
+  var d=await r.json();
+  document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+}
+
+async function guardarIngreso(){
+  var fecha=document.getElementById('ing-fecha').value;
+  var empresa=document.getElementById('ing-empresa').value;
+  var cat=document.getElementById('ing-cat').value;
+  var concepto=document.getElementById('ing-concepto').value.trim();
+  var monto=parseFloat(document.getElementById('ing-monto').value)||0;
+  var ref=document.getElementById('ing-ref').value.trim();
+  if(\!concepto||\!monto){alert('Concepto y monto son requeridos');return;}
+  if(\!fecha){fecha=new Date().toISOString().substring(0,10);}
+  var r=await fetch('/api/financiero/ingresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
+  var d=await r.json();
+  document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  if(r.ok){document.getElementById('ing-concepto').value='';document.getElementById('ing-monto').value='';document.getElementById('ing-ref').value='';loadIngresos();}
+}
+
+async function guardarEgreso(){
+  var fecha=document.getElementById('egr-fecha').value;
+  var empresa=document.getElementById('egr-empresa').value;
+  var cat=document.getElementById('egr-cat').value;
+  var concepto=document.getElementById('egr-concepto').value.trim();
+  var monto=parseFloat(document.getElementById('egr-monto').value)||0;
+  var ref=document.getElementById('egr-ref').value.trim();
+  if(\!concepto||\!monto){alert('Concepto y monto son requeridos');return;}
+  if(\!fecha){fecha=new Date().toISOString().substring(0,10);}
+  var r=await fetch('/api/financiero/egresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
+  var d=await r.json();
+  document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:#c0392b;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  if(r.ok){document.getElementById('egr-concepto').value='';document.getElementById('egr-monto').value='';document.getElementById('egr-ref').value='';loadEgresos();}
+}
+
+async function importarOCs(){
+  var r=await fetch('/api/financiero/importar-ocs',{method:'POST'});
+  var d=await r.json();
+  document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  if(r.ok)loadEgresos();
+}
+
+// Init
+document.addEventListener('DOMContentLoaded',function(){
+  var hoy=new Date().toISOString().substring(0,10);
+  document.getElementById('ing-fecha').value=hoy;
+  document.getElementById('egr-fecha').value=hoy;
+  loadConfig().then(function(){loadDashboard();});
+});
 </script>
 </body>
 </html>"""
@@ -2431,6 +2961,33 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </datalist>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
+    <div style="background:#f0f9f0;border:1px solid #c3e6cb;border-radius:10px;padding:16px;margin-bottom:16px;">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;color:#1b5e20;margin-bottom:0;">
+        <input type="checkbox" id="prod-pt-check" onchange="togglePTFields()" style="width:18px;height:18px;">
+        &#127981; Registrar unidades en Stock PT (Producto Terminado)
+      </label>
+      <div id="prod-pt-fields" style="display:none;margin-top:14px;display:none;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label>SKU Producto</label>
+            <input type="text" id="prod-sku-pt" placeholder="Ej: TRX-15" list="sku-sugerencias">
+            <datalist id="sku-sugerencias">
+              <option value="LBHA-30"><option value="TRX-15"><option value="NIAC-30">
+              <option value="AZHC-30"><option value="SBHA-30"><option value="ECEN-30">
+              <option value="EILU-30"><option value="CUREA-50"><option value="GELH-120">
+            </datalist>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Unidades producidas</label>
+            <input type="number" id="prod-uds-pt" placeholder="Ej: 500" min="1">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Precio mayorista (COP)</label>
+            <input type="number" id="prod-precio-pt" placeholder="Ej: 29400" min="0">
+          </div>
+        </div>
+      </div>
+    </div>
     <div style="display:flex;gap:10px;"><button onclick="iniciarRegistroProd()">&#9989; Registrar Produccion</button><button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button></div>
     <div id="prod-msg"></div>
     <div id="mee-consumo-panel" style="display:none;margin-top:24px;background:#f0f9f0;border:2px solid #27ae60;border-radius:12px;padding:22px;">
@@ -2931,6 +3488,11 @@ async function cargarHistIngreso(){
     tb.innerHTML=h;
   }catch(e){}
 }
+function togglePTFields(){
+  var checked=document.getElementById('prod-pt-check').checked;
+  var fields=document.getElementById('prod-pt-fields');
+  if(fields) fields.style.display=checked?'block':'none';
+}
 function abrirRotulos(){
   var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
   var manual=document.getElementById('prod-manual')?document.getElementById('prod-manual').value.trim():'';
@@ -3342,7 +3904,10 @@ async function iniciarRegistroProd(){
   // Registrar producción MP
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
-  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
+  var sku_pt=document.getElementById('prod-sku-pt')?document.getElementById('prod-sku-pt').value.trim():'';
+  var uds_pt=document.getElementById('prod-uds-pt')?parseInt(document.getElementById('prod-uds-pt').value)||0:0;
+  var precio_pt=document.getElementById('prod-precio-pt')?parseFloat(document.getElementById('prod-precio-pt').value)||0:0;
+  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,sku_pt:sku_pt,unidades_pt:uds_pt,precio_pt:precio_pt})});
   var d=await r.json();
   if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
   document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
@@ -3608,12 +4173,28 @@ def handle_produccion():
                 lotes_usados.append({'lote': 'sin_lote', 'vence': '', 'cantidad_g': g_restante})
             descuentos.append({'material': mat_nombre, 'material_id': mat_id,
                                 'cantidad_g': g_total, 'lotes_fefo': lotes_usados})
+        # Auto-crear entrada en stock_pt si viene sku + unidades
+        sku_pt = data.get('sku_pt', '').strip()
+        unidades_pt = int(data.get('unidades_pt', 0) or 0)
+        precio_pt = float(data.get('precio_pt', 0) or 0)
+        if sku_pt and unidades_pt > 0:
+            c.execute("""INSERT INTO stock_pt
+                         (sku, descripcion, lote_produccion, fecha_produccion,
+                          unidades_inicial, unidades_disponible, precio_base, empresa, estado, observaciones)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                      (sku_pt, producto, lote_ref, fecha,
+                       unidades_pt, unidades_pt, precio_pt,
+                       'ANIMUS', 'Disponible',
+                       f'Produccion {lote_ref} — {cantidad_kg}kg'))
         conn.commit()
         conn.close()
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
-        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
+        if sku_pt and unidades_pt > 0:
+            msg += f'. {unidades_pt} uds de {sku_pt} en stock PT.'
+        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref,
+                        'stock_pt_creado': bool(sku_pt and unidades_pt > 0)}), 201
     c.execute('SELECT producto, cantidad, fecha, estado, operador, COALESCE(presentacion,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
     prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or '', 'presentacion': r[5] or ''} for r in c.fetchall()]
     conn.close()
@@ -4587,6 +5168,160 @@ def gerencia_input_manual():
                   float(d.get('ingresos_maquila',0)), d.get('notas','')))
     conn.commit(); conn.close()
     return jsonify({'message': f'Inputs de {periodo} guardados'})
+
+
+# ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────
+@app.route('/financiero')
+def financiero_page():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return redirect(url_for('login'))
+    return Response(FINANCIERO_HTML, mimetype='text/html')
+
+@app.route('/api/financiero/ingresos', methods=['GET','POST'])
+def handle_fin_ingresos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('concepto') or not d.get('monto'):
+            conn.close(); return jsonify({'error': 'Concepto y monto requeridos'}), 400
+        periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
+        c.execute("""INSERT INTO flujo_ingresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
+                   d['concepto'], d.get('categoria','Ventas'), float(d['monto']),
+                   periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f"Ingreso de ${float(d['monto']):,.0f} registrado"}), 201
+    mes = request.args.get('mes')
+    q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_ingresos"
+    params = []
+    if mes: q += " WHERE periodo=?"; params.append(mes)
+    q += " ORDER BY fecha DESC LIMIT 200"
+    c.execute(q, params)
+    cols = ['id','fecha','empresa','concepto','categoria','monto','periodo','referencia']
+    conn.close()
+    return jsonify({'ingresos': [dict(zip(cols, r)) for r in c.fetchall()]})
+
+@app.route('/api/financiero/egresos', methods=['GET','POST'])
+def handle_fin_egresos():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('concepto') or not d.get('monto'):
+            conn.close(); return jsonify({'error': 'Concepto y monto requeridos'}), 400
+        periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
+        c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
+                   d['concepto'], d.get('categoria','MPs'), float(d['monto']),
+                   periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
+        conn.commit(); conn.close()
+        return jsonify({'message': f"Egreso de ${float(d['monto']):,.0f} registrado"}), 201
+    mes = request.args.get('mes')
+    q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_egresos"
+    params = []
+    if mes: q += " WHERE periodo=?"; params.append(mes)
+    q += " ORDER BY fecha DESC LIMIT 200"
+    c.execute(q, params)
+    cols = ['id','fecha','empresa','concepto','categoria','monto','periodo','referencia']
+    conn.close()
+    return jsonify({'egresos': [dict(zip(cols, r)) for r in c.fetchall()]})
+
+@app.route('/api/financiero/kpis')
+def financiero_kpis():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    periodo_actual = datetime.now().strftime('%Y-%m')
+    # KPIs mes actual
+    c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_ingresos WHERE periodo=?", (periodo_actual,))
+    ing_mes, ing_count = c.fetchone()
+    c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_egresos WHERE periodo=?", (periodo_actual,))
+    egr_mes, egr_count = c.fetchone()
+    # Saldo caja desde gerencia_inputs
+    c.execute("SELECT saldo_caja FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
+    row = c.fetchone(); saldo_caja = row[0] if row else 0
+    # Desglose por categoría mes actual
+    c.execute("SELECT categoria, SUM(monto) as total FROM flujo_ingresos WHERE periodo=? GROUP BY categoria ORDER BY total DESC", (periodo_actual,))
+    desglose_ing = [{'categoria': r[0], 'total': r[1]} for r in c.fetchall()]
+    c.execute("SELECT categoria, SUM(monto) as total FROM flujo_egresos WHERE periodo=? GROUP BY categoria ORDER BY total DESC", (periodo_actual,))
+    desglose_egr = [{'categoria': r[0], 'total': r[1]} for r in c.fetchall()]
+    # Histórico 6 meses
+    historico = []
+    for i in range(5, -1, -1):
+        from datetime import date as _d
+        import calendar
+        hoy = _d.today()
+        mes = hoy.month - i
+        anio = hoy.year
+        while mes <= 0: mes += 12; anio -= 1
+        p = f"{anio}-{mes:02d}"
+        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE periodo=?", (p,))
+        ing = c.fetchone()[0]
+        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo=?", (p,))
+        egr = c.fetchone()[0]
+        historico.append({'periodo': p, 'ingresos': ing, 'egresos': egr})
+    conn.close()
+    return jsonify({'ing_mes': ing_mes, 'ing_count': ing_count, 'egr_mes': egr_mes, 'egr_count': egr_count,
+                    'saldo_caja': saldo_caja, 'desglose_ing': desglose_ing, 'desglose_egr': desglose_egr,
+                    'historico': historico, 'periodo': periodo_actual})
+
+@app.route('/api/financiero/flujo-mensual')
+def financiero_flujo_mensual():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT periodo, SUM(monto) FROM flujo_ingresos GROUP BY periodo ORDER BY periodo")
+    ings = {r[0]: r[1] for r in c.fetchall()}
+    c.execute("SELECT periodo, SUM(monto) FROM flujo_egresos GROUP BY periodo ORDER BY periodo")
+    egrs = {r[0]: r[1] for r in c.fetchall()}
+    periodos = sorted(set(list(ings.keys()) + list(egrs.keys())))
+    meses = [{'periodo': p, 'ingresos': ings.get(p, 0), 'egresos': egrs.get(p, 0)} for p in periodos]
+    conn.close()
+    return jsonify({'meses': meses})
+
+@app.route('/api/financiero/config', methods=['GET','POST'])
+def financiero_config():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        for clave, valor in d.items():
+            c.execute("INSERT INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor", (clave, str(valor), ''))
+        conn.commit(); conn.close()
+        return jsonify({'message': f'{len(d)} parámetros actualizados'})
+    c.execute("SELECT clave, valor FROM flujo_config ORDER BY clave")
+    config = {r[0]: r[1] for r in c.fetchall()}
+    conn.close()
+    return jsonify({'config': config})
+
+@app.route('/api/financiero/importar-ocs', methods=['POST'])
+def financiero_importar_ocs():
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Traer OCs recibidas que no estén ya importadas
+    c.execute("""SELECT oc.numero_oc, oc.fecha, oc.proveedor,
+                        COALESCE(SUM(i.cantidad_g * i.precio_unitario), oc.valor_total, 0) as total
+                 FROM ordenes_compra oc
+                 LEFT JOIN ordenes_compra_items i ON oc.numero_oc=i.numero_oc
+                 WHERE oc.estado='Recibida'
+                 AND oc.numero_oc NOT IN (SELECT referencia FROM flujo_egresos WHERE referencia LIKE 'OC-%')
+                 GROUP BY oc.numero_oc""")
+    ocs = c.fetchall()
+    importadas = 0
+    for numero_oc, fecha, proveedor, total in ocs:
+        if total and total > 0:
+            periodo = (fecha or datetime.now().isoformat())[:7]
+            c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
+                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                      (fecha[:10] if fecha else datetime.now().isoformat()[:10],
+                       'ESPAGIRIA', f'OC {numero_oc} — {proveedor or ""}',
+                       'MPs', float(total), periodo, 'automatico', numero_oc, 'sistema'))
+            importadas += 1
+    conn.commit(); conn.close()
+    return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
 
 if __name__ == '__main__':
