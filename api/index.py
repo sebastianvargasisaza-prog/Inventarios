@@ -3698,6 +3698,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
       <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
     </table>
+  </div>
 
   <div id="cuarentena" class="tab-content">
     <h2>&#128274; Control de Calidad — Recepcion de Materiales</h2>
@@ -7126,4 +7127,3 @@ def recall_ejecutar():
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
