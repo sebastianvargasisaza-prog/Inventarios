@@ -2656,7 +2656,7 @@ async function loadDashboard(){
     var res = await fetch('/api/ordenes-compra').then(function(r){return r.json();});
     var ocs = res.ordenes||[];
     var alertas = [];
-    try{alertas = await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();});}catch(e){}
+    try{var _ar=await fetch('/api/alertas-reabastecimiento').then(function(r){return r.json();}); alertas=Array.isArray(_ar)?_ar:(_ar.alertas||[]);}catch(e){}
     var porAutorizar = ocs.filter(function(o){return o.estado==='Revisada';});
     var porPagar = ocs.filter(function(o){return o.estado==='Recibida';});
     var enTransito = ocs.filter(function(o){return o.estado==='Autorizada';});
@@ -7923,4 +7923,4 @@ def recall_ejecutar():
 
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=False, host='0.
