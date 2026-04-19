@@ -457,7 +457,11 @@ def seed_mee_xlsx():
     if not headers:
         return jsonify({'error': 'No se encontraron datos en el xlsx'}), 400
 
-    def norm(col): return re.sub(r'[^a-z0-9]', '', str(col).lower())
+    def norm(col):
+        s = str(col).lower()
+        for acc, rep in [('á','a'),('é','e'),('í','i'),('ó','o'),('ú','u'),('ñ','n'),('ü','u')]:
+            s = s.replace(acc, rep)
+        return re.sub(r'[^a-z0-9]', '', s)
     normas = {norm(h): i for i, h in enumerate(headers)}
 
     patrones = {
