@@ -984,49 +984,7 @@ def anular_movimiento(mov_id):
                f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) Ã¢ÂÂ {motivo}',
                request.remote_addr))
     conn.commit(); conn.close()
-    return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
-
-
-@bp.route('/api/liberacion', methods=['GET', 'POST'])
-def liberacion_list():
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    if request.method == 'POST':
-        d = request.get_json(silent=True) or {}
-        c.execute("""INSERT INTO liberaciones
-            (acondicionamiento_id, lote, producto, unidades, presentacion, fecha_produccion, cliente, destino, observaciones)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (int(d.get('acondicionamiento_id', 0)), d.get('lote', ''), d.get('producto', ''),
-             int(d.get('unidades', 0)), d.get('presentacion', ''), d.get('fecha_produccion', ''),
-             d.get('cliente', ''), d.get('destino', 'ANIMUS'), d.get('observaciones', '')))
-        conn.commit(); new_id = c.lastrowid; conn.close()
-        return jsonify({'ok': True, 'id': new_id}), 201
-    estado = request.args.get('estado', '')
-    if estado: c.execute("SELECT * FROM liberaciones WHERE estado=? ORDER BY creado_en DESC LIMIT 100", (estado,))
-    else: c.execute("SELECT * FROM liberaciones ORDER BY creado_en DESC LIMIT 100")
-    cols = [d[0] for d in c.description]
-    rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    conn.close()
-    return jsonify(rows)
-
-
-@bp.route('/api/liberacion/<int:lid>', methods=['PATCH'])
-def liberacion_update(lid):
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
-    u = session.get('compras_user', '')
-    d = request.get_json(silent=True) or {}
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    estado = d.get('estado', '')
-    if estado == 'Liberado':
-        c.execute("UPDATE liberaciones SET estado='Liberado', fecha_liberacion=?, aprobado_por=?, cliente=? WHERE id=?",
-                  (datetime.now().strftime('%Y-%m-%d'), u, d.get('cliente', ''), lid))
-    elif estado == 'Rechazado':
-        c.execute("UPDATE liberaciones SET estado='Rechazado', aprobado_por=?, observaciones=? WHERE id=?",
-                  (u, d.get('observaciones', ''), lid))
-    else:
-        c.execute("UPDATE liberaciones SET observaciones=? WHERE id=?", (d.get('observaciones', ''), lid))
-    conn.commit(); conn.close()
-    return jsonify({'ok': True})
+        return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
                     'tipo_contramovimiento': tipo_inv})
 
 
