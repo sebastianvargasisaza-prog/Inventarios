@@ -29,12 +29,16 @@ bp = Blueprint('financiero', __name__)
 
 @bp.route('/financiero')
 def financiero_page():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return redirect(url_for('core.login'))
     return Response(FINANCIERO_HTML, mimetype='text/html')
 
 @bp.route('/api/financiero/ingresos', methods=['GET','POST'])
 def handle_fin_ingresos():
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -60,6 +64,9 @@ def handle_fin_ingresos():
 
 @bp.route('/api/financiero/egresos', methods=['GET','POST'])
 def handle_fin_egresos():
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -85,7 +92,8 @@ def handle_fin_egresos():
 
 @bp.route('/api/financiero/kpis')
 def financiero_kpis():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     periodo_actual = datetime.now().strftime('%Y-%m')
@@ -124,7 +132,8 @@ def financiero_kpis():
 
 @bp.route('/api/financiero/flujo-mensual')
 def financiero_flujo_mensual():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT periodo, SUM(monto) FROM flujo_ingresos GROUP BY periodo ORDER BY periodo")
