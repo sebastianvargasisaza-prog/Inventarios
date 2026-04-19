@@ -568,7 +568,7 @@ def mee_set_stock():
     data = request.get_json(silent=True) or {}
     stock_actual = float(data.get('stock_actual', 2000))
     stock_minimo = float(data.get('stock_minimo', 1000))
-    conn = get_db(); c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE maestro_mee SET stock_actual=?, stock_minimo=?", (stock_actual, stock_minimo))
     updated = c.rowcount
     conn.commit()
