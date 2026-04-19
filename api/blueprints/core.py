@@ -37,7 +37,10 @@ def inventarios():
     if 'compras_user' not in session:
         return redirect('/login?next=/inventarios')
     usuario = session.get('compras_user', '').capitalize()
-    return Response(DASHBOARD_HTML.replace('{usuario}', usuario), mimetype='text/html')
+    html = DASHBOARD_HTML.replace('{usuario}', usuario)
+    resp = Response(html, mimetype='text/html; charset=utf-8')
+    resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+    return resp
 
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
 
