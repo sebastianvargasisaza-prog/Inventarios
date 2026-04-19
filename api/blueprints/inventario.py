@@ -984,7 +984,7 @@ def anular_movimiento(mov_id):
                f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) Ã¢ÂÂ {motivo}',
                request.remote_addr))
     conn.commit(); conn.close()
-        return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
+    return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
                     'tipo_contramovimiento': tipo_inv})
 
 
