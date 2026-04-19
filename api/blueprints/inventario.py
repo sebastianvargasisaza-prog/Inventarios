@@ -1432,6 +1432,19 @@ def _init_mee_movimientos():
 _init_mee_movimientos()
 
 
+@bp.route('/api/mee', methods=['POST'])
+def mee_crear():
+    if 'compras_user' not in session:return jsonify({'error':'Autenticacion requerida'}),401
+    d=request.json or {};cod=d.get('codigo','').strip().upper();desc=d.get('descripcion','').strip()
+    if not cod or not desc:return jsonify({'error':'codigo y descripcion requeridos'}),400
+    cat=d.get('categoria','Otro');prov=d.get('proveedor','');und=d.get('unidad','und')
+    sa=float(d.get('stock_actual',0));sm=float(d.get('stock_minimo',0))
+    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
+    try:c.execute("INSERT INTO maestro_mee(codigo,descripcion,categoria,unidad,proveedor,stock_actual,stock_minimo,estado)VALUES(?,?,?,?,?,?,?,'Activo')",(cod,desc,cat,und,prov,sa,sm));conn.commit()
+    except Exception as e:conn.close();return jsonify({'error':str(e)}),400
+    conn.close();return jsonify({'ok':True,'codigo':cod,'message':f'Material {cod} creado'})
+
+
 @bp.route('/api/mee/stock', methods=['GET'])
 def mee_stock_list():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
