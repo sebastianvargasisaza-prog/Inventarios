@@ -982,8 +982,7 @@ async function registrarConsumo(){
 }
 async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
-  if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'
-Quedará oculto del catálogo activo. ¿Confirmar?'))return;
+  if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
   var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
   var d=await r.json();
   document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
