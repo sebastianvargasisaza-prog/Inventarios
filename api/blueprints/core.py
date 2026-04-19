@@ -32,8 +32,12 @@ def index():
     return Response(HOME_HTML, mimetype='text/html')
 
 @bp.route('/inventarios')
+@bp.route('/planta')
 def inventarios():
-    return Response(DASHBOARD_HTML, mimetype='text/html')
+    if 'compras_user' not in session:
+        return redirect('/login?next=/inventarios')
+    usuario = session.get('compras_user', '').capitalize()
+    return Response(DASHBOARD_HTML.replace('{usuario}', usuario), mimetype='text/html')
 
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
 
