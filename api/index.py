@@ -1,9 +1,9 @@
 import os
 import sys
 
-# Garantizar que api/ esté en sys.path sin importar cómo Gunicorn arranca el app.
-# Con 'gunicorn api.index:app' desde la raíz, Python importa api.index como
-# namespace package y NO agrega api/ a sys.path automáticamente.
+# Garantizar que api/ este en sys.path sin importar como Gunicorn arranca el app.
+# Con 'gunicorn api.index:app' desde la raiz, Python importa api.index como
+# namespace package y NO agrega api/ a sys.path automaticamente.
 _api_dir = os.path.dirname(os.path.abspath(__file__))
 if _api_dir not in sys.path:
     sys.path.insert(0, _api_dir)
@@ -34,7 +34,7 @@ app.config.update(
 )
 register_hooks(app)
 
-# ─── Blueprints ───────────────────────────────────────────────────────────
+# Blueprints
 from blueprints.core import bp as core_bp
 from blueprints.hub import bp as hub_bp
 from blueprints.inventario import bp as inventario_bp
@@ -46,6 +46,7 @@ from blueprints.maquila import bp as maquila_bp
 from blueprints.despachos import bp as despachos_bp
 from blueprints.rrhh import bp as rrhh_bp
 from blueprints.calidad import bp as calidad_bp
+from blueprints.tecnica import bp as tecnica_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -58,8 +59,9 @@ app.register_blueprint(maquila_bp)
 app.register_blueprint(despachos_bp)
 app.register_blueprint(rrhh_bp)
 app.register_blueprint(calidad_bp)
+app.register_blueprint(tecnica_bp)
 
-# ─── DB init (idempotente) ──────────────────────────────────────────────────
+# DB init (idempotente)
 init_db()
 run_seed_rrhh()
 
