@@ -458,10 +458,9 @@ def seed_mee_xlsx():
         return jsonify({'error': 'No se encontraron datos en el xlsx'}), 400
 
     def norm(col):
-        s = str(col).lower()
-        for acc, rep in [('á','a'),('é','e'),('í','i'),('ó','o'),('ú','u'),('ñ','n'),('ü','u')]:
-            s = s.replace(acc, rep)
-        return re.sub(r'[^a-z0-9]', '', s)
+        import unicodedata as _ud
+        s = _ud.normalize('NFD', str(col).lower())
+        return re.sub(r'[^a-z0-9]', '', ''.join(c for c in s if _ud.category(c) != 'Mn'))
     normas = {norm(h): i for i, h in enumerate(headers)}
 
     patrones = {
