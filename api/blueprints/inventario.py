@@ -1,4 +1,4 @@
-# blueprints/inventario.py ÃÂ¢ÃÂÃÂ extraÃÂÃÂ­do de index.py (Fase C)
+# blueprints/inventario.py ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ extraÃÂÃÂÃÂÃÂ­do de index.py (Fase C)
 import os
 import json
 import sqlite3
@@ -165,7 +165,7 @@ def handle_produccion():
                       (sku_pt, producto, lote_ref, fecha,
                        unidades_pt, unidades_pt, precio_pt,
                        'ANIMUS', 'Disponible',
-                       f'Produccion {lote_ref} ÃÂ¢ÃÂÃÂ {cantidad_kg}kg'))
+                       f'Produccion {lote_ref} ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ {cantidad_kg}kg'))
         conn.commit()
         conn.close()
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
@@ -289,9 +289,9 @@ def calcular_costo_formula():
 
 @bp.route('/api/trazabilidad/lote-pt/<lote_ref>')
 def trazabilidad_lote_pt(lote_ref):
-    """Traza hacia atrÃÂÃÂ¡s: dado un lote PT (PROD-00001) devuelve MPs consumidas, proveedor, fecha vencimiento."""
+    """Traza hacia atrÃÂÃÂÃÂÃÂ¡s: dado un lote PT (PROD-00001) devuelve MPs consumidas, proveedor, fecha vencimiento."""
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    # ProducciÃÂÃÂ³n base
+    # ProducciÃÂÃÂÃÂÃÂ³n base
     c.execute("SELECT id, producto, cantidad, fecha, operador, observaciones FROM producciones WHERE lote=? OR id=?",
               (lote_ref, lote_ref.replace('PROD-','').lstrip('0') or 0))
     prod = c.fetchone()
@@ -300,7 +300,7 @@ def trazabilidad_lote_pt(lote_ref):
         return jsonify({'error': f'Lote no encontrado: {lote_ref}', 'lote_ref': lote_ref}), 404
     prod_data = {'id': prod[0], 'producto': prod[1], 'cantidad_kg': prod[2],
                  'fecha': prod[3], 'operador': prod[4] or '', 'observaciones': prod[5] or ''}
-    # MPs consumidas ÃÂ¢ÃÂÃÂ buscar Salidas etiquetadas con este lote_ref O por fecha+producto (legacy)
+    # MPs consumidas ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ buscar Salidas etiquetadas con este lote_ref O por fecha+producto (legacy)
     c.execute("""SELECT material_id, material_nombre, SUM(cantidad) as g_total,
                         GROUP_CONCAT(DISTINCT lote) as lotes_mp,
                         GROUP_CONCAT(DISTINCT proveedor) as proveedores
@@ -350,7 +350,7 @@ def trazabilidad_lote_pt(lote_ref):
 
 @bp.route('/api/trazabilidad/lote-mp/<path:lote_mp>')
 def trazabilidad_lote_mp(lote_mp):
-    """Traza hacia adelante: dado un lote de MP devuelve en quÃÂÃÂ© producciones se usÃÂÃÂ³ y a quÃÂÃÂ© clientes llegÃÂÃÂ³."""
+    """Traza hacia adelante: dado un lote de MP devuelve en quÃÂÃÂÃÂÃÂ© producciones se usÃÂÃÂÃÂÃÂ³ y a quÃÂÃÂÃÂÃÂ© clientes llegÃÂÃÂÃÂÃÂ³."""
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     # Ingreso del lote
     c.execute("""SELECT material_id, material_nombre, cantidad, fecha, proveedor,
@@ -367,7 +367,7 @@ def trazabilidad_lote_mp(lote_mp):
         'numero_oc': ingreso[5] or '', 'numero_factura': ingreso[6] or '',
         'fecha_vencimiento': ingreso[7] or '', 'estado_lote': ingreso[8] or 'VIGENTE'
     }
-    # Salidas ÃÂ¢ÃÂÃÂ producciones que consumieron este lote
+    # Salidas ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ producciones que consumieron este lote
     c.execute("""SELECT observaciones, cantidad, fecha FROM movimientos
                  WHERE lote=? AND tipo='Salida' ORDER BY fecha""", (lote_mp,))
     salidas = c.fetchall()
@@ -382,7 +382,7 @@ def trazabilidad_lote_mp(lote_mp):
             'lote_produccion': lote_prod, 'g_consumido': round(cant, 2),
             'fecha': fec[:10] if fec else '', 'observaciones': obs or ''
         })
-    # Detallar producciones ÃÂÃÂºnicas
+    # Detallar producciones ÃÂÃÂÃÂÃÂºnicas
     lotes_prod_unicos = list(set(p['lote_produccion'] for p in producciones_ref if p['lote_produccion']))
     producciones_detalle = []
     for lp in lotes_prod_unicos:
@@ -428,7 +428,7 @@ def get_analisis_abc():
     for mat, qty in items:
         prev_pct = (cumulative / total) * 100   # % acumulado ANTES de este item
         cumulative += qty
-        pct = (cumulative / total) * 100         # % acumulado DESPUÃÂÃÂS
+        pct = (cumulative / total) * 100         # % acumulado DESPUÃÂÃÂÃÂÃÂS
         # Clasificacion basada en donde EMPIEZA el item (estandar Pareto)
         # Un item es A si al agregarlo aun no hemos superado el 80% previo
         clasificacion = 'A' if prev_pct < 80 else ('B' if prev_pct < 95 else 'C')
@@ -458,26 +458,38 @@ def handle_alertas():
 @bp.route('/api/alertas-reabastecimiento')
 def alertas_reabastecimiento():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # MPs bajo minimo
     c.execute("""SELECT m.material_id,
                         COALESCE(mp.nombre_comercial, m.material_nombre) as nombre,
                         COALESCE(mp.proveedor,'') as proveedor,
                         COALESCE(mp.stock_minimo,0) as stock_minimo,
-                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_actual
+                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_actual,
+                        'MP' as tipo_material,
+                        COALESCE(mp.tipo,'') as subtipo
                  FROM movimientos m
                  LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                  GROUP BY m.material_id
                  HAVING stock_actual < stock_minimo AND stock_minimo > 0
                  ORDER BY (stock_actual/stock_minimo) ASC""")
-    rows = c.fetchall(); conn.close()
+    rows_mp = c.fetchall()
+    # MEE bajo minimo
+    c.execute("""SELECT codigo, descripcion, '' as proveedor, stock_minimo,
+                        stock_actual, 'MEE' as tipo_material, categoria as subtipo
+                 FROM maestro_mee
+                 WHERE estado='Activo' AND stock_minimo > 0 AND stock_actual < stock_minimo
+                 ORDER BY (stock_actual/stock_minimo) ASC""")
+    rows_mee = c.fetchall()
+    conn.close()
     alertas = []
-    for r in rows:
+    for r in list(rows_mp) + list(rows_mee):
         stock_actual = round(r[4] or 0, 1)
         stock_minimo = round(r[3], 1)
         alertas.append({'codigo_mp': r[0] or '', 'nombre': r[1] or '', 'proveedor': r[2] or '',
                         'stock_minimo': stock_minimo, 'stock_actual': max(stock_actual, 0),
-                        'deficit': round(max(stock_minimo - stock_actual, 0), 1)})
+                        'deficit': round(max(stock_minimo - stock_actual, 0), 1),
+                        'tipo': r[5] or 'MP', 'subtipo': r[6] or ''})
+    alertas.sort(key=lambda x: x['stock_actual']/x['stock_minimo'] if x['stock_minimo'] else 1)
     return jsonify({'alertas': alertas, 'total': len(alertas)})
-
 @bp.route('/api/stock')
 def get_stock():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -540,6 +552,75 @@ def get_mp(codigo):
     r = c.fetchone(); conn.close()
     return jsonify({'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]}) if r else (jsonify({'error':'not found'}),404)
 
+
+@bp.route('/api/maestro-mps/<codigo>/stock-minimo', methods=['PUT'])
+def update_stock_minimo(codigo):
+    """Actualiza el stock minimo de una MP."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    nuevo_min = d.get('stock_minimo')
+    if nuevo_min is None:
+        return jsonify({'error': 'stock_minimo requerido'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE maestro_mps SET stock_minimo=? WHERE codigo_mp=?", (float(nuevo_min), codigo))
+    if c.rowcount == 0:
+        conn.close(); return jsonify({'error': 'MP no encontrada'}), 404
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Stock minimo de {codigo} actualizado a {nuevo_min}'})
+
+@bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])
+def update_mee_stock_minimo(codigo):
+    """Actualiza el stock minimo de un MEE."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    nuevo_min = d.get('stock_minimo')
+    if nuevo_min is None:
+        return jsonify({'error': 'stock_minimo requerido'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET stock_minimo=? WHERE codigo=?", (float(nuevo_min), codigo))
+    if c.rowcount == 0:
+        conn.close(); return jsonify({'error': 'MEE no encontrado'}), 404
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Stock minimo de {codigo} actualizado a {nuevo_min}'})
+
+@bp.route('/api/consumo-manual', methods=['POST'])
+def consumo_manual():
+    """Registra consumo manual de una MP (ajuste por uso)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    codigo = (d.get('codigo_mp') or '').upper().strip()
+    cantidad = float(d.get('cantidad') or 0)
+    lote = d.get('lote', '')
+    obs = d.get('observaciones', 'Consumo manual')
+    operador = d.get('operador', session.get('compras_user', ''))
+    if not codigo or cantidad <= 0:
+        return jsonify({'error': 'Codigo y cantidad positiva requeridos'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    mp = c.fetchone()
+    nombre = mp[0] if mp else codigo
+    c.execute("""INSERT INTO movimientos
+                 (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
+                 VALUES (?,?,?,'Salida',datetime('now'),?,?,?)""",
+              (codigo, nombre, cantidad, obs, lote, operador))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Consumo de {cantidad} registrado para {nombre}'}), 201
+
+@bp.route('/api/maestro-mps/<codigo>/archivar', methods=['PUT'])
+def archivar_mp(codigo):
+    """Archiva una MP (la marca como inactiva sin borrarla)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", (codigo,))
+    if c.rowcount == 0:
+        conn.close(); return jsonify({'error': 'MP no encontrada'}), 404
+    conn.commit(); conn.close()
+    return jsonify({'message': f'MP {codigo} archivada exitosamente'})
+
 @bp.route('/api/recepcion', methods=['POST'])
 def registrar_recepcion():
     d = request.json; codigo = (d.get('codigo_mp') or '').upper().strip()
@@ -597,7 +678,7 @@ def registrar_recepcion():
         except: pass
     conn.commit(); conn.close()
     msg = f'{nombre} ingresada. Lote: {lote}'
-    if cuarentena: msg += ' ÃÂ¢ÃÂÃÂ En CUARENTENA (pendiente aprobacion QC)'
+    if cuarentena: msg += ' ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ En CUARENTENA (pendiente aprobacion QC)'
     if numero_oc: msg += f' | OC {numero_oc} actualizada'
     return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0),'cuarentena':cuarentena}), 201
 
@@ -662,7 +743,7 @@ def trazabilidad_lote(lote):
         'total_producciones': len(producciones)
     })
 
-# ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ CONTEO CICLICO BDG-PRO-002 ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+# ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ CONTEO CICLICO BDG-PRO-002 ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
 @bp.route('/api/conteo/estanterias', methods=['GET'])
 def conteo_estanterias():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -745,8 +826,10 @@ def conteo_programacion():
     import math
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est
-                 FROM lotes WHERE cantidad > 0
-                 GROUP BY est ORDER BY est""")
+                 FROM movimientos
+                 GROUP BY est
+                 HAVING SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) > 0
+                 ORDER BY est""")
     estanterias = [r[0] for r in c.fetchall()]
     if not estanterias:
         conn.close()
@@ -970,7 +1053,7 @@ def anular_movimiento(mov_id):
     if user not in ADMIN_USERS and mov.get('responsable','') != user:
         conn.close(); return jsonify({'error': 'Solo puedes anular tus propios movimientos o ser administrador'}), 403
     tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
-    obs_contra = f'[ANULACION] del movimiento #{mov_id} Ã¢ÂÂ {motivo} Ã¢ÂÂ por {user}'
+    obs_contra = f'[ANULACION] del movimiento #{mov_id} ÃÂ¢ÃÂÃÂ {motivo} ÃÂ¢ÃÂÃÂ por {user}'
     c.execute("""INSERT INTO movimientos
                  (material_id, tipo, cantidad, unidad, lote_ref, responsable, observaciones, fecha)
                  VALUES (?,?,?,?,?,?,?,datetime('now'))""",
@@ -981,7 +1064,7 @@ def anular_movimiento(mov_id):
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now'))""",
               (user, 'ANULAR_MOVIMIENTO', 'movimientos', str(mov_id),
-               f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) Ã¢ÂÂ {motivo}',
+               f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) ÃÂ¢ÃÂÃÂ {motivo}',
                request.remote_addr))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
@@ -1088,12 +1171,12 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '.l{background:#ecf0f1;font-weight:bold;font-size:8.5pt;width:35%;}'
        '@media print{.ph{display:none;}body{background:white;padding:0;}}'
        '</style></head><body>')
-    h+=('<div class="ph"><b>Rotulo de Recepcion ÃÂ¢ÃÂÃÂ Materia Prima</b><button class="pb" onclick="window.print()">Imprimir</button></div>'
+    h+=('<div class="ph"><b>Rotulo de Recepcion ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Materia Prima</b><button class="pb" onclick="window.print()">Imprimir</button></div>'
         '<div class="r"><div class="rh">'
         '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIA PRIMA</span>'
         '<span style="font-size:7.5pt;opacity:0.85;">Espagiria Laboratorios &nbsp;|&nbsp; COC-PRO-002-F07 &nbsp;|&nbsp; '+hoy+'</span>'
         '</div>'
-        '<div class="lote"><div style="font-size:9pt;color:#888;margin-bottom:4px;">NUMERO DE LOTE ÃÂ¢ÃÂÃÂ CODIGO DE BARRAS</div>'
+        '<div class="lote"><div style="font-size:9pt;color:#888;margin-bottom:4px;">NUMERO DE LOTE ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ CODIGO DE BARRAS</div>'
         '<div class="lnum">'+lote+'</div>'
         '<svg id="bc" style="margin-top:6px;"></svg>'
         '<div style="font-size:7pt;color:#888;margin-top:2px;">'+bv+'</div>'
@@ -1153,30 +1236,30 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
          '.calidad{background:#e8f5e9;}'
          '@media print{.ph{display:none;}body{background:white;padding:0;}}'
          '</style></head><body>')
-    h += ('<div class="ph"><b>RÃÂÃÂ³tulo de RecepciÃÂÃÂ³n ÃÂ¢ÃÂÃÂ Material E&E</b>'
+    h += ('<div class="ph"><b>RÃÂÃÂÃÂÃÂ³tulo de RecepciÃÂÃÂÃÂÃÂ³n ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Material E&E</b>'
           '<button class="pb" onclick="window.print()">Imprimir</button></div>'
           '<div class="r"><div class="rh">'
           '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIAL E&E</span>'
           '<span style="font-size:7.5pt;opacity:0.85;">Espagiria Laboratorios &nbsp;|&nbsp; COC-PRO-002-F07 &nbsp;|&nbsp; ' + hoy + '</span>'
           '</div>'
           '<div class="lote">'
-          '<div style="font-size:9pt;color:#666;margin-bottom:4px;">CODIGO MATERIAL ÃÂ¢ÃÂÃÂ CODIGO DE BARRAS</div>'
+          '<div style="font-size:9pt;color:#666;margin-bottom:4px;">CODIGO MATERIAL ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ CODIGO DE BARRAS</div>'
           '<div class="lnum">' + codigo + '</div>'
           '<svg id="bc" style="margin-top:6px;"></svg>'
           '</div><table>'
-          '<tr><td class="l">CÃÂÃÂ³digo MEE:</td><td style="font-weight:700;">' + codigo + '</td></tr>'
-          '<tr><td class="l">DescripciÃÂÃÂ³n:</td><td style="font-weight:700;">' + desc + '</td></tr>'
-          '<tr><td class="l">CategorÃÂÃÂ­a:</td><td>' + cat + '</td></tr>'
+          '<tr><td class="l">CÃÂÃÂÃÂÃÂ³digo MEE:</td><td style="font-weight:700;">' + codigo + '</td></tr>'
+          '<tr><td class="l">DescripciÃÂÃÂÃÂÃÂ³n:</td><td style="font-weight:700;">' + desc + '</td></tr>'
+          '<tr><td class="l">CategorÃÂÃÂÃÂÃÂ­a:</td><td>' + cat + '</td></tr>'
           '<tr><td class="l">Proveedor / Ref. compra:</td><td style="font-weight:700;">' + prov_display + '</td></tr>'
           '<tr><td class="l">Cantidad recibida:</td><td style="color:#27ae60;font-weight:700;">' + f"{cantidad:,}" + ' unidades</td></tr>'
-          '<tr><td class="l">Fecha de recepciÃÂÃÂ³n:</td><td style="font-weight:700;">' + hoy + '</td></tr>'
-          '<tr><td class="l">Fecha de anÃÂÃÂ¡lisis / inspecciÃÂÃÂ³n:</td><td style="height:28px;background:#fffde7;"></td></tr>'
+          '<tr><td class="l">Fecha de recepciÃÂÃÂÃÂÃÂ³n:</td><td style="font-weight:700;">' + hoy + '</td></tr>'
+          '<tr><td class="l">Fecha de anÃÂÃÂÃÂÃÂ¡lisis / inspecciÃÂÃÂÃÂÃÂ³n:</td><td style="height:28px;background:#fffde7;"></td></tr>'
           '<tr><td class="l">Piezas inspeccionadas (AQL):</td><td style="height:28px;"></td></tr>'
           '<tr class="calidad"><td class="l calidad" style="color:#1b5e20;font-weight:800;">Estado de calidad:</td>'
           '<td style="height:28px;"><span style="margin-right:14px;">&#9744; Aprobado</span>'
           '<span style="margin-right:14px;">&#9744; En cuarentena</span>'
           '<span>&#9744; Rechazado</span></td></tr>'
-          '<tr><td class="l">NÃÂÃÂºmero de recepciÃÂÃÂ³n:</td><td>' + nr + '</td></tr>'
+          '<tr><td class="l">NÃÂÃÂÃÂÃÂºmero de recepciÃÂÃÂÃÂÃÂ³n:</td><td>' + nr + '</td></tr>'
           '<tr><td class="l">Recibido por:</td><td style="height:30px;">' + oper + '</td></tr>'
           '<tr><td class="l">Aprobado por (Calidad):</td><td style="height:30px;"></td></tr>'
           '</table>'
@@ -1374,7 +1457,7 @@ def backfill_precios_mp():
                      WHERE codigo_mp=? AND (precio_referencia IS NULL OR precio_referencia=0)""",
                   (round(avg_p, 2), mat_id))
         actualizados += c.rowcount
-    # Fuente 2: precios_mp_historico (precio mÃÂÃÂ¡s reciente por MP)
+    # Fuente 2: precios_mp_historico (precio mÃÂÃÂÃÂÃÂ¡s reciente por MP)
     c.execute("""SELECT codigo_mp, precio_kg FROM precios_mp_historico
                  WHERE (codigo_mp, fecha) IN (
                      SELECT codigo_mp, MAX(fecha) FROM precios_mp_historico
@@ -1403,9 +1486,9 @@ def backfill_precios_mp():
     })
 
 
-# ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
-#  MAQUILA 360 ÃÂ¢ÃÂÃÂ API
-# ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+# ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
+#  MAQUILA 360 ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ API
+# ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ
 
 
 # ===========================================================================
@@ -1645,9 +1728,9 @@ def mee_anular_movimiento(mov_id):
 
 
 
-# ═══════════════════════════════════════════════════════════════
-#  ACONDICIONAMIENTO + LIBERACIÓN — Fase 4
-# ═══════════════════════════════════════════════════════════════
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+#  ACONDICIONAMIENTO + LIBERACIÃN â Fase 4
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 def _init_acondicionamiento():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
