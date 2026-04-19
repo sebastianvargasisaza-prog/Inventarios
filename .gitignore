@@ -1,12 +1,36 @@
-﻿*.bak
-*.bat
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Backups generados por scripts de refactor
+*.bak
+*.bak_*
+
+# Scripts de refactor (solo para uso local, no van al repo)
 patch_*.py
 push_*.py
 cargar_*.py
 recargar_*.py
 run_refactor_*.py
-k==*
-tatus
-.txt
+create_database_py.py
+extract_templates.py
+
+# Archivos de configuración local
+*.bat
 formulas_data.json
-erssebastia*
+
+# Entornos virtuales
+venv/
+.env/
+.venv/
+
+# Variables de entorno
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp

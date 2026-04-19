@@ -34,43 +34,6 @@ app.config.update(
 )
 register_hooks(app)
 
-
-from templates_py.rrhh_html import RRHH_HTML
-
-# ─── HUB HHA GROUP ────────────────────────────────────────────
-from templates_py.compromisos_html import COMPROMISOS_HTML
-
-from templates_py.home_html import HOME_HTML
-
-from templates_py.hub_html import HUB_HTML
-
-# ─── LOGIN COMPRAS ────────────────────────────────────────────
-# ─── MÓDULO CLIENTES ──────────────────────────────────────────
-from templates_py.clientes_html import CLIENTES_HTML
-
-# ─── MÓDULO CALIDAD BPM ────────────────────────────────────────
-from templates_py.calidad_html import CALIDAD_HTML
-
-# ─── MÓDULO HQ GERENCIA ────────────────────────────────────────
-from templates_py.gerencia_html import GERENCIA_HTML
-
-# ─── MÓDULO FINANCIERO ────────────────────────────────────────
-from templates_py.financiero_html import FINANCIERO_HTML
-
-from templates_py.login_html import LOGIN_HTML
-
-# ─── MÓDULO COMPRAS ───────────────────────────────────────────
-from templates_py.compras_html import COMPRAS_HTML
-
-from templates_py.recepcion_html import RECEPCION_HTML
-
-from templates_py.salida_html import SALIDA_HTML
-
-from templates_py.solicitudes_html import SOLICITUDES_HTML
-
-from templates_py.dashboard_html import DASHBOARD_HTML
-
-
 # ─── Blueprints ───────────────────────────────────────────────────────────
 from blueprints.core import bp as core_bp
 from blueprints.hub import bp as hub_bp
