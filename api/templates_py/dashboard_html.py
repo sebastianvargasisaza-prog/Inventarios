@@ -4,7 +4,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inventarios - Espagiria Laboratorios</title>
+<title>Planta - Espagiria Laboratorios</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; padding:20px; }
@@ -41,17 +41,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </style>
 </head>
 <body>
-<div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9999;display:flex;align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:16px;padding:40px;max-width:400px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <div style="font-size:2.5em;margin-bottom:8px;">&#128100;</div>
-    <h2 style="color:#2B7A78;margin-top:0;margin-bottom:6px;">&#191;Con qui&#233;n trabajamos hoy?</h2>
-    <p style="color:#888;font-size:0.88em;margin-bottom:24px;">Escribe tu nombre para registrar los movimientos</p>
-    <input type="text" id="oper-input" placeholder="Tu nombre..." style="font-size:1.1em;text-align:center;padding:12px;border:2px solid #2B7A78;border-radius:8px;margin-bottom:14px;" onkeypress="if(event.key==='Enter')confirmarOper()">
-    <br>
-    <button onclick="confirmarOper()" style="background:#2B7A78;padding:13px 40px;border-radius:8px;font-size:1em;font-weight:600;width:100%;">Entrar</button>
-    <div id="oper-error" style="color:#cc0000;font-size:0.85em;margin-top:8px;display:none;">Por favor escribe tu nombre</div>
-  </div>
-</div>
+<div id="modal-operador" style="display:none;"></div>
 <div id="modal-solicitud-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9996;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:480px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <h2 style="color:#2B7A78;margin-bottom:4px;">&#128722; Solicitar Compra</h2>
@@ -95,7 +85,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Sistema de Inventarios</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
+    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
     <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">â Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
@@ -873,23 +863,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
-var OPER_ACTUAL='';
-// Auto-login por localStorage (recordar operador por dispositivo)
-(function(){
-  try{
-    var saved=localStorage.getItem('espagiria_operador');
-    if(saved&&saved.trim()){
-      OPER_ACTUAL=saved.trim();
-      document.addEventListener('DOMContentLoaded',function(){
-        var modal=document.getElementById('modal-operador');
-        if(modal) modal.style.display='none';
-        var c=document.getElementById('oper-chip');
-        if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
-        loadDashboardCompleto();loadFormulas();
-      });
-    }
-  }catch(e){}
-})();
+var OPER_ACTUAL='{usuario}';
+document.addEventListener('DOMContentLoaded',function(){
+  var c=document.getElementById('oper-chip');
+  if(c&&OPER_ACTUAL) c.innerHTML='<span>&#128100; '+OPER_ACTUAL+'</span>';
+  loadDashboardCompleto();loadFormulas();
+});
 var _meeData=[], _prodPendiente=null;
 var _ajDat={};
 function _eq(s){return (s||'').split("'").join('&#39;');}
