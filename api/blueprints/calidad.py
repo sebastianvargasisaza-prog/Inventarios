@@ -1,0 +1,153 @@
+# blueprints/calidad.py — extraído de index.py (Fase C)
+import os
+import json
+import sqlite3
+import hmac
+import time
+from datetime import datetime, timedelta
+from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from templates_py.rrhh_html import RRHH_HTML
+from templates_py.compromisos_html import COMPROMISOS_HTML
+from templates_py.home_html import HOME_HTML
+from templates_py.hub_html import HUB_HTML
+from templates_py.clientes_html import CLIENTES_HTML
+from templates_py.calidad_html import CALIDAD_HTML
+from templates_py.gerencia_html import GERENCIA_HTML
+from templates_py.financiero_html import FINANCIERO_HTML
+from templates_py.login_html import LOGIN_HTML
+from templates_py.compras_html import COMPRAS_HTML
+from templates_py.recepcion_html import RECEPCION_HTML
+from templates_py.salida_html import SALIDA_HTML
+from templates_py.solicitudes_html import SOLICITUDES_HTML
+from templates_py.dashboard_html import DASHBOARD_HTML
+
+bp = Blueprint('calidad', __name__)
+
+
+@bp.route('/calidad')
+def calidad_page():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/calidad')
+    return Response(CALIDAD_HTML, mimetype='text/html')
+
+
+@bp.route('/api/calidad/dashboard')
+def calidad_dashboard():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Lotes en cuarentena
+    c.execute("""SELECT COUNT(*) FROM movimientos
+                 WHERE tipo='Entrada' AND (estado_lote='Cuarentena'
+                 OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))""")
+    cuarentena = c.fetchone()[0]
+    # Aprobados y rechazados últimos 30d
+    c.execute("""SELECT COUNT(*) FROM movimientos
+                 WHERE estado_lote='Aprobado'
+                 AND fecha >= date('now','-30 days')""")
+    aprobados = c.fetchone()[0]
+    c.execute("""SELECT COUNT(*) FROM movimientos
+                 WHERE estado_lote='Rechazado'
+                 AND fecha >= date('now','-30 days')""")
+    rechazados = c.fetchone()[0]
+    # NC abiertas
+    c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'")
+    nc_abiertas = c.fetchone()[0]
+    # Calibraciones vencidas
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    c.execute("SELECT COUNT(*) FROM calibraciones_instrumentos WHERE fecha_proxima < ? OR estado='Vencida'", (hoy,))
+    cals_vencidas = c.fetchone()[0]
+    # Actividad reciente: últimas NC + últimas acciones CC
+    actividad = []
+    c.execute("""SELECT 'NC' as tipo, descripcion, area, fecha, estado, impacto
+                 FROM no_conformidades ORDER BY id DESC LIMIT 5""")
+    for r in c.fetchall():
+        color = 'rojo' if r[5] in ('Alto','Critico') else 'amari'
+        actividad.append({'titulo': f'NC #{r[0]}: {r[1][:60]}' if False else f'NC — {r[1][:55]}',
+                          'subtitulo': f'{r[2]} · {r[4]}', 'fecha': r[3], 'color': color})
+    c.execute("""SELECT material_nombre, lote, estado_lote, fecha
+                 FROM movimientos WHERE tipo='Entrada'
+                 AND estado_lote IN ('Aprobado','Rechazado')
+                 ORDER BY id DESC LIMIT 5""")
+    for r in c.fetchall():
+        color = 'verde' if r[2] == 'Aprobado' else 'rojo'
+        actividad.append({'titulo': f'Lote {r[1] or "s/n"} — {r[2]}',
+                          'subtitulo': r[0][:50], 'fecha': r[3], 'color': color})
+    actividad.sort(key=lambda x: x.get('fecha','') or '', reverse=True)
+    conn.close()
+    return jsonify({
+        'cuarentena': cuarentena,
+        'aprobados': aprobados,
+        'rechazados': rechazados,
+        'nc_abiertas': nc_abiertas,
+        'cals_vencidas': cals_vencidas,
+        'actividad_reciente': actividad[:8]
+    })
+
+
+@bp.route('/api/calidad/no-conformidades', methods=['GET', 'POST'])
+def handle_no_conformidades():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        desc = (d.get('descripcion') or '').strip()
+        if not desc:
+            conn.close(); return jsonify({'error': 'descripcion requerida'}), 400
+        c.execute("""INSERT INTO no_conformidades
+                     (fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
+                      impacto,accion_correctiva,estado,creado_por)
+                     VALUES (date('now'),?,?,?,?,?,?,?,?,'Abierta',?)""",
+                  (d.get('tipo','Proceso'), desc,
+                   d.get('area',''), d.get('responsable',''),
+                   d.get('lote',''), d.get('codigo_mp',''),
+                   d.get('impacto','Bajo'), d.get('accion_correctiva',''),
+                   session.get('compras_user','')))
+        conn.commit(); new_id = c.lastrowid; conn.close()
+        return jsonify({'id': new_id}), 201
+    # GET
+    c.execute("""SELECT id,fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
+                        impacto,accion_correctiva,estado,fecha_cierre,cerrado_por,creado_por
+                 FROM no_conformidades ORDER BY id DESC LIMIT 200""")
+    cols = ['id','fecha','tipo','descripcion','area','responsable','lote','codigo_mp',
+            'impacto','accion_correctiva','estado','fecha_cierre','cerrado_por','creado_por']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
+
+@bp.route('/api/calidad/no-conformidades/<int:ncid>/cerrar', methods=['POST'])
+def cerrar_no_conformidad(ncid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""UPDATE no_conformidades
+                 SET estado='Cerrada', fecha_cierre=date('now'), cerrado_por=?
+                 WHERE id=?""",
+              (session.get('compras_user',''), ncid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/calidad/calibraciones')
+def get_calibraciones():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    # Auto-update estado based on fecha_proxima
+    c.execute("""UPDATE calibraciones_instrumentos
+                 SET estado='Vencida' WHERE fecha_proxima < ? AND estado='Vigente'""", (hoy,))
+    conn.commit()
+    c.execute("""SELECT id,instrumento,codigo,ubicacion,fecha_ultima,fecha_proxima,
+                        responsable,empresa,estado,certificado,observaciones
+                 FROM calibraciones_instrumentos
+                 ORDER BY CASE estado WHEN 'Vencida' THEN 0 ELSE 1 END, fecha_proxima ASC""")
+    cols = ['id','instrumento','codigo','ubicacion','fecha_ultima','fecha_proxima',
+            'responsable','empresa','estado','certificado','observaciones']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close(); return jsonify(rows)
+
