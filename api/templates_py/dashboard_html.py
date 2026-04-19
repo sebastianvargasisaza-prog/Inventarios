@@ -112,6 +112,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchTab('cuarentena',this)">&#128274; Cuarentena</button>
     <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
     <button class="tab-button" onclick="switchTab('conteo',this)">&#9989; Conteo Ciclico</button>
+    <button class="tab-button" onclick="switchTab('empaque',this)">&#128230; Empaque MEE</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
@@ -796,6 +797,76 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
+
+  <!-- ==================== TAB: EMPAQUE MEE ==================== -->
+  <div id="empaque" class="tab-content">
+    <h2>&#128230; Material de Empaque y Envase (MEE)</h2>
+    <p style="color:#666;font-size:0.9em;margin-bottom:16px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de produccion.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">
+      <div style="background:#2B7A78;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128230;</div><div style="font-size:2em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.82em;opacity:0.9;">Total MEE Activos</div></div>
+      <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#9888;</div><div style="font-size:2em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.82em;opacity:0.9;">Bajo Minimo</div></div>
+      <div style="background:#3498db;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128202;</div><div style="font-size:2em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.82em;opacity:0.9;">Mov. Esta Semana</div></div>
+      <div style="background:#9b59b6;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128229;</div><div style="font-size:2em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.82em;opacity:0.9;">Entradas Este Mes</div></div>
+    </div>
+    <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
+      <div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
+          <select id="mee-cat-filter" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <button onclick="cargarMeeStock()" style="white-space:nowrap;">&#8635; Actualizar</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Ultimo Mov.</th></tr></thead>
+          <tbody id="mee-stock-tbody"><tr><td colspan="7" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+        </div>
+      </div>
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
+        <h3 style="margin-bottom:14px;color:#2B7A78;font-size:1em;">&#9998; Registrar Movimiento</h3>
+        <div class="form-group"><label>Tipo</label>
+          <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
+            <option value="Entrada">&#128229; Entrada - recepcion</option>
+            <option value="Salida">&#128228; Salida - consumo en produccion</option>
+            <option value="Ajuste">&#9878; Ajuste de inventario</option>
+          </select></div>
+        <div class="form-group"><label>Material MEE</label>
+          <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
+        <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin-bottom:10px;font-size:0.88em;color:#1a4a6b;"></div>
+        <div class="form-group"><label>Cantidad</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0"></div>
+        <div class="form-group"><label>Unidad</label><input type="text" id="mee-unidad" value="und" placeholder="und / cajas / frascos"></div>
+        <div id="mee-lote-group" class="form-group"><label>Lote / Ref. proveedor</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
+        <div id="mee-batch-group" class="form-group" style="display:none;"><label>Batch de produccion</label><input type="text" id="mee-batch" placeholder="Ej: BATCH-2026-001"></div>
+        <div class="form-group"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
+        <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar</button>
+        <div id="mee-form-msg" style="margin-top:8px;"></div>
+      </div>
+    </div>
+    <div style="margin-bottom:22px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="color:#444;">Historial de Movimientos</h3>
+        <button onclick="cargarMeeHistorial()" style="background:#555;">Ver todos</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table"><thead><tr><th>#</th><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th>Cantidad</th><th>Lote/Batch</th><th>Responsable</th><th>Fecha</th><th></th></tr></thead>
+        <tbody id="mee-hist-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody></table>
+      </div>
+    </div>
+    <div style="background:#f0f8f0;border:1px solid #c3e6cb;border-radius:10px;padding:20px;">
+      <h3 style="margin-bottom:12px;color:#155724;">&#128269; Trazabilidad MEE</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+        <div>
+          <label style="font-weight:600;font-size:0.88em;color:#155724;">Por Batch de Produccion</label>
+          <div style="display:flex;gap:8px;margin-top:5px;"><input type="text" id="mee-traz-batch" placeholder="Ej: BATCH-2026-001" style="flex:1;"><button onclick="buscarTrazabilidadBatch()" style="white-space:nowrap;background:#155724;">Buscar</button></div>
+        </div>
+        <div>
+          <label style="font-weight:600;font-size:0.88em;color:#155724;">Por Codigo MEE</label>
+          <div style="display:flex;gap:8px;margin-top:5px;"><input type="text" id="mee-traz-codigo" placeholder="Ej: MEE-CAJ-001" style="flex:1;"><button onclick="buscarTrazabilidadMee()" style="white-space:nowrap;background:#155724;">Buscar</button></div>
+        </div>
+      </div>
+      <div id="mee-traz-result"></div>
+    </div>
+  </div>
+  <!-- ==================== /TAB EMPAQUE MEE ==================== -->
+
   </div>
 
 </div>
@@ -993,6 +1064,7 @@ function switchTab(n,btn){
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
+  if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
   if(n==='produccion') cargarHistProd();
@@ -2398,6 +2470,80 @@ async function cargarHistorialConteos(){
     tb.innerHTML = h;
   }catch(e){}
 }
+
+async function cargarMeeAlertas(){
+  try{
+    var r=await fetch('/api/mee/alertas'); var d=await r.json(); var res=d.resumen||{};
+    var cT=document.getElementById('mee-c-total'); var cB=document.getElementById('mee-c-bajo');
+    var cS=document.getElementById('mee-c-semana'); var cM=document.getElementById('mee-c-mes');
+    if(cT) cT.textContent=res.total_mee||0;
+    if(cB){ cB.textContent=res.bajo_minimo||0; var card=document.getElementById('mee-card-bajo'); if(card) card.style.background=(res.bajo_minimo>0)?'#e74c3c':'#27ae60'; }
+    if(cS) cS.textContent=res.movimientos_semana||0;
+    if(cM) cM.textContent=res.entradas_mes||0;
+    var panel=document.getElementById('mee-alertas-panel'); if(!panel) return;
+    if(d.bajo_minimo&&d.bajo_minimo.length>0){
+      var h='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;"><strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock minimo</strong><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
+      d.bajo_minimo.forEach(function(m){ var pct=Math.round(m.ratio*100); var col=pct<=0?'#e74c3c':'#e67e22'; h+='<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;"><span style="font-weight:700;color:'+col+';">'+m.descripcion+'</span> <span style="color:#888;">['+m.categoria+'] </span><span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+m.unidad+' ('+pct+'%)</span></div>'; });
+      h+='</div></div>';
+      if(d.obsolescencia&&d.obsolescencia.length>0){ h+='<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;margin-bottom:8px;"><strong>&#128337; Sin movimiento +90 dias:</strong> '+d.obsolescencia.map(function(o){return o.descripcion+' ('+o.stock_actual+')';}).join(' · ')+'</div>'; }
+      panel.innerHTML=h;
+    } else { panel.innerHTML='<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los MEE sobre stock minimo</div>'; }
+  }catch(e){}
+}
+async function cargarMeeStock(){
+  var cat=''; var sel=document.getElementById('mee-cat-filter'); if(sel) cat=sel.value||'';
+  try{
+    var r=await fetch('/api/mee/stock?categoria='+encodeURIComponent(cat)); var d=await r.json();
+    if(sel&&d.categorias){ var cur=sel.value; sel.innerHTML='<option value="">Todas ('+d.total+')</option>'; d.categorias.forEach(function(c){sel.innerHTML+='<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+'</option>';}); }
+    var codSel=document.getElementById('mee-codigo-sel');
+    if(codSel&&d.items){ var cur2=codSel.value; codSel.innerHTML='<option value="">-- Seleccionar material --</option>'; d.items.forEach(function(m){codSel.innerHTML+='<option value="'+m.codigo+'" data-stock="'+m.stock_actual+'" data-unidad="'+m.unidad+'" data-min="'+m.stock_minimo+'">'+m.codigo+' - '+m.descripcion+'</option>';}); if(cur2) codSel.value=cur2; }
+    var tb=document.getElementById('mee-stock-tbody'); if(!tb) return;
+    if(!d.items||!d.items.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin items activos</td></tr>';return;}
+    var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
+    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'--'};
+    var h=''; d.items.forEach(function(m){ var c=aC[m.alerta]||'#95a5a6'; var lbl=aL[m.alerta]||''; var last=(m.ultima_entrada||m.ultima_salida||'').substring(0,10); var ob=m.obsoleto?'<span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 4px;font-size:0.73em;margin-left:4px;">+90d</span>':'';
+      h+='<tr><td style="font-family:monospace;font-size:0.82em;color:#555;">'+m.codigo+'</td><td style="font-size:0.88em;">'+m.descripcion+ob+'</td><td style="font-size:0.8em;color:#777;">'+m.categoria+'</td><td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'--')+'</td><td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td><td style="font-size:0.8em;color:#999;">'+(last||'--')+'</td></tr>';
+    }); tb.innerHTML=h;
+  }catch(e){}
+}
+function meeActualizarTipo(tipo){ var iS=tipo==='Salida'; var lg=document.getElementById('mee-lote-group'); var bg=document.getElementById('mee-batch-group'); if(lg) lg.style.display=iS?'none':'block'; if(bg) bg.style.display=iS?'block':'none'; }
+function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none';return;} var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
+async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var msg=document.getElementById('mee-form-msg');
+  if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
+  if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
+  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs})}); var res=await r.json();
+    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial();
+    } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
+  }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
+}
+async function cargarMeeHistorial(){ try{ var r=await fetch('/api/mee/movimientos?limit=30'); var d=await r.json(); var tb=document.getElementById('mee-hist-tbody'); if(!tb) return;
+  if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos registrados</td></tr>';return;}
+  var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'}; var h='';
+  d.movimientos.forEach(function(m){var c=tC[m.tipo]||'#555'; var ref=m.batch_ref||m.lote_ref||'';
+    h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td><button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
+  }); tb.innerHTML=h;
+  }catch(e){}}
+async function meeAnular(id){ var m=prompt('Motivo de anulacion (obligatorio):'); if(!m||!m.trim()){alert('Debes ingresar un motivo.');return;}
+  try{var r=await fetch('/api/mee/anular/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:m.trim()})}); var res=await r.json();
+    if(res.ok){alert(res.message);cargarMeeHistorial();cargarMeeStock();cargarMeeAlertas();}else alert(res.error||'Error');
+  }catch(e){alert('Error de conexion');}}
+async function buscarTrazabilidadBatch(){ var b=(document.getElementById('mee-traz-batch')||{}).value||''; b=b.trim(); if(!b){alert('Ingresa un batch');return;}
+  var res=document.getElementById('mee-traz-result'); if(res)res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
+  try{var r=await fetch('/api/mee/trazabilidad?batch='+encodeURIComponent(b)); var d=await r.json();
+    if(!d.consumos||!d.consumos.length){if(res)res.innerHTML='<div style="color:#999;padding:10px 0;">Sin consumos para batch: <strong>'+b+'</strong></div>';return;}
+    var h='<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;"><h4 style="margin-bottom:10px;color:#155724;">Empaque consumido en batch: <strong>'+b+'</strong></h4><table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Cantidad</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
+    d.consumos.forEach(function(c){h+='<tr><td style="font-family:monospace;font-size:0.82em;">'+c.mee_codigo+'</td><td>'+c.descripcion+'</td><td style="color:#777;font-size:0.8em;">'+c.categoria+'</td><td style="font-weight:700;">'+c.cantidad+' '+c.unidad+'</td><td>'+c.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(c.fecha?c.fecha.substring(0,16):'')+'</td></tr>';});
+    h+='</tbody></table></div>'; if(res)res.innerHTML=h;
+  }catch(e){if(res)res.innerHTML='<div style="color:#e74c3c;">Error</div>';}}
+async function buscarTrazabilidadMee(){ var cod=(document.getElementById('mee-traz-codigo')||{}).value||''; cod=cod.trim(); if(!cod){alert('Ingresa un codigo MEE');return;}
+  var res=document.getElementById('mee-traz-result'); if(res)res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
+  try{var r=await fetch('/api/mee/trazabilidad?codigo='+encodeURIComponent(cod)); var d=await r.json();
+    if(!d.historial||!d.historial.length){if(res)res.innerHTML='<div style="color:#999;padding:10px 0;">Sin historial para MEE: <strong>'+cod+'</strong></div>';return;}
+    var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'};
+    var h='<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;"><h4 style="margin-bottom:10px;color:#155724;">Historial de: <strong>'+cod+'</strong></h4><table class="table"><thead><tr><th>Tipo</th><th>Cantidad</th><th>Lote</th><th>Batch Prod.</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
+    d.historial.forEach(function(m){var c=tC[m.tipo]||'#555'; h+='<tr><td><span style="color:'+c+';font-weight:700;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' '+m.unidad+'</td><td style="font-size:0.82em;color:#777;">'+(m.lote_ref||'--')+'</td><td style="font-family:monospace;font-size:0.82em;">'+(m.batch_ref||'--')+'</td><td>'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td></tr>';});
+    h+='</tbody></table></div>'; if(res)res.innerHTML=h;
+  }catch(e){if(res)res.innerHTML='<div style="color:#e74c3c;">Error</div>';}}
 </script>
 </body>
 </html>
