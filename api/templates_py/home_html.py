@@ -33,9 +33,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 <div class="wrap">
   <div class="greeting">&#128075; Bienvenido</div>
   <div class="greeting-sub">Selecciona el modulo al que deseas acceder.</div>
-  <div class="sect">Produccion &amp; Inventario</div>
+  <div class="sect">Produccion &amp; Planta</div>
   <div class="grid">
-    <a href="/inventarios" class="card"><div class="card-icon">&#128230;</div><div class="card-name">Inventario</div><div class="card-desc">Stock, lotes, trazabilidad</div></a>
+    <a href="/inventarios" class="card"><div class="card-icon">&#127981;</div><div class="card-name">Planta</div><div class="card-desc">Stock, lotes, trazabilidad</div></a>
     <a href="/recepcion" class="card"><div class="card-icon">&#128666;</div><div class="card-name">Recepcion</div><div class="card-desc">Ingreso de MP y MEE</div></a>
   </div>
   <div class="sect">Comercial &amp; Compras</div>
