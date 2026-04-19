@@ -8,8 +8,11 @@ COMPRAS_USERS = {
     'catalina':  os.environ.get('PASS_CATALINA',  'hha2026'),
     'luz':       os.environ.get('PASS_LUZ',       'hha2026'),
     'mayra':     os.environ.get('PASS_MAYRA',     'hha2026'),
+    'gloria':    os.environ.get('PASS_GLORIA',    'hha2026'),
+    'daniela':   os.environ.get('PASS_DANIELA',   'hha2026'),
 }
-ADMIN_USERS = {'sebastian', 'alejandro'}
-CONTADORA_USERS = {'mayra'}   # puede todo EXCEPTO Aprobar/Pagar OC
+ADMIN_USERS     = {'sebastian', 'alejandro'}
+CONTADORA_USERS = {'mayra'}                               # Finanzas + consulta
+RRHH_USERS      = {'gloria', 'daniela', 'luz', 'mayra'}  # Acceso a /rrhh
 
 DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')
