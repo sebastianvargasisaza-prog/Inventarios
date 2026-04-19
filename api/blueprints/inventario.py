@@ -713,8 +713,20 @@ def conteo_iniciar():
     est = d.get('estanteria', '')
     responsable = d.get('responsable', session.get('compras_user',''))
     from datetime import date
-    numero = 'CNT-' + date.today().strftime('%Y%m%d') + '-' + est.replace(' ','')[:6].upper()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Verificar si ya existe un conteo ABIERTO para esta estanteria
+    c.execute("SELECT id, numero FROM conteos_fisicos WHERE estanteria=? AND estado='Abierto' ORDER BY id DESC LIMIT 1", (est,))
+    existing = c.fetchone()
+    if existing:
+        conn.close()
+        return jsonify({'conteo_id': existing[0], 'numero': existing[1],
+                        'message': 'Conteo retomado', 'resuming': True})
+    numero = 'CNT-' + date.today().strftime('%Y%m%d') + '-' + est.replace(' ','')[:6].upper()
+    # Si el numero ya existe (mismo dia), agregar sufijo incremental
+    c.execute("SELECT COUNT(*) FROM conteos_fisicos WHERE numero LIKE ?", (numero + '%',))
+    suffix = c.fetchone()[0]
+    if suffix > 0:
+        numero = numero + f'-{suffix+1}'
     try:
         c.execute("INSERT INTO conteos_fisicos (numero,fecha_inicio,estado,responsable,estanteria,tipo_conteo) VALUES (?,datetime('now'),'Abierto',?,?,'Ciclico')",
                   (numero, responsable, est))
@@ -724,6 +736,46 @@ def conteo_iniciar():
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)}), 400
+
+
+@bp.route('/api/conteo/programacion', methods=['GET'])
+def conteo_programacion():
+    """Retorna la programacion ciclica automatica: estanteria asignada por semana ISO."""
+    from datetime import date, timedelta
+    import math
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est
+                 FROM lotes WHERE cantidad > 0
+                 GROUP BY est ORDER BY est""")
+    estanterias = [r[0] for r in c.fetchall()]
+    if not estanterias:
+        conn.close()
+        return jsonify({'semanas': [], 'total_estanterias': 0})
+    n = len(estanterias)
+    hoy = date.today()
+    lunes_actual = hoy - timedelta(days=hoy.weekday())
+    semanas = []
+    for delta in range(-1, 5):
+        lunes = lunes_actual + timedelta(weeks=delta)
+        semana_iso = lunes.isocalendar()[1]
+        anio = lunes.isocalendar()[0]
+        idx = (semana_iso - 1) % n
+        est = estanterias[idx]
+        fecha_fin = lunes + timedelta(days=6)
+        c.execute("""SELECT id, numero, estado FROM conteos_fisicos
+                     WHERE estanteria=? AND fecha_inicio BETWEEN ? AND ?
+                     ORDER BY id DESC LIMIT 1""",
+                  (est, lunes.isoformat(), fecha_fin.isoformat() + ' 23:59:59'))
+        conteo = c.fetchone()
+        semanas.append({
+            'semana': semana_iso, 'anio': anio, 'lunes': lunes.isoformat(),
+            'estanteria': est, 'es_actual': delta == 0,
+            'conteo_id': conteo[0] if conteo else None,
+            'conteo_numero': conteo[1] if conteo else None,
+            'conteo_estado': conteo[2] if conteo else 'Pendiente',
+        })
+    conn.close()
+    return jsonify({'semanas': semanas, 'total_estanterias': n, 'estanterias': estanterias})
 
 @bp.route('/api/conteo/<int:conteo_id>/guardar', methods=['POST'])
 def conteo_guardar(conteo_id):
@@ -893,6 +945,48 @@ def cc_review():
             'RECHAZADO': 'Lote RECHAZADO. Notificacion creada en Compras.',
             'CUARENTENA_EXTENDIDA': 'CUARENTENA EXTENDIDA. Maximo 5 dias para definicion.'}
     return jsonify({'message': msgs.get(estado_final,''), 'estado': estado_final})
+
+@bp.route('/api/movimientos/<int:mov_id>/anular', methods=['POST'])
+def anular_movimiento(mov_id):
+    """Anula un movimiento generando un contra-movimiento. Requiere autenticacion."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    motivo = d.get('motivo', '').strip()
+    if not motivo:
+        return jsonify({'error': 'Motivo de anulacion requerido'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT m.*, mp.nombre FROM movimientos m
+                 LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
+                 WHERE m.id=?""", (mov_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'Movimiento no encontrado'}), 404
+    cols = [d[0] for d in c.description]
+    mov = dict(zip(cols, row))
+    if mov.get('observaciones','').startswith('[ANULADO]'):
+        conn.close(); return jsonify({'error': 'Movimiento ya anulado'}), 400
+    if user not in ADMIN_USERS and mov.get('responsable','') != user:
+        conn.close(); return jsonify({'error': 'Solo puedes anular tus propios movimientos o ser administrador'}), 403
+    tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
+    obs_contra = f'[ANULACION] del movimiento #{mov_id} — {motivo} — por {user}'
+    c.execute("""INSERT INTO movimientos
+                 (material_id, tipo, cantidad, unidad, lote_ref, responsable, observaciones, fecha)
+                 VALUES (?,?,?,?,?,?,?,datetime('now'))""",
+              (mov['material_id'], tipo_inv, mov['cantidad'], mov.get('unidad','g'),
+               mov.get('lote_ref',''), user, obs_contra))
+    c.execute("UPDATE movimientos SET observaciones=? WHERE id=?",
+              ('[ANULADO] ' + (mov.get('observaciones') or ''), mov_id))
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+              (user, 'ANULAR_MOVIMIENTO', 'movimientos', str(mov_id),
+               f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) — {motivo}',
+               request.remote_addr))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
+                    'tipo_contramovimiento': tipo_inv})
+
 
 @bp.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
