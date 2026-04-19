@@ -1,5 +1,9 @@
 # blueprints/gerencia.py — extraído de index.py (Fase C)
 import os
+import re
+import io
+import zipfile
+import xml.etree.ElementTree as ET
 import json
 import sqlite3
 import hmac
@@ -360,6 +364,197 @@ def gerencia_input_manual():
                   float(d.get('ingresos_maquila',0)), d.get('notas','')))
     conn.commit(); conn.close()
     return jsonify({'message': f'Inputs de {periodo} guardados'})
+
+
+# ─── ADMIN — Carga MEE desde xlsx (stdlib, sin dependencias extra) ────────────
+
+def _parse_xlsx_bytes(raw):
+    """Parse xlsx bytes usando stdlib (zipfile + xml.etree). Retorna (headers, data_rows)."""
+    NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    def tag(n): return f'{{{NS}}}{n}'
+
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        names = z.namelist()
+        shared = []
+        if 'xl/sharedStrings.xml' in names:
+            root = ET.parse(z.open('xl/sharedStrings.xml')).getroot()
+            for si in root.iter(tag('si')):
+                text = ''.join(t.text or '' for t in si.iter(tag('t')))
+                shared.append(text)
+
+        sheet_path = None
+        for name in sorted(names):
+            if re.match(r'xl/worksheets/sheet\d+\.xml', name):
+                sheet_path = name
+                break
+        if not sheet_path:
+            return [], []
+
+        root = ET.parse(z.open(sheet_path)).getroot()
+
+        def col_idx(ref):
+            letters = re.match(r'([A-Z]+)', ref).group(1)
+            n = 0
+            for ch in letters:
+                n = n * 26 + (ord(ch) - 64)
+            return n - 1
+
+        rows_raw = {}
+        for row_el in root.iter(tag('row')):
+            r = int(row_el.get('r', 0)) - 1
+            cols = {}
+            for c_el in row_el.iter(tag('c')):
+                ref = c_el.get('r', 'A1')
+                ci = col_idx(ref)
+                t = c_el.get('t', '')
+                v_el = c_el.find(tag('v'))
+                if t == 's' and v_el is not None:
+                    idx = int(v_el.text)
+                    cols[ci] = shared[idx] if idx < len(shared) else ''
+                elif t == 'inlineStr':
+                    te = c_el.find(f'.//{tag("t")}')
+                    cols[ci] = te.text if te is not None else ''
+                elif v_el is not None:
+                    cols[ci] = v_el.text or ''
+                else:
+                    cols[ci] = ''
+            rows_raw[r] = cols
+
+        if not rows_raw:
+            return [], []
+
+        max_col = max(max(d.keys(), default=0) for d in rows_raw.values())
+        max_row = max(rows_raw.keys())
+
+        def get_row(i):
+            d = rows_raw.get(i, {})
+            return [d.get(c, '') for c in range(max_col + 1)]
+
+        h_idx = 0; best = 0
+        for i in range(min(10, max_row + 1)):
+            filled = sum(1 for v in get_row(i) if str(v).strip())
+            if filled > best:
+                best = filled; h_idx = i
+
+        headers = [str(v).strip() for v in get_row(h_idx)]
+        data_rows = [get_row(i) for i in range(h_idx + 1, max_row + 1)]
+        return headers, data_rows
+
+
+@bp.route('/api/admin/seed-mee-xlsx', methods=['POST'])
+def seed_mee_xlsx():
+    if 'compras_user' not in session or session.get('compras_user', '') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    if 'xlsx' not in request.files:
+        return jsonify({'error': 'Campo "xlsx" requerido (multipart/form-data)'}), 400
+
+    raw = request.files['xlsx'].read()
+    try:
+        headers, data_rows = _parse_xlsx_bytes(raw)
+    except Exception as e:
+        return jsonify({'error': f'Error parsing xlsx: {e}'}), 500
+
+    if not headers:
+        return jsonify({'error': 'No se encontraron datos en el xlsx'}), 400
+
+    def norm(col): return re.sub(r'[^a-z0-9]', '', str(col).lower())
+    normas = {norm(h): i for i, h in enumerate(headers)}
+
+    patrones = {
+        'codigo':       ['codigomee', 'codigo', 'cod', 'ref', 'referencia', 'id', 'item'],
+        'descripcion':  ['descripcion', 'nombre', 'material', 'desc', 'articulo', 'producto'],
+        'categoria':    ['categoria', 'tipo', 'tipomaterial', 'clase', 'grupo'],
+        'proveedor':    ['proveedor', 'supplier', 'vendedor'],
+        'fabricante':   ['fabricante', 'marca', 'manufacturer'],
+        'estado':       ['estado', 'status', 'activo'],
+        'stock_actual': ['stockactual', 'cantidadactual', 'stock', 'existencias', 'cantidad',
+                         'conteo', 'cantidadconteo', 'saldo', 'stockfisico', 'cant'],
+        'stock_minimo': ['stockminimo', 'stockmin', 'minimo', 'min', 'reorden'],
+        'unidad':       ['unidad', 'und', 'um', 'unidades', 'udm'],
+    }
+    mapa = {}
+    for campo, lista in patrones.items():
+        for p in lista:
+            if p in normas:
+                mapa[campo] = normas[p]; break
+
+    if 'codigo' not in mapa or 'descripcion' not in mapa:
+        return jsonify({'error': 'No se detectaron columnas codigo/descripcion',
+                        'headers': headers}), 400
+
+    def get_val(row, campo, default=''):
+        idx = mapa.get(campo)
+        return row[idx] if idx is not None and idx < len(row) else default
+
+    def infer_cat(desc, cod):
+        t = (str(desc) + ' ' + str(cod)).lower()
+        if re.search(r'caja|corrugado|carton|box', t): return 'Caja'
+        if re.search(r'frasco|botella|envase|flask|bottle', t): return 'Frasco'
+        if re.search(r'tapa|cap|tapon', t): return 'Tapa'
+        if re.search(r'bomba|pump|dispensador', t): return 'Bomba'
+        if re.search(r'etiqueta|label|sticker', t): return 'Etiqueta'
+        if re.search(r'bolsa|bag|sachet|pouch', t): return 'Bolsa'
+        if re.search(r'tubo|tube', t): return 'Tubo'
+        if re.search(r'insert|inserto|prospecto', t): return 'Inserto'
+        return 'Otro'
+
+    FECHA = '2026-04-19'
+    inserted = skipped = dups = 0
+    codigos_vistos = set()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        for row in data_rows:
+            cod  = str(get_val(row, 'codigo', '')).strip()
+            desc = str(get_val(row, 'descripcion', '')).strip()
+            if not cod or cod.upper() == 'NAN' or not desc:
+                skipped += 1; continue
+            if re.search(r'total|resumen|codigo|subtotal', cod, re.I):
+                skipped += 1; continue
+            if cod in codigos_vistos:
+                dups += 1; continue
+            codigos_vistos.add(cod)
+
+            cat_raw = str(get_val(row, 'categoria', '')).strip()
+            cat = cat_raw if cat_raw and cat_raw != 'nan' else infer_cat(desc, cod)
+            prov = str(get_val(row, 'proveedor', '')).strip().replace('nan', '')
+            fab  = str(get_val(row, 'fabricante', '')).strip().replace('nan', '')
+            und  = str(get_val(row, 'unidad', 'und')).strip()
+            if not und or und == 'nan': und = 'und'
+
+            est_raw = str(get_val(row, 'estado', 'Activo')).lower().strip()
+            estado = 'Inactivo' if re.search(r'inact|baja|obsoleto|descont', est_raw) else 'Activo'
+
+            try: stock  = float(get_val(row, 'stock_actual', 0) or 0)
+            except: stock = 0.0
+            try: minimo = float(get_val(row, 'stock_minimo', 0) or 0)
+            except: minimo = 0.0
+
+            cur.execute("""INSERT OR REPLACE INTO maestro_mee
+                (codigo, descripcion, categoria, proveedor, fabricante,
+                 estado, stock_actual, stock_minimo, unidad, fecha_creacion)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (cod, desc, cat, prov, fab, estado, stock, minimo, und, FECHA))
+            inserted += 1
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); conn.close()
+        return jsonify({'error': str(e)}), 500
+
+    c2 = conn.cursor()
+    c2.execute("SELECT COUNT(*) FROM maestro_mee"); total = c2.fetchone()[0]
+    c2.execute("SELECT COUNT(*) FROM maestro_mee WHERE stock_actual < stock_minimo AND stock_minimo > 0")
+    bajo = c2.fetchone()[0]
+    c2.execute("SELECT categoria, COUNT(*) c, SUM(stock_actual) s FROM maestro_mee GROUP BY categoria ORDER BY c DESC")
+    cats = [{'cat': r[0], 'count': r[1], 'stock': r[2]} for r in c2.fetchall()]
+    conn.close()
+
+    return jsonify({
+        'ok': True, 'inserted': inserted, 'skipped': skipped, 'dups': dups,
+        'total_mee': total, 'bajo_minimo': bajo,
+        'mapa_columnas': {k: headers[v] for k, v in mapa.items()},
+        'por_categoria': cats
+    })
 
 
 # ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────
