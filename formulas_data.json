@@ -1,0 +1,3103 @@
+[
+  {
+    "producto_nombre": "Emulsión Hidratante B3 BHA",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 20 MPs | 24.9% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00107",
+        "material_nombre": "Urea",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00201",
+        "material_nombre": "Alcohol cetílico",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00161",
+        "material_nombre": "L-carnitina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00202",
+        "material_nombre": "Sorbato de potasio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00045",
+        "material_nombre": "Benzoato de sodio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00277",
+        "material_nombre": "Silimarina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00237",
+        "material_nombre": "Ácido kójico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00216",
+        "material_nombre": "Aloe vera polvo",
+        "porcentaje": 0.05
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Esencia Centella Asiática",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 13 MPs | 7.95% activos",
+    "items": [
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00265",
+        "material_nombre": "Glicina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00120",
+        "material_nombre": "Regaliz raíz",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00185",
+        "material_nombre": "Asiaticoside 95%",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00176",
+        "material_nombre": "Centella triterpenos",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00214",
+        "material_nombre": "Betaglucano",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.15
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Limpiador Facial BHA 2%",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 11 MPs | 37.0% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00064",
+        "material_nombre": "Polietilenglicol 400",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00212",
+        "material_nombre": "AOS-40",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00084",
+        "material_nombre": "Probetaína",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 1.9
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MPAEAT01",
+        "material_nombre": "Aceite árbol de té",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.05
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Limpiador Iluminador Ácido Kóji",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 16 MPs | 28.85% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00212",
+        "material_nombre": "AOS-40",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00084",
+        "material_nombre": "Probetaína",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00082",
+        "material_nombre": "Tween 20",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00237",
+        "material_nombre": "Ácido kójico",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00083",
+        "material_nombre": "Tween 80",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00138",
+        "material_nombre": "Ácido láctico",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00202",
+        "material_nombre": "Sorbato de potasio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00045",
+        "material_nombre": "Benzoato de sodio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00214",
+        "material_nombre": "Betaglucano",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00120",
+        "material_nombre": "Regaliz raíz",
+        "porcentaje": 0.05
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Mascarilla Hidratante",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 16 MPs | 25.23% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 7.5
+      },
+      {
+        "material_id": "MP00201",
+        "material_nombre": "Alcohol cetílico",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00282",
+        "material_nombre": "Squalane",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00105",
+        "material_nombre": "Beauty Oil Rosa Mosqueta",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00110",
+        "material_nombre": "Pantenol",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00285",
+        "material_nombre": "Péptidos de colágeno",
+        "porcentaje": 0.02
+      },
+      {
+        "material_id": "MP00216",
+        "material_nombre": "Aloe vera polvo",
+        "porcentaje": 0.01
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Antioxidante Renova C",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 20 MPs | 20.13% activos",
+    "items": [
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00160",
+        "material_nombre": "Etil ascórbico",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00169",
+        "material_nombre": "Sodium ascorbyl phosphate",
+        "porcentaje": 3.5
+      },
+      {
+        "material_id": "MP00149",
+        "material_nombre": "Tetrahexyldecyl ascorbate",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00071",
+        "material_nombre": "Quincream",
+        "porcentaje": 1.2
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00238",
+        "material_nombre": "Ascorbyl glucoside",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00231",
+        "material_nombre": "Glicinamida",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00282",
+        "material_nombre": "Squalane",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00173",
+        "material_nombre": "Bakuchiol",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00090",
+        "material_nombre": "Triglicérido caprílico",
+        "porcentaje": 0.6
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.04
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Vitamina C",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 17 MPs | 19.0% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 3.5
+      },
+      {
+        "material_id": "MP00230",
+        "material_nombre": "Ácido ascórbico",
+        "porcentaje": 6.0
+      },
+      {
+        "material_id": "MP00183",
+        "material_nombre": "Alfa arbutina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00065",
+        "material_nombre": "Ácido cítrico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00231",
+        "material_nombre": "Glicinamida",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00285",
+        "material_nombre": "Péptidos de colágeno",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00150",
+        "material_nombre": "Ergotioneína",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00160",
+        "material_nombre": "Etil ascórbico",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00145",
+        "material_nombre": "Glutatión",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00237",
+        "material_nombre": "Ácido kójico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00264",
+        "material_nombre": "Beta-ciclodextrina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Hidratante AH 1.5%",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 12 MPs | 4.79% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.8
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00214",
+        "material_nombre": "Betaglucano",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00216",
+        "material_nombre": "Aloe vera polvo",
+        "porcentaje": 0.01
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Iluminador TRX",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 25 MPs | 20.63% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00183",
+        "material_nombre": "Alfa arbutina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00107",
+        "material_nombre": "Urea",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00231",
+        "material_nombre": "Glicinamida",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00145",
+        "material_nombre": "Glutatión",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00219",
+        "material_nombre": "Melatonina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00237",
+        "material_nombre": "Ácido kójico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00120",
+        "material_nombre": "Regaliz raíz",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00177",
+        "material_nombre": "Oligopéptido-68",
+        "porcentaje": 0.001
+      },
+      {
+        "material_id": "MP00264",
+        "material_nombre": "Beta-ciclodextrina",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00239",
+        "material_nombre": "Fitato de sodio",
+        "porcentaje": 0.05
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Multipéptidos",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 24 MPs | 11.21% activos",
+    "items": [
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 2.5
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00194",
+        "material_nombre": "Copper tripeptide-1",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00228",
+        "material_nombre": "Palmitoyl pentapeptide-4",
+        "porcentaje": 0.005
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00175",
+        "material_nombre": "Acetyl tetrapeptide-5",
+        "porcentaje": 0.001
+      },
+      {
+        "material_id": "MP00179",
+        "material_nombre": "Dipeptide diaminobutyroyl...",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00223",
+        "material_nombre": "PDRN",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00152",
+        "material_nombre": "Adenosina",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00265",
+        "material_nombre": "Glicina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00145",
+        "material_nombre": "Glutatión",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00191",
+        "material_nombre": "Palmitoyl tripeptide-5",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00285",
+        "material_nombre": "Péptidos de colágeno",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 0.1
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Niacinamida 5%",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 17 MPs | 8.57% activos",
+    "items": [
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00176",
+        "material_nombre": "Terpenos solubles",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00185",
+        "material_nombre": "Asiaticoside",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 0.1
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Exfoliante Nova PHA",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 17 MPs | 22.21% activos",
+    "items": [
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 8.0
+      },
+      {
+        "material_id": "MP00138",
+        "material_nombre": "Ácido láctico",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00297",
+        "material_nombre": "Hidróxido sodio sol. 50%",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00183",
+        "material_nombre": "Alfa arbutina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00107",
+        "material_nombre": "Urea",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00221",
+        "material_nombre": "Ácido azelaico",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00237",
+        "material_nombre": "Ácido kójico",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00264",
+        "material_nombre": "Beta-ciclodextrina",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00120",
+        "material_nombre": "Regaliz raíz",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      }
+    ]
+  },
+  {
+    "producto_nombre": "AZ Híbrid Clear",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 26 MPs | 52.23% activos",
+    "items": [
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 1.25
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 20.0
+      },
+      {
+        "material_id": "MP00246",
+        "material_nombre": "Ácido capriloil salicílico",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00221",
+        "material_nombre": "Ácido azelaico",
+        "porcentaje": 6.0
+      },
+      {
+        "material_id": "MP00297",
+        "material_nombre": "Hidróxido sodio",
+        "porcentaje": 0.95
+      },
+      {
+        "material_id": "MP00244",
+        "material_nombre": "Azelolil diglicinato potasio",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00116",
+        "material_nombre": "Epi-On",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00169",
+        "material_nombre": "Fosfato ascorbilo sódico",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00283",
+        "material_nombre": "Zinc PCA",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00176",
+        "material_nombre": "Terpenos solubles",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00239",
+        "material_nombre": "Fitato de sodio",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00178",
+        "material_nombre": "Acetyl tetrapeptide-40",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.8
+      },
+      {
+        "material_id": "MP00072",
+        "material_nombre": "Gransil VX-419",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Contorno de Cafeína",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 18 MPs | 17.43% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00118",
+        "material_nombre": "Cafeína anhidra",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00202",
+        "material_nombre": "Sorbato de potasio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00138",
+        "material_nombre": "Ácido láctico",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00045",
+        "material_nombre": "Benzoato de sodio",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00152",
+        "material_nombre": "Adenosina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00216",
+        "material_nombre": "Aloe vera polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00175",
+        "material_nombre": "Acetyl tetrapeptide-5",
+        "porcentaje": 0.03
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Contorno de Ojos Multipéptidos",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 26 MPs | 21.49% activos",
+    "items": [
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00118",
+        "material_nombre": "Cafeína anhidra",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00238",
+        "material_nombre": "Ascorbyl glucoside",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00285",
+        "material_nombre": "Péptidos de colágeno",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00152",
+        "material_nombre": "Adenosina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00265",
+        "material_nombre": "Glicina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.015
+      },
+      {
+        "material_id": "MP00175",
+        "material_nombre": "Acetyl tetrapeptide-5",
+        "porcentaje": 0.015
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.015
+      },
+      {
+        "material_id": "MP00191",
+        "material_nombre": "Palmitoyl tripeptide-5",
+        "porcentaje": 0.015
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00194",
+        "material_nombre": "Copper tripeptide-1",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.01
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Contorno de Ojos Retinaldehído",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 25 MPs | 28.38% activos",
+    "items": [
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00201",
+        "material_nombre": "Alcohol cetílico",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00282",
+        "material_nombre": "Squalane",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00079",
+        "material_nombre": "Vitamina E polvo",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00180",
+        "material_nombre": "L-teanina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00214",
+        "material_nombre": "Betaglucano",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00285",
+        "material_nombre": "Péptidos de colágeno",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00261",
+        "material_nombre": "Retinaldehído",
+        "porcentaje": 0.025
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00277",
+        "material_nombre": "Silimarina",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00173",
+        "material_nombre": "Bakuchiol",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00152",
+        "material_nombre": "Adenosina",
+        "porcentaje": 0.03
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Crema Corporal Renova Body",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 14 MPs | 35.8% activos",
+    "items": [
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00107",
+        "material_nombre": "Urea",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00071",
+        "material_nombre": "Quincream",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00134",
+        "material_nombre": "Miristato de isopropilo",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00199",
+        "material_nombre": "Silicona SF-350",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00266",
+        "material_nombre": "Adipato de butil",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00136",
+        "material_nombre": "Beauty Oil Jojoba",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00137",
+        "material_nombre": "Beauty Oil Argán",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00062",
+        "material_nombre": "Fragancia pistacho",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00020",
+        "material_nombre": "Yogurt cremoso",
+        "porcentaje": 0.1
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Limpiador Hidratante",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 17 MPs | 17.86% activos",
+    "items": [
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 0.95
+      },
+      {
+        "material_id": "MPEHGL01",
+        "material_nombre": "Ethylhexylglycerin",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00092",
+        "material_nombre": "Decyl glucoside",
+        "porcentaje": 3.5
+      },
+      {
+        "material_id": "MP00084",
+        "material_nombre": "Probetaína",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00050",
+        "material_nombre": "Caprylyl/capryl glucoside",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MPCTLH01",
+        "material_nombre": "Cetiol HE",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00049",
+        "material_nombre": "Poloxamer 184",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 0.2
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Triactive Retinoid + NAD",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 39 MPs | 28.08% activos",
+    "items": [
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00223",
+        "material_nombre": "PDRN",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00043",
+        "material_nombre": "Propanediol",
+        "porcentaje": 4.468
+      },
+      {
+        "material_id": "MP00246",
+        "material_nombre": "Ácido capriloil salicílico",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00132",
+        "material_nombre": "Polyaquol LW",
+        "porcentaje": 1.7
+      },
+      {
+        "material_id": "MP00040",
+        "material_nombre": "Cetiol",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00201",
+        "material_nombre": "Alcohol cetílico",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00240",
+        "material_nombre": "Cetyl tranexamate",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00274",
+        "material_nombre": "HPR",
+        "porcentaje": 0.115
+      },
+      {
+        "material_id": "MP00287",
+        "material_nombre": "Retinyl retinoate",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00173",
+        "material_nombre": "Bakuchiol",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00234",
+        "material_nombre": "Apigenin",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00149",
+        "material_nombre": "Tetrahexyldecyl ascorbate",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MPBNIT01",
+        "material_nombre": "Boron nitride",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00242",
+        "material_nombre": "Extracto CO2 romero",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00261",
+        "material_nombre": "Retinaldehído",
+        "porcentaje": 0.035
+      },
+      {
+        "material_id": "MP00264",
+        "material_nombre": "Beta-ciclodextrina",
+        "porcentaje": 0.153
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00239",
+        "material_nombre": "Fitato de sodio",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00174",
+        "material_nombre": "Palmitoyl tripeptide-38",
+        "porcentaje": 0.005
+      },
+      {
+        "material_id": "MP00178",
+        "material_nombre": "Acetyl tetrapeptide-40",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00235",
+        "material_nombre": "NAD+",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00275",
+        "material_nombre": "NMN",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00116",
+        "material_nombre": "Epi-On",
+        "porcentaje": 2.0
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Suero Exfoliante BHA 2%",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 29 MPs | 31.64% activos",
+    "items": [
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00256",
+        "material_nombre": "Etoxidiglicol",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00259",
+        "material_nombre": "Dimethyl isosorbide",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00043",
+        "material_nombre": "Propanediol",
+        "porcentaje": 4.5
+      },
+      {
+        "material_id": "MP00121",
+        "material_nombre": "Propilenglicol",
+        "porcentaje": 9.5
+      },
+      {
+        "material_id": "MP00210",
+        "material_nombre": "Ácido salicílico",
+        "porcentaje": 1.45
+      },
+      {
+        "material_id": "MP00263",
+        "material_nombre": "Betaine salicylate",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00246",
+        "material_nombre": "Ácido capriloil salicílico",
+        "porcentaje": 0.45
+      },
+      {
+        "material_id": "MP00270",
+        "material_nombre": "Gluconolactona",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00260",
+        "material_nombre": "Ácido succínico",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00297",
+        "material_nombre": "Soda cáustica 10%",
+        "porcentaje": 0.9
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina",
+        "porcentaje": 0.79
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00277",
+        "material_nombre": "Silimarina",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00167",
+        "material_nombre": "Ácido tranexámico",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00231",
+        "material_nombre": "Glicinamida",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00283",
+        "material_nombre": "Zinc PCA",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00145",
+        "material_nombre": "Glutatión",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00116",
+        "material_nombre": "Epi-On",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00250",
+        "material_nombre": "Myristoyl nonapeptide-3",
+        "porcentaje": 0.0015
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 1.0
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Gel Hidratante",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 18 MPs | 15.01% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00030",
+        "material_nombre": "Beauty Sensoft",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00127",
+        "material_nombre": "BM-956",
+        "porcentaje": 1.75
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00040",
+        "material_nombre": "Cetiol",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00236",
+        "material_nombre": "Pantenol polvo",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00223",
+        "material_nombre": "PDRN",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 0.9
+      },
+      {
+        "material_id": "MPEHGL01",
+        "material_nombre": "Ethylhexylglycerin",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina 85%",
+        "porcentaje": 0.2
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Booster Tensor",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 20 MPs | 10.21% activos",
+    "items": [
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00056",
+        "material_nombre": "Pullulan",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.2
+      },
+      {
+        "material_id": "MP00248",
+        "material_nombre": "Hydrolyzed sponge",
+        "porcentaje": 0.06
+      },
+      {
+        "material_id": "MP00112",
+        "material_nombre": "Aerosil 200",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00259",
+        "material_nombre": "Dimethyl isosorbide",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00256",
+        "material_nombre": "Etoxidiglicol",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00179",
+        "material_nombre": "Dipeptide diaminobutyroyl...",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00223",
+        "material_nombre": "PDRN",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00174",
+        "material_nombre": "Palmitoyl tripeptide-38",
+        "porcentaje": 0.005
+      },
+      {
+        "material_id": "MP00250",
+        "material_nombre": "Myristoyl nonapeptide-3",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00177",
+        "material_nombre": "Oligopéptido-68",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00215",
+        "material_nombre": "Betaína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00116",
+        "material_nombre": "Epi-On",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 0.95
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Blush Balm",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 21 MPs | 100.0% activos",
+    "items": [
+      {
+        "material_id": "MP00051",
+        "material_nombre": "Polyglyceryl-2 triisostearate",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "—",
+        "material_nombre": "Pigmentos CI",
+        "porcentaje": 7.5
+      },
+      {
+        "material_id": "MP00054",
+        "material_nombre": "Lauroyl lysine",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00127",
+        "material_nombre": "BM-956",
+        "porcentaje": 20.271
+      },
+      {
+        "material_id": "MP00040",
+        "material_nombre": "Cetiol",
+        "porcentaje": 20.271
+      },
+      {
+        "material_id": "MPCOCP01",
+        "material_nombre": "Coco caprylate",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00257",
+        "material_nombre": "Synthetic wax",
+        "porcentaje": 11.5
+      },
+      {
+        "material_id": "MP00024",
+        "material_nombre": "Microcristalina 127",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00041",
+        "material_nombre": "Ceresine wax",
+        "porcentaje": 10.0
+      },
+      {
+        "material_id": "MP00077",
+        "material_nombre": "Manteca murumuru",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00055",
+        "material_nombre": "PMSS",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MPBNIT01",
+        "material_nombre": "Boron nitride",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00207",
+        "material_nombre": "Stabil",
+        "porcentaje": 0.75
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00101",
+        "material_nombre": "AE Vainilla",
+        "porcentaje": 0.035
+      },
+      {
+        "material_id": "MP00025",
+        "material_nombre": "AE Neroli",
+        "porcentaje": 0.02
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.001
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.001
+      },
+      {
+        "material_id": "MP00174",
+        "material_nombre": "Palmitoyl tripeptide-38",
+        "porcentaje": 0.001
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Emulsión Limpiadora",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 21 MPs | 24.94% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 6.0
+      },
+      {
+        "material_id": "MP00073",
+        "material_nombre": "Goma xanthan",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00030",
+        "material_nombre": "Beauty Sensoft",
+        "porcentaje": 4.5
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00053",
+        "material_nombre": "Aerosil R972",
+        "porcentaje": 0.35
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.25
+      },
+      {
+        "material_id": "MP00050",
+        "material_nombre": "Caprylyl/capryl glucoside",
+        "porcentaje": 2.5
+      },
+      {
+        "material_id": "MP00092",
+        "material_nombre": "Decyl glucoside",
+        "porcentaje": 1.3
+      },
+      {
+        "material_id": "MP00084",
+        "material_nombre": "Probetaína",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00049",
+        "material_nombre": "Poloxamer 184",
+        "porcentaje": 1.2
+      },
+      {
+        "material_id": "MP00082",
+        "material_nombre": "Tween 20",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00214",
+        "material_nombre": "Betaglucano",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00181",
+        "material_nombre": "Centella asiatica extract",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "Biosure FE",
+        "porcentaje": 0.95
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.1
+      }
+    ]
+  },
+  {
+    "producto_nombre": "HydraPeptide",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 26 MPs | 22.24% activos",
+    "items": [
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.45
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 0.9
+      },
+      {
+        "material_id": "MPEHGL01",
+        "material_nombre": "Ethylhexylglycerin",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00132",
+        "material_nombre": "Polyaquol LW",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00040",
+        "material_nombre": "Cetiol",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00075",
+        "material_nombre": "Manteca de Babasú",
+        "porcentaje": 0.75
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MPCHLV01",
+        "material_nombre": "Cholesterol vegetal",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00174",
+        "material_nombre": "Palmitoyl tripeptide-38",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MPCAKY01",
+        "material_nombre": "Aceite de cacay",
+        "porcentaje": 0.75
+      },
+      {
+        "material_id": "MPCOCP01",
+        "material_nombre": "Coco caprylate",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00127",
+        "material_nombre": "BM-956",
+        "porcentaje": 2.5
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00192",
+        "material_nombre": "Acetyl hexapeptide-8",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00176",
+        "material_nombre": "Centella triterpenos",
+        "porcentaje": 0.03
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina",
+        "porcentaje": 0.2
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Emulsión Hidratante Iluminadora",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 26 MPs | 34.11% activos",
+    "items": [
+      {
+        "material_id": "MP00043",
+        "material_nombre": "Propanediol",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00262",
+        "material_nombre": "N-acetil glucosamina",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 5.0
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00132",
+        "material_nombre": "Polyaquol LW",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00240",
+        "material_nombre": "Cetyl tranexamate",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00149",
+        "material_nombre": "Tetrahexyldecyl ascorbate",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00040",
+        "material_nombre": "Cetiol",
+        "porcentaje": 6.0
+      },
+      {
+        "material_id": "MP00030",
+        "material_nombre": "Beauty Sensoft",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MPCOCP01",
+        "material_nombre": "Coco caprylate",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00201",
+        "material_nombre": "Alcohol cetílico",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MPCAKY01",
+        "material_nombre": "Aceite de cacay",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00186",
+        "material_nombre": "4-Butilresorcinol",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00127",
+        "material_nombre": "BM-956",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00231",
+        "material_nombre": "Glicinamida HCl",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00177",
+        "material_nombre": "Oligopéptido-68",
+        "porcentaje": 0.001
+      },
+      {
+        "material_id": "MP00120",
+        "material_nombre": "Extracto de regaliz",
+        "porcentaje": 0.01
+      },
+      {
+        "material_id": "MP00021",
+        "material_nombre": "Fenoxietanol",
+        "porcentaje": 0.9
+      },
+      {
+        "material_id": "MPEHGL01",
+        "material_nombre": "Ethylhexylglycerin",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00245",
+        "material_nombre": "1,2-Hexanediol",
+        "porcentaje": 0.3
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Lip Sérum Voluminizador",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 22 MPs | 41.62% activos",
+    "items": [
+      {
+        "material_id": "MP00093",
+        "material_nombre": "Polybutene low-viscosity",
+        "porcentaje": 6.5
+      },
+      {
+        "material_id": "MP00048",
+        "material_nombre": "Diisostearyl malate",
+        "porcentaje": 12.5
+      },
+      {
+        "material_id": "MP00052",
+        "material_nombre": "Bis-diglyceryl polyacyladipate-2",
+        "porcentaje": 7.0
+      },
+      {
+        "material_id": "MP00051",
+        "material_nombre": "Polyglyceryl-2 triisostearate",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00077",
+        "material_nombre": "Manteca de murumuru",
+        "porcentaje": 7.0
+      },
+      {
+        "material_id": "MP00074",
+        "material_nombre": "Manteca de cupuazú",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MPCAKY01",
+        "material_nombre": "Aceite de cacay",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00137",
+        "material_nombre": "Beauty Oil Argán",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00103",
+        "material_nombre": "Beauty Oil Cerámidas",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00054",
+        "material_nombre": "Lauroyl lysine",
+        "porcentaje": 0.45
+      },
+      {
+        "material_id": "—",
+        "material_nombre": "Pigmentos CI",
+        "porcentaje": 1.05
+      },
+      {
+        "material_id": "MP00110",
+        "material_nombre": "D-Pantenol líquido",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00078",
+        "material_nombre": "Vitamina E líquida",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00207",
+        "material_nombre": "Stabil",
+        "porcentaje": 0.8
+      },
+      {
+        "material_id": "MP00063",
+        "material_nombre": "Tinogard TT",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00166",
+        "material_nombre": "Menthyl lactate",
+        "porcentaje": 0.6
+      },
+      {
+        "material_id": "MP00140",
+        "material_nombre": "Vanillyl butyl ether",
+        "porcentaje": 0.06
+      },
+      {
+        "material_id": "MP00253",
+        "material_nombre": "Benzyl nicotinate",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00190",
+        "material_nombre": "Palmitoyl tripeptide-1",
+        "porcentaje": 0.005
+      },
+      {
+        "material_id": "MP00172",
+        "material_nombre": "Palmitoyl tetrapeptide-7",
+        "porcentaje": 0.005
+      },
+      {
+        "material_id": "MP00174",
+        "material_nombre": "Palmitoyl tripeptide-38",
+        "porcentaje": 0.003
+      },
+      {
+        "material_id": "MP00005",
+        "material_nombre": "Mocaccino Lips (Disaromas)",
+        "porcentaje": 0.3
+      }
+    ]
+  },
+  {
+    "producto_nombre": "Hydra-Balance",
+    "unidad_base_g": 1000.0,
+    "descripcion": "v1 | Lote ref: 1.0kg | 25 MPs | 23.05% activos",
+    "items": [
+      {
+        "material_id": "MP00006",
+        "material_nombre": "Pemulen EZ-4U",
+        "porcentaje": 0.4
+      },
+      {
+        "material_id": "MP00123",
+        "material_nombre": "Trietanolamina",
+        "porcentaje": 0.95
+      },
+      {
+        "material_id": "MP00254",
+        "material_nombre": "C13-C15 Alkane",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00111",
+        "material_nombre": "Puresil ORG01",
+        "porcentaje": 4.0
+      },
+      {
+        "material_id": "MP00184",
+        "material_nombre": "BM-939",
+        "porcentaje": 1.5
+      },
+      {
+        "material_id": "MP00132",
+        "material_nombre": "Polyaquol LW",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00246",
+        "material_nombre": "LHA",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00195",
+        "material_nombre": "Glicerina",
+        "porcentaje": 1.0
+      },
+      {
+        "material_id": "MP00043",
+        "material_nombre": "Propanediol",
+        "porcentaje": 3.0
+      },
+      {
+        "material_id": "MP00008",
+        "material_nombre": "Carbopol",
+        "porcentaje": 0.15
+      },
+      {
+        "material_id": "MP00046",
+        "material_nombre": "EDTA disódico",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00112",
+        "material_nombre": "Aerosil 200",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00148",
+        "material_nombre": "Niacinamida",
+        "porcentaje": 2.0
+      },
+      {
+        "material_id": "MP00244",
+        "material_nombre": "PAD",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00283",
+        "material_nombre": "Zinc PCA",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00226",
+        "material_nombre": "Ectoína",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00035",
+        "material_nombre": "Extracto té verde (Inchemical)",
+        "porcentaje": 0.1
+      },
+      {
+        "material_id": "MP00047",
+        "material_nombre": "Alantoína",
+        "porcentaje": 0.5
+      },
+      {
+        "material_id": "MP00163",
+        "material_nombre": "Ác. hialurónico 50 kD",
+        "porcentaje": 0.3
+      },
+      {
+        "material_id": "MP00233",
+        "material_nombre": "Ác. hialurónico 300 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00142",
+        "material_nombre": "Ác. hialurónico 1500 kD",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00265",
+        "material_nombre": "Glicina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00147",
+        "material_nombre": "L-arginina",
+        "porcentaje": 0.05
+      },
+      {
+        "material_id": "MP00068",
+        "material_nombre": "BioSure FE",
+        "porcentaje": 0.95
+      },
+      {
+        "material_id": "MP00207",
+        "material_nombre": "Stabil",
+        "porcentaje": 0.15
+      }
+    ]
+  }
+]

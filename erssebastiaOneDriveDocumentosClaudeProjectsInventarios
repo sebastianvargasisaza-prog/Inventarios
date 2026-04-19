@@ -1,0 +1,85 @@
+warning: in the working copy of '.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.env.production', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '01_UPDATE_stock_minimo.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '03_DIAGNOSTICO_COMPLETO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '04_FIX_lotes_duplicados.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ALL_322_BATCH.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'AUDIT_FORMULAS_CODIGOS.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'AUDIT_LIMPIEZA_TOTAL.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'BoM_Odoo_Import.csv', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'BoM_UoM_Fix.csv', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'BoM_UoM_Unidades.csv', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'CARGA_FINAL_INVENTARIO_COMPLETO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'DIAGNOSTICO_Y_CORRECCION_PART2.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'EJECUTAR_AHORA.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'EJECUTAR_AHORA_FINAL.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'EJECUTAR_ESTO_AHORA.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'EJECUTAR_FASE_6.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'EJECUTA_EN_SUPABASE.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_AUDIT_Y_RECARGA_LIMPIA.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_CARGAR_INVENTARIO_UNIFICADO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_INVENTARIO_CARGABLE.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_INVENTARIO_CARGABLE_CORREGIDO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_INVENTARIO_REAL_COMPLETO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_4_INVENTARIO_REAL_COMPLETO_V2.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_5_CONSOLIDAR_CODIGOS.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_5_VALIDAR_DUPLICADOS_EN_BD.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_6_DELETE_TODO_CLEAN.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_6_LOAD_MATERIALES_LIMPIOS_TEMPLATE.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_7_CARGAR_FORMULAS_LIMPIAS.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FASE_7_TODAS_LAS_FORMULAS.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'LIMPIEZA_TOTAL_Y_RECARGA_UNIFICADA.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'LISTA_MAESTRA_MATERIALES_COMPILADA.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'MAPEO_MPMP_FINAL.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'MAPEO_MPMP_FINAL_V2.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'MPs_Almacenable_Lote.csv', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PASO2_Part2_COMPLETO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PASO_2_FINAL_CORRECTO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PASO_2_LIMPIO.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Procfile', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Proveedores_MP_Odoo.csv', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'RESUMEN_EJECUTIVO.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'VERIFICACION_PART2_POST_CARGA.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'actualizar_panel.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'actualizar_vercel.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'api/index.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app_profesional.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cruzar_inventario_formulas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'diagnostico_inventario.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'diagnostico_inventario.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ejecutar_app.sh', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'extract_materiales.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'fix_stock_consolidado.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase4_carga_final_v2.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase4_final_corregido.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase4_final_corregido_v3.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase7_cargar_formulas.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase7_completo.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase7_final.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_fase7_simple.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'generar_mapeo_simple.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'google_calendar_integration.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'inventario_app.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'inventario_app_FINAL_VERIFIED.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'inventario_app_completa.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'inventario_app_supabase.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'notificaciones.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'requirements.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'route_panel_CORREGIDO.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'seed_lotes_desde_inventario.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'seed_materiales_desde_inventario.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'seed_materiales_normalizados.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'setup.sh', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'vercel.json', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/inventario-espagiria b/inventario-espagiria[m
+[1m--- a/inventario-espagiria[m
+[1m+++ b/inventario-espagiria[m
+[36m@@ -1 +1 @@[m
+[31m-Subproject commit e3a8f515f2f9b860c72950aeb1bb3cbf9d440ff9[m
+[32m+[m[32mSubproject commit e3a8f515f2f9b860c72950aeb1bb3cbf9d440ff9-dirty[m
+[1mdiff --git a/requirements.txt b/requirements.txt[m
+[1mindex 51b35a3..c8bed39 100644[m
+Binary files a/requirements.txt and b/requirements.txt differ

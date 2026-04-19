@@ -1,0 +1,230 @@
+# Auto-extraído de index.py — Fase A refactor
+HUB_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>HHA Group — Centro de Comando</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
+.header{background:#1e293b;border-bottom:1px solid #334155;padding:14px 20px;display:flex;align-items:center;gap:12px;}
+.header-logo{font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.5px;}
+.header-sub{font-size:12px;color:#94a3b8;margin-top:1px;}
+.header-right{margin-left:auto;text-align:right;font-size:12px;color:#94a3b8;}
+.header-right strong{display:block;color:#fff;font-size:13px;}
+.alert-bar{padding:10px 20px;display:flex;gap:10px;align-items:center;background:#1e293b;border-bottom:1px solid #334155;flex-wrap:wrap;}
+.al-pill{display:flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;}
+.al-crit{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;}
+.al-aten{background:#451a03;color:#fcd34d;border:1px solid #78350f;}
+.al-ok{background:#052e16;color:#86efac;border:1px solid #14532d;}
+.al-pulse{width:8px;height:8px;border-radius:50%;animation:pulse 1.5s infinite;}
+.al-crit .al-pulse{background:#ef4444;}
+.al-aten .al-pulse{background:#f59e0b;}
+.al-ok .al-pulse{background:#22c55e;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.main{padding:20px;max-width:1400px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:768px){.main{grid-template-columns:1fr;}}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;}
+.card-title{font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.card-full{grid-column:1/-1;}
+.alert-item{display:flex;align-items:flex-start;gap:10px;padding:10px;border-radius:8px;margin-bottom:8px;background:#0f172a;border:1px solid #1e293b;}
+.alert-item.crit{border-left:3px solid #ef4444;}
+.alert-item.aten{border-left:3px solid #f59e0b;}
+.al-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.al-body{flex:1;}
+.al-title{font-size:12px;font-weight:700;color:#e2e8f0;margin-bottom:2px;}
+.al-detail{font-size:11px;color:#94a3b8;line-height:1.4;}
+.al-action{display:inline-block;margin-top:5px;padding:3px 10px;background:#334155;color:#e2e8f0;border-radius:4px;font-size:10px;text-decoration:none;font-weight:600;}
+.al-action:hover{background:#475569;}
+.kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.kpi{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;}
+.kpi-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.kpi-val{font-size:22px;font-weight:800;color:#f1f5f9;}
+.kpi-val.warn{color:#fb923c;}
+.kpi-val.crit{color:#f87171;}
+.kpi-val.good{color:#4ade80;}
+.kpi-sub{font-size:11px;color:#64748b;margin-top:2px;}
+.module-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;}
+.mod-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 10px;background:#0f172a;border:1px solid #334155;border-radius:10px;text-decoration:none;color:#e2e8f0;transition:.15s;cursor:pointer;}
+.mod-btn:hover{background:#1e293b;border-color:#475569;}
+.mod-icon{font-size:24px;}
+.mod-name{font-size:12px;font-weight:600;text-align:center;}
+.mod-badge{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700;}
+.mb-warn{background:#451a03;color:#fcd34d;}
+.mb-ok{background:#052e16;color:#86efac;}
+.mb-neutral{background:#1e293b;color:#94a3b8;}
+.comp-mini{display:flex;flex-direction:column;gap:6px;}
+.comp-mini-item{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#0f172a;border-radius:6px;border:1px solid #1e293b;}
+.comp-mini-item.crit{border-left:2px solid #ef4444;}
+.comp-mini-item.alta{border-left:2px solid #f59e0b;}
+.comp-mini-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.dot-crit{background:#ef4444;}
+.dot-alta{background:#f59e0b;}
+.dot-norm{background:#3b82f6;}
+.comp-mini-text{font-size:12px;color:#cbd5e1;flex:1;line-height:1.3;}
+.comp-mini-meta{font-size:10px;color:#64748b;margin-left:auto;text-align:right;white-space:nowrap;}
+.section-hdr{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px;}
+.loading{color:#64748b;font-size:12px;text-align:center;padding:20px;}
+.spinner-txt{animation:pulse 1.5s infinite;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <div class="header-logo">HHA Group</div>
+    <div class="header-sub">Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
+  </div>
+  <div class="header-right">
+    <strong id="fecha-hoy"></strong>
+    <span>Centro de Comando</span>
+  </div>
+</div>
+
+<div class="alert-bar" id="alert-bar">
+  <span class="spinner-txt" style="font-size:12px;color:#64748b;">Calculando alertas...</span>
+</div>
+
+<div class="main">
+  <!-- ALERTAS ACTIVAS -->
+  <div class="card">
+    <div class="card-title">&#x26A0; Requiere tu decision</div>
+    <div id="alertas-list"><div class="loading spinner-txt">Cargando...</div></div>
+  </div>
+
+  <!-- PULSO FINANCIERO -->
+  <div class="card">
+    <div class="card-title">&#x1F4B0; Pulso Financiero</div>
+    <div class="kpi-grid" id="kpi-fin">
+      <div class="loading spinner-txt" style="grid-column:1/-1;">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- COMPROMISOS CRITICOS -->
+  <div class="card">
+    <div class="card-title">&#x1F4CB; Compromisos criticos &amp; vencidos</div>
+    <div id="comp-list"><div class="loading spinner-txt">Cargando...</div></div>
+    <a href="/compromisos" style="display:block;text-align:center;margin-top:10px;font-size:12px;color:#64748b;text-decoration:none;">Ver todos los compromisos &rarr;</a>
+  </div>
+
+  <!-- MODULOS -->
+  <div class="card">
+    <div class="card-title">&#x1F5C4; Modulos del sistema</div>
+    <div class="module-grid" id="mod-grid">
+      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
+      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
+      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
+      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
+      <a class="mod-btn" href="/maquila"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('fecha-hoy').textContent = new Date().toLocaleDateString('es-CO',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+function fmt(n){ return '$'+parseFloat(n||0).toLocaleString('es-CO',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+
+async function loadAll(){
+  try{
+    var [ra, rr] = await Promise.all([fetch('/api/hub/alertas'), fetch('/api/hub/resumen')]);
+    var alertas = await ra.json();
+    var resumen = await rr.json();
+    renderAlerts(alertas);
+    renderKpis(resumen);
+    updateModuleBadges(alertas.resumen, resumen);
+  }catch(e){ console.error(e); }
+  try{
+    var rc = await fetch('/api/compromisos?estado=Todos');
+    var dc = await rc.json();
+    renderCompromisos(dc.compromisos||[]);
+  }catch(e){}
+}
+
+function renderAlerts(data){
+  var alertas = data.alertas||[];
+  var res = data.resumen||{};
+  // Update alert bar
+  var barHtml = '';
+  if(res.critico>0) barHtml += '<div class="al-pill al-crit"><span class="al-pulse"></span>'+res.critico+' urgente'+(res.critico>1?'s':'')+'</div>';
+  if(res.atencion>0) barHtml += '<div class="al-pill al-aten"><span class="al-pulse"></span>'+res.atencion+' atencion</div>';
+  if(!res.critico && !res.atencion) barHtml = '<div class="al-pill al-ok"><span class="al-pulse"></span>Todo en orden</div>';
+  document.getElementById('alert-bar').innerHTML = barHtml;
+  // Alertas list
+  if(!alertas.length){
+    document.getElementById('alertas-list').innerHTML='<div class="loading" style="color:#4ade80;">&#x2705; Sin alertas activas</div>';
+    return;
+  }
+  document.getElementById('alertas-list').innerHTML = alertas.slice(0,8).map(function(a){
+    var icon = a.nivel==='critico' ? '&#x1F534;' : '&#x1F7E1;';
+    return '<div class="alert-item '+a.nivel+'">'+
+      '<span class="al-icon">'+icon+'</span>'+
+      '<div class="al-body">'+
+        '<div class="al-title">'+a.titulo+'</div>'+
+        '<div class="al-detail">'+a.detalle+'</div>'+
+        (a.accion?'<a class="al-action" href="'+a.accion+'">Ver &rarr;</a>':'')+
+      '</div></div>';
+  }).join('');
+}
+
+function renderKpis(r){
+  var ocs = r.ocs||{};
+  var comps = r.compromisos||{};
+  document.getElementById('kpi-fin').innerHTML =
+    mkKpi('Por autorizar', ocs.por_autorizar+' OCs', fmt(ocs.valor_autorizar||0), ocs.por_autorizar>0?'warn':'')+
+    mkKpi('Por pagar', ocs.por_pagar+' OCs', fmt(ocs.valor_pagar||0), ocs.por_pagar>0?'warn':'')+
+    mkKpi('Pagado esta semana', '',''+fmt(r.pagado_semana||0), 'good')+
+    mkKpi('Stock critico', r.stock_critico+' materiales', 'bajo minimo', r.stock_critico>5?'crit':r.stock_critico>0?'warn':'')+
+    mkKpi('Compromisos pendientes', comps.pendientes+' items', comps.vencidos+' vencidos', comps.vencidos>0?'crit':'')+
+    mkKpi('Clientes activos', r.clientes||0,'en sistema','');
+}
+
+function mkKpi(label,val,sub,cls){
+  return '<div class="kpi"><div class="kpi-label">'+label+'</div><div class="kpi-val'+(cls?' '+cls:'')+'" >'+val+'</div><div class="kpi-sub">'+sub+'</div></div>';
+}
+
+function renderCompromisos(items){
+  var hoy = new Date().toISOString().substring(0,10);
+  var urgent = items.filter(function(c){
+    return c.estado!=='Completado'&&c.estado!=='Cancelado'&&(c.prioridad==='Critico'||(c.fecha_limite&&c.fecha_limite<hoy));
+  }).slice(0,6);
+  if(!urgent.length){
+    document.getElementById('comp-list').innerHTML='<div class="loading" style="color:#4ade80;">&#x2705; Sin compromisos urgentes</div>';
+    return;
+  }
+  document.getElementById('comp-list').innerHTML = urgent.map(function(c){
+    var isVenc = c.fecha_limite && c.fecha_limite < hoy;
+    var cls = c.prioridad==='Critico'?'crit':'alta';
+    var dotCls = c.prioridad==='Critico'?'dot-crit':'dot-alta';
+    return '<div class="comp-mini-item '+cls+'">'+
+      '<span class="comp-mini-dot '+dotCls+'"></span>'+
+      '<span class="comp-mini-text">'+c.descripcion.substring(0,55)+'</span>'+
+      '<span class="comp-mini-meta">'+(isVenc?'<span style="color:#f87171;">VENC</span> ':'')+c.responsable+'<br>'+(c.fecha_limite||'')+'</span>'+
+    '</div>';
+  }).join('');
+}
+
+function updateModuleBadges(alRes, r){
+  var compBadge = document.getElementById('mb-comp');
+  if(compBadge){
+    var cnt = (r.ocs||{}).por_autorizar||0;
+    compBadge.textContent = cnt>0 ? cnt+' pendiente'+(cnt>1?'s':'') : 'ok';
+    compBadge.className = 'mod-badge '+(cnt>0?'mb-warn':'mb-ok');
+  }
+  var cliBadge = document.getElementById('mb-cli');
+  if(cliBadge){ cliBadge.textContent = r.clientes+' activos'; }
+  var comp2 = document.getElementById('mb-comp2');
+  if(comp2){
+    var cv = (r.compromisos||{}).vencidos||0;
+    comp2.textContent = cv>0?cv+' vencidos':'ok';
+    comp2.className = 'mod-badge '+(cv>0?'mb-warn':'mb-ok');
+  }
+}
+
+loadAll();
+setInterval(loadAll, 60000);
+</script>
+</body>
+</html>"""
