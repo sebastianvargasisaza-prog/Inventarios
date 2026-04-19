@@ -116,6 +116,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
       <div class="kpi-lbl">OCs pendientes aprobación</div>
       <div class="kpi-sub" id="sub-ocs-val">—</div>
     </div>
+    <div class="kpi" id="kpi-mee-bajos">
+      <div class="kpi-val" id="val-mee-bajos">—</div>
+      <div class="kpi-lbl">MEE bajo mínimo</div>
+      <div class="kpi-sub" id="sub-mee">Envases y empaques</div>
+    </div>
   </div>
 
   <!-- ÁNIMUS -->
@@ -269,6 +274,10 @@ async function loadKPIs(){
     document.getElementById('sub-deficit').textContent='Déficit: '+((e.deficit_total_kg||0).toFixed(1))+' kg';
     setKPIColor('kpi-mps-bajos','val-mps-bajos',mpsBajos>5?'rojo':(mpsBajos>0?'amarillo':'verde'));
 
+    var meeBajos=e.mee_bajo_minimo||0;
+    document.getElementById('val-mee-bajos').textContent=meeBajos;
+    setKPIColor('kpi-mee-bajos','val-mee-bajos',meeBajos>3?'rojo':(meeBajos>0?'amarillo':'verde'));
+
     var v30=e.lotes_vencen_30d||0;
     document.getElementById('val-vencen30').textContent=v30;
     document.getElementById('sub-vencen60').textContent='En 60 días: '+(e.lotes_vencen_60d||0)+' lotes';
@@ -302,6 +311,7 @@ async function loadKPIs(){
     // Detalle inventario
     var di='';
     di+='<div class="data-row"><span class="data-lbl">MPs bajo mínimo</span><span class="data-val '+(mpsBajos>0?'rojo':'verde')+'">'+mpsBajos+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">MEE bajo mínimo</span><span class="data-val '+(meeBajos>0?'amarillo':'verde')+'">'+meeBajos+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Déficit total</span><span class="data-val '+(e.deficit_total_kg>0?'amarillo':'verde')+'">'+((e.deficit_total_kg||0).toFixed(1))+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 30d</span><span class="data-val '+(v30>0?'rojo':'verde')+'">'+v30+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vencen_60d>0?'amarillo':'verde')+'">'+(e.lotes_vencen_60d||0)+'</span></div>';
@@ -321,6 +331,7 @@ async function loadKPIs(){
     // Alertas
     var alertas=[];
     if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' MPs bajo mínimo</strong> — Déficit total: '+((e.deficit_total_kg||0).toFixed(1))+' kg. Generar OC desde Compras.'});
+    if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> — Revisar stock MEE en módulo Compras.'});
     if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> — Revisar y usar en próximas producciones (FEFO).'});
     if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
     if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
