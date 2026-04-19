@@ -46,6 +46,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
   <div class="sect">Calidad &amp; Operaciones</div>
   <div class="grid">
     <a href="/calidad" class="card"><div class="card-icon">&#x2705;</div><div class="card-name">Calidad BPM</div><div class="card-desc">CC lotes, NC, calibraciones</div></a>
+    <a href="/solicitudes" class="card"><div class="card-icon">&#x1F4CB;</div><div class="card-name">Solicitudes</div><div class="card-desc">Pedir materiales e insumos</div></a>
   </div>
   <div class="sect">Gerencia</div>
   <div class="grid">
