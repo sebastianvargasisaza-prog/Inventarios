@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, RRHH_USERS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -29,7 +29,8 @@ bp = Blueprint('rrhh', __name__)
 
 @bp.route("/rrhh")
 def rrhh_panel():
-    if "compras_user" not in session:
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS):
         return redirect("/login?next=/rrhh")
     usuario = session.get("compras_user","").capitalize()
     return Response(RRHH_HTML.replace("{usuario}", usuario), mimetype="text/html")
@@ -37,7 +38,8 @@ def rrhh_panel():
 
 @bp.route("/api/rrhh/dashboard")
 def rrhh_dashboard():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM empleados WHERE estado='Activo'")
     headcount = c.fetchone()[0]
@@ -81,7 +83,8 @@ def rrhh_dashboard():
 
 @bp.route("/api/rrhh/empleados", methods=["GET","POST"])
 def rrhh_empleados():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == "POST":
         d = request.get_json(silent=True) or {}
@@ -98,7 +101,8 @@ def rrhh_empleados():
 
 @bp.route("/api/rrhh/empleados/<int:eid>", methods=["GET","PUT"])
 def rrhh_empleado_det(eid):
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == "PUT":
         d = request.get_json(silent=True) or {}
@@ -114,7 +118,8 @@ def rrhh_empleado_det(eid):
 
 @bp.route("/api/rrhh/nomina/<periodo>")
 def rrhh_nomina(periodo):
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     SMMLV=1423500; AUX=202000
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,area,nivel_riesgo FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
@@ -141,7 +146,8 @@ def rrhh_nomina(periodo):
 
 @bp.route("/api/rrhh/nomina/guardar", methods=["POST"])
 def rrhh_nomina_guardar():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     d=request.get_json(silent=True) or {}
     periodo=d.get("periodo",""); registros=d.get("registros",[])
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
@@ -154,7 +160,8 @@ def rrhh_nomina_guardar():
 
 @bp.route("/api/rrhh/ausencias", methods=["GET","POST"])
 def rrhh_ausencias():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     if request.method=="POST":
         d=request.get_json(silent=True) or {}
@@ -168,7 +175,8 @@ def rrhh_ausencias():
 
 @bp.route("/api/rrhh/ausencias/<int:aid>", methods=["PATCH"])
 def rrhh_ausencia_upd(aid):
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     d=request.get_json(silent=True) or {}
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     c.execute("UPDATE ausencias SET estado=?,aprobado_por=? WHERE id=?", (d.get("estado",""),session.get("compras_user",""),aid))
@@ -177,7 +185,8 @@ def rrhh_ausencia_upd(aid):
 
 @bp.route("/api/rrhh/capacitaciones", methods=["GET","POST"])
 def rrhh_caps():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     if request.method=="POST":
         d=request.get_json(silent=True) or {}
@@ -196,7 +205,8 @@ def rrhh_caps():
 
 @bp.route("/api/rrhh/evaluaciones", methods=["GET","POST"])
 def rrhh_evals():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     if request.method=="POST":
         d=request.get_json(silent=True) or {}
@@ -215,7 +225,8 @@ def rrhh_evals():
 
 @bp.route("/api/rrhh/sgsst", methods=["GET","POST"])
 def rrhh_sgsst():
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     if request.method=="POST":
         d=request.get_json(silent=True) or {}
@@ -229,7 +240,8 @@ def rrhh_sgsst():
 
 @bp.route("/api/rrhh/sgsst/<int:sid>", methods=["PATCH"])
 def rrhh_sgsst_upd(sid):
-    if "compras_user" not in session: return jsonify({"error":"No autorizado"}),401
+    u = session.get("compras_user", "")
+    if not u or (u not in ADMIN_USERS and u not in RRHH_USERS): return jsonify({"error":"No autorizado"}),401
     d=request.get_json(silent=True) or {}
     from datetime import date as ddate, timedelta
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
