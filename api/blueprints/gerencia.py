@@ -560,4 +560,23 @@ def seed_mee_xlsx():
     })
 
 
+@bp.route('/api/admin/mee-set-stock', methods=['POST'])
+def mee_set_stock():
+    """Actualiza stock_actual y stock_minimo de todos los MEE (uso unico admin)."""
+    if 'compras_user' not in session or session.get('compras_user', '') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json(silent=True) or {}
+    stock_actual = float(data.get('stock_actual', 2000))
+    stock_minimo = float(data.get('stock_minimo', 1000))
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET stock_actual=?, stock_minimo=?", (stock_actual, stock_minimo))
+    updated = c.rowcount
+    conn.commit()
+    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE stock_actual < stock_minimo AND stock_minimo > 0")
+    bajo = c.fetchone()[0]
+    conn.close()
+    return jsonify({'ok': True, 'updated': updated, 'stock_actual': stock_actual,
+                    'stock_minimo': stock_minimo, 'bajo_minimo': bajo})
+
+
 # ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────
