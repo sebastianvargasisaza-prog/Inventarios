@@ -581,8 +581,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div style="display:flex;gap:10px;margin-bottom:10px;"><button onclick="loadMovimientos()">Ver Ultimos Movimientos</button><button onclick="exportarExcelMovimientos()" style="background:#217346;">&#128196; Descargar Excel</button></div>
     <table class="table" id="mov-table">
-      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th></tr></thead>
-      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
+      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th><th>Anular</th></tr></thead>
+      <tbody><tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
     </table>
   </div>
 
@@ -725,7 +725,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica — igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
     </div>
 
-    <!-- Selector de estanteria -->
+    <!-- Programacion automatica semanal -->
+    <div id="cnt-prog-card" style="background:linear-gradient(135deg,#f0faf9 0%,#e8f8f5 100%);border:2px solid #2B7A78;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;color:#2B7A78;font-size:1em;">&#128197; Programacion Ciclica Automatica</h3>
+        <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias — cada lunes una nueva</span>
+      </div>
+      <div id="cnt-prog-tabla" style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+          <thead><tr style="background:#2B7A78;color:#fff;"><th style="padding:7px 12px;text-align:left;">Semana</th><th style="padding:7px 12px;text-align:left;">Lunes</th><th style="padding:7px 12px;text-align:left;">Estanteria asignada</th><th style="padding:7px 12px;text-align:center;">Estado</th><th style="padding:7px 12px;text-align:center;">Accion</th></tr></thead>
+          <tbody id="cnt-prog-rows"><tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Selector de estanteria manual -->
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:20px;display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:end;">
       <div>
         <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Estanteria / Seccion a contar</label>
@@ -978,7 +992,7 @@ function switchTab(n,btn){
   if(n==='cuarentena') cargarCuarentena();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
-  if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); }
+  if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
   if(n==='produccion') cargarHistProd();
@@ -1474,10 +1488,29 @@ async function loadMovimientos(){
     if(d.movimientos&&d.movimientos.length){
       tb.innerHTML=d.movimientos.map(function(m){
         var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">Entrada</span>':'<span style="color:#cc4444;font-weight:600;">Salida</span>';
-        return '<tr><td>'+m.material_nombre+'</td><td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td><td>'+t+'</td><td style="font-size:0.82em;color:#888;">'+m.fecha+'</td><td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td></tr>';
+        var esAnulado=m.observaciones&&m.observaciones.indexOf('[ANULADO]')===0;
+        var btnAnular=esAnulado
+          ?'<span style="color:#aaa;font-size:0.8em;">Anulado</span>'
+          :'<button onclick="anularMovimiento('+m.id+')" style="background:#cc4444;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.82em;">Anular</button>';
+        return '<tr style="'+(esAnulado?'opacity:0.5;text-decoration:line-through;':'')+'">'+'<td>'+m.material_nombre+'</td>'+'<td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td>'+'<td>'+t+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.fecha+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td>'+'<td>'+btnAnular+'</td>'+'</tr>';
       }).join('');
-    }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
+    }else{tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
   }catch(e){}
+}
+
+async function anularMovimiento(movId){
+  var motivo=prompt('Motivo de anulacion (obligatorio):');
+  if(!motivo||!motivo.trim()){alert('Debes ingresar un motivo.');return;}
+  try{
+    var r=await fetch('/api/movimientos/'+movId+'/anular',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo.trim()})});
+    var res=await r.json();
+    if(res.ok){
+      document.getElementById('mov-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+      loadMovimientos();
+    }else{
+      document.getElementById('mov-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al anular')+'</div>';
+    }
+  }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error de conexion</div>';}
 }
 
 async function registrarMov(){
@@ -2165,6 +2198,54 @@ async function cargarEstanterias(){
   }catch(e){}
 }
 
+async function cargarProgramacionCiclica(){
+  try{
+    var r = await fetch('/api/conteo/programacion');
+    var d = await r.json();
+    var tbody = document.getElementById('cnt-prog-rows');
+    if(!tbody) return;
+    if(!d.semanas || d.semanas.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">Sin datos de estanterias</td></tr>';
+      return;
+    }
+    var html = '';
+    d.semanas.forEach(function(s){
+      var bg = s.es_actual ? 'background:linear-gradient(135deg,#d4f7f2,#e8faf7);font-weight:700;' : '';
+      var badge = '';
+      if(s.conteo_estado === 'Abierto') badge = '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:10px;font-size:0.82em;">En Curso</span>';
+      else if(s.conteo_estado === 'Cerrado') badge = '<span style="background:#d1f2d1;color:#1a6b1a;padding:2px 8px;border-radius:10px;font-size:0.82em;">Completado</span>';
+      else badge = '<span style="background:#f0f0f0;color:#666;padding:2px 8px;border-radius:10px;font-size:0.82em;">Pendiente</span>';
+      var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
+      var accion = '';
+      if(s.es_actual && s.conteo_estado !== 'Cerrado'){
+        accion = '<button onclick="iniciarConteoProgramado(\'' + s.estanteria + '\')"\'+ " style=\"padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;\">"+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
+      }
+      html += '<tr style="border-bottom:1px solid #e0ece9;'+bg+'">'
+            + '<td style="padding:7px 12px;">'+semLabel+'</td>'
+            + '<td style="padding:7px 12px;">'+s.lunes+'</td>'
+            + '<td style="padding:7px 12px;font-weight:600;">'+s.estanteria+'</td>'
+            + '<td style="padding:7px 12px;text-align:center;">'+badge+'</td>'
+            + '<td style="padding:7px 12px;text-align:center;">'+accion+'</td>'
+            + '</tr>';
+    });
+    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' — ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
+    tbody.innerHTML = html;
+  }catch(e){
+    var tbody = document.getElementById('cnt-prog-rows');
+    if(tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:#c00;padding:10px;">Error cargando programacion</td></tr>';
+  }
+}
+
+function iniciarConteoProgramado(estanteria){
+  var sel = document.getElementById('cnt-est-sel');
+  if(sel){
+    for(var i=0; i<sel.options.length; i++){
+      if(sel.options[i].value === estanteria){ sel.selectedIndex = i; break; }
+    }
+  }
+  iniciarConteo();
+}
+
 async function iniciarConteo(){
   var est = document.getElementById('cnt-est-sel').value;
   var resp = document.getElementById('cnt-responsable').value.trim() || OPER_ACTUAL;
@@ -2175,6 +2256,9 @@ async function iniciarConteo(){
     var res = await r.json();
     if(!r.ok){alert(res.error||'Error'); return;}
     _conteoActivo = {id: res.conteo_id, numero: res.numero, estanteria: est};
+    if(res.resuming){
+      document.getElementById('cnt-msg').innerHTML = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 12px;color:#856404;font-size:0.88em;">&#9888; Retomando conteo abierto existente: '+res.numero+'</div>';
+    }
     document.getElementById('cnt-numero').textContent = res.numero;
     document.getElementById('cnt-est-label').textContent = est;
     document.getElementById('cnt-panel').style.display = 'block';
