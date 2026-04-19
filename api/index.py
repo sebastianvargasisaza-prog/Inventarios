@@ -1,4 +1,13 @@
 import os
+import sys
+
+# Garantizar que api/ esté en sys.path sin importar cómo Gunicorn arranca el app.
+# Con 'gunicorn api.index:app' desde la raíz, Python importa api.index como
+# namespace package y NO agrega api/ a sys.path automáticamente.
+_api_dir = os.path.dirname(os.path.abspath(__file__))
+if _api_dir not in sys.path:
+    sys.path.insert(0, _api_dir)
+
 import json
 import sqlite3
 import hmac
