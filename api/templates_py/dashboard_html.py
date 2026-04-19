@@ -2290,7 +2290,7 @@ async function cargarProgramacionCiclica(){
       var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
       var accion = '';
       if(s.es_actual && s.conteo_estado !== 'Cerrado'){
-        accion = '<button onclick="iniciarConteoProgramado(\'' + s.estanteria + '\')"\'+ " style=\"padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;\">"+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
+        accion = `<button onclick="iniciarConteoProgramado('${s.estanteria}')" style="padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">${s.conteo_estado==='Abierto'?'Retomar':'Iniciar'}</button>`;
       }
       html += '<tr style="border-bottom:1px solid #e0ece9;'+bg+'">'
             + '<td style="padding:7px 12px;">'+semLabel+'</td>'
