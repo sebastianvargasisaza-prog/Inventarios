@@ -17,6 +17,11 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
 .tab-button.active { background:white; color:#2B7A78; border-bottom:3px solid #2B7A78; }
 .tab-content { display:none; padding:25px; }
 .tab-content.active { display:block; }
+.sub-tab-bar { display:none; background:#e8f4f3; border-bottom:2px solid #2B7A78; padding:5px 10px; gap:5px; flex-wrap:wrap; }
+.sub-tab-bar.visible { display:flex; }
+.sub-btn { padding:7px 18px; border:none; border-radius:6px; font-size:0.82em; font-weight:600; cursor:pointer; background:transparent; color:#2B7A78; }
+.sub-btn.active { background:#2B7A78; color:white; }
+.sub-btn:hover { background:rgba(43,122,120,0.18); }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:15px; margin:15px 0; }
 .card { background:#2B7A78; color:white; padding:18px; border-radius:10px; text-align:center; }
 .card h3 { font-size:0.85em; opacity:0.9; margin-bottom:6px; }
@@ -92,17 +97,28 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
-    <button class="tab-button" onclick="switchTab('stock',this)">&#128230; Stock</button>
-            <button class="tab-button" onclick="switchTab('ingreso',this)">&#128666; Ingreso MP</button>
-    <button class="tab-button" onclick="switchTab('formulas',this)">&#129514; Formulas</button>
-    <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
-    <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
-    <button class="tab-button" onclick="switchTab('alertas',this)">&#9888; Alertas</button>
-    <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
-    <button class="tab-button" onclick="switchTab('cuarentena',this)">&#128274; Cuarentena</button>
+    <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
+    <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
+    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
+    <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
+    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
+    <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
     <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
-    <button class="tab-button" onclick="switchTab('conteo',this)">&#9989; Conteo Ciclico</button>
-    <button class="tab-button" onclick="switchTab('empaque',this)">&#128230; Empaque MEE</button>
+  </div>
+  <div id="bar-bodegaMP" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
+    <button class="sub-btn" onclick="subSwitchTab('ingreso',this,'bar-bodegaMP')">&#128666; Recepciones</button>
+    <button class="sub-btn" onclick="subSwitchTab('abc',this,'bar-bodegaMP')">&#128200; Análisis ABC</button>
+    <button class="sub-btn" onclick="subSwitchTab('alertas',this,'bar-bodegaMP')">&#9888; Alertas</button>
+    <button class="sub-btn" onclick="subSwitchTab('movimientos',this,'bar-bodegaMP')">&#128203; Movimientos</button>
+  </div>
+  <div id="bar-prodHub" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
+    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Lote</button>
+  </div>
+  <div id="bar-calidadHub" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
+    <button class="sub-btn" onclick="subSwitchTab('conteo',this,'bar-calidadHub')">&#9989; Conteo Cíclico</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
@@ -115,7 +131,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div class="grid" style="margin-bottom:20px;">
       <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
       <div class="card"><h3>Lotes en Bodega</h3><p id="materiales-count">-</p></div>
-      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchTab('alertas',document.querySelector('[onclick*=alertas]'))"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
+      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
       <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
     </div>
 
@@ -232,10 +248,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="ingreso" class="tab-content">
-    <div style="display:flex;gap:0;margin-bottom:22px;border-bottom:2px solid #ddd;">
-      <button id="ing-tab-mp" onclick="switchIngreso('mp')" style="padding:11px 28px;border:none;background:#2B7A78;color:white;font-weight:700;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;">&#128230; Materia Prima</button>
-      <button id="ing-tab-mee" onclick="switchIngreso('mee')" style="padding:11px 28px;border:none;background:#eee;color:#555;font-weight:600;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;margin-left:4px;">&#128230; Envase & Empaque</button>
-    </div>
     <div id="ing-panel-mp">
     <h2>&#128666; Ingreso de Materia Prima</h2>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
@@ -320,41 +332,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
     </table></div>
     </div><!-- end ing-panel-mp -->
-    <div id="ing-panel-mee" style="display:none;">
-      <h2>&#128230; Ingreso Materiales Envase & Empaque</h2>
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-          <div class="form-group"><label>Categoria</label>
-            <select id="mee-ing-cat" onchange="filtrarMEEIngreso()" style="width:100%;">
-              <option value="">Todas</option>
-              <option>Envase</option><option>Tapa</option><option>Etiqueta</option>
-              <option>Plegable</option><option>Serigrafia</option><option>Gotero</option>
-              <option>Frasco</option><option>Contorno</option><option>Otro</option>
-            </select>
-          </div>
-          <div class="form-group"><label>Material *</label>
-            <select id="mee-ing-cod" style="width:100%;"><option value="">-- Selecciona --</option></select>
-          </div>
-          <div class="form-group"><label>Cantidad recibida (unidades) *</label>
-            <input type="number" id="mee-ing-cant" placeholder="Ej: 500" min="1"></div>
-          <div class="form-group"><label>Proveedor / Referencia</label>
-            <input type="text" id="mee-ing-ref" placeholder="Factura, OC, remision..."></div>
-        </div>
-        <div class="form-group" style="margin-top:10px;"><label>Observaciones</label>
-          <input type="text" id="mee-ing-obs" placeholder="Opcional"></div>
-        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-          <button onclick="registrarIngresoMEE()" style="background:#27ae60;">&#10003; Registrar Entrada MEE</button>
-          <button onclick="generarRotuloMEE()" style="background:#2980b9;" id="btn-rotulo-mee">&#128209; Generar Rotulo + Codigo de Barras</button>
-          <button onclick="limpiarIngresoMEE()" style="background:#95a5a6;">Limpiar</button>
-        </div>
-        <div id="mee-ing-msg" style="margin-top:10px;"></div>
-      </div>
-      <h3 style="margin-bottom:10px;">Ultimas Entradas MEE</h3>
-      <div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">
-        <thead><tr><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th style="text-align:right;">Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead>
-        <tbody id="mee-hist-body"><tr><td colspan="7" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
-      </table></div>
-    </div><!-- end ing-panel-mee -->
   </div>
 
   <div id="formulas" class="tab-content">
@@ -1035,6 +1012,7 @@ async function cargarHistProd(){
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.sub-tab-bar').forEach(function(b){b.classList.remove('visible');});
   document.getElementById(n).classList.add('active');
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
@@ -1050,6 +1028,33 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
 }
 
+
+function switchGroup(barId,defaultTab,mainBtn){
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.sub-tab-bar').forEach(function(b){b.classList.remove('visible');});
+  if(mainBtn) mainBtn.classList.add('active');
+  var bar=document.getElementById(barId);
+  if(bar){ bar.classList.add('visible'); bar.querySelectorAll('.sub-btn').forEach(function(b){b.classList.remove('active');}); bar.querySelectorAll('.sub-btn').forEach(function(b){ if(b.getAttribute('onclick')&&b.getAttribute('onclick').indexOf("'"+defaultTab+"'")>=0) b.classList.add('active'); }); }
+  subSwitchTab(defaultTab,null,barId);
+}
+function subSwitchTab(tabId,btn,barId){
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  var bar=document.getElementById(barId);
+  if(bar){ bar.querySelectorAll('.sub-btn').forEach(function(b){b.classList.remove('active');}); }
+  if(btn) btn.classList.add('active');
+  var target=document.getElementById(tabId);
+  if(target) target.classList.add('active');
+  if(tabId==='stock'){loadStock();loadMEE();}
+  if(tabId==='formulas'||tabId==='produccion') loadFormulas();
+  if(tabId==='produccion') cargarHistProd();
+  if(tabId==='cuarentena') cargarCuarentena();
+  if(tabId==='ingreso') initIngreso();
+  if(tabId==='abc') loadABC();
+  if(tabId==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
+  if(tabId==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
+  if(tabId==='movimientos') loadMovimientos();
+}
 var _charts={};
 async function loadDashboard(){
   try{
@@ -1630,15 +1635,6 @@ async function loadAlertasReabas(){
 /* ===== MEE FUNCTIONS ===== */
 var MEE_CATS=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Frasco','Contorno','Otro'];
 
-function switchIngreso(t){
-  document.getElementById('ing-panel-mp').style.display=t==='mp'?'block':'none';
-  document.getElementById('ing-panel-mee').style.display=t==='mee'?'block':'none';
-  document.getElementById('ing-tab-mp').style.background=t==='mp'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mp').style.color=t==='mp'?'white':'#555';
-  document.getElementById('ing-tab-mee').style.background=t==='mee'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mee').style.color=t==='mee'?'white':'#555';
-  if(t==='mee'){cargarSelectsMEE();loadHistMEE();}
-}
 async function cargarSelectsMEE(){
   var r=await fetch('/api/mee/stock'); var d=await r.json();
   _meeData=d.items||[];
