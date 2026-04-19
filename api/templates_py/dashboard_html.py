@@ -988,7 +988,7 @@ async function archivarMP(){
   document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok) setTimeout(function(){cerrarAjuste();loadStock();},1500);
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}document.getElementById('modal-ajuste-body').innerHTML='';}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';document.getElementById('modal-ajuste-body').innerHTML='';}
 function abrirSolIdx(ri){
   var a=(window._alertasData||[])[ri];if(!a)return;
   abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
