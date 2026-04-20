@@ -34,8 +34,6 @@ def index():
 @bp.route('/inventarios')
 @bp.route('/planta')
 def inventarios():
-    if 'compras_user' not in session:
-        return redirect('/login?next=/inventarios')
     usuario = session.get('compras_user', '').capitalize()
     from config import ADMIN_USERS
     es_admin = 'true' if session.get('compras_user','') in ADMIN_USERS else 'false'
@@ -49,8 +47,6 @@ def inventarios():
 
 @bp.route('/hub')
 def hub():
-    if 'compras_user' not in session:
-        return redirect('/login?next=/hub')
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
 
@@ -101,19 +97,18 @@ def compras():
     username = session.get('compras_user', '')
     # Solo usuarios con acceso a compras
     if username not in COMPRAS_ACCESS:
-        sin_acceso = """<\!DOCTYPE html><html><head><meta charset=UTF-8>
-<title>Sin acceso</title>
-<style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}
-.card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;text-align:center;max-width:400px;}
-h2{color:#f59e0b;margin:0 0 12px;}p{color:#94a3b8;margin:0 0 20px;}
-a{display:inline-block;background:#667eea;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>
-<body><div class="card"><h2>Acceso restringido</h2>
-<p>El modulo de Compras no esta disponible para tu usuario.</p>
-<a href="/hub">Volver al escritorio</a></div></body></html>"""
+        sin_acceso = (
+            '<!DOCTYPE html><html><head><meta charset=UTF-8>'
+            '<title>Sin acceso</title>'
+            '<style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}'
+            '.card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;text-align:center;max-width:400px;}'
+            'h2{color:#f59e0b;margin:0 0 12px;}p{color:#94a3b8;margin:0 0 20px;}'
+            'a{display:inline-block;background:#667eea;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>'
+            '<body><div class="card"><h2>Acceso restringido</h2>'
+            '<p>El modulo de Compras no esta disponible para tu usuario.</p>'
+            '<a href="/hub">Volver al escritorio</a></div></body></html>'
+        )
         return Response(sin_acceso, mimetype='text/html')
     usuario = username.capitalize()
     es_contadora = 'true' if username in CONTADORA_USERS else 'false'
-    html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
-    return Response(html, mimetype='text/html')
-
-
+    html = COMPRAS_H
