@@ -360,7 +360,7 @@ function renderCronograma(){
     const tareas=byCat[cat]||[];
     if(!tareas.length) return;
     const catComp=tareas.filter(t=>{const r=_crReg[t.id];return r&&(r.estado==='Completada'||r.estado==='No aplica'||r.estado==='OOS');}).length;
-    const catEmoji={'Apertura':'ð','Produccion':'âï¸','Recepcion':'ð¦','Analisis':'ð¬','Cierre':'ð'}[cat]||'ð';
+    const catEmoji={'Apertura':'🌅','Produccion':'⚙️','Recepcion':'📦','Analisis':'🔬','Cierre':'🔒'}[cat]||'📋';
     html+='<div class="cron-section"><div class="cron-section-hdr" onclick="toggleCat(this)">';
     html+='<span class="cron-cat-name">'+catEmoji+' '+esc(cat)+'</span>';
     html+='<span class="cron-cat-prog">'+catComp+'/'+tareas.length+'</span>';
