@@ -104,6 +104,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
   <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
+  <a class="tn" href="/solicitudes" style="text-decoration:none;">&#x1F4CB; Solicitudes</a>
 </div>
 
 <!-- PANES -->
