@@ -1,4 +1,4 @@
-# Auto-extraÃÂÃÂ­do de index.py â Fase A refactor
+# Auto-extraído de index.py â Fase A refactor
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -115,7 +115,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">MÃ³dulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
+    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
     <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">â Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
@@ -124,26 +124,26 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
     <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
     <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
-    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; ProducciÃ³n</button>
+    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
     <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
-    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; LiberaciÃ³n</button>
+    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
     <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
     <button class="sub-btn" onclick="subSwitchTab('ingreso',this,'bar-bodegaMP')">&#128666; Recepciones</button>
-    <button class="sub-btn" onclick="subSwitchTab('abc',this,'bar-bodegaMP')">&#128200; AnÃ¡lisis ABC</button>
+    <button class="sub-btn" onclick="subSwitchTab('abc',this,'bar-bodegaMP')">&#128200; Análisis ABC</button>
     <button class="sub-btn" onclick="subSwitchTab('alertas',this,'bar-bodegaMP')">&#9888; Alertas</button>
     <button class="sub-btn" onclick="subSwitchTab('movimientos',this,'bar-bodegaMP')">&#128203; Movimientos</button>
   </div>
   <div id="bar-prodHub" class="sub-tab-bar">
-    <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; FÃ³rmulas</button>
+    <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Lote</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
-    <button class="sub-btn" onclick="subSwitchTab('conteo',this,'bar-calidadHub')">&#9989; Conteo CÃ­clico</button>
+    <button class="sub-btn" onclick="subSwitchTab('conteo',this,'bar-calidadHub')">&#9989; Conteo Cíclico</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
@@ -160,18 +160,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
     </div>
 
-    <!-- Alertas criticas rÃÂÃÂ¡pidas -->
+    <!-- Alertas criticas rápidas -->
     <div id="dash-alertas-rapidas" style="display:none;background:#ffebeb;border:1px solid #cc0000;border-radius:8px;padding:12px;margin-bottom:20px;">
       <h4 style="color:#cc0000;margin-bottom:8px;">&#128308; MPs criticas â bajo stock minimo ahora</h4>
       <div id="dash-alertas-lista" style="font-size:0.88em;"></div>
     </div>
 
-    <!-- GrÃÂÃÂ¡ficas -->
+    <!-- Gráficas -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
       <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
-        <h4 style="margin-bottom:12px;color:#333;">&#128308; Vencimientos prÃÂÃÂ³ximos 6 meses</h4>
+        <h4 style="margin-bottom:12px;color:#333;">&#128308; Vencimientos próximos 6 meses</h4>
         <canvas id="chart-vencimientos" height="180"></canvas>
-        <p id="chart-venc-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin vencimientos prÃÂÃÂ³ximos</p>
+        <p id="chart-venc-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin vencimientos próximos</p>
       </div>
       <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
         <h4 style="margin-bottom:12px;color:#333;">&#128230; Top 5 MPs por Stock</h4>
@@ -190,11 +190,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         </div>
         <div style="text-align:center;padding:10px 20px;background:#fff3e0;border-radius:8px;">
           <div style="font-size:1.8em;font-weight:700;color:#e65100;" id="dash-criticos">-</div>
-          <div style="font-size:0.82em;color:#888;">CrÃÂÃÂ­ticos &lt;30d</div>
+          <div style="font-size:0.82em;color:#888;">Críticos &lt;30d</div>
         </div>
         <div style="text-align:center;padding:10px 20px;background:#fffde7;border-radius:8px;">
           <div style="font-size:1.8em;font-weight:700;color:#f57f17;" id="dash-proximos">-</div>
-          <div style="font-size:0.82em;color:#888;">PrÃÂÃÂ³ximos &lt;90d</div>
+          <div style="font-size:0.82em;color:#888;">Próximos &lt;90d</div>
         </div>
       </div>
     </div>
@@ -300,7 +300,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="CÃÂÃÂ³digo (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #2B7A78;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
+        <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #2B7A78;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
@@ -332,7 +332,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             </select>
           </div>
           <div class="form-group" style="margin:0;">
-            <label>NÃÂÃÂ° Factura / Remision</label>
+            <label>N° Factura / Remision</label>
             <input type="text" id="ing-factura" placeholder="Ej: FAC-2026-1234">
           </div>
         </div>
@@ -470,7 +470,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <!-- TRAZABILIDAD INVIMA -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <h3 style="color:#6c5ce7;margin:0 0 12px;">&#128203; Trazabilidad de Lotes (INVIMA)</h3>
-      <p style="font-size:0.85em;color:#718096;margin:0 0 14px;">Dado un lote PT rastrea las MPs usadas y los clientes que lo recibieron. Dado un lote MP rastrea en quÃÂÃÂ© producciones se consumio y a quÃÂÃÂ© clientes llegÃÂÃÂ³.</p>
+      <p style="font-size:0.85em;color:#718096;margin:0 0 14px;">Dado un lote PT rastrea las MPs usadas y los clientes que lo recibieron. Dado un lote MP rastrea en qué producciones se consumio y a qué clientes llegó.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
         <div style="flex:1;min-width:220px;">
           <label style="font-size:0.83em;font-weight:600;color:#555;">Lote PT (ej: PROD-00001)</label>
@@ -871,7 +871,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
 <div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">PresentaciÃ³n</label><input id="ac-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Presentación</label><input id="ac-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="2000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Unidades Producidas</label><input id="ac-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
@@ -881,23 +881,23 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <div id="ac-table-wrap">
 <table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">PresentaciÃ³n</th><th style="padding:8px">Batch(g)</th><th style="padding:8px">Uds</th><th style="padding:8px">Fecha</th><th style="padding:8px">Operador</th><th style="padding:8px">Estado</th><th style="padding:8px">AcciÃ³n</th></tr></thead>
+<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Presentación</th><th style="padding:8px">Batch(g)</th><th style="padding:8px">Uds</th><th style="padding:8px">Fecha</th><th style="padding:8px">Operador</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
 <tbody id="ac-tbody"></tbody>
 </table></div>
 </div></div>
 
 <div id="liberacion" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 14px;color:#1a4a7a">&#9989; LiberaciÃ³n & Entrega</h2>
+<h2 style="margin:0 0 14px;color:#1a4a7a">&#9989; Liberación & Entrega</h2>
 <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para LiberaciÃ³n</h3>
+<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para Liberación</h3>
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
 <div><label style="font-size:12px;color:#555">Lote PT</label><input id="lb-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Producto</label><input id="lb-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">PresentaciÃ³n</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Presentación</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Unidades</label><input id="lb-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Fecha ProducciÃ³n</label><input id="lb-fprod" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Destino</label><select id="lb-dest" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px"><option value="ANIMUS">ANÃMUS Lab</option><option value="MAQUILA">Maquila</option><option value="OTRO">Otro</option></select></div>
+<div><label style="font-size:12px;color:#555">Fecha Producción</label><input id="lb-fprod" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Destino</label><select id="lb-dest" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px"><option value="ANIMUS">ANÍMUS Lab</option><option value="MAQUILA">Maquila</option><option value="OTRO">Otro</option></select></div>
 </div>
 <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
 <div><label style="font-size:12px;color:#555">Cliente</label><input id="lb-cli" placeholder="Nombre cliente" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
@@ -912,7 +912,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <button onclick="loadLiberaciones('Rechazado')" style="background:#dc3545;color:#fff;padding:5px 12px;border:none;border-radius:4px;cursor:pointer">Rechazadas</button>
 </div>
 <table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Uds</th><th style="padding:8px">Destino</th><th style="padding:8px">Cliente</th><th style="padding:8px">F.Prod</th><th style="padding:8px">F.Lib</th><th style="padding:8px">Aprobado por</th><th style="padding:8px">Estado</th><th style="padding:8px">AcciÃ³n</th></tr></thead>
+<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Uds</th><th style="padding:8px">Destino</th><th style="padding:8px">Cliente</th><th style="padding:8px">F.Prod</th><th style="padding:8px">F.Lib</th><th style="padding:8px">Aprobado por</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
 <tbody id="lb-tbody"></tbody>
 </table>
 </div></div>
@@ -1038,11 +1038,11 @@ async function verHistorialLote(idx){
 
 async function confirmarAjuste(){
   var fis=parseFloat(document.getElementById('ajuste-fisico').value);
-  if(isNaN(fis)||fis<0){alert('Cantidad invÃÂÃÂ¡lida');return;}
+  if(isNaN(fis)||fis<0){alert('Cantidad inválida');return;}
   var dif=Math.round((fis-_ajDat.sa)*100)/100;
-  if(dif===0){alert('El stock fÃÂÃÂ­sico coincide con el sistema');return;}
+  if(dif===0){alert('El stock físico coincide con el sistema');return;}
   var tipo=dif>0?'Entrada':'Salida';
-  var obs='AJUSTE: '+(document.getElementById('ajuste-obs').value||'Conteo fÃÂÃÂ­sico')+' | Op: '+OPER_ACTUAL;
+  var obs='AJUSTE: '+(document.getElementById('ajuste-obs').value||'Conteo físico')+' | Op: '+OPER_ACTUAL;
   try{
     var r=await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({material_id:_ajDat.mid,material_nombre:_ajDat.mn,
@@ -1891,7 +1891,7 @@ async function generarOCsDesdeAlertasMEE(){
   if(r2.ok)alert('OC creada: '+d2.numero_oc+'\\nVisible en Compras > Ordenes');
   else alert('Error: '+(d2.error||''));
 }
-/* MEE en producciÃÂÃÂ³n */
+/* MEE en producción */
 async function simularProduccion(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value.trim();
   var kg=parseFloat(document.getElementById('prod-kg').value);
@@ -1965,9 +1965,9 @@ async function abrirPreciosMP(){
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
     +'<h3 style="margin:0;">&#128176; Precios de Referencia â Materias Primas</h3>'
     +'<button onclick="document.getElementById(\\'modal-precios-mp\\').remove()" style="background:none;border:none;font-size:1.4em;cursor:pointer;">&#10006;</button></div>'
-    +'<p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Precio por kg (usado para estimar costo de fÃÂÃÂ³rmulas). Fuente: ÃÂÃÂºltima OC o manual.</p>'
+    +'<p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Precio por kg (usado para estimar costo de fórmulas). Fuente: última OC o manual.</p>'
     +'<div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">'
-    +'<thead><tr><th>CÃÂÃÂ³digo</th><th>Material</th><th>Precio/kg ($)</th><th></th></tr></thead>'
+    +'<thead><tr><th>Código</th><th>Material</th><th>Precio/kg ($)</th><th></th></tr></thead>'
     +'<tbody>'+rows+'</tbody></table></div></div>';
   document.body.appendChild(modal);
   modal.addEventListener('click',function(e){if(e.target===modal)modal.remove();});
@@ -1986,7 +1986,7 @@ async function iniciarRegistroProd(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
-  // Registrar producciÃÂÃÂ³n MP
+  // Registrar producción MP
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
   var sku_pt=document.getElementById('prod-sku-pt')?document.getElementById('prod-sku-pt').value.trim():'';
