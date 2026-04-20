@@ -104,7 +104,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
   <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
-  <button class="tn" data-tab="sol">&#x1F4CB; Solicitudes</button>
+  <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
 </div>
 
 <!-- PANES -->
@@ -184,21 +184,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
 
-<div id="pane-sol" class="pane">
-  <div id="sol-kpis" class="kpis" style="margin-bottom:12px;"></div>
-  <div style="font-size:12px;color:#78716c;margin-bottom:8px;padding:0 4px;">&#x2139;&#xFE0F; <b>Catalina:</b> procesa las Pendientes asignando proveedor y generando OC. La OC pasa directo a autorizacion de Gerencia.</div>
+<div id="pane-solic" class="pane">
   <div class="bar">
-    <input type="text" id="q-sol" placeholder="Buscar por #, solicitante, area..." oninput="renderSol()">
-    <select id="s-sol" onchange="renderSol()">
+    <input type="text" id="q-solic" placeholder="Buscar solicitud, solicitante..." oninput="renderSolicitudes()">
+    <select id="s-solic" onchange="renderSolicitudes()">
       <option value="">Todos los estados</option>
-      <option>Pendiente</option>
-      <option>Procesada</option>
-      <option>Rechazada</option>
+      <option value="Pendiente">Pendiente</option>
+      <option value="Aprobada">Aprobada</option>
+      <option value="Rechazada">Rechazada</option>
     </select>
   </div>
-  <div id="grid-sol" class="grid"></div>
+  <div id="pills-solic" class="pills"></div>
+  <div id="grid-solic" class="grid"></div>
 </div>
-
 <!-- MODAL: Proveedor 360 -->
 <div id="m-ficha360" class="ov">
 <div class="mdl mdl-lg" style="max-width:780px;max-height:88vh;overflow-y:auto;">
@@ -329,6 +327,48 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
+
+<!-- MODAL: Detalle OC -->
+<div id="m-oc-det" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#128203; Detalle Orden de Compra</h3><button class="mx" onclick="closeModal('m-oc-det')">&times;</button></div>
+  <div class="mb" id="oc-det-body" style="padding:0 4px;"><div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div></div>
+  <div class="mf" id="oc-det-footer">
+    <button class="btn bo" onclick="closeModal('m-oc-det')">Cerrar</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Aprobar / Rechazar OC -->
+<div id="m-aut" class="ov">
+<div class="mdl">
+  <div class="mh"><h3>&#9997; Decision sobre OC</h3><button class="mx" onclick="closeModal('m-aut')">&times;</button></div>
+  <div class="mb">
+    <div id="m-aut-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;margin-bottom:4px;"></div>
+    <div class="fg"><label>Motivo / Comentario (recomendado)</label>
+      <textarea id="aut-motivo" placeholder="Razon de la aprobacion o rechazo..." rows="3"></textarea>
+    </div>
+    <input type="hidden" id="aut-num">
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-aut')">Cancelar</button>
+    <button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="decidirOC('Rechazada')">&#10005; Rechazar</button>
+    <button class="btn bi" onclick="decidirOC('Autorizada')">&#10003; Autorizar</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Detalle Solicitud (Catalina) -->
+<div id="m-sol-det" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#128203; Solicitud de Compra</h3><button class="mx" onclick="closeModal('m-sol-det')">&times;</button></div>
+  <div class="mb" id="sol-det-body" style="padding:0 4px;"><div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div></div>
+  <div class="mf" id="sol-det-footer">
+    <button class="btn bo" onclick="closeModal('m-sol-det')">Cerrar</button>
+  </div>
+</div>
+</div>
+
 <button class="fab" id="fab-btn" onclick="openNuevaOC('')" title="Nueva OC">+</button>
 
 <script>
@@ -377,9 +417,10 @@ document.querySelectorAll('.tn').forEach(function(btn){
     if(pane) pane.classList.add('on');
     if(tab==='dash') renderDash();
     else if(tab==='prov') renderProv();
+    else if(tab==='solic') loadSolicitudes();
     else renderCat(tab);
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
   });
 });
@@ -427,7 +468,7 @@ function mkKpi(l,v,s,c){
   return '<div class="kpi"><div class="kpi-l">'+l+'</div><div class="kpi-v'+(c?' '+c:'')+'" >'+v+'</div><div class="kpi-s">'+s+'</div></div>';
 }
 function miniCard(o){
-  var btns='';
+  var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">Ver detalle</button>';
   if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
@@ -437,7 +478,6 @@ function miniCard(o){
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
 
-// ─── Por categoria ────────────────────────────────────────────────
 function renderCat(grp){
   var q=(document.getElementById('q-'+grp)||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-'+grp)||{value:''}).value;
@@ -463,7 +503,7 @@ function renderCat(grp){
   document.getElementById('grid-'+grp).innerHTML=list.map(function(o){ return fullCard(o,grp); }).join('');
 }
 function fullCard(o,grp){
-  var btns='';
+  var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">&#128203; Ver</button>';
   if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
   if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
@@ -476,7 +516,6 @@ function fullCard(o,grp){
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
 
-// ─── Proveedores ──────────────────────────────────────────────────
 function renderProv(){
   var q=(document.getElementById('q-prov')||{value:''}).value.toLowerCase();
   var list=PROVS.filter(function(p){ return !q||(p.nombre||'').toLowerCase().indexOf(q)>=0||(p.nit||'').toLowerCase().indexOf(q)>=0; });
@@ -703,18 +742,42 @@ async function confirmarRev(){
 }
 
 // ─── Autorizar ────────────────────────────────────────────────────
-async function autorizarOC(num){
-  if(!confirm('Autorizar OC '+num+'?')) return;
-  try{
-    var r=await fetch('/api/ordenes-compra/'+num+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-    var d=await r.json();
-    if(d.error){ alert('Error: '+d.error); return; }
-    await loadData();
-    renderDash();
-  }catch(e){ alert('Error: '+e); }
+// ─── Autorizar (abre modal con opcion rechazar) ───────────────────
+function autorizarOC(num){
+  var oc=OCS.find(function(o){ return o.numero_oc===num; })||{};
+  document.getElementById('aut-num').value=num;
+  document.getElementById('aut-motivo').value='';
+  document.getElementById('m-aut-info').innerHTML=
+    '<strong>'+esc(num)+'</strong> &mdash; '+esc(oc.proveedor||'-')+
+    '<br><span style="color:#78716c;font-size:12px;">Valor: <strong>'+fmt(oc.valor_total)+'</strong>'+
+    (oc.observaciones?' &nbsp;|&nbsp; '+esc((oc.observaciones||'').substring(0,80)):'')+
+    '</span>';
+  openModal('m-aut');
+}
+async function decidirOC(decision){
+  var num=document.getElementById('aut-num').value;
+  var motivo=document.getElementById('aut-motivo').value.trim();
+  if(decision==='Rechazada'&&!motivo){
+    if(!confirm('Rechazar sin motivo. Confirmar?')) return;
+  }
+  if(decision==='Autorizada'){
+    try{
+      var r=await fetch('/api/ordenes-compra/'+num+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo})});
+      var d=await r.json();
+      if(d.error){ alert('Error: '+d.error); return; }
+    }catch(e){ alert('Error: '+e); return; }
+  } else {
+    try{
+      var r2=await fetch('/api/ordenes-compra/'+num,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Rechazada',motivo:motivo})});
+      var d2=await r2.json();
+      if(d2.error){ alert('Error: '+d2.error); return; }
+    }catch(e){ alert('Error: '+e); return; }
+  }
+  closeModal('m-aut');
+  await loadData();
+  renderDash();
 }
 
-// ─── Pagar ────────────────────────────────────────────────────────
 function openPago(num,val,prov){
   document.getElementById('pago-num').value=num;
   document.getElementById('pago-monto').value=val||'';
@@ -771,7 +834,7 @@ async function crearProv(){
   }catch(e){ alert('Error: '+e); }
 }
 
-// ─── Event delegation para botones de OC ────────────────────────
+// ─── Event delegation para botones de OC ────────────────────
 document.addEventListener('click',function(e){
   var btn=e.target.closest('[data-act]');
   if(!btn) return;
@@ -781,174 +844,218 @@ document.addEventListener('click',function(e){
   else if(act==='pago') openPago(oc,parseFloat(btn.getAttribute('data-val')||0),btn.getAttribute('data-prov')||'');
   else if(act==='rev') openRev(oc,btn.getAttribute('data-prov')||'',parseFloat(btn.getAttribute('data-val')||0),btn.getAttribute('data-obs')||'');
   else if(act==='rec') marcarRecibida(oc);
+  else if(act==='det') openOCDetail(oc);
+  else if(act==='sdet') openSolicitudDetail(btn.getAttribute('data-sol')||'');
 });
 
-// ─── Init ─────────────────────────────────────────────────────────
-loadData();
+// ─── Globals para modales de detalle (evita escaping de quotes) ───
+var _detOC={};  // OC abierta en modal detalle
+var _detSol={estado:''}; // Solicitud abierta en modal detalle
 
+// Wrappers sin argumentos para botones de footer (sin riesgo de escaping)
+function _ocDetClose(){ closeModal('m-oc-det'); }
+function _ocDetAut(){ closeModal('m-oc-det'); autorizarOC(_detOC.numero_oc||''); }
+function _ocDetPago(){ closeModal('m-oc-det'); openPago(_detOC.numero_oc||'',parseFloat(_detOC.valor_total||0),_detOC.proveedor||''); }
+function _ocDetRev(){ closeModal('m-oc-det'); openRev(_detOC.numero_oc||'',_detOC.proveedor||'',parseFloat(_detOC.valor_total||0),(_detOC.observaciones||'').substring(0,80)); }
+function _solDetClose(){ closeModal('m-sol-det'); }
+function _solDetApr(){ gestionarSol('Aprobada'); }
+function _solDetRech(){ gestionarSol('Rechazada'); }
+function _solFillProv(){ fillProv('sol-prov-sel','sol-prov-ibox'); }
 
-/* ─── SOLICITUDES MANAGEMENT ─────────────────────────────────────── */
-var SOLS=[], _solActual=null, PROVS_LIST=[];
-function loadSolicitudes(){
-  fetch('/api/solicitudes-compra').then(function(r){return r.json();}).then(function(d){
-    SOLS=d.solicitudes||[]; renderSol(); renderSolKpis();
-  });
+// ─── Detalle OC ─────────────────────────────────────────────────
+async function openOCDetail(num){
+  openModal('m-oc-det');
+  var body=document.getElementById('oc-det-body');
+  var footer=document.getElementById('oc-det-footer');
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div>';
+  footer.innerHTML='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
+  _detOC={};
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(num));
+    var d=await r.json();
+    if(d.error){ body.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>'; return; }
+    var o=d.oc||{}; _detOC=o;
+    var items=d.items||[];
+    var estColor={'Borrador':'#78716c','Revisada':'#d97706','Autorizada':'#2563eb','Pagada':'#16a34a','Recibida':'#14532d','Rechazada':'#dc2626'}[o.estado]||'#78716c';
+    var h='<div style="padding:16px 20px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    h+='<div><div style="font-weight:800;font-size:16px;font-family:monospace;">'+esc(o.numero_oc||num)+'</div>';
+    h+='<div style="color:#57534e;font-size:13px;">'+esc(o.proveedor||'-')+'</div></div>';
+    h+='<span class="badge" style="background:'+estColor+'22;color:'+estColor+';font-size:12px;">'+esc(o.estado||'')+'</span></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;background:#f9f8f7;border-radius:6px;padding:10px;">';
+    h+='<div><span style="color:#78716c;">Fecha:</span> '+fdate(o.fecha)+'</div>';
+    h+='<div><span style="color:#78716c;">Entrega est.:</span> '+(o.fecha_entrega_est?fdate(o.fecha_entrega_est):'-')+'</div>';
+    h+='<div><span style="color:#78716c;">Creado por:</span> '+esc(o.creado_por||'-')+'</div>';
+    h+='<div><span style="color:#78716c;">Autorizado por:</span> '+esc(o.autorizado_por||'-')+'</div>';
+    if(o.valor_total) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Valor total:</span> <strong style="font-size:15px;">'+fmt(o.valor_total)+'</strong></div>';
+    if(o.observaciones) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Observaciones:</span> '+esc(o.observaciones)+'</div>';
+    h+='</div>';
+    if(items.length){
+      h+='<div style="font-weight:700;font-size:12px;color:#44403c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Items del pedido</div>';
+      h+='<div style="overflow-x:auto;"><table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th style="text-align:right;">Precio U.</th><th style="text-align:right;">Subtotal</th></tr></thead><tbody>';
+      items.forEach(function(it){
+        var cant=it[3]||it.cantidad_g||0;
+        var pu=it[4]||it.precio_unitario||0;
+        var sub=it[5]||it.subtotal||0;
+        var nom=it[2]||it.nombre_mp||'';
+        var cod=it[1]||it.codigo_mp||'';
+        h+='<tr><td style="font-family:monospace;font-size:11px;">'+esc(cod)+'</td><td>'+esc(nom)+'</td>';
+        h+='<td>'+Number(cant).toLocaleString('es-CO')+'</td>';
+        h+='<td style="text-align:right;">'+(pu?fmt(pu):'-')+'</td>';
+        h+='<td style="text-align:right;font-weight:700;">'+(sub?fmt(sub):'-')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    } else { h+='<div style="color:#78716c;font-size:13px;">Sin items registrados</div>'; }
+    h+='</div>';
+    body.innerHTML=h;
+    var fbtns='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
+    if(o.estado==='Revisada'&&!ES_C) fbtns+='<button class="btn bi" onclick="_ocDetAut()">Autorizar / Rechazar</button>';
+    if(o.estado==='Autorizada'&&!ES_C) fbtns+='<button class="btn bg" onclick="_ocDetPago()">Registrar Pago</button>';
+    if(o.estado==='Borrador'&&ES_C) fbtns+='<button class="btn bw" onclick="_ocDetRev()">Revisar &amp; Asignar</button>';
+    footer.innerHTML=fbtns;
+  }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
 }
-function renderSolKpis(){
-  var cnt={Pendiente:0,Procesada:0,Rechazada:0};
-  SOLS.forEach(function(s){var k=s.estado==='Pendiente'?'Pendiente':s.estado==='Rechazada'?'Rechazada':'Procesada'; cnt[k]++;});
-  document.getElementById('sol-kpis').innerHTML=
-    mkKpi('Pendientes',cnt.Pendiente,'Requieren accion',cnt.Pendiente>0?'w':'')+
-    mkKpi('Con OC generada',cnt.Procesada,'En flujo autorizacion',cnt.Procesada>0?'g':'')+
-    mkKpi('Rechazadas',cnt.Rechazada,'Con motivo','');
+
+// ─── Solicitudes para Catalina ────────────────────────────────────────
+var SOLIC=[];
+async function loadSolicitudes(){
+  try{
+    var r=await fetch('/api/solicitudes-compra');
+    var d=await r.json();
+    SOLIC=d.solicitudes||[];
+  }catch(e){ SOLIC=[]; }
+  renderSolicitudes();
 }
-function renderSol(){
-  var q=(document.getElementById('q-sol')||{value:''}).value.toLowerCase();
-  var st=(document.getElementById('s-sol')||{value:''}).value;
-  var list=SOLS.filter(function(s){
-    if(st && s.estado!==st) return false;
-    if(q && !(s.numero+s.solicitante+s.area+s.categoria).toLowerCase().includes(q)) return false;
+function renderSolicitudes(){
+  var q=(document.getElementById('q-solic')||{value:''}).value.toLowerCase();
+  var st=(document.getElementById('s-solic')||{value:''}).value;
+  var list=SOLIC.filter(function(s){
+    if(st&&s.estado!==st) return false;
+    if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
-  var bmap={Pendiente:'background:#fef3c7;color:#92400e',Procesada:'background:#d1fae5;color:#065f46',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
-  var umap={Alta:'color:#dc2626;font-weight:700',Media:'color:#d97706',Baja:'color:#16a34a'};
-  var html='';
-  if(!list.length){html='<div class="empty">No hay solicitudes</div>';}
-  else{
-    html='<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f5f4f2;">'
-      +'<th style="padding:8px 10px;">No</th><th style="padding:8px 10px;">Fecha</th>'
-      +'<th style="padding:8px 10px;">Solicitante</th><th style="padding:8px 10px;">Area</th>'
-      +'<th style="padding:8px 10px;">Urgencia</th><th style="padding:8px 10px;">Estado</th>'
-      +'<th style="padding:8px 10px;">OC</th><th style="padding:8px 10px;"></th></tr></thead><tbody>';
-    list.forEach(function(s){
-      var bst=bmap[s.estado]||''; var ust=umap[s.urgencia]||'';
-      var bg=s.estado==='Pendiente'?'background:#fffbeb;':'';
-      var ocTxt=s.numero_oc?('<b>'+esc(s.numero_oc)+'</b>'):'-';
-      var btn=s.estado==='Pendiente'?'<button class="btn bp" style="font-size:11px;padding:3px 8px;" data-num="'+esc(s.numero)+'" onclick="openSolBtn(this)">Procesar</button>':'';
-      html+='<tr style="border-bottom:1px solid #f3f4f6;cursor:pointer;'+bg+'" data-num="'+esc(s.numero)+'" onclick="openSolRow(this)">'
-        +'<td style="padding:8px 10px;font-weight:600;">'+esc(s.numero)+'</td>'
-        +'<td style="padding:8px 10px;color:#78716c;">'+esc((s.fecha||'').substring(0,10))+'</td>'
-        +'<td style="padding:8px 10px;">'+esc(s.solicitante||'')+'</td>'
-        +'<td style="padding:8px 10px;">'+esc(s.area||'')+'</td>'
-        +'<td style="padding:8px 10px;"><span style="'+ust+'">'+esc(s.urgencia||'')+'</span></td>'
-        +'<td style="padding:8px 10px;"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></td>'
-        +'<td style="padding:8px 10px;font-size:11px;">'+ocTxt+'</td>'
-        +'<td style="padding:8px 10px;">'+btn+'</td></tr>';
-    });
-    html+='</tbody></table>';
-  }
-  document.getElementById('grid-sol').innerHTML=html;
-  // Re-attach row click via delegation
-  document.getElementById('grid-sol').querySelectorAll('tr[data-num]').forEach(function(tr){
-    tr.addEventListener('click',function(e){if(e.target.tagName!=='BUTTON') openSol(tr.dataset.num);});
-  });
-}
-function openSolRow(el){openSol(el.dataset.num);}
-function openSolBtn(el){event.stopPropagation(); openSol(el.dataset.num);}
-function openSol(numero){
-  _solActual=numero;
-  Promise.all([
-    fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)).then(function(r){return r.json();}),
-    fetch('/api/proveedores-compras').then(function(r){return r.json();})
-  ]).then(function(res){
-    var detail=res[0], provs=res[1].proveedores||[];
-    PROVS_LIST=provs;
-    var s=detail.solicitud||{}, items=detail.items||[];
-    var bmap2={Pendiente:'background:#fef3c7;color:#92400e',Procesada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46'};
-    var bst2=bmap2[s.estado]||'';
-    var urg_color=s.urgencia==='Alta'?'color:#dc2626':s.urgencia==='Media'?'color:#d97706':'color:#16a34a';
-    var html='<div class="g2">'
-      +'<div class="fg"><label>Numero</label><div style="font-weight:700;font-size:15px;">'+esc(s.numero)+'</div></div>'
-      +'<div class="fg"><label>Estado</label><span style="padding:4px 12px;border-radius:10px;font-size:12px;font-weight:700;'+bst2+'">'+esc(s.estado)+'</span></div>'
-      +'<div class="fg"><label>Solicitante</label><div>'+esc(s.solicitante||'')+'</div></div>'
-      +'<div class="fg"><label>Area / Empresa</label><div>'+esc(s.area||'')+' - '+esc(s.empresa||'')+'</div></div>'
-      +'<div class="fg"><label>Urgencia</label><div style="font-weight:600;'+urg_color+'">'+esc(s.urgencia||'')+'</div></div>'
-      +'<div class="fg"><label>Categoria</label><div>'+esc(s.categoria||'')+'</div></div>'
+  var pend=list.filter(function(s){ return s.estado==='Pendiente'; }).length;
+  var apro=list.filter(function(s){ return s.estado==='Aprobada'; }).length;
+  var rech=list.filter(function(s){ return s.estado==='Rechazada'; }).length;
+  var pills='<span class="pill">'+list.length+' solicitudes</span>';
+  if(pend) pills+='<span class="pill y">Pendiente: '+pend+'</span>';
+  if(apro) pills+='<span class="pill g">Aprobada: '+apro+'</span>';
+  if(rech) pills+='<span class="pill" style="background:#fee2e2;color:#991b1b;">Rechazada: '+rech+'</span>';
+  document.getElementById('pills-solic').innerHTML=pills;
+  if(!list.length){ document.getElementById('grid-solic').innerHTML='<div class="empty">No hay solicitudes</div>'; return; }
+  var urgColor={'Normal':'#16a34a','Urgente':'#d97706','Critico':'#dc2626'};
+  var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7','Rechazada':'#fee2e2'};
+  var stFg={'Pendiente':'#92400e','Aprobada':'#166534','Rechazada':'#991b1b'};
+  document.getElementById('grid-solic').innerHTML=list.map(function(s){
+    var urg=s.urgencia||'Normal';
+    var urgC=urgColor[urg]||'#78716c';
+    var stB=stBg[s.estado]||'#f3f4f6';
+    var stF=stFg[s.estado]||'#374151';
+    return '<div class="card">'
+      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
+      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
+      +'<span class="badge" style="background:'+stB+';color:'+stF+';">'+s.estado+'</span></div>'
+      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
+      +'<span>'+esc(s.categoria||'-')+'</span>'
+      +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
+      +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
+      +'<div class="acts"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button></div>'
       +'</div>';
-    if(s.observaciones){html+='<div class="fg"><label>Observaciones</label><div style="background:#fffbeb;padding:8px 12px;border-radius:6px;font-size:12px;border-left:3px solid #f59e0b;">'+esc(s.observaciones)+'</div></div>';}
-    html+='<div class="fg"><label>Items Solicitados ('+items.length+')</label><table class="itbl"><thead><tr><th>Codigo</th><th>Material</th><th>Cantidad</th><th>Unidad</th></tr></thead><tbody>';
-    items.forEach(function(it){html+='<tr><td style="font-weight:600;">'+esc(it.codigo_mp||'')+'</td><td>'+esc(it.nombre_mp||'')+'</td><td style="text-align:right;">'+esc(String(it.cantidad_g||''))+'</td><td>'+esc(it.unidad||'')+'</td></tr>';});
-    html+='</tbody></table></div>';
-    if(s.estado==='Pendiente'){
-      var popts='<option value="">-- Seleccionar proveedor --</option>';
-      provs.forEach(function(p){popts+='<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>';});
-      html+='<div class="fg"><label>Proveedor</label>'
-        +'<select id="sol-prov-sel" style="width:100%;padding:8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'+popts+'</select>'
-        +'<button type="button" onclick="toggleNuevoProv()" style="margin-top:6px;background:none;border:none;color:#2563eb;font-size:12px;cursor:pointer;text-decoration:underline;">+ Crear proveedor nuevo</button></div>'
-        +'<div id="div-nuevo-prov" style="display:none;background:#f9f8f7;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-top:4px;">'
-        +'<div style="font-weight:700;font-size:12px;margin-bottom:10px;">Nuevo Proveedor</div>'
-        +'<div class="g2">'
-        +'<div class="fg"><label>Nombre *</label><input id="np-nombre" type="text" placeholder="Nombre o razon social"></div>'
-        +'<div class="fg"><label>Contacto</label><input id="np-contacto" type="text" placeholder="Nombre contacto"></div>'
-        +'<div class="fg"><label>Email</label><input id="np-email" type="email"></div>'
-        +'<div class="fg"><label>Telefono</label><input id="np-tel" type="text"></div>'
-        +'<div class="fg"><label>Categoria</label><select id="np-cat"><option>MP</option><option>MEE</option><option>Servicios</option><option>Administrativo</option><option>Infraestructura</option></select></div>'
-        +'<div class="fg"><label>Condiciones pago</label><input id="np-pago" type="text" placeholder="30 dias, contado..."></div>'
-        +'</div>'
-        +'<button class="btn bp" style="margin-top:8px;width:100%;" onclick="crearProveedorInline()">Guardar y Seleccionar</button></div>';
-    } else if(s.numero_oc){
-      html+='<div class="fg"><label>Orden de Compra Generada</label><div style="background:#ecfdf5;padding:10px 14px;border-radius:8px;border-left:4px solid #10b981;font-weight:700;font-size:14px;">'+esc(s.numero_oc)+'</div></div>';
+  }).join('');
+}
+async function openSolicitudDetail(num){
+  openModal('m-sol-det');
+  var body=document.getElementById('sol-det-body');
+  var footer=document.getElementById('sol-det-footer');
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div>';
+  footer.innerHTML='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
+  try{
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num));
+    var d=await r.json();
+    if(d.error){ body.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>'; return; }
+    var s=d.solicitud||{};
+    var items=d.items||[];
+    var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7','Rechazada':'#fee2e2'};
+    var stFg={'Pendiente':'#92400e','Aprobada':'#166534','Rechazada':'#991b1b'};
+    var h='<div style="padding:16px 20px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+    h+='<div><div style="font-weight:800;font-size:16px;font-family:monospace;">'+esc(s.numero||num)+'</div>';
+    h+='<div style="color:#57534e;font-size:13px;">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>';
+    h+='<span class="badge" style="background:'+(stBg[s.estado]||'#f3f4f6')+';color:'+(stFg[s.estado]||'#374151')+';font-size:12px;">'+esc(s.estado||'')+'</span></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;background:#f9f8f7;border-radius:6px;padding:10px;">';
+    h+='<div><span style="color:#78716c;">Empresa:</span> '+esc(s.empresa||'Espagiria')+'</div>';
+    h+='<div><span style="color:#78716c;">Categoria:</span> '+esc(s.categoria||'-')+'</div>';
+    h+='<div><span style="color:#78716c;">Tipo:</span> '+esc(s.tipo||'-')+'</div>';
+    h+='<div><span style="color:#78716c;">Urgencia:</span> <strong>'+esc(s.urgencia||'Normal')+'</strong></div>';
+    h+='<div><span style="color:#78716c;">Fecha:</span> '+fdate(s.fecha)+'</div>';
+    if(s.aprobado_por) h+='<div><span style="color:#78716c;">Gestionado por:</span> '+esc(s.aprobado_por)+'</div>';
+    if(s.numero_oc) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">OC generada:</span> <strong style="color:#2563eb;">'+esc(s.numero_oc)+'</strong></div>';
+    if(s.observaciones) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Observaciones / Justificacion:</span><br><em>'+esc(s.observaciones)+'</em></div>';
+    h+='</div>';
+    if(items.length){
+      h+='<div style="font-weight:700;font-size:12px;color:#44403c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Items solicitados</div>';
+      h+='<table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Valor est.</th></tr></thead><tbody>';
+      items.forEach(function(it){
+        h+='<tr><td style="font-family:monospace;font-size:11px;">'+esc(it.codigo_mp||'-')+'</td>';
+        h+='<td>'+esc(it.nombre_mp||'-')+'</td>';
+        h+='<td>'+(it.cantidad_g||0)+' '+(it.unidad||'und')+'</td>';
+        h+='<td>'+(it.valor_estimado?fmt(it.valor_estimado):'-')+'</td></tr>';
+      });
+      h+='</tbody></table>';
     }
-    document.getElementById('m-sol-body').innerHTML=html;
-    var footer='';
     if(s.estado==='Pendiente'){
-      footer='<button class="btn bp" style="font-size:13px;padding:8px 18px;" onclick="generarOCSol()">Generar OC</button> ';
-      footer+='<button class="btn" style="background:#dc2626;color:#fff;font-size:13px;padding:8px 18px;" onclick="solRechazo()">Rechazar</button>';
+      h+='<div style="margin-top:16px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">';
+      h+='<div style="font-weight:700;font-size:13px;margin-bottom:10px;">&#9997; Gestionar Solicitud</div>';
+      h+='<div class="fg" style="margin-bottom:10px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Proveedor / Beneficiario</label>';
+      h+='<select id="sol-prov-sel" onchange="_solFillProv()" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"><option value="">-- Seleccionar proveedor --</option>';
+      PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>'; });
+      h+='</select><div id="sol-prov-ibox" class="ibox" style="display:none;margin-top:6px;"></div></div>';
+      h+='<div class="g2" style="margin-bottom:10px;">';
+      h+='<div class="fg"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Valor estimado ($)</label>';
+      h+='<input type="number" id="sol-valor" placeholder="0" min="0" step="1000" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
+      h+='<div class="fg"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Fecha entrega est.</label>';
+      h+='<input type="date" id="sol-fent" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div></div>';
+      h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario</label>';
+      h+='<textarea id="sol-motivo" placeholder="Razon de aprobacion o rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
+      h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
+      h+='</div>';
     }
-    footer+='<button class="btn" onclick="closeModal(&quot;m-sol&quot;)" style="margin-left:auto;font-size:13px;">Cerrar</button>';
-    document.getElementById('m-sol-footer').innerHTML=footer;
-    openModal('m-sol');
-  });
+    h+='</div>';
+    body.innerHTML=h;
+    var fbtns='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
+    if(s.estado==='Pendiente'){
+      fbtns+='<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
+      fbtns+='<button class="btn bg" onclick="_solDetApr()">&#10003; Aprobar y crear OC</button>';
+    }
+    footer.innerHTML=fbtns;
+  }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
 }
-function toggleNuevoProv(){
-  var d=document.getElementById('div-nuevo-prov');
-  d.style.display=d.style.display==='none'?'block':'none';
-  if(d.style.display==='block') document.getElementById('sol-prov-sel').value='';
-}
-function crearProveedorInline(){
-  var nombre=(document.getElementById('np-nombre')||{value:''}).value.trim();
-  if(!nombre){alert('Nombre es obligatorio');return;}
-  var body={nombre:nombre,contacto:(document.getElementById('np-contacto')||{value:''}).value,email:(document.getElementById('np-email')||{value:''}).value,telefono:(document.getElementById('np-tel')||{value:''}).value,categoria:(document.getElementById('np-cat')||{value:'MP'}).value,condiciones_pago:(document.getElementById('np-pago')||{value:''}).value};
-  fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)})
-  .then(function(r){return r.json();}).then(function(d){
-    if(d.error){alert('Error: '+d.error);return;}
-    var sel=document.getElementById('sol-prov-sel');
-    if(sel){var opt=document.createElement('option');opt.value=nombre;opt.textContent=nombre;sel.appendChild(opt);sel.value=nombre;}
-    document.getElementById('div-nuevo-prov').style.display='none';
-    alert('Proveedor "'+nombre+'" creado y seleccionado.');
-  });
-}
-function generarOCSol(){
+async function gestionarSol(decision){
+  var num=document.getElementById('sol-det-num').value;
   var prov=(document.getElementById('sol-prov-sel')||{value:''}).value;
-  if(!prov){alert('Selecciona o crea un proveedor primero.');return;}
-  if(!confirm('Generar OC para '+_solActual+' con proveedor: '+prov+'?')) return;
-  fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({estado:'Procesada',crear_oc:true,proveedor:prov})})
-  .then(function(r){return r.json();}).then(function(d){
-    if(d.ok){alert('OC generada: '+d.numero_oc+'\\nAhora aparece en la cola Para Autorizar.');closeModal('m-sol');loadSolicitudes();load();}
-    else alert('Error: '+(d.error||'Verifica que hayas iniciado sesion.'));
-  });
-}
-function solRechazo(){
-  var motivo=prompt('Motivo del rechazo:');
-  if(motivo===null) return;
-  if(!motivo.trim()){alert('Debes ingresar un motivo.');return;}
-  fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({estado:'Rechazada',observaciones:motivo})})
-  .then(function(r){return r.json();}).then(function(d){
-    if(d.ok){alert('Solicitud rechazada.');closeModal('m-sol');loadSolicitudes();}
-    else alert('Error: '+(d.error||'No autorizado'));
-  });
+  var valor=parseFloat((document.getElementById('sol-valor')||{value:0}).value||0);
+  var motivo=(document.getElementById('sol-motivo')||{value:''}).value.trim();
+  var fent=(document.getElementById('sol-fent')||{value:''}).value;
+  if(decision==='Rechazada'&&!motivo){
+    if(!confirm('Rechazar sin motivo. Confirmar?')) return;
+  }
+  var body={estado:decision,observaciones:motivo};
+  if(decision==='Aprobada'){
+    body.crear_oc=true;
+    body.proveedor=prov||'Por definir';
+  }
+  try{
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-sol-det');
+    await Promise.all([loadData(),loadSolicitudes()]);
+    alert(decision==='Aprobada'?'Solicitud aprobada. OC generada: '+(d.numero_oc||''):'Solicitud rechazada.');
+  }catch(e){ alert('Error: '+e); }
 }
 
+// ─── Init ─────────────────────────────────────────────────────────────
+loadData();
 </script>
-
-<!-- MODAL: Gestionar Solicitud -->
-<div id="m-sol" class="ov">
-<div class="mdl mdl-lg" style="max-width:720px;">
-  <div class="mh"><h3>&#x1F4CB; Gestionar Solicitud</h3><button class="mx" onclick="closeModal(&quot;m-sol&quot;)">&times;</button></div>
-  <div class="mb" id="m-sol-body" style="gap:10px;"></div>
-  <div class="mf" id="m-sol-footer"></div>
-</div>
-</div>
-
 </body>
 </html>"""
