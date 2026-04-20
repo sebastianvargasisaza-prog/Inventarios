@@ -186,13 +186,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <div id="pane-sol" class="pane">
   <div id="sol-kpis" class="kpis" style="margin-bottom:12px;"></div>
+  <div style="font-size:12px;color:#78716c;margin-bottom:8px;padding:0 4px;">&#x2139;&#xFE0F; <b>Catalina:</b> procesa las Pendientes asignando proveedor y generando OC. La OC pasa directo a autorizacion de Gerencia.</div>
   <div class="bar">
     <input type="text" id="q-sol" placeholder="Buscar por #, solicitante, area..." oninput="renderSol()">
     <select id="s-sol" onchange="renderSol()">
       <option value="">Todos los estados</option>
       <option>Pendiente</option>
-      <option>Verificada</option>
-      <option>Autorizada</option>
+      <option>Procesada</option>
       <option>Rechazada</option>
     </select>
   </div>
@@ -801,13 +801,15 @@ function loadSolicitudes(){
 }
 
 function renderSolKpis(){
-  var cnt = {Pendiente:0, Verificada:0, Autorizada:0, Rechazada:0};
-  SOLS.forEach(function(s){ cnt[s.estado] = (cnt[s.estado]||0)+1; });
+  var cnt = {Pendiente:0,Procesada:0,Rechazada:0};
+  SOLS.forEach(function(s){
+    var k = (s.estado==='Pendiente')?'Pendiente':(s.estado==='Rechazada'?'Rechazada':'Procesada');
+    cnt[k]++;
+  });
   document.getElementById('sol-kpis').innerHTML =
-    mkKpi('Pendientes', cnt.Pendiente, 'Requieren revision', cnt.Pendiente>0?'w':'')+
-    mkKpi('Verificadas', cnt.Verificada, 'Listas para autorizar', cnt.Verificada>0?'y':'')+
-    mkKpi('Autorizadas', cnt.Autorizada, 'OC generada', 'g')+
-    mkKpi('Rechazadas', cnt.Rechazada, 'Este ciclo', '');
+    mkKpi('Pendientes', cnt.Pendiente, 'Requieren accion', cnt.Pendiente>0?'w':'')+
+    mkKpi('Con OC generada', cnt.Procesada, 'En flujo de autorizacion', cnt.Procesada>0?'g':'')+
+    mkKpi('Rechazadas', cnt.Rechazada, 'Con motivo registrado', '');
 }
 
 function renderSol(){
@@ -819,33 +821,35 @@ function renderSol(){
     if(q && !(s.numero+s.solicitante+s.area+s.categoria).toLowerCase().includes(q)) ok = false;
     return ok;
   });
+  var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Procesada:'background:#d1fae5;color:#065f46',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
+  var urgMap = {Alta:'color:#dc2626;font-weight:700',Media:'color:#d97706',Baja:'color:#16a34a'};
   var html = '';
   if(!list.length){ html = '<div class="empty">No hay solicitudes con esos filtros</div>'; }
   else {
-    var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
-    var urgMap = {Alta:'color:#dc2626;font-weight:700',Media:'color:#d97706',Baja:'color:#16a34a'};
     html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr style="background:#f5f4f2;">'
-          + '<th style="padding:8px;text-align:left;">N°</th>'
-          + '<th style="padding:8px;text-align:left;">Fecha</th>'
-          + '<th style="padding:8px;text-align:left;">Solicitante</th>'
-          + '<th style="padding:8px;text-align:left;">Area</th>'
-          + '<th style="padding:8px;text-align:left;">Urgencia</th>'
-          + '<th style="padding:8px;text-align:left;">Estado</th>'
-          + '<th style="padding:8px;text-align:left;">OC</th>'
-          + '<th style="padding:8px;"></th></tr></thead><tbody>';
+      + '<th style="padding:8px 10px;text-align:left;">N°</th>'
+      + '<th style="padding:8px 10px;text-align:left;">Fecha</th>'
+      + '<th style="padding:8px 10px;text-align:left;">Solicitante</th>'
+      + '<th style="padding:8px 10px;text-align:left;">Area</th>'
+      + '<th style="padding:8px 10px;text-align:left;">Urgencia</th>'
+      + '<th style="padding:8px 10px;text-align:left;">Estado</th>'
+      + '<th style="padding:8px 10px;text-align:left;">OC</th>'
+      + '<th style="padding:8px 10px;"></th></tr></thead><tbody>';
     list.forEach(function(s){
       var bst = badgeMap[s.estado]||'';
       var ust = urgMap[s.urgencia]||'';
-      html += '<tr style="border-bottom:1px solid #f3f4f6;cursor:pointer;" onclick="openSol(''+esc(s.numero)+'')">'
-        + '<td style="padding:8px;font-weight:600;">'+esc(s.numero)+'</td>'
-        + '<td style="padding:8px;color:#78716c;">'+esc((s.fecha||'').substring(0,10))+'</td>'
-        + '<td style="padding:8px;">'+esc(s.solicitante||'')+'</td>'
-        + '<td style="padding:8px;color:#57534e;">'+esc(s.area||'')+'</td>'
-        + '<td style="padding:8px;"><span style="'+ust+'">'+esc(s.urgencia||'')+'</span></td>'
-        + '<td style="padding:8px;"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></td>'
-        + '<td style="padding:8px;font-size:11px;color:#78716c;">'+esc(s.numero_oc||'-')+'</td>'
-        + '<td style="padding:8px;"><button class="btn bp" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();openSol(''+esc(s.numero)+'')">Gestionar</button></td>'
+      var isPending = (s.estado==='Pendiente');
+      var rowBg = isPending ? 'background:#fffbeb;' : '';
+      html += '<tr style="border-bottom:1px solid #f3f4f6;cursor:pointer;'+rowBg+'" onclick="openSol(''+esc(s.numero)+'')">'
+        + '<td style="padding:8px 10px;font-weight:600;">'+esc(s.numero)+'</td>'
+        + '<td style="padding:8px 10px;color:#78716c;">'+esc((s.fecha||'').substring(0,10))+'</td>'
+        + '<td style="padding:8px 10px;">'+esc(s.solicitante||'')+'</td>'
+        + '<td style="padding:8px 10px;color:#57534e;">'+esc(s.area||'')+'</td>'
+        + '<td style="padding:8px 10px;"><span style="'+ust+'">'+esc(s.urgencia||'')+'</span></td>'
+        + '<td style="padding:8px 10px;"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></td>'
+        + '<td style="padding:8px 10px;font-size:11px;color:#78716c;">'+(s.numero_oc?('<b>'+esc(s.numero_oc)+'</b>'):'-')+'</td>'
+        + '<td style="padding:8px 10px;">'+(isPending?'<button class="btn bp" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();openSol(''+esc(s.numero)+'')">Procesar</button>':'')+'</td>'
         + '</tr>';
     });
     html += '</tbody></table>';
@@ -855,87 +859,141 @@ function renderSol(){
 
 function openSol(numero){
   _solActual = numero;
-  var sol = SOLS.find(function(s){return s.numero===numero;});
-  if(!sol){return;}
-  // Load items and proveedores
   Promise.all([
     fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)).then(function(r){return r.json();}),
     fetch('/api/proveedores-compras').then(function(r){return r.json();})
-  ]).then(function(results){
-    var detail = results[0];
-    var provs = (results[1].proveedores||[]);
+  ]).then(function(res){
+    var detail = res[0], provs = (res[1].proveedores||[]);
     PROVS_LIST = provs;
-    var s = detail.solicitud || sol;
+    var s = detail.solicitud || {};
     var items = detail.items || [];
-    var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
+    var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Procesada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46'};
     var bst = badgeMap[s.estado]||'';
+
     var html = '<div class="g2">'
-      + '<div class="fg"><label>Numero</label><div style="font-weight:700;">'+esc(s.numero)+'</div></div>'
-      + '<div class="fg"><label>Estado</label><span style="padding:4px 10px;border-radius:10px;font-size:12px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></div>'
+      + '<div class="fg"><label>Numero</label><div style="font-weight:700;font-size:15px;">'+esc(s.numero)+'</div></div>'
+      + '<div class="fg"><label>Estado</label><span style="padding:4px 12px;border-radius:10px;font-size:12px;font-weight:700;'+bst+'">'+esc(s.estado)+'</span></div>'
       + '<div class="fg"><label>Solicitante</label><div>'+esc(s.solicitante||'')+'</div></div>'
-      + '<div class="fg"><label>Area / Empresa</label><div>'+esc(s.area||'')+' / '+esc(s.empresa||'')+'</div></div>'
-      + '<div class="fg"><label>Urgencia</label><div>'+esc(s.urgencia||'')+'</div></div>'
+      + '<div class="fg"><label>Area / Empresa</label><div>'+esc(s.area||'')+' &bull; '+esc(s.empresa||'')+'</div></div>'
+      + '<div class="fg"><label>Urgencia</label><div style="font-weight:600;'+(s.urgencia==='Alta'?'color:#dc2626':s.urgencia==='Media'?'color:#d97706':'color:#16a34a')+'">'+esc(s.urgencia||'')+'</div></div>'
       + '<div class="fg"><label>Categoria</label><div>'+esc(s.categoria||'')+'</div></div>'
       + '</div>';
-    if(s.observaciones){ html += '<div class="fg"><label>Observaciones</label><div style="background:#fffbeb;padding:8px;border-radius:6px;font-size:12px;">'+esc(s.observaciones)+'</div></div>'; }
-    // Items
-    html += '<div class="fg"><label>Items Solicitados</label>'
+    if(s.observaciones){ html += '<div class="fg"><label>Observaciones del solicitante</label><div style="background:#fffbeb;padding:8px 12px;border-radius:6px;font-size:12px;border-left:3px solid #f59e0b;">'+esc(s.observaciones)+'</div></div>'; }
+
+    // Items table
+    html += '<div class="fg"><label>Items Solicitados ('+items.length+')</label>'
       + '<table class="itbl"><thead><tr><th>Codigo</th><th>Material</th><th>Cantidad</th><th>Unidad</th></tr></thead><tbody>';
     items.forEach(function(it){
-      html += '<tr><td>'+esc(it.codigo_mp||'')+'</td><td>'+esc(it.nombre_mp||'')+'</td><td>'+esc(String(it.cantidad_g||''))+'</td><td>'+esc(it.unidad||'')+'</td></tr>';
+      html += '<tr><td style="font-weight:600;">'+esc(it.codigo_mp||'')+'</td><td>'+esc(it.nombre_mp||'')+'</td><td style="text-align:right;">'+esc(String(it.cantidad_g||''))+'</td><td>'+esc(it.unidad||'')+'</td></tr>';
     });
     html += '</tbody></table></div>';
-    // Proveedor selector (show when Pendiente or Verificada)
-    if(s.estado === 'Pendiente' || s.estado === 'Verificada'){
-      var provOpts = '<option value="">-- Seleccionar proveedor --</option>';
+
+    // If Pendiente: show proveedor selector + create new option
+    if(s.estado === 'Pendiente'){
+      var provOpts = '<option value="">-- Seleccionar proveedor existente --</option>';
       provs.forEach(function(p){ provOpts += '<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>'; });
-      html += '<div class="fg"><label>Proveedor Asignado</label>'
-        + '<select id="sol-prov-sel" style="width:100%;padding:8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'+provOpts+'</select></div>';
-      if(s.numero_oc){ html += '<div class="fg"><label>OC vinculada</label><div style="font-weight:600;">'+esc(s.numero_oc)+'</div></div>'; }
+      html += '<div class="fg"><label>Proveedor</label>'
+        + '<select id="sol-prov-sel" style="width:100%;padding:8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;" onchange="solProvChange(this.value)">'+provOpts+'</select>'
+        + '<button type="button" onclick="toggleNuevoProv()" style="margin-top:6px;background:none;border:none;color:#2563eb;font-size:12px;cursor:pointer;text-decoration:underline;">+ Crear proveedor nuevo</button></div>'
+        + '<div id="div-nuevo-prov" style="display:none;background:#f9f8f7;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-top:4px;">'
+        + '<div style="font-weight:700;font-size:12px;color:#44403c;margin-bottom:10px;">Nuevo Proveedor</div>'
+        + '<div class="g2">'
+        + '<div class="fg"><label>Nombre *</label><input id="np-nombre" type="text" placeholder="Nombre o razon social"></div>'
+        + '<div class="fg"><label>Contacto</label><input id="np-contacto" type="text" placeholder="Nombre contacto"></div>'
+        + '<div class="fg"><label>Email</label><input id="np-email" type="email" placeholder="correo@empresa.com"></div>'
+        + '<div class="fg"><label>Telefono</label><input id="np-tel" type="text" placeholder="+57..."></div>'
+        + '<div class="fg"><label>Categoria</label><select id="np-cat"><option>MP</option><option>MEE</option><option>Servicios</option><option>Administrativo</option><option>Infraestructura</option></select></div>'
+        + '<div class="fg"><label>Condiciones pago</label><input id="np-pago" type="text" placeholder="30 dias, contado..."></div>'
+        + '</div>'
+        + '<button class="btn bp" style="margin-top:8px;width:100%;" onclick="crearProveedorInline()">Guardar y Seleccionar</button>'
+        + '</div>';
+    } else if(s.numero_oc){
+      html += '<div class="fg"><label>Orden de Compra Generada</label>'
+        + '<div style="background:#ecfdf5;padding:10px 14px;border-radius:8px;border-left:4px solid #10b981;font-weight:700;font-size:14px;">'+esc(s.numero_oc)+'</div></div>';
     }
+
     document.getElementById('m-sol-body').innerHTML = html;
-    // Footer buttons
+
+    // Footer
     var footer = '';
     if(s.estado === 'Pendiente'){
-      footer += '<button class="btn bp" onclick="accionSol('Verificada',false)">&#x2705; Verificar</button>';
-      footer += '<button class="btn" style="background:#dc2626;color:#fff;" onclick="solRechazo()">&#x274C; Rechazar</button>';
-    } else if(s.estado === 'Verificada'){
-      footer += '<button class="btn bp" onclick="accionSol('Autorizada',true)">&#x2705; Autorizar + Crear OC</button>';
-      footer += '<button class="btn" style="background:#dc2626;color:#fff;" onclick="solRechazo()">&#x274C; Rechazar</button>';
+      footer += '<button class="btn bp" style="font-size:13px;padding:8px 18px;" onclick="generarOCSol()">&#x1F4DD; Generar Orden de Compra</button>';
+      footer += ' <button class="btn" style="background:#dc2626;color:#fff;font-size:13px;padding:8px 18px;" onclick="solRechazo()">&#x274C; Rechazar</button>';
     }
-    footer += '<button class="btn" onclick="closeModal('m-sol')" style="margin-left:auto;">Cerrar</button>';
+    footer += '<button class="btn" onclick="closeModal('m-sol')" style="margin-left:auto;font-size:13px;">Cerrar</button>';
     document.getElementById('m-sol-footer').innerHTML = footer;
     openModal('m-sol');
   });
 }
 
-function accionSol(nuevoEstado, crearOC){
+function solProvChange(val){
+  if(val) document.getElementById('div-nuevo-prov').style.display='none';
+}
+
+function toggleNuevoProv(){
+  var d = document.getElementById('div-nuevo-prov');
+  d.style.display = d.style.display==='none'?'block':'none';
+  if(d.style.display==='block') document.getElementById('sol-prov-sel').value='';
+}
+
+function crearProveedorInline(){
+  var nombre = (document.getElementById('np-nombre')||{value:''}).value.trim();
+  if(!nombre){ alert('El nombre del proveedor es obligatorio'); return; }
+  var body = {
+    nombre: nombre,
+    contacto: (document.getElementById('np-contacto')||{value:''}).value,
+    email: (document.getElementById('np-email')||{value:''}).value,
+    telefono: (document.getElementById('np-tel')||{value:''}).value,
+    categoria: (document.getElementById('np-cat')||{value:'MP'}).value,
+    condiciones_pago: (document.getElementById('np-pago')||{value:''}).value
+  };
+  fetch('/api/proveedores-compras', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'same-origin', body:JSON.stringify(body)})
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(d.error){ alert('Error: '+d.error); return; }
+    // Refresh proveedor list and select the new one
+    fetch('/api/proveedores-compras').then(function(r){return r.json();}).then(function(pd){
+      PROVS_LIST = pd.proveedores||[];
+      var sel = document.getElementById('sol-prov-sel');
+      if(sel){
+        var opt = document.createElement('option');
+        opt.value = nombre; opt.textContent = nombre;
+        sel.appendChild(opt);
+        sel.value = nombre;
+      }
+      document.getElementById('div-nuevo-prov').style.display='none';
+      alert('Proveedor "'+nombre+'" creado y seleccionado.');
+    });
+  });
+}
+
+function generarOCSol(){
   var prov = (document.getElementById('sol-prov-sel')||{value:''}).value;
-  var body = {estado: nuevoEstado};
-  if(prov) body.proveedor = prov;
-  if(crearOC){ body.crear_oc = true; if(prov) body.proveedor = prov; }
+  if(!prov){ alert('Debes seleccionar o crear un proveedor antes de generar la OC.'); return; }
+  if(!confirm('Generar Orden de Compra para "'+_solActual+'" con proveedor "'+prov+'"?')) return;
   fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado', {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     credentials:'same-origin',
-    body:JSON.stringify(body)
+    body:JSON.stringify({estado:'Procesada', crear_oc:true, proveedor:prov})
   }).then(function(r){return r.json();}).then(function(d){
     if(d.ok){
-      var msg = 'Solicitud '+_solActual+' -> '+nuevoEstado;
-      if(d.numero_oc) msg += '. OC creada: '+d.numero_oc;
-      alert(msg);
+      alert('OC generada: '+d.numero_oc+'
+La solicitud queda en estado Procesada.
+Pasa a la cola de autorizacion del CEO.');
       closeModal('m-sol');
       loadSolicitudes();
       load();
     } else {
-      alert('Error: '+(d.error||'No autorizado. Verifica que hayas iniciado sesion en Compras.'));
+      alert('Error: '+(d.error||'Verifica que hayas iniciado sesion en Compras.'));
     }
   });
 }
 
 function solRechazo(){
   var motivo = prompt('Motivo del rechazo:');
-  if(!motivo) return;
+  if(motivo===null) return;
+  if(!motivo.trim()){ alert('Debes ingresar un motivo.'); return; }
   fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado', {
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
@@ -943,7 +1001,7 @@ function solRechazo(){
     body:JSON.stringify({estado:'Rechazada', observaciones:motivo})
   }).then(function(r){return r.json();}).then(function(d){
     if(d.ok){
-      alert('Solicitud rechazada.');
+      alert('Solicitud rechazada. El solicitante puede ver el motivo.');
       closeModal('m-sol');
       loadSolicitudes();
     } else {
