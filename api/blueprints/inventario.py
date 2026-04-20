@@ -687,14 +687,14 @@ def lotes_cuarentena():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.lote, m.cantidad,
                       m.fecha, m.proveedor, m.numero_factura, m.numero_oc, m.observaciones,
-                      mp.nombre_inci
+                      mp.nombre_inci, m.estado_lote
                FROM movimientos m
                LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-               WHERE m.estado_lote='CUARENTENA' AND m.tipo='Entrada'
+               WHERE m.estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
                ORDER BY m.fecha DESC""")
     rows = c.fetchall()
     conn.close()
-    cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci']
+    cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci','estado_lote']
     return jsonify([dict(zip(cols,r)) for r in rows])
 
 @bp.route('/api/lotes/liberar', methods=['POST'])
