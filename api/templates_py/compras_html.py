@@ -924,7 +924,7 @@ function generarOCSol(){
   if(!confirm('Generar OC para '+_solActual+' con proveedor: '+prov+'?')) return;
   fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({estado:'Procesada',crear_oc:true,proveedor:prov})})
   .then(function(r){return r.json();}).then(function(d){
-    if(d.ok){alert('OC generada: '+d.numero_oc+'\nAhora aparece en la cola Para Autorizar.');closeModal('m-sol');loadSolicitudes();load();}
+    if(d.ok){alert('OC generada: '+d.numero_oc+'\\nAhora aparece en la cola Para Autorizar.');closeModal('m-sol');loadSolicitudes();load();}
     else alert('Error: '+(d.error||'Verifica que hayas iniciado sesion.'));
   });
 }
