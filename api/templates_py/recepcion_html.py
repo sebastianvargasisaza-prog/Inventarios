@@ -200,7 +200,7 @@ async function loadQueue() {
     pendientes.forEach(function(oc) {
       var dt = oc.fecha ? new Date(oc.fecha) : null;
       var dias = dt ? Math.floor((today - dt) / 86400000) : 0;
-      html += '<div class="oc-card" data-oc="' + oc.numero_oc + '" onclick="cargarOC(this.dataset.oc)">
+      html += '<div class="oc-card" data-oc="' + oc.numero_oc + '" onclick="cargarOC(this.dataset.oc)">'
         + '<div class="oc-num">' + oc.numero_oc + '</div>'
         + '<div class="oc-prov">' + (oc.proveedor || '') + '</div>'
         + '<div class="oc-val">$' + Number(oc.valor_total||0).toLocaleString() + '</div>'
