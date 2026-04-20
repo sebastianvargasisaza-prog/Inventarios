@@ -28,3 +28,6 @@ CALIDAD_USERS   = {"laura", "miguel", "yuliel"}
 PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
+
+COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "alejandro", "sebastian"}
+FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
