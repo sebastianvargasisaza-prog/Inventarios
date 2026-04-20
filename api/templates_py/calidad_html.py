@@ -1,9 +1,9 @@
-# calidad_html.py â extraÃ­do de index.py (Fase C prep)
+# calidad_html.py Ã¢ÂÂ extraÃÂ­do de index.py (Fase C prep)
 CALIDAD_HTML = r"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Calidad BPM â Espagiria</title>
+<title>Calidad BPM Ã¢ÂÂ Espagiria</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
@@ -117,22 +117,22 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
-  <div class="tab" onclick="window.location='/solicitudes'">&#x1F4CB; Solicitudes</div>
+  
 </div>
 <div class="main">
 
-<!-- ââ DASHBOARD âââââââââââââââââââââââââââââââââââââââ -->
+<!-- Ã¢ÂÂÃ¢ÂÂ DASHBOARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 <div id="tab-dash" class="pane active">
   <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">Cronograma Hoy</div><div class="kpi-val good" id="kv-cron-pct">—</div><div class="kpi-sub">% completado</div></div>
-    <div class="kpi"><div class="kpi-label">Lotes en Cuarentena</div><div class="kpi-val warn" id="kv-cuarentena">â</div><div class="kpi-sub">Pendientes CC</div></div>
-    <div class="kpi"><div class="kpi-label">Aprobados (30d)</div><div class="kpi-val good" id="kv-aprobados">â</div><div class="kpi-sub">Lotes aprobados</div></div>
-    <div class="kpi"><div class="kpi-label">Rechazados (30d)</div><div class="kpi-val crit" id="kv-rechazados">â</div><div class="kpi-sub">Lotes rechazados</div></div>
-    <div class="kpi"><div class="kpi-label">NC Abiertas</div><div class="kpi-val warn" id="kv-nc">â</div><div class="kpi-sub">No conformidades</div></div>
-    <div class="kpi"><div class="kpi-label">Calibraciones Vencidas</div><div class="kpi-val crit" id="kv-cals">â</div><div class="kpi-sub">Requieren accion</div></div>
+    <div class="kpi"><div class="kpi-label">Cronograma Hoy</div><div class="kpi-val good" id="kv-cron-pct">â</div><div class="kpi-sub">% completado</div></div>
+    <div class="kpi"><div class="kpi-label">Lotes en Cuarentena</div><div class="kpi-val warn" id="kv-cuarentena">Ã¢ÂÂ</div><div class="kpi-sub">Pendientes CC</div></div>
+    <div class="kpi"><div class="kpi-label">Aprobados (30d)</div><div class="kpi-val good" id="kv-aprobados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes aprobados</div></div>
+    <div class="kpi"><div class="kpi-label">Rechazados (30d)</div><div class="kpi-val crit" id="kv-rechazados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes rechazados</div></div>
+    <div class="kpi"><div class="kpi-label">NC Abiertas</div><div class="kpi-val warn" id="kv-nc">Ã¢ÂÂ</div><div class="kpi-sub">No conformidades</div></div>
+    <div class="kpi"><div class="kpi-label">Calibraciones Vencidas</div><div class="kpi-val crit" id="kv-cals">Ã¢ÂÂ</div><div class="kpi-sub">Requieren accion</div></div>
   </div>
   <div class="card">
-    <div class="card-title">Cumplimiento — Ultimos 7 dias</div>
+    <div class="card-title">Cumplimiento â Ultimos 7 dias</div>
     <div class="week-chart" id="week-chart"><p style="color:#475569;font-size:0.78em">Cargando...</p></div>
   </div>
     <div class="card">
@@ -141,18 +141,18 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
-<!-- ââ CONTROL CALIDAD MP (cuarentena) âââââââââââââââââ -->
+<!-- Ã¢ÂÂÃ¢ÂÂ CONTROL CALIDAD MP (cuarentena) Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 
-<!-- ── CRONOGRAMA DEL DIA ──────────────────────────── -->
+<!-- ââ CRONOGRAMA DEL DIA ââââââââââââââââââââââââââââ -->
 <div id="tab-cron" class="pane">
   <div class="cron-topbar">
     <input type="date" id="cron-fecha" onchange="loadCronograma()">
     <button class="btn btn-ghost btn-sm" onclick="cronHoy()">Hoy</button>
     <div class="cron-summary" id="cron-summary">
-      <div class="cron-stat"><strong id="cs-comp">—</strong>&nbsp;completadas</div>
-      <div class="cron-stat"><strong id="cs-total">—</strong>&nbsp;tareas</div>
-      <div class="cron-stat"><strong id="cs-oos">—</strong>&nbsp;OOS</div>
-      <div class="cron-stat"><strong id="cs-pct">—</strong>% cumplimiento</div>
+      <div class="cron-stat"><strong id="cs-comp">â</strong>&nbsp;completadas</div>
+      <div class="cron-stat"><strong id="cs-total">â</strong>&nbsp;tareas</div>
+      <div class="cron-stat"><strong id="cs-oos">â</strong>&nbsp;OOS</div>
+      <div class="cron-stat"><strong id="cs-pct">â</strong>% cumplimiento</div>
     </div>
     <div id="cron-progbar" style="width:100%">
       <div class="prog-bar"><div class="prog-fill" id="cron-pfill" style="width:0%"></div></div>
@@ -163,7 +163,7 @@ textarea{resize:vertical;min-height:70px;}
 
 <div id="tab-cc" class="pane">
   <div class="card">
-    <div class="card-title">Lotes en Cuarentena â Pendientes de Revision</div>
+    <div class="card-title">Lotes en Cuarentena Ã¢ÂÂ Pendientes de Revision</div>
     <table>
       <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Fec. Vencimiento</th><th>OC</th><th>Accion</th></tr></thead>
       <tbody id="cc-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
@@ -171,7 +171,7 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
-<!-- ââ NO CONFORMIDADES âââââââââââââââââââââââââââââââ -->
+<!-- Ã¢ÂÂÃ¢ÂÂ NO CONFORMIDADES Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 <div id="tab-nc" class="pane">
   <div class="card">
     <div class="card-title">Registrar No Conformidad</div>
@@ -200,10 +200,10 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
-<!-- ââ CALIBRACIONES ââââââââââââââââââââââââââââââââââ -->
+<!-- Ã¢ÂÂÃ¢ÂÂ CALIBRACIONES Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 <div id="tab-cal" class="pane">
   <div class="card">
-    <div class="card-title">Instrumentos y Equipos â Estado de Calibracion</div>
+    <div class="card-title">Instrumentos y Equipos Ã¢ÂÂ Estado de Calibracion</div>
     <table>
       <thead><tr><th>Instrumento</th><th>Codigo</th><th>Ubicacion</th><th>Ultima Cal.</th><th>Proxima Cal.</th><th>Responsable</th><th>Certificado</th><th>Estado</th></tr></thead>
       <tbody id="cal-tbody"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
@@ -213,7 +213,7 @@ textarea{resize:vertical;min-height:70px;}
 
 </div><!-- /main -->
 
-<!-- ── MODAL COMPLETAR TAREA ───────────────────────── -->
+<!-- ââ MODAL COMPLETAR TAREA âââââââââââââââââââââââââ -->
 <div class="modal-overlay" id="m-cron-comp">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-cron-comp')">&times;</button>
@@ -242,8 +242,8 @@ textarea{resize:vertical;min-height:70px;}
 
 <script>
 function esc(s){const d=document.createElement('div');d.appendChild(document.createTextNode(s||'')); return d.innerHTML;}
-function fmt(d){return d?d.substring(0,10):'—';}
-function fmtH(s){return s?s.substring(0,5):'—';}
+function fmt(d){return d?d.substring(0,10):'â';}
+function fmtH(s){return s?s.substring(0,5):'â';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
@@ -259,7 +259,7 @@ function goTab(id){
   else if(id==='tab-cal') loadCal();
 }
 
-/* ── DASHBOARD ────────────────────────────── */
+/* ââ DASHBOARD ââââââââââââââââââââââââââââââ */
 async function loadDash(){
   try{
     const r=await fetch('/api/calidad/dashboard');
@@ -309,7 +309,7 @@ async function loadWeekChart(){
   }catch(e){}
 }
 
-/* ── CRONOGRAMA DEL DIA ────────────────── */
+/* ââ CRONOGRAMA DEL DIA ââââââââââââââââââ */
 var _crDate='', _crTareas=[], _crReg={};
 
 function cronHoy(){
@@ -360,7 +360,7 @@ function renderCronograma(){
     const tareas=byCat[cat]||[];
     if(!tareas.length) return;
     const catComp=tareas.filter(t=>{const r=_crReg[t.id];return r&&(r.estado==='Completada'||r.estado==='No aplica'||r.estado==='OOS');}).length;
-    const catEmoji={'Apertura':'🌅','Produccion':'⚙️','Recepcion':'📦','Analisis':'🔬','Cierre':'🔒'}[cat]||'📋';
+    const catEmoji={'Apertura':'ð','Produccion':'âï¸','Recepcion':'ð¦','Analisis':'ð¬','Cierre':'ð'}[cat]||'ð';
     html+='<div class="cron-section"><div class="cron-section-hdr" onclick="toggleCat(this)">';
     html+='<span class="cron-cat-name">'+catEmoji+' '+esc(cat)+'</span>';
     html+='<span class="cron-cat-prog">'+catComp+'/'+tareas.length+'</span>';
@@ -378,8 +378,8 @@ function renderCronograma(){
       if(vencida) dotCls='cst-late';
       var btns='';
       if(est==='Pendiente'||est==='En curso'){
-        if(est==='Pendiente'){btns='<button class="btn btn-ghost btn-sm" data-cron-ini="'+t.id+'">▶ Iniciar</button>';}
-        btns+='<button class="btn btn-primary btn-sm" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">✓ Completar</button>';
+        if(est==='Pendiente'){btns='<button class="btn btn-ghost btn-sm" data-cron-ini="'+t.id+'">â¶ Iniciar</button>';}
+        btns+='<button class="btn btn-primary btn-sm" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">â Completar</button>';
       }else{
         btns='<button class="btn btn-ghost btn-sm" style="font-size:0.68em" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">Editar</button>';
       }
@@ -390,7 +390,7 @@ function renderCronograma(){
       html+='<div class="cron-row '+rowCls+'">';
       html+='<div class="cron-status-dot '+dotCls+'"></div>';
       html+='<div class="cron-nombre">'+esc(t.nombre)+'</div>';
-      html+='<div class="cron-hora">'+(t.hora_objetivo?t.hora_objetivo:'—')+'</div>';
+      html+='<div class="cron-hora">'+(t.hora_objetivo?t.hora_objetivo:'â')+'</div>';
       html+='<div class="cron-resp">'+esc(t.responsable)+'</div>';
       if(t.procedimiento) html+='<div class="cron-proc">'+esc(t.procedimiento)+'</div>';
       html+='<div class="cron-tiempos">'+tiempoStr+'</div>';
@@ -455,7 +455,7 @@ async function decidirTarea(estado){
   }catch(e){alert('Error: '+e.message);}
 }
 
-/* ── CUARENTENA ────────────────────────────────────── */
+/* ââ CUARENTENA ââââââââââââââââââââââââââââââââââââââ */
 async function loadCuarentena(){
   const tbody=document.getElementById('cc-tbody');
   try{
@@ -465,9 +465,9 @@ async function loadCuarentena(){
     tbody.innerHTML=rows.map(l=>`<tr>
       <td><strong>${esc(l.material_nombre)}</strong><br><small style="color:#64748b">${esc(l.lote||'sin lote')}</small></td>
       <td>${esc(String(l.cantidad))} g</td>
-      <td>${esc(l.proveedor||'—')}</td>
+      <td>${esc(l.proveedor||'â')}</td>
       <td>${fmt(l.fecha_vencimiento)}</td>
-      <td>${esc(l.numero_oc||'—')}</td>
+      <td>${esc(l.numero_oc||'â')}</td>
       <td style="display:flex;gap:6px">
         <button class="btn btn-primary btn-sm" data-aprobar="${l.id}" data-estado="Aprobado">Aprobar</button>
         <button class="btn btn-danger btn-sm" data-aprobar="${l.id}" data-estado="Rechazado">Rechazar</button>
@@ -489,7 +489,7 @@ document.addEventListener('click',async function(e){
   }catch(e){alert('Error: '+e.message);}
 });
 
-/* ── NO CONFORMIDADES ────────────────────────────────── */
+/* ââ NO CONFORMIDADES ââââââââââââââââââââââââââââââââââ */
 async function registrarNC(){
   const desc=document.getElementById('nc-desc').value.trim();
   if(!desc){alert('La descripcion es obligatoria');return;}
@@ -518,7 +518,7 @@ async function loadNC(){
         <td>${esc(nc.descripcion)}</td>
         <td><span class="${bimpacto}">${esc(nc.impacto)}</span></td>
         <td><span class="${bestado}">${esc(nc.estado)}</span></td>
-        <td>${nc.estado==='Abierta'?'<button class="btn btn-sm btn-primary" data-cerrar-nc="'+nc.id+'">Cerrar</button>':'—'}</td>
+        <td>${nc.estado==='Abierta'?'<button class="btn btn-sm btn-primary" data-cerrar-nc="'+nc.id+'">Cerrar</button>':'â'}</td>
       </tr>`;
     }).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="8" class="empty">Error: '+esc(e.message)+'</td></tr>';}
@@ -536,7 +536,7 @@ document.addEventListener('click',async function(ev){
   }catch(e){alert('Error: '+e.message);}
 });
 
-/* ── CALIBRACIONES ─────────────────────────────────────────── */
+/* ââ CALIBRACIONES âââââââââââââââââââââââââââââââââââââââââââ */
 async function loadCal(){
   const tbody=document.getElementById('cal-tbody');
   try{
@@ -554,7 +554,7 @@ async function loadCal(){
         <td>${fmt(c.fecha_ultima)}</td>
         <td style="${vence?'color:#f87171;font-weight:700':''}">${fmt(c.fecha_proxima)}</td>
         <td>${esc(c.responsable)}</td>
-        <td><small style="color:#64748b">${esc(c.certificado||'—')}</small></td>
+        <td><small style="color:#64748b">${esc(c.certificado||'â')}</small></td>
         <td><span class="${bs}">${esc(c.estado)}</span></td>
       </tr>`;
     }).join('');
