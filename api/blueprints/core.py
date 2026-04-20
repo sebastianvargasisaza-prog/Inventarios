@@ -57,9 +57,9 @@ def hub():
 @bp.route('/login', methods=['GET','POST'])
 def login():
     error = ''
-    next_url = request.args.get('next', '/compras')
+    next_url = request.args.get('next', '/hub')
     if not next_url.startswith('/') or next_url.startswith('//'):
-        next_url = '/compras'
+        next_url = '/hub'
     if request.method == 'POST':
         ip = _client_ip()
         if _is_locked(ip):
