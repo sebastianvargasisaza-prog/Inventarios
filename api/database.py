@@ -216,14 +216,17 @@ def init_db():
         fecha_creacion TEXT
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos_mee (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo_mee TEXT NOT NULL,
-        tipo TEXT NOT NULL,
-        cantidad REAL NOT NULL,
-        referencia TEXT DEFAULT '',
-        observaciones TEXT DEFAULT '',
-        operador TEXT DEFAULT '',
-        fecha TEXT NOT NULL
+        id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+        mee_codigo  TEXT     NOT NULL,
+        tipo        TEXT     NOT NULL CHECK(tipo IN ('Entrada','Salida','Ajuste')),
+        cantidad    REAL     NOT NULL,
+        unidad      TEXT     DEFAULT 'und',
+        lote_ref    TEXT     DEFAULT '',
+        batch_ref   TEXT     DEFAULT '',
+        responsable TEXT     DEFAULT '',
+        observaciones TEXT   DEFAULT '',
+        fecha       DATETIME DEFAULT (datetime('now')),
+        anulado     INTEGER  DEFAULT 0
     )""")
     # Seed MEE
     c.execute("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ('TA-SPRAY-100-01','TAPA SPRAY','Tapa','Cafarcol','China','Activo',2000,1000,'und',datetime('now'))")

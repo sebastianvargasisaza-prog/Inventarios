@@ -1213,11 +1213,14 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper()
     codigo = urllib.parse.unquote(codigo)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT descripcion, categoria, proveedor FROM maestro_mee WHERE codigo=?", (codigo,))
-    mee = c.fetchone()
-    c.execute("SELECT referencia, operador, fecha FROM movimientos_mee WHERE codigo_mee=? AND tipo='entrada' ORDER BY id DESC LIMIT 1", (codigo,))
-    mov = c.fetchone(); conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute("SELECT descripcion, categoria, proveedor FROM maestro_mee WHERE codigo=?", (codigo,))
+        mee = c.fetchone()
+        c.execute("SELECT lote_ref, responsable, fecha FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
+        mov = c.fetchone(); conn.close()
+    except Exception as e:
+        return "<h2>Error DB: " + str(e) + "</h2>", 500
     desc = mee[0] if mee else codigo; cat = mee[1] if mee else ''; prov = mee[2] if mee else ''
     ref  = mov[0] if mov else ''; oper = mov[1] if mov else ''
     nr   = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
