@@ -1,4 +1,4 @@
-# Auto-extraído de index.py â Fase A refactor
+# Auto-extraído de index.py — Fase A refactor
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -118,7 +118,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
-    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">â Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
+    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
@@ -162,7 +162,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
     <!-- Alertas criticas rápidas -->
     <div id="dash-alertas-rapidas" style="display:none;background:#ffebeb;border:1px solid #cc0000;border-radius:8px;padding:12px;margin-bottom:20px;">
-      <h4 style="color:#cc0000;margin-bottom:8px;">&#128308; MPs criticas â bajo stock minimo ahora</h4>
+      <h4 style="color:#cc0000;margin-bottom:8px;">&#128308; MPs criticas — bajo stock minimo ahora</h4>
       <div id="dash-alertas-lista" style="font-size:0.88em;"></div>
     </div>
 
@@ -307,7 +307,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
       </div>
       <div id="ing-nueva-mp-inline" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
-        <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima â Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
+        <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima — Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group"><label>Nombre INCI *</label><input type="text" id="ing-inci-new" placeholder="Ej: NIACINAMIDE"></div>
           <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo-new" placeholder="Ej: Activo, Emoliente..."></div>
@@ -494,9 +494,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:16px 20px;margin-bottom:18px;font-size:0.9em;color:#1a4a6b;">
       <strong>&#8505; Para que sirve este modulo:</strong> Clasifica todas las materias primas segun el valor de stock que representan (Pareto 80/20).
       <ul style="margin:8px 0 0 16px;padding:0;">
-        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> â Top 80% del stock total. Son las MPs mas criticas: maxima atencion en control y reorden.</li>
-        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> â 80-95% acumulado. Control intermedio.</li>
-        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> â 95-100%. Son muchos items pero representan poco stock. Control basico.</li>
+        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> — Top 80% del stock total. Son las MPs mas criticas: maxima atencion en control y reorden.</li>
+        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> — 80-95% acumulado. Control intermedio.</li>
+        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> — 95-100%. Son muchos items pero representan poco stock. Control basico.</li>
       </ul>
       <p style="margin:8px 0 0;"><strong>Uso practico:</strong> Las MPs clase A son las que nunca pueden quedarse sin stock. Usar para definir frecuencia de conteo fisico y prioridad de compra.</p>
     </div>
@@ -580,10 +580,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="cuarentena" class="tab-content">
-    <h2>&#128274; Control de Calidad â Recepcion de Materiales</h2>
+    <h2>&#128274; Control de Calidad — Recepcion de Materiales</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
       <strong>&#8505; Como funciona:</strong> Cuando recibes una MP en la pestana <strong>Ingreso MP</strong> y marcas el checkbox <strong>"Poner en cuarentena"</strong>, ese lote aparece aqui hasta que alguien con rol admin lo revise y apruebe o rechace conforme a COC-PRO-001. Mientras esta en cuarentena, el sistema NO permite usarlo en produccion.<br>
-      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC â es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
+      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC — es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
     </div>
     <div id="cuar-msg"></div>
 
@@ -597,11 +597,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="cc-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:14px;padding:32px;max-width:680px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-          <h3 style="color:#1C2B30;margin:0;">&#128203; Revision CC â <span id="cc-modal-lote"></span></h3>
+          <h3 style="color:#1C2B30;margin:0;">&#128203; Revision CC — <span id="cc-modal-lote"></span></h3>
           <button onclick="cerrarCCModal()" style="background:none;border:none;font-size:1.4em;cursor:pointer;color:#999;">&#x2715;</button>
         </div>
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.88em;">
-          <strong>COC-PRO-001 v03</strong> â Todos los campos son obligatorios. La firma queda registrada con timestamp en el sistema y no puede modificarse.
+          <strong>COC-PRO-001 v03</strong> — Todos los campos son obligatorios. La firma queda registrada con timestamp en el sistema y no puede modificarse.
         </div>
 
         <!-- Info del lote -->
@@ -621,7 +621,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             </label>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
               <input type="checkbox" id="cc-coa-vigente" style="width:18px;height:18px;">
-              <span>COA vigente â no vencido segun politica de re-analisis</span>
+              <span>COA vigente — no vencido segun politica de re-analisis</span>
             </label>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
               <input type="checkbox" id="cc-ficha-ok" style="width:18px;height:18px;">
@@ -687,7 +687,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="trazabilidad" class="tab-content">
     <h2>&#128269; Trazabilidad de Lotes</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
-      <strong>&#8505; Herramienta de busqueda â no es un dashboard.</strong> Escribe el numero de lote de una MP (el codigo que aparece en la etiqueta de recepcion, ej: <code style="background:#d0eaf9;padding:1px 5px;border-radius:4px;">ESP260417ACE</code>) y el sistema muestra: quien recibio ese lote, de que proveedor, en que fecha, y en que producciones fue utilizado. Util para auditorias, reclamos de proveedor y trazabilidad BPM.
+      <strong>&#8505; Herramienta de busqueda — no es un dashboard.</strong> Escribe el numero de lote de una MP (el codigo que aparece en la etiqueta de recepcion, ej: <code style="background:#d0eaf9;padding:1px 5px;border-radius:4px;">ESP260417ACE</code>) y el sistema muestra: quien recibio ese lote, de que proveedor, en que fecha, y en que producciones fue utilizado. Util para auditorias, reclamos de proveedor y trazabilidad BPM.
     </div>
     <div id="trz-msg"></div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;display:flex;gap:12px;align-items:flex-end;">
@@ -712,17 +712,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 
   <div id="conteo" class="tab-content">
-    <h2>&#9989; Conteo Fisico Ciclico â BDG-FOR-003</h2>
+    <h2>&#9989; Conteo Fisico Ciclico — BDG-FOR-003</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
       <strong>&#8505; Para que sirve:</strong> Permite verificar fisicamente el stock de una estanteria contra lo que dice el sistema. El operario cuenta los gramos reales, los ingresa, y el sistema calcula diferencias. Si la diferencia es mayor al 5% del valor, requiere aprobacion de gerencia antes de ajustar. Queda registro firmado conforme a BDG-PRO-002.<br>
-      <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica â igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
+      <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica — igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
     </div>
 
     <!-- Programacion automatica semanal -->
     <div id="cnt-prog-card" style="background:linear-gradient(135deg,#f0faf9 0%,#e8f8f5 100%);border:2px solid #2B7A78;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h3 style="margin:0;color:#2B7A78;font-size:1em;">&#128197; Programacion Ciclica Automatica</h3>
-        <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias â cada lunes una nueva</span>
+        <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias — cada lunes una nueva</span>
       </div>
       <div id="cnt-prog-tabla" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
@@ -1049,7 +1049,7 @@ async function confirmarAjuste(){
         cantidad:Math.abs(dif),tipo:tipo,observaciones:obs,lote:_ajDat.lt,operador:OPER_ACTUAL})});
     var res=await r.json();
     var sg=dif>0?'+':'';
-    document.getElementById('ajuste-msg').innerHTML='<div class="alert-success">ÃÂ¢ÃÂÃÂ Ajuste registrado: '+sg+dif.toLocaleString()+'g ('+tipo+'). Stock actualizado.</div>';
+    document.getElementById('ajuste-msg').innerHTML='<div class="alert-success">✓ Ajuste registrado: '+sg+dif.toLocaleString()+'g ('+tipo+'). Stock actualizado.</div>';
     setTimeout(function(){cerrarAjuste();loadStock();},2500);
   }catch(e){document.getElementById('ajuste-msg').innerHTML='<div class="alert-error">Error al registrar ajuste</div>';}
 }
@@ -1297,7 +1297,7 @@ function seleccionarMP(mp){
   document.getElementById('ing-tipo').value=mp.tipo||'';
   var p=document.getElementById('ing-prov');if(p&&!p.value)p.value=mp.proveedor||'';
   var st=document.getElementById('ing-status');
-  if(st){st.textContent='ÃÂ¢ÃÂÃÂ '+mp.nombre_comercial+' ('+mp.codigo_mp+')';st.style.color='#27ae60';}
+  if(st){st.textContent='✓ '+mp.nombre_comercial+' ('+mp.codigo_mp+')';st.style.color='#27ae60';}
   var panel=document.getElementById('ing-nueva-mp-inline');if(panel)panel.style.display='none';
   ocultarDropMP();
 }
@@ -1328,7 +1328,7 @@ async function buscarMPIngreso(val){
     var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
     if(found){seleccionarMP(found);}
     else if(!matches.length){
-      if(st){st.textContent='MP nueva â llena los datos';st.style.color='#e67e22';}
+      if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
       if(panel)panel.style.display='block';
     } else {
       if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
@@ -1351,7 +1351,7 @@ async function cargarOCsPendientes(){
         var opt=document.createElement('option');
         opt.value=oc.numero_oc+'|'+item.codigo_mp;
         var kg=(item.cantidad_pendiente_g/1000).toFixed(2);
-        opt.textContent=oc.numero_oc+' â '+item.nombre_mp+' ('+kg+' kg pendientes)';
+        opt.textContent=oc.numero_oc+' — '+item.nombre_mp+' ('+kg+' kg pendientes)';
         opt.dataset.codigo=item.codigo_mp;
         opt.dataset.nombre=item.nombre_mp;
         opt.dataset.inci=item.nombre_inci||'';
@@ -1420,7 +1420,7 @@ async function registrarIngreso(){
     var res=await r.json();
     if(r.ok){
       _ultimoIng=res;
-      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' â CUARENTENA activa':'')+'</div>';
+      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+'</div>';
       await cargarHistIngreso();
       await cargarOCsPendientes();
     } else {document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';}
@@ -1760,7 +1760,7 @@ function filtrarMEEIngreso(){
   var sel=document.getElementById('mee-ing-cod');
   sel.innerHTML='<option value="">-- Selecciona --</option>';
   _meeData.filter(function(x){return !cat||x.categoria===cat;}).forEach(function(x){
-    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' â '+x.descripcion;sel.appendChild(o);
+    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
   });
 }
 async function registrarIngresoMEE(){
@@ -1829,7 +1829,7 @@ async function crearMEE(){
 }
 async function abrirAjusteMEE(cod,desc,stock){
   if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
-  var nuevo=prompt('Ajuste de stock: '+cod+' â '+desc+'\\nStock actual: '+stock+' und\\nNuevo valor:');
+  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\\nStock actual: '+stock+' und\\nNuevo valor:');
   if(nuevo===null||nuevo==='')return;
   var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
   var obs=prompt('Motivo del ajuste:','Inventario fisico');
@@ -1848,7 +1848,7 @@ async function verHistorialMEE(cod){
       var col=m.tipo==='Entrada'?'#27ae60':m.tipo==='Ajuste'?'#f39c12':'#e74c3c';
       return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+(m.lote_ref||m.batch_ref||'')+'</td><td style="padding:6px;">'+m.responsable+'</td><td style="padding:6px;font-size:11px;">'+m.fecha.substring(0,16)+'</td></tr>';
     }).join('')+'</tbody></table></div>';
-  document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial â '+cod+'</h3>'+html+'</div>';
+  document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial — '+cod+'</h3>'+html+'</div>';
   document.getElementById('modal-ajuste').style.display='flex';
 }
 async function solicitarCompraMEE(cod,desc,stock,smin){
@@ -1929,7 +1929,7 @@ async function simularProduccion(){
       costoHtml='<div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'
         +'<span>&#128176; <strong>Costo estimado batch:</strong> $'+Number(d.costo_total).toLocaleString('es-CO')+'</span>'
         +'<span>&#128197; <strong>Costo/kg:</strong> $'+Number(d.costo_por_kg).toLocaleString('es-CO')+'</span>'
-        +(d.ingredientes_sin_precio>0?'<span style="color:#e67e22;font-size:0.85em;">&#9888; '+d.ingredientes_sin_precio+' ingrediente(s) sin precio â costo subestimado ('+d.cobertura_precio_pct+'% cobertura)</span>':'')
+        +(d.ingredientes_sin_precio>0?'<span style="color:#e67e22;font-size:0.85em;">&#9888; '+d.ingredientes_sin_precio+' ingrediente(s) sin precio — costo subestimado ('+d.cobertura_precio_pct+'% cobertura)</span>':'')
         +'</div>';
     } else if(d.ingredientes_sin_precio>0){
       costoHtml='<div style="margin-top:8px;padding:8px 12px;background:#fffbeb;border-radius:6px;font-size:0.84em;color:#b7791f;">&#9888; No hay precios de referencia. <a href="#" onclick="abrirPreciosMP();return false;">Configura precios por material</a> para ver costo estimado.</div>';
@@ -1963,7 +1963,7 @@ async function abrirPreciosMP(){
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:95%;max-height:80vh;overflow-y:auto;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
-    +'<h3 style="margin:0;">&#128176; Precios de Referencia â Materias Primas</h3>'
+    +'<h3 style="margin:0;">&#128176; Precios de Referencia — Materias Primas</h3>'
     +'<button onclick="document.getElementById(\\'modal-precios-mp\\').remove()" style="background:none;border:none;font-size:1.4em;cursor:pointer;">&#10006;</button></div>'
     +'<p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Precio por kg (usado para estimar costo de fórmulas). Fuente: última OC o manual.</p>'
     +'<div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">'
@@ -2009,7 +2009,7 @@ function renderMEEConsumoRows(){
   var html=cats.map(function(cat){
     var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
     if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
-    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' â '+x.descripcion+'</option>';}).join('');
+    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
     return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
       +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
       +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(&quot;'+cat+'&quot;)" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
@@ -2093,7 +2093,7 @@ async function crearNuevaMP(){
   }catch(e){document.getElementById('nmp-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
-// ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Funciones CC / Trazabilidad / Conteo Ciclico ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ
+// ── Funciones CC / Trazabilidad / Conteo Ciclico ──
 async function cargarCuarentena(){
   try{
     var r=await fetch('/api/lotes/cuarentena');
@@ -2224,13 +2224,13 @@ async function buscarTrazabilidad(){
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
       '<div><b>Codigo:</b> '+ing.codigo_mp+'</div>'+
       '<div><b>Nombre:</b> '+ing.nombre+'</div>'+
-      '<div><b>INCI:</b> '+(ing.nombre_inci||'â')+'</div>'+
+      '<div><b>INCI:</b> '+(ing.nombre_inci||'—')+'</div>'+
       '<div><b>Cantidad:</b> '+Number(ing.cantidad_g).toLocaleString()+' g</div>'+
-      '<div><b>Proveedor:</b> '+(ing.proveedor||'â')+'</div>'+
-      '<div><b>Factura:</b> '+(ing.factura||'â')+'</div>'+
-      '<div><b>OC:</b> '+(ing.orden_compra||'â')+'</div>'+
-      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'â')+'</div>'+
-      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'â')+'</div>'+
+      '<div><b>Proveedor:</b> '+(ing.proveedor||'—')+'</div>'+
+      '<div><b>Factura:</b> '+(ing.factura||'—')+'</div>'+
+      '<div><b>OC:</b> '+(ing.orden_compra||'—')+'</div>'+
+      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'—')+'</div>'+
+      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'—')+'</div>'+
       '</div>';
     document.getElementById('trz-nprod').textContent=data.total_producciones;
     var tb=document.getElementById('trz-prod-tbody');
@@ -2390,7 +2390,7 @@ async function cargarProgramacionCiclica(){
             + '<td style="padding:7px 12px;text-align:center;">'+accion+'</td>'
             + '</tr>';
     });
-    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' â ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
+    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' — ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
     tbody.innerHTML = html;
   }catch(e){
     var tbody = document.getElementById('cnt-prog-rows');
@@ -2468,7 +2468,7 @@ function calcDiff(i, stockSis, precioRef){
   pctEl.textContent = pct.toFixed(1) + '%';
   if(pct > 5){
     pctEl.style.color = '#e74c3c';
-    pctEl.textContent += ' ÃÂ¢ÃÂÃÂ  GERENCIA';
+    pctEl.textContent += ' ⚠ GERENCIA';
     row.style.background = '#fff5f5';
   } else {
     pctEl.style.color = pct > 2 ? '#e67e22' : '#27ae60';
@@ -2501,7 +2501,7 @@ async function guardarConteo(){
       var msg = 'Guardado. ';
       if(res.items_con_diferencia > 0) msg += res.items_con_diferencia+' item(s) con diferencias.';
       document.getElementById('cnt-resumen').style.display = 'block';
-      document.getElementById('cnt-resumen').innerHTML = msg + ' Revisa los items marcados con ÃÂ¢ÃÂÃÂ  GERENCIA antes de cerrar.';
+      document.getElementById('cnt-resumen').innerHTML = msg + ' Revisa los items marcados con ⚠ GERENCIA antes de cerrar.';
       await cargarHistorialConteos();
     }
   }catch(e){alert('Error: '+e.message);}
@@ -2553,7 +2553,7 @@ async function cargarHistorialConteos(){
       h += '<td style="text-align:center;">'+c.total_items+'</td>';
       h += '<td style="text-align:center;color:'+(c.items_diferencia>0?'#e74c3c':'#27ae60')+';">'+c.items_diferencia+'</td>';
       h += '<td style="text-align:center;">';
-      if(c.items_gerencia > 0) h += '<span style="color:#e74c3c;font-weight:700;">'+c.items_gerencia+' ÃÂ¢ÃÂÃÂ </span>';
+      if(c.items_gerencia > 0) h += '<span style="color:#e74c3c;font-weight:700;">'+c.items_gerencia+' ⚠</span>';
       else h += '<span style="color:#27ae60;">OK</span>';
       h += '</td></tr>';
     });
@@ -2575,7 +2575,7 @@ async function cargarMeeAlertas(){
       var h='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;"><strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock minimo</strong><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
       d.bajo_minimo.forEach(function(m){ var pct=Math.round(m.ratio*100); var col=pct<=0?'#e74c3c':'#e67e22'; h+='<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;"><span style="font-weight:700;color:'+col+';">'+m.descripcion+'</span> <span style="color:#888;">['+m.categoria+'] </span><span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+m.unidad+' ('+pct+'%)</span></div>'; });
       h+='</div></div>';
-      if(d.obsolescencia&&d.obsolescencia.length>0){ h+='<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;margin-bottom:8px;"><strong>&#128337; Sin movimiento +90 dias:</strong> '+d.obsolescencia.map(function(o){return o.descripcion+' ('+o.stock_actual+')';}).join(' ÃÂÃÂ· ')+'</div>'; }
+      if(d.obsolescencia&&d.obsolescencia.length>0){ h+='<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;margin-bottom:8px;"><strong>&#128337; Sin movimiento +90 dias:</strong> '+d.obsolescencia.map(function(o){return o.descripcion+' ('+o.stock_actual+')';}).join(' · ')+'</div>'; }
       panel.innerHTML=h;
     } else { panel.innerHTML='<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los MEE sobre stock minimo</div>'; }
   }catch(e){}
@@ -2597,7 +2597,7 @@ async function cargarMeeStock(){
       var cur2 = codSel.value;
       codSel.innerHTML = '<option value="">-- Seleccionar material --</option>';
       d.items.forEach(function(m){
-        codSel.innerHTML += '<option value="'+m.codigo+'" data-stock="'+m.stock_actual+'" data-unidad="'+m.unidad+'" data-min="'+m.stock_minimo+'">'+m.codigo+' Ã¢ÂÂ '+m.descripcion+'</option>';
+        codSel.innerHTML += '<option value="'+m.codigo+'" data-stock="'+m.stock_actual+'" data-unidad="'+m.unidad+'" data-min="'+m.stock_minimo+'">'+m.codigo+' — '+m.descripcion+'</option>';
       });
       if(cur2) codSel.value = cur2;
     }
@@ -2607,7 +2607,7 @@ async function cargarMeeStock(){
       tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
-    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'Ã¢ÂÂ'};
+    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
     var hoy=new Date(); hoy.setHours(0,0,0,0);
     var h='';
     d.items.forEach(function(m){
@@ -2627,7 +2627,7 @@ async function cargarMeeStock(){
       h+='<td style="font-size:0.88em;">'+m.descripcion+ob+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+m.categoria+'</td>';
       h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td>';
-      h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'Ã¢ÂÂ')+'</td>';
+      h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.8em;color:#999;">'+(lastMov||'<span style="color:#ddd;">Ninguno</span>')+'</td>';
       h+='<td>'+rot+'</td>';
