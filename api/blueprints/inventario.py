@@ -1242,7 +1242,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     h += ('<div class="ph"><b>RÃÂÃÂÃÂÃÂ³tulo de RecepciÃÂÃÂÃÂÃÂ³n ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Material E&E</b>'
           '<button class="pb" onclick="window.print()">Imprimir</button></div>'
           '<div class="r"><div class="rh">'
-          '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIAL E&E</span>'
+          '<span style="font-weight:bold;font-size:11pt;display:block;margin-bottom:2px;">ROTULO DE INGRESO DE MATERIAL E&amp;E</span>'
           '<span style="font-size:7.5pt;opacity:0.85;">Espagiria Laboratorios &nbsp;|&nbsp; COC-PRO-002-F07 &nbsp;|&nbsp; ' + hoy + '</span>'
           '</div>'
           '<div class="lote">'
@@ -1267,7 +1267,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
           '<tr><td class="l">Aprobado por (Calidad):</td><td style="height:30px;"></td></tr>'
           '</table>'
           '<div style="background:#dde8f0;padding:4px 10px;font-size:7.5pt;color:#555;text-align:center;">'
-          'COC-PRO-002-F07 &nbsp;|&nbsp; Material Envase & Empaque &nbsp;|&nbsp; ' + hoy + '</div>'
+          'COC-PRO-002-F07 &nbsp;|&nbsp; Material Envase &amp; Empaque &nbsp;|&nbsp; ' + hoy + '</div>'
           '</div>'
           '<script>window.onload=function(){try{JsBarcode("#bc","' + bv + '",{format:"CODE128",width:1.5,height:45,displayValue:false,margin:0});}catch(e){}}</script>'
           '</body></html>')
