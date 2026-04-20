@@ -70,6 +70,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
+  <div class="tab" onclick="window.location='/solicitudes'">&#x1F4CB; Solicitudes</div>
 </div>
 <div class="main">
 
