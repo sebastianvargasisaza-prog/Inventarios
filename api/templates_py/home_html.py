@@ -42,12 +42,12 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
   <div class="grid">
     <a href="/compras" class="card"><div class="card-icon">&#128722;</div><div class="card-name">Compras</div><div class="card-desc">OC, proveedores, pagos</div></a>
     <a href="/clientes" class="card"><div class="card-icon">&#128101;</div><div class="card-name">Clientes</div><div class="card-desc">Maquila 360 &amp; Aliados</div></a>
+    <a href="/solicitudes" class="card"><div class="card-icon">&#x1F4CB;</div><div class="card-name">Solicitudes</div><div class="card-desc">Pedir materiales e insumos</div></a>
   </div>
   <div class="sect">Calidad &amp; Operaciones</div>
   <div class="grid">
     <a href="/calidad" class="card"><div class="card-icon">&#x2705;</div><div class="card-name">Calidad BPM</div><div class="card-desc">CC lotes, NC, calibraciones</div></a>
-  <a href="/solicitudes" class="card"><div class="card-icon">&#x1F4CB;</div><div class="card-name">Solicitudes</div><div class="card-desc">Pedir materiales e insumos</div></a>
-    <a href="/tecnica" class="card"><div class="card-icon">&#129514;</div><div class="card-name">Tecnica</div><div class="card-desc">Formulas, fichas, INVIMA, SGD</div></a>
+      <a href="/tecnica" class="card"><div class="card-icon">&#129514;</div><div class="card-name">Tecnica</div><div class="card-desc">Formulas, fichas, INVIMA, SGD</div></a>
   </div>
   <div class="sect">Gerencia</div>
   <div class="grid">
