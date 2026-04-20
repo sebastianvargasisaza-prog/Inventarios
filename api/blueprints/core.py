@@ -46,6 +46,14 @@ def inventarios():
 
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
 
+
+@bp.route('/hub')
+def hub():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/hub')
+    from templates_py.hub_html import HUB_HTML
+    return Response(HUB_HTML, mimetype='text/html')
+
 @bp.route('/login', methods=['GET','POST'])
 def login():
     error = ''
@@ -74,13 +82,7 @@ def login():
             session['login_time']   = time.time()
             nxt = request.args.get('next', '')
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
-                # Sin next explicito: redirigir segun rol
-                if username in PLANTA_USERS:
-                    nxt = '/planta'
-                elif username in CALIDAD_USERS:
-                    nxt = '/calidad'
-                else:
-                    nxt = '/compras'
+                nxt = '/hub'
             return redirect(nxt)
         _record_failure(ip)
         _log_sec("login_failure", username, ip)
@@ -97,9 +99,18 @@ def compras():
     if 'compras_user' not in session:
         return redirect('/login')
     username = session.get('compras_user', '')
-    # Operarios de planta no tienen acceso a compras — redirigir a su modulo
-    if username in PLANTA_USERS:
-        return redirect('/planta')
+    # Roles sin acceso a compras
+    if username in PLANTA_USERS or username in CALIDAD_USERS:
+        sin_acceso = """<\!DOCTYPE html><html><head><meta charset=UTF-8>
+<title>Sin acceso</title>
+<style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}
+.card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;text-align:center;max-width:400px;}
+h2{color:#f59e0b;margin:0 0 12px;}p{color:#94a3b8;margin:0 0 20px;}
+a{display:inline-block;background:#667eea;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>
+<body><div class="card"><h2>Acceso restringido</h2>
+<p>El modulo de Compras no esta disponible para tu usuario.</p>
+<a href="/hub">Volver al escritorio</a></div></body></html>"""
+        return Response(sin_acceso, mimetype='text/html')
     usuario = username.capitalize()
     es_contadora = 'true' if username in CONTADORA_USERS else 'false'
     html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
