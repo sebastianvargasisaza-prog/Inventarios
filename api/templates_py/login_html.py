@@ -30,7 +30,7 @@ input[type=text],input[type=password]{width:100%;background:#0f172a;border:1px s
     <div class="logo-sub">Solo acceso autorizado</div>
   </div>
   {error}
-  <form method="POST" action="/login">
+  <form method="POST" action="/login?next={next_url}">
     <div class="fg"><label>Usuario</label><input type="text" name="username" placeholder="Ej: Sebastian, Catalina..." required autofocus autocomplete="username"></div>
     <div class="fg"><label>Contraseña</label><input type="password" name="password" placeholder="••••••••" required></div>
     <button type="submit" class="btn">Ingresar al sistema →</button>

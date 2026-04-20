@@ -10,9 +10,12 @@ COMPRAS_USERS = {
     'mayra':     os.environ.get('PASS_MAYRA',     'hha2026'),
     'gloria':    os.environ.get('PASS_GLORIA',    'hha2026'),
     'daniela':   os.environ.get('PASS_DANIELA',   'hha2026'),
+    # Operarios de planta — acceso a /planta (dashboard inventarios)
+    'planta':    os.environ.get('PASS_PLANTA',    'espagiria2026'),
 }
 ADMIN_USERS     = {'sebastian', 'alejandro'}
 CONTADORA_USERS = {'mayra'}                               # Finanzas + consulta
 RRHH_USERS      = {'gloria', 'daniela', 'luz', 'mayra'}  # Acceso a /rrhh
+PLANTA_USERS    = {'planta'}                              # Solo acceso a /planta (inventarios)
 
 DB_PATH = os.environ.get('DB_PATH', '/var/data/inventario.db')

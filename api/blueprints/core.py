@@ -47,11 +47,14 @@ def inventarios():
 @bp.route('/login', methods=['GET','POST'])
 def login():
     error = ''
+    next_url = request.args.get('next', '/compras')
+    if not next_url.startswith('/') or next_url.startswith('//'):
+        next_url = '/compras'
     if request.method == 'POST':
         ip = _client_ip()
         if _is_locked(ip):
             error = '<div class="err">Demasiados intentos. Espera 15 min.</div>'
-            return Response(LOGIN_HTML.replace('{error}', error), mimetype='text/html')
+            return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '').strip()
         expected = COMPRAS_USERS.get(username, '')
@@ -74,7 +77,7 @@ def login():
         _record_failure(ip)
         _log_sec("login_failure", username, ip)
         error = '<div class="err">Usuario o contraseña incorrectos.</div>'
-    return Response(LOGIN_HTML.replace('{error}', error), mimetype='text/html')
+    return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')
 
 @bp.route('/logout')
 def logout():
