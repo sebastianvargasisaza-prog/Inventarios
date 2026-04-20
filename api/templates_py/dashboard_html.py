@@ -2102,7 +2102,7 @@ async function cargarCuarentena(){
     if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin lotes pendientes de revision QC</td></tr>';return;}
     var h='';
     data.forEach(function(l){
-      var esAdmin=(OPER_ACTUAL==='sebastian'||OPER_ACTUAL==='alejandro'||OPER_ACTUAL==='hernando');
+      var esAdmin=(['sebastian','alejandro','hernando'].includes((OPER_ACTUAL||'').toLowerCase()));
       var estadoColor=l.estado_lote==='CUARENTENA'?'#e67e22':l.estado_lote==='CUARENTENA_EXTENDIDA'?'#c0392b':'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
