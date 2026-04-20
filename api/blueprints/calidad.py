@@ -1,4 +1,4 @@
-# blueprints/calidad.py — extraído de index.py (Fase C)
+# blueprints/calidad.py â extraÃ­do de index.py (Fase C)
 import os
 import json
 import sqlite3
@@ -44,7 +44,7 @@ def calidad_dashboard():
                  WHERE tipo='Entrada' AND (estado_lote='Cuarentena'
                  OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))""")
     cuarentena = c.fetchone()[0]
-    # Aprobados y rechazados últimos 30d
+    # Aprobados y rechazados Ãºltimos 30d
     c.execute("""SELECT COUNT(*) FROM movimientos
                  WHERE estado_lote='Aprobado'
                  AND fecha >= date('now','-30 days')""")
@@ -60,21 +60,21 @@ def calidad_dashboard():
     hoy = datetime.now().strftime('%Y-%m-%d')
     c.execute("SELECT COUNT(*) FROM calibraciones_instrumentos WHERE fecha_proxima < ? OR estado='Vencida'", (hoy,))
     cals_vencidas = c.fetchone()[0]
-    # Actividad reciente: últimas NC + últimas acciones CC
+    # Actividad reciente: Ãºltimas NC + Ãºltimas acciones CC
     actividad = []
     c.execute("""SELECT 'NC' as tipo, descripcion, area, fecha, estado, impacto
                  FROM no_conformidades ORDER BY id DESC LIMIT 5""")
     for r in c.fetchall():
         color = 'rojo' if r[5] in ('Alto','Critico') else 'amari'
-        actividad.append({'titulo': f'NC #{r[0]}: {r[1][:60]}' if False else f'NC — {r[1][:55]}',
-                          'subtitulo': f'{r[2]} · {r[4]}', 'fecha': r[3], 'color': color})
+        actividad.append({'titulo': f'NC #{r[0]}: {r[1][:60]}' if False else f'NC â {r[1][:55]}',
+                          'subtitulo': f'{r[2]} Â· {r[4]}', 'fecha': r[3], 'color': color})
     c.execute("""SELECT material_nombre, lote, estado_lote, fecha
                  FROM movimientos WHERE tipo='Entrada'
                  AND estado_lote IN ('Aprobado','Rechazado')
                  ORDER BY id DESC LIMIT 5""")
     for r in c.fetchall():
         color = 'verde' if r[2] == 'Aprobado' else 'rojo'
-        actividad.append({'titulo': f'Lote {r[1] or "s/n"} — {r[2]}',
+        actividad.append({'titulo': f'Lote {r[1] or "s/n"} â {r[2]}',
                           'subtitulo': r[0][:50], 'fecha': r[3], 'color': color})
     actividad.sort(key=lambda x: x.get('fecha','') or '', reverse=True)
     conn.close()
@@ -151,3 +151,122 @@ def get_calibraciones():
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify(rows)
 
+
+
+
+# -- CRONOGRAMA DEL DIA -------------------------------------------------------
+
+@bp.route('/api/calidad/cronograma')
+def get_cronograma():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    fecha = request.args.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT id,nombre,categoria,hora_objetivo,hora_limite,responsable,
+                        procedimiento,requiere_valor,unidad_valor,orden
+                 FROM calidad_tareas WHERE activa=1 ORDER BY orden, id""")
+    cols_t = ['id','nombre','categoria','hora_objetivo','hora_limite','responsable',
+              'procedimiento','requiere_valor','unidad_valor','orden']
+    tareas = [dict(zip(cols_t, r)) for r in c.fetchall()]
+    c.execute("""SELECT tarea_id,usuario,estado,hora_inicio,hora_fin,
+                        valor_registrado,observaciones
+                 FROM calidad_registros WHERE fecha=?""", (fecha,))
+    cols_r = ['tarea_id','usuario','estado','hora_inicio','hora_fin',
+              'valor_registrado','observaciones']
+    registros = {r[0]: dict(zip(cols_r, r)) for r in c.fetchall()}
+    conn.close()
+    return jsonify({'tareas': tareas, 'registros': registros, 'fecha': fecha})
+
+
+@bp.route('/api/calidad/cronograma/iniciar', methods=['POST'])
+def iniciar_tarea_cron():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json(silent=True) or {}
+    tarea_id = d.get('tarea_id')
+    fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    hora_ahora = datetime.now().strftime('%H:%M')
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT id FROM calidad_registros WHERE fecha=? AND tarea_id=?", (fecha, tarea_id))
+    existing = c.fetchone()
+    if existing:
+        c.execute("UPDATE calidad_registros SET estado='En curso', hora_inicio=? WHERE id=?",
+                  (hora_ahora, existing[0]))
+    else:
+        c.execute("""INSERT INTO calidad_registros
+                     (fecha,tarea_id,usuario,estado,hora_inicio)
+                     VALUES (?,?,?,?,?)""",
+                  (fecha, tarea_id, session.get('compras_user',''), 'En curso', hora_ahora))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/calidad/cronograma/completar', methods=['POST'])
+def completar_tarea_cron():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json(silent=True) or {}
+    tarea_id = d.get('tarea_id')
+    fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    hora_ahora = datetime.now().strftime('%H:%M')
+    estado = d.get('estado', 'Completada')
+    if estado not in ('Completada', 'No aplica', 'OOS'):
+        estado = 'Completada'
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT id, hora_inicio FROM calidad_registros WHERE fecha=? AND tarea_id=?",
+              (fecha, tarea_id))
+    existing = c.fetchone()
+    if existing:
+        c.execute("""UPDATE calidad_registros
+                     SET estado=?, hora_fin=?, valor_registrado=?, observaciones=?,
+                         usuario=?
+                     WHERE id=?""",
+                  (estado, hora_ahora, d.get('valor',''), d.get('observaciones',''),
+                   session.get('compras_user',''), existing[0]))
+    else:
+        c.execute("""INSERT INTO calidad_registros
+                     (fecha,tarea_id,usuario,estado,hora_fin,valor_registrado,observaciones)
+                     VALUES (?,?,?,?,?,?,?)""",
+                  (fecha, tarea_id, session.get('compras_user',''),
+                   estado, hora_ahora, d.get('valor',''), d.get('observaciones','')))
+    if estado == 'OOS':
+        c.execute("SELECT nombre FROM calidad_tareas WHERE id=?", (tarea_id,))
+        row = c.fetchone()
+        nombre_tarea = row[0] if row else 'Tarea de cronograma'
+        c.execute("""INSERT INTO no_conformidades
+                     (fecha,tipo,descripcion,area,responsable,impacto,
+                      accion_correctiva,estado,creado_por)
+                     VALUES (date('now'),'Proceso',?,
+                     'Calidad','Jefe CC','Alto',
+                     ?,'Abierta',?)""",
+                  ('OOS detectado en cronograma: ' + nombre_tarea,
+                   d.get('observaciones',''),
+                   session.get('compras_user','')))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/calidad/cronograma/resumen')
+def resumen_cronograma():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM calidad_tareas WHERE activa=1")
+    total_tareas = c.fetchone()[0] or 1
+    dias = []
+    for i in range(6, -1, -1):
+        fecha = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        c.execute("""SELECT
+                       COUNT(*) as total_reg,
+                       SUM(CASE WHEN estado IN ('Completada','No aplica') THEN 1 ELSE 0 END) as comp,
+                       SUM(CASE WHEN estado='OOS' THEN 1 ELSE 0 END) as oos
+                     FROM calidad_registros WHERE fecha=?""", (fecha,))
+        row = c.fetchone()
+        dias.append({
+            'fecha': fecha,
+            'completadas': (row[1] or 0) + (row[2] or 0),
+            'oos': row[2] or 0,
+            'total_tareas': total_tareas
+        })
+    conn.close()
+    return jsonify({'dias': dias, 'total_tareas': total_tareas})
