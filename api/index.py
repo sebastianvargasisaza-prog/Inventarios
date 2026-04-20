@@ -1,9 +1,9 @@
 import os
 import sys
 
-# Garantizar que api/ este en sys.path sin importar como Gunicorn arranca el app.
-# Con 'gunicorn api.index:app' desde la raiz, Python importa api.index como
-# namespace package y NO agrega api/ a sys.path automaticamente.
+# Garantizar que api/ esté en sys.path sin importar cómo Gunicorn arranca el app.
+# Con 'gunicorn api.index:app' desde la raíz, Python importa api.index como
+# namespace package y NO agrega api/ a sys.path automáticamente.
 _api_dir = os.path.dirname(os.path.abspath(__file__))
 if _api_dir not in sys.path:
     sys.path.insert(0, _api_dir)
@@ -30,11 +30,11 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 register_hooks(app)
 
-# Blueprints
+# ─── Blueprints ───────────────────────────────────────────────────────────
 from blueprints.core import bp as core_bp
 from blueprints.hub import bp as hub_bp
 from blueprints.inventario import bp as inventario_bp
@@ -61,7 +61,7 @@ app.register_blueprint(rrhh_bp)
 app.register_blueprint(calidad_bp)
 app.register_blueprint(tecnica_bp)
 
-# DB init (idempotente)
+# ─── DB init (idempotente) ──────────────────────────────────────────────────
 init_db()
 run_seed_rrhh()
 
