@@ -2116,7 +2116,7 @@ async function cargarCuarentena(){
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
       if(esAdmin){
-        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
+        h+='<button onclick="abrirCCModal(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
