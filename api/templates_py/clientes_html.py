@@ -408,7 +408,7 @@ async function crearPedido(){
 
 async function cambiarEstadoPedido(numero){
   var estados=['Confirmado','Produciendo','Listo','Despachado','Facturado','Cancelado'];
-  var nuevo=prompt('Nuevo estado para '+numero+':\n'+estados.join(', '));
+  var nuevo=prompt('Nuevo estado para '+numero+':\\n'+estados.join(', '));
   if(!nuevo||!estados.includes(nuevo)) return;
   await fetch('/api/pedidos/'+numero,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
   loadPedidos('');
