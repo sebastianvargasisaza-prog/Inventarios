@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -72,9 +72,15 @@ def login():
             session.permanent = True
             session['compras_user'] = username
             session['login_time']   = time.time()
-            nxt = request.args.get('next', '/compras')
-            if not nxt.startswith('/') or nxt.startswith('//'):
-                nxt = '/compras'
+            nxt = request.args.get('next', '')
+            if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
+                # Sin next explicito: redirigir segun rol
+                if username in PLANTA_USERS:
+                    nxt = '/planta'
+                elif username in CALIDAD_USERS:
+                    nxt = '/calidad'
+                else:
+                    nxt = '/compras'
             return redirect(nxt)
         _record_failure(ip)
         _log_sec("login_failure", username, ip)
@@ -90,8 +96,12 @@ def logout():
 def compras():
     if 'compras_user' not in session:
         return redirect('/login')
-    usuario = session.get('compras_user', '').capitalize()
-    es_contadora = 'true' if session.get('compras_user','') in CONTADORA_USERS else 'false'
+    username = session.get('compras_user', '')
+    # Operarios de planta no tienen acceso a compras — redirigir a su modulo
+    if username in PLANTA_USERS:
+        return redirect('/planta')
+    usuario = username.capitalize()
+    es_contadora = 'true' if username in CONTADORA_USERS else 'false'
     html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
     return Response(html, mimetype='text/html')
 
