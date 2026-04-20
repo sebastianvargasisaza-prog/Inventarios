@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -39,13 +39,14 @@ def gerencia_page():
 
 @bp.route('/gerencia-financiero')
 def gerencia_financiero_page():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    u = session.get('compras_user', '')
+    if not u or u not in FINANZAS_ACCESS:
         return redirect(url_for('core.login'))
     return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/api/gerencia/kpis')
 def gerencia_kpis():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
@@ -95,7 +96,7 @@ def gerencia_kpis():
 
 @bp.route('/api/gerencia/flujo-operacional')
 def gerencia_flujo_operacional():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
     from datetime import date
     today = date.today()
@@ -180,7 +181,7 @@ def admin_generate_hash():
 
 @bp.route('/api/gerencia/dashboard-extra')
 def gerencia_dashboard_extra():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
     from datetime import date, timedelta
     today    = date.today()
