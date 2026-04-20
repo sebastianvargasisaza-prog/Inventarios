@@ -895,7 +895,7 @@ function openSol(numero){
       footer='<button class="btn bp" style="font-size:13px;padding:8px 18px;" onclick="generarOCSol()">Generar OC</button> ';
       footer+='<button class="btn" style="background:#dc2626;color:#fff;font-size:13px;padding:8px 18px;" onclick="solRechazo()">Rechazar</button>';
     }
-    footer+='<button class="btn" onclick="closeModal('m-sol')" style="margin-left:auto;font-size:13px;">Cerrar</button>';
+    footer+='<button class="btn" onclick="closeModal(&quot;m-sol&quot;)" style="margin-left:auto;font-size:13px;">Cerrar</button>';
     document.getElementById('m-sol-footer').innerHTML=footer;
     openModal('m-sol');
   });
@@ -944,7 +944,7 @@ function solRechazo(){
 <!-- MODAL: Gestionar Solicitud -->
 <div id="m-sol" class="ov">
 <div class="mdl mdl-lg" style="max-width:720px;">
-  <div class="mh"><h3>&#x1F4CB; Gestionar Solicitud</h3><button class="mx" onclick="closeModal('m-sol')">&times;</button></div>
+  <div class="mh"><h3>&#x1F4CB; Gestionar Solicitud</h3><button class="mx" onclick="closeModal(&quot;m-sol&quot;)">&times;</button></div>
   <div class="mb" id="m-sol-body" style="gap:10px;"></div>
   <div class="mf" id="m-sol-footer"></div>
 </div>
