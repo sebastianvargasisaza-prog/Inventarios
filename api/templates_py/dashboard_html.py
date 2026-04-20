@@ -2676,14 +2676,15 @@ async function buscarTrazabilidadMee(){ var cod=(document.getElementById('mee-tr
   }catch(e){if(res)res.innerHTML='<div style="color:#e74c3c;">Error</div>';}}
 
 
+function _toast(msg,ok){var t=document.createElement("div");t.style="position:fixed;bottom:24px;right:24px;background:"+(ok?"#27ae60":"#c0392b")+";color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-size:15px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.2);max-width:360px;transition:opacity 0.3s;";t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity="0";setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},300);},4000);}
 function registrarAcond(){
   var d={lote:document.getElementById("ac-lote").value,producto:document.getElementById("ac-prod").value,presentacion:document.getElementById("ac-pres").value,cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,fecha:document.getElementById("ac-fecha").value,observaciones:document.getElementById("ac-obs").value};
-  if(!d.lote||!d.producto){alert("Lote y producto son obligatorios");return;}
+  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
   fetch("/api/acondicionamiento",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
   .then(function(r){return r.json();}).then(function(j){
-    if(j.ok){alert("Batch registrado #"+j.id);["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs"].forEach(function(i){document.getElementById(i).value="";});loadAcond();}
-    else alert("Error: "+(j.error||"desconocido"));
-  }).catch(function(e){alert("Error de red: "+e);});
+    if(j.ok){_toast("\u2705 Batch registrado correctamente #"+j.id,1);["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs"].forEach(function(i){document.getElementById(i).value="";});loadAcond();}
+    else _toast("Error: "+(j.error||"desconocido"),0);
+  }).catch(function(e){_toast("Error de red: "+e,0);});
 }
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
@@ -2703,12 +2704,12 @@ function updateAcond(id,estado){
 }
 function registrarLiberacion(){
   var d={lote:document.getElementById("lb-lote").value,producto:document.getElementById("lb-prod").value,presentacion:document.getElementById("lb-pres").value,unidades:parseInt(document.getElementById("lb-uds").value)||0,fecha_produccion:document.getElementById("lb-fprod").value,destino:document.getElementById("lb-dest").value,cliente:document.getElementById("lb-cli").value,observaciones:document.getElementById("lb-obs").value};
-  if(!d.lote||!d.producto){alert("Lote y producto son obligatorios");return;}
+  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
   fetch("/api/liberacion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
   .then(function(r){return r.json();}).then(function(j){
-    if(j.ok){alert("Lote enviado a CC #"+j.id);["lb-lote","lb-prod","lb-pres","lb-uds","lb-cli","lb-obs"].forEach(function(i){document.getElementById(i).value="";});loadLiberaciones("");}
-    else alert("Error: "+(j.error||"desconocido"));
-  }).catch(function(e){alert("Error: "+e);});
+    if(j.ok){_toast("\u2705 Lote enviado a CC #"+j.id,1);["lb-lote","lb-prod","lb-pres","lb-uds","lb-cli","lb-obs"].forEach(function(i){document.getElementById(i).value="";});loadLiberaciones("");}
+    else _toast("Error: "+(j.error||"desconocido"),0);
+  }).catch(function(e){_toast("Error: "+e,0);});
 }
 function loadLiberaciones(estado){
   var url="/api/liberacion"+(estado?"?estado="+encodeURIComponent(estado):"");
