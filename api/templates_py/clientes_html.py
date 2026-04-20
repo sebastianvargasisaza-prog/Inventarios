@@ -328,7 +328,7 @@ async function loadClientes(){
         +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(cl.facturado_total)+'</td>'
         +'<td style="color:#999;font-size:0.85em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
         +'<td style="white-space:nowrap;">'
-        +'<button class="btn btn-ghost btn-sm" onclick="verHistorialCliente('+cl.id+',\\''+cl.nombre+'\\')">Historial</button> '
+        +'<button class="btn btn-ghost btn-sm" data-clid="'+cl.id+'" data-clnom="'+cl.nombre+'" onclick="verHistClBtn(this)">Historial</button> '
         +'<button class="btn btn-sm" style="background:#2B7A78;" onclick="abrirCliente360('+cl.id+')">&#x1F4CA; 360</button>'
         +'</td>'
         +'</tr>';
@@ -366,7 +366,7 @@ async function loadPedidos(estado){
         +'<td style="color:#999;font-size:0.85em;">'+(p.fecha_entrega_est||'—')+'</td>'
         +'<td>'+badgePed(p.estado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmt(p.valor_total)+'</td>'
-        +'<td><button class="btn btn-ghost btn-sm" onclick="cambiarEstadoPedido(\\''+p.numero+'\\')">Estado</button></td>'
+        +'<td><button class="btn btn-ghost btn-sm" data-pnum="'+p.numero+'" onclick="cambEstBtn(this)">Estado</button></td>'
         +'</tr>';
     }).join('');
   }catch(e){console.error(e);}
@@ -484,7 +484,7 @@ async function verHistorialCliente(id,nombre){
   var panel=document.createElement('div');
   panel.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
   panel.innerHTML='<div style="background:white;border-radius:14px;padding:28px;max-width:600px;width:92%;max-height:80vh;overflow-y:auto;position:relative;">'
-    +'<button onclick="this.closest(\\'div[style]\\').remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>'
+    +'<button onclick="closePanel(this)" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:20px;cursor:pointer;">✕</button>'
     +h+'</div>';
   document.body.appendChild(panel);
 }
@@ -576,6 +576,10 @@ async function abrirCliente360(cid){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>';}
 }
+
+function verHistClBtn(el){ verHistorialCliente(el.dataset.clid, el.dataset.clnom); }
+function cambEstBtn(el){ cambiarEstadoPedido(el.dataset.pnum); }
+function closePanel(el){ el.closest('div[style]').remove(); }
 
 // Auto-cargar dashboard al iniciar
 loadDashboardClientes();
