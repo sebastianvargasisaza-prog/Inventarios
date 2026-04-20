@@ -73,6 +73,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div class="tab" onclick="goTab('tab-stock',this)">&#x1F4E6; Stock PT</div>
   <div class="tab" onclick="goTab('tab-despachos',this)">&#x1F69A; Despachos</div>
   <div class="tab" onclick="goTab('tab-churn',this)">&#x26A0; Riesgo Churn</div>
+  <div class="tab" onclick="window.location='/solicitudes'">&#x1F4CB; Solicitudes</div>
 </div>
 
 <div class="content">
