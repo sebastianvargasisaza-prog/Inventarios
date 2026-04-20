@@ -104,7 +104,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
   <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
-  <a class="tn" href="/solicitudes" style="text-decoration:none;">&#x1F4CB; Solicitudes</a>
+  <button class="tn" data-tab="sol">&#x1F4CB; Solicitudes</button>
 </div>
 
 <!-- PANES -->
@@ -182,6 +182,21 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <button class="btn bp" onclick="openModal('m-nprov')">+ Nuevo Proveedor</button>
   </div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
+</div>
+
+<div id="pane-sol" class="pane">
+  <div id="sol-kpis" class="kpis" style="margin-bottom:12px;"></div>
+  <div class="bar">
+    <input type="text" id="q-sol" placeholder="Buscar por #, solicitante, area..." oninput="renderSol()">
+    <select id="s-sol" onchange="renderSol()">
+      <option value="">Todos los estados</option>
+      <option>Pendiente</option>
+      <option>Verificada</option>
+      <option>Autorizada</option>
+      <option>Rechazada</option>
+    </select>
+  </div>
+  <div id="grid-sol" class="grid"></div>
 </div>
 
 <!-- MODAL: Proveedor 360 -->
@@ -770,6 +785,183 @@ document.addEventListener('click',function(e){
 
 // ─── Init ─────────────────────────────────────────────────────────
 loadData();
+
+
+/* ─── SOLICITUDES MANAGEMENT ─────────────────────────────── */
+var SOLS = [];
+var _solActual = null;
+var PROVS_LIST = [];
+
+function loadSolicitudes(){
+  fetch('/api/solicitudes-compra').then(function(r){return r.json();}).then(function(d){
+    SOLS = d.solicitudes || [];
+    renderSol();
+    renderSolKpis();
+  });
+}
+
+function renderSolKpis(){
+  var cnt = {Pendiente:0, Verificada:0, Autorizada:0, Rechazada:0};
+  SOLS.forEach(function(s){ cnt[s.estado] = (cnt[s.estado]||0)+1; });
+  document.getElementById('sol-kpis').innerHTML =
+    mkKpi('Pendientes', cnt.Pendiente, 'Requieren revision', cnt.Pendiente>0?'w':'')+
+    mkKpi('Verificadas', cnt.Verificada, 'Listas para autorizar', cnt.Verificada>0?'y':'')+
+    mkKpi('Autorizadas', cnt.Autorizada, 'OC generada', 'g')+
+    mkKpi('Rechazadas', cnt.Rechazada, 'Este ciclo', '');
+}
+
+function renderSol(){
+  var q = (document.getElementById('q-sol')||{value:''}).value.toLowerCase();
+  var st = (document.getElementById('s-sol')||{value:''}).value;
+  var list = SOLS.filter(function(s){
+    var ok = true;
+    if(st && s.estado !== st) ok = false;
+    if(q && !(s.numero+s.solicitante+s.area+s.categoria).toLowerCase().includes(q)) ok = false;
+    return ok;
+  });
+  var html = '';
+  if(!list.length){ html = '<div class="empty">No hay solicitudes con esos filtros</div>'; }
+  else {
+    var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
+    var urgMap = {Alta:'color:#dc2626;font-weight:700',Media:'color:#d97706',Baja:'color:#16a34a'};
+    html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="background:#f5f4f2;">'
+          + '<th style="padding:8px;text-align:left;">N°</th>'
+          + '<th style="padding:8px;text-align:left;">Fecha</th>'
+          + '<th style="padding:8px;text-align:left;">Solicitante</th>'
+          + '<th style="padding:8px;text-align:left;">Area</th>'
+          + '<th style="padding:8px;text-align:left;">Urgencia</th>'
+          + '<th style="padding:8px;text-align:left;">Estado</th>'
+          + '<th style="padding:8px;text-align:left;">OC</th>'
+          + '<th style="padding:8px;"></th></tr></thead><tbody>';
+    list.forEach(function(s){
+      var bst = badgeMap[s.estado]||'';
+      var ust = urgMap[s.urgencia]||'';
+      html += '<tr style="border-bottom:1px solid #f3f4f6;cursor:pointer;" onclick="openSol(''+esc(s.numero)+'')">'
+        + '<td style="padding:8px;font-weight:600;">'+esc(s.numero)+'</td>'
+        + '<td style="padding:8px;color:#78716c;">'+esc((s.fecha||'').substring(0,10))+'</td>'
+        + '<td style="padding:8px;">'+esc(s.solicitante||'')+'</td>'
+        + '<td style="padding:8px;color:#57534e;">'+esc(s.area||'')+'</td>'
+        + '<td style="padding:8px;"><span style="'+ust+'">'+esc(s.urgencia||'')+'</span></td>'
+        + '<td style="padding:8px;"><span style="padding:3px 8px;border-radius:10px;font-size:11px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></td>'
+        + '<td style="padding:8px;font-size:11px;color:#78716c;">'+esc(s.numero_oc||'-')+'</td>'
+        + '<td style="padding:8px;"><button class="btn bp" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();openSol(''+esc(s.numero)+'')">Gestionar</button></td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  document.getElementById('grid-sol').innerHTML = html;
+}
+
+function openSol(numero){
+  _solActual = numero;
+  var sol = SOLS.find(function(s){return s.numero===numero;});
+  if(!sol){return;}
+  // Load items and proveedores
+  Promise.all([
+    fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)).then(function(r){return r.json();}),
+    fetch('/api/proveedores-compras').then(function(r){return r.json();})
+  ]).then(function(results){
+    var detail = results[0];
+    var provs = (results[1].proveedores||[]);
+    PROVS_LIST = provs;
+    var s = detail.solicitud || sol;
+    var items = detail.items || [];
+    var badgeMap = {Pendiente:'background:#fef3c7;color:#92400e',Verificada:'background:#dbeafe;color:#1e40af',Autorizada:'background:#d1fae5;color:#065f46',Rechazada:'background:#fee2e2;color:#991b1b'};
+    var bst = badgeMap[s.estado]||'';
+    var html = '<div class="g2">'
+      + '<div class="fg"><label>Numero</label><div style="font-weight:700;">'+esc(s.numero)+'</div></div>'
+      + '<div class="fg"><label>Estado</label><span style="padding:4px 10px;border-radius:10px;font-size:12px;font-weight:600;'+bst+'">'+esc(s.estado)+'</span></div>'
+      + '<div class="fg"><label>Solicitante</label><div>'+esc(s.solicitante||'')+'</div></div>'
+      + '<div class="fg"><label>Area / Empresa</label><div>'+esc(s.area||'')+' / '+esc(s.empresa||'')+'</div></div>'
+      + '<div class="fg"><label>Urgencia</label><div>'+esc(s.urgencia||'')+'</div></div>'
+      + '<div class="fg"><label>Categoria</label><div>'+esc(s.categoria||'')+'</div></div>'
+      + '</div>';
+    if(s.observaciones){ html += '<div class="fg"><label>Observaciones</label><div style="background:#fffbeb;padding:8px;border-radius:6px;font-size:12px;">'+esc(s.observaciones)+'</div></div>'; }
+    // Items
+    html += '<div class="fg"><label>Items Solicitados</label>'
+      + '<table class="itbl"><thead><tr><th>Codigo</th><th>Material</th><th>Cantidad</th><th>Unidad</th></tr></thead><tbody>';
+    items.forEach(function(it){
+      html += '<tr><td>'+esc(it.codigo_mp||'')+'</td><td>'+esc(it.nombre_mp||'')+'</td><td>'+esc(String(it.cantidad_g||''))+'</td><td>'+esc(it.unidad||'')+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    // Proveedor selector (show when Pendiente or Verificada)
+    if(s.estado === 'Pendiente' || s.estado === 'Verificada'){
+      var provOpts = '<option value="">-- Seleccionar proveedor --</option>';
+      provs.forEach(function(p){ provOpts += '<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>'; });
+      html += '<div class="fg"><label>Proveedor Asignado</label>'
+        + '<select id="sol-prov-sel" style="width:100%;padding:8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'+provOpts+'</select></div>';
+      if(s.numero_oc){ html += '<div class="fg"><label>OC vinculada</label><div style="font-weight:600;">'+esc(s.numero_oc)+'</div></div>'; }
+    }
+    document.getElementById('m-sol-body').innerHTML = html;
+    // Footer buttons
+    var footer = '';
+    if(s.estado === 'Pendiente'){
+      footer += '<button class="btn bp" onclick="accionSol('Verificada',false)">&#x2705; Verificar</button>';
+      footer += '<button class="btn" style="background:#dc2626;color:#fff;" onclick="solRechazo()">&#x274C; Rechazar</button>';
+    } else if(s.estado === 'Verificada'){
+      footer += '<button class="btn bp" onclick="accionSol('Autorizada',true)">&#x2705; Autorizar + Crear OC</button>';
+      footer += '<button class="btn" style="background:#dc2626;color:#fff;" onclick="solRechazo()">&#x274C; Rechazar</button>';
+    }
+    footer += '<button class="btn" onclick="closeModal('m-sol')" style="margin-left:auto;">Cerrar</button>';
+    document.getElementById('m-sol-footer').innerHTML = footer;
+    openModal('m-sol');
+  });
+}
+
+function accionSol(nuevoEstado, crearOC){
+  var prov = (document.getElementById('sol-prov-sel')||{value:''}).value;
+  var body = {estado: nuevoEstado};
+  if(prov) body.proveedor = prov;
+  if(crearOC){ body.crear_oc = true; if(prov) body.proveedor = prov; }
+  fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado', {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body:JSON.stringify(body)
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.ok){
+      var msg = 'Solicitud '+_solActual+' -> '+nuevoEstado;
+      if(d.numero_oc) msg += '. OC creada: '+d.numero_oc;
+      alert(msg);
+      closeModal('m-sol');
+      loadSolicitudes();
+      load();
+    } else {
+      alert('Error: '+(d.error||'No autorizado. Verifica que hayas iniciado sesion en Compras.'));
+    }
+  });
+}
+
+function solRechazo(){
+  var motivo = prompt('Motivo del rechazo:');
+  if(!motivo) return;
+  fetch('/api/solicitudes-compra/'+encodeURIComponent(_solActual)+'/estado', {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
+    body:JSON.stringify({estado:'Rechazada', observaciones:motivo})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.ok){
+      alert('Solicitud rechazada.');
+      closeModal('m-sol');
+      loadSolicitudes();
+    } else {
+      alert('Error: '+(d.error||'No autorizado'));
+    }
+  });
+}
+
 </script>
+
+<!-- MODAL: Gestionar Solicitud -->
+<div id="m-sol" class="ov">
+<div class="mdl mdl-lg" style="max-width:720px;">
+  <div class="mh"><h3>&#x1F4CB; Gestionar Solicitud</h3><button class="mx" onclick="closeModal('m-sol')">&times;</button></div>
+  <div class="mb" id="m-sol-body" style="gap:10px;"></div>
+  <div class="mf" id="m-sol-footer"></div>
+</div>
+</div>
+
 </body>
 </html>"""
