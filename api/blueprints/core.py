@@ -37,7 +37,9 @@ def inventarios():
     if 'compras_user' not in session:
         return redirect('/login?next=/inventarios')
     usuario = session.get('compras_user', '').capitalize()
-    html = DASHBOARD_HTML.replace('{usuario}', usuario)
+    from config import ADMIN_USERS
+    es_admin = 'true' if session.get('compras_user','') in ADMIN_USERS else 'false'
+    html = DASHBOARD_HTML.replace('{usuario}', usuario).replace('{es_admin}', es_admin)
     resp = Response(html, mimetype='text/html; charset=utf-8')
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp

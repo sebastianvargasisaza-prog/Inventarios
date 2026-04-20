@@ -98,10 +98,28 @@ def handle_movimientos():
                    data.get('operador','')))
         conn.commit(); conn.close()
         return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
-    c.execute('SELECT material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote FROM movimientos ORDER BY fecha DESC LIMIT 500')
-    movimientos = [{'material_id': r[0] or '', 'material_nombre': r[1], 'cantidad': r[2], 'tipo': r[3], 'fecha': r[4], 'observaciones': r[5], 'operador': r[6] or '', 'lote': r[7] or ''} for r in c.fetchall()]
+    c.execute('SELECT id, material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote, proveedor, fecha_vencimiento, numero_factura FROM movimientos ORDER BY fecha DESC LIMIT 500')
+    movimientos = [{'id': r[0], 'material_id': r[1] or '', 'material_nombre': r[2], 'cantidad': r[3], 'tipo': r[4], 'fecha': r[5], 'observaciones': r[6], 'operador': r[7] or '', 'lote': r[8] or '', 'proveedor': r[9] or '', 'fecha_vencimiento': r[10] or '', 'numero_factura': r[11] or ''} for r in c.fetchall()]
     conn.close()
     return jsonify({'movimientos': movimientos})
+
+
+@bp.route('/api/movimientos/<int:mov_id>', methods=['DELETE'])
+def eliminar_movimiento(mov_id):
+    from flask import session as flask_session
+    from config import ADMIN_USERS
+    usuario = flask_session.get('compras_user', '')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado — solo administradores pueden eliminar movimientos'}), 403
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute('SELECT id, material_id, material_nombre, lote, cantidad, tipo FROM movimientos WHERE id=?', (mov_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Movimiento no encontrado'}), 404
+    c.execute('DELETE FROM movimientos WHERE id=?', (mov_id,))
+    conn.commit(); conn.close()
+    return jsonify({'message': f'Movimiento {mov_id} eliminado. Lote: {row[3]}, MP: {row[2]}', 'id': mov_id}), 200
 
 @bp.route('/api/produccion', methods=['GET', 'POST'])
 def handle_produccion():
@@ -490,6 +508,7 @@ def alertas_reabastecimiento():
                         'tipo': r[5] or 'MP', 'subtipo': r[6] or ''})
     alertas.sort(key=lambda x: x['stock_actual']/x['stock_minimo'] if x['stock_minimo'] else 1)
     return jsonify({'alertas': alertas, 'total': len(alertas)})
+
 @bp.route('/api/stock')
 def get_stock():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -551,7 +570,6 @@ def get_mp(codigo):
     c.execute("SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     r = c.fetchone(); conn.close()
     return jsonify({'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5]}) if r else (jsonify({'error':'not found'}),404)
-
 
 @bp.route('/api/maestro-mps/<codigo>/stock-minimo', methods=['PUT'])
 def update_stock_minimo(codigo):
@@ -795,7 +813,7 @@ def conteo_iniciar():
     responsable = d.get('responsable', session.get('compras_user',''))
     from datetime import date
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    # Verificar si ya existe un conteo ABIERTO para esta estanteria
+    # ── Verificar si ya existe un conteo ABIERTO para esta estantería ──────────
     c.execute("SELECT id, numero FROM conteos_fisicos WHERE estanteria=? AND estado='Abierto' ORDER BY id DESC LIMIT 1", (est,))
     existing = c.fetchone()
     if existing:
@@ -803,7 +821,7 @@ def conteo_iniciar():
         return jsonify({'conteo_id': existing[0], 'numero': existing[1],
                         'message': 'Conteo retomado', 'resuming': True})
     numero = 'CNT-' + date.today().strftime('%Y%m%d') + '-' + est.replace(' ','')[:6].upper()
-    # Si el numero ya existe (mismo dia), agregar sufijo incremental
+    # Si el número ya existe (mismo día), agregar sufijo incremental
     c.execute("SELECT COUNT(*) FROM conteos_fisicos WHERE numero LIKE ?", (numero + '%',))
     suffix = c.fetchone()[0]
     if suffix > 0:
@@ -813,7 +831,7 @@ def conteo_iniciar():
                   (numero, responsable, est))
         conteo_id = c.lastrowid
         conn.commit(); conn.close()
-        return jsonify({'conteo_id': conteo_id, 'numero': numero, 'message': 'Conteo iniciado'})
+        return jsonify({'conteo_id': conteo_id, 'numero': numero, 'message': 'Conteo iniciado', 'resuming': False})
     except Exception as e:
         conn.close()
         return jsonify({'error': str(e)}), 400
@@ -821,10 +839,11 @@ def conteo_iniciar():
 
 @bp.route('/api/conteo/programacion', methods=['GET'])
 def conteo_programacion():
-    """Retorna la programacion ciclica automatica: estanteria asignada por semana ISO."""
+    """Retorna la programación cíclica automática: estantería asignada por semana ISO."""
     from datetime import date, timedelta
     import math
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Obtener todas las estanterias con stock positivo desde movimientos
     c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est
                  FROM movimientos
                  GROUP BY est
@@ -836,14 +855,16 @@ def conteo_programacion():
         return jsonify({'semanas': [], 'total_estanterias': 0})
     n = len(estanterias)
     hoy = date.today()
+    # Lunes de la semana actual
     lunes_actual = hoy - timedelta(days=hoy.weekday())
     semanas = []
-    for delta in range(-1, 5):
+    for delta in range(-1, 5):  # semana pasada + actual + próximas 4
         lunes = lunes_actual + timedelta(weeks=delta)
         semana_iso = lunes.isocalendar()[1]
         anio = lunes.isocalendar()[0]
         idx = (semana_iso - 1) % n
         est = estanterias[idx]
+        # Verificar si ya hay conteo para esa semana + estantería
         fecha_fin = lunes + timedelta(days=6)
         c.execute("""SELECT id, numero, estado FROM conteos_fisicos
                      WHERE estanteria=? AND fecha_inicio BETWEEN ? AND ?
@@ -851,8 +872,11 @@ def conteo_programacion():
                   (est, lunes.isoformat(), fecha_fin.isoformat() + ' 23:59:59'))
         conteo = c.fetchone()
         semanas.append({
-            'semana': semana_iso, 'anio': anio, 'lunes': lunes.isoformat(),
-            'estanteria': est, 'es_actual': delta == 0,
+            'semana': semana_iso,
+            'anio': anio,
+            'lunes': lunes.isoformat(),
+            'estanteria': est,
+            'es_actual': delta == 0,
             'conteo_id': conteo[0] if conteo else None,
             'conteo_numero': conteo[1] if conteo else None,
             'conteo_estado': conteo[2] if conteo else 'Pendiente',
@@ -1048,10 +1072,13 @@ def anular_movimiento(mov_id):
         conn.close(); return jsonify({'error': 'Movimiento no encontrado'}), 404
     cols = [d[0] for d in c.description]
     mov = dict(zip(cols, row))
+    # Verificar que no esté ya anulado
     if mov.get('observaciones','').startswith('[ANULADO]'):
         conn.close(); return jsonify({'error': 'Movimiento ya anulado'}), 400
+    # Solo admin puede anular movimientos de otros usuarios
     if user not in ADMIN_USERS and mov.get('responsable','') != user:
         conn.close(); return jsonify({'error': 'Solo puedes anular tus propios movimientos o ser administrador'}), 403
+    # Generar contra-movimiento (invierte el tipo)
     tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
     obs_contra = f'[ANULACION] del movimiento #{mov_id} — {motivo} — por {user}'
     c.execute("""INSERT INTO movimientos
@@ -1059,8 +1086,10 @@ def anular_movimiento(mov_id):
                  VALUES (?,?,?,?,?,?,?,datetime('now'))""",
               (mov['material_id'], tipo_inv, mov['cantidad'], mov.get('unidad','g'),
                mov.get('lote_ref',''), user, obs_contra))
+    # Marcar original como anulado
     c.execute("UPDATE movimientos SET observaciones=? WHERE id=?",
               ('[ANULADO] ' + (mov.get('observaciones') or ''), mov_id))
+    # Registrar en audit_log
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now'))""",
               (user, 'ANULAR_MOVIMIENTO', 'movimientos', str(mov_id),
@@ -1220,7 +1249,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         c.execute("SELECT lote_ref, responsable, fecha FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
         mov = c.fetchone(); conn.close()
     except Exception as e:
-        return "<h2>Error DB: " + str(e) + "</h2>", 500
+        return f"<h2>Error DB: {e}</h2>", 500
     desc = mee[0] if mee else codigo; cat = mee[1] if mee else ''; prov = mee[2] if mee else ''
     ref  = mov[0] if mov else ''; oper = mov[1] if mov else ''
     nr   = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
@@ -1489,14 +1518,9 @@ def backfill_precios_mp():
     })
 
 
-# ═══════════════════════════════════════════════
-#  MAQUILA 360 — API
-# ═══════════════════════════════════════════════
-
-
-# ===========================================================================
-# MODULO MEE - Material de Empaque y Envase  (Tasks #70 #71 #72)
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════
+# MÓDULO MEE — Material de Empaque y Envase  (Tasks #70 #71 #72)
+# ═══════════════════════════════════════════════════════════════════════
 
 def _init_mee_movimientos():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -1520,19 +1544,36 @@ _init_mee_movimientos()
 
 @bp.route('/api/mee', methods=['POST'])
 def mee_crear():
-    if 'compras_user' not in session:return jsonify({'error':'Autenticacion requerida'}),401
-    d=request.json or {};cod=d.get('codigo','').strip().upper();desc=d.get('descripcion','').strip()
-    if not cod or not desc:return jsonify({'error':'codigo y descripcion requeridos'}),400
-    cat=d.get('categoria','Otro');prov=d.get('proveedor','');und=d.get('unidad','und')
-    sa=float(d.get('stock_actual',0));sm=float(d.get('stock_minimo',0))
-    conn=sqlite3.connect(DB_PATH);c=conn.cursor()
-    try:c.execute("INSERT INTO maestro_mee(codigo,descripcion,categoria,unidad,proveedor,stock_actual,stock_minimo,estado)VALUES(?,?,?,?,?,?,?,'Activo')",(cod,desc,cat,und,prov,sa,sm));conn.commit()
-    except Exception as e:conn.close();return jsonify({'error':str(e)}),400
-    conn.close();return jsonify({'ok':True,'codigo':cod,'message':f'Material {cod} creado'})
+    """Crea un nuevo material en maestro_mee."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'Autenticacion requerida'}), 401
+    d = request.json or {}
+    codigo      = d.get('codigo','').strip().upper()
+    descripcion = d.get('descripcion','').strip()
+    categoria   = d.get('categoria','Otro').strip()
+    proveedor   = d.get('proveedor','').strip()
+    unidad      = d.get('unidad','und').strip()
+    stock_actual = float(d.get('stock_actual', 0))
+    stock_minimo = float(d.get('stock_minimo', 0))
+    if not codigo or not descripcion:
+        return jsonify({'error': 'codigo y descripcion requeridos'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        c.execute("""INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor,
+                                              stock_actual, stock_minimo, estado)
+                     VALUES (?,?,?,?,?,?,?,'Activo')""",
+                  (codigo, descripcion, categoria, unidad, proveedor, stock_actual, stock_minimo))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 400
+    conn.close()
+    return jsonify({'ok': True, 'codigo': codigo, 'message': f'Material {codigo} creado exitosamente'})
 
 
 @bp.route('/api/mee/stock', methods=['GET'])
 def mee_stock_list():
+    """Lista maestro_mee con stock, alertas y metricas de movimiento."""
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     cat_f = request.args.get('categoria', '')
     sql = """
@@ -1560,6 +1601,7 @@ def mee_stock_list():
     c.execute(sql, params)
     cols = [d[0] for d in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
+
     from datetime import date
     hoy = date.today()
     for r in rows:
@@ -1576,73 +1618,94 @@ def mee_stock_list():
         if ref:
             try:
                 days = (hoy - date.fromisoformat(ref[:10])).days
-                r['dias_sin_mov'] = days; r['obsoleto'] = days > 90
+                r['dias_sin_mov'] = days
+                r['obsoleto'] = days > 90
             except Exception:
                 r['dias_sin_mov'] = None; r['obsoleto'] = False
         else:
             r['dias_sin_mov'] = None; r['obsoleto'] = s > 0
+
     c.execute("SELECT DISTINCT categoria FROM maestro_mee WHERE estado='Activo' ORDER BY categoria")
     categorias = [row[0] for row in c.fetchall()]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'"); total = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo"); bajo = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'")
+    total = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo")
+    bajo = c.fetchone()[0]
     conn.close()
     return jsonify({'items': rows, 'categorias': categorias, 'total': total, 'bajo_minimo': bajo})
 
 
 @bp.route('/api/mee/movimiento', methods=['POST'])
 def mee_registrar_movimiento():
+    """Registra una entrada, salida o ajuste de empaque MEE."""
     if 'compras_user' not in session:
         return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
-    codigo = d.get('codigo','').strip(); tipo = d.get('tipo','').strip()
-    cantidad = float(d.get('cantidad', 0)); unidad = d.get('unidad','und').strip()
-    lote_ref = d.get('lote_ref','').strip(); batch_ref = d.get('batch_ref','').strip()
+    codigo      = d.get('codigo','').strip()
+    tipo        = d.get('tipo','').strip()
+    cantidad    = float(d.get('cantidad', 0))
+    unidad      = d.get('unidad','und').strip()
+    lote_ref    = d.get('lote_ref','').strip()
+    batch_ref   = d.get('batch_ref','').strip()
     responsable = d.get('responsable', session.get('compras_user','')).strip()
-    obs = d.get('observaciones','').strip()
+    obs         = d.get('observaciones','').strip()
+
     if not codigo or tipo not in ('Entrada','Salida','Ajuste') or cantidad <= 0:
-        return jsonify({'error': 'codigo, tipo y cantidad>0 requeridos'}), 400
+        return jsonify({'error': 'codigo, tipo (Entrada/Salida/Ajuste) y cantidad>0 requeridos'}), 400
+
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT codigo, descripcion, stock_actual, unidad FROM maestro_mee WHERE codigo=?", (codigo,))
     mee = c.fetchone()
     if not mee:
-        conn.close(); return jsonify({'error': 'Codigo MEE no encontrado'}), 404
+        conn.close(); return jsonify({'error': f'Codigo MEE {codigo} no encontrado'}), 404
+
     c.execute("""INSERT INTO movimientos_mee
                  (mee_codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, observaciones)
                  VALUES (?,?,?,?,?,?,?,?)""",
               (codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, obs))
     mov_id = c.lastrowid
+
     if tipo == 'Entrada':
-        c.execute("UPDATE maestro_mee SET stock_actual=stock_actual+? WHERE codigo=?", (cantidad, codigo))
+        c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
     elif tipo == 'Salida':
-        c.execute("UPDATE maestro_mee SET stock_actual=MAX(0,stock_actual-?) WHERE codigo=?", (cantidad, codigo))
+        c.execute("UPDATE maestro_mee SET stock_actual = MAX(0, stock_actual - ?) WHERE codigo=?", (cantidad, codigo))
     else:
-        c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (cantidad, codigo))
+        c.execute("UPDATE maestro_mee SET stock_actual = ? WHERE codigo=?", (cantidad, codigo))
+
     c.execute("SELECT stock_actual, stock_minimo FROM maestro_mee WHERE codigo=?", (codigo,))
     s_new, s_min = c.fetchone()
     conn.commit(); conn.close()
+
     alerta = None
     if s_min and s_min > 0 and s_new < s_min:
-        alerta = 'Stock bajo minimo: ' + str(int(s_new)) + ' ' + unidad + ' (minimo: ' + str(int(s_min)) + ')'
-    return jsonify({'ok': True, 'movimiento_id': mov_id, 'stock_nuevo': s_new, 'alerta': alerta,
-                    'message': tipo + ' de ' + str(int(cantidad)) + ' ' + unidad + ' registrada para ' + mee[1]})
+        alerta = f'Stock bajo minimo: {s_new:.0f} {unidad} (minimo: {s_min:.0f})'
+    return jsonify({
+        'ok': True, 'movimiento_id': mov_id, 'stock_nuevo': s_new, 'alerta': alerta,
+        'message': f'{tipo} de {cantidad:.0f} {unidad} registrada para {mee[1]}'
+    })
 
 
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
+    """Historial paginado de movimientos MEE."""
     if 'compras_user' not in session:
         return jsonify({'error': 'Autenticacion requerida'}), 401
-    codigo = request.args.get('codigo',''); tipo = request.args.get('tipo','')
-    limit = min(int(request.args.get('limit', 50)), 200)
+    codigo = request.args.get('codigo','')
+    tipo   = request.args.get('tipo','')
+    limit  = min(int(request.args.get('limit', 50)), 200)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     sql = """SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion,'') as descripcion,
                     mv.tipo, mv.cantidad, mv.unidad, mv.lote_ref, mv.batch_ref,
                     mv.responsable, mv.observaciones, mv.fecha, mv.anulado
-             FROM movimientos_mee mv LEFT JOIN maestro_mee m ON mv.mee_codigo=m.codigo
+             FROM movimientos_mee mv
+             LEFT JOIN maestro_mee m ON mv.mee_codigo = m.codigo
              WHERE mv.anulado=0"""
     params = []
-    if codigo: sql += " AND mv.mee_codigo=?"; params.append(codigo)
-    if tipo:   sql += " AND mv.tipo=?"; params.append(tipo)
-    sql += " ORDER BY mv.fecha DESC LIMIT " + str(limit)
+    if codigo:
+        sql += " AND mv.mee_codigo=?"; params.append(codigo)
+    if tipo:
+        sql += " AND mv.tipo=?"; params.append(tipo)
+    sql += f" ORDER BY mv.fecha DESC LIMIT {limit}"
     c.execute(sql, params)
     cols = [d[0] for d in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
@@ -1652,61 +1715,85 @@ def mee_historial_movimientos():
 
 @bp.route('/api/mee/alertas', methods=['GET'])
 def mee_alertas_list():
+    """Alertas MEE: bajo minimo + posible obsolescencia (sin mov >90 dias)."""
     from datetime import date, timedelta
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     hace90 = (date.today() - timedelta(days=90)).isoformat()
+
     c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.stock_minimo, m.unidad
-                 FROM maestro_mee m WHERE m.estado='Activo' AND m.stock_minimo>0 AND m.stock_actual<m.stock_minimo
-                 ORDER BY (m.stock_actual/m.stock_minimo) ASC""")
-    bajo_minimo = [{'codigo':r[0],'descripcion':r[1],'categoria':r[2],'stock_actual':r[3],
-                    'stock_minimo':r[4],'unidad':r[5],'ratio':round(r[3]/r[4],2) if r[4] else 0} for r in c.fetchall()]
-    c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.unidad, MAX(mv.fecha) as ultimo_mov
-                 FROM maestro_mee m LEFT JOIN movimientos_mee mv ON m.codigo=mv.mee_codigo AND mv.anulado=0
-                 WHERE m.estado='Activo' AND m.stock_actual>0 GROUP BY m.codigo
-                 HAVING ultimo_mov IS NULL OR ultimo_mov < ? ORDER BY ultimo_mov ASC LIMIT 15""", (hace90,))
-    obsolescencia = [{'codigo':r[0],'descripcion':r[1],'categoria':r[2],'stock_actual':r[3],
-                      'unidad':r[4],'ultimo_mov':r[5] or 'Nunca'} for r in c.fetchall()]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'"); total = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo"); n_bajo = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE anulado=0 AND fecha>=date('now','-7 days')"); mov_sem = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE tipo='Entrada' AND anulado=0 AND fecha>=date('now','-30 days')"); ent_mes = c.fetchone()[0]
+                 FROM maestro_mee m
+                 WHERE m.estado='Activo' AND m.stock_minimo>0 AND m.stock_actual < m.stock_minimo
+                 ORDER BY (m.stock_actual / m.stock_minimo) ASC""")
+    bajo_minimo = [{'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
+                    'stock_actual': r[3], 'stock_minimo': r[4], 'unidad': r[5],
+                    'ratio': round(r[3]/r[4], 2) if r[4] else 0} for r in c.fetchall()]
+
+    c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.unidad,
+                        MAX(mv.fecha) as ultimo_mov
+                 FROM maestro_mee m
+                 LEFT JOIN movimientos_mee mv ON m.codigo=mv.mee_codigo AND mv.anulado=0
+                 WHERE m.estado='Activo' AND m.stock_actual>0
+                 GROUP BY m.codigo
+                 HAVING ultimo_mov IS NULL OR ultimo_mov < ?
+                 ORDER BY ultimo_mov ASC LIMIT 15""", (hace90,))
+    obsolescencia = [{'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
+                      'stock_actual': r[3], 'unidad': r[4], 'ultimo_mov': r[5] or 'Nunca'}
+                     for r in c.fetchall()]
+
+    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'")
+    total = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo")
+    n_bajo = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE anulado=0 AND fecha>=date('now','-7 days')")
+    mov_sem = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE tipo='Entrada' AND anulado=0 AND fecha>=date('now','-30 days')")
+    ent_mes = c.fetchone()[0]
     conn.close()
-    return jsonify({'bajo_minimo': bajo_minimo, 'obsolescencia': obsolescencia,
-                    'resumen': {'total_mee': total, 'bajo_minimo': n_bajo,
-                                'movimientos_semana': mov_sem, 'entradas_mes': ent_mes}})
+    return jsonify({
+        'bajo_minimo': bajo_minimo, 'obsolescencia': obsolescencia,
+        'resumen': {'total_mee': total, 'bajo_minimo': n_bajo,
+                    'movimientos_semana': mov_sem, 'entradas_mes': ent_mes}
+    })
 
 
 @bp.route('/api/mee/trazabilidad', methods=['GET'])
 def mee_trazabilidad():
+    """Trazabilidad MEE: batch->empaque consumido  |  codigo->historial de batches."""
     if 'compras_user' not in session:
         return jsonify({'error': 'Autenticacion requerida'}), 401
-    batch = request.args.get('batch','').strip(); codigo = request.args.get('codigo','').strip()
+    batch  = request.args.get('batch','').strip()
+    codigo = request.args.get('codigo','').strip()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
     if batch:
         c.execute("""SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion,'') as descripcion,
                             m.categoria, mv.cantidad, mv.unidad, mv.responsable, mv.fecha, mv.observaciones
                      FROM movimientos_mee mv LEFT JOIN maestro_mee m ON mv.mee_codigo=m.codigo
                      WHERE mv.batch_ref LIKE ? AND mv.tipo='Salida' AND mv.anulado=0
-                     ORDER BY mv.fecha""", ('%' + batch + '%',))
+                     ORDER BY mv.fecha""", (f'%{batch}%',))
         cols = [d[0] for d in c.description]
         consumos = [dict(zip(cols, r)) for r in c.fetchall()]
         conn.close()
-        return jsonify({'tipo':'batch','referencia':batch,'consumos':consumos,'total':len(consumos)})
+        return jsonify({'tipo': 'batch', 'referencia': batch, 'consumos': consumos, 'total': len(consumos)})
+
     elif codigo:
         c.execute("""SELECT mv.id, mv.tipo, mv.batch_ref, mv.lote_ref, mv.cantidad, mv.unidad,
                             mv.responsable, mv.fecha, mv.observaciones
-                     FROM movimientos_mee mv WHERE mv.mee_codigo=? AND mv.anulado=0
+                     FROM movimientos_mee mv
+                     WHERE mv.mee_codigo=? AND mv.anulado=0
                      ORDER BY mv.fecha DESC LIMIT 100""", (codigo,))
         cols = [d[0] for d in c.description]
         historial = [dict(zip(cols, r)) for r in c.fetchall()]
         conn.close()
-        return jsonify({'tipo':'mee','referencia':codigo,'historial':historial,'total':len(historial)})
+        return jsonify({'tipo': 'mee', 'referencia': codigo, 'historial': historial, 'total': len(historial)})
+
     conn.close()
     return jsonify({'error': 'Proporcione parametro batch o codigo'}), 400
 
 
 @bp.route('/api/mee/anular/<int:mov_id>', methods=['POST'])
 def mee_anular_movimiento(mov_id):
+    """Anula un movimiento MEE revirtiendo el impacto en stock."""
     if 'compras_user' not in session:
         return jsonify({'error': 'Autenticacion requerida'}), 401
     user = session.get('compras_user','')
@@ -1717,18 +1804,22 @@ def mee_anular_movimiento(mov_id):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT * FROM movimientos_mee WHERE id=?", (mov_id,))
     row = c.fetchone()
-    if not row: conn.close(); return jsonify({'error': 'No encontrado'}), 404
-    cols_mv = [d[0] for d in c.description]; mv = dict(zip(cols_mv, row))
-    if mv['anulado']: conn.close(); return jsonify({'error': 'Ya anulado'}), 400
+    if not row:
+        conn.close(); return jsonify({'error': 'No encontrado'}), 404
+    cols_mv = [d[0] for d in c.description]
+    mv = dict(zip(cols_mv, row))
+    if mv['anulado']:
+        conn.close(); return jsonify({'error': 'Ya anulado'}), 400
     if mv['tipo'] == 'Entrada':
-        c.execute("UPDATE maestro_mee SET stock_actual=MAX(0,stock_actual-?) WHERE codigo=?", (mv['cantidad'],mv['mee_codigo']))
+        c.execute("UPDATE maestro_mee SET stock_actual=MAX(0,stock_actual-?) WHERE codigo=?",
+                  (mv['cantidad'], mv['mee_codigo']))
     elif mv['tipo'] == 'Salida':
-        c.execute("UPDATE maestro_mee SET stock_actual=stock_actual+? WHERE codigo=?", (mv['cantidad'],mv['mee_codigo']))
+        c.execute("UPDATE maestro_mee SET stock_actual=stock_actual+? WHERE codigo=?",
+                  (mv['cantidad'], mv['mee_codigo']))
     c.execute("UPDATE movimientos_mee SET anulado=1, observaciones=observaciones||? WHERE id=?",
-              (' [ANULADO por ' + user + ': ' + motivo + ']', mov_id))
+              (f' [ANULADO por {user}: {motivo}]', mov_id))
     conn.commit(); conn.close()
-    return jsonify({'ok': True, 'message': 'Movimiento #' + str(mov_id) + ' anulado y stock revertido'})
-
+    return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado y stock revertido'})
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1851,3 +1942,8 @@ def liberacion_update(lid):
         c.execute("UPDATE liberaciones SET observaciones=? WHERE id=?", (d.get('observaciones', ''), lid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
+
+
+# ═══════════════════════════════════════════════
+#  MAQUILA 360 — API
+# ═══════════════════════════════════════════════
