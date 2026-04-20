@@ -366,6 +366,8 @@ def get_solicitud_estado(numero):
 
 @bp.route('/solicitudes')
 def solicitudes_page():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/solicitudes')
     return Response(SOLICITUDES_HTML, mimetype='text/html')
 
 
@@ -396,7 +398,7 @@ def actualizar_estado_solicitud(numero):
         oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
         cur.execute("""INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones, creado_por)
                      VALUES (?,?,?,?,?,?)""",
-                  (oc_num, datetime.now().isoformat(), 'Revisada', proveedor_oc,
+                  (oc_num, datetime.now().isoformat(), 'Borrador', proveedor_oc,
                    f'Generado desde {numero.upper()}', session.get('compras_user','')))
         for it in items_sol:
             cur.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",

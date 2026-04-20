@@ -29,6 +29,8 @@ bp = Blueprint('despachos', __name__)
 
 @bp.route('/recepcion')
 def recepcion_panel():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/recepcion')
     return Response(RECEPCION_HTML, mimetype='text/html')
 
 
