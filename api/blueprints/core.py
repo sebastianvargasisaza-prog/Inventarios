@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -99,8 +99,8 @@ def compras():
     if 'compras_user' not in session:
         return redirect('/login')
     username = session.get('compras_user', '')
-    # Roles sin acceso a compras
-    if username in PLANTA_USERS or username in CALIDAD_USERS:
+    # Solo usuarios con acceso a compras
+    if username not in COMPRAS_ACCESS:
         sin_acceso = """<\!DOCTYPE html><html><head><meta charset=UTF-8>
 <title>Sin acceso</title>
 <style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}
