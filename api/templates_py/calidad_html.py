@@ -270,6 +270,8 @@ async function loadDash(){
     document.getElementById('kv-nc').textContent=d.nc_abiertas||0;
     document.getElementById('kv-cals').textContent=d.cals_vencidas||0;
     const act=document.getElementById('act-list');
+    
+    loadWeekChart();
     const items=(d.actividad_reciente||[]);
     if(!items.length){act.innerHTML='<p class="empty">Sin actividad reciente</p>';return;}
     act.innerHTML=items.map(a=>`
@@ -280,7 +282,6 @@ async function loadDash(){
           <div class="act-sub">${esc(a.subtitulo||'')} ${a.fecha?'&middot; '+fmt(a.fecha):''}</div>
         </div>
       </div>`).join('');
-    loadWeekChart();
   }catch(e){document.getElementById('act-list').innerHTML='<p class="empty">Error: '+esc(e.message)+'</p>';}
 }
 
