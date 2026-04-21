@@ -335,6 +335,8 @@ def handle_solicitudes_compra():
     params = []
     if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
+    filtro_categoria = request.args.get('categoria', '')
+    if filtro_categoria: sql += " AND categoria=?"; params.append(filtro_categoria)
     sql += " ORDER BY fecha DESC LIMIT 200"
     c.execute(sql, params)
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area']
@@ -403,12 +405,13 @@ def actualizar_estado_solicitud(numero):
         cur.execute("SELECT COUNT(*) FROM ordenes_compra")
         n_oc = cur.fetchone()[0] + 1
         oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
-        # OC creada directamente como 'Revisada' — lista para autorizar
+        # Influencer/Marketing Digital salta directo a Autorizada; resto queda en Revisada
+        estado_oc = 'Autorizada' if categoria_oc == 'Influencer/Marketing Digital' else 'Revisada'
         cur.execute(
             "INSERT INTO ordenes_compra "
             "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
             "VALUES (?,?,?,?,?,?,?,?,?)",
-            (oc_num, datetime.now().isoformat(), 'Revisada', proveedor_oc,
+            (oc_num, datetime.now().isoformat(), estado_oc, proveedor_oc,
              obs_oc, session.get('compras_user',''),
              valor_oc if valor_oc > 0 else None, fent_oc or None, categoria_oc))
         for it in items_sol:

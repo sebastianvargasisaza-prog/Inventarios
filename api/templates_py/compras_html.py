@@ -104,6 +104,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
   <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
+  <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
 </div>
 
@@ -174,6 +175,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div id="pills-cc" class="pills"></div>
   <div id="grid-cc" class="grid"></div>
+</div>
+
+<div id="pane-influencer" class="pane">
+  <div class="bar">
+    <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
+    <select id="s-influencer" onchange="renderInfluencers()">
+      <option value="">Todos los estados</option>
+      <option value="Pendiente">Pendiente - Por pagar</option>
+      <option value="Aprobada">Aprobada - Pagada</option>
+    </select>
+  </div>
+  <div id="pills-influencer" class="pills"></div>
+  <div id="grid-influencer" class="grid"></div>
 </div>
 
 <div id="pane-prov" class="pane">
@@ -418,9 +432,10 @@ document.querySelectorAll('.tn').forEach(function(btn){
     if(tab==='dash') renderDash();
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
+    else if(tab==='influencer') loadInfluencers();
     else renderCat(tab);
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
   });
 });
@@ -860,7 +875,38 @@ function _ocDetRev(){ closeModal('m-oc-det'); openRev(_detOC.numero_oc||'',_detO
 function _solDetClose(){ closeModal('m-sol-det'); }
 function _solDetApr(){ gestionarSol('Aprobada'); }
 function _solDetRech(){ gestionarSol('Rechazada'); }
-function _solFillProv(){ fillProv('sol-prov-sel','sol-prov-ibox'); }
+function _solFillProv(){
+  var v=(document.getElementById('sol-prov-sel')||{value:''}).value;
+  var tb=document.getElementById('sol-tercero-box');
+  var nb=document.getElementById('sol-nuevo-prov-box');
+  if(tb) tb.style.display = v==='__tercero__' ? 'block' : 'none';
+  if(nb) nb.style.display = v==='__nuevo__' ? 'block' : 'none';
+  if(v\!=='__tercero__'&&v\!=='__nuevo__') fillProv('sol-prov-sel','sol-prov-ibox');
+}
+async function _guardarNuevoProv(){
+  var nombre=(document.getElementById('snp-nombre')||{value:''}).value.trim();
+  if(\!nombre){ alert('El nombre del proveedor es obligatorio'); return; }
+  var banco=(document.getElementById('snp-banco')||{value:''}).value.trim();
+  var tipo=(document.getElementById('snp-tipo')||{value:'Ahorros'}).value;
+  var cuenta=(document.getElementById('snp-cuenta')||{value:''}).value.trim();
+  var nit=(document.getElementById('snp-nit')||{value:''}).value.trim();
+  var body={nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta,categoria:'Cuenta de Cobro',condiciones_pago:'Inmediato'};
+  try{
+    var r=await fetch('/api/proveedores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    PROVS.push({nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta});
+    var sel=document.getElementById('sol-prov-sel');
+    var opt=document.createElement('option');
+    opt.value=nombre; opt.textContent=nombre; opt.selected=true;
+    var nuevoOpt=sel.querySelector('option[value="__nuevo__"]');
+    if(nuevoOpt) sel.insertBefore(opt, nuevoOpt); else sel.appendChild(opt);
+    var nb=document.getElementById('sol-nuevo-prov-box');
+    if(nb) nb.style.display='none';
+    fillProv('sol-prov-sel','sol-prov-ibox');
+    alert('Proveedor guardado y seleccionado.');
+  }catch(e){ alert('Error: '+e); }
+}
 
 // ─── Detalle OC ─────────────────────────────────────────────────
 async function openOCDetail(num){
@@ -918,6 +964,7 @@ async function openOCDetail(num){
 
 // ─── Solicitudes para Catalina ────────────────────────────────────────
 var SOLIC=[];
+var INFLUENCERS=[];
 async function loadSolicitudes(){
   try{
     var r=await fetch('/api/solicitudes-compra');
@@ -925,6 +972,48 @@ async function loadSolicitudes(){
     SOLIC=d.solicitudes||[];
   }catch(e){ SOLIC=[]; }
   renderSolicitudes();
+}
+async function loadInfluencers(){
+  try{
+    var r=await fetch('/api/solicitudes-compra?categoria=Influencer%2FMarketing+Digital');
+    var d=await r.json();
+    INFLUENCERS=d.solicitudes||[];
+  }catch(e){ INFLUENCERS=[]; }
+  renderInfluencers();
+}
+function renderInfluencers(){
+  var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
+  var st=(document.getElementById('s-influencer')||{value:''}).value;
+  var list=INFLUENCERS.filter(function(s){
+    if(st&&s.estado\!==st) return false;
+    if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  var pend=list.filter(function(s){ return s.estado==='Pendiente'; }).length;
+  var apro=list.filter(function(s){ return s.estado==='Aprobada'; }).length;
+  var pills='<span class="pill">'+list.length+' cuentas de cobro</span>';
+  if(pend) pills+='<span class="pill y">Por pagar: '+pend+'</span>';
+  if(apro) pills+='<span class="pill g">Pagadas: '+apro+'</span>';
+  var el=document.getElementById('pills-influencer');
+  var gel=document.getElementById('grid-influencer');
+  if(el) el.innerHTML=pills;
+  if(\!gel) return;
+  if(\!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro de influencers</div>'; return; }
+  var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7'};
+  var stFg={'Pendiente':'#92400e','Aprobada':'#166534'};
+  gel.innerHTML=list.map(function(s){
+    var stB=stBg[s.estado]||'#f3f4f6';
+    var stF=stFg[s.estado]||'#374151';
+    return '<div class="card">'
+      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
+      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
+      +'<span class="badge" style="background:'+stB+';color:'+stF+';">'+s.estado+'</span></div>'
+      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
+      +'<span style="color:#7c3aed;font-weight:600;">'+esc(s.tipo||'-')+'</span></div>'
+      +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
+      +'<div class="acts"><button class="btn bg bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4B8; Pagar directamente</button></div>'
+      +'</div>';
+  }).join('');
 }
 function renderSolicitudes(){
   var q=(document.getElementById('q-solic')||{value:''}).value.toLowerCase();
@@ -1008,8 +1097,24 @@ async function openSolicitudDetail(num){
       h+='<div style="font-weight:700;font-size:13px;margin-bottom:10px;">&#9997; Gestionar Solicitud</div>';
       h+='<div class="fg" style="margin-bottom:10px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Proveedor / Beneficiario</label>';
       h+='<select id="sol-prov-sel" onchange="_solFillProv()" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"><option value="">-- Seleccionar proveedor --</option>';
+      h+='<option value="__tercero__">&#x1F4B3; Pago a Terceros (ingrese nombre)</option>';
       PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>'; });
-      h+='</select><div id="sol-prov-ibox" class="ibox" style="display:none;margin-top:6px;"></div></div>';
+      h+='<option value="__nuevo__">&#x2795; Crear nuevo proveedor...</option>';
+      h+='</select>';
+      h+='<div id="sol-prov-ibox" class="ibox" style="display:none;margin-top:6px;"></div>';
+      h+='<div id="sol-tercero-box" style="display:none;margin-top:6px;"><input type="text" id="sol-tercero-txt" placeholder="Nombre del beneficiario..." style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
+      h+='<div id="sol-nuevo-prov-box" style="display:none;margin-top:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;">';
+      h+='<div style="font-weight:700;font-size:12px;color:#0369a1;margin-bottom:8px;">&#x2795; Nuevo Proveedor</div>';
+      h+='<div class="g2" style="gap:6px;margin-bottom:6px;">';
+      h+='<input type="text" id="snp-nombre" placeholder="Nombre / Razon social *" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;">';
+      h+='<input type="text" id="snp-nit" placeholder="NIT / CC" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;"></div>';
+      h+='<div class="g2" style="gap:6px;margin-bottom:6px;">';
+      h+='<input type="text" id="snp-banco" placeholder="Banco" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;">';
+      h+='<select id="snp-tipo" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;"><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option></select></div>';
+      h+='<input type="text" id="snp-cuenta" placeholder="Numero de cuenta" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;margin-bottom:6px;">';
+      h+='<button class="btn bp" onclick="_guardarNuevoProv()" style="width:100%;font-size:12px;">&#x1F4BE; Guardar y seleccionar</button>';
+      h+='</div>';
+      h+='</div>';
       h+='<div class="g2" style="margin-bottom:10px;">';
       h+='<div class="fg"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Valor estimado ($)</label>';
       h+='<input type="number" id="sol-valor" placeholder="0" min="0" step="1000" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
@@ -1026,14 +1131,22 @@ async function openSolicitudDetail(num){
     var fbtns='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
     if(s.estado==='Pendiente'){
       fbtns+='<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
-      fbtns+='<button class="btn bg" onclick="_solDetApr()">&#9654; Enviar a Autorización</button>';
+      if(s.categoria==='Influencer/Marketing Digital'){
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#7c3aed;">&#x1F4B8; Pagar directamente</button>';
+      } else {
+        fbtns+='<button class="btn bg" onclick="_solDetApr()">&#9654; Enviar a Autorización</button>';
+      }
     }
     footer.innerHTML=fbtns;
   }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
 }
 async function gestionarSol(decision){
   var num=document.getElementById('sol-det-num').value;
-  var prov=(document.getElementById('sol-prov-sel')||{value:''}).value;
+  var _provSel=(document.getElementById('sol-prov-sel')||{value:''}).value;
+  if(_provSel==='__nuevo__'){ alert('Primero guarda el nuevo proveedor antes de continuar.'); return; }
+  var prov=_provSel==='__tercero__'
+    ? ((document.getElementById('sol-tercero-txt')||{value:''}).value.trim()||'Pago a Terceros')
+    : _provSel;
   var valor=parseFloat((document.getElementById('sol-valor')||{value:0}).value||0);
   var motivo=(document.getElementById('sol-motivo')||{value:''}).value.trim();
   var fent=(document.getElementById('sol-fent')||{value:''}).value;
@@ -1055,7 +1168,7 @@ async function gestionarSol(decision){
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-sol-det');
-    await Promise.all([loadData(),loadSolicitudes()]);
+    await Promise.all([loadData(),loadSolicitudes(),loadInfluencers()]);
     alert(decision==='Aprobada'?'Solicitud aprobada. OC generada: '+(d.numero_oc||''):'Solicitud rechazada.');
   }catch(e){ alert('Error: '+e); }
 }
