@@ -192,7 +192,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="grid-influencer" class="grid"></div>
 </div>
 <!-- Modal rechazo influencer -->
-<div id="m-rechazar-inf" class="modal" style="display:none;">
+<div id="m-rechazar-inf" class="ov">
   <div class="mc" style="max-width:440px;">
     <div class="mh"><h3>Rechazar cuenta de cobro</h3><button class="mc-x" onclick="closeModal('m-rechazar-inf')">&#x2715;</button></div>
     <div style="padding:20px;">
