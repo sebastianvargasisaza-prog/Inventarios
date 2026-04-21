@@ -17,6 +17,11 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
 .tab-button.active { background:white; color:#2B7A78; border-bottom:3px solid #2B7A78; }
 .tab-content { display:none; padding:25px; }
 .tab-content.active { display:block; }
+.sub-tab-bar { display:none; background:#e8f4f3; border-bottom:2px solid #2B7A78; padding:5px 10px; gap:5px; flex-wrap:wrap; }
+.sub-tab-bar.visible { display:flex; }
+.sub-btn { padding:7px 18px; border:none; border-radius:6px; font-size:0.82em; font-weight:600; cursor:pointer; background:transparent; color:#2B7A78; }
+.sub-btn.active { background:#2B7A78; color:white; }
+.sub-btn:hover { background:rgba(43,122,120,0.18); }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:15px; margin:15px 0; }
 .card { background:#2B7A78; color:white; padding:18px; border-radius:10px; text-align:center; }
 .card h3 { font-size:0.85em; opacity:0.9; margin-bottom:6px; }
@@ -72,7 +77,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div style="background:white;border-radius:16px;padding:28px;max-width:500px;width:96%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <h2 style="color:#2B7A78;margin-bottom:4px;">&#9878; Gestionar Material</h2>
     <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:14px;"></p>
-    <!-- Conteo Fisico -->
     <div style="border:1px solid #d0ece7;border-radius:8px;padding:14px;margin-bottom:10px;background:#f9fffe;">
       <div style="font-size:0.78em;font-weight:700;color:#2B7A78;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128203; Conteo F&#237;sico</div>
       <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:#888;"></div>
@@ -84,7 +88,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="ajuste-msg" style="margin-top:8px;font-size:0.85em;"></div>
     </div>
-    <!-- Stock Minimo -->
     <div style="border:1px solid #ffeeba;border-radius:8px;padding:14px;margin-bottom:10px;background:#fffdf0;">
       <div style="font-size:0.78em;font-weight:700;color:#856404;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128202; Stock M&#237;nimo</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -93,7 +96,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="ajuste-smin-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <!-- Consumo Manual -->
     <div style="border:1px solid #d8b4fe;border-radius:8px;padding:14px;margin-bottom:10px;background:#faf5ff;">
       <div style="font-size:0.78em;font-weight:700;color:#6f42c1;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#9749; Consumo Manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -102,7 +104,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="ajuste-consumo-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <!-- Archivar -->
     <div style="border:1px solid #f5c6cb;border-radius:8px;padding:12px;background:#fff8f8;">
       <div style="font-size:0.78em;font-weight:700;color:#c0392b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">&#128190; Archivar Material</div>
       <p style="font-size:0.82em;color:#888;margin-bottom:8px;">Oculta el material del cat&#225;logo activo sin eliminar su historial.</p>
@@ -114,37 +115,48 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
-    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">M&#243;dulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
+    <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
     <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
-    <button class="tab-button" onclick="switchTab('stock',this)">&#128230; Stock</button>
-            <button class="tab-button" onclick="switchTab('ingreso',this)">&#128666; Ingreso MP</button>
-    <button class="tab-button" onclick="switchTab('formulas',this)">&#129514; Formulas</button>
-    <button class="tab-button" onclick="switchTab('produccion',this)">&#127981; Produccion</button>
-    <button class="tab-button" onclick="switchTab('abc',this)">&#128200; ABC</button>
-    <button class="tab-button" onclick="switchTab('alertas',this)">&#9888; Alertas</button>
-    <button class="tab-button" onclick="switchTab('movimientos',this)">&#128203; Movimientos</button>
-    <button class="tab-button" onclick="switchTab('cuarentena',this)">&#128274; Cuarentena</button>
+    <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
+    <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
+    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
+    <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
+    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
+    <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
     <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
-    <button class="tab-button" onclick="switchTab('conteo',this)">&#9989; Conteo Ciclico</button>
-    <button class="tab-button" onclick="switchTab('empaque',this)">&#128230; Empaque MEE</button>
+  </div>
+  <div id="bar-bodegaMP" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
+    <button class="sub-btn" onclick="subSwitchTab('ingreso',this,'bar-bodegaMP')">&#128666; Recepciones</button>
+    <button class="sub-btn" onclick="subSwitchTab('abc',this,'bar-bodegaMP')">&#128200; Análisis ABC</button>
+    <button class="sub-btn" onclick="subSwitchTab('alertas',this,'bar-bodegaMP')">&#9888; Alertas</button>
+    <button class="sub-btn" onclick="subSwitchTab('movimientos',this,'bar-bodegaMP')">&#128203; Movimientos</button>
+  </div>
+  <div id="bar-prodHub" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
+    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Lote</button>
+  </div>
+  <div id="bar-calidadHub" class="sub-tab-bar">
+    <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
+    <button class="sub-btn" onclick="subSwitchTab('conteo',this,'bar-calidadHub')">&#9989; Conteo Cíclico</button>
   </div>
 
   <div id="dashboard" class="tab-content active">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h2 style="margin:0;">Dashboard Ejecutivo</h2>
-      <button onclick="loadDashboardCompleto()" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
+      <button onclick="loadDashboardCompleto()" style="padding:7px 16px;loadAcond();loadLiberaciones('');font-size:0.88em;">&#8635; Actualizar</button>
     </div>
 
     <!-- KPI Cards -->
     <div class="grid" style="margin-bottom:20px;">
       <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
       <div class="card"><h3>Lotes en Bodega</h3><p id="materiales-count">-</p></div>
-      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchTab('alertas',document.querySelector('[onclick*=alertas]'))"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
+      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
       <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
     </div>
 
@@ -261,10 +273,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="ingreso" class="tab-content">
-    <div style="display:flex;gap:0;margin-bottom:22px;border-bottom:2px solid #ddd;">
-      <button id="ing-tab-mp" onclick="switchIngreso('mp')" style="padding:11px 28px;border:none;background:#2B7A78;color:white;font-weight:700;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;">&#128230; Materia Prima</button>
-      <button id="ing-tab-mee" onclick="switchIngreso('mee')" style="padding:11px 28px;border:none;background:#eee;color:#555;font-weight:600;font-size:0.92em;border-radius:8px 8px 0 0;cursor:pointer;margin-left:4px;">&#128230; Envase & Empaque</button>
-    </div>
     <div id="ing-panel-mp">
     <h2>&#128666; Ingreso de Materia Prima</h2>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
@@ -345,45 +353,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <h3 style="margin-bottom:10px;">Ultimas Entradas</h3>
     <div style="overflow-x:auto;"><table class="table" id="ing-hist">
-      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th><th id="ing-hist-accion-th" style="display:none;">Accion</th></tr></thead>
+      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
       <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
     </table></div>
     </div><!-- end ing-panel-mp -->
-    <div id="ing-panel-mee" style="display:none;">
-      <h2>&#128230; Ingreso Materiales Envase & Empaque</h2>
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-          <div class="form-group"><label>Categoria</label>
-            <select id="mee-ing-cat" onchange="filtrarMEEIngreso()" style="width:100%;">
-              <option value="">Todas</option>
-              <option>Envase</option><option>Tapa</option><option>Etiqueta</option>
-              <option>Plegable</option><option>Serigrafia</option><option>Gotero</option>
-              <option>Frasco</option><option>Contorno</option><option>Otro</option>
-            </select>
-          </div>
-          <div class="form-group"><label>Material *</label>
-            <select id="mee-ing-cod" style="width:100%;"><option value="">-- Selecciona --</option></select>
-          </div>
-          <div class="form-group"><label>Cantidad recibida (unidades) *</label>
-            <input type="number" id="mee-ing-cant" placeholder="Ej: 500" min="1"></div>
-          <div class="form-group"><label>Proveedor / Referencia</label>
-            <input type="text" id="mee-ing-ref" placeholder="Factura, OC, remision..."></div>
-        </div>
-        <div class="form-group" style="margin-top:10px;"><label>Observaciones</label>
-          <input type="text" id="mee-ing-obs" placeholder="Opcional"></div>
-        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-          <button onclick="registrarIngresoMEE()" style="background:#27ae60;">&#10003; Registrar Entrada MEE</button>
-          <button onclick="generarRotuloMEE()" style="background:#2980b9;" id="btn-rotulo-mee">&#128209; Generar Rotulo + Codigo de Barras</button>
-          <button onclick="limpiarIngresoMEE()" style="background:#95a5a6;">Limpiar</button>
-        </div>
-        <div id="mee-ing-msg" style="margin-top:10px;"></div>
-      </div>
-      <h3 style="margin-bottom:10px;">Ultimas Entradas MEE</h3>
-      <div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">
-        <thead><tr><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th style="text-align:right;">Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead>
-        <tbody id="mee-hist-body"><tr><td colspan="7" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
-      </table></div>
-    </div><!-- end ing-panel-mee -->
   </div>
 
   <div id="formulas" class="tab-content">
@@ -543,7 +516,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
       <div id="alertas-reabas-tabla">
         <table class="table">
-          <thead><tr><th>Tipo</th><th>C&#243;digo</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">M&#237;nimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">D&#233;ficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Acci&#243;n</th></tr></thead>
+          <thead><tr><th>Tipo</th><th>Código</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Mínimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Déficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Acción</th></tr></thead>
           <tbody id="reabas-body"><tr><td colspan="9" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
         </table>
       </div>
@@ -753,13 +726,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="cnt-prog-tabla" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
-          <thead><tr style="background:#2B7A78;color:#fff;">
-            <th style="padding:7px 12px;text-align:left;">Semana</th>
-            <th style="padding:7px 12px;text-align:left;">Lunes</th>
-            <th style="padding:7px 12px;text-align:left;">Estanteria asignada</th>
-            <th style="padding:7px 12px;text-align:center;">Estado</th>
-            <th style="padding:7px 12px;text-align:center;">Accion</th>
-          </tr></thead>
+          <thead><tr style="background:#2B7A78;color:#fff;"><th style="padding:7px 12px;text-align:left;">Semana</th><th style="padding:7px 12px;text-align:left;">Lunes</th><th style="padding:7px 12px;text-align:left;">Estanteria asignada</th><th style="padding:7px 12px;text-align:center;">Estado</th><th style="padding:7px 12px;text-align:center;">Accion</th></tr></thead>
           <tbody id="cnt-prog-rows"><tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">Cargando...</td></tr></tbody>
         </table>
       </div>
@@ -822,140 +789,137 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
-  </div>
 
-  <!-- ═══════════════════════════════ TAB: EMPAQUE MEE ═══════════════════════════════ -->
+  <!-- ==================== TAB: EMPAQUE MEE ==================== -->
   <div id="empaque" class="tab-content">
     <h2>&#128230; Material de Empaque y Envase (MEE)</h2>
     <p style="color:#666;font-size:0.9em;margin-bottom:16px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de produccion.</p>
-
-    <!-- Cards resumen -->
-    <div id="mee-cards-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">
-      <div style="background:#2B7A78;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128230;</div><div style="font-size:2em;font-weight:700;" id="mee-c-total">—</div><div style="font-size:0.82em;opacity:0.9;">Total MEE Activos</div></div>
-      <div style="background:#e74c3c;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#9888;</div><div style="font-size:2em;font-weight:700;" id="mee-c-bajo">—</div><div style="font-size:0.82em;opacity:0.9;">Bajo Minimo</div></div>
-      <div style="background:#3498db;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128202;</div><div style="font-size:2em;font-weight:700;" id="mee-c-semana">—</div><div style="font-size:0.82em;opacity:0.9;">Mov. Esta Semana</div></div>
-      <div style="background:#9b59b6;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128229;</div><div style="font-size:2em;font-weight:700;" id="mee-c-mes">—</div><div style="font-size:0.82em;opacity:0.9;">Entradas Este Mes</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">
+      <div style="background:#2B7A78;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128230;</div><div style="font-size:2em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.82em;opacity:0.9;">Total MEE Activos</div></div>
+      <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#9888;</div><div style="font-size:2em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.82em;opacity:0.9;">Bajo Minimo</div></div>
+      <div style="background:#3498db;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128202;</div><div style="font-size:2em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.82em;opacity:0.9;">Mov. Esta Semana</div></div>
+      <div style="background:#9b59b6;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128229;</div><div style="font-size:2em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.82em;opacity:0.9;">Entradas Este Mes</div></div>
     </div>
-
-    <!-- Panel de alertas bajo minimo -->
     <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
-
-    <!-- Layout: tabla de stock + formulario -->
     <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
-
-      <!-- Tabla de stock MEE -->
       <div>
         <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
-          <select id="mee-cat-filter" style="flex:1;width:auto;" onchange="cargarMeeStock()">
-            <option value="">Todas las categorias</option>
-          </select>
+          <select id="mee-cat-filter" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
           <button onclick="cargarMeeStock()" style="white-space:nowrap;">&#8635; Actualizar</button>
         </div>
         <div style="overflow-x:auto;">
-          <table class="table" id="mee-stock-table">
-            <thead><tr>
-              <th>Codigo</th><th>Descripcion</th><th>Categoria</th>
-              <th>Stock</th><th>Minimo</th><th>Estado</th><th>Ultimo Mov.</th><th>Rotacion</th>
-            </tr></thead>
-            <tbody id="mee-stock-tbody"><tr><td colspan="8" style="text-align:center;color:#999;">Cargando...</td></tr></tbody>
-          </table>
+          <table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Ultimo Mov.</th><th>Rotacion</th></tr></thead>
+          <tbody id="mee-stock-tbody"><tr><td colspan="8" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
         </div>
       </div>
-
-      <!-- Formulario de movimiento -->
       <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
         <h3 style="margin-bottom:14px;color:#2B7A78;font-size:1em;">&#9998; Registrar Movimiento</h3>
-        <div class="form-group">
-          <label>Tipo</label>
+        <div class="form-group"><label>Tipo</label>
           <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
-            <option value="Entrada">&#128229; Entrada — recepcion de empaque</option>
-            <option value="Salida">&#128228; Salida — consumo en produccion</option>
+            <option value="Entrada">&#128229; Entrada - recepcion</option>
+            <option value="Salida">&#128228; Salida - consumo en produccion</option>
             <option value="Ajuste">&#9878; Ajuste de inventario</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Material MEE</label>
-          <select id="mee-codigo-sel" onchange="meeSelChange()">
-            <option value="">-- Seleccionar material --</option>
-          </select>
-        </div>
+          </select></div>
+        <div class="form-group"><label>Material MEE</label>
+          <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
         <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin-bottom:10px;font-size:0.88em;color:#1a4a6b;"></div>
-        <div class="form-group">
-          <label>Cantidad</label>
-          <input type="number" id="mee-cantidad" min="1" step="1" placeholder="0">
-        </div>
-        <div class="form-group">
-          <label>Unidad</label>
-          <input type="text" id="mee-unidad" value="und" placeholder="und / cajas / frascos / rollos">
-        </div>
-        <div id="mee-lote-group" class="form-group">
-          <label>Lote / Ref. proveedor</label>
-          <input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001">
-        </div>
-        <div id="mee-batch-group" class="form-group" style="display:none;">
-          <label>Batch de produccion</label>
-          <input type="text" id="mee-batch" placeholder="Ej: BATCH-2026-001">
-        </div>
-        <div class="form-group">
-          <label>Observaciones</label>
-          <textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea>
-        </div>
-        <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar Movimiento</button>
+        <div class="form-group"><label>Cantidad</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0"></div>
+        <div class="form-group"><label>Unidad</label><input type="text" id="mee-unidad" value="und" placeholder="und / cajas / frascos"></div>
+        <div id="mee-lote-group" class="form-group"><label>Lote / Ref. proveedor</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
+        <div id="mee-batch-group" class="form-group" style="display:none;"><label>Batch de produccion</label><input type="text" id="mee-batch" placeholder="Ej: BATCH-2026-001"></div>
+        <div class="form-group"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
+        <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
       </div>
     </div>
-
-    <!-- Historial de movimientos MEE -->
     <div style="margin-bottom:22px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <h3 style="color:#444;">Historial de Movimientos</h3>
         <button onclick="cargarMeeHistorial()" style="background:#555;">Ver todos</button>
       </div>
       <div style="overflow-x:auto;">
-        <table class="table">
-          <thead><tr>
-            <th>#</th><th>Codigo</th><th>Descripcion</th><th>Tipo</th>
-            <th>Cantidad</th><th>Lote / Batch</th><th>Responsable</th><th>Fecha</th><th></th>
-          </tr></thead>
-          <tbody id="mee-hist-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
-        </table>
+        <table class="table"><thead><tr><th>#</th><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th>Cantidad</th><th>Lote/Batch</th><th>Responsable</th><th>Fecha</th><th></th></tr></thead>
+        <tbody id="mee-hist-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody></table>
       </div>
     </div>
-
-    <!-- Trazabilidad MEE -->
     <div style="background:#f0f8f0;border:1px solid #c3e6cb;border-radius:10px;padding:20px;">
       <h3 style="margin-bottom:12px;color:#155724;">&#128269; Trazabilidad MEE</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
         <div>
           <label style="font-weight:600;font-size:0.88em;color:#155724;">Por Batch de Produccion</label>
-          <div style="display:flex;gap:8px;margin-top:5px;">
-            <input type="text" id="mee-traz-batch" placeholder="Ej: BATCH-2026-001" style="flex:1;">
-            <button onclick="buscarTrazabilidadBatch()" style="white-space:nowrap;background:#155724;">Buscar</button>
-          </div>
-          <p style="font-size:0.8em;color:#666;margin-top:4px;">Muestra todo el empaque consumido en ese batch</p>
+          <div style="display:flex;gap:8px;margin-top:5px;"><input type="text" id="mee-traz-batch" placeholder="Ej: BATCH-2026-001" style="flex:1;"><button onclick="buscarTrazabilidadBatch()" style="white-space:nowrap;background:#155724;">Buscar</button></div>
         </div>
         <div>
           <label style="font-weight:600;font-size:0.88em;color:#155724;">Por Codigo MEE</label>
-          <div style="display:flex;gap:8px;margin-top:5px;">
-            <input type="text" id="mee-traz-codigo" placeholder="Ej: MEE-CAJ-001" style="flex:1;">
-            <button onclick="buscarTrazabilidadMee()" style="white-space:nowrap;background:#155724;">Buscar</button>
-          </div>
-          <p style="font-size:0.8em;color:#666;margin-top:4px;">Muestra todos los batches donde se uso este material</p>
+          <div style="display:flex;gap:8px;margin-top:5px;"><input type="text" id="mee-traz-codigo" placeholder="Ej: MEE-CAJ-001" style="flex:1;"><button onclick="buscarTrazabilidadMee()" style="white-space:nowrap;background:#155724;">Buscar</button></div>
         </div>
       </div>
       <div id="mee-traz-result"></div>
     </div>
   </div>
-  <!-- ═══════════════════════════════ /TAB EMPAQUE MEE ═══════════════════════════════ -->
+  <!-- ==================== /TAB EMPAQUE MEE ==================== -->
 
   </div>
 
 </div>
+
+<div id="acondicionamiento" class="tab-content">
+<div style="padding:18px">
+<h2 style="margin:0 0 14px;color:#1a4a7a">&#128230; Acondicionamiento PT</h2>
+<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Batch de Acondicionamiento</h3>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+<div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Presentación</label><input id="ac-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="2000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Unidades Producidas</label><input id="ac-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+</div>
+<div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="ac-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
+<button onclick="registrarAcond()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Registrar Batch</button>
+</div>
+<div id="ac-table-wrap">
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Presentación</th><th style="padding:8px">Batch(g)</th><th style="padding:8px">Uds</th><th style="padding:8px">Fecha</th><th style="padding:8px">Operador</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
+<tbody id="ac-tbody"></tbody>
+</table></div>
+</div></div>
+
+<div id="liberacion" class="tab-content">
+<div style="padding:18px">
+<h2 style="margin:0 0 14px;color:#1a4a7a">&#9989; Liberación & Entrega</h2>
+<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para Liberación</h3>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+<div><label style="font-size:12px;color:#555">Lote PT</label><input id="lb-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Producto</label><input id="lb-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Presentación</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Unidades</label><input id="lb-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Fecha Producción</label><input id="lb-fprod" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Destino</label><select id="lb-dest" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px"><option value="ANIMUS">ANÍMUS Lab</option><option value="MAQUILA">Maquila</option><option value="OTRO">Otro</option></select></div>
+</div>
+<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+<div><label style="font-size:12px;color:#555">Cliente</label><input id="lb-cli" placeholder="Nombre cliente" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Observaciones</label><input id="lb-obs" placeholder="Observaciones CC" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+</div>
+<button onclick="registrarLiberacion()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Enviar a Control de Calidad</button>
+</div>
+<div style="margin-bottom:10px">
+<button onclick="loadLiberaciones('')" style="background:#6c757d;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Todas</button>
+<button onclick="loadLiberaciones('Pendiente CC')" style="background:#fd7e14;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Pendiente CC</button>
+<button onclick="loadLiberaciones('Liberado')" style="background:#28a745;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Liberadas</button>
+<button onclick="loadLiberaciones('Rechazado')" style="background:#dc3545;color:#fff;padding:5px 12px;border:none;border-radius:4px;cursor:pointer">Rechazadas</button>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Uds</th><th style="padding:8px">Destino</th><th style="padding:8px">Cliente</th><th style="padding:8px">F.Prod</th><th style="padding:8px">F.Lib</th><th style="padding:8px">Aprobado por</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
+<tbody id="lb-tbody"></tbody>
+</table>
+</div></div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
-  var ES_ADMIN={es_admin};
 document.addEventListener('DOMContentLoaded',function(){
   var c=document.getElementById('oper-chip');
   if(c&&OPER_ACTUAL) c.innerHTML='<span>&#128100; '+OPER_ACTUAL+'</span>';
@@ -986,7 +950,7 @@ function abrirAjusteIdx(idx){
 async function abrirAjuste(mid,mn,lt,sa){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
-  document.getElementById('ajuste-info').textContent=mid+' \u2014 '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
+  document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
   document.getElementById('ajuste-sistema').value=sa;
   document.getElementById('ajuste-fisico').value='';
   document.getElementById('ajuste-obs').value='';
@@ -1001,10 +965,10 @@ async function abrirAjuste(mid,mn,lt,sa){
 async function actualizarStockMinimo(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
   var val=parseFloat(document.getElementById('ajuste-smin').value);
-  if(isNaN(val)||val<0){document.getElementById('ajuste-smin-msg').innerHTML='<span style="color:red;">Valor inv\u00e1lido</span>';return;}
+  if(isNaN(val)||val<0){document.getElementById('ajuste-smin-msg').innerHTML='<span style="color:red;">Valor inválido</span>';return;}
   var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/stock-minimo',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stock_minimo:val})});
   var d=await r.json();
-  document.getElementById('ajuste-smin-msg').innerHTML=r.ok?'<span style="color:#28a745;">\u2713 Actualizado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  document.getElementById('ajuste-smin-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Actualizado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok) setTimeout(loadAlertasReabas,500);
 }
 async function registrarConsumo(){
@@ -1013,18 +977,18 @@ async function registrarConsumo(){
   if(isNaN(cant)||cant<=0){document.getElementById('ajuste-consumo-msg').innerHTML='<span style="color:red;">Cantidad positiva requerida</span>';return;}
   var r=await fetch('/api/consumo-manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_mp:mid,cantidad:cant,lote:_ajDat.lt||'',operador:OPER_ACTUAL})});
   var d=await r.json();
-  document.getElementById('ajuste-consumo-msg').innerHTML=r.ok?'<span style="color:#28a745;">\u2713 '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  document.getElementById('ajuste-consumo-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok){var ns=Math.max(0,(_ajDat.sa||0)-cant);document.getElementById('ajuste-sistema').value=ns;_ajDat.sa=ns;document.getElementById('ajuste-consumo').value='';setTimeout(loadStock,500);}
 }
 async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
-  if(!confirm('Archivar '+mid+' \u2014 '+(_ajDat.mn||'')+'\nQuedar\u00e1 oculto del cat\u00e1logo activo. \u00bfConfirmar?'))return;
+  if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
   var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
   var d=await r.json();
-  document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">\u2713 Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok) setTimeout(function(){cerrarAjuste();loadStock();},1500);
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';document.getElementById('modal-ajuste-body').innerHTML='';}
 function abrirSolIdx(ri){
   var a=(window._alertasData||[])[ri];if(!a)return;
   abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
@@ -1158,6 +1122,7 @@ async function cargarHistProd(){
 function switchTab(n,btn){
   document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
   document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.sub-tab-bar').forEach(function(b){b.classList.remove('visible');});
   document.getElementById(n).classList.add('active');
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
@@ -1173,6 +1138,33 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
 }
 
+
+function switchGroup(barId,defaultTab,mainBtn){
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.tab-button').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.sub-tab-bar').forEach(function(b){b.classList.remove('visible');});
+  if(mainBtn) mainBtn.classList.add('active');
+  var bar=document.getElementById(barId);
+  if(bar){ bar.classList.add('visible'); bar.querySelectorAll('.sub-btn').forEach(function(b){b.classList.remove('active');}); bar.querySelectorAll('.sub-btn').forEach(function(b){ if(b.getAttribute('onclick')&&b.getAttribute('onclick').indexOf("'"+defaultTab+"'")>=0) b.classList.add('active'); }); }
+  subSwitchTab(defaultTab,null,barId);
+}
+function subSwitchTab(tabId,btn,barId){
+  document.querySelectorAll('.tab-content').forEach(function(t){t.classList.remove('active');});
+  var bar=document.getElementById(barId);
+  if(bar){ bar.querySelectorAll('.sub-btn').forEach(function(b){b.classList.remove('active');}); }
+  if(btn) btn.classList.add('active');
+  var target=document.getElementById(tabId);
+  if(target) target.classList.add('active');
+  if(tabId==='stock'){loadStock();loadMEE();}
+  if(tabId==='formulas'||tabId==='produccion') loadFormulas();
+  if(tabId==='produccion') cargarHistProd();
+  if(tabId==='cuarentena') cargarCuarentena();
+  if(tabId==='ingreso') initIngreso();
+  if(tabId==='abc') loadABC();
+  if(tabId==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
+  if(tabId==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
+  if(tabId==='movimientos') loadMovimientos();
+}
 var _charts={};
 async function loadDashboard(){
   try{
@@ -1448,12 +1440,10 @@ function limpiarIngreso(){
 }
 async function cargarHistIngreso(){
   try{
-    if(ES_ADMIN){var th=document.getElementById('ing-hist-accion-th');if(th)th.style.display='';}
     var r=await fetch('/api/movimientos'),d=await r.json();
-    var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,50);
+    var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,20);
     var tb=document.querySelector('#ing-hist tbody'); if(!tb) return;
-    var cols=ES_ADMIN?9:8;
-    if(!entradas.length){tb.innerHTML='<tr><td colspan="'+cols+'" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
+    if(!entradas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
     var h='';
     entradas.forEach(function(m){
       h+='<tr><td style="font-family:monospace;font-size:0.85em;">'+(m.material_id||'')+'</td>';
@@ -1464,30 +1454,10 @@ async function cargarHistIngreso(){
       h+='<td style="text-align:right;font-weight:600;">'+m.cantidad.toLocaleString()+'</td>';
       h+='<td style="font-size:0.85em;">'+(m.proveedor||'')+'</td>';
       h+='<td style="color:#c0392b;font-size:0.85em;">'+(m.fecha_vencimiento?m.fecha_vencimiento.substring(0,10):'')+'</td>';
-      h+='<td style="font-size:0.82em;color:#888;">'+m.fecha.substring(0,10)+'</td>';
-      if(ES_ADMIN){
-        var le=(m.lote||'').replace(/'/g,"\\'");
-        var ne=(m.material_nombre||'').replace(/'/g,"\\'");
-        h+='<td style="text-align:center;"><button onclick="eliminarIngreso('+m.id+',\''+le+'\',\''+ne+'\')" style="padding:2px 8px;font-size:0.75em;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">x Eliminar</button></td>';
-      }
-      h+='</tr>';
+      h+='<td style="font-size:0.82em;color:#888;">'+m.fecha.substring(0,10)+'</td></tr>';
     });
     tb.innerHTML=h;
-  }catch(e){console.error('histIngreso:',e);}
-}
-async function eliminarIngreso(id,lote,nombre){
-  if(!confirm('Eliminar ingreso erroneo?\n\nLote: '+lote+'\nMP: '+nombre+'\n\nEsta accion no se puede deshacer.')) return;
-  try{
-    var r=await fetch('/api/movimientos/'+id,{method:'DELETE'});
-    var d=await r.json();
-    if(r.ok){
-      alert('Eliminado: '+d.message);
-      await cargarHistIngreso();
-      if(typeof loadLotes==='function') await loadLotes();
-    }else{
-      alert('Error: '+(d.error||'No autorizado'));
-    }
-  }catch(e){alert('Error de red al eliminar');}
+  }catch(e){}
 }
 function togglePTFields(){
   var checked=document.getElementById('prod-pt-check').checked;
@@ -1688,14 +1658,7 @@ async function loadMovimientos(){
         var btnAnular=esAnulado
           ?'<span style="color:#aaa;font-size:0.8em;">Anulado</span>'
           :'<button onclick="anularMovimiento('+m.id+')" style="background:#cc4444;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.82em;">Anular</button>';
-        return '<tr style="'+(esAnulado?'opacity:0.5;text-decoration:line-through;':'')+'">'
-          +'<td>'+m.material_nombre+'</td>'
-          +'<td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td>'
-          +'<td>'+t+'</td>'
-          +'<td style="font-size:0.82em;color:#888;">'+m.fecha+'</td>'
-          +'<td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td>'
-          +'<td>'+btnAnular+'</td>'
-          +'</tr>';
+        return '<tr style="'+(esAnulado?'opacity:0.5;text-decoration:line-through;':'')+'">'+'<td>'+m.material_nombre+'</td>'+'<td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td>'+'<td>'+t+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.fecha+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td>'+'<td>'+btnAnular+'</td>'+'</tr>';
       }).join('');
     }else{tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
   }catch(e){}
@@ -1754,10 +1717,9 @@ async function loadAlertasReabas(){
     window._alertasData=alertas;
     alertas.forEach(function(a,ri){
       var pct=a.stock_minimo>0?Math.round((a.stock_actual/a.stock_minimo)*100):0;
-      var critico=pct<25;
-      var urgente=pct>=25&&pct<50;
+      var critico=pct<25;var urgente=pct>=25&&pct<50;
       var color=critico?'#ffebeb':urgente?'#fff3e0':'#fffde7';
-      var badge=critico?'<span style="background:#cc0000;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">CR\u00cdTICO</span>':
+      var badge=critico?'<span style="background:#cc0000;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">CRÍTICO</span>':
                 urgente?'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">URGENTE</span>':
                 '<span style="background:#f57f17;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">BAJO</span>';
       var esMEE=a.tipo==='MEE';
@@ -1773,7 +1735,7 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:center;">'+badge+' '+pct+'%</td>';
-      var accion=esMEE?'<button onclick="switchTab(\'mee\',null)" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Ver MEE</button>':
+      var accion=esMEE?'<button onclick="switchTab(&apos;mee&apos;,null)" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Ver MEE</button>':
                        '<button onclick="abrirSolIdx('+ri+')" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Solicitar</button>';
       h+='<td style="text-align:center;">'+accion+'</td>';
       h+='</tr>';
@@ -1788,15 +1750,6 @@ async function loadAlertasReabas(){
 /* ===== MEE FUNCTIONS ===== */
 var MEE_CATS=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Frasco','Contorno','Otro'];
 
-function switchIngreso(t){
-  document.getElementById('ing-panel-mp').style.display=t==='mp'?'block':'none';
-  document.getElementById('ing-panel-mee').style.display=t==='mee'?'block':'none';
-  document.getElementById('ing-tab-mp').style.background=t==='mp'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mp').style.color=t==='mp'?'white':'#555';
-  document.getElementById('ing-tab-mee').style.background=t==='mee'?'#2B7A78':'#eee';
-  document.getElementById('ing-tab-mee').style.color=t==='mee'?'white':'#555';
-  if(t==='mee'){cargarSelectsMEE();loadHistMEE();}
-}
 async function cargarSelectsMEE(){
   var r=await fetch('/api/mee/stock'); var d=await r.json();
   _meeData=d.items||[];
@@ -1890,10 +1843,10 @@ async function verHistorialMEE(cod){
   var d=await r.json();
   var rows=d.movimientos||[];
   var html='<div style="max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
-    +'<thead style="background:#2B7A78;color:white;"><tr><th style="padding:7px;">Tipo</th><th>Cant.</th><th>Referencia</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>'
+    +'<thead style="background:#2B7A78;color:white;"><tr><th style="padding:7px;">Tipo</th><th>Cant.</th><th>Referencia</th><th>Operador</th><th>Fecha</th></tr></thead><tbody>'
     +rows.map(function(m){
       var col=m.tipo==='Entrada'?'#27ae60':m.tipo==='Ajuste'?'#f39c12':'#e74c3c';
-      return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+(m.lote_ref||m.batch_ref||'')+'</td><td style="padding:6px;">'+m.responsable+'</td><td style="padding:6px;font-size:11px;">'+(m.fecha||'').substring(0,16)+'</td></tr>';
+      return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;font-weight:700;">'+m.cantidad+'</td><td style="padding:6px;">'+(m.lote_ref||m.batch_ref||'')+'</td><td style="padding:6px;">'+m.responsable+'</td><td style="padding:6px;font-size:11px;">'+m.fecha.substring(0,16)+'</td></tr>';
     }).join('')+'</tbody></table></div>';
   document.getElementById('modal-ajuste-body').innerHTML='<div style="padding:16px;"><h3 style="color:#2B7A78;">Historial — '+cod+'</h3>'+html+'</div>';
   document.getElementById('modal-ajuste').style.display='flex';
@@ -2437,8 +2390,7 @@ async function cargarProgramacionCiclica(){
             + '<td style="padding:7px 12px;text-align:center;">'+accion+'</td>'
             + '</tr>';
     });
-    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;">'
-          + '<td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' — ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
+    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' — ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
     tbody.innerHTML = html;
   }catch(e){
     var tbody = document.getElementById('cnt-prog-rows');
@@ -2609,62 +2561,25 @@ async function cargarHistorialConteos(){
   }catch(e){}
 }
 
-// ═══════════════════════════ MÓDULO MEE — Empaque y Envase ═══════════════════════════
-
 async function cargarMeeAlertas(){
   try{
-    var r = await fetch('/api/mee/alertas');
-    var d = await r.json();
-    var res = d.resumen || {};
-    // Cards
-    var cTotal = document.getElementById('mee-c-total');
-    var cBajo  = document.getElementById('mee-c-bajo');
-    var cSem   = document.getElementById('mee-c-semana');
-    var cMes   = document.getElementById('mee-c-mes');
-    if(cTotal) cTotal.textContent = res.total_mee || 0;
-    if(cBajo){
-      cBajo.textContent = res.bajo_minimo || 0;
-      cBajo.closest('div').style.background = (res.bajo_minimo > 0) ? '#e74c3c' : '#27ae60';
-    }
-    if(cSem) cSem.textContent = res.movimientos_semana || 0;
-    if(cMes) cMes.textContent = res.entradas_mes || 0;
-    // Panel alertas
-    var panel = document.getElementById('mee-alertas-panel');
-    if(!panel) return;
-    if(d.bajo_minimo && d.bajo_minimo.length > 0){
-      var h = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;">';
-      h += '<strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock minimo</strong>';
-      h += '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
-      d.bajo_minimo.forEach(function(m){
-        var pct = Math.round(m.ratio*100);
-        var col = pct <= 0 ? '#e74c3c' : '#e67e22';
-        h += '<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;">';
-        h += '<span style="font-weight:700;color:'+col+';">'+m.descripcion+'</span> ';
-        h += '<span style="color:#888;">['+m.categoria+'] </span>';
-        h += '<span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+m.unidad+' ('+pct+'%)</span>';
-        h += '</div>';
-      });
-      h += '</div></div>';
-      if(d.obsolescencia && d.obsolescencia.length > 0){
-        h += '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;">';
-        h += '<strong>&#128337; '+d.obsolescencia.length+' materiales sin movimiento +90 dias:</strong> ';
-        h += d.obsolescencia.map(function(o){ return o.descripcion+' ('+o.stock_actual+' '+o.unidad+')'; }).join(' · ');
-        h += '</div>';
-      }
-      panel.innerHTML = h;
-    } else {
-      var hOk = '<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los materiales de empaque sobre stock minimo</div>';
-      if(d.obsolescencia && d.obsolescencia.length > 0){
-        hOk += '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;">';
-        hOk += '<strong>&#128337; '+d.obsolescencia.length+' materiales sin movimiento +90 dias:</strong> ';
-        hOk += d.obsolescencia.map(function(o){ return o.descripcion+' ('+o.stock_actual+' '+o.unidad+')'; }).join(' · ');
-        hOk += '</div>';
-      }
-      panel.innerHTML = hOk;
-    }
+    var r=await fetch('/api/mee/alertas'); var d=await r.json(); var res=d.resumen||{};
+    var cT=document.getElementById('mee-c-total'); var cB=document.getElementById('mee-c-bajo');
+    var cS=document.getElementById('mee-c-semana'); var cM=document.getElementById('mee-c-mes');
+    if(cT) cT.textContent=res.total_mee||0;
+    if(cB){ cB.textContent=res.bajo_minimo||0; var card=document.getElementById('mee-card-bajo'); if(card) card.style.background=(res.bajo_minimo>0)?'#e74c3c':'#27ae60'; }
+    if(cS) cS.textContent=res.movimientos_semana||0;
+    if(cM) cM.textContent=res.entradas_mes||0;
+    var panel=document.getElementById('mee-alertas-panel'); if(!panel) return;
+    if(d.bajo_minimo&&d.bajo_minimo.length>0){
+      var h='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;"><strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock minimo</strong><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
+      d.bajo_minimo.forEach(function(m){ var pct=Math.round(m.ratio*100); var col=pct<=0?'#e74c3c':'#e67e22'; h+='<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;"><span style="font-weight:700;color:'+col+';">'+m.descripcion+'</span> <span style="color:#888;">['+m.categoria+'] </span><span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+m.unidad+' ('+pct+'%)</span></div>'; });
+      h+='</div></div>';
+      if(d.obsolescencia&&d.obsolescencia.length>0){ h+='<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;margin-bottom:8px;"><strong>&#128337; Sin movimiento +90 dias:</strong> '+d.obsolescencia.map(function(o){return o.descripcion+' ('+o.stock_actual+')';}).join(' · ')+'</div>'; }
+      panel.innerHTML=h;
+    } else { panel.innerHTML='<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los MEE sobre stock minimo</div>'; }
   }catch(e){}
 }
-
 async function cargarMeeStock(){
   var cat = '';
   var sel = document.getElementById('mee-cat-filter');
@@ -2672,13 +2587,11 @@ async function cargarMeeStock(){
   try{
     var r = await fetch('/api/mee/stock?categoria='+encodeURIComponent(cat));
     var d = await r.json();
-    // Llenar filtro de categorias
     if(sel && d.categorias){
       var cur = sel.value;
       sel.innerHTML = '<option value="">Todas ('+d.total+')</option>';
       d.categorias.forEach(function(c){ sel.innerHTML += '<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+'</option>'; });
     }
-    // Llenar selector de formulario
     var codSel = document.getElementById('mee-codigo-sel');
     if(codSel && d.items){
       var cur2 = codSel.value;
@@ -2688,205 +2601,144 @@ async function cargarMeeStock(){
       });
       if(cur2) codSel.value = cur2;
     }
-    // Tabla
     var tb = document.getElementById('mee-stock-tbody');
     if(!tb) return;
     if(!d.items || !d.items.length){
-      tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
+      tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
-    var aColors = {critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
-    var aLabels = {critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
-    var hoy = new Date(); hoy.setHours(0,0,0,0);
-    var h = '';
+    var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
+    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
+    var hoy=new Date(); hoy.setHours(0,0,0,0);
+    var h='';
     d.items.forEach(function(m){
-      var c = aColors[m.alerta]||'#95a5a6';
-      var lbl = aLabels[m.alerta]||'';
-      var lastMov = (m.ultima_entrada||m.ultima_salida||'').substring(0,10);
-      var obsolBadge = m.obsoleto ? ' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>' : '';
-      // Rotacion: dias desde ultima salida (consumo)
-      var rotHtml = '<span style="color:#bbb;font-size:0.8em;">Sin salidas</span>';
+      var c=aC[m.alerta]||'#95a5a6';
+      var lbl=aL[m.alerta]||'';
+      var lastMov=(m.ultima_entrada||m.ultima_salida||'').substring(0,10);
+      var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
+      var rot='<span style="color:#bbb;font-size:0.8em;">Sin salidas</span>';
       if(m.ultima_salida){
-        var ds = Math.floor((hoy - new Date(m.ultima_salida.substring(0,10)))/864e5);
-        var rCol = ds<=30?'#27ae60':ds<=90?'#f39c12':'#e74c3c';
-        var rLbl = ds<=30?'Rapida':'Lenta >'+ds+'d';
-        if(ds<=30) rLbl='Rapida ('+ds+'d)'; else if(ds<=90) rLbl='Media ('+ds+'d)'; else rLbl='Lenta ('+ds+'d)';
-        rotHtml='<span style="color:'+rCol+';font-size:0.8em;font-weight:600;">'+rLbl+'</span>';
+        var ds=Math.floor((hoy-new Date(m.ultima_salida.substring(0,10)))/864e5);
+        var rc=ds<=30?'#27ae60':ds<=90?'#f39c12':'#e74c3c';
+        var rl=ds<=30?'Rapida ('+ds+'d)':ds<=90?'Media ('+ds+'d)':'Lenta ('+ds+'d)';
+        rot='<span style="color:'+rc+';font-size:0.8em;font-weight:600;">'+rl+'</span>';
       }
-      h += '<tr>';
-      h += '<td style="font-family:monospace;font-size:0.82em;color:#555;">'+m.codigo+'</td>';
-      h += '<td style="font-size:0.88em;">'+m.descripcion+obsolBadge+'</td>';
-      h += '<td style="font-size:0.8em;color:#777;">'+m.categoria+'</td>';
-      h += '<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td>';
-      h += '<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
-      h += '<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
-      h += '<td style="font-size:0.8em;color:#999;">'+(lastMov||'<span style="color:#ddd;">Ninguno</span>')+'</td>';
-      h += '<td>'+rotHtml+'</td>';
-      h += '</tr>';
+      h+='<tr>';
+      h+='<td style="font-family:monospace;font-size:0.82em;color:#555;">'+m.codigo+'</td>';
+      h+='<td style="font-size:0.88em;">'+m.descripcion+ob+'</td>';
+      h+='<td style="font-size:0.8em;color:#777;">'+m.categoria+'</td>';
+      h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td>';
+      h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
+      h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
+      h+='<td style="font-size:0.8em;color:#999;">'+(lastMov||'<span style="color:#ddd;">Ninguno</span>')+'</td>';
+      h+='<td>'+rot+'</td>';
+      h+='</tr>';
     });
-    tb.innerHTML = h;
+    tb.innerHTML=h;
   }catch(e){}
 }
-
-function meeActualizarTipo(tipo){
-  var isSalida = tipo === 'Salida';
-  var loteGrp  = document.getElementById('mee-lote-group');
-  var batchGrp = document.getElementById('mee-batch-group');
-  if(loteGrp)  loteGrp.style.display  = isSalida ? 'none' : 'block';
-  if(batchGrp) batchGrp.style.display = isSalida ? 'block' : 'none';
+function meeActualizarTipo(tipo){ var iS=tipo==='Salida'; var lg=document.getElementById('mee-lote-group'); var bg=document.getElementById('mee-batch-group'); if(lg) lg.style.display=iS?'none':'block'; if(bg) bg.style.display=iS?'block':'none'; }
+function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none';return;} var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
+async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var msg=document.getElementById('mee-form-msg');
+  if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
+  if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
+  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs})}); var res=await r.json();
+    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial();
+    } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
+  }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
 }
+async function cargarMeeHistorial(){ try{ var r=await fetch('/api/mee/movimientos?limit=30'); var d=await r.json(); var tb=document.getElementById('mee-hist-tbody'); if(!tb) return;
+  if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos registrados</td></tr>';return;}
+  var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'}; var h='';
+  d.movimientos.forEach(function(m){var c=tC[m.tipo]||'#555'; var ref=m.batch_ref||m.lote_ref||'';
+    h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td><button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
+  }); tb.innerHTML=h;
+  }catch(e){}}
+async function meeAnular(id){ var m=prompt('Motivo de anulacion (obligatorio):'); if(!m||!m.trim()){alert('Debes ingresar un motivo.');return;}
+  try{var r=await fetch('/api/mee/anular/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:m.trim()})}); var res=await r.json();
+    if(res.ok){alert(res.message);cargarMeeHistorial();cargarMeeStock();cargarMeeAlertas();}else alert(res.error||'Error');
+  }catch(e){alert('Error de conexion');}}
+async function buscarTrazabilidadBatch(){ var b=(document.getElementById('mee-traz-batch')||{}).value||''; b=b.trim(); if(!b){alert('Ingresa un batch');return;}
+  var res=document.getElementById('mee-traz-result'); if(res)res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
+  try{var r=await fetch('/api/mee/trazabilidad?batch='+encodeURIComponent(b)); var d=await r.json();
+    if(!d.consumos||!d.consumos.length){if(res)res.innerHTML='<div style="color:#999;padding:10px 0;">Sin consumos para batch: <strong>'+b+'</strong></div>';return;}
+    var h='<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;"><h4 style="margin-bottom:10px;color:#155724;">Empaque consumido en batch: <strong>'+b+'</strong></h4><table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Cantidad</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
+    d.consumos.forEach(function(c){h+='<tr><td style="font-family:monospace;font-size:0.82em;">'+c.mee_codigo+'</td><td>'+c.descripcion+'</td><td style="color:#777;font-size:0.8em;">'+c.categoria+'</td><td style="font-weight:700;">'+c.cantidad+' '+c.unidad+'</td><td>'+c.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(c.fecha?c.fecha.substring(0,16):'')+'</td></tr>';});
+    h+='</tbody></table></div>'; if(res)res.innerHTML=h;
+  }catch(e){if(res)res.innerHTML='<div style="color:#e74c3c;">Error</div>';}}
+async function buscarTrazabilidadMee(){ var cod=(document.getElementById('mee-traz-codigo')||{}).value||''; cod=cod.trim(); if(!cod){alert('Ingresa un codigo MEE');return;}
+  var res=document.getElementById('mee-traz-result'); if(res)res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
+  try{var r=await fetch('/api/mee/trazabilidad?codigo='+encodeURIComponent(cod)); var d=await r.json();
+    if(!d.historial||!d.historial.length){if(res)res.innerHTML='<div style="color:#999;padding:10px 0;">Sin historial para MEE: <strong>'+cod+'</strong></div>';return;}
+    var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'};
+    var h='<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;"><h4 style="margin-bottom:10px;color:#155724;">Historial de: <strong>'+cod+'</strong></h4><table class="table"><thead><tr><th>Tipo</th><th>Cantidad</th><th>Lote</th><th>Batch Prod.</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
+    d.historial.forEach(function(m){var c=tC[m.tipo]||'#555'; h+='<tr><td><span style="color:'+c+';font-weight:700;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' '+m.unidad+'</td><td style="font-size:0.82em;color:#777;">'+(m.lote_ref||'--')+'</td><td style="font-family:monospace;font-size:0.82em;">'+(m.batch_ref||'--')+'</td><td>'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td></tr>';});
+    h+='</tbody></table></div>'; if(res)res.innerHTML=h;
+  }catch(e){if(res)res.innerHTML='<div style="color:#e74c3c;">Error</div>';}}
 
-function meeSelChange(){
-  var sel  = document.getElementById('mee-codigo-sel');
-  var prev = document.getElementById('mee-stock-preview');
-  var und  = document.getElementById('mee-unidad');
-  if(!sel || !sel.value){ if(prev) prev.style.display='none'; return; }
-  var opt = sel.options[sel.selectedIndex];
-  var stock = opt.getAttribute('data-stock');
-  var unidad = opt.getAttribute('data-unidad') || 'und';
-  var min   = opt.getAttribute('data-min');
-  if(prev){
-    var ratio = min > 0 ? (stock/min*100).toFixed(0) : null;
-    var col = !ratio ? '#666' : (ratio < 100 ? '#e74c3c' : '#27ae60');
-    prev.style.display='block';
-    prev.innerHTML = '&#128230; Stock: <strong style="color:'+col+';">'+stock+' '+unidad+'</strong> &nbsp;|&nbsp; Minimo: <strong>'+min+' '+unidad+'</strong>'+(ratio ? ' &nbsp;('+ratio+'%)' : '');
-  }
-  if(und) und.value = unidad;
+
+function _toast(msg,ok){var t=document.createElement("div");t.style="position:fixed;bottom:24px;right:24px;background:"+(ok?"#27ae60":"#c0392b")+";color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-size:15px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.2);max-width:360px;transition:opacity 0.3s;";t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity="0";setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},300);},4000);}
+function registrarAcond(){
+  var d={lote:document.getElementById("ac-lote").value,producto:document.getElementById("ac-prod").value,presentacion:document.getElementById("ac-pres").value,cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,fecha:document.getElementById("ac-fecha").value,observaciones:document.getElementById("ac-obs").value};
+  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
+  fetch("/api/acondicionamiento",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
+  .then(function(r){return r.json();}).then(function(j){
+    if(j.ok){_toast("\u2705 Batch registrado correctamente #"+j.id,1);["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs"].forEach(function(i){document.getElementById(i).value="";});loadAcond();}
+    else _toast("Error: "+(j.error||"desconocido"),0);
+  }).catch(function(e){_toast("Error de red: "+e,0);});
 }
-
-async function registrarMeeMovimiento(){
-  var tipo     = (document.getElementById('mee-tipo')||{}).value;
-  var codigo   = (document.getElementById('mee-codigo-sel')||{}).value;
-  var cantidad = parseFloat((document.getElementById('mee-cantidad')||{}).value);
-  var unidad   = (document.getElementById('mee-unidad')||{}).value || 'und';
-  var lote     = (document.getElementById('mee-lote')||{}).value || '';
-  var batch    = (document.getElementById('mee-batch')||{}).value || '';
-  var obs      = (document.getElementById('mee-obs')||{}).value || '';
-  var msg      = document.getElementById('mee-form-msg');
-  if(!codigo){ if(msg) msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>'; return; }
-  if(!cantidad||cantidad<=0){ if(msg) msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida mayor que 0</div>'; return; }
-  try{
-    var r = await fetch('/api/mee/movimiento',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({tipo:tipo, codigo:codigo, cantidad:cantidad, unidad:unidad,
-                            lote_ref:lote, batch_ref:batch, observaciones:obs})
+function loadAcond(){
+  fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
+    var tb=document.getElementById("ac-tbody"); if(!tb)return;
+    tb.innerHTML="";
+    rows.forEach(function(r){
+      var estadoColor=r.estado==="Completado"?"#28a745":r.estado==="Rechazado"?"#dc3545":"#fd7e14";
+      var btn="";
+        if(r.estado==="En proceso") btn=`<button onclick="updateAcond(${r.id},'Completado')" style="background:#28a745;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px">Completar</button>`;
+        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${r.lote}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.producto}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.presentacion}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.cantidad_batch_g}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades_producidas}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.operador}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${estadoColor};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${r.estado}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btn}</td></tr>`;
     });
-    var res = await r.json();
-    if(res.ok){
-      var alertHtml = res.alerta ? '<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>' : '';
-      if(msg) msg.innerHTML='<div class="alert-success">'+res.message+' — Nuevo stock: <strong>'+res.stock_nuevo+'</strong>'+alertHtml+'</div>';
-      document.getElementById('mee-cantidad').value='';
-      document.getElementById('mee-lote').value='';
-      document.getElementById('mee-batch').value='';
-      document.getElementById('mee-obs').value='';
-      cargarMeeStock(); cargarMeeAlertas(); cargarMeeHistorial();
-    } else {
-      if(msg) msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>';
-    }
-  }catch(e){ if(msg) msg.innerHTML='<div class="alert-error">Error de conexion</div>'; }
+  }).catch(function(){});
+}
+function updateAcond(id,estado){
+  fetch("/api/acondicionamiento/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:estado})})
+  .then(function(){loadAcond();});
+}
+function registrarLiberacion(){
+  var d={lote:document.getElementById("lb-lote").value,producto:document.getElementById("lb-prod").value,presentacion:document.getElementById("lb-pres").value,unidades:parseInt(document.getElementById("lb-uds").value)||0,fecha_produccion:document.getElementById("lb-fprod").value,destino:document.getElementById("lb-dest").value,cliente:document.getElementById("lb-cli").value,observaciones:document.getElementById("lb-obs").value};
+  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
+  fetch("/api/liberacion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
+  .then(function(r){return r.json();}).then(function(j){
+    if(j.ok){_toast("\u2705 Lote enviado a CC #"+j.id,1);["lb-lote","lb-prod","lb-pres","lb-uds","lb-cli","lb-obs"].forEach(function(i){document.getElementById(i).value="";});loadLiberaciones("");}
+    else _toast("Error: "+(j.error||"desconocido"),0);
+  }).catch(function(e){_toast("Error: "+e,0);});
+}
+function loadLiberaciones(estado){
+  var url="/api/liberacion"+(estado?"?estado="+encodeURIComponent(estado):"");
+  fetch(url).then(function(r){return r.json();}).then(function(rows){
+    var tb=document.getElementById("lb-tbody"); if(!tb)return;
+    tb.innerHTML="";
+    rows.forEach(function(r){
+      var ec=r.estado==="Liberado"?"#28a745":r.estado==="Rechazado"?"#dc3545":"#fd7e14";
+      var btns="";
+      if(r.estado==="Pendiente CC"){
+            btns=`<button onclick="aprobarLib(${r.id})" style="background:#28a745;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px;margin-right:3px">Liberar</button>`;
+            btns+=`<button onclick="rechazarLib(${r.id})" style="background:#dc3545;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px">Rechazar</button>`;
+      }
+        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${r.lote}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.producto}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.destino}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.cliente||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha_produccion||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha_liberacion||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.aprobado_por||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${ec};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${r.estado}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btns}</td></tr>`;
+    });
+  }).catch(function(){});
+}
+function aprobarLib(id){
+  var cli=prompt("Cliente final (opcional):");
+  fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:"Liberado",cliente:cli||""})})
+  .then(function(){loadLiberaciones("");});
+}
+function rechazarLib(id){
+  var obs=prompt("Motivo de rechazo:");
+  if(!obs)return;
+  fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:"Rechazado",observaciones:obs})})
+  .then(function(){loadLiberaciones("");});
 }
 
-async function cargarMeeHistorial(){
-  try{
-    var r = await fetch('/api/mee/movimientos?limit=30');
-    var d = await r.json();
-    var tb = document.getElementById('mee-hist-tbody');
-    if(!tb) return;
-    if(!d.movimientos || !d.movimientos.length){
-      tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos registrados aun</td></tr>'; return;
-    }
-    var tColors = {Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'};
-    var h = '';
-    d.movimientos.forEach(function(m){
-      var c = tColors[m.tipo]||'#555';
-      var ref = m.batch_ref || m.lote_ref || '';
-      h += '<tr>';
-      h += '<td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td>';
-      h += '<td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td>';
-      h += '<td style="font-size:0.85em;">'+m.descripcion+'</td>';
-      h += '<td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td>';
-      h += '<td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td>';
-      h += '<td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'—')+'</td>';
-      h += '<td style="font-size:0.82em;">'+m.responsable+'</td>';
-      h += '<td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td>';
-      h += '<td><button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td>';
-      h += '</tr>';
-    });
-    tb.innerHTML = h;
-  }catch(e){}
-}
-
-async function meeAnular(id){
-  var motivo = prompt('Motivo de anulacion (obligatorio):');
-  if(!motivo||!motivo.trim()){ alert('Debes ingresar un motivo.'); return; }
-  try{
-    var r = await fetch('/api/mee/anular/'+id,{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({motivo: motivo.trim()})
-    });
-    var res = await r.json();
-    if(res.ok){ alert(res.message); cargarMeeHistorial(); cargarMeeStock(); cargarMeeAlertas(); }
-    else alert(res.error||'Error al anular');
-  }catch(e){ alert('Error de conexion'); }
-}
-
-async function buscarTrazabilidadBatch(){
-  var batch = (document.getElementById('mee-traz-batch')||{}).value||'';
-  batch = batch.trim();
-  if(!batch){ alert('Ingresa un batch de produccion'); return; }
-  var res = document.getElementById('mee-traz-result');
-  if(res) res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
-  try{
-    var r = await fetch('/api/mee/trazabilidad?batch='+encodeURIComponent(batch));
-    var d = await r.json();
-    if(!d.consumos || !d.consumos.length){
-      if(res) res.innerHTML='<div style="color:#999;padding:10px 0;">Sin consumos de empaque registrados para batch: <strong>'+batch+'</strong></div>'; return;
-    }
-    var h = '<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;">';
-    h += '<h4 style="margin-bottom:10px;color:#155724;">&#128203; Empaque consumido en batch: <strong>'+batch+'</strong></h4>';
-    h += '<table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Cantidad</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
-    d.consumos.forEach(function(c){
-      h += '<tr><td style="font-family:monospace;font-size:0.82em;">'+c.mee_codigo+'</td>';
-      h += '<td style="font-size:0.88em;">'+c.descripcion+'</td>';
-      h += '<td style="color:#777;font-size:0.8em;">'+c.categoria+'</td>';
-      h += '<td style="font-weight:700;">'+c.cantidad+' '+c.unidad+'</td>';
-      h += '<td>'+c.responsable+'</td>';
-      h += '<td style="font-size:0.8em;color:#888;">'+(c.fecha?c.fecha.substring(0,16):'')+'</td></tr>';
-    });
-    h += '</tbody></table></div>';
-    if(res) res.innerHTML = h;
-  }catch(e){ if(res) res.innerHTML='<div style="color:#e74c3c;">Error de conexion</div>'; }
-}
-
-async function buscarTrazabilidadMee(){
-  var codigo = (document.getElementById('mee-traz-codigo')||{}).value||'';
-  codigo = codigo.trim();
-  if(!codigo){ alert('Ingresa un codigo MEE'); return; }
-  var res = document.getElementById('mee-traz-result');
-  if(res) res.innerHTML='<div style="color:#666;padding:10px;">Buscando...</div>';
-  try{
-    var r = await fetch('/api/mee/trazabilidad?codigo='+encodeURIComponent(codigo));
-    var d = await r.json();
-    if(!d.historial || !d.historial.length){
-      if(res) res.innerHTML='<div style="color:#999;padding:10px 0;">Sin historial para MEE: <strong>'+codigo+'</strong></div>'; return;
-    }
-    var tColors = {Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'};
-    var h = '<div style="background:white;border-radius:8px;padding:14px;margin-top:4px;">';
-    h += '<h4 style="margin-bottom:10px;color:#155724;">&#128269; Historial de: <strong>'+codigo+'</strong></h4>';
-    h += '<table class="table"><thead><tr><th>Tipo</th><th>Cantidad</th><th>Lote</th><th>Batch Prod.</th><th>Responsable</th><th>Fecha</th></tr></thead><tbody>';
-    d.historial.forEach(function(m){
-      var c = tColors[m.tipo]||'#555';
-      h += '<tr><td><span style="color:'+c+';font-weight:700;">'+m.tipo+'</span></td>';
-      h += '<td style="font-weight:700;">'+m.cantidad+' '+m.unidad+'</td>';
-      h += '<td style="font-size:0.82em;color:#777;font-family:monospace;">'+(m.lote_ref||'—')+'</td>';
-      h += '<td style="font-family:monospace;font-size:0.82em;">'+(m.batch_ref||'—')+'</td>';
-      h += '<td>'+m.responsable+'</td>';
-      h += '<td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td></tr>';
-    });
-    h += '</tbody></table></div>';
-    if(res) res.innerHTML = h;
-  }catch(e){ if(res) res.innerHTML='<div style="color:#e74c3c;">Error de conexion</div>'; }
-}
-// ════════════════════════════════ /MÓDULO MEE ════════════════════════════════
 </script>
 </body>
 </html>
