@@ -510,6 +510,8 @@ def recibir_oc(numero_oc):
     oc_row = cur.fetchone()
     if not oc_row:
         conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    if oc_row[0] not in ('Autorizada', 'Parcial'):
+        conn.close(); return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
     cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
@@ -521,13 +523,15 @@ def recibir_oc(numero_oc):
     disc_r = 1 if data2.get('tiene_discrepancias') else 0
     items_r = data2.get('items_recepcion', [])
     receptor_nombre = data2.get('receptor_nombre', '') or operador
-    # Build lookup dict for items_recepcion data keyed by codigo_mp
-    rec_map = {ir.get('codigo_mp', ''): ir for ir in items_r}
+    # Build lookup por indice posicional (codigo_mp puede estar vacio en solicitudes)
+    rec_map_idx = {idx: ir for idx, ir in enumerate(items_r)}
+    # Fallback: lookup por codigo_mp para compatibilidad con clientes que lo envien
+    rec_map_cod = {ir.get('codigo_mp', ''): ir for ir in items_r if ir.get('codigo_mp', '')}
     ingresos = 0
     es_parcial = False
-    for item in items_oc:
+    for _idx, item in enumerate(items_oc):
         codigo, nombre, cantidad_pedida = item
-        ir = rec_map.get(codigo, {})
+        ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
         cant_recibida = float(ir.get('cantidad_recibida', 0) or cantidad_pedida)
         lote_num = ir.get('lote', '').strip()
         fv = ir.get('fecha_vencimiento', '').strip()

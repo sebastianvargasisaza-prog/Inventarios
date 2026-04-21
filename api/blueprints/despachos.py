@@ -36,6 +36,8 @@ def recepcion_panel():
 
 @bp.route('/api/recepcion/detalle/<numero_oc>')
 def recepcion_detalle_oc(numero_oc):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute(
         'SELECT numero_oc, proveedor, estado, categoria, fecha, '
@@ -65,12 +67,15 @@ def recepcion_detalle_oc(numero_oc):
 
 @bp.route('/api/recepcion/seguimiento')
 def recepcion_seguimiento():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute(
         'SELECT numero_oc, fecha, estado, proveedor, categoria, '
         'COALESCE(valor_total,0), COALESCE(fecha_recepcion,""), '
         'COALESCE(observaciones_recepcion,""), COALESCE(tiene_discrepancias,0), '
-        'COALESCE(fecha_pago,""), COALESCE(fecha_autorizacion,"") '
+        'COALESCE(fecha_pago,""), COALESCE(fecha_autorizacion,""), '
+        'COALESCE(recibido_por,"") '
         "FROM ordenes_compra WHERE estado IN ('Autorizada','Recibida','Pagada','Parcial') "
         'ORDER BY fecha DESC LIMIT 200')
     rows = c.fetchall()
@@ -79,13 +84,15 @@ def recepcion_seguimiento():
         {'numero_oc': r[0], 'fecha': r[1], 'estado': r[2], 'proveedor': r[3],
          'categoria': r[4], 'valor_total': r[5], 'fecha_recepcion': r[6],
          'observaciones': r[7], 'tiene_discrepancias': r[8],
-         'fecha_pago': r[9], 'fecha_autorizacion': r[10]}
+         'fecha_pago': r[9], 'fecha_autorizacion': r[10], 'recibido_por': r[11]}
         for r in rows
     ])
 
 
 @bp.route('/api/recepcion/lotes-cuarentena')
 def recepcion_lotes_cuarentena():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT id, material_id, material_nombre, cantidad, lote,
                         fecha_vencimiento, proveedor, fecha, numero_oc
@@ -100,6 +107,8 @@ def recepcion_lotes_cuarentena():
 
 @bp.route('/api/recepcion/aprobar-lote', methods=['POST'])
 def recepcion_aprobar_lote():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     d = request.get_json() or {}
     mov_id = d.get('mov_id')
     nuevo_estado = d.get('estado', 'Aprobado')  # Aprobado o Rechazado
@@ -115,6 +124,8 @@ def recepcion_aprobar_lote():
 
 @bp.route('/api/recepcion/trazabilidad/<path:lote>')
 def recepcion_trazabilidad_lote(lote):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.cantidad,
                         m.lote, m.fecha_vencimiento, m.proveedor, m.fecha,
