@@ -1,4 +1,4 @@
-# blueprints/tecnica.py -- Modulo Tecnica & Aseguramiento
+# blueprints/tecnica.py — Módulo Técnica & Aseguramiento
 import os
 import sqlite3
 from datetime import datetime
@@ -10,7 +10,7 @@ bp = Blueprint('tecnica', __name__)
 
 
 def _check_access():
-    return bool(session.get('compras_user'))
+    return True  # auth eliminada — solo compras/gerencia requieren login
 
 
 def _init_tecnica():
@@ -70,6 +70,7 @@ def _init_tecnica():
 _init_tecnica()
 
 
+# ── Página ─────────────────────────────────────────────────────────────────
 @bp.route('/tecnica')
 def tecnica_page():
     if not _check_access():
@@ -77,6 +78,7 @@ def tecnica_page():
     return Response(TECNICA_HTML, mimetype='text/html')
 
 
+# ── Dashboard ──────────────────────────────────────────────────────────────
 @bp.route('/api/tecnica/dashboard')
 def tecnica_dashboard():
     if not _check_access():
@@ -102,6 +104,7 @@ def tecnica_dashboard():
                  WHERE estado='Vigente' AND fecha_revision IS NOT NULL
                    AND fecha_revision <= date('now','+30 days')""")
     docs_revisar = c.fetchone()[0]
+    # Próximos vencimientos INVIMA
     c.execute("""SELECT producto, num_registro, fecha_vencimiento, estado
                  FROM registros_invima
                  WHERE fecha_vencimiento IS NOT NULL AND fecha_vencimiento != ''
@@ -122,6 +125,7 @@ def tecnica_dashboard():
     })
 
 
+# ── Fórmulas Maestras ──────────────────────────────────────────────────────
 @bp.route('/api/tecnica/formulas', methods=['GET', 'POST'])
 def formulas_list():
     if not _check_access():
@@ -168,12 +172,13 @@ def formula_update(fid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
     if sets:
-        c.execute("UPDATE formulas_maestras SET " + sets + " WHERE id=?", vals)
+        c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
         conn.commit()
     conn.close()
     return jsonify({'ok': True})
 
 
+# ── Fichas Técnicas ────────────────────────────────────────────────────────
 @bp.route('/api/tecnica/fichas', methods=['GET', 'POST'])
 def fichas_list():
     if not _check_access():
@@ -219,12 +224,13 @@ def ficha_update(fid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
     if sets:
-        c.execute("UPDATE fichas_tecnicas SET " + sets + " WHERE id=?", vals)
+        c.execute(f"UPDATE fichas_tecnicas SET {sets} WHERE id=?", vals)
         conn.commit()
     conn.close()
     return jsonify({'ok': True})
 
 
+# ── Registros INVIMA ───────────────────────────────────────────────────────
 @bp.route('/api/tecnica/invima', methods=['GET', 'POST'])
 def invima_list():
     if not _check_access():
@@ -271,12 +277,13 @@ def invima_update(rid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [rid]
     if sets:
-        c.execute("UPDATE registros_invima SET " + sets + " WHERE id=?", vals)
+        c.execute(f"UPDATE registros_invima SET {sets} WHERE id=?", vals)
         conn.commit()
     conn.close()
     return jsonify({'ok': True})
 
 
+# ── Documentos SGD ─────────────────────────────────────────────────────────
 @bp.route('/api/tecnica/documentos', methods=['GET', 'POST'])
 def documentos_list():
     if not _check_access():
@@ -324,7 +331,7 @@ def documento_update(did):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [did]
     if sets:
-        c.execute("UPDATE documentos_sgd SET " + sets + " WHERE id=?", vals)
+        c.execute(f"UPDATE documentos_sgd SET {sets} WHERE id=?", vals)
         conn.commit()
     conn.close()
     return jsonify({'ok': True})

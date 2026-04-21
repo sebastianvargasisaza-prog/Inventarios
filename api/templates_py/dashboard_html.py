@@ -1451,9 +1451,9 @@ async function cargarHistIngreso(){
     if(ES_ADMIN){var th=document.getElementById('ing-hist-accion-th');if(th)th.style.display='';}
     var r=await fetch('/api/movimientos'),d=await r.json();
     var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,50);
-    var tb=document.querySelector('#ing-hist tbody'); if(\!tb) return;
+    var tb=document.querySelector('#ing-hist tbody'); if(!tb) return;
     var cols=ES_ADMIN?9:8;
-    if(\!entradas.length){tb.innerHTML='<tr><td colspan="'+cols+'" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
+    if(!entradas.length){tb.innerHTML='<tr><td colspan="'+cols+'" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
     var h='';
     entradas.forEach(function(m){
       h+='<tr><td style="font-family:monospace;font-size:0.85em;">'+(m.material_id||'')+'</td>';
@@ -1476,7 +1476,7 @@ async function cargarHistIngreso(){
   }catch(e){console.error('histIngreso:',e);}
 }
 async function eliminarIngreso(id,lote,nombre){
-  if(\!confirm('Eliminar ingreso erroneo?\n\nLote: '+lote+'\nMP: '+nombre+'\n\nEsta accion no se puede deshacer.')) return;
+  if(!confirm('Eliminar ingreso erroneo?\n\nLote: '+lote+'\nMP: '+nombre+'\n\nEsta accion no se puede deshacer.')) return;
   try{
     var r=await fetch('/api/movimientos/'+id,{method:'DELETE'});
     var d=await r.json();

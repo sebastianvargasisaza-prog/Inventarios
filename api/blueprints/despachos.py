@@ -29,8 +29,6 @@ bp = Blueprint('despachos', __name__)
 
 @bp.route('/recepcion')
 def recepcion_panel():
-    if 'compras_user' not in session:
-        return redirect('/login?next=/recepcion')
     return Response(RECEPCION_HTML, mimetype='text/html')
 
 
@@ -100,8 +98,6 @@ def recepcion_lotes_cuarentena():
 
 @bp.route('/api/recepcion/aprobar-lote', methods=['POST'])
 def recepcion_aprobar_lote():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
     d = request.get_json() or {}
     mov_id = d.get('mov_id')
     nuevo_estado = d.get('estado', 'Aprobado')  # Aprobado o Rechazado

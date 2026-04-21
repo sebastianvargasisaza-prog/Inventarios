@@ -574,8 +574,6 @@ def get_mp(codigo):
 @bp.route('/api/maestro-mps/<codigo>/stock-minimo', methods=['PUT'])
 def update_stock_minimo(codigo):
     """Actualiza el stock minimo de una MP."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     nuevo_min = d.get('stock_minimo')
     if nuevo_min is None:
@@ -590,8 +588,6 @@ def update_stock_minimo(codigo):
 @bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])
 def update_mee_stock_minimo(codigo):
     """Actualiza el stock minimo de un MEE."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     nuevo_min = d.get('stock_minimo')
     if nuevo_min is None:
@@ -606,8 +602,6 @@ def update_mee_stock_minimo(codigo):
 @bp.route('/api/consumo-manual', methods=['POST'])
 def consumo_manual():
     """Registra consumo manual de una MP (ajuste por uso)."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     codigo = (d.get('codigo_mp') or '').upper().strip()
     cantidad = float(d.get('cantidad') or 0)
@@ -630,8 +624,6 @@ def consumo_manual():
 @bp.route('/api/maestro-mps/<codigo>/archivar', methods=['PUT'])
 def archivar_mp(codigo):
     """Archiva una MP (la marca como inactiva sin borrarla)."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", (codigo,))
     if c.rowcount == 0:
@@ -806,8 +798,6 @@ def conteo_materiales_estanteria():
 
 @bp.route('/api/conteo/iniciar', methods=['POST'])
 def conteo_iniciar():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     est = d.get('estanteria', '')
     responsable = d.get('responsable', session.get('compras_user',''))
@@ -886,8 +876,6 @@ def conteo_programacion():
 
 @bp.route('/api/conteo/<int:conteo_id>/guardar', methods=['POST'])
 def conteo_guardar(conteo_id):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     items = d.get('items', [])
     UMBRAL_ESCALA = 0.05  # 5% -> escala a gerencia (BDG-PRO-002 num 8)
@@ -925,8 +913,6 @@ def conteo_guardar(conteo_id):
 
 @bp.route('/api/conteo/<int:conteo_id>/cerrar', methods=['POST'])
 def conteo_cerrar(conteo_id):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM conteo_items WHERE conteo_id=? AND requiere_gerencia=1 AND aprobado_gerencia=0", (conteo_id,))
     pendientes_gerencia = c.fetchone()[0]
@@ -939,8 +925,6 @@ def conteo_cerrar(conteo_id):
 
 @bp.route('/api/conteo/<int:conteo_id>/ajustar', methods=['POST'])
 def conteo_ajustar(conteo_id):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     user = session.get('compras_user','')
     d = request.json or {}
     item_id = d.get('item_id')
@@ -998,8 +982,6 @@ def conteo_get_items(conteo_id):
 
 @bp.route('/api/lotes/cc-review', methods=['POST'])
 def cc_review():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     user = session.get('compras_user', '')
     allowed = set(ADMIN_USERS) | {'hernando'}
     if user not in allowed:
@@ -1056,8 +1038,6 @@ def cc_review():
 @bp.route('/api/movimientos/<int:mov_id>/anular', methods=['POST'])
 def anular_movimiento(mov_id):
     """Anula un movimiento generando un contra-movimiento. Requiere autenticacion."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     user = session.get('compras_user', '')
     d = request.json or {}
     motivo = d.get('motivo', '').strip()
@@ -1545,8 +1525,6 @@ _init_mee_movimientos()
 @bp.route('/api/mee', methods=['POST'])
 def mee_crear():
     """Crea un nuevo material en maestro_mee."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     codigo      = d.get('codigo','').strip().upper()
     descripcion = d.get('descripcion','').strip()
@@ -1638,8 +1616,6 @@ def mee_stock_list():
 @bp.route('/api/mee/movimiento', methods=['POST'])
 def mee_registrar_movimiento():
     """Registra una entrada, salida o ajuste de empaque MEE."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.json or {}
     codigo      = d.get('codigo','').strip()
     tipo        = d.get('tipo','').strip()
@@ -1688,8 +1664,6 @@ def mee_registrar_movimiento():
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
     """Historial paginado de movimientos MEE."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     codigo = request.args.get('codigo','')
     tipo   = request.args.get('tipo','')
     limit  = min(int(request.args.get('limit', 50)), 200)
@@ -1759,8 +1733,6 @@ def mee_alertas_list():
 @bp.route('/api/mee/trazabilidad', methods=['GET'])
 def mee_trazabilidad():
     """Trazabilidad MEE: batch->empaque consumido  |  codigo->historial de batches."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     batch  = request.args.get('batch','').strip()
     codigo = request.args.get('codigo','').strip()
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -1794,8 +1766,6 @@ def mee_trazabilidad():
 @bp.route('/api/mee/anular/<int:mov_id>', methods=['POST'])
 def mee_anular_movimiento(mov_id):
     """Anula un movimiento MEE revirtiendo el impacto en stock."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'Autenticacion requerida'}), 401
     user = session.get('compras_user','')
     payload = request.json or {}
     motivo = payload.get('motivo','').strip()
@@ -1866,7 +1836,6 @@ _init_acondicionamiento()
 
 @bp.route('/api/acondicionamiento', methods=['GET', 'POST'])
 def acondicionamiento_list():
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
@@ -1891,7 +1860,6 @@ def acondicionamiento_list():
 
 @bp.route('/api/acondicionamiento/<int:aid>', methods=['PATCH'])
 def acondicionamiento_update(aid):
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
     d = request.get_json(silent=True) or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if 'estado' in d: c.execute("UPDATE acondicionamiento SET estado=? WHERE id=?", (d['estado'], aid))
@@ -1904,7 +1872,6 @@ def acondicionamiento_update(aid):
 
 @bp.route('/api/liberacion', methods=['GET', 'POST'])
 def liberacion_list():
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
@@ -1927,7 +1894,6 @@ def liberacion_list():
 
 @bp.route('/api/liberacion/<int:lid>', methods=['PATCH'])
 def liberacion_update(lid):
-    if 'compras_user' not in session: return jsonify({'error': 'Autenticacion requerida'}), 401
     u = session.get('compras_user', '')
     d = request.get_json(silent=True) or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()

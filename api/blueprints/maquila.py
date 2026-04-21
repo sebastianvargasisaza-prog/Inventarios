@@ -338,14 +338,10 @@ def recall_ejecutar():
 
 @bp.route('/hub-salida')
 def hub_salida_page():
-    if 'compras_user' not in session:
-        return redirect(url_for('core.login'))
     return Response(SALIDA_HTML, mimetype='text/html')
 
 @bp.route('/api/hub-salida/pedidos-pendientes')
 def hub_pedidos_pendientes():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, p.valor_total
                  FROM pedidos p
@@ -359,8 +355,6 @@ def hub_pedidos_pendientes():
 
 @bp.route('/api/hub-salida/pedido/<numero>')
 def hub_pedido_detalle(numero):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT p.numero, p.cliente_id, cl.nombre as cliente, p.fecha, p.estado, p.valor_total
                  FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id
@@ -378,8 +372,6 @@ def hub_pedido_detalle(numero):
 
 @bp.route('/api/hub-salida/stock/<sku>')
 def hub_stock_sku(sku):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""SELECT lote_pt, unidades_disponible, fecha_produccion
                  FROM stock_pt WHERE sku=? AND estado='Disponible' AND unidades_disponible>0
@@ -391,8 +383,6 @@ def hub_stock_sku(sku):
 
 @bp.route('/api/hub-salida/despachar', methods=['POST'])
 def hub_despachar():
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autenticado'}), 401
     d = request.get_json() or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM despachos"); n = (c.fetchone()[0] or 0) + 1
