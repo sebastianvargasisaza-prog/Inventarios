@@ -70,7 +70,7 @@ textarea{resize:vertical;min-height:80px}
 </head>
 <body>
 <div class="topbar">
-  <a href="/hub" class="hha-back">&#x1F3E0; Panel Central</a>
+  <a href="/modulos" class="hha-back">&#x1F4F1; M&#xF3;dulos</a>
   <div class="topbar-logo">&#128203; Compras &amp; Pagos</div>
   <div class="topbar-sub">Nueva Solicitud</div>
 </div>

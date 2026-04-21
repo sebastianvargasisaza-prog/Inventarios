@@ -57,7 +57,7 @@ textarea{resize:vertical;min-height:60px;}
 <div class="topbar">
   <span class="logo">ESPAGIRIA</span>
   <span class="badge">TECNICA</span>
-  <a href="/hub">&#x1F3E0; Panel Central</a>
+  <a href="/modulos">&#x1F4F1; M&#xF3;dulos</a>
 </div>
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-dash')">&#128200; Dashboard</div>

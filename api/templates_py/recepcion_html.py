@@ -84,7 +84,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 </head>
 <body>
 <div class="topbar">
-  <a href="/hub" class="hub-link">&#x1F3E0; Panel Central</a>
+  <a href="/modulos" class="hub-link">&#x1F4F1; M&#xF3;dulos</a>
   <h1>&#128230; Recepcion de Mercancia</h1>
 </div>
 <div class="container">

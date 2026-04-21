@@ -57,6 +57,14 @@ def hub():
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
 
+@bp.route('/modulos')
+def modulos():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/modulos')
+    from templates_py.modulos_html import MODULOS_HTML
+    usuario = session.get('compras_user', '')
+    return Response(MODULOS_HTML.replace('{usuario}', usuario), mimetype='text/html')
+
 @bp.route('/login', methods=['GET','POST'])
 def login():
     error = ''

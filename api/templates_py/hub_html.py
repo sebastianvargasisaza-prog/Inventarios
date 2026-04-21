@@ -102,6 +102,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   <a class="qn-btn" href="/compromisos">&#x2705; Compromisos</a>
   <a class="qn-btn" href="/solicitudes">&#x1F4DD; Solicitudes</a>
   <div class="qn-sep"></div>
+  <a class="qn-btn" href="/modulos" style="background:#1e3a5f;border-color:#3b82f6;color:#93c5fd;font-weight:700;">&#x1F4F1; Panel de M&#xF3;dulos</a>
+  <div class="qn-sep"></div>
   <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x23CF; Cerrar sesión</a>
 </div>
 

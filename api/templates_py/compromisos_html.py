@@ -69,7 +69,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <div class="topbar">
   <h1>&#x1F4CB; Compromisos — HHA Group</h1>
   <div class="tb-right">
-    <a href="/hub" style="font-weight:700;">&#x1F3E0; Panel Central</a>
+    <a href="/modulos" style="font-weight:700;">&#x1F4F1; M&#xF3;dulos</a>
     <a href="/gerencia">Gerencia</a>
   </div>
 </div>
