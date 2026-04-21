@@ -1974,7 +1974,7 @@ def acondicionamiento_list():
         # Auto-descontar MEE del maestro_mee
         lote_ref = d.get('lote', '')
         for item in mee_items:
-            cod = str(item.get('codigo_mee', '')).strip()
+            cod = str(item.get('codigo', item.get('codigo_mee', ''))).strip()
             cant = float(item.get('cantidad', 0) or 0)
             if not cod or cant <= 0: continue
             c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
