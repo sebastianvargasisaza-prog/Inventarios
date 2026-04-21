@@ -87,6 +87,10 @@ def init_db():
     for _rc in ["observaciones_recepcion TEXT DEFAULT ''", "tiene_discrepancias INTEGER DEFAULT 0"]:
         try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_rc}")
         except: pass
+    # IVA columns
+    for _iva in ["con_iva INTEGER DEFAULT 0", "valor_sin_iva REAL DEFAULT 0"]:
+        try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_iva}")
+        except: pass
     for _ri in ["estado_recepcion TEXT DEFAULT 'OK'", "notas_recepcion TEXT DEFAULT ''"]:
         try: c.execute(f"ALTER TABLE ordenes_compra_items ADD COLUMN {_ri}")
         except: pass

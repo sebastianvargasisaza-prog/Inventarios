@@ -293,8 +293,17 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <div id="rev-ibox" class="ibox" style="display:none"></div>
     </div>
     <div class="g2">
-      <div class="fg"><label>Valor Total ($)</label><input type="number" id="rev-val" min="0" step="0.01" placeholder="0"></div>
+      <div class="fg"><label>Valor base / subtotal ($)</label><input type="number" id="rev-val" min="0" step="0.01" placeholder="0" oninput="calcRevIva()"></div>
       <div class="fg"><label>Fecha entrega</label><input type="date" id="rev-fent"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin:6px 0 2px;">
+      <input type="checkbox" id="rev-iva-chk" onchange="calcRevIva()" style="width:16px;height:16px;cursor:pointer;">
+      <label for="rev-iva-chk" style="cursor:pointer;font-weight:600;font-size:13px;">Aplica IVA (19%)</label>
+    </div>
+    <div id="rev-iva-breakdown" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal</span><span id="rev-iva-sub">$0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#92400e;"><span>IVA 19%</span><span id="rev-iva-monto">$0</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="rev-iva-total">$0</span></div>
     </div>
     <div class="fg"><label>Observaciones</label><textarea id="rev-obs" placeholder="Notas de revision..."></textarea></div>
     <input type="hidden" id="rev-num">
@@ -606,7 +615,7 @@ function miniCard(o){
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
-    '<div class="cval">'+fmt(o.valor_total)+'</div>'+
+    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     '<div class="cmeta"><span>'+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
@@ -645,7 +654,7 @@ function fullCard(o,grp){
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
     '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span></div>'+
     (o.observaciones?'<div class="cobs">'+esc((o.observaciones||'').substring(0,90))+'</div>':'')+
-    '<div class="cval">'+fmt(o.valor_total)+'</div>'+
+    '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }
 
@@ -1071,17 +1080,38 @@ async function crearOCSugerida(){
 }
 
 // ─── Revisar ──────────────────────────────────────────────────────
-function openRev(num,prov,val,obs){
+function openRev(num,prov,val,obs,conIva,valBase){
+  var oc=OCS.find(function(o){ return o.numero_oc===num; })||{};
+  var ivaActivo=conIva!==undefined ? !!conIva : !!(oc.con_iva);
+  var base=valBase!==undefined ? valBase : (oc.valor_sin_iva>0 ? oc.valor_sin_iva : (ivaActivo ? parseFloat(val||0)/1.19 : parseFloat(val||0)));
   document.getElementById('rev-num').value=num;
   document.getElementById('rev-info').innerHTML='<strong>'+num+'</strong><br><span style="color:#78716c;">'+esc(obs||'-')+'</span>';
-  document.getElementById('rev-val').value=val||'';
+  document.getElementById('rev-val').value=base>0 ? base.toFixed(0) : (val||'');
+  document.getElementById('rev-iva-chk').checked=ivaActivo;
   document.getElementById('rev-obs').value='';
   document.getElementById('rev-fent').value='';
   document.getElementById('rev-ibox').style.display='none';
   fillProvSelect('rev-prov');
   document.getElementById('rev-prov').value=prov;
   if(prov) fillProv('rev-prov','rev-ibox');
+  calcRevIva();
   openModal('m-rev');
+}
+function calcRevIva(){
+  var base=parseFloat(document.getElementById('rev-val').value)||0;
+  var chk=document.getElementById('rev-iva-chk').checked;
+  var bd=document.getElementById('rev-iva-breakdown');
+  if(chk && base>0){
+    var iva=base*0.19;
+    var tot=base+iva;
+    var fmt2=function(n){ return '$'+Math.round(n).toLocaleString('es-CO'); };
+    document.getElementById('rev-iva-sub').textContent=fmt2(base);
+    document.getElementById('rev-iva-monto').textContent=fmt2(iva);
+    document.getElementById('rev-iva-total').textContent=fmt2(tot);
+    bd.style.display='block';
+  } else {
+    bd.style.display='none';
+  }
 }
 async function confirmarRev(){
   var num=document.getElementById('rev-num').value;
@@ -1092,7 +1122,10 @@ async function confirmarRev(){
   if(!prov){ alert('Selecciona proveedor'); return; }
   if(!val||parseFloat(val)<=0){ alert('Ingresa el valor total'); return; }
   try{
-    var body={proveedor:prov,valor_total:parseFloat(val),observaciones:obs};
+    var conIva=document.getElementById('rev-iva-chk').checked;
+    var baseVal=parseFloat(val)||0;
+    var totalVal=conIva ? Math.round(baseVal*1.19*100)/100 : baseVal;
+    var body={proveedor:prov,valor_total:totalVal,observaciones:obs,con_iva:conIva,valor_sin_iva:baseVal};
     if(fent) body.fecha_entrega_est=fent;
     var r=await fetch('/api/ordenes-compra/'+num+'/revisar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
@@ -1217,7 +1250,7 @@ var _detSol={estado:''}; // Solicitud abierta en modal detalle
 function _ocDetClose(){ closeModal('m-oc-det'); }
 function _ocDetAut(){ closeModal('m-oc-det'); autorizarOC(_detOC.numero_oc||''); }
 function _ocDetPago(){ closeModal('m-oc-det'); openPago(_detOC.numero_oc||'',parseFloat(_detOC.valor_total||0),_detOC.proveedor||''); }
-function _ocDetRev(){ closeModal('m-oc-det'); openRev(_detOC.numero_oc||'',_detOC.proveedor||'',parseFloat(_detOC.valor_total||0),(_detOC.observaciones||'').substring(0,80)); }
+function _ocDetRev(){ closeModal('m-oc-det'); openRev(_detOC.numero_oc||'',_detOC.proveedor||'',parseFloat(_detOC.valor_total||0),(_detOC.observaciones||'').substring(0,80),_detOC.con_iva,parseFloat(_detOC.valor_sin_iva||0)); }
 function _solDetClose(){ closeModal('m-sol-det'); }
 function _solDetApr(){ gestionarSol('Aprobada'); }
 function _solDetRech(){ gestionarSol('Rechazada'); }
@@ -1279,7 +1312,15 @@ async function openOCDetail(num){
     h+='<div><span style="color:#78716c;">Entrega est.:</span> '+(o.fecha_entrega_est?fdate(o.fecha_entrega_est):'-')+'</div>';
     h+='<div><span style="color:#78716c;">Creado por:</span> '+esc(o.creado_por||'-')+'</div>';
     h+='<div><span style="color:#78716c;">Autorizado por:</span> '+esc(o.autorizado_por||'-')+'</div>';
-    if(o.valor_total) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Valor total:</span> <strong style="font-size:15px;">'+fmt(o.valor_total)+'</strong></div>';
+    if(o.valor_total){
+      var ivaTxt='';
+      if(o.con_iva && o.valor_sin_iva>0){
+        var ivaAmt=Math.round(o.valor_sin_iva*0.19);
+        ivaTxt=' <span style="font-size:11px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 6px;margin-left:4px;">+IVA incl.</span>'
+          +'<div style="color:#78716c;font-size:11px;margin-top:2px;">Subtotal: '+fmt(o.valor_sin_iva)+' &nbsp;|&nbsp; IVA 19%: '+fmt(ivaAmt)+'</div>';
+      }
+      h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Valor total:</span> <strong style="font-size:15px;">'+fmt(o.valor_total)+'</strong>'+ivaTxt+'</div>';
+    }
     if(o.observaciones) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Observaciones:</span> '+esc(o.observaciones)+'</div>';
     h+='</div>';
     if(items.length){

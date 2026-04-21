@@ -185,7 +185,8 @@ def handle_ordenes_compra():
         "SELECT o.numero_oc, o.fecha, o.estado, o.proveedor, o.fecha_entrega_est,"
         " o.observaciones, o.creado_por, COUNT(i.id) as num_items,"
         " o.categoria, o.remision_code, o.autorizado_por,"
-        " COALESCE(o.valor_total, 0) as valor_total"
+        " COALESCE(o.valor_total, 0) as valor_total,"
+        " COALESCE(o.con_iva, 0) as con_iva, COALESCE(o.valor_sin_iva, 0) as valor_sin_iva"
         " FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc"
     )
     if cat_filter:
@@ -193,7 +194,8 @@ def handle_ordenes_compra():
     else:
         c.execute(_sql + " GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 300")
     cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones',
-            'creado_por','num_items','categoria','remision_code','autorizado_por','valor_total']
+            'creado_por','num_items','categoria','remision_code','autorizado_por','valor_total',
+            'con_iva','valor_sin_iva']
     rows = c.fetchall(); conn.close()
     return jsonify({'ordenes': [dict(zip(cols, r)) for r in rows]})
 
@@ -517,6 +519,9 @@ def revisar_oc(numero_oc):
         sets.append('valor_total=?'); params.append(float(d['valor_total'] or 0))
     if d.get('observaciones'):
         sets.append('observaciones=?'); params.append(str(d['observaciones']))
+    # IVA
+    sets.append('con_iva=?'); params.append(1 if d.get('con_iva') else 0)
+    sets.append('valor_sin_iva=?'); params.append(float(d.get('valor_sin_iva') or 0))
     params.append(numero_oc)
     cur.execute(f"UPDATE ordenes_compra SET {', '.join(sets)} WHERE numero_oc=?", params)
     conn.commit(); conn.close()
