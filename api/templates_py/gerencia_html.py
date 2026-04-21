@@ -65,7 +65,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 <body>
 <div class="topbar">
   <div class="topbar-left">
-    <a href="/" style="color:#a8a29e;text-decoration:none;font-size:12px;margin-right:4px;">&#8592; Inicio</a>
+    <a href="/hub" style="color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:600;margin-right:4px;">&#8962; Hub</a>
     <span class="logo">HHA GROUP</span>
     <span class="badge-ceo">PANEL GERENCIAL</span>
     <span class="periodo-badge" id="periodo-label">Cargando...</span>
@@ -73,7 +73,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div style="display:flex;align-items:center;gap:12px;">
     <button class="refresh-btn" onclick="loadKPIs()">⟳ Actualizar</button>
     <span class="ultima-act" id="ultima-actualizacion"></span>
-    <a href="/" style="font-size:12px;color:#a8a29e;text-decoration:none;">&#8592; Inicio</a>
+    <a href="/hub" style="font-size:12px;font-weight:700;color:#e2e8f0;text-decoration:none;border:1px solid rgba(255,255,255,0.25);padding:5px 12px;border-radius:6px;">&#8962; Panel</a>
   </div>
 </div>
 
@@ -201,11 +201,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
+    <a href="/hub" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.35);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
     <a href="/recepcion" style="background:rgba(43,122,120,0.2);border:1px solid rgba(43,122,120,0.4);color:#7ACFCC;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
     <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
     <a href="/compras" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
     <a href="/clientes" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
     <a href="/financiero" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">💰 Financiero</a>
+    <a href="/calidad" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔬 Calidad</a>
+    <a href="/rrhh" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👥 RRHH</a>
+    <a href="/tecnica" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔧 Técnica</a>
   </div>
 
 
