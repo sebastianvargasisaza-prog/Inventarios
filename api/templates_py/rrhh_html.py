@@ -135,7 +135,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 <body>
 <header>
   <div class="header-top">
-    <a href="/">&#8592; Inicio</a>
+    <a href="/hub" style="font-weight:700;">&#x1F3E0; Panel Central</a>
     <h1>&#128101; Recursos Humanos &mdash; HHA Group</h1>
     <span class="user-chip">{usuario}</span>
   </div>

@@ -63,7 +63,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 </head>
 <body>
 <div class="topbar">
-  <a href="/" class="rec-link">&#8592; Inicio</a>
+  <a href="/hub" class="rec-link">&#x1F3E0; Panel Central</a>
   <h1>&#128666; Hub de Salida — Despachos</h1>
 </div>
 <div class="container">

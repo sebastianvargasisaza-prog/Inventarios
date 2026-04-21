@@ -50,7 +50,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="topbar">
-  <a href="/" style="color:#a8a29e;text-decoration:none;font-size:13px;margin-right:8px;">&#8592; Inicio</a>
+  <a href="/hub" style="color:#fff;text-decoration:none;font-size:13px;font-weight:700;margin-right:8px;background:rgba(255,255,255,0.15);padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);">&#x1F3E0; Panel Central</a>
   <div class="topbar-title">💰 FINANCIERO — HHA GROUP</div>
   <div style="display:flex;gap:12px;align-items:center;">
     <span id="periodo-label" style="font-size:0.85em;opacity:0.85;"></span>

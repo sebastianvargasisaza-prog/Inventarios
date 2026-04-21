@@ -63,7 +63,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </head>
 <body>
 <div class="topbar">
-  <a href="/" class="hha-back">&#8592; Inicio</a>
+  <a href="/hub" class="hha-back">&#x1F3E0; Panel Central</a>
   <span class="topbar-title">&#x1F91D; MAQUILA 360 &amp; ALIADOS — HHA Group</span>
 </div>
 <div class="tabs">

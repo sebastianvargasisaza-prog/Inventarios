@@ -110,6 +110,26 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 </div>
 
 <div class="main">
+  <\!-- PANEL DE MÓDULOS -->
+  <!-- MODULOS -->
+  <div class="card card-full">
+    <div class="card-title" style="font-size:13px;color:#e2e8f0;">&#x1F4F1; Panel de M&#xF3;dulos</div>
+    <div class="module-grid" id="mod-grid">
+      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
+      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
+      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
+      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
+      <a class="mod-btn" href="/hub-salida"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/calidad"><span class="mod-icon">&#x1F52C;</span><span class="mod-name">Calidad</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/tecnica"><span class="mod-icon">&#x1F527;</span><span class="mod-name">Técnica</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/rrhh"><span class="mod-icon">&#x1F465;</span><span class="mod-name">RRHH</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/solicitudes"><span class="mod-icon">&#x1F4DD;</span><span class="mod-name">Solicitudes</span><span class="mod-badge mb-ok">activo</span></a>
+    </div>
+  </div>
+
   <!-- ALERTAS ACTIVAS -->
   <div class="card">
     <div class="card-title">&#x26A0; Requiere tu decision</div>
@@ -131,24 +151,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
     <a href="/compromisos" style="display:block;text-align:center;margin-top:10px;font-size:12px;color:#64748b;text-decoration:none;">Ver todos los compromisos &rarr;</a>
   </div>
 
-  <!-- MODULOS -->
-  <div class="card">
-    <div class="card-title">&#x1F5C4; Modulos del sistema</div>
-    <div class="module-grid" id="mod-grid">
-      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
-      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
-      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
-      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
-      <a class="mod-btn" href="/hub-salida"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/calidad"><span class="mod-icon">&#x1F52C;</span><span class="mod-name">Calidad</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/tecnica"><span class="mod-icon">&#x1F527;</span><span class="mod-name">Técnica</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/rrhh"><span class="mod-icon">&#x1F465;</span><span class="mod-name">RRHH</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/solicitudes"><span class="mod-icon">&#x1F4DD;</span><span class="mod-name">Solicitudes</span><span class="mod-badge mb-ok">activo</span></a>
-    </div>
-  </div>
 </div>
 
 <script>
