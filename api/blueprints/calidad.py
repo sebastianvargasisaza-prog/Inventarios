@@ -56,7 +56,7 @@ def calidad_dashboard():
     hoy = datetime.now().strftime('%Y-%m-%d')
     c.execute("SELECT COUNT(*) FROM calibraciones_instrumentos WHERE fecha_proxima < ? OR estado='Vencida'", (hoy,))
     cals_vencidas = c.fetchone()[0]
-    # PT liberados y rechazados últimos 30d
+    # PT liberados y rechazados ultimos 30d
     c.execute("""SELECT COUNT(*) FROM liberaciones
                  WHERE estado='Liberado'
                  AND fecha_liberacion >= date('now','-30 days')""")
@@ -67,14 +67,14 @@ def calidad_dashboard():
     rechazados_pt = c.fetchone()[0]
     total_lib = liberados_mes + rechazados_pt
     tasa_liberacion = round((liberados_mes / total_lib * 100), 1) if total_lib > 0 else None
-    # Actividad reciente: últimas NC + últimas acciones CC + últimas liberaciones PT
+    # Actividad reciente: últimas NC + últimas acciones CC
     actividad = []
-    c.execute("""SELECT descripcion, area, fecha, estado, impacto
+    c.execute("""SELECT 't#C' as tipo, descripcion, area, fecha, estado, impacto
                  FROM no_conformidades ORDER BY id DESC LIMIT 5""")
     for r in c.fetchall():
-        color = 'rojo' if r[1] in ('Alto','Critico') else 'amari'
-        actividad.append({'titulo': f'NC — {r[0][:55]}',
-                          'subtitulo': f'{r[1]} · {r[3]}', 'fecha': r[2], 'color': color})
+        color = 'rojo' if r[2] in ('Alto','Critico') else 'amari'
+        actividad.append({'titulo': f'NC — {r[1][:55]}',
+                          'subtitulo': f'{r[2]} · {r[4]}', 'fecha': r[3], 'color': color})
     c.execute("""SELECT material_nombre, lote, estado_lote, fecha
                  FROM movimientos WHERE tipo='Entrada'
                  AND estado_lote IN ('Aprobado','Rechazado')
@@ -89,8 +89,8 @@ def calidad_dashboard():
                  ORDER BY l.id DESC LIMIT 5""")
     for r in c.fetchall():
         color = 'verde' if r[2] == 'Liberado' else 'rojo'
-        cliente_txt = f' → {r[5]}' if r[5] else ''
-        actividad.append({'titulo': f'PT {r[2]} — {r[0][:40]}',
+        cliente_txt = f' -> {r[5]}' if r[5] else ''
+        actividad.append({'titulo': f'PT {r[2]} -- {r[0][:40]}',
                           'subtitulo': f'Lote {r[1] or "s/n"} · {r[4] or ""}{cliente_txt}',
                           'fecha': r[3] or '', 'color': color})
     actividad.sort(key=lambda x: x.get('fecha','') or '', reverse=True)
@@ -242,4 +242,36 @@ def completar_tarea_cron():
         c.execute("""INSERT INTO no_conformidades
                      (fecha,tipo,descripcion,area,responsable,impacto,
                       accion_correctiva,estado,creado_por)
-                     VALUES (date('
+                     VALUES (date('now'),'Proceso',?z,
+                     'Calidad','Jefe CC','Alto',
+                     ?,'Abierta',?)""",
+                  ('OOS detectado en cronograma: ' + nombre_tarea,
+                   d.get('observaciones',''),
+                   session.get('compras_user','')))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/calidad/cronograma/resumen')
+def resumen_cronograma():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM calidad_tareas WHERE activa=1")
+    total_tareas = c.fetchone()[0] or 1
+    dias = []
+    for i in range(6, -1, -1):
+        fecha = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
+        c.execute("""SELECT
+                       COUNT(*) as total_reg,
+                       SUM(CASE WHEN estado IN ('Completada','No aplica') THEN 1 ELSE 0 END) as comp,
+                       SUM(CASE WHEN estado='OOS' THEN 1 ELSE 0 END) as oos
+                     FROM calidad_registros WHERE fecha=?""", (fecha,))
+        row = c.fetchone()
+        dias.append({
+            'fecha': fecha,
+            'completadas': (row[1] or 0) + (row[2] or 0),
+            'oos': row[2] or 0,
+            'total_tareas': total_tareas
+        })
+    conn.close()
+    return jsonify({'dias': dias, 'total_tareas': total_tareas})
+
