@@ -753,7 +753,7 @@ def migrar_influencers():
         "SELECT numero,fecha,estado,solicitante,categoria,tipo,observaciones,numero_oc"
         " FROM solicitudes_compra"
         " WHERE (LOWER(solicitante) LIKE '%jeferson%' OR LOWER(solicitante) LIKE '%jefferson%')"
-        " ORDER BY fecha DESC")
+        " ORDER BY fecha ASC")
     cols = ['numero','fecha','estado','solicitante','categoria','tipo','observaciones','numero_oc']
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     for row in rows:
@@ -769,23 +769,32 @@ def migrar_influencers():
         num = row['numero']
         c.execute("UPDATE solicitudes_compra SET categoria=? WHERE numero=?",
                   ('Influencer/Marketing Digital', num))
-        if row['estado'] == 'Pendiente' and not row['numero_oc']:
-            c.execute("SELECT COUNT(*) FROM ordenes_compra")
-            n_oc = c.fetchone()[0] + 1
-            oc_num = 'OC-{}-{:04d}'.format(datetime.now().year, n_oc)
-            prov = row['tipo'] or 'Por definir'
-            obs = row['observaciones'] or ('Influencer - ' + num)
-            c.execute(
-                "INSERT INTO ordenes_compra"
-                " (numero_oc,fecha,estado,proveedor,observaciones,creado_por,valor_total,categoria)"
-                " VALUES (?,?,?,?,?,?,?,?)",
-                (oc_num, datetime.now().isoformat(), 'Autorizada', prov, obs,
-                 'sebastian', row['valor'] if row['valor'] > 0 else None,
-                 'Influencer/Marketing Digital'))
-            c.execute(
-                "UPDATE solicitudes_compra SET estado='Aprobada', numero_oc=?, aprobado_por='sebastian' WHERE numero=?",
-                (oc_num, num))
-            ocs_creadas.append(oc_num)
+        needs_oc = (row['estado'] in ('Pendiente','Aprobada')) and not row['numero_oc']
+        if needs_oc:
+            try:
+                c.execute("SELECT COUNT(*) FROM ordenes_compra")
+                n_oc = c.fetchone()[0] + 1
+                oc_num = 'OC-{}-{:04d}'.format(datetime.now().year, n_oc)
+                c.execute("SELECT numero_oc FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+                while c.fetchone():
+                    n_oc += 1
+                    oc_num = 'OC-{}-{:04d}'.format(datetime.now().year, n_oc)
+                    c.execute("SELECT numero_oc FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+                prov = row['tipo'] or 'Por definir'
+                obs = (row['observaciones'] or '')[:200] or ('Influencer - ' + num)
+                c.execute(
+                    "INSERT INTO ordenes_compra"
+                    " (numero_oc,fecha,estado,proveedor,observaciones,creado_por,valor_total,categoria)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (oc_num, datetime.now().isoformat(), 'Autorizada', prov, obs,
+                     'sebastian', row['valor'] if row['valor'] > 0 else None,
+                     'Influencer/Marketing Digital'))
+                c.execute(
+                    "UPDATE solicitudes_compra SET estado='Aprobada', numero_oc=?, aprobado_por='sebastian' WHERE numero=?",
+                    (oc_num, num))
+                ocs_creadas.append(oc_num)
+            except Exception as ex:
+                ocs_creadas.append('ERROR-' + num + ':' + str(ex)[:60])
         migradas.append(num)
     conn.commit()
     conn.close()
