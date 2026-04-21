@@ -881,11 +881,11 @@ function _solFillProv(){
   var nb=document.getElementById('sol-nuevo-prov-box');
   if(tb) tb.style.display = v==='__tercero__' ? 'block' : 'none';
   if(nb) nb.style.display = v==='__nuevo__' ? 'block' : 'none';
-  if(v\!=='__tercero__'&&v\!=='__nuevo__') fillProv('sol-prov-sel','sol-prov-ibox');
+  if(v!=='__tercero__'&&v!=='__nuevo__') fillProv('sol-prov-sel','sol-prov-ibox');
 }
 async function _guardarNuevoProv(){
   var nombre=(document.getElementById('snp-nombre')||{value:''}).value.trim();
-  if(\!nombre){ alert('El nombre del proveedor es obligatorio'); return; }
+  if(!nombre){ alert('El nombre del proveedor es obligatorio'); return; }
   var banco=(document.getElementById('snp-banco')||{value:''}).value.trim();
   var tipo=(document.getElementById('snp-tipo')||{value:'Ahorros'}).value;
   var cuenta=(document.getElementById('snp-cuenta')||{value:''}).value.trim();
@@ -985,7 +985,7 @@ function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-influencer')||{value:''}).value;
   var list=INFLUENCERS.filter(function(s){
-    if(st&&s.estado\!==st) return false;
+    if(st&&s.estado!==st) return false;
     if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
@@ -997,8 +997,8 @@ function renderInfluencers(){
   var el=document.getElementById('pills-influencer');
   var gel=document.getElementById('grid-influencer');
   if(el) el.innerHTML=pills;
-  if(\!gel) return;
-  if(\!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro de influencers</div>'; return; }
+  if(!gel) return;
+  if(!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro de influencers</div>'; return; }
   var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7'};
   var stFg={'Pendiente':'#92400e','Aprobada':'#166534'};
   gel.innerHTML=list.map(function(s){
