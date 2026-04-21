@@ -937,7 +937,7 @@ var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
 document.addEventListener('DOMContentLoaded',function(){
   // Restaurar operador desde localStorage si no vino por sesión
-  if(\!OPER_ACTUAL){
+  if(!OPER_ACTUAL){
     try{var saved=localStorage.getItem('espagiria_operador');if(saved)OPER_ACTUAL=saved;}catch(e){}
   }
   var c=document.getElementById('oper-chip');
