@@ -837,7 +837,7 @@ async function confirmarPago(){
 async function marcarRecibida(num){
   if(!confirm('Marcar '+num+' como Recibida?')) return;
   try{
-    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     await loadData();
@@ -1067,8 +1067,8 @@ function pagarInfluencer(oc_num, sol_num, valor){
   if(!oc_num){ alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return; }
   var confirmado=confirm('Confirmar pago ' + fmoney(valor) + ' para ' + sol_num + ' | OC: ' + oc_num + ' | Se registrará en Finanzas.');
   if(!confirmado) return;
-  fetch('/api/compras/oc/'+encodeURIComponent(oc_num)+'/pagar',{
-    method:'POST',headers:{'Content-Type':'application/json'},
+  fetch('/api/ordenes-compra/'+encodeURIComponent(oc_num)+'/pagar',{
+    method:'PATCH',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num})
   }).then(function(r){return r.json();}).then(function(d){
     if(d.ok){

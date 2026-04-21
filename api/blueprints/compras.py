@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, USER_EMAILS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -601,13 +601,17 @@ def rechazar_oc(numero_oc):
     if sol:
         cur.execute("UPDATE solicitudes_compra SET estado='Pendiente', observaciones=COALESCE(observaciones,'')||' | RECHAZADA por '||?||': '||? WHERE numero=?",
                     (usuario_actual, motivo, sol[0]))
+    # Get solicitante BEFORE closing connection
+    solicitante_email = ''
+    if sol:
+        cur.execute('SELECT solicitante FROM solicitudes_compra WHERE numero=?', (sol[0],))
+        _sr = cur.fetchone()
+        solicitante_email = (_sr[0] if _sr else '').lower().strip()
     conn.commit(); conn.close()
     # Send email notification to requester (non-blocking, best-effort)
-    if sol:
+    if sol and solicitante_email:
         try:
-            cur.execute('SELECT solicitante FROM solicitudes_compra WHERE numero=?', (sol[0],))
-            sol_row = cur.fetchone()
-            solicitante = (sol_row[0] if sol_row else '').lower().strip()
+            solicitante = solicitante_email
             dest_email = USER_EMAILS.get(solicitante, '')
             if dest_email:
                 import sys, threading
