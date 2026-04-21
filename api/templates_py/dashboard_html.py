@@ -713,7 +713,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <button onclick="buscarTrazabilidad()" style="padding:10px 24px;background:#667eea;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Buscar</button>
     </div>
-    <div id="trz-result" style="display:none;">
+    <div id="trz-result-lote" style="display:none;">
       <div style="background:#fff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:16px;">
         <h3 style="color:#2c3e50;margin:0 0 12px;">Ingreso del Lote</h3>
         <div id="trz-ingreso"></div>
@@ -820,7 +820,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
       <div>
         <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
-          <select id="mee-cat-filter" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <select id="mee-cat-filter-bodega" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
           <button onclick="cargarMeeStock()" style="white-space:nowrap;">&#8635; Actualizar</button>
         </div>
         <div style="overflow-x:auto;">
@@ -2246,11 +2246,11 @@ async function buscarTrazabilidad(){
     var data=await r.json();
     if(!data.ingreso){
       document.getElementById('trz-msg').innerHTML='<div class="alert-error">Lote no encontrado: '+lote+'</div>';
-      document.getElementById('trz-result').style.display='none';
+      document.getElementById('trz-result-lote').style.display='none';
       return;
     }
     document.getElementById('trz-msg').innerHTML='';
-    document.getElementById('trz-result').style.display='block';
+    document.getElementById('trz-result-lote').style.display='block';
     var ing=data.ingreso;
     document.getElementById('trz-ingreso').innerHTML=
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
@@ -2614,7 +2614,7 @@ async function cargarMeeAlertas(){
 }
 async function cargarMeeStock(){
   var cat = '';
-  var sel = document.getElementById('mee-cat-filter');
+  var sel = document.getElementById('mee-cat-filter-bodega') || document.getElementById('mee-cat-filter');
   if(sel) cat = sel.value || '';
   try{
     var r = await fetch('/api/mee/stock?categoria='+encodeURIComponent(cat));
