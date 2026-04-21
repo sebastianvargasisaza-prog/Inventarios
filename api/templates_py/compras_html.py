@@ -1065,7 +1065,7 @@ function renderInfluencers(){
 // ─── Pagar influencer ───────────────────────────────────────────────
 function pagarInfluencer(oc_num, sol_num, valor){
   if(!oc_num){ alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return; }
-  var confirmado=confirm('Confirmar pago de '+fmoney(valor)+' para '+sol_num+'\n\nOC: '+oc_num+'\n\nEsto registrará el pago en Finanzas (flujo de egresos).');
+  var confirmado=confirm('Confirmar pago ' + fmoney(valor) + ' para ' + sol_num + ' | OC: ' + oc_num + ' | Se registrará en Finanzas.');
   if(!confirmado) return;
   fetch('/api/compras/oc/'+encodeURIComponent(oc_num)+'/pagar',{
     method:'POST',headers:{'Content-Type':'application/json'},
