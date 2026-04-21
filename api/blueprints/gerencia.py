@@ -64,6 +64,10 @@ def gerencia_kpis():
     prod_mes = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Pendiente','Aprobada','Enviada')")
     ocs_pendientes = c.fetchone()[0] or 0
+    try:
+        c.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Pendiente'")
+        sol_pendientes = c.fetchone()[0] or 0
+    except: sol_pendientes = 0
     c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE estado='Disponible'")
     uds_pt = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Confirmado','En preparacion')")
@@ -87,10 +91,11 @@ def gerencia_kpis():
         'vencimientos': 'rojo' if lotes_vence_30 > 0 else ('amarillo' if lotes_vence_60 > 0 else 'verde'),
         'pt': 'rojo' if uds_pt < 100 else ('amarillo' if uds_pt < 500 else 'verde'),
         'pedidos': 'amarillo' if pedidos_activos > 0 else 'verde',
+        'solicitudes': 'amarillo' if sol_pendientes > 0 else 'verde',
     }
     return jsonify({'espagiria': {'mps_bajo_minimo': mps_bajo_minimo, 'mee_bajo_minimo': mee_bajo_minimo,
                                    'lotes_vence_30': lotes_vence_30,
-                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes},
+                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes, 'sol_pendientes': sol_pendientes},
                     'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
                     'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
 

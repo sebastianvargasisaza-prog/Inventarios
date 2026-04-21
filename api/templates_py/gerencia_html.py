@@ -116,6 +116,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
       <div class="kpi-lbl">OCs pendientes aprobación</div>
       <div class="kpi-sub" id="sub-ocs-val">—</div>
     </div>
+    <div class="kpi" id="kpi-sol-pend" style="cursor:pointer;" onclick="location.href='/compras'">
+      <div class="kpi-val" id="val-sol-pend">—</div>
+      <div class="kpi-lbl">Solicitudes a Compras</div>
+      <div class="kpi-sub" style="font-size:0.78em;opacity:0.6;">Pendientes de aprobar → /compras</div>
+    </div>
     <div class="kpi" id="kpi-mee-bajos">
       <div class="kpi-val" id="val-mee-bajos">—</div>
       <div class="kpi-lbl">MEE bajo mínimo</div>
@@ -290,6 +295,9 @@ async function loadKPIs(){
     document.getElementById('val-ocs').textContent=ocs;
     document.getElementById('sub-ocs-val').textContent='Valor: '+fmt(e.valor_ocs_pendientes||0);
     setKPIColor('kpi-ocs','val-ocs',ocs>3?'amarillo':'verde');
+    var solPend=e.sol_pendientes||0;
+    document.getElementById('val-sol-pend').textContent=solPend;
+    setKPIColor('kpi-sol-pend','val-sol-pend',solPend>0?'amarillo':'verde');
 
     // ÁNIMUS KPIs
     document.getElementById('val-uds-pt').textContent=fmtN(a.unidades_pt_disponibles||0);
@@ -317,6 +325,7 @@ async function loadKPIs(){
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vencen_60d>0?'amarillo':'verde')+'">'+(e.lotes_vencen_60d||0)+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+(e.lotes_produccion_mes||0)+' lotes / '+(e.kg_producidos_mes||0)+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:rgba(255,255,255,0.5);font-size:0.82em;">→ ver</a></span></div>';
     document.getElementById('detalle-inventario').innerHTML=di;
 
     // Detalle ÁNIMUS
@@ -334,6 +343,7 @@ async function loadKPIs(){
     if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> — Revisar stock MEE en módulo Compras.'});
     if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> — Revisar y usar en próximas producciones (FEFO).'});
     if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
+    if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> — Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
     if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
     if(f.saldo_caja>0&&f.nomina_total>0&&f.saldo_caja<f.nomina_total*2) alertas.push({icon:'🔴',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nóminas.'});
 
