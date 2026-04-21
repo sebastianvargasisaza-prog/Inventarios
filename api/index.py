@@ -34,6 +34,44 @@ app.config.update(
 )
 register_hooks(app)
 
+@app.route('/api/email-status')
+def email_status():
+    """Diagnostico de configuracion SMTP — solo admins."""
+    if session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    import sys as _sys
+    _api_dir2 = os.path.dirname(os.path.abspath(__file__))
+    _parent = os.path.dirname(_api_dir2)
+    _sys.path.insert(0, _parent)
+    try:
+        from notificaciones import SistemaNotificaciones
+        n = SistemaNotificaciones()
+        remitente = n.email_remitente
+        password_set = bool(n.contraseña)
+        # Enmascarar: muestra primeros 4 chars + ***
+        remitente_masked = (remitente[:4] + '***' + remitente[remitente.find('@'):]) if '@' in remitente else (remitente[:4] + '***' if remitente else '')
+        # Fuente de cada var
+        src_email = ('EMAIL_REMITENTE' if os.getenv('EMAIL_REMITENTE') else
+                     'SMTP_EMAIL'      if os.getenv('SMTP_EMAIL')      else 'NO CONFIGURADO')
+        src_pass  = ('EMAIL_PASSWORD'  if os.getenv('EMAIL_PASSWORD')  else
+                     'SMTP_PASSWORD'   if os.getenv('SMTP_PASSWORD')   else 'NO CONFIGURADO')
+        configurado = bool(remitente and password_set)
+        return jsonify({
+            'configurado': configurado,
+            'remitente': remitente_masked or 'NO CONFIGURADO',
+            'password_set': password_set,
+            'smtp_server': n.smtp_server,
+            'smtp_port': n.smtp_port,
+            'fuente_email': src_email,
+            'fuente_password': src_pass,
+            'advertencia': None if configurado else
+                'Email NO configurado. Define EMAIL_REMITENTE (o SMTP_EMAIL) y '
+                'EMAIL_PASSWORD (o SMTP_PASSWORD) como variables de entorno en Render.'
+        })
+    except Exception as e:
+        return jsonify({'configurado': False, 'error': str(e)}), 500
+
+
 # ─── Blueprints ───────────────────────────────────────────────────────────
 from blueprints.core import bp as core_bp
 from blueprints.hub import bp as hub_bp
