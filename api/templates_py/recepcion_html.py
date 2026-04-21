@@ -226,7 +226,9 @@ async function buscarOC() {
     var r = await fetch('/api/recepcion/detalle/' + encodeURIComponent(num));
     var d = await r.json();
     if (!r.ok || d.error) {
-      showMsg('oc-msg', d.error || 'OC no encontrada', 'err');
+      var msg = d.error || 'OC no encontrada';
+      if (r.status === 422) msg = '⛔ ' + msg;
+      showMsg('oc-msg', msg, 'err');
       document.getElementById('oc-section').style.display = 'none';
       return;
     }

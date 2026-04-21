@@ -46,6 +46,13 @@ def recepcion_detalle_oc(numero_oc):
     oc = c.fetchone()
     if oc is None:
         conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    _INTANGIBLE = ('SVC', 'CC', 'Influencer/Marketing Digital')
+    if oc[3] in _INTANGIBLE:
+        conn.close()
+        return jsonify({
+            'error': f'La OC {oc[0]} es de tipo {oc[3]} (intangible). '
+                     'No requiere recepcion fisica — se gestiona directamente en Compras.'
+        }), 422
     c.execute(
         'SELECT codigo_mp, nombre_mp, COALESCE(cantidad_g,0), '
         'COALESCE(precio_unitario,0), COALESCE(cantidad_recibida_g,0), '
@@ -77,6 +84,7 @@ def recepcion_seguimiento():
         'COALESCE(fecha_pago,""), COALESCE(fecha_autorizacion,""), '
         'COALESCE(recibido_por,"") '
         "FROM ordenes_compra WHERE estado IN ('Autorizada','Recibida','Pagada','Parcial') "
+        "AND categoria NOT IN ('SVC','CC','Influencer/Marketing Digital') "
         'ORDER BY fecha DESC LIMIT 200')
     rows = c.fetchall()
     conn.close()
