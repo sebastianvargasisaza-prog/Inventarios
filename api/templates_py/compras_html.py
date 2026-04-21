@@ -176,6 +176,16 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 
 <div id="pane-cc" class="pane">
+  <!-- Solicitudes Cuenta de Cobro pendientes de aprobacion gerencia -->
+  <div id="cc-solic-wrap" style="margin-bottom:20px;">
+    <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+      <span style="background:#fef3c7;color:#92400e;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;" id="cc-solic-badge">0</span>
+      Solicitudes pendientes de aprobaci&oacute;n
+    </div>
+    <div id="pills-cc-solic" class="pills"></div>
+    <div id="grid-cc-solic" class="grid"></div>
+  </div>
+  <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;border-top:1px solid #e7e5e4;padding-top:16px;">&#x1F4CB; &Oacute;rdenes de Compra CC</div>
   <div class="bar">
     <input type="text" id="q-cc" placeholder="Buscar..." oninput="renderCat('cc')">
     <select id="s-cc" onchange="renderCat('cc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
@@ -547,6 +557,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='influencer') loadInfluencers();
+    else if(tab==='cc'){ renderCat('cc'); loadCCSolicitudes(); }
     else{ renderCat(tab); if(tab==='mp') renderMPAlerts(); }
     var fab = document.getElementById('fab-btn');
     if(tab==='prov'||tab==='solic'||tab==='influencer'){ fab.style.display='none'; }
@@ -1353,6 +1364,7 @@ async function openOCDetail(num){
 // ─── Solicitudes para Catalina ────────────────────────────────────────
 var SOLIC=[];
 var INFLUENCERS=[];
+var CC_SOLIC=[];
 async function loadSolicitudes(){
   try{
     var r=await fetch('/api/solicitudes-compra');
@@ -1487,7 +1499,9 @@ function rechazarInfluencer(oc_num, sol_num){
 function renderSolicitudes(){
   var q=(document.getElementById('q-solic')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-solic')||{value:''}).value;
+  var _INTANGIBLE_CATS=['Influencer/Marketing Digital','Cuenta de Cobro'];
   var list=SOLIC.filter(function(s){
+    if(_INTANGIBLE_CATS.indexOf(s.categoria)>=0) return false;
     if(st&&s.estado!==st) return false;
     if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
     return true;
@@ -1521,7 +1535,47 @@ function renderSolicitudes(){
       +'</div>';
   }).join('');
 }
+async function loadCCSolicitudes(){
+  try{
+    var r=await fetch('/api/solicitudes-compra?categoria=Cuenta+de+Cobro');
+    var d=await r.json();
+    CC_SOLIC=d.solicitudes||[];
+  }catch(e){ CC_SOLIC=[]; }
+  renderCCSolicitudes();
+}
+function renderCCSolicitudes(){
+  var pend=CC_SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
+  var badge=document.getElementById('cc-solic-badge');
+  if(badge) badge.textContent=pend.length;
+  var pills=document.getElementById('pills-cc-solic');
+  var grid=document.getElementById('grid-cc-solic');
+  if(!grid) return;
+  if(!pend.length){
+    if(pills) pills.innerHTML='';
+    grid.innerHTML='<div class="empty" style="color:#86efac;">&#10003; Sin solicitudes pendientes</div>';
+    return;
+  }
+  if(pills) pills.innerHTML='<span class="pill y">Pendiente: '+pend.length+'</span>';
+  var urgColor={'Normal':'#16a34a','Urgente':'#d97706','Critico':'#dc2626'};
+  grid.innerHTML=pend.map(function(s){
+    var urg=s.urgencia||'Normal';
+    var urgC=urgColor[urg]||'#78716c';
+    var obs=(s.observaciones||'').substring(0,100);
+    var val=s.valor>0?(' &mdash; '+fmoney(s.valor)):'';  
+    return '<div class="card" style="border-left:3px solid #f59e0b;">'
+      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
+      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
+      +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
+      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
+      +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
+      +(s.fecha_requerida?'<span>Req: '+fdate(s.fecha_requerida)+'</span>':'')+'</div>'
+      +(obs?'<div class="cobs">'+esc(obs)+'</div>':'')
+      +'<div class="acts"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4CB; Revisar &amp; Aprobar</button></div>'
+      +'</div>';
+  }).join('');
+}
 async function openSolicitudDetail(num){
+
   openModal('m-sol-det');
   var body=document.getElementById('sol-det-body');
   var footer=document.getElementById('sol-det-footer');
@@ -1602,6 +1656,8 @@ async function openSolicitudDetail(num){
       fbtns+='<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
       if(s.categoria==='Influencer/Marketing Digital'){
         fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#7c3aed;">&#x1F4B8; Pagar directamente</button>';
+      } else if(s.categoria==='Cuenta de Cobro'){
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#d97706;">&#x1F4B3; Aprobar Cuenta de Cobro</button>';
       } else {
         fbtns+='<button class="btn bg" onclick="_solDetApr()">&#9654; Enviar a Autorización</button>';
       }
@@ -1637,13 +1693,14 @@ async function gestionarSol(decision){
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-sol-det');
-    await Promise.all([loadData(),loadSolicitudes(),loadInfluencers()]);
+    await Promise.all([loadData(),loadSolicitudes(),loadInfluencers(),loadCCSolicitudes()]);
     alert(decision==='Aprobada'?'Solicitud aprobada. OC generada: '+(d.numero_oc||''):'Solicitud rechazada.');
   }catch(e){ alert('Error: '+e); }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
 loadData();
+loadCCSolicitudes();
 </script>
 </body>
 </html>"""

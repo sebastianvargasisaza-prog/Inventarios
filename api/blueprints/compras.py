@@ -360,7 +360,11 @@ def handle_solicitudes_compra():
     if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
     filtro_categoria = request.args.get('categoria', '')
-    if filtro_categoria: sql += " AND categoria=?"; params.append(filtro_categoria)
+    if filtro_categoria:
+        sql += " AND categoria=?"; params.append(filtro_categoria)
+    else:
+        # Sin filtro explicito = vista de Catalina: excluir categorias de pago/gerencia
+        sql += " AND categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     sql += " ORDER BY fecha DESC LIMIT 200"
     c.execute(sql, params)
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida']
@@ -452,8 +456,10 @@ def actualizar_estado_solicitud(numero):
         cur.execute("SELECT COUNT(*) FROM ordenes_compra")
         n_oc = cur.fetchone()[0] + 1
         oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
-        # Influencer/Marketing Digital salta directo a Autorizada; resto queda en Revisada
-        estado_oc = 'Autorizada' if categoria_oc == 'Influencer/Marketing Digital' else 'Revisada'
+        # Influencer y Cuenta de Cobro saltan directo a Autorizada
+        # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
+        _FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+        estado_oc = 'Autorizada' if categoria_oc in _FAST_TRACK else 'Revisada'
         cur.execute(
             "INSERT INTO ordenes_compra "
             "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
