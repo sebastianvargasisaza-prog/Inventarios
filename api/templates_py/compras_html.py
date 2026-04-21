@@ -1036,8 +1036,8 @@ function renderInfluencers(){
     var obsCorta=(s.observaciones||'').substring(0,120);
     var btns='';
     if(s.estado==='Aprobada'){
-      btns='<button class="btn" style="background:#7c3aed;color:#fff;font-size:13px;" onclick="pagarInfluencer(''+esc(s.numero_oc||'')+'',''+esc(s.numero)+'','+Number(s.valor||0)+')">&#x1F4B8; Pagar</button>'
-          +'<button class="btn" style="background:#dc2626;color:#fff;font-size:13px;" onclick="rechazarInfluencer(''+esc(s.numero_oc||'')+'',''+esc(s.numero)+'')">&#x2715; Rechazar</button>';
+      btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;font-size:13px;">&#x1F4B8; Pagar</button>'
+          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#dc2626;color:#fff;font-size:13px;">&#x2715; Rechazar</button>';
     } else if(s.estado==='Pagada'){
       btns='<span style="color:#065f46;font-weight:600;font-size:13px;">&#x2713; Pagado</span>';
     } else if(s.estado==='Rechazada'){
@@ -1054,6 +1054,13 @@ function renderInfluencers(){
       +(btns?'<div class="acts">'+btns+'</div>':'')
       +'</div>';
   }).join('');
+  // Event delegation for pagar/rechazar buttons
+  gel.onclick=function(e){
+    var bp=e.target.closest('.inf-pagar');
+    var br=e.target.closest('.inf-rechazar');
+    if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
+    if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
+  };
 }
 // ─── Pagar influencer ───────────────────────────────────────────────
 function pagarInfluencer(oc_num, sol_num, valor){
