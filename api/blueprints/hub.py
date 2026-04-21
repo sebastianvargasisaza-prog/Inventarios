@@ -98,7 +98,7 @@ def hub_alertas():
             'accion':'/compras','oc_num':num,'valor':val})
     # OCs Autorizadas proximas a vencer (3 dias)
     en3 = (datetime.now() + __import__('datetime').timedelta(days=3)).strftime('%Y-%m-%d')
-    c.execute("SELECT numero_oc, proveedor, valor_total, fecha_entrega_est FROM ordenes_compra WHERE estado='Autorizada' AND fecha_entrega_est BETUÅEN ? AND ? ORDER BY fecha_entrega_est ASC", (hoy, en3))
+    c.execute("SELECT numero_oc, proveedor, valor_total, fecha_entrega_est FROM ordenes_compra WHERE estado='Autorizada' AND fecha_entrega_est BETWEEN ? AND ? ORDER BY fecha_entrega_est ASC", (hoy, en3))
     for row in c.fetchall():
         num, prov, val, fecha = row
         alertas.append({'nivel':'atencion','tipo':'pago_proximo','titulo':'Pago proximo',
