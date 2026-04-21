@@ -1146,7 +1146,7 @@ function switchTab(n,btn){
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
-  if(n==='liberacion') loadLiberaciones('');
+  if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
   if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
@@ -2798,10 +2798,37 @@ function loadLiberaciones(estado){
     });
   }).catch(function(){});
 }
+var _clientesLib=[];
+async function cargarClientesLib(){
+  try{var r=await fetch('/api/clientes');var d=await r.json();_clientesLib=(d.clientes||[]).filter(function(c){return c.activo;});}
+  catch(e){_clientesLib=[];}
+}
 function aprobarLib(id){
-  var cli=prompt("Cliente final (opcional):");
-  fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:"Liberado",cliente:cli||""})})
-  .then(function(){loadLiberaciones("");});
+  var opts=_clientesLib.map(function(c){return '<option value="'+c.nombre+'">'+c.nombre+'</option>';}).join('');
+  var modal=document.createElement('div');
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML='<div style="background:#fff;border-radius:10px;padding:28px 32px;min-width:340px;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,0.18);">'
+    +'<h3 style="margin:0 0 18px;color:#1a2332;font-size:1.1em;">&#128666; Confirmar Liberación</h3>'
+    +'<label style="font-size:0.85em;color:#555;display:block;margin-bottom:5px;">Cliente destino</label>'
+    +'<select id="lib-cli-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:0.93em;margin-bottom:14px;">'
+    +'<option value="">-- Seleccionar cliente --</option>'+opts
+    +'</select>'
+    +'<label style="font-size:0.85em;color:#555;display:block;margin-bottom:5px;">Observaciones (opcional)</label>'
+    +'<input id="lib-obs-inp" type="text" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:0.93em;margin-bottom:20px;box-sizing:border-box;" placeholder="Ej: Conforme CC, OK BPM...">'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;">'
+    +'<button onclick="this.closest(\'div\').parentElement.remove()" style="padding:8px 18px;border:1px solid #ccc;border-radius:6px;cursor:pointer;background:#f5f5f5;font-size:0.9em;">Cancelar</button>'
+    +'<button id="lib-confirm-btn" style="padding:8px 18px;background:#28a745;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9em;">&#10003; Liberar</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+  document.getElementById('lib-confirm-btn').onclick=function(){
+    var cli=document.getElementById('lib-cli-sel').value;
+    var obs=document.getElementById('lib-obs-inp').value;
+    modal.remove();
+    fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({estado:"Liberado",cliente:cli,observaciones:obs})})
+    .then(function(r){return r.json();})
+    .then(function(){_toast('✅ Liberado'+(cli?' → '+cli:''),1);loadLiberaciones('');});
+  };
 }
 function rechazarLib(id){
   var obs=prompt("Motivo de rechazo:");

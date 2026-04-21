@@ -129,7 +129,9 @@ textarea{resize:vertical;min-height:70px;}
     <div class="kpi"><div class="kpi-label">Aprobados (30d)</div><div class="kpi-val good" id="kv-aprobados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes aprobados</div></div>
     <div class="kpi"><div class="kpi-label">Rechazados (30d)</div><div class="kpi-val crit" id="kv-rechazados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes rechazados</div></div>
     <div class="kpi"><div class="kpi-label">NC Abiertas</div><div class="kpi-val warn" id="kv-nc">Ã¢ÂÂ</div><div class="kpi-sub">No conformidades</div></div>
-    <div class="kpi"><div class="kpi-label">Calibraciones Vencidas</div><div class="kpi-val crit" id="kv-cals">Ã¢ÂÂ</div><div class="kpi-sub">Requieren accion</div></div>
+    <div class="kpi"><div class="kpi-label">Calibraciones Vencidas</div><div class="kpi-val crit" id="kv-cals">Ã¢ÂÂ</div><div class="kpi-sub">Requieren accion</div>
+    <div class="kpi"><div class="kpi-label">PT Liberados (30d)</div><div class="kpi-val good" id="kv-lib-mes">—</div><div class="kpi-sub">Productos terminados</div></div>
+    <div class="kpi"><div class="kpi-label">Tasa Liberacion PT</div><div class="kpi-val good" id="kv-tasa-lib">—</div><div class="kpi-sub">% aprobados vs total</div></div></div>
   </div>
   <div class="card">
     <div class="card-title">Cumplimiento â Ultimos 7 dias</div>
@@ -269,6 +271,11 @@ async function loadDash(){
     document.getElementById('kv-rechazados').textContent=d.rechazados||0;
     document.getElementById('kv-nc').textContent=d.nc_abiertas||0;
     document.getElementById('kv-cals').textContent=d.cals_vencidas||0;
+    document.getElementById('kv-lib-mes').textContent=d.liberados_mes\!=null?d.liberados_mes:'-';
+    var tasa=d.tasa_liberacion;
+    var tasaEl=document.getElementById('kv-tasa-lib');
+    if(tasa\!=null){tasaEl.textContent=tasa+'%';tasaEl.className='kpi-val '+(tasa>=90?'good':(tasa>=70?'warn':'crit'));}
+    else{tasaEl.textContent='N/A';tasaEl.className='kpi-val';}
     const act=document.getElementById('act-list');
     
     loadWeekChart();

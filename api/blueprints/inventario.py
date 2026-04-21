@@ -2058,6 +2058,19 @@ def liberacion_update(lid):
                        uds_lib, uds_lib, precio_lib,
                        'ANIMUS', 'Disponible',
                        f'Liberacion aprobada por {u} — {pres_lib}'))
+        # Registrar en calidad como BPM completado
+        try:
+            _lib_val = lib[1] if lib else 'PT'
+            _lib_lote = lib[0] if lib else ''
+            _cli_dest = d.get('cliente','') or 'sin cliente'
+            c.execute("""INSERT INTO calidad_registros
+                         (fecha, tarea_id, usuario, estado, valor_registrado, observaciones)
+                         VALUES (date('now'), NULL, ?, 'Completado', ?, ?)""",
+                     (u,
+                      f"{_lib_lote} | {str(_lib_val)[:40]}",
+                      f"BPM Liberacion PT -> {_cli_dest}"))
+        except Exception:
+            pass
     elif estado == 'Rechazado':
         c.execute("UPDATE liberaciones SET estado='Rechazado', aprobado_por=?, observaciones=? WHERE id=?",
                   (u, d.get('observaciones', ''), lid))
