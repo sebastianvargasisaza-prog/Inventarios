@@ -171,28 +171,13 @@ def handle_produccion():
                 lotes_usados.append({'lote': 'sin_lote', 'vence': '', 'cantidad_g': g_restante})
             descuentos.append({'material': mat_nombre, 'material_id': mat_id,
                                 'cantidad_g': g_total, 'lotes_fefo': lotes_usados})
-        # Auto-crear entrada en stock_pt si viene sku + unidades
-        sku_pt = data.get('sku_pt', '').strip()
-        unidades_pt = int(data.get('unidades_pt', 0) or 0)
-        precio_pt = float(data.get('precio_pt', 0) or 0)
-        if sku_pt and unidades_pt > 0:
-            c.execute("""INSERT INTO stock_pt
-                         (sku, descripcion, lote_produccion, fecha_produccion,
-                          unidades_inicial, unidades_disponible, precio_base, empresa, estado, observaciones)
-                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                      (sku_pt, producto, lote_ref, fecha,
-                       unidades_pt, unidades_pt, precio_pt,
-                       'ANIMUS', 'Disponible',
-                       f'Produccion {lote_ref} — {cantidad_kg}kg'))
+        # Stock PT se crea via Acondicionamiento → Liberacion (flujo BPM correcto)
         conn.commit()
         conn.close()
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
-            msg += f'. {len(descuentos)} MPs descontadas por FEFO.'
-        if sku_pt and unidades_pt > 0:
-            msg += f'. {unidades_pt} uds de {sku_pt} en stock PT.'
-        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref,
-                        'stock_pt_creado': bool(sku_pt and unidades_pt > 0)}), 201
+            msg += f'. {len(descuentos)} MPs descontadas.'
+        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
     c.execute('SELECT producto, cantidad, fecha, estado, operador, COALESCE(presentacion,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
     prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or '', 'presentacion': r[5] or ''} for r in c.fetchall()]
     conn.close()
@@ -1954,6 +1939,15 @@ def _init_acondicionamiento():
         estado                  TEXT DEFAULT 'Pendiente CC',
         creado_en               DATETIME DEFAULT (datetime('now'))
     )""")
+    # Nuevas columnas — múltiples presentaciones y flujo liberación→stock_pt
+    for _sql in [
+        "ALTER TABLE acondicionamiento ADD COLUMN sku TEXT DEFAULT ''",
+        "ALTER TABLE acondicionamiento ADD COLUMN precio_base REAL DEFAULT 0",
+        "ALTER TABLE liberaciones ADD COLUMN sku TEXT DEFAULT ''",
+        "ALTER TABLE liberaciones ADD COLUMN precio_base REAL DEFAULT 0",
+    ]:
+        try: c.execute(_sql)
+        except: pass
     conn.commit(); conn.close()
 
 _init_acondicionamiento()
@@ -1965,14 +1959,35 @@ def acondicionamiento_list():
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
         u = session.get('compras_user', '')
+        mee_items = d.get('mee_consumido', [])
         c.execute("""INSERT INTO acondicionamiento
-            (produccion_id, lote, producto, cantidad_batch_g, unidades_producidas, presentacion, mee_consumido, fecha, operador, observaciones)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
+             presentacion, mee_consumido, fecha, operador, observaciones, sku, precio_base)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (int(d.get('produccion_id', 0)), d.get('lote', ''), d.get('producto', ''),
              float(d.get('cantidad_batch_g', 0)), int(d.get('unidades_producidas', 0)),
-             d.get('presentacion', ''), json.dumps(d.get('mee_consumido', [])),
-             d.get('fecha', datetime.now().strftime('%Y-%m-%d')), u, d.get('observaciones', '')))
-        conn.commit(); new_id = c.lastrowid; conn.close()
+             d.get('presentacion', ''), json.dumps(mee_items),
+             d.get('fecha', datetime.now().strftime('%Y-%m-%d')), u,
+             d.get('observaciones', ''), d.get('sku', '').strip(),
+             float(d.get('precio_base', 0) or 0)))
+        new_id = c.lastrowid
+        # Auto-descontar MEE del maestro_mee
+        lote_ref = d.get('lote', '')
+        for item in mee_items:
+            cod = str(item.get('codigo_mee', '')).strip()
+            cant = float(item.get('cantidad', 0) or 0)
+            if not cod or cant <= 0: continue
+            c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
+            row = c.fetchone()
+            if not row: continue
+            nuevo = max(0, row[0] - cant)
+            c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo, cod))
+            c.execute("""INSERT INTO movimientos_mee
+                         (mee_codigo, tipo, cantidad, lote_ref, batch_ref, responsable, observaciones)
+                         VALUES (?,?,?,?,?,?,?)""",
+                      (cod, 'Salida', cant, lote_ref, lote_ref, u,
+                       f'Consumo acondicionamiento {lote_ref}'))
+        conn.commit(); conn.close()
         return jsonify({'ok': True, 'id': new_id}), 201
     c.execute("""SELECT id, produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
                         presentacion, fecha, operador, estado, observaciones
@@ -2001,11 +2016,13 @@ def liberacion_list():
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
         c.execute("""INSERT INTO liberaciones
-            (acondicionamiento_id, lote, producto, unidades, presentacion, fecha_produccion, cliente, destino, observaciones)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (acondicionamiento_id, lote, producto, unidades, presentacion,
+             fecha_produccion, cliente, destino, observaciones, sku, precio_base)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (int(d.get('acondicionamiento_id', 0)), d.get('lote', ''), d.get('producto', ''),
              int(d.get('unidades', 0)), d.get('presentacion', ''), d.get('fecha_produccion', ''),
-             d.get('cliente', ''), d.get('destino', 'ANIMUS'), d.get('observaciones', '')))
+             d.get('cliente', ''), d.get('destino', 'ANIMUS'), d.get('observaciones', ''),
+             d.get('sku', '').strip(), float(d.get('precio_base', 0) or 0)))
         conn.commit(); new_id = c.lastrowid; conn.close()
         return jsonify({'ok': True, 'id': new_id}), 201
     estado = request.args.get('estado', '')
@@ -2026,6 +2043,21 @@ def liberacion_update(lid):
     if estado == 'Liberado':
         c.execute("UPDATE liberaciones SET estado='Liberado', fecha_liberacion=?, aprobado_por=?, cliente=? WHERE id=?",
                   (datetime.now().strftime('%Y-%m-%d'), u, d.get('cliente', ''), lid))
+        # Auto-crear entrada en stock_pt al liberar
+        c.execute("SELECT lote, producto, unidades, sku, precio_base, presentacion FROM liberaciones WHERE id=?", (lid,))
+        lib = c.fetchone()
+        if lib and lib[3]:  # sku presente
+            lote_lib, prod_lib, uds_lib, sku_lib, precio_lib, pres_lib = lib
+            fecha_lib = datetime.now().strftime('%Y-%m-%d')
+            c.execute("""INSERT INTO stock_pt
+                         (sku, descripcion, lote_produccion, fecha_produccion,
+                          unidades_inicial, unidades_disponible, precio_base,
+                          empresa, estado, observaciones)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                      (sku_lib, prod_lib, lote_lib, fecha_lib,
+                       uds_lib, uds_lib, precio_lib,
+                       'ANIMUS', 'Disponible',
+                       f'Liberacion aprobada por {u} — {pres_lib}'))
     elif estado == 'Rechazado':
         c.execute("UPDATE liberaciones SET estado='Rechazado', aprobado_por=?, observaciones=? WHERE id=?",
                   (u, d.get('observaciones', ''), lid))

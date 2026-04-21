@@ -438,29 +438,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </datalist>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="background:#f0f9f0;border:1px solid #c3e6cb;border-radius:10px;padding:16px;margin-bottom:16px;">
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;color:#1b5e20;margin-bottom:0;">
-        <input type="checkbox" id="prod-pt-check" onchange="togglePTFields()" style="width:18px;height:18px;">
-        &#127981; Registrar unidades en Stock PT (Producto Terminado)
-      </label>
-      <div id="prod-pt-fields" style="display:none;margin-top:14px;display:none;">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-          <div class="form-group" style="margin:0;">
-            <label>SKU Producto</label>
-            <input type="text" id="prod-sku-pt" placeholder="Ej: TRX-15" list="sku-sugerencias">
-            <datalist id="sku-sugerencias">
-              <option value="LBHA-30"><option value="TRX-15"><option value="NIAC-30">
-              <option value="AZHC-30"><option value="SBHA-30"><option value="ECEN-30">
-              <option value="EILU-30"><option value="CUREA-50"><option value="GELH-120">
-            </datalist>
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label>Unidades producidas</label>
-            <input type="number" id="prod-uds-pt" placeholder="Ej: 500" min="1">
-          </div>
-        </div>
-      </div>
-    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Produccion</button>
@@ -468,16 +445,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
-    <div id="mee-consumo-panel" style="display:none;margin-top:24px;background:#f0f9f0;border:2px solid #27ae60;border-radius:12px;padding:22px;">
-      <h3 style="color:#1b5e20;margin-bottom:6px;">&#128230; Paso 2: Consumo de Materiales E&E</h3>
-      <p style="font-size:0.88em;color:#555;margin-bottom:16px;">Completa el empaque usado en esta produccion. Marca <strong>No aplica</strong> si alguna categoria no corresponde.</p>
-      <div id="mee-rows-container"></div>
-      <div style="display:flex;gap:10px;margin-top:18px;">
-        <button onclick="confirmarProdCompleta()" style="background:#1b5e20;font-size:1em;padding:11px 28px;">&#10003; Confirmar Produccion Completa</button>
-        <button onclick="cancelarMEEConsumoProd()" style="background:#95a5a6;">Cancelar</button>
-      </div>
-      <div id="mee-consumo-msg" style="margin-top:10px;"></div>
-    </div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3><button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button></div>
       <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
@@ -892,8 +859,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div><label style="font-size:12px;color:#555">Unidades Producidas</label><input id="ac-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 </div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+<div><label style="font-size:12px;color:#555">SKU PT</label><input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Precio Base (COP)</label><input id="ac-precio" type="number" placeholder="35000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+</div>
 <div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="ac-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
-<button onclick="registrarAcond()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Registrar Batch</button>
+<div style="margin-top:12px;border:1px solid #ccc;border-radius:6px;padding:12px;background:#fafafa">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <label style="font-size:12px;font-weight:600;color:#333">&#128230; MEE Consumido <span style="color:#888;font-weight:normal">(envases, tapas, etiquetas...)</span></label>
+    <button onclick="addMEERowAcond()" style="background:#6c5ce7;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px">+ Agregar</button>
+  </div>
+  <div id="ac-mee-rows" style="display:flex;flex-direction:column;gap:6px;"></div>
+  <div id="ac-mee-msg" style="font-size:11px;color:#888;margin-top:6px;">Sin items MEE agregados</div>
+</div>
+<button onclick="registrarAcond()" style="margin-top:12px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">&#9989; Registrar Batch</button>
+<div id="ac-form-msg" style="margin-top:8px;"></div>
 </div>
 <div id="ac-table-wrap">
 <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1165,7 +1145,7 @@ function switchTab(n,btn){
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
-  if(n==='acondicionamiento') loadAcond();
+  if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
   if(n==='liberacion') loadLiberaciones('');
   if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
@@ -1492,11 +1472,6 @@ async function cargarHistIngreso(){
     });
     tb.innerHTML=h;
   }catch(e){}
-}
-function togglePTFields(){
-  var checked=document.getElementById('prod-pt-check').checked;
-  var fields=document.getElementById('prod-pt-fields');
-  if(fields) fields.style.display=checked?'block':'none';
 }
 function abrirRotulos(){
   var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
@@ -2047,73 +2022,31 @@ async function iniciarRegistroProd(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
-  // Registrar producción MP
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
-  var sku_pt=document.getElementById('prod-sku-pt')?document.getElementById('prod-sku-pt').value.trim():'';
-  var uds_pt=document.getElementById('prod-uds-pt')?parseInt(document.getElementById('prod-uds-pt').value)||0:0;
-  var precio_pt=document.getElementById('prod-precio-pt')?parseFloat(document.getElementById('prod-precio-pt').value)||0:0;
-  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,sku_pt:sku_pt,unidades_pt:uds_pt,precio_pt:precio_pt})});
-  var d=await r.json();
-  if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
-  _prodPendiente={lote:d.lote};
-  // Cargar MEE catalogos y mostrar panel
-  var rm=await fetch('/api/mee/stock'); var dm=await rm.json();
-  _meeData=dm.items||[];
-  renderMEEConsumoRows();
-  document.getElementById('mee-consumo-panel').style.display='block';
-  document.getElementById('mee-consumo-panel').scrollIntoView({behavior:'smooth'});
-}
-function renderMEEConsumoRows(){
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var html=cats.map(function(cat){
-    var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
-    if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
-    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
-    return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
-      +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
-      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(&quot;'+cat+'&quot;)" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
-      +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
-      +'</div>';
-  }).join('');
-  document.getElementById('mee-rows-container').innerHTML=html;
-}
-function toggleMEECant(cat){
-  var sel=document.getElementById('mee-cons-'+cat).value;
-  document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
-  if(sel!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
-}
-async function confirmarProdCompleta(){
-  if(!_prodPendiente){alert('No hay produccion pendiente');return;}
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var consumos=[];
-  for(var i=0;i<cats.length;i++){
-    var cat=cats[i];
-    var sel=document.getElementById('mee-cons-'+cat);
-    if(!sel)continue;
-    var cod=sel.value;
-    if(cod==='__NA__')continue;
-    var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
-    if(cod&&cant>0)consumos.push({codigo_mee:cod,cantidad:cant,referencia:_prodPendiente.lote});
-  }
-  if(consumos.length>0){
-    var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
+  try{
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
     var d=await r.json();
-    if(!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
-  }
-  document.getElementById('mee-consumo-panel').style.display='none';
-  document.getElementById('mee-consumo-msg').innerHTML='';
-  _prodPendiente=null;
-  var nm=consumos.length;
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;font-size:1em;">&#10003; Produccion completa: '+nm+' tipo(s) de MEE descontados.</span>';
-  cargarHistProd(); loadMEE();
+    if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+    var html='<div class="alert-success">'+(d.message||'Produccion registrada')+' &mdash; Lote: <strong>'+d.lote+'</strong></div>';
+    if(d.descuentos&&d.descuentos.length){
+      html+='<div style="margin-top:8px;font-size:0.88em;color:#555;"><strong>MPs descontadas:</strong><ul style="margin-top:4px;padding-left:18px;">';
+      d.descuentos.forEach(function(mp){html+='<li>'+mp.material+': '+mp.cantidad_g.toLocaleString()+'g</li>';});
+      html+='</ul></div>';
+    }
+    html+='<div style="margin-top:8px;padding:8px 14px;background:#e8f4fd;border-radius:6px;font-size:0.85em;color:#1a4a7a;">';
+    html+='&#8594; Ve a <strong>Acondicionamiento</strong> para registrar cada presentacion, descontar MEE y crear Stock PT.</div>';
+    document.getElementById('prod-msg').innerHTML=html;
+    document.getElementById('prod-preview').style.display='none';
+    document.getElementById('prod-sel').value='';
+    document.getElementById('prod-manual').value='';
+    document.getElementById('prod-kg').value='';
+    document.getElementById('prod-obs').value='';
+    cargarHistProd();
+    setTimeout(function(){document.getElementById('prod-msg').innerHTML='';},10000);
+  }catch(e){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
 }
-function cancelarMEEConsumoProd(){
-  document.getElementById('mee-consumo-panel').style.display='none';
-  _prodPendiente=null;
-}
-
 
 window.onload=function(){/* Data loads after operator confirms name */};
 function mostrarFormNuevaMP(){
@@ -2745,14 +2678,84 @@ async function buscarTrazabilidadMee(){ var cod=(document.getElementById('mee-tr
 
 
 function _toast(msg,ok){var t=document.createElement("div");t.style="position:fixed;bottom:24px;right:24px;background:"+(ok?"#27ae60":"#c0392b")+";color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-size:15px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.2);max-width:360px;transition:opacity 0.3s;";t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity="0";setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},300);},4000);}
+var _meeAcondItems=[];
+function cargarMeeParaAcond(){
+  fetch("/api/mee/stock").then(function(r){return r.json();}).then(function(d){
+    _meeAcondItems=(d.items||[]).filter(function(m){return m.stock_actual>0;});
+  }).catch(function(){});
+}
+function addMEERowAcond(){
+  var cont=document.getElementById("ac-mee-rows");
+  var msg=document.getElementById("ac-mee-msg"); if(msg) msg.style.display="none";
+  var row=document.createElement("div");
+  row.style.cssText="display:flex;gap:8px;align-items:center;";
+  var selHtml='<select style="flex:2;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:12px;">'+
+    '<option value="">-- Seleccionar MEE --</option>';
+  _meeAcondItems.forEach(function(m){
+    selHtml+='<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' (stock:'+m.stock_actual+')</option>';
+  });
+  selHtml+='</select>';
+  row.innerHTML=selHtml+
+    '<input type="number" min="1" placeholder="Cant" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:12px;">'+
+    '<button onclick="this.parentElement.remove();_checkMEEMsg();" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;">&times;</button>';
+  cont.appendChild(row);
+}
+function _checkMEEMsg(){
+  var cont=document.getElementById("ac-mee-rows");
+  var msg=document.getElementById("ac-mee-msg");
+  if(msg) msg.style.display=(cont&&cont.children.length===0)?"block":"none";
+}
 function registrarAcond(){
-  var d={lote:document.getElementById("ac-lote").value,producto:document.getElementById("ac-prod").value,presentacion:document.getElementById("ac-pres").value,cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,fecha:document.getElementById("ac-fecha").value,observaciones:document.getElementById("ac-obs").value};
-  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
+  var lote=document.getElementById("ac-lote").value;
+  var prod=document.getElementById("ac-prod").value;
+  if(!lote||!prod){_toast("Lote y producto son obligatorios",0);return;}
+  var meeRows=document.getElementById("ac-mee-rows").querySelectorAll("div");
+  var mee_consumido=[];
+  var meeOk=true;
+  meeRows.forEach(function(row){
+    var sel=row.querySelector("select");
+    var qty=row.querySelector("input[type=number]");
+    if(sel&&qty&&sel.value){
+      var c=parseInt(qty.value)||0;
+      if(c<=0){meeOk=false;return;}
+      mee_consumido.push({codigo:sel.value,cantidad:c});
+    }
+  });
+  if(!meeOk){_toast("Verifica cantidades MEE (deben ser > 0)",0);return;}
+  var d={
+    lote:lote,
+    producto:prod,
+    presentacion:document.getElementById("ac-pres").value,
+    cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,
+    unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,
+    fecha:document.getElementById("ac-fecha").value,
+    observaciones:document.getElementById("ac-obs").value,
+    sku:document.getElementById("ac-sku").value.trim(),
+    precio_base:parseFloat(document.getElementById("ac-precio").value)||0,
+    mee_consumido:mee_consumido
+  };
+  var msgEl=document.getElementById("ac-form-msg");
   fetch("/api/acondicionamiento",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
-  .then(function(r){return r.json();}).then(function(j){
-    if(j.ok){_toast("\u2705 Batch registrado correctamente #"+j.id,1);["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs"].forEach(function(i){document.getElementById(i).value="";});loadAcond();}
-    else _toast("Error: "+(j.error||"desconocido"),0);
-  }).catch(function(e){_toast("Error de red: "+e,0);});
+  .then(function(r){return r.json();})
+  .then(function(j){
+    if(j.ok||j.id){
+      var info="\u2705 Batch registrado #"+j.id;
+      if(mee_consumido.length) info+=" | MEE descontado: "+mee_consumido.length+" item(s)";
+      _toast(info,1);
+      ["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs","ac-sku","ac-precio"].forEach(function(id){document.getElementById(id).value="";});
+      document.getElementById("ac-mee-rows").innerHTML="";
+      _checkMEEMsg();
+      if(msgEl) msgEl.innerHTML="";
+      loadAcond();
+    } else {
+      var err="Error: "+(j.error||"desconocido");
+      _toast(err,0);
+      if(msgEl) msgEl.innerHTML='<span style="color:red;">'+err+'</span>';
+    }
+  }).catch(function(e){
+    _toast("Error de red: "+e,0);
+    if(msgEl) msgEl.innerHTML='<span style="color:red;">Error de red: '+e+'</span>';
+  });
 }
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
