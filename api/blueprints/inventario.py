@@ -1382,7 +1382,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         lbl += '</div>'
         return lbl
 
-    h  = '<\!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+    h  = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
     h += '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
     h += css + '</head><body>'
     h += ('<div class="ph">'
