@@ -108,7 +108,7 @@ def handle_no_conformidades():
                         impacto,accion_correctiva,estado,fecha_cierre,cerrado_por,creado_por
                  FROM no_conformidades ORDER BY id DESC LIMIT 200""")
     cols = ['id','fecha','tipo','descripcion','area','responsable','lote','codigo_mp',
-            'impacto','accion_correctiva','estado','fecha_cierre','cerrado_por','creado_por']}
+            'impacto','accion_correctiva','estado','fecha_cierre','cerrado_por','creado_por']
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify(rows)
 
