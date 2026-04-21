@@ -407,7 +407,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
-<\!-- MODAL: Nueva OC Materias Primas (con catalogo) -->
+<!-- MODAL: Nueva OC Materias Primas (con catalogo) -->
 <div id="m-noc-mp" class="ov">
 <div class="mdl mdl-lg">
   <div class="mh"><h3>&#x1F9EA; Nueva OC &#x2014; Materias Primas</h3><button class="mx" onclick="closeModal('m-noc-mp')">&times;</button></div>
@@ -452,7 +452,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
-<\!-- MODAL: OC Sugerida desde alertas de stock -->
+<!-- MODAL: OC Sugerida desde alertas de stock -->
 <div id="m-oc-sug" class="ov">
 <div class="mdl mdl-lg">
   <div class="mh"><h3>&#x26A0;&#xFE0F; OC Sugerida &#x2014; MPs Bajo Stock</h3><button class="mx" onclick="closeModal('m-oc-sug')">&times;</button></div>
@@ -549,25 +549,25 @@ document.querySelectorAll('.tn').forEach(function(btn){
 async function loadData(){
   try{
     var r = await fetch('/api/ordenes-compra');
-    if(\!r.ok) throw new Error('OC API '+r.status);
+    if(!r.ok) throw new Error('OC API '+r.status);
     var d = await r.json();
     OCS = d.ordenes||[];
   }catch(e){ console.error('OC load error:',e); OCS=[]; }
   try{
     var r2 = await fetch('/api/proveedores-compras');
-    if(\!r2.ok) throw new Error('Prov API '+r2.status);
+    if(!r2.ok) throw new Error('Prov API '+r2.status);
     var d2 = await r2.json();
     PROVS = d2.proveedores||[];
   }catch(e){ console.error('Prov load error:',e); PROVS=[]; }
   try{
     var r3 = await fetch('/api/maestro-mps');
-    if(\!r3.ok) throw new Error('Cat API '+r3.status);
+    if(!r3.ok) throw new Error('Cat API '+r3.status);
     var d3 = await r3.json();
     _MPCAT = d3.mps||[];
   }catch(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }
   try{
     var r4 = await fetch('/api/alertas-reabastecimiento');
-    if(\!r4.ok) throw new Error('Alert API '+r4.status);
+    if(!r4.ok) throw new Error('Alert API '+r4.status);
     var d4 = await r4.json();
     _ALERTAS_MP = (d4.alertas||[]).filter(function(a){ return a.tipo==='MP'; });
   }catch(e){ console.error('Alert load error:',e); _ALERTAS_MP=[]; }
@@ -849,8 +849,8 @@ function renderMPAlerts(){
   var banner=document.getElementById('mp-alert-banner');
   var text=document.getElementById('mp-alert-text');
   var list=document.getElementById('mp-alert-list');
-  if(\!banner) return;
-  if(\!_ALERTAS_MP||\!_ALERTAS_MP.length){ banner.style.display='none'; return; }
+  if(!banner) return;
+  if(!_ALERTAS_MP||!_ALERTAS_MP.length){ banner.style.display='none'; return; }
   var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
   banner.style.display='block';
   text.textContent=_ALERTAS_MP.length+' MPs bajo stock mínimo — Deficit total: '+Math.round(total_def/1000)+'kg';
@@ -934,20 +934,20 @@ function mpLookup(n){
   var namEl=document.getElementById('mprn'+n);
   var infEl=document.getElementById('mpri'+n);
   var prcEl=document.getElementById('mprp'+n);
-  if(\!codEl||\!infEl) return;
+  if(!codEl||!infEl) return;
   var cod=(codEl.value||'').trim();
-  if(\!cod){ infEl.textContent=''; return; }
+  if(!cod){ infEl.textContent=''; return; }
   var mp=_MPCAT.find(function(m){ return m.codigo_mp===cod; });
-  if(\!mp&&cod.length>=4){
+  if(!mp&&cod.length>=4){
     var q=cod.toLowerCase();
     mp=_MPCAT.find(function(m){
       return (m.nombre_comercial||'').toLowerCase().indexOf(q)>=0
           ||(m.nombre_inci||'').toLowerCase().indexOf(q)>=0;
     });
   }
-  if(\!mp){ infEl.textContent=''; infEl.style.color='#78716c'; return; }
-  if(\!(namEl.value||'').trim()) namEl.value=mp.nombre_comercial||mp.nombre_inci||cod;
-  if((\!prcEl.value||parseFloat(prcEl.value)===0)&&mp.precio_referencia&&mp.precio_referencia>0){
+  if(!mp){ infEl.textContent=''; infEl.style.color='#78716c'; return; }
+  if(!(namEl.value||'').trim()) namEl.value=mp.nombre_comercial||mp.nombre_inci||cod;
+  if((!prcEl.value||parseFloat(prcEl.value)===0)&&mp.precio_referencia&&mp.precio_referencia>0){
     prcEl.value=parseFloat(mp.precio_referencia).toFixed(4);
     calcTotMP();
   }
@@ -964,7 +964,7 @@ function calcTotMP(){
   var tot=0;
   for(var i=1;i<=MP_ITMS;i++){
     var q=document.getElementById('mprq'+i),p=document.getElementById('mprp'+i);
-    if(\!q||\!p) continue;
+    if(!q||!p) continue;
     var s=parseFloat(q.value||0)*parseFloat(p.value||0);
     var el=document.getElementById('mprs'+i); if(el) el.textContent=fmt(s);
     tot+=s;
@@ -975,11 +975,11 @@ async function crearOCMP(){
   var prov=document.getElementById('nmp-prov').value;
   var obs=document.getElementById('nmp-obs').value;
   var fent=document.getElementById('nmp-fent').value;
-  if(\!prov){ alert('Selecciona un proveedor'); return; }
+  if(!prov){ alert('Selecciona un proveedor'); return; }
   var items=[];
   for(var i=1;i<=MP_ITMS;i++){
     var n=document.getElementById('mprn'+i);
-    if(\!n||(n.value||'').trim()==='') continue;
+    if(!n||(n.value||'').trim()==='') continue;
     items.push({
       codigo_mp:(document.getElementById('mprc'+i)||{value:''}).value,
       nombre_mp:n.value.trim(),
@@ -987,7 +987,7 @@ async function crearOCMP(){
       precio_unitario:parseFloat((document.getElementById('mprp'+i)||{value:0}).value||0)
     });
   }
-  if(\!items.length){ alert('Agrega al menos un item con descripcion'); return; }
+  if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
   try{
     var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items,creado_por:'{usuario}'};
     if(fent) body.fecha_entrega_est=fent;
@@ -1003,7 +1003,7 @@ async function crearOCMP(){
 
 // ─── MP: OC Sugerida desde alertas ───────────────────────
 function openOCSugerida(){
-  if(\!_ALERTAS_MP||\!_ALERTAS_MP.length){ alert('No hay MPs bajo stock mínimo'); return; }
+  if(!_ALERTAS_MP||!_ALERTAS_MP.length){ alert('No hay MPs bajo stock mínimo'); return; }
   fillProvSelect('sug-prov');
   document.getElementById('sug-prov').value='';
   document.getElementById('sug-ibox').style.display='none';
@@ -1037,7 +1037,7 @@ function calcTotSug(){
   var tot=0;
   for(var i=0;i<_ALERTAS_MP.length;i++){
     var q=document.getElementById('sugq'+i),p=document.getElementById('sugp'+i);
-    if(\!q||\!p) continue;
+    if(!q||!p) continue;
     var s=parseFloat(q.value||0)*parseFloat(p.value||0);
     var el=document.getElementById('sugs'+i); if(el) el.textContent=fmt(s);
     tot+=s;
@@ -1046,7 +1046,7 @@ function calcTotSug(){
 }
 async function crearOCSugerida(){
   var prov=document.getElementById('sug-prov').value;
-  if(\!prov){ alert('Selecciona un proveedor'); return; }
+  if(!prov){ alert('Selecciona un proveedor'); return; }
   var items=[];
   for(var i=0;i<_ALERTAS_MP.length;i++){
     var a=_ALERTAS_MP[i];
@@ -1055,7 +1055,7 @@ async function crearOCSugerida(){
     if(q<=0) continue;
     items.push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p});
   }
-  if(\!items.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
+  if(!items.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
   try{
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
