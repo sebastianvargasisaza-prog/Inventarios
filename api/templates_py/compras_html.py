@@ -989,7 +989,7 @@ async function crearOCMP(){
   }
   if(\!items.length){ alert('Agrega al menos un item con descripcion'); return; }
   try{
-    var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items};
+    var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items,creado_por:'{usuario}'};
     if(fent) body.fecha_entrega_est=fent;
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
@@ -1058,7 +1058,7 @@ async function crearOCSugerida(){
   if(\!items.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
   try{
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({proveedor:prov,categoria:'MP',
+      body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
         observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
         items:items})});
     var d=await r.json();
