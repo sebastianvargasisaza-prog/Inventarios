@@ -586,9 +586,10 @@ async function loadData(){
 
 // ─── Dashboard ────────────────────────────────────────────────────
 function renderDash(){
-  var autList = OCS.filter(function(o){ return o.estado==='Revisada'; });
-  var pagList = OCS.filter(function(o){ return o.estado==='Autorizada'; });
-  var recList = OCS.filter(function(o){ return o.estado==='Pagada'; });
+  var _noInfl=function(o){ return (o.categoria||'').indexOf('Influencer')<0; };
+  var autList = OCS.filter(function(o){ return o.estado==='Revisada' && _noInfl(o); });
+  var pagList = OCS.filter(function(o){ return o.estado==='Autorizada' && _noInfl(o); });
+  var recList = OCS.filter(function(o){ return o.estado==='Pagada' && _noInfl(o); });
   var vAut = autList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
   var vPag = pagList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
   var mes = new Date().toISOString().substring(0,7);
