@@ -3,14 +3,17 @@ import os
 import sqlite3
 from datetime import datetime
 from flask import Blueprint, jsonify, request, Response, session, redirect
-from config import DB_PATH, ADMIN_USERS
+from auth import sin_acceso_html
+from config import DB_PATH, ADMIN_USERS, TECNICA_USERS
 from templates_py.tecnica_html import TECNICA_HTML
 
 bp = Blueprint('tecnica', __name__)
 
 
 def _check_access():
-    return True  # auth eliminada — solo compras/gerencia requieren login
+    """Verifica sesion activa y pertenencia a TECNICA_USERS o ADMIN_USERS."""
+    u = session.get('compras_user', '')
+    return bool(u) and (u in TECNICA_USERS or u in ADMIN_USERS)
 
 
 def _init_tecnica():
@@ -73,8 +76,11 @@ _init_tecnica()
 # ── Página ─────────────────────────────────────────────────────────────────
 @bp.route('/tecnica')
 def tecnica_page():
-    if not _check_access():
+    # Separar check de sesion vs check de rol para dar respuesta correcta
+    if 'compras_user' not in session:
         return redirect('/login?next=/tecnica')
+    if not _check_access():
+        return Response(sin_acceso_html('Tecnica'), mimetype='text/html')
     return Response(TECNICA_HTML, mimetype='text/html')
 
 

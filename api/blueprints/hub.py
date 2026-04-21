@@ -197,6 +197,8 @@ def update_compromiso(cid):
 
 @bp.route('/compromisos')
 def compromisos_page():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/compromisos')
     return Response(COMPROMISOS_HTML, mimetype='text/html')
 
 @bp.route('/api/health')

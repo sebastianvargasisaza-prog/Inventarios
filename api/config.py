@@ -23,14 +23,16 @@ COMPRAS_USERS = {
 }
 ADMIN_USERS     = {"sebastian", "alejandro"}
 CONTADORA_USERS = {"mayra"}
-RRHH_USERS      = {"gloria", "daniela", "luz", "mayra"}
-CALIDAD_USERS   = {"laura", "miguel", "yuliel"}
+RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "alejandro", "sebastian"}
+CALIDAD_USERS   = {"laura", "miguel", "yuliel", "alejandro", "sebastian"}
 PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
-COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "alejandro", "sebastian"}
+COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "daniela", "alejandro", "sebastian"}
 FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
+CLIENTES_ACCESS = {"mayra", "luz", "catalina", "valentina", "daniela", "alejandro", "sebastian"}
+TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
 
 # PIN para desbloquear vista de cantidades en Formulas (cambiar via env var FORMULA_PIN)
 FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")

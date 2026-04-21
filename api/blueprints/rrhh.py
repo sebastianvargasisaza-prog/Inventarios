@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, RRHH_USERS
-from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -29,7 +29,11 @@ bp = Blueprint('rrhh', __name__)
 
 @bp.route("/rrhh")
 def rrhh_panel():
+    if "compras_user" not in session:
+        return redirect("/login?next=/rrhh")
     u = session.get("compras_user", "")
+    if u not in RRHH_USERS:
+        return Response(sin_acceso_html("Recursos Humanos"), mimetype="text/html")
     usuario = u.capitalize()
     return Response(RRHH_HTML.replace("{usuario}", usuario), mimetype="text/html")
 

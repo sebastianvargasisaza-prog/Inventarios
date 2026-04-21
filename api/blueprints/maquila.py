@@ -338,6 +338,8 @@ def recall_ejecutar():
 
 @bp.route('/hub-salida')
 def hub_salida_page():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/hub-salida')
     return Response(SALIDA_HTML, mimetype='text/html')
 
 @bp.route('/api/hub-salida/pedidos-pendientes')

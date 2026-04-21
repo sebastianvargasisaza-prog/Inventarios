@@ -7,8 +7,8 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS
-from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS, CLIENTES_ACCESS
+from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -29,11 +29,16 @@ bp = Blueprint('core', __name__)
 
 @bp.route('/')
 def index():
-    return Response(HOME_HTML, mimetype='text/html')
+    # Redirigir a login si no hay sesion activa; a /hub si ya esta autenticado
+    if 'compras_user' not in session:
+        return redirect('/login')
+    return redirect('/hub')
 
 @bp.route('/inventarios')
 @bp.route('/planta')
 def inventarios():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/inventarios')
     usuario = session.get('compras_user', '').capitalize()
     from config import ADMIN_USERS
     es_admin = 'true' if session.get('compras_user','') in ADMIN_USERS else 'false'
@@ -47,6 +52,8 @@ def inventarios():
 
 @bp.route('/hub')
 def hub():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/hub')
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
 
@@ -93,7 +100,7 @@ def logout():
 @bp.route('/compras')
 def compras():
     if 'compras_user' not in session:
-        return redirect('/login')
+        return redirect('/login?next=/compras')
     username = session.get('compras_user', '')
     # Solo usuarios con acceso a compras
     if username not in COMPRAS_ACCESS:
