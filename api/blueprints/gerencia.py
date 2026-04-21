@@ -35,7 +35,7 @@ bp = Blueprint('gerencia', __name__)
 def gerencia_page():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return redirect(url_for('core.login'))
-    return Response(HUB_HTML, mimetype='text/html')
+    return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/gerencia-financiero')
 def gerencia_financiero_page():
