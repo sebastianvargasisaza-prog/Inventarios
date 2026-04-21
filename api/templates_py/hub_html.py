@@ -66,6 +66,14 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 .section-hdr{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px;}
 .loading{color:#64748b;font-size:12px;text-align:center;padding:20px;}
 .spinner-txt{animation:pulse 1.5s infinite;}
+.quick-nav{background:#1e293b;border-bottom:1px solid #334155;padding:8px 20px;display:flex;gap:8px;overflow-x:auto;flex-wrap:nowrap;}
+.quick-nav::-webkit-scrollbar{height:3px;}
+.quick-nav::-webkit-scrollbar-thumb{background:#475569;border-radius:2px;}
+.qn-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:#0f172a;border:1px solid #334155;border-radius:20px;color:#cbd5e1;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;transition:.15s;flex-shrink:0;}
+.qn-btn:hover{background:#334155;color:#f1f5f9;border-color:#475569;}
+.qn-btn.primary{background:#2563eb;border-color:#3b82f6;color:#fff;}
+.qn-btn.primary:hover{background:#1d4ed8;}
+.qn-sep{width:1px;background:#334155;margin:0 4px;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -78,6 +86,23 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
     <strong id="fecha-hoy"></strong>
     <span>Centro de Comando</span>
   </div>
+</div>
+
+<div class="quick-nav">
+  <a class="qn-btn primary" href="/inventarios">&#x1F4E6; Inventario</a>
+  <a class="qn-btn" href="/compras">&#x1F6D2; Compras</a>
+  <a class="qn-btn" href="/recepcion">&#x1F69A; Recepci&#xF3;n</a>
+  <a class="qn-btn" href="/clientes">&#x1F464; Clientes</a>
+  <a class="qn-btn" href="/financiero">&#x1F4CA; Financiero</a>
+  <a class="qn-btn" href="/gerencia">&#x1F3DB; Gerencia</a>
+  <a class="qn-btn" href="/calidad">&#x1F52C; Calidad</a>
+  <a class="qn-btn" href="/tecnica">&#x1F527; T&#xE9;cnica</a>
+  <a class="qn-btn" href="/rrhh">&#x1F465; RRHH</a>
+  <a class="qn-btn" href="/hub-salida">&#x1F9EA; Maquila</a>
+  <a class="qn-btn" href="/compromisos">&#x2705; Compromisos</a>
+  <a class="qn-btn" href="/solicitudes">&#x1F4DD; Solicitudes</a>
+  <div class="qn-sep"></div>
+  <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x2192; Salir</a>
 </div>
 
 <div class="alert-bar" id="alert-bar">
