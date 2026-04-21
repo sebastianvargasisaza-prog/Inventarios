@@ -271,10 +271,10 @@ async function loadDash(){
     document.getElementById('kv-rechazados').textContent=d.rechazados||0;
     document.getElementById('kv-nc').textContent=d.nc_abiertas||0;
     document.getElementById('kv-cals').textContent=d.cals_vencidas||0;
-    document.getElementById('kv-lib-mes').textContent=d.liberados_mes\!=null?d.liberados_mes:'-';
+    document.getElementById('kv-lib-mes').textContent=d.liberados_mes!=null?d.liberados_mes:'-';
     var tasa=d.tasa_liberacion;
     var tasaEl=document.getElementById('kv-tasa-lib');
-    if(tasa\!=null){tasaEl.textContent=tasa+'%';tasaEl.className='kpi-val '+(tasa>=90?'good':(tasa>=70?'warn':'crit'));}
+    if(tasa!=null){tasaEl.textContent=tasa+'%';tasaEl.className='kpi-val '+(tasa>=90?'good':(tasa>=70?'warn':'crit'));}
     else{tasaEl.textContent='N/A';tasaEl.className='kpi-val';}
     const act=document.getElementById('act-list');
     
