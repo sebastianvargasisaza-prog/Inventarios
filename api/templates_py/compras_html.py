@@ -90,7 +90,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </head>
 <body>
 <div class="topbar">
-  <h1>&#x1F6D2; Compras &mdash; Espagiria</h1>
+  <h1>&#x1F6D2; Compras HHA</h1>
   <span style="font-size:13px;color:#a8a29e;">&#x1F464; {usuario}</span>&nbsp;&nbsp;
   <a href="/modulos" style="font-weight:700;">&#x1F4F1; M&#xF3;dulos</a>
 </div>

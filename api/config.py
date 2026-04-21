@@ -39,7 +39,7 @@ FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")
 
 # Emails de usuarios para notificaciones (configurar via env vars en Render)
 USER_EMAILS = {
-    "jefferson":  os.environ.get("EMAIL_JEFFERSON",  ""),
+    "jefferson":  os.environ.get("EMAIL_JEFFERSON",  "jermun1992@gmail.com"),
     "hernando":   os.environ.get("EMAIL_HERNANDO",   ""),
     "catalina":   os.environ.get("EMAIL_CATALINA",   ""),
     "luz":        os.environ.get("EMAIL_LUZ",        ""),
