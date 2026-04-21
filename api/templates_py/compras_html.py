@@ -1018,6 +1018,7 @@ async function openSolicitudDetail(num){
       h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario</label>';
       h+='<textarea id="sol-motivo" placeholder="Razon de aprobacion o rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
       h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
+      h+='<input type="hidden" id="sol-det-cat" value="'+esc(s.categoria||'MP')+'">';
       h+='</div>';
     }
     h+='</div>';
@@ -1025,7 +1026,7 @@ async function openSolicitudDetail(num){
     var fbtns='<button class="btn bo" onclick="_solDetClose()">Cerrar</button>';
     if(s.estado==='Pendiente'){
       fbtns+='<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="_solDetRech()">&#10005; Rechazar</button>';
-      fbtns+='<button class="btn bg" onclick="_solDetApr()">&#10003; Aprobar y crear OC</button>';
+      fbtns+='<button class="btn bg" onclick="_solDetApr()">&#9654; Enviar a Autorización</button>';
     }
     footer.innerHTML=fbtns;
   }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
@@ -1043,6 +1044,11 @@ async function gestionarSol(decision){
   if(decision==='Aprobada'){
     body.crear_oc=true;
     body.proveedor=prov||'Por definir';
+    if(valor>0) body.valor_total=valor;
+    if(fent) body.fecha_entrega_est=fent;
+    var catEl=document.getElementById('sol-det-cat');
+    if(catEl) body.categoria=catEl.value;
+    body.observaciones_oc=motivo||('Generado desde '+num);
   }
   try{
     var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

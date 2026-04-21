@@ -390,16 +390,27 @@ def actualizar_estado_solicitud(numero):
     conn.commit()
     oc_creada = ''
     if d.get('crear_oc'):
-        cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g, unidad FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+        cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g, unidad, categoria FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
         items_sol = cur.fetchall()
+        # Obtener categoria de la solicitud para la OC
+        cur.execute("SELECT categoria FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+        sol_row = cur.fetchone()
+        categoria_oc = d.get('categoria') or (sol_row[0] if sol_row and sol_row[0] else 'MP')
         proveedor_oc = d.get('proveedor', 'Por definir')
+        valor_oc = float(d.get('valor_total') or 0)
+        fent_oc = d.get('fecha_entrega_est', '')
+        obs_oc = d.get('observaciones_oc') or f'Generado desde {numero.upper()}'
         cur.execute("SELECT COUNT(*) FROM ordenes_compra")
         n_oc = cur.fetchone()[0] + 1
         oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
-        cur.execute("""INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones, creado_por)
-                     VALUES (?,?,?,?,?,?)""",
-                  (oc_num, datetime.now().isoformat(), 'Borrador', proveedor_oc,
-                   f'Generado desde {numero.upper()}', session.get('compras_user','')))
+        # OC creada directamente como 'Revisada' — lista para autorizar
+        cur.execute(
+            "INSERT INTO ordenes_compra "
+            "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (oc_num, datetime.now().isoformat(), 'Revisada', proveedor_oc,
+             obs_oc, session.get('compras_user',''),
+             valor_oc if valor_oc > 0 else None, fent_oc or None, categoria_oc))
         for it in items_sol:
             cur.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
                       (oc_num, it[0], it[1], it[2]))
