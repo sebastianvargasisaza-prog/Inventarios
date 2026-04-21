@@ -46,7 +46,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </style>
 </head>
 <body>
-<div id="modal-operador" style="display:none;"></div>
+<div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);z-index:9999;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:18px;padding:36px 32px;max-width:380px;width:94%;box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center;">
+    <div style="font-size:2.2em;margin-bottom:10px;">&#128100;</div>
+    <h2 style="color:#2B7A78;margin-bottom:6px;font-size:1.25em;">&#191;Qui&#233;n est&#225; operando?</h2>
+    <p style="color:#666;font-size:0.88em;margin-bottom:20px;">Escribe tu nombre para registrar movimientos correctamente.</p>
+    <input type="text" id="oper-input" placeholder="Ej: Alejandro, Valentina..." autocomplete="off"
+      style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1em;outline:none;box-sizing:border-box;margin-bottom:8px;"
+      onkeydown="if(event.key==='Enter')confirmarOper()">
+    <div id="oper-error" style="display:none;color:#dc3545;font-size:0.82em;margin-bottom:8px;">&#9888; Escribe tu nombre para continuar.</div>
+    <button onclick="confirmarOper()" style="width:100%;background:linear-gradient(135deg,#2B7A78,#1a5c5a);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;margin-top:4px;">Entrar al sistema &#8594;</button>
+  </div>
+</div>
 <div id="modal-solicitud-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9996;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:480px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <h2 style="color:#2B7A78;margin-bottom:4px;">&#128722; Solicitar Compra</h2>
@@ -921,9 +932,19 @@ var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
 document.addEventListener('DOMContentLoaded',function(){
+  // Restaurar operador desde localStorage si no vino por sesión
+  if(\!OPER_ACTUAL){
+    try{var saved=localStorage.getItem('espagiria_operador');if(saved)OPER_ACTUAL=saved;}catch(e){}
+  }
   var c=document.getElementById('oper-chip');
-  if(c&&OPER_ACTUAL) c.innerHTML='<span>&#128100; '+OPER_ACTUAL+'</span>';
-  loadDashboardCompleto();loadFormulas();
+  if(OPER_ACTUAL){
+    if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
+    loadDashboardCompleto();loadFormulas();
+  } else {
+    // Sin operador identificado: mostrar modal antes de cargar
+    document.getElementById('modal-operador').style.display='flex';
+    setTimeout(function(){var inp=document.getElementById('oper-input');if(inp)inp.focus();},150);
+  }
 });
 var _ajDat={};
 function _eq(s){return (s||'').split("'").join('&#39;');}
