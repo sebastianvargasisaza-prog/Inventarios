@@ -3,7 +3,7 @@ HUB_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>HHA Group — Centro de Comando</title>
+<title>HHA Group — Panel Central</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
@@ -84,7 +84,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   </div>
   <div class="header-right">
     <strong id="fecha-hoy"></strong>
-    <span>Centro de Comando</span>
+    <span>Panel Central</span>
   </div>
 </div>
 
@@ -110,8 +110,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 </div>
 
 <div class="main">
-  <\!-- PANEL DE MÓDULOS -->
-  <!-- MODULOS -->
   <div class="card card-full">
     <div class="card-title" style="font-size:13px;color:#e2e8f0;">&#x1F4F1; Panel de M&#xF3;dulos</div>
     <div class="module-grid" id="mod-grid">
