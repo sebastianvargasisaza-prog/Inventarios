@@ -1315,7 +1315,7 @@ function seleccionarMP(mp){
   var panel=document.getElementById('ing-nueva-mp-inline');if(panel)panel.style.display='none';
   ocultarDropMP();
 }
-async function buscarMPIngreso(val){
+function buscarMPIngreso(val){
   val=(val||'').trim();
   var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp-inline'),dd=document.getElementById('mp-dropdown');
   if(val.length<2){
@@ -1325,29 +1325,28 @@ async function buscarMPIngreso(val){
     if(dd)dd.style.display='none';
     return;
   }
-  try{
-    var r2=await fetch('/api/maestro-mps'),d2=await r2.json(),mps=d2.mps||[];
-    var busq=val.toLowerCase();
-    var matches=mps.filter(function(m){
-      return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
-    }).slice(0,12);
-    window._mpMatches=matches;
-    if(dd){
-      if(!matches.length){dd.style.display='none';}
-      else{
-        dd.style.display='block';
-        dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
-      }
+  // Use cached catalog (_cat loaded by initIngreso) — avoids HTTP request on every keypress
+  var mps=Object.values(_cat);
+  var busq=val.toLowerCase();
+  var matches=mps.filter(function(m){
+    return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
+  }).slice(0,12);
+  window._mpMatches=matches;
+  if(dd){
+    if(!matches.length){dd.style.display='none';}
+    else{
+      dd.style.display='block';
+      dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
     }
-    var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
-    if(found){seleccionarMP(found);}
-    else if(!matches.length){
-      if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
-      if(panel)panel.style.display='block';
-    } else {
-      if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
-    }
-  }catch(e){if(st){st.textContent='Error buscando';st.style.color='#c0392b';}}
+  }
+  var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
+  if(found){seleccionarMP(found);}
+  else if(!matches.length){
+    if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
+    if(panel)panel.style.display='block';
+  } else {
+    if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
+  }
 }
 
 
@@ -1429,16 +1428,28 @@ async function registrarIngreso(){
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
     data.stock_minimo=parseFloat(document.getElementById('ing-smin-new')?document.getElementById('ing-smin-new').value:0)||0;
   }
+  // B4: disable button to prevent double-submission
+  var btn=document.querySelector('button[onclick="registrarIngreso()"]');
+  if(btn){btn.disabled=true;btn.textContent='Registrando...';}
   try{
     var r=await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
     if(r.ok){
       _ultimoIng=res;
-      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+'</div>';
+      var ocWarn=res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
+      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+ocWarn+'</div>';
+      // B5: clear form after successful registration to prevent accidental re-submission
+      limpiarIngreso();
       await cargarHistIngreso();
       await cargarOCsPendientes();
-    } else {document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';}
-  }catch(e){document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+    } else {
+      document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>';
+      if(btn){btn.disabled=false;btn.textContent='\u2713 Registrar Entrada';}
+    }
+  }catch(e){
+    document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error de red: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent='\u2713 Registrar Entrada';}
+  }
 }
 function generarRotuloIngreso(){
   if(!_ultimoIng){alert('Registra un ingreso primero');return;}

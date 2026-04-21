@@ -629,6 +629,9 @@ def archivar_mp(codigo):
 def registrar_recepcion():
     d = request.json; codigo = (d.get('codigo_mp') or '').upper().strip()
     if not codigo: return jsonify({'error': 'Codigo MP requerido'}), 400
+    cantidad_recibida = float(d.get('cantidad') or 0)
+    if cantidad_recibida <= 0:
+        return jsonify({'error': 'La cantidad debe ser mayor a 0'}), 400
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     mp = c.fetchone()
@@ -657,7 +660,7 @@ def registrar_recepcion():
                   lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador,
                   precio_kg,numero_factura,numero_oc)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-              (codigo,nombre,float(d.get('cantidad',0)),'Entrada',datetime.now().isoformat(),
+              (codigo,nombre,cantidad_recibida,'Entrada',datetime.now().isoformat(),
                d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
                d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
                d.get('operador',''),precio_kg,numero_factura,numero_oc))
@@ -669,22 +672,27 @@ def registrar_recepcion():
                       (codigo, precio_kg, numero_factura, proveedor))
         except: pass
     # Cerrar OC si se referencia una
+    oc_warning = None
     if numero_oc:
         try:
             c.execute("UPDATE ordenes_compra_items SET cantidad_recibida_g=cantidad_recibida_g+?,lote_asignado=? WHERE numero_oc=? AND codigo_mp=?",
-                      (float(d.get('cantidad',0)), lote, numero_oc, codigo))
+                      (cantidad_recibida, lote, numero_oc, codigo))
             # verificar si todos los items de la OC estan recibidos
             c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_g - cantidad_recibida_g) > 1", (numero_oc,))
             pendientes = c.fetchone()[0]
             if pendientes == 0:
                 c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now'),recibido_por=? WHERE numero_oc=?",
                           (d.get('operador',''), numero_oc))
-        except: pass
+        except Exception as oc_err:
+            # Log but don't fail the reception — OC can be reconciled manually
+            print(f'[WARN] OC update failed for {numero_oc}: {oc_err}', flush=True)
+            oc_warning = f'OC {numero_oc} no pudo actualizarse automaticamente — verificar manualmente'
     conn.commit(); conn.close()
     msg = f'{nombre} ingresada. Lote: {lote}'
     if cuarentena: msg += ' — En CUARENTENA (pendiente aprobacion QC)'
-    if numero_oc: msg += f' | OC {numero_oc} actualizada'
-    return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':d.get('cantidad',0),'cuarentena':cuarentena}), 201
+    if numero_oc and not oc_warning: msg += f' | OC {numero_oc} actualizada'
+    if oc_warning: msg += f' | ⚠ {oc_warning}'
+    return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':cantidad_recibida,'cuarentena':cuarentena,'oc_warning':oc_warning}), 201
 
 @bp.route('/api/lotes/cuarentena', methods=['GET'])
 def lotes_cuarentena():
