@@ -102,7 +102,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   <a class="qn-btn" href="/compromisos">&#x2705; Compromisos</a>
   <a class="qn-btn" href="/solicitudes">&#x1F4DD; Solicitudes</a>
   <div class="qn-sep"></div>
-  <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x2192; Salir</a>
+  <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x23CF; Cerrar sesión</a>
 </div>
 
 <div class="alert-bar" id="alert-bar">
