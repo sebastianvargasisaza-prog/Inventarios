@@ -934,6 +934,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div></div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
+var formulasPin=false;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
 document.addEventListener('DOMContentLoaded',function(){
@@ -1526,25 +1527,52 @@ function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun.</p>';return;}
   var html='';
+  if(!formulasPin){
+    html+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
+         +'<span>&#128274; Cantidades ocultas &mdash; activa el PIN para ver la f&oacute;rmula completa</span>'
+         +'<button onclick="pedirPinFormula()" style="background:#667eea;color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-weight:600;font-size:0.85em;">&#128275; Desbloquear</button>'
+         +'</div>';
+  } else {
+    html+='<div style="background:#d4edda;border:1px solid #28a745;border-radius:6px;padding:8px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
+         +'<span style="color:#155724;">&#128275; F&oacute;rmulas desbloqueadas</span>'
+         +'<button onclick="formulasPin=false;renderFormulas(fData)" style="background:#6c757d;color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:0.85em;">&#128274; Bloquear</button>'
+         +'</div>';
+  }
+  var MASK='<span style="filter:blur(5px);user-select:none;pointer-events:none;color:#555;">&#x2588;&#x2588;.&#x2588;&#x2588;</span>';
   fl.forEach(function(f,idx){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
     var ok=Math.abs(total-100)<0.1;
     var rows='';
     f.items.forEach(function(it){
-      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+it.porcentaje+'%</td><td style="font-weight:600;">'+(it.porcentaje*10).toFixed(2)+'g</td></tr>';
+      var pctVal=formulasPin?it.porcentaje+'%':MASK+'%';
+      var gVal=formulasPin?(it.porcentaje*10).toFixed(2)+'g':MASK+'g';
+      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gVal+'</td></tr>';
     });
+    var totalStr=formulasPin?total.toFixed(2)+'%'+(ok?' OK':' revisar'):MASK+'%';
+    var editBtn=formulasPin
+      ?'<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      :'<button onclick="pedirPinFormula()" style="background:#aaa;color:white;border:none;padding:5px 10px;font-size:0.82em;border-radius:3px;cursor:pointer;" title="Requiere PIN">&#128274; Editar</button>';
     html+='<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html+='<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>';
-    html+='<div style="display:flex;gap:6px;">';
-    html+='<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>';
+    html+='<div style="display:flex;gap:6px;">'+editBtn;
     html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
     html+='</div></div>';
     html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g/kg</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';">Total: '+total.toFixed(2)+'%'+(ok?' OK':' revisar')+'</small>';
+    html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';"> '+totalStr+'</small>';
     html+='</div>';
   });
   c.innerHTML=html;
+}
+
+async function pedirPinFormula(){
+  var pin=prompt('PIN de acceso a f\u00f3rmulas:');
+  if(!pin) return;
+  try{
+    var r=await fetch('/api/formulas/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    if(r.ok){formulasPin=true;renderFormulas(fData);}
+    else{alert('PIN incorrecto');}
+  }catch(e){alert('Error al verificar PIN');}
 }
 
 function addFRow(){
@@ -1588,6 +1616,7 @@ async function guardarFormula(){
 }
 
 function editFormula(idx){
+  if(!formulasPin){pedirPinFormula();return;}
   var f=fData[idx]; if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;

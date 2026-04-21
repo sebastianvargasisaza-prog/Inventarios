@@ -259,6 +259,15 @@ def simular_produccion():
     })
 
 
+@bp.route('/api/formulas/unlock', methods=['POST'])
+def formulas_unlock():
+    from config import FORMULA_PIN
+    data = request.get_json() or {}
+    pin = str(data.get('pin', ''))
+    if pin == FORMULA_PIN:
+        return jsonify({'ok': True})
+    return jsonify({'ok': False, 'error': 'PIN incorrecto'}), 403
+
 @bp.route('/api/formula/costo', methods=['POST'])
 def calcular_costo_formula():
     """Calcula costo estimado de un batch sin verificar stock."""

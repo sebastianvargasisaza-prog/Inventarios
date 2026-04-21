@@ -31,3 +31,6 @@ DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
 COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "alejandro", "sebastian"}
 FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
+
+# PIN para desbloquear vista de cantidades en Formulas (cambiar via env var FORMULA_PIN)
+FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")
