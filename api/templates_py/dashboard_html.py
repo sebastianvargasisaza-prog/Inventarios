@@ -149,7 +149,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="dashboard" class="tab-content active">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <h2 style="margin:0;">Dashboard Ejecutivo</h2>
-      <button onclick="loadDashboardCompleto()" style="padding:7px 16px;loadAcond();loadLiberaciones('');font-size:0.88em;">&#8635; Actualizar</button>
+      <button onclick="loadDashboardCompleto();loadAcond();loadLiberaciones('');" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
     </div>
 
     <!-- KPI Cards -->
@@ -925,7 +925,6 @@ document.addEventListener('DOMContentLoaded',function(){
   if(c&&OPER_ACTUAL) c.innerHTML='<span>&#128100; '+OPER_ACTUAL+'</span>';
   loadDashboardCompleto();loadFormulas();
 });
-var _meeData=[], _prodPendiente=null;
 var _ajDat={};
 function _eq(s){return (s||'').split("'").join('&#39;');}
 function selOper(n){
@@ -1134,6 +1133,9 @@ function switchTab(n,btn){
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
+  if(n==='acondicionamiento') loadAcond();
+  if(n==='liberacion') loadLiberaciones('');
+  if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
 }
