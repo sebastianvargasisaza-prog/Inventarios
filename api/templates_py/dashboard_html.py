@@ -86,7 +86,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 </div>
 <div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;"><div id="modal-ajuste-body" style="background:white;border-radius:16px;padding:0;max-width:700px;width:96%;max-height:90vh;overflow-y:auto;">
   <div style="background:white;border-radius:16px;padding:28px;max-width:500px;width:96%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <h2 style="color:#2B7A78;margin-bottom:4px;">&#9878; Gestionar Material</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <h2 style="color:#2B7A78;margin:0;">&#9878; Gestionar Material</h2>
+      <button onclick="cerrarAjuste()" style="background:none;border:none;font-size:1.6em;cursor:pointer;color:#aaa;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
     <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:14px;"></p>
     <div style="border:1px solid #d0ece7;border-radius:8px;padding:14px;margin-bottom:10px;background:#f9fffe;">
       <div style="font-size:0.78em;font-weight:700;color:#2B7A78;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128203; Conteo F&#237;sico</div>
@@ -331,6 +334,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
         <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
+        <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
       </div>
       <!-- OC Receipt + Costos + Cuarentena -->
       <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px;margin:12px 0;">
