@@ -3,7 +3,7 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Compras — Espagiria</title>
+<title>Compras HHA</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-size:14px;}
@@ -178,16 +178,32 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 
 <div id="pane-influencer" class="pane">
+  <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;"></div>
   <div class="bar">
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
     <select id="s-influencer" onchange="renderInfluencers()">
       <option value="">Todos los estados</option>
-      <option value="Pendiente">Pendiente - Por pagar</option>
-      <option value="Aprobada">Aprobada - Pagada</option>
+      <option value="Aprobada">Por pagar</option>
+      <option value="Pagada">Pagadas</option>
+      <option value="Rechazada">Rechazadas</option>
     </select>
   </div>
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer" class="grid"></div>
+</div>
+<!-- Modal rechazo influencer -->
+<div id="m-rechazar-inf" class="modal" style="display:none;">
+  <div class="mc" style="max-width:440px;">
+    <div class="mh"><h3>Rechazar cuenta de cobro</h3><button class="mc-x" onclick="closeModal('m-rechazar-inf')">&#x2715;</button></div>
+    <div style="padding:20px;">
+      <p style="margin:0 0 12px;color:#374151;">Motivo del rechazo (visible para el solicitante):</p>
+      <textarea id="motivo-rechazo-inf" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;resize:vertical;" placeholder="Ej: Falta información de cuenta, monto incorrecto..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#6b7280;color:#fff;">Cancelar</button>
+        <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">Confirmar Rechazo</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="pane-prov" class="pane">
@@ -965,14 +981,6 @@ async function openOCDetail(num){
 // ─── Solicitudes para Catalina ────────────────────────────────────────
 var SOLIC=[];
 var INFLUENCERS=[];
-async function loadSolicitudes(){
-  try{
-    var r=await fetch('/api/solicitudes-compra');
-    var d=await r.json();
-    SOLIC=d.solicitudes||[];
-  }catch(e){ SOLIC=[]; }
-  renderSolicitudes();
-}
 async function loadInfluencers(){
   try{
     var r=await fetch('/api/solicitudes-compra?categoria=Influencer%2FMarketing+Digital');
@@ -981,6 +989,7 @@ async function loadInfluencers(){
   }catch(e){ INFLUENCERS=[]; }
   renderInfluencers();
 }
+function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
 function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-influencer')||{value:''}).value;
@@ -989,32 +998,105 @@ function renderInfluencers(){
     if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
-  var pend=list.filter(function(s){ return s.estado==='Pendiente'; }).length;
-  var apro=list.filter(function(s){ return s.estado==='Aprobada'; }).length;
-  var pills='<span class="pill">'+list.length+' cuentas de cobro</span>';
-  if(pend) pills+='<span class="pill y">Por pagar: '+pend+'</span>';
-  if(apro) pills+='<span class="pill g">Pagadas: '+apro+'</span>';
+  // KPI cards
+  var pendAll=INFLUENCERS.filter(function(s){ return s.estado==='Aprobada'; });
+  var totalPend=pendAll.reduce(function(a,s){ return a+(s.valor||0); },0);
+  var kpiEl=document.getElementById('kpi-influencer');
+  if(kpiEl){
+    kpiEl.innerHTML=
+      '<div style="background:#7c3aed;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Por pagar</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+pendAll.length+' OCs</div>'
+      +'<div style="font-size:13px;opacity:.9;margin-top:2px;">'+fmoney(totalPend)+'</div>'
+      +'</div>'
+      +'<div style="background:#059669;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Pagadas</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+INFLUENCERS.filter(function(s){return s.estado==="Pagada";}).length+'</div>'
+      +'</div>'
+      +'<div style="background:#6b7280;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Total influencers</div>'
+      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+INFLUENCERS.length+'</div>'
+      +'</div>';
+  }
+  // Pills
+  var pills='<span class="pill">'+list.length+' mostradas</span>';
   var el=document.getElementById('pills-influencer');
   var gel=document.getElementById('grid-influencer');
   if(el) el.innerHTML=pills;
   if(!gel) return;
-  if(!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro de influencers</div>'; return; }
-  var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7'};
-  var stFg={'Pendiente':'#92400e','Aprobada':'#166534'};
+  if(!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro</div>'; return; }
+  var stCfg={
+    'Aprobada':  {bg:'#ede9fe',fg:'#5b21b6',label:'Lista para pagar'},
+    'Pagada':    {bg:'#d1fae5',fg:'#065f46',label:'Pagada'},
+    'Rechazada': {bg:'#fee2e2',fg:'#991b1b',label:'Rechazada'},
+    'Pendiente': {bg:'#fef3c7',fg:'#92400e',label:'Pendiente'}
+  };
   gel.innerHTML=list.map(function(s){
-    var stB=stBg[s.estado]||'#f3f4f6';
-    var stF=stFg[s.estado]||'#374151';
+    var cfg=stCfg[s.estado]||{bg:'#f3f4f6',fg:'#374151',label:s.estado};
+    var obsCorta=(s.observaciones||'').substring(0,120);
+    var btns='';
+    if(s.estado==='Aprobada'){
+      btns='<button class="btn" style="background:#7c3aed;color:#fff;font-size:13px;" onclick="pagarInfluencer(''+esc(s.numero_oc||'')+'',''+esc(s.numero)+'','+Number(s.valor||0)+')">&#x1F4B8; Pagar</button>'
+          +'<button class="btn" style="background:#dc2626;color:#fff;font-size:13px;" onclick="rechazarInfluencer(''+esc(s.numero_oc||'')+'',''+esc(s.numero)+'')">&#x2715; Rechazar</button>';
+    } else if(s.estado==='Pagada'){
+      btns='<span style="color:#065f46;font-weight:600;font-size:13px;">&#x2713; Pagado</span>';
+    } else if(s.estado==='Rechazada'){
+      btns='<span style="color:#991b1b;font-weight:600;font-size:13px;">&#x2715; Rechazada</span>';
+    }
     return '<div class="card">'
       +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
       +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
-      +'<span class="badge" style="background:'+stB+';color:'+stF+';">'+s.estado+'</span></div>'
-      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
-      +'<span style="color:#7c3aed;font-weight:600;">'+esc(s.tipo||'-')+'</span></div>'
-      +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
-      +'<div class="acts"><button class="btn bg bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4B8; Pagar directamente</button></div>'
+      +'<span class="badge" style="background:'+cfg.bg+';color:'+cfg.fg+';">'+cfg.label+'</span></div>'
+      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span>'
+      +(s.numero_oc?'<span style="font-family:monospace;font-size:11px;color:#6b7280;">'+esc(s.numero_oc)+'</span>':'')
+      +'<span style="color:#7c3aed;font-weight:600;">'+fmoney(s.valor)+'</span></div>'
+      +(obsCorta?'<div class="cobs">'+esc(obsCorta)+'</div>':'')
+      +(btns?'<div class="acts">'+btns+'</div>':'')
       +'</div>';
   }).join('');
 }
+// ─── Pagar influencer ───────────────────────────────────────────────
+function pagarInfluencer(oc_num, sol_num, valor){
+  if(!oc_num){ alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return; }
+  var confirmado=confirm('Confirmar pago de '+fmoney(valor)+' para '+sol_num+'\n\nOC: '+oc_num+'\n\nEsto registrará el pago en Finanzas (flujo de egresos).');
+  if(!confirmado) return;
+  fetch('/api/compras/oc/'+encodeURIComponent(oc_num)+'/pagar',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.ok){
+      alert('Pago registrado. La OC quedó como Pagada y el egreso fue enviado a Finanzas.');
+      loadInfluencers();
+    } else { alert('Error: '+(d.error||'desconocido')); }
+  }).catch(function(){ alert('Error de conexión'); });
+}
+// ─── Rechazar influencer ────────────────────────────────────────────
+var _rechazarOC='', _rechazarSol='';
+function rechazarInfluencer(oc_num, sol_num){
+  if(!oc_num){ alert('Esta solicitud no tiene OC vinculada.'); return; }
+  _rechazarOC=oc_num; _rechazarSol=sol_num;
+  var m=document.getElementById('motivo-rechazo-inf');
+  if(m) m.value='';
+  openModal('m-rechazar-inf');
+  var btn=document.getElementById('btn-confirmar-rechazo');
+  if(btn){
+    btn.onclick=function(){
+      var motivo=(document.getElementById('motivo-rechazo-inf')||{value:''}).value.trim();
+      if(!motivo){ alert('El motivo es obligatorio para rechazar.'); return; }
+      fetch('/api/compras/oc/'+encodeURIComponent(_rechazarOC)+'/rechazar',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({motivo:motivo})
+      }).then(function(r){return r.json();}).then(function(d){
+        if(d.ok){
+          closeModal('m-rechazar-inf');
+          alert('OC rechazada. La solicitud volvió a estado Pendiente con el motivo registrado.');
+          loadInfluencers();
+        } else { alert('Error: '+(d.error||'desconocido')); }
+      }).catch(function(){ alert('Error de conexión'); });
+    };
+  }
+}
+
 function renderSolicitudes(){
   var q=(document.getElementById('q-solic')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-solic')||{value:''}).value;

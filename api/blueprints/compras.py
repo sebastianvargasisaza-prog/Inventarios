@@ -341,6 +341,14 @@ def handle_solicitudes_compra():
     c.execute(sql, params)
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area']
     rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
+    # Enrich with numero_oc and total valor
+    for row in rows_sol:
+        c2 = conn.cursor()
+        c2.execute("SELECT numero_oc, aprobado_por FROM solicitudes_compra WHERE numero=?", (row['numero'],))
+        extra = c2.fetchone()
+        row['numero_oc'] = extra[0] if extra else None
+        c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
+        row['valor'] = c2.fetchone()[0] or 0
     conn.close()
     return jsonify({'solicitudes': rows_sol})
 
@@ -571,6 +579,30 @@ def pagar_oc(numero_oc):
         pass
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'estado': 'Pagada', 'monto': monto})
+
+@bp.route('/api/compras/oc/<numero_oc>/rechazar', methods=['POST'])
+def rechazar_oc(numero_oc):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario_actual = session.get('compras_user', '')
+    d = request.get_json() or {}
+    motivo = d.get('motivo', 'Sin motivo especificado')[:300]
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("SELECT estado, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    row = cur.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    # Mark OC as Rechazada
+    cur.execute("UPDATE ordenes_compra SET estado='Rechazada', observaciones=COALESCE(observaciones,'')||' | RECHAZADA: '||? WHERE numero_oc=?",
+                (motivo, numero_oc))
+    # Revert linked solicitud to Pendiente so requester can resubmit
+    cur.execute("SELECT numero FROM solicitudes_compra WHERE numero_oc=?", (numero_oc,))
+    sol = cur.fetchone()
+    if sol:
+        cur.execute("UPDATE solicitudes_compra SET estado='Pendiente', observaciones=COALESCE(observaciones,'')||' | RECHAZADA por '||?||': '||? WHERE numero=?",
+                    (usuario_actual, motivo, sol[0]))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'estado': 'Rechazada', 'motivo': motivo})
 
 @bp.route('/api/compras/buscar-remision/<remision_code>')
 def buscar_remision(remision_code):
