@@ -408,6 +408,21 @@ def actualizar_estado_solicitud(numero):
         cur.execute("SELECT categoria FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
         sol_row = cur.fetchone()
         categoria_oc = d.get('categoria') or (sol_row[0] if sol_row and sol_row[0] else 'MP')
+        # Normalizar categorias largas de solicitudes a claves cortas de OC
+        _SOLIC_TO_OC_CAT = {
+            'Materia Prima': 'MP', 'Materias Primas': 'MP', 'MPs': 'MP',
+            'Material de Empaque': 'MEE', 'Envase': 'MEE', 'Insumos': 'MEE',
+            'Empaque': 'MEE',
+            'EPP': 'ADM', 'Aseo/Limpieza': 'ADM', 'Papeleria/Oficina': 'ADM',
+            'Dotacion': 'ADM', 'Otro': 'ADM', 'Administrativo': 'ADM',
+            'Nomina': 'ADM', 'Admin': 'ADM',
+            'Mantenimiento': 'INF', 'Repuestos': 'INF',
+            'Reactivos/Laboratorio': 'INF', 'Infraestructura': 'INF',
+            'Servicios Profesionales': 'SVC', 'Software/Tecnologia': 'SVC',
+            'Servicios': 'SVC', 'Analisis': 'SVC', 'Acondicionamiento': 'SVC',
+            'Servicio': 'SVC',
+        }
+        categoria_oc = _SOLIC_TO_OC_CAT.get(categoria_oc, categoria_oc)
         proveedor_oc = d.get('proveedor', 'Por definir')
         valor_oc = float(d.get('valor_total') or 0)
         fent_oc = d.get('fecha_entrega_est', '')

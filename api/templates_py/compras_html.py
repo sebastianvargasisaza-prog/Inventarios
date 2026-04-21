@@ -1272,7 +1272,7 @@ async function _guardarNuevoProv(){
   var nit=(document.getElementById('snp-nit')||{value:''}).value.trim();
   var body={nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta,categoria:'Cuenta de Cobro',condiciones_pago:'Inmediato'};
   try{
-    var r=await fetch('/api/proveedores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     PROVS.push({nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta});
@@ -1353,6 +1353,14 @@ async function openOCDetail(num){
 // ─── Solicitudes para Catalina ────────────────────────────────────────
 var SOLIC=[];
 var INFLUENCERS=[];
+async function loadSolicitudes(){
+  try{
+    var r=await fetch('/api/solicitudes-compra');
+    var d=await r.json();
+    SOLIC=d.solicitudes||[];
+  }catch(e){ SOLIC=[]; }
+  renderSolicitudes();
+}
 async function loadInfluencers(){
   try{
     var r=await fetch('/api/solicitudes-compra?categoria=Influencer%2FMarketing+Digital');
