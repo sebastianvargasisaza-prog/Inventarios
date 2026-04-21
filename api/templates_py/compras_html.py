@@ -209,17 +209,31 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer" class="grid"></div>
 </div>
-<!-- Modal rechazo influencer -->
+<\!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
-  <div class="mc" style="max-width:440px;">
-    <div class="mh"><h3>Rechazar cuenta de cobro</h3><button class="mc-x" onclick="closeModal('m-rechazar-inf')">&#x2715;</button></div>
-    <div style="padding:20px;">
-      <p style="margin:0 0 12px;color:#374151;">Motivo del rechazo (visible para el solicitante):</p>
-      <textarea id="motivo-rechazo-inf" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;resize:vertical;" placeholder="Ej: Falta información de cuenta, monto incorrecto..."></textarea>
-      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
-        <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#6b7280;color:#fff;">Cancelar</button>
-        <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">Confirmar Rechazo</button>
+  <div class="mdl" style="max-width:440px;">
+    <div class="mh" style="background:#fef2f2;border-bottom:1px solid #fecaca;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;line-height:1;">&#x274C;</span>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#991b1b;">Rechazar solicitud</div>
+          <div id="m-rechazar-inf-sub" style="font-size:12px;color:#b91c1c;margin-top:1px;"></div>
+        </div>
       </div>
+      <button class="mx" onclick="closeModal('m-rechazar-inf')">&#x2715;</button>
+    </div>
+    <div class="mb">
+      <div class="fg">
+        <label>Motivo del rechazo <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:#78716c;">(visible para el solicitante)</span></label>
+        <textarea id="motivo-rechazo-inf" rows="4" placeholder="Ej: Falta información de cuenta, monto incorrecto, valor no coincide..."></textarea>
+      </div>
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
+        ⚠️ El solicitante recibirá un correo con este motivo. Sé específico para evitar reenvíos innecesarios.
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;">Cancelar</button>
+      <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">&#x274C; Confirmar Rechazo</button>
     </div>
   </div>
 </div>
@@ -1476,6 +1490,8 @@ function rechazarInfluencer(oc_num, sol_num){
   _rechazarOC=oc_num; _rechazarSol=sol_num;
   var m=document.getElementById('motivo-rechazo-inf');
   if(m) m.value='';
+  var sub=document.getElementById('m-rechazar-inf-sub');
+  if(sub) sub.textContent=sol_num ? 'Solicitud '+sol_num : '';
   openModal('m-rechazar-inf');
   var btn=document.getElementById('btn-confirmar-rechazo');
   if(btn){
