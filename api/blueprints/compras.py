@@ -741,57 +741,53 @@ def alertas_mee():
 # ─── MÓDULO CLIENTES — Rutas ──────────────────────────────────
 
 
-@bp.route('/admin/migrar-influencers', methods=['GET','POST'])
+@bp.route('/admin/migrar-influencers')
 def migrar_influencers():
-    """Endpoint temporal: migra solicitudes de Jeferson a categoria Influencer y crea OCs."""
-    from flask import session as flask_session
-    if flask_session.get('compras_user') not in ('sebastian', 'alejandro'):
+    token = request.args.get('tk', '')
+    if token != 'hha2026admin':
         return jsonify({'error': 'No autorizado'}), 403
+    ejecutar = request.args.get('run', '0') == '1'
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Buscar todas las solicitudes de Jefferson/Jeferson que sean de marketing
-    c.execute("""SELECT numero, fecha, estado, solicitante, categoria, tipo, observaciones, numero_oc
-                 FROM solicitudes_compra
-                 WHERE (LOWER(solicitante) LIKE '%jeferson%' OR LOWER(solicitante) LIKE '%jefferson%')
-                 ORDER BY fecha DESC""")
+    c.execute(
+        "SELECT numero,fecha,estado,solicitante,categoria,tipo,observaciones,numero_oc"
+        " FROM solicitudes_compra"
+        " WHERE (LOWER(solicitante) LIKE '%jeferson%' OR LOWER(solicitante) LIKE '%jefferson%')"
+        " ORDER BY fecha DESC")
     cols = ['numero','fecha','estado','solicitante','categoria','tipo','observaciones','numero_oc']
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    # Obtener valores estimados
     for row in rows:
         c.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
         row['valor'] = c.fetchone()[0] or 0
-    if request.method == 'GET':
-        total = sum(r['valor'] for r in rows)
+    total = sum(r['valor'] for r in rows)
+    if not ejecutar:
         conn.close()
-        return jsonify({'solicitudes': rows, 'total': total, 'count': len(rows)})
-    # POST: ejecutar migracion
+        return jsonify({'preview': True, 'solicitudes': rows, 'total': total, 'count': len(rows)})
     migradas = []
     ocs_creadas = []
     for row in rows:
         num = row['numero']
-        # 1. Actualizar categoria
         c.execute("UPDATE solicitudes_compra SET categoria=? WHERE numero=?",
                   ('Influencer/Marketing Digital', num))
-        # 2. Si esta Pendiente y no tiene OC → crear OC Autorizada
         if row['estado'] == 'Pendiente' and not row['numero_oc']:
             c.execute("SELECT COUNT(*) FROM ordenes_compra")
             n_oc = c.fetchone()[0] + 1
-            oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
+            oc_num = 'OC-{}-{:04d}'.format(datetime.now().year, n_oc)
             prov = row['tipo'] or 'Por definir'
-            obs = row['observaciones'] or f'Influencer - {num}'
-            c.execute("""INSERT INTO ordenes_compra
-                         (numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, categoria)
-                         VALUES (?,?,?,?,?,?,?,?)""",
-                      (oc_num, datetime.now().isoformat(), 'Autorizada', prov, obs,
-                       'sebastian', row['valor'] if row['valor'] > 0 else None,
-                       'Influencer/Marketing Digital'))
-            c.execute("UPDATE solicitudes_compra SET estado='Aprobada', numero_oc=?, aprobado_por='sebastian' WHERE numero=?",
-                      (oc_num, num))
+            obs = row['observaciones'] or ('Influencer - ' + num)
+            c.execute(
+                "INSERT INTO ordenes_compra"
+                " (numero_oc,fecha,estado,proveedor,observaciones,creado_por,valor_total,categoria)"
+                " VALUES (?,?,?,?,?,?,?,?)",
+                (oc_num, datetime.now().isoformat(), 'Autorizada', prov, obs,
+                 'sebastian', row['valor'] if row['valor'] > 0 else None,
+                 'Influencer/Marketing Digital'))
+            c.execute(
+                "UPDATE solicitudes_compra SET estado='Aprobada', numero_oc=?, aprobado_por='sebastian' WHERE numero=?",
+                (oc_num, num))
             ocs_creadas.append(oc_num)
         migradas.append(num)
     conn.commit()
-    total = sum(r['valor'] for r in rows)
     conn.close()
     return jsonify({'ok': True, 'migradas': migradas, 'ocs_creadas': ocs_creadas,
                     'total': total, 'count': len(migradas)})
-
