@@ -330,11 +330,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727"></div>
-        <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01"></div>
+        <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01" oninput="calcularValorTotal()"></div>
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
         <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
-        <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
+        <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0" oninput="calcularValorTotal()"></div>
+        <div class="form-group" style="grid-column:span 2;"><label>Valor total estimado (COP)</label><input type="text" id="ing-valor-total" placeholder="Se calcula al ingresar cantidad y precio" readonly style="background:#f0fff4;color:#27ae60;font-weight:600;border:1px solid #a8e6cf;"></div>
       </div>
       <!-- OC Receipt + Costos + Cuarentena -->
       <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px;margin:12px 0;">
@@ -1007,10 +1008,15 @@ async function registrarConsumo(){
 async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
   if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
-  var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
-  var d=await r.json();
-  document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
-  if(r.ok) setTimeout(function(){cerrarAjuste();loadStock();},1500);
+  try{
+    var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
+    var d={}; try{d=await r.json();}catch(je){}
+    document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error al archivar')+'</span>';
+    setTimeout(function(){cerrarAjuste();loadStock();},1500);
+  }catch(e){
+    document.getElementById('ajuste-arch-msg').innerHTML='<span style="color:red;">Error: '+e.message+'</span>';
+    setTimeout(function(){cerrarAjuste();},3000);
+  }
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
 function abrirSolIdx(ri){
