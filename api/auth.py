@@ -4,7 +4,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-from flask import request, session, redirect
+from flask import request, session, redirect, jsonify
 
 from config import DB_PATH
 
@@ -79,7 +79,23 @@ def register_hooks(app):
         if session.get('compras_user'):
             if time.time() - session.get('login_time', 0) > 8 * 3600:
                 session.clear()
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Sesion expirada'}), 401
                 return redirect('/login')
+
+    @app.before_request
+    def require_auth_for_api():
+        """Bloquea TODAS las rutas /api/ si no hay sesion activa.
+        Excepcion: /api/login (publico).
+        Esto cierra la brecha donde ~45 endpoints aceptaban mutaciones sin auth.
+        """
+        if not request.path.startswith('/api/'):
+            return  # Rutas HTML se manejan individualmente
+        PUBLIC_API = {'/api/login', '/api/logout'}
+        if request.path in PUBLIC_API:
+            return
+        if not session.get('compras_user'):
+            return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
 
     @app.after_request
     def add_security_headers(response):

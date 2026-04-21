@@ -209,7 +209,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer" class="grid"></div>
 </div>
-<\!-- Modal rechazo influencer -->
+<!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
   <div class="mdl" style="max-width:440px;">
     <div class="mh" style="background:#fef2f2;border-bottom:1px solid #fecaca;">

@@ -342,14 +342,14 @@ def admin_cleanup_test_data():
         c.execute("DELETE FROM ordenes_compra WHERE numero_oc=? AND proveedor LIKE '%test%' OR numero_oc=?", (num, num))
     deleted['ocs'] = len(test_oc_nums)
     # Test solicitudes
-    c.execute("DELETE FROM solicitudes WHERE numero='SOL-2026-0001' OR proveedor LIKE '%test%' OR proveedor LIKE '%prueba%'")
+    c.execute("DELETE FROM solicitudes_compra WHERE numero='SOL-2026-0001' OR solicitante LIKE '%test%' OR observaciones LIKE '%prueba%'")
     deleted['solicitudes'] = c.rowcount
     # Test pedidos
     c.execute("DELETE FROM pedidos_items WHERE numero_pedido='PED-2026-0001'")
     c.execute("DELETE FROM pedidos WHERE numero='PED-2026-0001'")
     deleted['pedidos'] = c.rowcount
     # Test lotes
-    c.execute("DELETE FROM lotes WHERE codigo_lote LIKE '%AUDIT%' OR codigo_lote LIKE '%TEST%' OR codigo_lote LIKE '%-test-%'")
+    c.execute("DELETE FROM movimientos WHERE lote LIKE '%AUDIT%' OR lote LIKE '%TEST%' OR lote LIKE '%-test-%'")
     deleted['lotes'] = c.rowcount
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'deleted': deleted, 'message': 'Test data cleaned up'})

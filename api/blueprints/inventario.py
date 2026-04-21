@@ -1100,6 +1100,8 @@ def reset_mov():
 
 @bp.route('/rotulos/<producto_nombre>/<cantidad_str>')
 def generar_rotulos(producto_nombre, cantidad_str):
+    if 'compras_user' not in session:
+        return redirect('/login')
     try: cantidad_kg = float(cantidad_str)
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
@@ -1159,6 +1161,8 @@ def generar_rotulos(producto_nombre, cantidad_str):
 
 @bp.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
 def rotulo_recepcion(codigo, lote, cantidad_str):
+    if 'compras_user' not in session:
+        return redirect('/login')
     try: cantidad = float(cantidad_str)
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
@@ -1288,6 +1292,8 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
 
 @bp.route('/rotulo-recepcion-mee/<codigo>/<cantidad_str>')
 def rotulo_recepcion_mee(codigo, cantidad_str):
+    if 'compras_user' not in session:
+        return redirect('/login')
     try: cantidad = int(float(cantidad_str))
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
