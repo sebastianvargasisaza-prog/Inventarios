@@ -469,8 +469,8 @@ def recibir_oc(numero_oc):
         if cant_recibida > 0:
             if categoria == 'MEE':
                 cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
-                cur.execute("INSERT INTO movimientos_mee (codigo_mee, tipo, cantidad, referencia, observaciones, operador, fecha) VALUES (?,?,?,?,?,?,?)",
-                           (codigo, 'entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
+                cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha) VALUES (?,?,?,?,?,?,?)",
+                           (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
             else:
                 cur.execute(
                     "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
@@ -722,8 +722,8 @@ def ajuste_mee(codigo):
     anterior=row[0]
     diff=nuevo-anterior
     cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,codigo))
-    cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
-                (codigo,'ajuste',diff,'ajuste_manual',obs,oper,datetime.now().isoformat()))
+    cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
+                (codigo,'Ajuste',diff,'ajuste_manual',obs,oper,datetime.now().isoformat()))
     conn.commit(); conn.close()
     return jsonify({'ok':True,'nuevo_stock':nuevo})
 
@@ -732,8 +732,8 @@ def handle_movimientos_mee():
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
     if request.method == 'POST':
         d = request.get_json()
-        cod  = d.get('codigo_mee')
-        tipo = d.get('tipo','entrada')
+        cod  = d.get('codigo_mee') or d.get('mee_codigo', '')
+        tipo_raw = d.get('tipo','Entrada'); tipo = tipo_raw[0].upper()+tipo_raw[1:].lower() if tipo_raw else 'Entrada'
         cant = float(d.get('cantidad',0))
         ref  = d.get('referencia','')
         obs  = d.get('observaciones','')
@@ -742,11 +742,11 @@ def handle_movimientos_mee():
         cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
         row=cur.fetchone()
         if not row: conn.close(); return jsonify({'error':'MEE no encontrado'}), 404
-        delta = cant if tipo=='entrada' else -cant
+        delta = cant if tipo in ('Entrada','entrada') else -cant
         nuevo = row[0]+delta
         if nuevo<0: conn.close(); return jsonify({'error':f'Stock insuficiente (actual: {row[0]})'}), 400
         cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
-        cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
                     (cod,tipo,cant,ref,obs,oper,datetime.now().isoformat()))
         conn.commit(); conn.close()
         return jsonify({'ok':True,'nuevo_stock':nuevo}), 201
@@ -754,14 +754,14 @@ def handle_movimientos_mee():
     codigo = request.args.get('codigo','')
     tipo   = request.args.get('tipo','')
     limit  = int(request.args.get('limit',50))
-    sql = """SELECT m.id,m.codigo_mee,mm.descripcion,m.tipo,m.cantidad,m.referencia,m.observaciones,m.operador,m.fecha
-             FROM movimientos_mee m LEFT JOIN maestro_mee mm ON m.codigo_mee=mm.codigo WHERE 1=1"""
+    sql = """SELECT m.id,m.mee_codigo,mm.descripcion,m.tipo,m.cantidad,m.lote_ref,m.observaciones,m.responsable,m.fecha
+             FROM movimientos_mee m LEFT JOIN maestro_mee mm ON m.mee_codigo=mm.codigo WHERE 1=1"""
     params=[]
-    if codigo: sql+=" AND m.codigo_mee=?"; params.append(codigo)
+    if codigo: sql+=" AND m.mee_codigo=?"; params.append(codigo)
     if tipo:   sql+=" AND m.tipo=?"; params.append(tipo)
     sql+=" ORDER BY m.fecha DESC LIMIT ?"; params.append(limit)
     cur.execute(sql, params)
-    cols=['id','codigo_mee','descripcion','tipo','cantidad','referencia','observaciones','operador','fecha']
+    cols=['id','mee_codigo','descripcion','tipo','cantidad','lote_ref','observaciones','responsable','fecha']
     rows=[dict(zip(cols,r)) for r in cur.fetchall()]
     conn.close()
     return jsonify({'movimientos':rows})
@@ -775,7 +775,7 @@ def movimientos_mee_lote():
     ref  = d.get('referencia','')
     errores=[]
     for m in movs:
-        cod=m.get('codigo_mee'); cant=float(m.get('cantidad',0))
+        cod=m.get('codigo_mee') or m.get('mee_codigo'); cant=float(m.get('cantidad',0))
         if not cod or cant<=0: continue
         cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
         row=cur.fetchone()
@@ -783,8 +783,8 @@ def movimientos_mee_lote():
         nuevo=row[0]-cant
         if nuevo<0: nuevo=0
         cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
-        cur.execute("INSERT INTO movimientos_mee (codigo_mee,tipo,cantidad,referencia,observaciones,operador,fecha) VALUES (?,?,?,?,?,?,?)",
-                    (cod,'salida',cant,ref,'Consumo produccion',oper,datetime.now().isoformat()))
+        cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
+                    (cod,'Salida',cant,ref,'Consumo produccion',oper,datetime.now().isoformat()))
     conn.commit(); conn.close()
     if errores: return jsonify({'ok':True,'advertencias':errores})
     return jsonify({'ok':True})
