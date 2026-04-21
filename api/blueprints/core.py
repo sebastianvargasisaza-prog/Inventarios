@@ -118,4 +118,7 @@ def compras():
         return Response(sin_acceso, mimetype='text/html')
     usuario = username.capitalize()
     es_contadora = 'true' if username in CONTADORA_USERS else 'false'
-    html = COMPRAS_H
+    html = COMPRAS_HTML.replace('{usuario}', usuario).replace('{es_contadora}', es_contadora)
+    resp = Response(html, mimetype='text/html; charset=utf-8')
+    resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+    return resp
