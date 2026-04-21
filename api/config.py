@@ -36,3 +36,14 @@ TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
 
 # PIN para desbloquear vista de cantidades en Formulas (cambiar via env var FORMULA_PIN)
 FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")
+
+# Emails de usuarios para notificaciones (configurar via env vars en Render)
+USER_EMAILS = {
+    "jefferson":  os.environ.get("EMAIL_JEFFERSON",  ""),
+    "hernando":   os.environ.get("EMAIL_HERNANDO",   ""),
+    "catalina":   os.environ.get("EMAIL_CATALINA",   ""),
+    "luz":        os.environ.get("EMAIL_LUZ",        ""),
+    "daniela":    os.environ.get("EMAIL_DANIELA",    ""),
+    "sebastian":  os.environ.get("EMAIL_SEBASTIAN",  "sebastianvargasisaza@gmail.com"),
+    "alejandro":  os.environ.get("EMAIL_ALEJANDRO",  ""),
+}

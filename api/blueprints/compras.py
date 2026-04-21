@@ -602,6 +602,32 @@ def rechazar_oc(numero_oc):
         cur.execute("UPDATE solicitudes_compra SET estado='Pendiente', observaciones=COALESCE(observaciones,'')||' | RECHAZADA por '||?||': '||? WHERE numero=?",
                     (usuario_actual, motivo, sol[0]))
     conn.commit(); conn.close()
+    # Send email notification to requester (non-blocking, best-effort)
+    if sol:
+        try:
+            cur.execute('SELECT solicitante FROM solicitudes_compra WHERE numero=?', (sol[0],))
+            sol_row = cur.fetchone()
+            solicitante = (sol_row[0] if sol_row else '').lower().strip()
+            dest_email = USER_EMAILS.get(solicitante, '')
+            if dest_email:
+                import sys, threading
+                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from notificaciones import SistemaNotificaciones
+                notif = SistemaNotificaciones()
+                asunto = f'Cuenta de cobro rechazada &mdash; {numero_oc}'
+                body = ('<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
+                    '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
+                    '<h2 style="color:#991b1b;">Cuenta de cobro rechazada</h2>'
+                    f'<p>Hola <strong>{solicitante.capitalize()}</strong>, '
+                    f'tu cuenta de cobro <strong>{numero_oc}</strong> fue rechazada.</p>'
+                    f'<p><strong>Motivo:</strong> {motivo}</p>'
+                    '<p>Tu solicitud volvio a estado <em>Pendiente</em>. '
+                    'Puedes corregirla y reenviarla desde el sistema.</p>'
+                    '<p style="color:#6b7280;font-size:12px;">Compras HHA &mdash; Espagiria</p>'
+                    '</div></body></html>')
+                threading.Thread(target=notif._enviar_email, args=(asunto, body, [dest_email]), daemon=True).start()
+        except Exception as e:
+            print(f'[rechazar_oc] email error (non-critical): {e}')
     return jsonify({'ok': True, 'estado': 'Rechazada', 'motivo': motivo})
 
 @bp.route('/api/compras/buscar-remision/<remision_code>')
