@@ -171,8 +171,8 @@ textarea{resize:vertical;min-height:80px}
       <div class="row2">
         <div class="field"><label>Nombre completo *</label>
           <input type="text" id="p-nombre" placeholder="Nombre del beneficiario"></div>
-        <div class="field"><label>Red social / Handle</label>
-          <input type="text" id="p-handle" placeholder="@usuario o N/A"></div>
+        <div class="field" id="p-handle-box"><label>Red social / Handle</label>
+          <input type="text" id="p-handle" placeholder="@usuario"></div>
       </div>
       <div class="row2">
         <div class="field"><label>Banco *</label>
@@ -213,7 +213,7 @@ textarea{resize:vertical;min-height:80px}
     </div>
     <div class="field"><label>Observaciones adicionales</label>
       <textarea id="p-obs" placeholder="Informacion adicional..."></textarea></div>
-    <button class="btn-primary" onclick="enviarSolicitud()">Enviar Solicitud de Pago</button>
+    <button class="btn-primary" id="btn-enviar-pago" onclick="enviarSolicitud()">Enviar Solicitud de Pago</button>
   </div><!-- /pago-section -->
 </div>
 
@@ -286,8 +286,11 @@ function buildUniSelect(id,sel){
 function onCatChange(){
   var cat=document.getElementById('f-cat').value;
   var esPago=PAGO_CATS.indexOf(cat)>=0;
+  var esInfl=cat==='Influencer/Marketing Digital';
   document.getElementById('items-section').style.display=esPago?'none':'block';
   document.getElementById('pago-section').style.display=esPago?'block':'none';
+  var hbox=document.getElementById('p-handle-box');
+  if(hbox) hbox.style.display=esInfl?'block':'none';
   if(esPago)setTipo('Pago');else setTipo('Compra');
   if(!esPago){
     var rows=document.getElementById('items-body').children;
@@ -352,7 +355,7 @@ async function enviarSolicitud(){
     if(!numcta){alert('Ingresa el numero de cuenta o celular');return;}
     if(!valor){alert('Ingresa el valor a pagar');return;}
     if(!desc){alert('Ingresa una descripcion del servicio');return;}
-    var obsStr='BENEFICIARIO: '+nombre+' | BANCO: '+banco+' '+tipoCta+' | CUENTA/CEL: '+numcta+(cedula?' | CED/NIT: '+cedula:'')+' | VALOR: $'+valor+' | SERVICIO: '+desc+(obsExtra?' | '+obsExtra:'');
+    var obsStr='BENEFICIARIO: '+nombre+(handle?' | HANDLE: '+handle:'')+' | BANCO: '+banco+' '+tipoCta+' | CUENTA/CEL: '+numcta+(cedula?' | CED/NIT: '+cedula:'')+' | VALOR: $'+valor+' | SERVICIO: '+desc+(obsExtra?' | '+obsExtra:'');
     items=[{codigo_mp:'',nombre_mp:desc,cantidad_g:1,unidad:'servicio',valor_estimado:valor}];
     body={solicitante:sol,area:document.getElementById('f-area').value,empresa:empresa,tipo:'Pago',
       categoria:cat,urgencia:urg,observaciones:obsStr,items:items};
@@ -373,7 +376,7 @@ async function enviarSolicitud(){
     body={solicitante:sol,area:document.getElementById('f-area').value,empresa:empresa,tipo:tipo,
       categoria:cat,urgencia:urg,observaciones:document.getElementById('f-obs').value,items:items};
   }
-  var btn=document.querySelector('#btn-enviar,#pago-section .btn-primary');
+  var btn=esPago ? document.getElementById('btn-enviar-pago') : document.getElementById('btn-enviar');
   if(btn){btn.disabled=true;btn.textContent='Enviando...';}
   try{
     var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -383,8 +386,14 @@ async function enviarSolicitud(){
       document.getElementById('form-card').style.display='none';
       document.getElementById('confirm-card').style.display='block';
       window.scrollTo(0,0);
-    }else{alert('Error: '+(d.error||'Intenta de nuevo'));if(btn){btn.disabled=false;btn.textContent='Enviar Solicitud';}}
-  }catch(e){alert('Error de conexion.');if(btn){btn.disabled=false;btn.textContent='Enviar Solicitud';}}
+    }else{
+      alert('Error: '+(d.error||'Intenta de nuevo'));
+      if(btn){btn.disabled=false;btn.textContent=esPago?'Enviar Solicitud de Pago':'Enviar Solicitud';}
+    }
+  }catch(e){
+    alert('Error de conexion.');
+    if(btn){btn.disabled=false;btn.textContent=esPago?'Enviar Solicitud de Pago':'Enviar Solicitud';}
+  }
 }
 function nuevaSolicitud(){
   document.getElementById('form-card').style.display='block';
@@ -405,8 +414,10 @@ function nuevaSolicitud(){
     '<td><select id="i0-uni"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>und</option></select></td>'+
     '<td><input type="number" placeholder="0" min="0" step="1000" id="i0-val"></td>'+
     '<td><button class="btn-del" onclick="delItem(0)">&#10005;</button></td></tr>';
-  itemCount=1;urg='Normal';setUrg('Normal',document.getElementById('ub-n'));
+  itemCount=1;urg='Normal';tipo='Compra';setUrg('Normal',document.getElementById('ub-n'));setTipo('Compra');
   var eb=document.getElementById('btn-enviar');if(eb){eb.disabled=false;eb.textContent='Enviar Solicitud';}
+  var ep=document.getElementById('btn-enviar-pago');if(ep){ep.disabled=false;ep.textContent='Enviar Solicitud de Pago';}
+  var hbox=document.getElementById('p-handle-box');if(hbox)hbox.style.display='none';
 }
 async function consultarSol(){
   var num=document.getElementById('sol-lookup').value.trim().toUpperCase();
