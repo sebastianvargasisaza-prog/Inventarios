@@ -118,10 +118,18 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 
 <div id="pane-mp"  class="pane">
+  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
+      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
+      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
+    </div>
+    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+  </div>
   <div class="bar">
-    <input type="text" id="q-mp" placeholder="Buscar..." oninput="renderCat('mp')">
+    <input type="text" id="q-mp" placeholder="Buscar OC..." oninput="renderCat('mp')">
     <select id="s-mp" onchange="renderCat('mp')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
-    <button class="btn bp" onclick="openNuevaOC('MP')">+ Nueva OC</button>
+    <button class="btn bp" onclick="openNuevaOCMP()">+ Nueva OC</button>
   </div>
   <div id="pills-mp" class="pills"></div>
   <div id="grid-mp" class="grid"></div>
@@ -399,6 +407,84 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
+<\!-- MODAL: Nueva OC Materias Primas (con catalogo) -->
+<div id="m-noc-mp" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#x1F9EA; Nueva OC &#x2014; Materias Primas</h3><button class="mx" onclick="closeModal('m-noc-mp')">&times;</button></div>
+  <div class="mb">
+    <div id="nmp-alert-info" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#92400e;"></div>
+    <div class="fg" style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor</label>
+      <select id="nmp-prov" onchange="fillProv('nmp-prov','nmp-ibox')" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></select>
+      <div id="nmp-ibox" class="ibox" style="display:none;margin-top:6px;"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Fecha entrega estimada</label>
+        <input type="date" id="nmp-fent" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Observaciones</label>
+        <input type="text" id="nmp-obs" placeholder="Opcional..." style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+    </div>
+    <datalist id="mp-codes-dl"></datalist>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#f5f5f4;font-weight:600;color:#44403c;">
+        <th style="padding:6px 4px;text-align:left;width:100px;">Codigo MP</th>
+        <th style="padding:6px 4px;text-align:left;">Material</th>
+        <th style="padding:6px 4px;text-align:center;width:85px;">Cant (g)</th>
+        <th style="padding:6px 4px;text-align:center;width:90px;">Precio/g</th>
+        <th style="padding:6px 4px;text-align:right;width:85px;">Subtotal</th>
+        <th style="padding:6px 4px;width:30px;"></th>
+      </tr></thead>
+      <tbody id="nmp-tbody"></tbody>
+    </table>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
+      <button class="btn bo" style="font-size:12px;" onclick="addRowMP(null)">+ Agregar item</button>
+      <div style="font-size:15px;font-weight:700;color:#1c1917;">Total: <span id="nmp-tot">$0</span></div>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
+    <button class="btn bp" onclick="crearOCMP()">&#x2713; Crear Orden de Compra</button>
+  </div>
+</div>
+</div>
+
+<\!-- MODAL: OC Sugerida desde alertas de stock -->
+<div id="m-oc-sug" class="ov">
+<div class="mdl mdl-lg">
+  <div class="mh"><h3>&#x26A0;&#xFE0F; OC Sugerida &#x2014; MPs Bajo Stock</h3><button class="mx" onclick="closeModal('m-oc-sug')">&times;</button></div>
+  <div class="mb">
+    <div style="font-size:12px;color:#78716c;margin-bottom:12px;">Cantidades sugeridas incluyen 20% de buffer sobre el deficit. Ajusta antes de crear.</div>
+    <div class="fg" style="margin-bottom:12px;">
+      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor</label>
+      <select id="sug-prov" onchange="fillProv('sug-prov','sug-ibox')" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></select>
+      <div id="sug-ibox" class="ibox" style="display:none;margin-top:6px;"></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#fef3c7;font-weight:600;color:#78350f;">
+        <th style="padding:6px 4px;text-align:left;">Material</th>
+        <th style="padding:6px 4px;text-align:right;width:80px;">Stock actual</th>
+        <th style="padding:6px 4px;text-align:right;width:70px;">Deficit</th>
+        <th style="padding:6px 4px;text-align:center;width:100px;">Cantidad (g)</th>
+        <th style="padding:6px 4px;text-align:center;width:90px;">Precio/g</th>
+        <th style="padding:6px 4px;text-align:right;width:85px;">Subtotal</th>
+      </tr></thead>
+      <tbody id="sug-tbody"></tbody>
+    </table>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;font-size:15px;font-weight:700;color:#1c1917;">
+      Total: <span id="sug-tot" style="margin-left:6px;">$0</span>
+    </div>
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-oc-sug')">Cancelar</button>
+    <button class="btn bp" onclick="crearOCSugerida()">&#x2713; Crear OC Borrador</button>
+  </div>
+</div>
+</div>
+
 <button class="fab" id="fab-btn" onclick="openNuevaOC('')" title="Nueva OC">+</button>
 
 <script>
@@ -407,6 +493,9 @@ var OCS = [];
 var PROVS = [];
 var ES_C = {es_contadora};
 var ITMS = 0;
+var MP_ITMS = 0;
+var _MPCAT = [];
+var _ALERTAS_MP = [];
 
 // Mapa categoria → grupos de strings
 var CMAP = {
@@ -449,7 +538,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='influencer') loadInfluencers();
-    else renderCat(tab);
+    else{ renderCat(tab); if(tab==='mp') renderMPAlerts(); }
     var fab = document.getElementById('fab-btn');
     if(tab==='prov'||tab==='solic'||tab==='influencer'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
@@ -460,17 +549,30 @@ document.querySelectorAll('.tn').forEach(function(btn){
 async function loadData(){
   try{
     var r = await fetch('/api/ordenes-compra');
-    if(!r.ok) throw new Error('OC API '+r.status);
+    if(\!r.ok) throw new Error('OC API '+r.status);
     var d = await r.json();
     OCS = d.ordenes||[];
   }catch(e){ console.error('OC load error:',e); OCS=[]; }
   try{
     var r2 = await fetch('/api/proveedores-compras');
-    if(!r2.ok) throw new Error('Prov API '+r2.status);
+    if(\!r2.ok) throw new Error('Prov API '+r2.status);
     var d2 = await r2.json();
     PROVS = d2.proveedores||[];
   }catch(e){ console.error('Prov load error:',e); PROVS=[]; }
+  try{
+    var r3 = await fetch('/api/maestro-mps');
+    if(\!r3.ok) throw new Error('Cat API '+r3.status);
+    var d3 = await r3.json();
+    _MPCAT = d3.mps||[];
+  }catch(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }
+  try{
+    var r4 = await fetch('/api/alertas-reabastecimiento');
+    if(\!r4.ok) throw new Error('Alert API '+r4.status);
+    var d4 = await r4.json();
+    _ALERTAS_MP = (d4.alertas||[]).filter(function(a){ return a.tipo==='MP'; });
+  }catch(e){ console.error('Alert load error:',e); _ALERTAS_MP=[]; }
   renderDash();
+  renderMPAlerts();
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────
@@ -675,6 +777,7 @@ document.querySelectorAll('.ov').forEach(function(ov){ ov.addEventListener('clic
 // ─── Nueva OC ─────────────────────────────────────────────────────
 var _catMap={'mp':'MP','mee':'MEE','svc':'SVC','adm':'ADM','inf':'INF','cc':'CC'};
 function openNuevaOC(catCode){
+  if(catCode==='MP'||catCode==='mp'){ openNuevaOCMP(); return; }
   var cat=_catMap[catCode]||catCode||'MP';
   document.getElementById('noc-cat').value=cat;
   document.getElementById('noc-fent').value='';
@@ -737,6 +840,233 @@ async function crearOC(){
     await loadData();
     renderCat(_catMap[Object.keys(_catMap).find(function(k){ return _catMap[k]===cat; })||'']||'mp');
     alert('Creada: '+d.numero_oc);
+  }catch(e){ alert('Error de conexion: '+e); }
+}
+
+
+// ─── MP: Banner de alertas ──────────────────────────────────
+function renderMPAlerts(){
+  var banner=document.getElementById('mp-alert-banner');
+  var text=document.getElementById('mp-alert-text');
+  var list=document.getElementById('mp-alert-list');
+  if(\!banner) return;
+  if(\!_ALERTAS_MP||\!_ALERTAS_MP.length){ banner.style.display='none'; return; }
+  var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
+  banner.style.display='block';
+  text.textContent=_ALERTAS_MP.length+' MPs bajo stock mínimo — Deficit total: '+Math.round(total_def/1000)+'kg';
+  list.innerHTML=_ALERTAS_MP.slice(0,8).map(function(a){
+    var pct=a.stock_minimo>0?Math.round(a.stock_actual/a.stock_minimo*100):0;
+    var col=pct<30?'#dc2626':'#d97706';
+    return '<span style="background:#fff;border:1px solid '+col+';color:'+col
+      +';border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">'
+      +esc(a.nombre.substring(0,24))+' ('+Math.round(a.stock_actual)+'g / min '+Math.round(a.stock_minimo)+'g)</span>';
+  }).join('');
+}
+
+// ─── MP: Nueva OC con catálogo ───────────────────────────
+function openNuevaOCMP(prefillItems){
+  MP_ITMS=0;
+  document.getElementById('nmp-tbody').innerHTML='';
+  document.getElementById('nmp-prov').value='';
+  document.getElementById('nmp-ibox').style.display='none';
+  document.getElementById('nmp-fent').value='';
+  document.getElementById('nmp-obs').value='';
+  document.getElementById('nmp-tot').textContent='$0';
+  fillProvSelect('nmp-prov');
+  var dl=document.getElementById('mp-codes-dl');
+  dl.innerHTML=_MPCAT.map(function(m){
+    return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
+  }).join('');
+  var info=document.getElementById('nmp-alert-info');
+  if(_ALERTAS_MP&&_ALERTAS_MP.length){
+    info.style.display='block';
+    info.textContent='⚠️ '+_ALERTAS_MP.length+' MPs bajo stock mínimo. Al escribir un código verás stock en tiempo real.';
+  } else { info.style.display='none'; }
+  if(prefillItems&&prefillItems.length){
+    prefillItems.forEach(function(it){ addRowMP(it); });
+  } else { addRowMP(null); addRowMP(null); }
+  openModal('m-noc-mp');
+}
+function addRowMP(prefill){
+  MP_ITMS++;
+  var n=MP_ITMS;
+  var cod=(prefill&&prefill.codigo_mp)||'';
+  var nom=(prefill&&prefill.nombre_mp)||'';
+  var qty=(prefill&&prefill.cantidad_g)||'';
+  var prc=(prefill&&prefill.precio_unitario)||'';
+  var tr=document.createElement('tr');
+  tr.id='mpr'+n;
+  tr.innerHTML=
+    '<td style="padding:3px;">'
+      +'<input id="mprc'+n+'" list="mp-codes-dl" placeholder="COD" value="'+esc(cod)+'"'
+      +' style="width:95px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;"'
+      +' onchange="mpLookup('+n+')" oninput="mpLookupDebounce('+n+')">';
+  tr.innerHTML+=
+    '</td>'
+    +'<td style="padding:3px;min-width:150px;">'
+      +'<input id="mprn'+n+'" placeholder="Descripcion" value="'+esc(nom)+'"'
+      +' style="width:100%;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;">'
+      +'<div id="mpri'+n+'" style="font-size:10px;margin-top:2px;"></div>'
+    +'</td>'
+    +'<td style="padding:3px;">'
+      +'<input id="mprq'+n+'" type="number" value="'+esc(qty)+'" min="0" placeholder="g"'
+      +' oninput="calcTotMP()" style="width:80px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+    +'</td>'
+    +'<td style="padding:3px;">'
+      +'<input id="mprp'+n+'" type="number" value="'+esc(prc)+'" min="0" step="0.001" placeholder="$/g"'
+      +' oninput="calcTotMP()" style="width:85px;padding:5px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+    +'</td>'
+    +'<td id="mprs'+n+'" style="padding:3px 6px;text-align:right;white-space:nowrap;font-size:12px;">$0</td>'
+    +'<td style="padding:3px 2px;">'
+      +'<button class="btn bo" style="padding:2px 6px;font-size:11px;" onclick="rmRowMP('+n+')">x</button>'
+    +'</td>';
+  document.getElementById('nmp-tbody').appendChild(tr);
+  if(prefill) calcTotMP();
+}
+function rmRowMP(n){ var e=document.getElementById('mpr'+n); if(e){ e.remove(); calcTotMP(); } }
+var _mpLT={};
+function mpLookupDebounce(n){
+  if(_mpLT[n]) clearTimeout(_mpLT[n]);
+  _mpLT[n]=setTimeout(function(){ mpLookup(n); },300);
+}
+function mpLookup(n){
+  var codEl=document.getElementById('mprc'+n);
+  var namEl=document.getElementById('mprn'+n);
+  var infEl=document.getElementById('mpri'+n);
+  var prcEl=document.getElementById('mprp'+n);
+  if(\!codEl||\!infEl) return;
+  var cod=(codEl.value||'').trim();
+  if(\!cod){ infEl.textContent=''; return; }
+  var mp=_MPCAT.find(function(m){ return m.codigo_mp===cod; });
+  if(\!mp&&cod.length>=4){
+    var q=cod.toLowerCase();
+    mp=_MPCAT.find(function(m){
+      return (m.nombre_comercial||'').toLowerCase().indexOf(q)>=0
+          ||(m.nombre_inci||'').toLowerCase().indexOf(q)>=0;
+    });
+  }
+  if(\!mp){ infEl.textContent=''; infEl.style.color='#78716c'; return; }
+  if(\!(namEl.value||'').trim()) namEl.value=mp.nombre_comercial||mp.nombre_inci||cod;
+  if((\!prcEl.value||parseFloat(prcEl.value)===0)&&mp.precio_referencia&&mp.precio_referencia>0){
+    prcEl.value=parseFloat(mp.precio_referencia).toFixed(4);
+    calcTotMP();
+  }
+  var alerta=_ALERTAS_MP.find(function(a){ return a.codigo_mp===mp.codigo_mp; });
+  if(alerta){
+    infEl.style.color='#dc2626';
+    infEl.textContent='⚠ Stock: '+Math.round(alerta.stock_actual)+'g / Min: '+Math.round(mp.stock_minimo)+'g | Deficit: '+Math.round(alerta.deficit)+'g';
+  } else {
+    infEl.style.color='#16a34a';
+    infEl.textContent='✓ Stock OK | Min: '+Math.round(mp.stock_minimo||0)+'g'+(mp.precio_referencia?' | Ref: $'+parseFloat(mp.precio_referencia).toFixed(2)+'/g':'');
+  }
+}
+function calcTotMP(){
+  var tot=0;
+  for(var i=1;i<=MP_ITMS;i++){
+    var q=document.getElementById('mprq'+i),p=document.getElementById('mprp'+i);
+    if(\!q||\!p) continue;
+    var s=parseFloat(q.value||0)*parseFloat(p.value||0);
+    var el=document.getElementById('mprs'+i); if(el) el.textContent=fmt(s);
+    tot+=s;
+  }
+  var totEl=document.getElementById('nmp-tot'); if(totEl) totEl.textContent=fmt(tot);
+}
+async function crearOCMP(){
+  var prov=document.getElementById('nmp-prov').value;
+  var obs=document.getElementById('nmp-obs').value;
+  var fent=document.getElementById('nmp-fent').value;
+  if(\!prov){ alert('Selecciona un proveedor'); return; }
+  var items=[];
+  for(var i=1;i<=MP_ITMS;i++){
+    var n=document.getElementById('mprn'+i);
+    if(\!n||(n.value||'').trim()==='') continue;
+    items.push({
+      codigo_mp:(document.getElementById('mprc'+i)||{value:''}).value,
+      nombre_mp:n.value.trim(),
+      cantidad_g:parseFloat((document.getElementById('mprq'+i)||{value:1}).value||1),
+      precio_unitario:parseFloat((document.getElementById('mprp'+i)||{value:0}).value||0)
+    });
+  }
+  if(\!items.length){ alert('Agrega al menos un item con descripcion'); return; }
+  try{
+    var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items};
+    if(fent) body.fecha_entrega_est=fent;
+    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-noc-mp');
+    await loadData();
+    renderCat('mp');
+    alert('OC creada: '+d.numero_oc);
+  }catch(e){ alert('Error de conexion: '+e); }
+}
+
+// ─── MP: OC Sugerida desde alertas ───────────────────────
+function openOCSugerida(){
+  if(\!_ALERTAS_MP||\!_ALERTAS_MP.length){ alert('No hay MPs bajo stock mínimo'); return; }
+  fillProvSelect('sug-prov');
+  document.getElementById('sug-prov').value='';
+  document.getElementById('sug-ibox').style.display='none';
+  var tbody=document.getElementById('sug-tbody');
+  tbody.innerHTML=_ALERTAS_MP.map(function(a,i){
+    var mp=_MPCAT.find(function(m){ return m.codigo_mp===a.codigo_mp; });
+    var pref=(mp&&mp.precio_referencia>0)?parseFloat(mp.precio_referencia).toFixed(4):'';
+    var qty=Math.ceil(a.deficit*1.2/100)*100;
+    return '<tr id="sugr'+i+'">'
+      +'<td style="padding:5px 4px;">'
+        +'<div style="font-weight:600;font-size:12px;">'+esc(a.nombre.substring(0,35))+'</div>'
+        +'<div style="font-size:10px;color:#78716c;">'+esc(a.codigo_mp)+(a.proveedor?' · '+esc(a.proveedor):'')+'</div>'
+      +'</td>'
+      +'<td style="padding:5px 4px;text-align:right;font-size:12px;">'+Math.round(a.stock_actual)+'g</td>'
+      +'<td style="padding:5px 4px;text-align:right;font-size:12px;color:#dc2626;font-weight:600;">'+Math.round(a.deficit)+'g</td>'
+      +'<td style="padding:5px 4px;">'
+        +'<input id="sugq'+i+'" type="number" value="'+qty+'" min="0" oninput="calcTotSug()"'
+        +' style="width:95px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+      +'</td>'
+      +'<td style="padding:5px 4px;">'
+        +'<input id="sugp'+i+'" type="number" value="'+pref+'" min="0" step="0.001" placeholder="$/g" oninput="calcTotSug()"'
+        +' style="width:85px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+      +'</td>'
+      +'<td id="sugs'+i+'" style="padding:5px 4px;text-align:right;font-size:12px;white-space:nowrap;">$0</td>'
+      +'</tr>';
+  }).join('');
+  calcTotSug();
+  openModal('m-oc-sug');
+}
+function calcTotSug(){
+  var tot=0;
+  for(var i=0;i<_ALERTAS_MP.length;i++){
+    var q=document.getElementById('sugq'+i),p=document.getElementById('sugp'+i);
+    if(\!q||\!p) continue;
+    var s=parseFloat(q.value||0)*parseFloat(p.value||0);
+    var el=document.getElementById('sugs'+i); if(el) el.textContent=fmt(s);
+    tot+=s;
+  }
+  var totEl=document.getElementById('sug-tot'); if(totEl) totEl.textContent=fmt(tot);
+}
+async function crearOCSugerida(){
+  var prov=document.getElementById('sug-prov').value;
+  if(\!prov){ alert('Selecciona un proveedor'); return; }
+  var items=[];
+  for(var i=0;i<_ALERTAS_MP.length;i++){
+    var a=_ALERTAS_MP[i];
+    var q=parseFloat((document.getElementById('sugq'+i)||{value:0}).value||0);
+    var p=parseFloat((document.getElementById('sugp'+i)||{value:0}).value||0);
+    if(q<=0) continue;
+    items.push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p});
+  }
+  if(\!items.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
+  try{
+    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({proveedor:prov,categoria:'MP',
+        observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
+        items:items})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    closeModal('m-oc-sug');
+    await loadData();
+    renderCat('mp');
+    alert('OC sugerida creada: '+d.numero_oc);
   }catch(e){ alert('Error de conexion: '+e); }
 }
 
