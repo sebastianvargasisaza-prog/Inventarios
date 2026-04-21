@@ -1163,8 +1163,9 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)); mp=c.fetchone()
-    c.execute("SELECT fecha_vencimiento,estanteria,posicion FROM movimientos WHERE material_id=? AND lote=? ORDER BY fecha DESC LIMIT 1", (codigo,lote)); mov=c.fetchone(); conn.close()
-    ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''; pv=mp[3] if mp else ''
+    c.execute("SELECT fecha_vencimiento,estanteria,posicion,proveedor FROM movimientos WHERE material_id=? AND lote=? ORDER BY fecha DESC LIMIT 1", (codigo,lote)); mov=c.fetchone(); conn.close()
+    ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''
+    pv=(mp[3] if mp and mp[3] else '') or (mov[3] if mov and len(mov)>3 and mov[3] else '')
     fv=str(mov[0])[:10] if mov and mov[0] else ''; ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
     nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
     h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script><title>Rotulo Recepcion</title>'
@@ -1199,8 +1200,18 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         '<tr><td class="l">Fecha de recepcion:</td><td style="font-weight:700;">'+hoy+'</td></tr>'
         '<tr><td class="l">Fecha de vencimiento:</td><td style="color:#c0392b;font-weight:700;">'+fv+'</td></tr>'
         '<tr><td class="l">Fecha de analisis:</td><td style="height:28px;background:#fffde7;"></td></tr>'
-        '<tr style="background:#e8f5e9;"><td class="l" style="color:#1b5e20;font-weight:800;">Estado de calidad:</td>'
-        '<td style="height:28px;"><span style="margin-right:18px;">&#9744; Aprobado</span><span style="margin-right:18px;">&#9744; En cuarentena</span><span>&#9744; Rechazado</span></td></tr>'
+        '<tr style="background:#e8f5e9;">'
+        '<td class="l" style="color:#1b5e20;font-weight:800;font-size:10pt;vertical-align:middle;">Estado de calidad:</td>'
+        '<td style="height:70px;vertical-align:top;padding:8px;">'
+        '<div style="display:flex;gap:20px;margin-bottom:6px;">'
+        '<span style="font-size:11pt;font-weight:700;">&#9744; Aprobado</span>'
+        '<span style="font-size:11pt;font-weight:700;">&#9744; Cuarentena</span>'
+        '<span style="font-size:11pt;font-weight:700;">&#9744; Rechazado</span>'
+        '</div>'
+        '<div style="background:#fffde7;border:1px dashed #f39c12;height:36px;border-radius:3px;display:flex;align-items:center;justify-content:center;">'
+        '<span style="font-size:7.5pt;color:#aaa;">[ espacio para sticker de calidad ]</span>'
+        '</div>'
+        '</td></tr>'
         '<tr><td class="l">Ubicacion:</td><td>Est. '+ub+'</td></tr>'
         '<tr><td class="l">N de Recepcion:</td><td>'+nr+'</td></tr>'
         '<tr><td class="l">Recibido por:</td><td style="height:30px;"></td></tr>'
