@@ -27,6 +27,26 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 bp = Blueprint('compras', __name__)
 
 
+def _notificar_solicitante_email(dest_email, asunto, body_html):
+    """Envia email al solicitante de forma no-bloqueante.
+    Nunca lanza excepcion — falla silenciosamente con log.
+    """
+    if not dest_email:
+        return
+    try:
+        import sys, threading
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from notificaciones import SistemaNotificaciones
+        notif = SistemaNotificaciones()
+        threading.Thread(
+            target=notif._enviar_email,
+            args=(asunto, body_html, [dest_email]),
+            daemon=True
+        ).start()
+    except Exception as _e:
+        print(f'[notificar_solicitante] email error (non-critical): {_e}')
+
+
 @bp.route('/api/dashboard-stats')
 def dashboard_stats():
     from datetime import date
@@ -315,12 +335,14 @@ def handle_solicitudes_compra():
         cat = d.get('categoria','Materia Prima')
         tip = d.get('tipo','Compra')
         area = d.get('area','Produccion')
+        email_sol = d.get('email_solicitante', '').strip().lower()
+        fecha_req = d.get('fecha_requerida', '').strip()
         c.execute("""INSERT INTO solicitudes_compra
-                     (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                     (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (numero, datetime.now().isoformat(), 'Pendiente',
                    d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
-                   area, emp, cat, tip))
+                   area, emp, cat, tip, email_sol, fecha_req))
         for it in (d.get('items') or []):
             c.execute("""INSERT INTO solicitudes_compra_items
                          (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
@@ -333,7 +355,7 @@ def handle_solicitudes_compra():
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
-    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area FROM solicitudes_compra WHERE 1=1"
+    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida FROM solicitudes_compra WHERE 1=1"
     params = []
     if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
@@ -341,7 +363,7 @@ def handle_solicitudes_compra():
     if filtro_categoria: sql += " AND categoria=?"; params.append(filtro_categoria)
     sql += " ORDER BY fecha DESC LIMIT 200"
     c.execute(sql, params)
-    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area']
+    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida']
     rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
     # Enrich with numero_oc and total valor
     for row in rows_sol:
@@ -444,7 +466,39 @@ def actualizar_estado_solicitud(numero):
                       (oc_num, it[0], it[1], it[2]))
         cur.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?", (oc_num, numero.upper()))
         oc_creada = oc_num
+    # Fetch email for notification BEFORE closing connection
+    cur.execute("SELECT email_solicitante FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    _em_row = cur.fetchone()
+    _notif_dest = (_em_row[0] if _em_row else '').strip()
     conn.commit(); conn.close()
+    # Notificacion al solicitante (no-blocking, best-effort)
+    if _notif_dest:
+        if nuevo == 'Rechazada':
+            _asunto_n = f'Solicitud rechazada \u2014 {numero.upper()}'
+            _body_n = (
+                '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
+                '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
+                '<h2 style="color:#991b1b;">Solicitud rechazada</h2>'
+                f'<p>Tu solicitud <strong>{numero.upper()}</strong> fue rechazada.</p>'
+                + (f'<p><strong>Motivo:</strong> {obs}</p>' if obs else '')
+                + '<p>Puedes corregirla y reenviarla desde el sistema.</p>'
+                '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+                '</div></body></html>'
+            )
+            _notificar_solicitante_email(_notif_dest, _asunto_n, _body_n)
+        elif oc_creada:
+            _asunto_n = f'Solicitud aprobada \u2014 {numero.upper()}'
+            _body_n = (
+                '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
+                '<div style="background:#dcfce7;padding:20px;border-radius:8px;border-left:4px solid #16a34a;">'
+                '<h2 style="color:#15803d;">Solicitud aprobada</h2>'
+                f'<p>Tu solicitud <strong>{numero.upper()}</strong> fue aprobada.</p>'
+                f'<p>Orden de compra generada: <strong>{oc_creada}</strong></p>'
+                '<p>El equipo de compras esta gestionando tu pedido.</p>'
+                '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+                '</div></body></html>'
+            )
+            _notificar_solicitante_email(_notif_dest, _asunto_n, _body_n)
     return jsonify({'ok': True, 'estado': nuevo, 'numero_oc': oc_creada})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
@@ -621,37 +675,31 @@ def rechazar_oc(numero_oc):
     if sol:
         cur.execute("UPDATE solicitudes_compra SET estado='Pendiente', observaciones=COALESCE(observaciones,'')||' | RECHAZADA por '||?||': '||? WHERE numero=?",
                     (usuario_actual, motivo, sol[0]))
-    # Get solicitante BEFORE closing connection
-    solicitante_email = ''
+    # Fetch solicitante nombre + email directo BEFORE closing connection
+    _sol_nombre = ''
+    _sol_email_directo = ''
     if sol:
-        cur.execute('SELECT solicitante FROM solicitudes_compra WHERE numero=?', (sol[0],))
+        cur.execute('SELECT solicitante, email_solicitante FROM solicitudes_compra WHERE numero=?', (sol[0],))
         _sr = cur.fetchone()
-        solicitante_email = (_sr[0] if _sr else '').lower().strip()
+        _sol_nombre = (_sr[0] if _sr else '').lower().strip()
+        _sol_email_directo = (_sr[1] if _sr and len(_sr) > 1 else '').strip()
     conn.commit(); conn.close()
-    # Send email notification to requester (non-blocking, best-effort)
-    if sol and solicitante_email:
-        try:
-            solicitante = solicitante_email
-            dest_email = USER_EMAILS.get(solicitante, '')
-            if dest_email:
-                import sys, threading
-                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                from notificaciones import SistemaNotificaciones
-                notif = SistemaNotificaciones()
-                asunto = f'Cuenta de cobro rechazada &mdash; {numero_oc}'
-                body = ('<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
-                    '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
-                    '<h2 style="color:#991b1b;">Cuenta de cobro rechazada</h2>'
-                    f'<p>Hola <strong>{solicitante.capitalize()}</strong>, '
-                    f'tu cuenta de cobro <strong>{numero_oc}</strong> fue rechazada.</p>'
-                    f'<p><strong>Motivo:</strong> {motivo}</p>'
-                    '<p>Tu solicitud volvio a estado <em>Pendiente</em>. '
-                    'Puedes corregirla y reenviarla desde el sistema.</p>'
-                    '<p style="color:#6b7280;font-size:12px;">Compras HHA &mdash; Espagiria</p>'
-                    '</div></body></html>')
-                threading.Thread(target=notif._enviar_email, args=(asunto, body, [dest_email]), daemon=True).start()
-        except Exception as e:
-            print(f'[rechazar_oc] email error (non-critical): {e}')
+    # Email destino: primero el email directo de la solicitud, luego el mapa USER_EMAILS
+    _dest_email = _sol_email_directo or USER_EMAILS.get(_sol_nombre, '')
+    if sol and _dest_email:
+        _asunto_r = f'OC rechazada \u2014 {numero_oc}'
+        _body_r = (
+            '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
+            '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
+            '<h2 style="color:#991b1b;">Orden de compra rechazada</h2>'
+            f'<p>La OC <strong>{numero_oc}</strong> asociada a tu solicitud fue rechazada.</p>'
+            f'<p><strong>Motivo:</strong> {motivo}</p>'
+            '<p>Tu solicitud volvio a estado <em>Pendiente</em>. '
+            'Puedes corregirla y reenviarla desde el sistema.</p>'
+            '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
+            '</div></body></html>'
+        )
+        _notificar_solicitante_email(_dest_email, _asunto_r, _body_r)
     return jsonify({'ok': True, 'estado': 'Rechazada', 'motivo': motivo})
 
 @bp.route('/api/compras/buscar-remision/<remision_code>')

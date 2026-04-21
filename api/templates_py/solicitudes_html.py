@@ -109,6 +109,16 @@ textarea{resize:vertical;min-height:80px}
   </div>
   <div class="row2">
     <div class="field">
+      <label>Tu correo (para notificaciones)</label>
+      <input type="email" id="f-email" placeholder="correo@ejemplo.com">
+    </div>
+    <div class="field" id="fecha-req-box">
+      <label>Fecha requerida (opcional)</label>
+      <input type="date" id="f-fecha-req">
+    </div>
+  </div>
+  <div class="row2">
+    <div class="field">
       <label>Categoria</label>
       <select id="f-cat" onchange="onCatChange()">
         <option value="Materia Prima">Materia Prima</option>
@@ -123,6 +133,7 @@ textarea{resize:vertical;min-height:80px}
         <option value="Dotacion">Dotacion</option>
         <option value="Influencer/Marketing Digital">Influencer / Marketing Digital</option>
         <option value="Reactivos/Laboratorio">Reactivos / Laboratorio</option>
+        <option value="Cuenta de Cobro">Cuenta de Cobro</option>
         <option value="Otro">Otro</option>
       </select>
     </div>
@@ -262,7 +273,7 @@ textarea{resize:vertical;min-height:80px}
 </div>
 <script>
 var empresa='Espagiria',tipo='Compra',urg='Normal',itemCount=1;
-var PAGO_CATS=['Influencer/Marketing Digital','Servicios Profesionales'];
+var PAGO_CATS=['Influencer/Marketing Digital','Servicios Profesionales','Software/Tecnologia','Cuenta de Cobro'];
 var uniMap={
   'Materia Prima':['g','kg','ml','L','und'],
   'Material de Empaque':['und','rollo','caja','paquete','kg'],
@@ -343,6 +354,7 @@ async function enviarSolicitud(){
   var body,items=[];
   if(esPago){
     var nombre=document.getElementById('p-nombre').value.trim();
+    var handle=document.getElementById('p-handle').value.trim();
     var banco=document.getElementById('p-banco').value;
     var tipoCta=document.getElementById('p-tipo-cta').value;
     var numcta=document.getElementById('p-numcta').value.trim();
@@ -358,7 +370,9 @@ async function enviarSolicitud(){
     var obsStr='BENEFICIARIO: '+nombre+(handle?' | HANDLE: '+handle:'')+' | BANCO: '+banco+' '+tipoCta+' | CUENTA/CEL: '+numcta+(cedula?' | CED/NIT: '+cedula:'')+' | VALOR: $'+valor+' | SERVICIO: '+desc+(obsExtra?' | '+obsExtra:'');
     items=[{codigo_mp:'',nombre_mp:desc,cantidad_g:1,unidad:'servicio',valor_estimado:valor}];
     body={solicitante:sol,area:document.getElementById('f-area').value,empresa:empresa,tipo:'Pago',
-      categoria:cat,urgencia:urg,observaciones:obsStr,items:items};
+      categoria:cat,urgencia:urg,observaciones:obsStr,items:items,
+      email_solicitante:document.getElementById('f-email').value.trim(),
+      fecha_requerida:document.getElementById('f-fecha-req').value};
   } else {
     var rows=document.getElementById('items-body').children;
     for(var i=0;i<rows.length;i++){
@@ -374,7 +388,9 @@ async function enviarSolicitud(){
     }
     if(!items.length){alert('Agrega al menos un item');return;}
     body={solicitante:sol,area:document.getElementById('f-area').value,empresa:empresa,tipo:tipo,
-      categoria:cat,urgencia:urg,observaciones:document.getElementById('f-obs').value,items:items};
+      categoria:cat,urgencia:urg,observaciones:document.getElementById('f-obs').value,items:items,
+      email_solicitante:document.getElementById('f-email').value.trim(),
+      fecha_requerida:document.getElementById('f-fecha-req').value};
   }
   var btn=esPago ? document.getElementById('btn-enviar-pago') : document.getElementById('btn-enviar');
   if(btn){btn.disabled=true;btn.textContent='Enviando...';}
@@ -399,6 +415,8 @@ function nuevaSolicitud(){
   document.getElementById('form-card').style.display='block';
   document.getElementById('confirm-card').style.display='none';
   document.getElementById('f-sol').value='';
+  document.getElementById('f-email').value='';
+  document.getElementById('f-fecha-req').value='';
   document.getElementById('f-obs').value='';
   document.getElementById('p-nombre').value='';document.getElementById('p-handle').value='';
   document.getElementById('p-banco').value='';document.getElementById('p-numcta').value='';
@@ -407,11 +425,12 @@ function nuevaSolicitud(){
   document.getElementById('items-section').style.display='block';
   document.getElementById('pago-section').style.display='none';
   document.getElementById('f-cat').value='Materia Prima';
+  var _defCat=document.getElementById('f-cat').value||'Materia Prima';
   document.getElementById('items-body').innerHTML=
     '<tr id="ir-0"><td><input type="text" placeholder="Cod." id="i0-cod"></td>'+
     '<td><input type="text" placeholder="Descripcion del item" id="i0-nom"></td>'+
     '<td><input type="number" placeholder="0" min="0" step="0.01" id="i0-cant"></td>'+
-    '<td><select id="i0-uni"><option>g</option><option>kg</option><option>ml</option><option>L</option><option>und</option></select></td>'+
+    '<td>'+buildUniSelect('i0-uni','')+'</td>'+
     '<td><input type="number" placeholder="0" min="0" step="1000" id="i0-val"></td>'+
     '<td><button class="btn-del" onclick="delItem(0)">&#10005;</button></td></tr>';
   itemCount=1;urg='Normal';tipo='Compra';setUrg('Normal',document.getElementById('ub-n'));setTipo('Compra');

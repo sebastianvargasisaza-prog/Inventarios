@@ -107,6 +107,14 @@ def init_db():
     try:
         c.execute("ALTER TABLE solicitudes_compra_items ADD COLUMN valor_estimado REAL DEFAULT 0")
     except: pass
+    # Migracion: email del solicitante para notificaciones directas
+    try:
+        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN email_solicitante TEXT DEFAULT ''")
+    except: pass
+    # Migracion: fecha en que se necesita el pedido (para priorizacion)
+    try:
+        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN fecha_requerida TEXT DEFAULT ''")
+    except: pass
     try:
         c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
     except: pass
