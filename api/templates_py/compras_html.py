@@ -95,6 +95,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pill-on{background:#ea580c!important;border-color:#ea580c!important;color:#fff!important;font-weight:700;}
 .btn.br{background:#dc2626;color:#fff;border:1px solid #b91c1c;}
 .btn.br:hover{background:#b91c1c;}
+.ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid #d6d3d1;background:#fff;color:#57534e;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.ocs-cpill:hover{background:#f5f5f4;border-color:#a8a29e;}
+.ocs-cpill.on{background:#ea580c;border-color:#ea580c;color:#fff;}
+.ptbl{width:100%;border-collapse:collapse;font-size:13px;}
+.ptbl th{background:#f5f5f4;color:#78716c;font-weight:600;padding:8px 10px;text-align:left;border-bottom:2px solid #e7e5e4;}
+.ptbl td{padding:8px 10px;border-bottom:1px solid #f0edec;vertical-align:middle;}
+.ptbl tr:hover td{background:#fafafa;}
 </style>
 </head>
 <body>
@@ -106,12 +113,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <div class="tab-nav">
   <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
-  <button class="tn"     data-tab="mp">&#x1F9EA; Mat. Primas</button>
-  <button class="tn"     data-tab="mee">&#x1F4E6; Empaque</button>
-  <button class="tn"     data-tab="svc">&#x1F527; Servicios</button>
-  <button class="tn"     data-tab="adm">&#x1F4CB; Administrativo</button>
-  <button class="tn"     data-tab="inf">&#x1F3DB; Infraestructura</button>
-  <button class="tn"     data-tab="cc">&#x1F4B3; Cuentas Cobro</button>
+  <button class="tn"     data-tab="ocs">&#x1F4CB; &#xD3;rdenes de Compra</button>
+  <button class="tn"     data-tab="pagos">&#x1F4B8; Pagos</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
   <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
@@ -127,7 +130,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
 </div>
 
-<div id="pane-mp"  class="pane">
+<div id="pane-ocs" class="pane">
+  <!-- MP restock alert banner — hidden unless cat=MP or ALL -->
   <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
@@ -136,53 +140,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     </div>
     <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
   </div>
-  <div class="bar">
-    <input type="text" id="q-mp" placeholder="Buscar OC..." oninput="renderCat('mp')">
-    <select id="s-mp" onchange="renderCat('mp')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
-  </div>
-  <div id="pills-mp" class="pills"></div>
-  <div id="grid-mp" class="grid"></div>
-</div>
-
-<div id="pane-mee" class="pane">
-  <div class="bar">
-    <input type="text" id="q-mee" placeholder="Buscar..." oninput="renderCat('mee')">
-    <select id="s-mee" onchange="renderCat('mee')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
-  </div>
-  <div id="pills-mee" class="pills"></div>
-  <div id="grid-mee" class="grid"></div>
-</div>
-
-<div id="pane-svc" class="pane">
-  <div class="bar">
-    <input type="text" id="q-svc" placeholder="Buscar..." oninput="renderCat('svc')">
-    <select id="s-svc" onchange="renderCat('svc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-  </div>
-  <div id="pills-svc" class="pills"></div>
-  <div id="grid-svc" class="grid"></div>
-</div>
-
-<div id="pane-adm" class="pane">
-  <div class="bar">
-    <input type="text" id="q-adm" placeholder="Buscar..." oninput="renderCat('adm')">
-    <select id="s-adm" onchange="renderCat('adm')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-  </div>
-  <div id="pills-adm" class="pills"></div>
-  <div id="grid-adm" class="grid"></div>
-</div>
-
-<div id="pane-inf" class="pane">
-  <div class="bar">
-    <input type="text" id="q-inf" placeholder="Buscar..." oninput="renderCat('inf')">
-    <select id="s-inf" onchange="renderCat('inf')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-  </div>
-  <div id="pills-inf" class="pills"></div>
-  <div id="grid-inf" class="grid"></div>
-</div>
-
-<div id="pane-cc" class="pane">
-  <!-- Solicitudes Cuenta de Cobro pendientes de aprobacion gerencia -->
-  <div id="cc-solic-wrap" style="margin-bottom:20px;">
+  <!-- CC solicitudes — hidden unless cat=CC or ALL -->
+  <div id="cc-solic-wrap" style="margin-bottom:20px;display:none;">
     <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
       <span style="background:#fef3c7;color:#92400e;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;" id="cc-solic-badge">0</span>
       Solicitudes pendientes de aprobaci&oacute;n
@@ -190,13 +149,45 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <div id="pills-cc-solic" class="pills"></div>
     <div id="grid-cc-solic" class="grid"></div>
   </div>
-  <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;border-top:1px solid #e7e5e4;padding-top:16px;">&#x1F4CB; &Oacute;rdenes de Compra CC</div>
-  <div class="bar">
-    <input type="text" id="q-cc" placeholder="Buscar..." oninput="renderCat('cc')">
-    <select id="s-cc" onchange="renderCat('cc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
+  <!-- Category filter pills -->
+  <div id="ocs-cat-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+    <button class="ocs-cpill on" data-cat="ALL">&#x1F4CB; Todas</button>
+    <button class="ocs-cpill" data-cat="mp">&#x1F9EA; Mat. Primas</button>
+    <button class="ocs-cpill" data-cat="mee">&#x1F4E6; Empaque</button>
+    <button class="ocs-cpill" data-cat="svc">&#x1F527; Servicios</button>
+    <button class="ocs-cpill" data-cat="adm">&#x1F4CB; Adm</button>
+    <button class="ocs-cpill" data-cat="inf">&#x1F3DB; Infra</button>
+    <button class="ocs-cpill" data-cat="cc">&#x1F4B3; CC</button>
   </div>
-  <div id="pills-cc" class="pills"></div>
-  <div id="grid-cc" class="grid"></div>
+  <!-- Search + status filter -->
+  <div class="bar">
+    <input type="text" id="q-ocs" placeholder="Buscar OC, proveedor..." oninput="renderOCS()">
+    <select id="s-ocs" onchange="renderOCS()">
+      <option value="">Todos los estados</option>
+      <option>Borrador</option><option>Revisada</option><option>Autorizada</option>
+      <option>Pagada</option><option>Recibida</option>
+    </select>
+  </div>
+  <div id="pills-ocs" class="pills"></div>
+  <div id="grid-ocs" class="grid"></div>
+</div>
+
+<div id="pane-pagos" class="pane">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="font-weight:700;font-size:15px;color:#1c1917;">&#x1F4B8; Registro de Pagos</div>
+    <input type="text" id="q-pagos" placeholder="Buscar proveedor, OC, medio..." oninput="renderPagos()"
+      style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+    <select id="s-pagos-cat" onchange="renderPagos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <option value="">Todas las categorias</option>
+      <option value="mp">Mat. Primas</option><option value="mee">Empaque</option>
+      <option value="svc">Servicios</option><option value="adm">Adm</option>
+      <option value="inf">Infra</option><option value="cc">CC</option>
+    </select>
+  </div>
+  <div id="pagos-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>
+  <div id="pagos-wrap">
+    <div class="empty">Cargando pagos...</div>
+  </div>
 </div>
 
 <div id="pane-influencer" class="pane">
@@ -411,6 +402,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       </div>
     </div>
     <div class="fg"><label>Comprobante / Referencia</label><textarea id="pago-obs" rows="2" placeholder="No. transaccion, referencia..."></textarea></div>
+    <div class="fg"><label>&#x1F5BC; Captura de transferencia (opcional)</label>
+      <input type="file" id="pago-img-file" accept="image/*" onchange="previewPagoImg()" style="display:block;margin-bottom:6px;font-size:12px;">
+      <img id="pago-img-preview" src="" alt="" style="display:none;max-width:100%;max-height:160px;border-radius:6px;border:1px solid #e7e5e4;">
+    </div>
     <input type="hidden" id="pago-num">
   </div>
   <div class="mf">
@@ -587,6 +582,8 @@ var ITMS = 0;
 var MP_ITMS = 0;
 var _MPCAT = [];
 var _ALERTAS_MP = [];
+var _ocsCatFilter = 'ALL';
+var PAGOS = [];
 
 // Mapa categoria → grupos de strings
 var CMAP = {
@@ -630,11 +627,14 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='influencer') loadInfluencers();
     else if(tab==='consol') loadConsolidado();
-    else if(tab==='cc'){ renderCat('cc'); loadCCSolicitudes(); }
-    else{ renderCat(tab); if(tab==='mp') renderMPAlerts(); }
+    else if(tab==='ocs'){ renderOCS(); }
+    else if(tab==='pagos'){ loadPagos(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'){ fab.style.display='none'; }
-    else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'){ fab.style.display='none'; }
+    else{ fab.style.display='flex'; fab.onclick=function(){
+      var cat=tab==='dash'?'':tab==='ocs'?(_ocsCatFilter==='ALL'?'':_ocsCatFilter.toUpperCase()):tab.toUpperCase();
+      openNuevaOC(cat);
+    }; }
   });
 });
 
@@ -666,6 +666,7 @@ async function loadData(){
   }catch(e){ console.error('Alert load error:',e); _ALERTAS_MP=[]; }
   renderDash();
   renderMPAlerts();
+  renderOCS();
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────
@@ -690,6 +691,26 @@ function renderDash(){
   document.getElementById('q-pag').innerHTML = pagList.length
     ? pagList.map(function(o){ return miniCard(o); }).join('')
     : '<div class="empty">Sin OCs pendientes</div>';
+  // Spending chart by category
+  var _catLabels=['MP','MEE','SVC','ADM','INF','CC'];
+  var _catColors=['#f59e0b','#3b82f6','#8b5cf6','#10b981','#ef4444','#ec4899'];
+  var _catTotals=_catLabels.map(function(g){ return OCS.filter(function(o){ return inGroup(o.categoria,g.toLowerCase())&&o.estado==='Pagada'; }).reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0); });
+  var _maxV=Math.max.apply(null,_catTotals)||1;
+  var _chartHTML='<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px;margin-top:14px;">';
+  _chartHTML+='<div style="font-weight:700;font-size:13px;color:#1c1917;margin-bottom:12px;">&#x1F4CA; Gasto acumulado por categor\u00EDa (OCs Pagadas)</div>';
+  _chartHTML+='<div style="display:grid;gap:7px;">';
+  _catLabels.forEach(function(g,i){
+    var pct=_catTotals[i]/_maxV*100;
+    _chartHTML+='<div style="display:grid;grid-template-columns:48px 1fr 80px;align-items:center;gap:8px;">';
+    _chartHTML+='<span style="font-size:11px;font-weight:600;color:#57534e;">'+g+'</span>';
+    _chartHTML+='<div style="background:#f5f5f4;border-radius:4px;height:18px;overflow:hidden;"><div style="background:'+_catColors[i]+';width:'+pct.toFixed(1)+'%;height:100%;border-radius:4px;transition:width .4s;"></div></div>';
+    _chartHTML+='<span style="font-size:11px;color:#57534e;text-align:right;">'+fmt(_catTotals[i])+'</span>';
+    _chartHTML+='</div>';
+  });
+  _chartHTML+='</div></div>';
+  var _chartWrap=document.getElementById('dash-chart-wrap');
+  if(!_chartWrap){ _chartWrap=document.createElement('div'); _chartWrap.id='dash-chart-wrap'; document.getElementById('kpi-area').after(_chartWrap); }
+  _chartWrap.innerHTML=_chartHTML;
 }
 function mkKpi(l,v,s,c){
   return '<div class="kpi"><div class="kpi-l">'+l+'</div><div class="kpi-v'+(c?' '+c:'')+'" >'+v+'</div><div class="kpi-s">'+s+'</div></div>';
@@ -734,7 +755,8 @@ function fullCard(o,grp){
   if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
   if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
-  if(o.estado==='Pagada'&&!ES_C&&(grp==='mp'||grp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
+  var _effGrp=grp==='ocs'?(Object.keys(CMAP).find(function(k){return inGroup(o.categoria,k);})||'svc'):grp;
+  if(o.estado==='Pagada'&&!ES_C&&(_effGrp==='mp'||_effGrp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
   if(o.estado==='Borrador') btns+='<button class="btn bi bs" data-act="edit" data-oc="'+esc(o.numero_oc)+'">&#9998; Editar</button>';
   if(o.estado==='Borrador'||o.estado==='Rechazada') btns+='<button class="btn br bs" data-act="del" data-oc="'+esc(o.numero_oc)+'">&#128465; Eliminar</button>';
   return '<div class="card">'+
@@ -743,6 +765,119 @@ function fullCard(o,grp){
     (o.observaciones?'<div class="cobs">'+esc((o.observaciones||'').substring(0,90))+'</div>':'')+
     '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
+}
+
+// ─── OCS unified tab ─────────────────────────────────────────────────────────
+function renderOCS(){
+  // Wire up category filter pill clicks (idempotent)
+  document.querySelectorAll('.ocs-cpill').forEach(function(btn){
+    btn.onclick=function(){
+      document.querySelectorAll('.ocs-cpill').forEach(function(b){ b.classList.remove('on'); });
+      this.classList.add('on');
+      _ocsCatFilter=this.getAttribute('data-cat');
+      renderOCS();
+    };
+  });
+  var q=(document.getElementById('q-ocs')||{value:''}).value.toLowerCase();
+  var st=(document.getElementById('s-ocs')||{value:''}).value;
+  // Show/hide context sections
+  var mpBanner=document.getElementById('mp-alert-banner');
+  var ccSolic=document.getElementById('cc-solic-wrap');
+  if(mpBanner) mpBanner.style.display=(_ocsCatFilter==='ALL'||_ocsCatFilter==='mp')?'':'none';
+  if(ccSolic){
+    if(_ocsCatFilter==='ALL'||_ocsCatFilter==='cc'){
+      ccSolic.style.display='';
+      loadCCSolicitudes();
+    } else {
+      ccSolic.style.display='none';
+    }
+  }
+  if(_ocsCatFilter==='mp'||_ocsCatFilter==='ALL') renderMPAlerts();
+  var list;
+  if(_ocsCatFilter==='ALL'){
+    list=OCS.filter(function(o){ return (o.categoria||'').indexOf('Influencer')<0; });
+  } else {
+    list=OCS.filter(function(o){ return inGroup(o.categoria,_ocsCatFilter); });
+  }
+  if(q) list=list.filter(function(o){ return (o.numero_oc||'').toLowerCase().indexOf(q)>=0||(o.proveedor||'').toLowerCase().indexOf(q)>=0||(o.observaciones||'').toLowerCase().indexOf(q)<0?false:true; });
+  if(q) list=OCS.filter(function(o){
+    if(_ocsCatFilter!=='ALL'&&!inGroup(o.categoria,_ocsCatFilter)) return false;
+    if((o.categoria||'').indexOf('Influencer')>=0) return false;
+    var sq=(o.numero_oc||'').toLowerCase().indexOf(q)>=0||(o.proveedor||'').toLowerCase().indexOf(q)>=0||(o.observaciones||'').toLowerCase().indexOf(q)>=0;
+    return sq;
+  });
+  if(st) list=list.filter(function(o){ return o.estado===st; });
+  var counts={};
+  ['Borrador','Revisada','Autorizada','Pagada','Recibida'].forEach(function(e){ counts[e]=(list.filter(function(o){ return o.estado===e; })).length; });
+  var vTotal=list.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var pills='<span class="pill">'+list.length+' OCs</span>';
+  if(counts.Borrador) pills+='<span class="pill">Borrador: '+counts.Borrador+'</span>';
+  if(counts.Revisada) pills+='<span class="pill y">Revisada: '+counts.Revisada+'</span>';
+  if(counts.Autorizada) pills+='<span class="pill b">Autorizada: '+counts.Autorizada+'</span>';
+  if(counts.Pagada) pills+='<span class="pill g">Pagada: '+counts.Pagada+'</span>';
+  if(counts.Recibida) pills+='<span class="pill">Recibida: '+counts.Recibida+'</span>';
+  pills+='<span class="pill" style="background:#e7e5e4;">'+fmt(vTotal)+'</span>';
+  document.getElementById('pills-ocs').innerHTML=pills;
+  if(!list.length){
+    document.getElementById('grid-ocs').innerHTML='<div class="empty">No hay OCs'+(q?' para esa busqueda':_ocsCatFilter!=='ALL'?' en esta categor\u00EDa':'')+'</div>';
+    return;
+  }
+  document.getElementById('grid-ocs').innerHTML=list.map(function(o){ return fullCard(o,'ocs'); }).join('');
+}
+
+// ─── Pagos tab ────────────────────────────────────────────────────────────────
+async function loadPagos(){
+  document.getElementById('pagos-wrap').innerHTML='<div class="empty">Cargando...</div>';
+  try{
+    var r=await fetch('/api/compras/pagos');
+    if(!r.ok) throw new Error('Pagos '+r.status);
+    var d=await r.json();
+    PAGOS=d.pagos||[];
+  }catch(e){ PAGOS=[]; console.error('loadPagos:',e); }
+  renderPagos();
+}
+function renderPagos(){
+  var q=(document.getElementById('q-pagos')||{value:''}).value.toLowerCase();
+  var catF=(document.getElementById('s-pagos-cat')||{value:''}).value;
+  var list=PAGOS.filter(function(p){
+    if(catF&&!inGroup(p.categoria,catF)) return false;
+    if(q&&(p.numero_oc||'').toLowerCase().indexOf(q)<0&&(p.proveedor||'').toLowerCase().indexOf(q)<0&&(p.medio_pago||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  var vTotal=list.reduce(function(s,p){ return s+parseFloat(p.monto||p.valor_total||0); },0);
+  var kpiHTML='<div class="kpi"><div class="kpi-l">Pagos filtrados</div><div class="kpi-v">'+list.length+'</div></div>';
+  kpiHTML+='<div class="kpi"><div class="kpi-l">Monto total</div><div class="kpi-v g">'+fmt(vTotal)+'</div></div>';
+  document.getElementById('pagos-kpis').innerHTML=kpiHTML;
+  if(!list.length){
+    document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos registrados</div>';
+    return;
+  }
+  var rows=list.map(function(p){
+    var tieneImg=p.tiene_comprobante;
+    var imgBtn=tieneImg?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)">&#x1F4F8; Ver</button>':'<span style="color:#a8a29e;font-size:11px;">Sin imagen</span>';
+    return '<tr>'
+      +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
+      +'<td>'+esc(p.proveedor||'-')+'</td>'
+      +'<td><span style="font-size:10px;background:#e7e5e4;border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
+      +'<td style="font-weight:600;color:#16a34a;">'+fmt(p.monto||p.valor_total)+'</td>'
+      +'<td>'+esc(p.medio_pago||'-')+'</td>'
+      +'<td>'+fdate(p.fecha_pago)+'</td>'
+      +'<td>'+esc(p.pagado_por||'-')+'</td>'
+      +'<td>'+imgBtn+'</td>'
+      +'</tr>';
+  }).join('');
+  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th>Categoría</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Por</th><th>Comprobante</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+async function verComprobante(num){
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(num)+'/comprobante');
+    if(!r.ok){ alert('Sin comprobante guardado'); return; }
+    var d=await r.json();
+    if(!d.imagen){ alert('Sin comprobante guardado'); return; }
+    var w=window.open('','_blank','width=700,height=600');
+    w.document.write('<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="'+d.imagen+'" style="max-width:100%;max-height:100vh;"></body></html>');
+    w.document.close();
+  }catch(e){ alert('Error: '+e); }
 }
 
 function renderProv(){
@@ -1185,8 +1320,7 @@ async function submitOC(){
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc');
     await loadData();
-    var grp=Object.keys(_catMap).find(function(k){ return _catMap[k]===cat; })||'mp';
-    renderCat(grp);
+    renderOCS();
     alert(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
   }catch(e){ alert('Error de conexion: '+e); }
 }
@@ -1244,7 +1378,11 @@ async function eliminarOC(oc){
     if(d.error){ alert(d.error); return; }
     await loadData();
     var at=document.querySelector('.tn.on');
-    if(at) renderCat(at.getAttribute('data-tab'));
+    if(at){
+      var _tab=at.getAttribute('data-tab');
+      if(_tab==='ocs') renderOCS();
+      else if(_tab) try{renderCat(_tab);}catch(_){}
+    }
     alert('OC '+oc+' eliminada');
   }catch(e){ alert('Error: '+e); }
 }
@@ -1493,7 +1631,7 @@ async function crearOCMP(){
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc-mp');
     await loadData();
-    renderCat('mp');
+    renderOCS();
     alert('OC creada: '+d.numero_oc);
   }catch(e){ alert('Error de conexion: '+e); }
 }
@@ -1577,7 +1715,7 @@ async function crearOCSugerida(){
       else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
     }catch(e){ errores.push(prov+': '+e.message); }
   }
-  await loadData(); renderCat('mp');
+  await loadData(); renderOCS();
   if(errores.length){
     alert('Creadas: '+creadas.join(', ')+'\\nErrores:\\n'+errores.join('\\n'));
   } else {
@@ -1604,7 +1742,7 @@ async function crearOCFila(i){
       if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
       var row=document.getElementById('sugr'+i);
       if(row) row.style.background='#f0fdf4';
-      await loadData(); renderCat('mp');
+      await loadData(); renderOCS();
     } else {
       var msg=(res&&res.error)?res.error:'Error '+r.status;
       if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
@@ -1714,20 +1852,39 @@ function openPago(num,val,prov){
   document.getElementById('pago-info').innerHTML='<strong>'+num+'</strong> &mdash; '+esc(prov)+'<br>Valor autorizado: <strong>'+fmt(val)+'</strong>';
   openModal('m-pago');
 }
+function previewPagoImg(){
+  var f=document.getElementById('pago-img-file').files[0];
+  var prev=document.getElementById('pago-img-preview');
+  if(f){ var rd=new FileReader(); rd.onload=function(e){ prev.src=e.target.result; prev.style.display='block'; }; rd.readAsDataURL(f); }
+  else { prev.src=''; prev.style.display='none'; }
+}
 async function confirmarPago(){
   var num=document.getElementById('pago-num').value;
   var monto=document.getElementById('pago-monto').value;
   var medio=document.getElementById('pago-medio').value;
   var obs=document.getElementById('pago-obs').value;
   if(!monto||parseFloat(monto)<=0){ alert('Ingresa el monto'); return; }
+  var imgData=null;
+  var imgFile=document.getElementById('pago-img-file').files[0];
+  if(imgFile){
+    imgData=await new Promise(function(res){
+      var rd=new FileReader(); rd.onload=function(e){ res(e.target.result); }; rd.readAsDataURL(imgFile);
+    });
+  }
   try{
+    var payload={monto:parseFloat(monto),medio:medio,observaciones:obs};
+    if(imgData) payload.comprobante_imagen=imgData;
     var r=await fetch('/api/ordenes-compra/'+num+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({monto:parseFloat(monto),medio:medio,observaciones:obs})});
+      body:JSON.stringify(payload)});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-pago');
+    // Reset image
+    document.getElementById('pago-img-file').value='';
+    document.getElementById('pago-img-preview').style.display='none';
     await loadData();
     renderDash();
+    if(PAGOS.length) loadPagos();
   }catch(e){ alert('Error: '+e); }
 }
 

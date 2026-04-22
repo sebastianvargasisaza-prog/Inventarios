@@ -752,6 +752,10 @@ def pagar_oc(numero_oc):
     monto = float(d.get('monto', 0) or 0)
     medio = d.get('medio', 'Transferencia')
     obs = d.get('observaciones', '')
+    comprobante_imagen = d.get('comprobante_imagen', '') or ''
+    # Limit image size to ~4MB base64 to avoid DB bloat
+    if len(comprobante_imagen) > 4_000_000:
+        comprobante_imagen = comprobante_imagen[:4_000_000]
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
     cur.execute("SELECT estado, categoria, proveedor, valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
@@ -763,8 +767,8 @@ def pagar_oc(numero_oc):
     cat_map = {'MPs':'MPs','MP':'MPs','Envase':'MEE','Insumos':'MEE','MEE':'MEE','SVC':'Servicios','Servicios':'Servicios','Analisis':'Servicios','Ánalisis':'Servicios','Acondicionamiento':'Servicios','Admin':'Administrativo','Nomina':'Administrativo','ADM':'Administrativo','Infraestructura':'Infraestructura','INF':'Infraestructura','CC':'Cuentas de Cobro'}
     cat_egreso = cat_map.get(categoria, 'Compras')
     fecha_pago = datetime.now().isoformat()
-    cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=? WHERE numero_oc=?",
-                (usuario_actual, fecha_pago, numero_oc))
+    cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=? WHERE numero_oc=?",
+                (usuario_actual, fecha_pago, medio, comprobante_imagen, numero_oc))
     try:
         cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
@@ -774,6 +778,41 @@ def pagar_oc(numero_oc):
         pass
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'estado': 'Pagada', 'monto': monto})
+
+@bp.route('/api/compras/pagos', methods=['GET'])
+def get_pagos():
+    """Return all paid OCs with payment metadata (no image data)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("""
+        SELECT numero_oc, proveedor, categoria, valor_total,
+               medio_pago, fecha_pago, pagado_por,
+               CASE WHEN comprobante_imagen != '' AND comprobante_imagen IS NOT NULL THEN 1 ELSE 0 END as tiene_comprobante
+        FROM ordenes_compra
+        WHERE estado IN ('Pagada','Parcial')
+        ORDER BY fecha_pago DESC
+        LIMIT 500
+    """)
+    cols = [d[0] for d in cur.description]
+    pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({'pagos': pagos})
+
+
+@bp.route('/api/ordenes-compra/<numero_oc>/comprobante', methods=['GET'])
+def get_comprobante(numero_oc):
+    """Return only the comprobante_imagen for a specific OC (lazy load)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    cur.execute("SELECT comprobante_imagen FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    row = cur.fetchone()
+    conn.close()
+    if not row or not row[0]:
+        return jsonify({'error': 'Sin comprobante'}), 404
+    return jsonify({'imagen': row[0]})
+
 
 @bp.route('/api/compras/oc/<numero_oc>/rechazar', methods=['POST'])
 def rechazar_oc(numero_oc):

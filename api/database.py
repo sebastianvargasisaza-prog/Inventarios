@@ -91,6 +91,10 @@ def init_db():
     for _iva in ["con_iva INTEGER DEFAULT 0", "valor_sin_iva REAL DEFAULT 0"]:
         try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_iva}")
         except: pass
+    # Payment detail columns (comprobante image + payment method)
+    for _pc in ["comprobante_imagen TEXT DEFAULT ''", "medio_pago TEXT DEFAULT ''"]:
+        try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_pc}")
+        except: pass
     for _ri in ["estado_recepcion TEXT DEFAULT 'OK'", "notas_recepcion TEXT DEFAULT ''"]:
         try: c.execute(f"ALTER TABLE ordenes_compra_items ADD COLUMN {_ri}")
         except: pass
