@@ -2584,12 +2584,13 @@ table.items td.r{text-align:right;}
 <!-- TÍTULO -->
 <table class="main" style="margin-bottom:2px;">
   <tr>
-    <td colspan="2" style="border:none;padding-bottom:4px;">
-      <div class="oc-title">ORDEN DE COMPRA</div>
-      <div class="oc-lote">${numDoc}</div>
+    <td colspan="2" style="border:none;padding-bottom:4px;vertical-align:middle;">
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgMjY1IiB3aWR0aD0iMTIwIiBoZWlnaHQ9IjE1OSI+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImRjIj4KICAgICAgPHBhdGggZD0iTTEwMCAxMiBDMTAwIDEyIDM4IDc4IDM4IDE0MiBDMzggMTc3IDY2IDIwMiAxMDAgMjAyIEMxMzQgMjAyIDE2MiAxNzcgMTYyIDE0MiBDMTYyIDc4IDEwMCAxMiAxMDAgMTIgWiIvPgogICAgPC9jbGlwUGF0aD4KICA8L2RlZnM+CiAgPHBhdGggZD0iTTEwMCAxMiBDMTAwIDEyIDM4IDc4IDM4IDE0MiBDMzggMTc3IDY2IDIwMiAxMDAgMjAyIEMxMzQgMjAyIDE2MiAxNzcgMTYyIDE0MiBDMTYyIDc4IDEwMCAxMiAxMDAgMTIgWiIKICAgIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJkN2E3NCIgc3Ryb2tlLXdpZHRoPSI3Ii8+CiAgPGcgY2xpcC1wYXRoPSJ1cmwoI2RjKSIgZmlsbD0iIzJkN2E3NCI+CiAgICA8cmVjdCB4PSI4OCIgeT0iNTgiIHdpZHRoPSIyNCIgaGVpZ2h0PSI3IiByeD0iMyIvPgogICAgPHJlY3QgeD0iOTAiIHk9IjY1IiB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHJ4PSIyIi8+CiAgICA8cGF0aCBkPSJNODYgODUgTDc2IDEzMiBRNzEgMTU4IDEwMCAxNjIgUTEyOSAxNTggMTI0IDEzMiBMMTE0IDg1IFoiLz4KICAgIDxlbGxpcHNlIGN4PSI4MiIgY3k9IjE1MCIgcng9IjE5IiByeT0iMTIiIHRyYW5zZm9ybT0icm90YXRlKC0zOCA4MiAxNTApIi8+CiAgICA8ZWxsaXBzZSBjeD0iMTE2IiBjeT0iMTU0IiByeD0iMTciIHJ5PSIxMSIgdHJhbnNmb3JtPSJyb3RhdGUoMjIgMTE2IDE1NCkiLz4KICA8L2c+CiAgPHRleHQgeD0iMTAwIiB5PSIyMjciIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxBcmlhbCIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIyOCIgbGV0dGVyLXNwYWNpbmc9IjIiIGZpbGw9IiMyZDdhNzQiPkhIQSBHUk9VUDwvdGV4dD4KICA8dGV4dCB4PSIxMDAiIHk9IjI0MyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXdlaWdodD0iNzAwIiBmb250LXNpemU9IjguNSIgbGV0dGVyLXNwYWNpbmc9IjEuNSIgZmlsbD0iIzJkN2E3NCI+VFJBTlNGT1JNQU1PUyBDSUVOQ0lBIEVOIENVSURBRE88L3RleHQ+CiAgPHRleHQgeD0iMTAwIiB5PSIyNTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLHNlcmlmIiBmb250LXN0eWxlPSJpdGFsaWMiIGZvbnQtc2l6ZT0iMTAiIGZpbGw9IiMyZDdhNzQiPmJ5IMOBbmltdXMgw5cgRXNwYWdpcmlhPC90ZXh0Pgo8L3N2Zz4=" alt="HHA Group" style="height:72px;width:auto;display:block;margin-bottom:6px;">
     </td>
-    <td style="text-align:right;border:none;vertical-align:top;padding-top:4px;">
-      <div style="font-size:10px;color:#1a6bbf;font-weight:700;">Generado por Sistema HHA</div>
+    <td style="text-align:right;border:none;vertical-align:middle;">
+      <div class="oc-title">ORDEN DE COMPRA</div>
+      <div class="oc-lomdte" style="font-size:20px;font-weight:900;color:#2d7a74;">${numDoc}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:4px;">Generado por Sistema HHA &bull; ${fechaStr}</div>
     </td>
   </tr>
 </table>
