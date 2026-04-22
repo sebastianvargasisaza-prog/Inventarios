@@ -1302,6 +1302,7 @@ async function initIngreso(){
     try{var r=await fetch('/api/maestro-mps'),d=await r.json();(d.mps||[]).forEach(function(mp){_cat[mp.codigo_mp]=mp;});}catch(e){}
   }
   cargarHistIngreso();
+  cargarOCsPendientes();
 }
 function ocultarDropMP(){var d=document.getElementById('mp-dropdown');if(d)d.style.display='none';}
 function seleccionarMP(mp){
@@ -1363,7 +1364,7 @@ async function cargarOCsPendientes(){
       (oc.items||[]).forEach(function(item){
         var opt=document.createElement('option');
         opt.value=oc.numero_oc+'|'+item.codigo_mp;
-        var kg=(item.cantidad_pendiente_g/1000).toFixed(2);
+        var kg=((item.cantidad_g||0)/1000).toFixed(2);
         opt.textContent=oc.numero_oc+' — '+item.nombre_mp+' ('+kg+' kg pendientes)';
         opt.dataset.codigo=item.codigo_mp;
         opt.dataset.nombre=item.nombre_mp;
@@ -1437,9 +1438,12 @@ async function registrarIngreso(){
     if(r.ok){
       _ultimoIng=res;
       var ocWarn=res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
-      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+ocWarn+'</div>';
-      // B5: clear form after successful registration to prevent accidental re-submission
+      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+ocWarn+'</div>';
       limpiarIngreso();
+      // Show success AFTER limpiarIngreso so it is not wiped immediately
+      document.getElementById('ing-msg').innerHTML=successMsg;
+      // Re-enable button so user can register another MP
+      if(btn){btn.disabled=false;btn.textContent='✓ Registrar Entrada';}
       await cargarHistIngreso();
       await cargarOCsPendientes();
     } else {
