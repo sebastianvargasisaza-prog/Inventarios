@@ -1032,15 +1032,16 @@ async function enviarSolicitudCompra(){
       items:[{codigo_mp:(_solMP&&_solMP.cod)||"S/C",nombre_mp:(_solMP&&_solMP.nom)||"Sin nombre",
               cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
     var r=await fetch("/api/solicitudes-compra",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-    var res=await r.json();
-    if(r.ok){
+    var res=null;
+    try{res=await r.json();}catch(_){res=null;}
+    if(r.ok&&res){
       document.getElementById("sol-msg").innerHTML='<div style="padding:12px;background:#d4edda;border:1px solid #28a745;border-radius:6px;color:#155724;font-weight:600;">&#10003; Solicitud '+res.numero+' creada. El equipo de compras fue notificado.</div>';
-      if(btn){btn.disabled=true;btn.textContent="✓ Enviado";btn.style.background="#28a745";}
+      if(btn){btn.disabled=true;btn.textContent="\u2713 Enviado";btn.style.background="#28a745";}
       setTimeout(function(){cerrarSolicitudCompra();},3500);
     } else {
-      var errMsg=(res&&res.error)?res.error:"Error del servidor ("+r.status+")";
-      document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;">&#10060; '+errMsg+'</div>';
-      if(btn){btn.disabled=false;btn.textContent="✓ Enviar Solicitud";}
+      var errMsg=(res&&res.error)?res.error:(res&&res.detail)?res.detail.slice(-200):"Error "+r.status+" — recarga la pagina e intenta de nuevo";
+      document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;font-size:0.88em;">&#10060; '+errMsg+'</div>';
+      if(btn){btn.disabled=false;btn.textContent="\u2713 Enviar Solicitud";}
     }
   }catch(e){
     document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;">&#10060; Error: '+e.message+'</div>';

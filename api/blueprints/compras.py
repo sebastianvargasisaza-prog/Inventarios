@@ -428,32 +428,41 @@ def proveedor_ficha_360(nombre):
 
 @bp.route('/api/solicitudes-compra', methods=['GET','POST'])
 def handle_solicitudes_compra():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'POST':
-        d = request.json
-        c.execute("SELECT COUNT(*) FROM solicitudes_compra"); num = (c.fetchone()[0] or 0) + 1
-        numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
-        emp = d.get('empresa','Espagiria')
-        cat = d.get('categoria','Materia Prima')
-        tip = d.get('tipo','Compra')
-        area = d.get('area','Produccion')
-        email_sol = d.get('email_solicitante', '').strip().lower()
-        fecha_req = d.get('fecha_requerida', '').strip()
-        c.execute("""INSERT INTO solicitudes_compra
-                     (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (numero, datetime.now().isoformat(), 'Pendiente',
-                   d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
-                   area, emp, cat, tip, email_sol, fecha_req))
-        for it in (d.get('items') or []):
-            c.execute("""INSERT INTO solicitudes_compra_items
-                         (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
-                         VALUES (?,?,?,?,?,?,?)""",
-                      (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                       it.get('cantidad_g',0), it.get('unidad','g'),
-                       it.get('justificacion',''), it.get('valor_estimado',0)))
-        conn.commit(); conn.close()
-        return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            d = request.json or {}
+            c.execute('SELECT COUNT(*) FROM solicitudes_compra'); num = (c.fetchone()[0] or 0) + 1
+            numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
+            emp = d.get('empresa','Espagiria')
+            cat = d.get('categoria','Materia Prima')
+            tip = d.get('tipo','Compra')
+            area = d.get('area','Produccion')
+            email_sol = d.get('email_solicitante', '').strip().lower()
+            fecha_req = d.get('fecha_requerida', '').strip()
+            c.execute("""INSERT INTO solicitudes_compra
+                         (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (numero, datetime.now().isoformat(), 'Pendiente',
+                       d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
+                       area, emp, cat, tip, email_sol, fecha_req))
+            for it in (d.get('items') or []):
+                c.execute("""INSERT INTO solicitudes_compra_items
+                             (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
+                             VALUES (?,?,?,?,?,?,?)""",
+                          (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                           it.get('cantidad_g',0), it.get('unidad','g'),
+                           it.get('justificacion',''), it.get('valor_estimado',0)))
+            conn.commit(); conn.close()
+            return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
+        except Exception as e:
+            if conn:
+                try: conn.rollback(); conn.close()
+                except: pass
+            import traceback as _tb
+            return jsonify({'error': str(e), 'detail': _tb.format_exc()[-500:]}), 500
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
