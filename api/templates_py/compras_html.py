@@ -1561,7 +1561,7 @@ async function crearOCSugerida(){
   }
   await loadData(); renderCat('mp');
   if(errores.length){
-    alert('Creadas: '+creadas.join(', ')+'\nErrores:\n'+errores.join('\n'));
+    alert('Creadas: '+creadas.join(', ')+'\\nErrores:\\n'+errores.join('\\n'));
   } else {
     closeModal('m-oc-sug');
     alert('OCs creadas (agrupadas por proveedor): '+creadas.join(', '));

@@ -241,7 +241,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- CARTERA / PAGOS -->
+<!-- CARTERA / PAGOS -->
 <div id="ta-cartera" class="page">
   <div class="section-header"><h2>&#x1F4B0; Cartera y Pagos</h2></div>
   <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:#166534;">
@@ -517,7 +517,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- MODAL: Registrar pago -->
+<!-- MODAL: Registrar pago -->
 <div id="m-pago-ped" class="mdl">
 <div class="mdl-box">
   <div class="mdl-hdr mdl-hdr-a">
@@ -628,7 +628,7 @@ async function loadDashA(){
     document.getElementById('ka-churn').textContent=nc;
     document.getElementById('ka-churn').style.color=nc>0?'#dc2626':'#16a34a';
     var tb=document.getElementById('cartera-dash-body');
-    if(\!aliados.length){tb.innerHTML='<tr><td colspan="5" class="empty">Sin aliados</td></tr>';return;}
+    if(!aliados.length){tb.innerHTML='<tr><td colspan="5" class="empty">Sin aliados</td></tr>';return;}
     tb.innerHTML=aliados.map(function(a){
       var saldo=a.saldo||0;
       var saldoColor=saldo>0?'#dc2626':'#16a34a';
@@ -655,7 +655,7 @@ async function loadAliados(){
     var saldoMap={};
     (ct.aliados||[]).forEach(function(x){saldoMap[x.id]=x.saldo||0;});
     cls.forEach(function(a){_aliadosCache[a.id]=a;});
-    if(\!cls.length){tb.innerHTML='<tr><td colspan="10" class="empty">Sin aliados registrados</td></tr>';return;}
+    if(!cls.length){tb.innerHTML='<tr><td colspan="10" class="empty">Sin aliados registrados</td></tr>';return;}
     var sel=document.getElementById('ped-cliente');
     sel.innerHTML='<option value="">Seleccionar...</option>';
     cls.forEach(function(cl){sel.innerHTML+='<option value="'+cl.id+'">'+cl.nombre+'</option>';});
@@ -684,7 +684,7 @@ async function loadAliados(){
 }
 async function crearAliado(){
   var nombre=document.getElementById('cli-nombre').value.trim();
-  if(\!nombre){alert('Nombre requerido');return;}
+  if(!nombre){alert('Nombre requerido');return;}
   var data={nombre:nombre,empresa:'ANIMUS',tipo:document.getElementById('cli-tipo').value,
     nit:document.getElementById('cli-nit').value,
     email:document.getElementById('cli-email').value,
@@ -720,7 +720,7 @@ async function guardarAliado(){
 }
 async function eliminarAliado(cid, btn){
   var a=_aliadosCache[cid]||{};
-  if(\!confirm('&#xbf;Desactivar aliado "'+a.nombre+'"? El historial se conserva.')){return;}
+  if(!confirm('&#xbf;Desactivar aliado "'+a.nombre+'"? El historial se conserva.')){return;}
   btn.disabled=true; btn.textContent='...';
   var r=await fetch('/api/aliados/'+cid,{method:'DELETE'});
   var res=await r.json();
@@ -734,7 +734,7 @@ async function loadPedidos(estado){
     var d=await fetch(url).then(function(r){return r.json();});
     var tb=document.getElementById('pedidos-body');
     var peds=d.pedidos||[];
-    if(\!peds.length){tb.innerHTML='<tr><td colspan="9" class="empty">Sin pedidos</td></tr>';return;}
+    if(!peds.length){tb.innerHTML='<tr><td colspan="9" class="empty">Sin pedidos</td></tr>';return;}
     tb.innerHTML=peds.map(function(p){
       var valor=p.valor_total||0;
       var pagado=p.monto_pagado||0;
@@ -771,7 +771,7 @@ function addItemPedido(){
 }
 async function crearPedido(){
   var cid=document.getElementById('ped-cliente').value;
-  if(\!cid){alert('Selecciona un aliado');return;}
+  if(!cid){alert('Selecciona un aliado');return;}
   var items=[];
   document.querySelectorAll('.ped-item-row').forEach(function(row){
     var sku=row.querySelector('.ped-sku').value.trim();
@@ -780,7 +780,7 @@ async function crearPedido(){
     var precio=parseFloat(row.querySelector('.ped-precio').value)||0;
     if((sku||desc)&&cant>0) items.push({sku:sku,descripcion:desc,cantidad:cant,precio_unitario:precio,subtotal:cant*precio});
   });
-  if(\!items.length){alert('Agrega al menos un ítem');return;}
+  if(!items.length){alert('Agrega al menos un ítem');return;}
   var data={cliente_id:parseInt(cid),fecha_entrega_est:document.getElementById('ped-fecha-ent').value,
     observaciones:document.getElementById('ped-obs').value,items:items};
   var r=await fetch('/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -799,7 +799,7 @@ function cambiarEstadoPedido(numero){
 async function confirmarEstadoPedido(){
   var nuevo=document.getElementById('m-estado-sel').value;
   var msg=document.getElementById('m-estado-msg');
-  if(\!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
+  if(!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
   var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
   var res=await r.json();
   if(r.ok){
@@ -857,7 +857,7 @@ async function loadCartera(){
     document.getElementById('kc-aliados').style.color=conDeuda>0?'#d97706':'#16a34a';
     document.getElementById('kc-pagado').textContent=fmtM(totalPag);
     var tb=document.getElementById('cartera-body');
-    if(\!aliados.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin aliados</td></tr>';return;}
+    if(!aliados.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin aliados</td></tr>';return;}
     tb.innerHTML=aliados.map(function(a){
       var saldo=a.saldo||0;
       var saldoCell=saldo>0

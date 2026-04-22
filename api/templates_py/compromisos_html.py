@@ -183,8 +183,8 @@ function render(){
         '</div>'+
         (c.notas?'<div style="font-size:11px;color:#78716c;font-style:italic;margin-top:4px;">'+esc(c.notas)+'</div>':'')+
         '<div class="comp-actions">'+
-          (!isDone?'<button class="btn btn-succ" onclick="marcar('+c.id+','Completado')">Completado</button>':'') +
-          (c.estado==='Pendiente'?'<button class="btn btn-warn" onclick="marcar('+c.id+','En Proceso')">En Proceso</button>':'')+
+          (!isDone?'<button class="btn btn-succ" onclick="marcar('+c.id+',\\'Completado\\')">Completado</button>':'') +
+          (c.estado==='Pendiente'?'<button class="btn btn-warn" onclick="marcar('+c.id+',\\'En Proceso\\')">En Proceso</button>':'')+
           '<button class="btn btn-outl" onclick="promptNota('+c.id+')">Nota</button>'+
         '</div>'+
       '</div></div>';

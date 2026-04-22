@@ -742,8 +742,8 @@ async function loadAusencias(){
         '<td style="color:#78716c;max-width:150px;">'+(a.observaciones||'—')+'</td>' +
         '<td>' +
           (a.estado==='Pendiente'?
-            '<button class="btn btn-success btn-sm" onclick="aprobarAus('+a.id+',\\'Aprobada\\')">Aprobar</button> '+
-            '<button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="aprobarAus('+a.id+',\\'Rechazada\\')">Rechazar</button>':
+            '<button class="btn btn-success btn-sm" onclick="aprobarAus('+a.id+',\'Aprobada\')">Aprobar</button> '+
+            '<button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="aprobarAus('+a.id+',\'Rechazada\')">Rechazar</button>':
             '<span style="color:#a8a29e;font-size:12px;">'+a.aprobado_por+'</span>') +
         '</td></tr>';
     }).join('');
@@ -865,7 +865,7 @@ function openEvaModal(){
   document.getElementById('ev-criteria').innerHTML = CRITERIA.map(function(c){
     return '<div class="rating-group" style="margin-bottom:10px;">' +
       '<label>'+c.label+'</label>' +
-      '<input type="range" id="ev-'+c.key+'" min="1" max="5" step="0.5" value="3" oninput="document.getElementById(\\'rv-'+c.key+'\\').textContent=this.value;">' +
+      '<input type="range" id="ev-'+c.key+'" min="1" max="5" step="0.5" value="3" oninput="document.getElementById(\'rv-'+c.key+'\').textContent=this.value;">' +
       '<span class="rval" id="rv-'+c.key+'">3</span>' +
       '</div>';
   }).join('');
