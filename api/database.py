@@ -87,10 +87,6 @@ def init_db():
     for _rc in ["observaciones_recepcion TEXT DEFAULT ''", "tiene_discrepancias INTEGER DEFAULT 0"]:
         try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_rc}")
         except: pass
-    # IVA columns
-    for _iva in ["con_iva INTEGER DEFAULT 0", "valor_sin_iva REAL DEFAULT 0"]:
-        try: c.execute(f"ALTER TABLE ordenes_compra ADD COLUMN {_iva}")
-        except: pass
     for _ri in ["estado_recepcion TEXT DEFAULT 'OK'", "notas_recepcion TEXT DEFAULT ''"]:
         try: c.execute(f"ALTER TABLE ordenes_compra_items ADD COLUMN {_ri}")
         except: pass
@@ -106,14 +102,6 @@ def init_db():
     except: pass
     try:
         c.execute("ALTER TABLE solicitudes_compra_items ADD COLUMN valor_estimado REAL DEFAULT 0")
-    except: pass
-    # Migracion: email del solicitante para notificaciones directas
-    try:
-        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN email_solicitante TEXT DEFAULT ''")
-    except: pass
-    # Migracion: fecha en que se necesita el pedido (para priorizacion)
-    try:
-        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN fecha_requerida TEXT DEFAULT ''")
     except: pass
     try:
         c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
@@ -361,22 +349,6 @@ def init_db():
                  ingresos_maquila REAL DEFAULT 0, notas TEXT DEFAULT '', fecha TEXT)""")
 
     # ââ ANIMUS PT reorder + recall ââââââââââââââââââââââââââââââââââââââ
-    # ── Aliados: nivel + semáforo ────────────────────────────────────
-    try: c.execute("ALTER TABLE clientes ADD COLUMN nivel_aliado TEXT DEFAULT 'Ingreso'")
-    except: pass
-    try: c.execute("ALTER TABLE clientes ADD COLUMN semaforo TEXT DEFAULT 'verde'")
-    except: pass
-    try: c.execute("ALTER TABLE clientes ADD COLUMN fecha_vinculacion TEXT DEFAULT ''")
-    except: pass
-    try: c.execute("ALTER TABLE clientes ADD COLUMN ciudad TEXT DEFAULT ''")
-    except: pass
-    try: c.execute("ALTER TABLE pedidos ADD COLUMN monto_pagado REAL DEFAULT 0")
-    except: pass
-    try: c.execute("ALTER TABLE pedidos ADD COLUMN estado_pago TEXT DEFAULT 'Pendiente'")
-    except: pass
-    # Desactivar ghost aliados seeded incorrectamente (ANIMUS Lab interno + seed placeholder)
-    try: c.execute("UPDATE clientes SET activo=0 WHERE codigo IN ('CLI-001','CLI-002') AND empresa='ANIMUS'")
-    except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN stock_minimo_ud INTEGER DEFAULT 0")
     except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN dias_reposicion INTEGER DEFAULT 15")
@@ -851,6 +823,12 @@ def init_db():
         c.execute("DELETE FROM sgsst_items WHERE id NOT IN (SELECT MIN(id) FROM sgsst_items GROUP BY descripcion)")
         c.execute("DELETE FROM capacitaciones WHERE id NOT IN (SELECT MIN(id) FROM capacitaciones GROUP BY nombre)")
         c.execute("DELETE FROM capacitaciones_empleados WHERE rowid NOT IN (SELECT MIN(rowid) FROM capacitaciones_empleados GROUP BY capacitacion_id, empleado_id)")
+    except: pass
+    # ONE-TIME: delete test records from planta production tables
+    try:
+        c.execute("DELETE FROM acondicionamiento")
+        c.execute("DELETE FROM liberaciones")
+        c.execute("DELETE FROM stock_pt")
     except: pass
     conn.commit()
     conn.close()
