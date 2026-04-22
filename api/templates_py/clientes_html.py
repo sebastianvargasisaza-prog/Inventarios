@@ -537,7 +537,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 <script>
 // ─── GLOBALS ──────────────────────────────────────────────────────────────
-var _seccion='animus', _pedActivo=null, _aliadoActivo=null, _prospectoActivo=null;
+var _seccion='animus', _pedActivo=null, _aliadoActivo=null, _prospectoActivo=null, _aliadosCache={}, _prospectoCache={}, _ordenesCache={};
 
 function fmt(n){return n?('$'+parseFloat(n).toLocaleString('es-CO')):'—';}
 function fmtM(n){if(!n)return'—';var m=n/1000000;return'$'+m.toFixed(1)+'M';}
@@ -652,6 +652,7 @@ async function loadAliados(){
     var d=await fetch('/api/clientes?empresa=ANIMUS').then(function(r){return r.json();});
     var tb=document.getElementById('aliados-body');
     var cls=d.clientes||[];
+    cls.forEach(function(a){_aliadosCache[a.id]=a;});
     if(!cls.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin aliados registrados</td></tr>';return;}
     var sel=document.getElementById('ped-cliente');
     sel.innerHTML='<option value="">Seleccionar...</option>';
@@ -666,7 +667,7 @@ async function loadAliados(){
         +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(cl.facturado_total)+'</td>'
         +'<td style="color:#999;font-size:0.83em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
         +'<td style="white-space:nowrap;">'
-        +'<button class="btn btn-ghost btn-xs" onclick="abrirEditAliado('+cl.id+',\''+cl.nombre+'\',\''+cl.semaforo+'\',\''+cl.nivel_aliado+'\')">Editar</button> '
+        +'<button class="btn btn-ghost btn-xs" onclick="abrirEditAliado('+cl.id+')">Editar</button> '
         +'<button class="btn btn-xs" onclick="abrirCliente360('+cl.id+')">360</button>'
         +'</td></tr>';
     }).join('');
@@ -690,11 +691,12 @@ async function crearAliado(){
   }catch(e){document.getElementById('cli-msg').innerHTML='<div class="msg-err">Error</div>';}
 }
 
-function abrirEditAliado(cid,nom,sem,niv){
+function abrirEditAliado(cid){
+  var a=_aliadosCache[cid]||{};
   _aliadoActivo=cid;
-  document.getElementById('ea-nombre').textContent=nom;
-  document.getElementById('ea-semaforo').value=sem||'verde';
-  document.getElementById('ea-nivel').value=niv||'Ingreso';
+  document.getElementById('ea-nombre').textContent=a.nombre||'';
+  document.getElementById('ea-semaforo').value=a.semaforo||'verde';
+  document.getElementById('ea-nivel').value=a.nivel_aliado||'Ingreso';
   document.getElementById('ea-msg').innerHTML='';
   openMdl('m-edit-aliado');
 }
@@ -926,6 +928,7 @@ var ETAPAS_COLORS={'Contacto':'#6b7280','Brief':'#2563eb','Formulación':'#0891b
 async function loadPipeline(){
   var data=await fetch('/api/maquila/prospectos').then(function(r){return r.json();});
   var prosp=Array.isArray(data)?data:[];
+  prosp.forEach(function(p){_prospectoCache[p.id]=p;});
   var kw=document.getElementById('kanban-pipeline');
   var byEtapa={};
   ETAPAS.forEach(function(e){byEtapa[e]=[];});
@@ -941,7 +944,7 @@ async function loadPipeline(){
     h+='<div class="kan-col">'
       +'<div class="kan-col-hdr"><span style="color:'+col+';">'+etapa+'</span><span class="cnt">'+cards.length+'</span></div>';
     cards.forEach(function(p){
-      h+='<div class="kan-card" onclick="abrirMoverEtapa('+p.id+',\''+p.empresa+'\',\''+p.etapa+'\')">'
+      h+='<div class="kan-card" onclick="abrirMoverEtapa('+p.id+')">'
         +'<div class="kan-card-emp">'+p.empresa+'</div>'
         +'<div class="kan-card-prod">'+(p.producto_tipo||'—')+'</div>'
         +'<div class="kan-card-val">'+fmt(p.valor_estimado)+'</div>'
@@ -953,10 +956,11 @@ async function loadPipeline(){
   kw.innerHTML=h;
 }
 
-function abrirMoverEtapa(id,emp,etapaActual){
+function abrirMoverEtapa(id){
+  var p=_prospectoCache[id]||{};
   _prospectoActivo=id;
-  document.getElementById('me-emp').textContent=emp;
-  document.getElementById('me-etapa').value=etapaActual||'Contacto';
+  document.getElementById('me-emp').textContent=p.empresa||'';
+  document.getElementById('me-etapa').value=p.etapa||'Contacto';
   document.getElementById('me-msg').innerHTML='';
   openMdl('m-etapa-maq');
 }
@@ -984,7 +988,7 @@ async function loadProspectos(){
       +'<td>'+etapaBadge(p.etapa)+'</td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(p.valor_estimado)+'</td>'
       +'<td style="color:#999;font-size:0.82em;">'+(p.fecha_contacto||'').substring(0,10)+'</td>'
-      +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirMoverEtapa('+p.id+',\''+p.empresa+'\',\''+p.etapa+'\')">Etapa</button></td>'
+      +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirMoverEtapa('+p.id+')">Etapa</button></td>'
       +'</tr>';
   }).join('');
 }
@@ -1013,6 +1017,7 @@ async function crearProspectoData(form){
 async function loadOrdenes(){
   var data=await fetch('/api/maquila/ordenes').then(function(r){return r.json();});
   var ords=Array.isArray(data)?data:[];
+  ords.forEach(function(o){_ordenesCache[o.id]=o;});
   var tb=document.getElementById('ordenes-body');
   if(!ords.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin órdenes</td></tr>';return;}
   var estColors={'Cotizacion':'badge-gris','Orden':'badge-azul','Producción':'badge-amarillo','Entregado':'badge-verde','Facturado':'badge-verde'};
@@ -1025,7 +1030,7 @@ async function loadOrdenes(){
       +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'—')+'</td>'
       +'<td><span class="badge '+(estColors[o.estado]||'badge-gris')+'">'+o.estado+'</span></td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(o.valor_total)+'</td>'
-      +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirEstOrden('+o.id+',\''+o.estado+'\')">Estado</button></td>'
+      +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirEstOrden('+o.id+')">Estado</button></td>'
       +'</tr>';
   }).join('');
 }
@@ -1042,9 +1047,10 @@ async function crearOrden(){
   document.getElementById('mo-msg').innerHTML=r.ok?'<div class="msg-ok">Orden creada</div>':'<div class="msg-err">Error</div>';
   if(r.ok){loadOrdenes();toggleForm('f-orden');}
 }
-async function abrirEstOrden(oid,actual){
+async function abrirEstOrden(oid){
+  var o=_ordenesCache[oid]||{};
   document.getElementById('eo-oid').value=oid;
-  document.getElementById('eo-sel').value=actual;
+  document.getElementById('eo-sel').value=o.estado||'Cotizacion';
   document.getElementById('eo-msg').textContent='';
   document.getElementById('m-est-orden').style.display='flex';
 }
