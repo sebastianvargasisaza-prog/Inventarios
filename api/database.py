@@ -856,6 +856,8 @@ def init_db():
         c.execute("DELETE FROM capacitaciones WHERE id NOT IN (SELECT MIN(id) FROM capacitaciones GROUP BY nombre)")
         c.execute("DELETE FROM capacitaciones_empleados WHERE rowid NOT IN (SELECT MIN(rowid) FROM capacitaciones_empleados GROUP BY capacitacion_id, empleado_id)")
     except: pass
+    # ── One-time production data corrections ──────────────────────────────────
+    apply_production_corrections(c)
     conn.commit()
     conn.close()
 
@@ -961,6 +963,64 @@ def seed_rrhh(c):
     for i,ev in enumerate(evals):
         total = round((ev[4]+ev[5]+ev[6]+ev[7]+ev[8])/5,1)
         c.execute("INSERT INTO evaluaciones (empleado_id,periodo,evaluador,puntaje_total,puntaje_calidad,puntaje_asistencia,puntaje_actitud,puntaje_conocimiento,puntaje_productividad,comentarios,estado) VALUES (?,?,?,?,?,?,?,?,?,?,'Publicada')", (ev[0],ev[1],ev[2],total,ev[4],ev[5],ev[6],ev[7],ev[8],ev[9]))
+
+
+def apply_production_corrections(c):
+    """One-time corrections for known data-entry errors in producciones."""
+    # ── Correction 1: EMULSION LIMPIADORA NF 2026-04-22 ──────────────────────
+    # Luis entered 20,000 kg instead of 20 kg (1000x over-consumption of 21 MPs)
+    # Guard: skip if already corrected
+    c.execute("""SELECT COUNT(*) FROM movimientos
+                 WHERE tipo='Entrada'
+                 AND observaciones LIKE '%CORRECCION%EMULSION LIMPIADORA NF%20000kg%'""")
+    already_done = c.fetchone()[0]
+    if already_done:
+        return
+
+    c.execute("""SELECT id FROM producciones
+                 WHERE producto='EMULSION LIMPIADORA NF'
+                 AND cantidad=20000
+                 AND fecha LIKE '2026-04-22%'""")
+    bad_prod = c.fetchone()
+    if not bad_prod:
+        return  # Either already fixed or doesn't exist
+
+    # Get all erroneous Salida movements from that production
+    c.execute("""SELECT id, material_id, material_nombre, cantidad
+                 FROM movimientos
+                 WHERE tipo='Salida'
+                 AND fecha LIKE '2026-04-22%'
+                 AND (observaciones LIKE '%EMULSION LIMPIADORA%' OR observaciones LIKE '%PROD-00007%')
+                 AND observaciones NOT LIKE '[ANULADO]%'
+                 AND observaciones NOT LIKE '[ANULACION]%'""")
+    bad_movs = c.fetchall()
+    if not bad_movs:
+        return
+
+    # Create corrective Entrada for 999/1000 of each erroneous Salida
+    for mov_id, mat_id, mat_nom, qty in bad_movs:
+        correction = round(qty * 999.0 / 1000.0, 4)
+        c.execute("""INSERT INTO movimientos
+                     (material_id, material_nombre, cantidad, tipo, observaciones, fecha)
+                     VALUES (?,?,?,'Entrada',?,datetime('now'))""",
+                  (mat_id, mat_nom, correction,
+                   f'[CORRECCION] Error ingreso EMULSION LIMPIADORA NF 2026-04-22: '
+                   f'registrada como 20000kg era 20kg. Restaura {correction}g (mov#{mov_id})'))
+
+    # Fix the production record
+    c.execute("""UPDATE producciones SET cantidad=20
+                 WHERE producto='EMULSION LIMPIADORA NF'
+                 AND cantidad=20000
+                 AND fecha LIKE '2026-04-22%'""")
+
+    try:
+        c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                     VALUES ('sistema','CORRECCION_PRODUCCION','producciones','auto',
+                     'EMULSION LIMPIADORA NF 2026-04-22: cantidad 20000kg→20kg. '
+                     'Entradas correctivas para 21 MPs generadas automaticamente.',
+                     '127.0.0.1', datetime('now'))""")
+    except Exception:
+        pass
 
 
 def run_seed_rrhh():
