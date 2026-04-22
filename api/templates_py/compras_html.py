@@ -115,6 +115,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
   <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
+  <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
 </div>
 
 <!-- PANES -->
@@ -262,6 +263,22 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
+</div>
+
+<div id="pane-consol" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px;">
+    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Pedidos consolidados por proveedor</span>
+    <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
+      <label style="font-size:12px;color:#64748b;">Estados:</label>
+      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
+      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
+      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Autorizada" checked> Autorizada</label>
+      <button class="btn bp" onclick="loadConsolidado()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
+  </div>
+  <div id="consol-body" style="padding:16px 0;">
+    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando consolidado...</div>
+  </div>
 </div>
 <!-- MODAL: Proveedor 360 -->
 <div id="m-ficha360" class="ov">
@@ -612,10 +629,11 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='influencer') loadInfluencers();
+    else if(tab==='consol') loadConsolidado();
     else if(tab==='cc'){ renderCat('cc'); loadCCSolicitudes(); }
     else{ renderCat(tab); if(tab==='mp') renderMPAlerts(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){ openNuevaOC(tab==='dash'?'':tab.toUpperCase()); }; }
   });
 });
@@ -2276,6 +2294,133 @@ async function gestionarSol(decision){
     await Promise.all([loadData(),loadSolicitudes(),loadInfluencers(),loadCCSolicitudes()]);
     alert(decision==='Aprobada'?'Solicitud aprobada. OC generada: '+(d.numero_oc||''):'Solicitud rechazada.');
   }catch(e){ alert('Error: '+e); }
+}
+
+
+// ─── Consolidado por Proveedor ────────────────────────────────────
+var _consolCache = [];  // cache para copiarPedido(idx)
+
+async function loadConsolidado(){
+  var body = document.getElementById('consol-body');
+  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+  var estados = Array.from(document.querySelectorAll('.consol-est:checked')).map(function(el){return el.value;});
+  if(!estados.length){
+    body.innerHTML = '<div style="color:#f59e0b;padding:16px;">Selecciona al menos un estado.</div>';
+    return;
+  }
+  try{
+    var qs = estados.map(function(e){return 'estados='+encodeURIComponent(e);}).join('&');
+    var r = await fetch('/api/compras/consolidado-proveedor?'+qs);
+    var d = await r.json();
+    _consolCache = d.proveedores || [];
+    if(!_consolCache.length){
+      body.innerHTML = '<div style="color:#4ade80;text-align:center;padding:40px;">&#x2705; No hay OCs pendientes para consolidar.</div>';
+      return;
+    }
+    body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+  }catch(e){
+    body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: '+e+'</div>';
+  }
+}
+
+function renderConsolCard(p, idx){
+  var estadoColors = {'Borrador':'#94a3b8','Revisada':'#f59e0b','Autorizada':'#22c55e'};
+  var itemsHtml = p.items.map(function(it){
+    var cant = it.cantidad_total_g >= 1000
+      ? (it.cantidad_total_g/1000).toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'
+      : it.cantidad_total_g.toLocaleString('es-CO',{maximumFractionDigits:0})+' g';
+    var sub = it.subtotal_total > 0
+      ? '<span style="color:#64748b;font-size:11px;"> ($'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})+')</span>'
+      : '';
+    var ocs = it.ocs_origen.length > 1
+      ? '<span style="font-size:10px;color:#94a3b8;"> '+it.ocs_origen.join(', ')+'</span>'
+      : '';
+    return '<tr>'
+      +'<td style="padding:5px 8px;color:#1e293b;">'+escConH(it.nombre_mp)+'</td>'
+      +'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'+cant+'</td>'
+      +'<td style="padding:5px 8px;">'+sub+'</td>'
+      +'<td style="padding:5px 8px;">'+ocs+'</td>'
+      +'</tr>';
+  }).join('');
+
+  var ocsHtml = p.ocs.map(function(o){
+    var col = estadoColors[o.estado] || '#94a3b8';
+    return '<span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;margin-right:4px;">'
+      +o.numero_oc+' <span style="color:'+col+';">'+o.estado+'</span></span>';
+  }).join('');
+
+  var totalFmt = p.valor_total > 0
+    ? '$'+Number(p.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0})
+    : '--';
+
+  return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden;">'
+    +'<div style="background:#f8fafc;padding:14px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #e2e8f0;">'
+      +'<span style="font-size:22px;">&#x1F3ED;</span>'
+      +'<div style="flex:1;">'
+        +'<div style="font-weight:700;font-size:16px;color:#0f172a;">'+escConH(p.proveedor)+'</div>'
+        +'<div style="font-size:12px;color:#64748b;margin-top:2px;">'
+          +p.n_ocs+' OC'+(p.n_ocs>1?'s':'')+' &bull; '
+          +p.n_items+' producto'+(p.n_items>1?'s':'')+' &bull; Total: <strong>'+totalFmt+'</strong>'
+        +'</div>'
+        +'<div style="margin-top:6px;">'+ocsHtml+'</div>'
+      +'</div>'
+      +'<button class="btn bp" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
+        +' style="padding:8px 16px;font-size:12px;white-space:nowrap;">&#x1F4CB; Copiar pedido</button>'
+    +'</div>'
+    +'<div style="padding:12px 18px;">'
+      +'<table style="width:100%;border-collapse:collapse;">'
+        +'<thead><tr>'
+          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Producto</th>'
+          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Cantidad total</th>'
+          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">Subtotal</th>'
+          +'<th style="text-align:left;font-size:11px;color:#94a3b8;padding:4px 8px;border-bottom:1px solid #f1f5f9;">OCs origen</th>'
+        +'</tr></thead>'
+        +'<tbody>'+itemsHtml+'</tbody>'
+      +'</table>'
+    +'</div>'
+  +'</div>';
+}
+
+async function copiarPedido(idx){
+  var p = _consolCache[idx];
+  if(!p){ alert('Error: proveedor no encontrado'); return; }
+  var fecha = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
+  var lines = [];
+  lines.push('Pedido para: '+p.proveedor);
+  lines.push('Fecha: '+fecha);
+  lines.push('');
+  p.items.forEach(function(it){
+    var cant = it.cantidad_total_g >= 1000
+      ? (it.cantidad_total_g/1000).toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'
+      : it.cantidad_total_g.toLocaleString('es-CO',{maximumFractionDigits:0})+' g';
+    var sub = it.subtotal_total > 0
+      ? '  ($'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})+')'
+      : '';
+    lines.push('- '+it.nombre_mp+': '+cant+sub);
+  });
+  lines.push('');
+  if(p.valor_total > 0)
+    lines.push('Valor total estimado: $'+Number(p.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0}));
+  lines.push('OCs: '+p.ocs.map(function(o){return o.numero_oc;}).join(', '));
+  var texto = lines.join('\\n');
+  try{
+    await navigator.clipboard.writeText(texto);
+    var btn = document.querySelector('[data-consol-idx="'+idx+'"]');
+    if(btn){ var orig=btn.innerHTML; btn.innerHTML='&#x2705; Copiado!'; btn.style.background='#22c55e';
+      setTimeout(function(){btn.innerHTML=orig;btn.style.background='';},2000); }
+  }catch(e){
+    // Fallback para navegadores sin clipboard API
+    var ta = document.createElement('textarea');
+    ta.value = texto; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    alert('Texto copiado al portapapeles.');
+  }
+}
+
+function escConH(s){
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(s||''));
+  return d.innerHTML;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
