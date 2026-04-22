@@ -824,12 +824,6 @@ def init_db():
         c.execute("DELETE FROM capacitaciones WHERE id NOT IN (SELECT MIN(id) FROM capacitaciones GROUP BY nombre)")
         c.execute("DELETE FROM capacitaciones_empleados WHERE rowid NOT IN (SELECT MIN(rowid) FROM capacitaciones_empleados GROUP BY capacitacion_id, empleado_id)")
     except: pass
-    # ONE-TIME: delete test records from planta production tables
-    try:
-        c.execute("DELETE FROM acondicionamiento")
-        c.execute("DELETE FROM liberaciones")
-        c.execute("DELETE FROM stock_pt")
-    except: pass
     conn.commit()
     conn.close()
 
@@ -944,3 +938,4 @@ def run_seed_rrhh():
     seed_rrhh(c)
     conn.commit()
     conn.close()
+                                                                                                                                                                                                                                       
