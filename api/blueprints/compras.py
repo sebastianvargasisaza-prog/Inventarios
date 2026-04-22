@@ -995,8 +995,8 @@ def alertas_mee():
 def consolidado_por_proveedor():
     """
     Consolida OCs activas agrupadas por proveedor.
-    Suma cantidades del mismo item (codigo_mp) cuando aparece en multiples OCs.
-    Estados incluidos: Borrador, Revisada, Autorizada (excluye Pagada/Recibida/Rechazada).
+    Incluye datos del proveedor (NIT, contacto, tel) y observaciones de cada OC
+    como fallback cuando no hay items registrados en ordenes_compra_items.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -1013,13 +1013,19 @@ def consolidado_por_proveedor():
             o.fecha,
             o.valor_total,
             o.categoria,
+            o.observaciones,
             i.codigo_mp,
             i.nombre_mp,
             i.cantidad_g,
             i.precio_unitario,
-            i.subtotal
+            i.subtotal,
+            pv.nit,
+            pv.contacto,
+            pv.telefono,
+            pv.email
         FROM ordenes_compra o
         LEFT JOIN ordenes_compra_items i ON o.numero_oc = i.numero_oc
+        LEFT JOIN proveedores pv ON LOWER(TRIM(o.proveedor)) = LOWER(TRIM(pv.nombre))
         WHERE o.estado IN ({placeholders})
         ORDER BY o.proveedor, o.numero_oc, i.nombre_mp
     """, estados_activos)
@@ -1027,25 +1033,35 @@ def consolidado_por_proveedor():
     rows = c.fetchall()
     conn.close()
 
-    # Agrupar por proveedor
-    from collections import defaultdict, OrderedDict
+    from collections import OrderedDict
     proveedores = OrderedDict()
 
     for row in rows:
-        prov, oc, estado, fecha, valor_total_oc, cat, cod_mp, nom_mp, cant, precio_u, subtotal = row
+        (prov, oc, estado, fecha, valor_total_oc, cat, obs,
+         cod_mp, nom_mp, cant, precio_u, subtotal,
+         nit, contacto, telefono, email) = row
         prov = prov or 'Sin proveedor'
 
         if prov not in proveedores:
             proveedores[prov] = {
                 'proveedor': prov,
-                'ocs': {},           # numero_oc → {estado, fecha, valor, categoria}
-                'items': {},         # codigo_mp → {nombre, cantidad_total, precio_u, ocs_origen}
+                'nit': nit or '',
+                'contacto': contacto or '',
+                'telefono': telefono or '',
+                'email': email or '',
+                'ocs': {},
+                'items': {},
                 'valor_total': 0.0,
             }
 
         p = proveedores[prov]
+        # Completar datos proveedor si primera fila no los tenía
+        if not p['nit'] and nit: p['nit'] = nit
+        if not p['contacto'] and contacto: p['contacto'] = contacto
+        if not p['telefono'] and telefono: p['telefono'] = telefono
+        if not p['email'] and email: p['email'] = email
 
-        # Registrar OC
+        # Registrar OC (incluye observaciones para fallback)
         if oc and oc not in p['ocs']:
             p['ocs'][oc] = {
                 'numero_oc': oc,
@@ -1053,14 +1069,14 @@ def consolidado_por_proveedor():
                 'fecha': (fecha or '')[:10],
                 'valor_total': valor_total_oc or 0,
                 'categoria': cat or '',
+                'observaciones': obs or '',
             }
             p['valor_total'] += valor_total_oc or 0
 
-        # Consolidar item — sumar si mismo codigo_mp
+        # Consolidar item por codigo_mp
         if cod_mp:
-            key = cod_mp
-            if key not in p['items']:
-                p['items'][key] = {
+            if cod_mp not in p['items']:
+                p['items'][cod_mp] = {
                     'codigo_mp': cod_mp,
                     'nombre_mp': nom_mp or cod_mp,
                     'cantidad_total_g': 0.0,
@@ -1068,17 +1084,20 @@ def consolidado_por_proveedor():
                     'subtotal_total': 0.0,
                     'ocs_origen': [],
                 }
-            item = p['items'][key]
+            item = p['items'][cod_mp]
             item['cantidad_total_g'] += cant or 0
             item['subtotal_total'] += subtotal or 0
             if oc and oc not in item['ocs_origen']:
                 item['ocs_origen'].append(oc)
 
-    # Serializar a lista ordenada por valor desc
     result = []
     for prov, data in proveedores.items():
         result.append({
             'proveedor': prov,
+            'nit': data['nit'],
+            'contacto': data['contacto'],
+            'telefono': data['telefono'],
+            'email': data['email'],
             'ocs': sorted(data['ocs'].values(), key=lambda x: x['fecha'], reverse=True),
             'items': sorted(data['items'].values(), key=lambda x: x['nombre_mp']),
             'valor_total': data['valor_total'],
