@@ -136,7 +136,7 @@ def generar_oc_automatica():
     # Crear OC por cada proveedor
     ordenes_creadas = []
     for prov, items in por_proveedor.items():
-        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num=(c.fetchone()[0] or 0)+1
+        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num=(c.fetchone()[0] or 0)+1
         numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
         c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
                   (numero_oc, datetime.now().isoformat(), 'Pendiente', prov, 'Generada automaticamente por stock bajo minimo'))
@@ -181,7 +181,7 @@ def handle_ordenes_compra():
     if request.method == 'POST':
         d = request.json
         if not d.get('proveedor'): conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
-        c.execute("SELECT COUNT(*) FROM ordenes_compra"); num = (c.fetchone()[0] or 0) + 1
+        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
         numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
         categoria = d.get('categoria', 'MP')
         c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
@@ -433,7 +433,7 @@ def handle_solicitudes_compra():
         try:
             conn = sqlite3.connect(DB_PATH); c = conn.cursor()
             d = request.json or {}
-            c.execute('SELECT COUNT(*) FROM solicitudes_compra'); num = (c.fetchone()[0] or 0) + 1
+            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?", (f"SOL-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
             numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
             emp = d.get('empresa','Espagiria')
             cat = d.get('categoria','Materia Prima')
@@ -564,8 +564,8 @@ def actualizar_estado_solicitud(numero):
         valor_oc = float(d.get('valor_total') or 0)
         fent_oc = d.get('fecha_entrega_est', '')
         obs_oc = d.get('observaciones_oc') or f'Generado desde {numero.upper()}'
-        cur.execute("SELECT COUNT(*) FROM ordenes_compra")
-        n_oc = cur.fetchone()[0] + 1
+        cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
+        n_oc = (cur.fetchone()[0] or 0) + 1
         oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
         # Influencer y Cuenta de Cobro saltan directo a Autorizada
         # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
