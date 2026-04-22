@@ -233,6 +233,33 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 </div><!-- /content -->
 
+<\!-- MODAL: Cambiar estado pedido -->
+<div id="m-estado-ped" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:none;align-items:center;justify-content:center;">
+<div style="background:white;border-radius:14px;max-width:440px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;">
+  <div style="background:#2B7A78;color:white;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+    <strong>Cambiar estado del pedido</strong>
+    <button onclick="cerrarModalEstado()" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:1.2em;cursor:pointer;border-radius:5px;padding:2px 8px;">&times;</button>
+  </div>
+  <div style="padding:20px;">
+    <p style="margin-bottom:6px;font-size:0.85em;color:#5C7A7A;">Pedido: <strong id="m-estado-num" style="font-family:monospace;"></strong></p>
+    <label style="display:block;font-size:0.8em;font-weight:600;color:#5C7A7A;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Nuevo estado</label>
+    <select id="m-estado-sel" style="width:100%;padding:10px 12px;border:1.5px solid #D8E4E4;border-radius:7px;font-size:0.9em;background:#fafcfc;">
+      <option value="">Seleccionar...</option>
+      <option value="Confirmado">Confirmado</option>
+      <option value="Produciendo">Produciendo</option>
+      <option value="Listo">Listo para despachar</option>
+      <option value="Despachado">Despachado</option>
+      <option value="Facturado">Facturado</option>
+      <option value="Cancelado">Cancelado</option>
+    </select>
+    <div id="m-estado-msg" style="margin-top:8px;min-height:24px;"></div>
+  </div>
+  <div style="padding:0 20px 18px;display:flex;gap:10px;justify-content:flex-end;">
+    <button class="btn btn-ghost" onclick="cerrarModalEstado()">Cancelar</button>
+    <button class="btn" onclick="confirmarEstadoPedido()">Guardar</button>
+  </div>
+</div>
+</div>
 <script>
 function goTab(id,btn){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
@@ -406,12 +433,33 @@ async function crearPedido(){
   }catch(e){document.getElementById('ped-msg').innerHTML='<div class="msg-err">Error</div>';}
 }
 
-async function cambiarEstadoPedido(numero){
-  var estados=['Confirmado','Produciendo','Listo','Despachado','Facturado','Cancelado'];
-  var nuevo=prompt('Nuevo estado para '+numero+':\\n'+estados.join(', '));
-  if(!nuevo||!estados.includes(nuevo)) return;
-  await fetch('/api/pedidos/'+numero,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
-  loadPedidos('');
+var _pedidoEstadoActivo=null;
+function cambiarEstadoPedido(numero){
+  _pedidoEstadoActivo=numero;
+  document.getElementById('m-estado-num').textContent=numero;
+  document.getElementById('m-estado-sel').value='';
+  document.getElementById('m-estado-msg').innerHTML='';
+  var m=document.getElementById('m-estado-ped');
+  m.style.display='flex';
+}
+function cerrarModalEstado(){
+  document.getElementById('m-estado-ped').style.display='none';
+  _pedidoEstadoActivo=null;
+}
+async function confirmarEstadoPedido(){
+  var nuevo=document.getElementById('m-estado-sel').value;
+  var msg=document.getElementById('m-estado-msg');
+  if(\!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.85em;">Selecciona un estado</span>';return;}
+  try{
+    var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
+    var res=await r.json();
+    if(r.ok){
+      msg.innerHTML='<span style="color:#16a34a;font-size:0.85em;">Actualizado</span>';
+      setTimeout(function(){cerrarModalEstado();loadPedidos('');},600);
+    } else {
+      msg.innerHTML='<span style="color:#dc2626;font-size:0.85em;">'+(res.error||'Error al actualizar')+'</span>';
+    }
+  }catch(e){msg.innerHTML='<span style="color:#dc2626;font-size:0.85em;">Error de conexion</span>';}
 }
 
 async function loadStockPT(){

@@ -9,20 +9,7 @@ from flask import Blueprint, jsonify, request, Response, session, redirect, url_
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CLIENTES_ACCESS
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
-from templates_py.rrhh_html import RRHH_HTML
-from templates_py.compromisos_html import COMPROMISOS_HTML
-from templates_py.home_html import HOME_HTML
-from templates_py.hub_html import HUB_HTML
 from templates_py.clientes_html import CLIENTES_HTML
-from templates_py.calidad_html import CALIDAD_HTML
-from templates_py.gerencia_html import GERENCIA_HTML
-from templates_py.financiero_html import FINANCIERO_HTML
-from templates_py.login_html import LOGIN_HTML
-from templates_py.compras_html import COMPRAS_HTML
-from templates_py.recepcion_html import RECEPCION_HTML
-from templates_py.salida_html import SALIDA_HTML
-from templates_py.solicitudes_html import SOLICITUDES_HTML
-from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('clientes', __name__)
 
@@ -58,8 +45,19 @@ def handle_clientes():
             return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
         except Exception as e:
             conn.close(); return jsonify({'error': str(e)}), 400
-    c.execute("SELECT id,codigo,nombre,empresa,tipo,contacto,email,telefono,condiciones_pago,descuento_pct,activo,fecha_creacion FROM clientes WHERE activo=1 ORDER BY nombre")
-    cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono','condiciones_pago','descuento_pct','activo','fecha_creacion']
+    c.execute("""SELECT cl.id, cl.codigo, cl.nombre, cl.empresa, cl.tipo, cl.contacto, cl.email,
+                        cl.telefono, cl.condiciones_pago, cl.descuento_pct, cl.activo, cl.fecha_creacion,
+                        COUNT(p.numero) as total_pedidos,
+                        COALESCE(SUM(p.valor_total),0) as facturado_total,
+                        MAX(p.fecha) as ultimo_pedido
+                 FROM clientes cl
+                 LEFT JOIN pedidos p ON p.cliente_id = cl.id
+                 WHERE cl.activo=1
+                 GROUP BY cl.id
+                 ORDER BY cl.nombre""")
+    cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono',
+            'condiciones_pago','descuento_pct','activo','fecha_creacion',
+            'total_pedidos','facturado_total','ultimo_pedido']
     clientes = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify({'clientes': clientes})
 
@@ -203,12 +201,12 @@ def handle_pedidos():
         conn.commit(); conn.close()
         return jsonify({'message': f'Pedido {numero} creado', 'numero': numero}), 201
     estado = request.args.get('estado')
-    q = "SELECT p.numero,c.nombre,p.fecha,p.estado,p.valor_total,p.empresa,p.fecha_entrega_est FROM pedidos p LEFT JOIN clientes c ON p.cliente_id=c.id"
+    q = "SELECT p.numero,c.nombre,p.fecha,p.estado,p.valor_total,p.empresa,p.fecha_entrega_est,c.codigo as cliente_codigo FROM pedidos p LEFT JOIN clientes c ON p.cliente_id=c.id"
     params = []
     if estado: q += " WHERE p.estado=?"; params.append(estado)
     q += " ORDER BY p.fecha DESC LIMIT 100"
     c.execute(q, params)
-    cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est']
+    cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est','cliente_codigo']
     rows = c.fetchall(); conn.close()
     return jsonify({'pedidos': [dict(zip(cols, r)) for r in rows]})
 
@@ -244,8 +242,8 @@ def handle_stock_pt():
                    float(d.get('precio_base',0)), d.get('empresa','ANIMUS'), 'Disponible', d.get('observaciones','')))
         conn.commit(); conn.close()
         return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds"}), 201
-    c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
-    cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base']
+    c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base,COUNT(*) as lotes FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
+    cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base','lotes']
     rows = c.fetchall()
     conn.close()
     return jsonify({'stock_pt': [dict(zip(cols, r)) for r in rows]})
@@ -262,7 +260,12 @@ def handle_despachos():
         for it in (d.get('items') or []):
             c.execute("INSERT INTO despachos_items (numero_despacho,sku,descripcion,lote_pt,cantidad,precio_unitario) VALUES (?,?,?,?,?,?)",
                       (numero, it.get('sku',''), it.get('descripcion',''), it.get('lote_pt',''), int(it.get('cantidad',0)), float(it.get('precio_unitario',0))))
-            c.execute("UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?) WHERE sku=? AND unidades_disponible>0 ORDER BY fecha_produccion ASC LIMIT 1",
+            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
+                         WHERE id=(
+                           SELECT id FROM stock_pt
+                           WHERE sku=? AND unidades_disponible>0
+                           ORDER BY fecha_produccion ASC LIMIT 1
+                         )""",
                       (int(it.get('cantidad',0)), it.get('sku','')))
         if d.get('numero_pedido'):
             c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (d['numero_pedido'],))
