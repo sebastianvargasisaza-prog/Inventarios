@@ -387,7 +387,9 @@ def hub_stock_sku(sku):
 def hub_despachar():
     d = request.get_json() or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM despachos"); n = (c.fetchone()[0] or 0) + 1
+    c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?",
+              (f"DSP-{datetime.now().strftime('%Y')}-%",))
+    n = (c.fetchone()[0] or 0) + 1
     numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
     c.execute("""INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado)
                  VALUES (?,?,?,datetime('now'),?,?,?)""",
