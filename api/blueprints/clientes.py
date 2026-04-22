@@ -45,19 +45,26 @@ def handle_clientes():
             return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
         except Exception as e:
             conn.close(); return jsonify({'error': str(e)}), 400
-    c.execute("""SELECT cl.id, cl.codigo, cl.nombre, cl.empresa, cl.tipo, cl.contacto, cl.email,
+    empresa_fil = request.args.get('empresa')
+    q_filter = "AND cl.empresa=?" if empresa_fil else ""
+    q_params = (empresa_fil,) if empresa_fil else ()
+    c.execute(f"""SELECT cl.id, cl.codigo, cl.nombre, cl.empresa, cl.tipo, cl.contacto, cl.email,
                         cl.telefono, cl.condiciones_pago, cl.descuento_pct, cl.activo, cl.fecha_creacion,
                         COUNT(p.numero) as total_pedidos,
                         COALESCE(SUM(p.valor_total),0) as facturado_total,
-                        MAX(p.fecha) as ultimo_pedido
+                        MAX(p.fecha) as ultimo_pedido,
+                        COALESCE(cl.nivel_aliado,'Ingreso') as nivel_aliado,
+                        COALESCE(cl.semaforo,'verde') as semaforo,
+                        COALESCE(cl.fecha_vinculacion,'') as fecha_vinculacion
                  FROM clientes cl
                  LEFT JOIN pedidos p ON p.cliente_id = cl.id
-                 WHERE cl.activo=1
+                 WHERE cl.activo=1 {q_filter}
                  GROUP BY cl.id
-                 ORDER BY cl.nombre""")
+                 ORDER BY cl.nombre""", q_params)
     cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono',
             'condiciones_pago','descuento_pct','activo','fecha_creacion',
-            'total_pedidos','facturado_total','ultimo_pedido']
+            'total_pedidos','facturado_total','ultimo_pedido',
+            'nivel_aliado','semaforo','fecha_vinculacion']
     clientes = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify({'clientes': clientes})
 
@@ -275,5 +282,24 @@ def handle_despachos():
     cols = ['numero','cliente','fecha','numero_pedido','estado','operador']
     rows = c.fetchall(); conn.close()
     return jsonify({'despachos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/aliados/<int:cid>', methods=['PATCH'])
+def patch_aliado(cid):
+    """Actualiza semaforo y/o nivel_aliado de un aliado ANIMUS."""
+    d = request.json or {}
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    campos = []; vals = []
+    if 'semaforo' in d and d['semaforo'] in ('verde','amarillo','rojo'):
+        campos.append('semaforo=?'); vals.append(d['semaforo'])
+    if 'nivel_aliado' in d and d['nivel_aliado'] in ('Ingreso','Estratégico','Mayorista'):
+        campos.append('nivel_aliado=?'); vals.append(d['nivel_aliado'])
+    if 'fecha_vinculacion' in d:
+        campos.append('fecha_vinculacion=?'); vals.append(d['fecha_vinculacion'])
+    if campos:
+        vals.append(cid)
+        c.execute(f"UPDATE clientes SET {','.join(campos)} WHERE id=?", vals)
+        conn.commit()
+    conn.close(); return jsonify({'ok': True})
 
 # ─── MÓDULO GERENCIA — Rutas ──────────────────────────────────

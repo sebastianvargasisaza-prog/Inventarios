@@ -361,6 +361,13 @@ def init_db():
                  ingresos_maquila REAL DEFAULT 0, notas TEXT DEFAULT '', fecha TEXT)""")
 
     # ââ ANIMUS PT reorder + recall ââââââââââââââââââââââââââââââââââââââ
+    # ── Aliados: nivel + semáforo ────────────────────────────────────
+    try: c.execute("ALTER TABLE clientes ADD COLUMN nivel_aliado TEXT DEFAULT 'Ingreso'")
+    except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN semaforo TEXT DEFAULT 'verde'")
+    except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN fecha_vinculacion TEXT DEFAULT ''")
+    except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN stock_minimo_ud INTEGER DEFAULT 0")
     except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN dias_reposicion INTEGER DEFAULT 15")
