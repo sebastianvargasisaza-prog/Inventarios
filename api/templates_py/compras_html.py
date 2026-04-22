@@ -831,11 +831,11 @@ async function abrirFicha360(nombre) {
     var ft=document.getElementById('ficha360-footer');
     if(ft){
       ft.innerHTML=
-        '<button class="btn bo" onclick="closeModal(\"m-ficha360\")">Cerrar</button>'
-        +'<button class="btn bw" style="background:#2563eb;" onclick="editarProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+        '<button class="btn bo" onclick="closeModal(\'m-ficha360\')">Cerrar</button>'
+        +'<button class="btn bw" style="background:#2563eb;" onclick="editarProv360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
         +'&#x270F; Editar</button>'
         +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
-        +'onclick="bajaProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+        +'onclick="bajaProv360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
         +'&#x1F6AB; Dar de baja</button>';
     }
   } catch(e) { el.innerHTML = '<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
@@ -881,9 +881,9 @@ function editarProv360(nombre){
   h+='</div></div>';
   el.innerHTML=h;
   if(ft) ft.innerHTML=
-    '<button class="btn bo" onclick="abrirFicha360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    '<button class="btn bo" onclick="abrirFicha360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
     +'&#x2190; Volver</button>'
-    +'<button class="btn bg" onclick="guardarEditProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'<button class="btn bg" onclick="guardarEditProv360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
     +'&#x1F4BE; Guardar cambios</button>';
 }
 async function guardarEditProv360(nombre){
@@ -918,10 +918,10 @@ function bajaProv360(nombre){
   h+='</div></div>';
   el.innerHTML=h;
   if(ft) ft.innerHTML=
-    '<button class="btn bo" onclick="abrirFicha360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    '<button class="btn bo" onclick="abrirFicha360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
     +'&#x2190; Cancelar</button>'
     +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
-    +'onclick="confirmarBajaProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'onclick="confirmarBajaProv360(\''+ nombre.replace(/'/g,\"&#39;\")+'\')">'
     +'&#x26A0; Confirmar baja definitiva</button>';
 }
 async function confirmarBajaProv360(nombre){
