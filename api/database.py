@@ -368,6 +368,15 @@ def init_db():
     except: pass
     try: c.execute("ALTER TABLE clientes ADD COLUMN fecha_vinculacion TEXT DEFAULT ''")
     except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN ciudad TEXT DEFAULT ''")
+    except: pass
+    try: c.execute("ALTER TABLE pedidos ADD COLUMN monto_pagado REAL DEFAULT 0")
+    except: pass
+    try: c.execute("ALTER TABLE pedidos ADD COLUMN estado_pago TEXT DEFAULT 'Pendiente'")
+    except: pass
+    # Desactivar ghost aliados seeded incorrectamente (ANIMUS Lab interno + seed placeholder)
+    try: c.execute("UPDATE clientes SET activo=0 WHERE codigo IN ('CLI-001','CLI-002') AND empresa='ANIMUS'")
+    except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN stock_minimo_ud INTEGER DEFAULT 0")
     except: pass
     try: c.execute("ALTER TABLE stock_pt ADD COLUMN dias_reposicion INTEGER DEFAULT 15")

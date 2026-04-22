@@ -35,12 +35,12 @@ def handle_clientes():
         try:
             c.execute("""INSERT INTO clientes
                          (codigo,nombre,empresa,tipo,contacto,email,telefono,nit,
-                          condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?)""",
+                          condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones,ciudad)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?,?)""",
                       (codigo, d['nombre'], d.get('empresa','ANIMUS'), d.get('tipo','Distribuidor'),
                        d.get('contacto',''), d.get('email',''), d.get('telefono',''),
-                       d.get('nit',''), d.get('condiciones_pago','30 dias'),
-                       float(d.get('descuento_pct',0)), d.get('observaciones','')))
+                       d.get('nit',''), d.get('condiciones_pago','Pago anticipado'),
+                       float(d.get('descuento_pct',0)), d.get('observaciones',''), d.get('ciudad','')))
             conn.commit(); conn.close()
             return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
         except Exception as e:
@@ -55,7 +55,8 @@ def handle_clientes():
                         MAX(p.fecha) as ultimo_pedido,
                         COALESCE(cl.nivel_aliado,'Ingreso') as nivel_aliado,
                         COALESCE(cl.semaforo,'verde') as semaforo,
-                        COALESCE(cl.fecha_vinculacion,'') as fecha_vinculacion
+                        COALESCE(cl.fecha_vinculacion,'') as fecha_vinculacion,
+                        COALESCE(cl.ciudad,'') as ciudad
                  FROM clientes cl
                  LEFT JOIN pedidos p ON p.cliente_id = cl.id
                  WHERE cl.activo=1 {q_filter}
@@ -64,7 +65,7 @@ def handle_clientes():
     cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono',
             'condiciones_pago','descuento_pct','activo','fecha_creacion',
             'total_pedidos','facturado_total','ultimo_pedido',
-            'nivel_aliado','semaforo','fecha_vinculacion']
+            'nivel_aliado','semaforo','fecha_vinculacion','ciudad']
     clientes = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify({'clientes': clientes})
 
@@ -208,12 +209,12 @@ def handle_pedidos():
         conn.commit(); conn.close()
         return jsonify({'message': f'Pedido {numero} creado', 'numero': numero}), 201
     estado = request.args.get('estado')
-    q = "SELECT p.numero,c.nombre,p.fecha,p.estado,p.valor_total,p.empresa,p.fecha_entrega_est,c.codigo as cliente_codigo FROM pedidos p LEFT JOIN clientes c ON p.cliente_id=c.id"
+    q = "SELECT p.numero,c.nombre,p.fecha,p.estado,p.valor_total,p.empresa,p.fecha_entrega_est,c.codigo as cliente_codigo,COALESCE(p.monto_pagado,0) as monto_pagado,COALESCE(p.estado_pago,'Pendiente') as estado_pago,c.id as cliente_id FROM pedidos p LEFT JOIN clientes c ON p.cliente_id=c.id"
     params = []
     if estado: q += " WHERE p.estado=?"; params.append(estado)
     q += " ORDER BY p.fecha DESC LIMIT 100"
     c.execute(q, params)
-    cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est','cliente_codigo']
+    cols = ['numero','cliente','fecha','estado','valor_total','empresa','fecha_entrega_est','cliente_codigo','monto_pagado','estado_pago','cliente_id']
     rows = c.fetchall(); conn.close()
     return jsonify({'pedidos': [dict(zip(cols, r)) for r in rows]})
 
@@ -222,8 +223,14 @@ def handle_pedido_detalle(numero):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'PATCH':
         d = request.json or {}
-        if d.get('estado'):
-            c.execute("UPDATE pedidos SET estado=? WHERE numero=?", (d['estado'], numero))
+        sets = []; vals = []
+        if d.get('estado'): sets.append('estado=?'); vals.append(d['estado'])
+        if 'monto_pagado' in d: sets.append('monto_pagado=?'); vals.append(float(d['monto_pagado']))
+        if d.get('estado_pago'): sets.append('estado_pago=?'); vals.append(d['estado_pago'])
+        if d.get('numero_factura'): sets.append('numero_factura=?'); vals.append(d['numero_factura'])
+        if sets:
+            vals.append(numero)
+            c.execute(f"UPDATE pedidos SET {','.join(sets)} WHERE numero=?", vals)
             conn.commit()
         conn.close(); return jsonify({'message': f'Pedido {numero} actualizado'})
     c.execute("SELECT p.*,cl.nombre as cliente_nombre FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id WHERE p.numero=?", (numero,))
@@ -296,10 +303,45 @@ def patch_aliado(cid):
         campos.append('nivel_aliado=?'); vals.append(d['nivel_aliado'])
     if 'fecha_vinculacion' in d:
         campos.append('fecha_vinculacion=?'); vals.append(d['fecha_vinculacion'])
+    if 'ciudad' in d:
+        campos.append('ciudad=?'); vals.append(d['ciudad'])
     if campos:
         vals.append(cid)
         c.execute(f"UPDATE clientes SET {','.join(campos)} WHERE id=?", vals)
         conn.commit()
     conn.close(); return jsonify({'ok': True})
+
+
+@bp.route('/api/clientes/cartera')
+def get_cartera():
+    """Resumen de cartera por aliado: facturado, pagado, saldo."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""
+        SELECT cl.id, cl.nombre, cl.codigo, cl.semaforo,
+               COUNT(p.numero) as total_pedidos,
+               COALESCE(SUM(p.valor_total),0) as facturado,
+               COALESCE(SUM(COALESCE(p.monto_pagado,0)),0) as pagado,
+               COALESCE(SUM(p.valor_total),0) - COALESCE(SUM(COALESCE(p.monto_pagado,0)),0) as saldo,
+               MAX(p.fecha) as ultimo_pedido
+        FROM clientes cl
+        LEFT JOIN pedidos p ON p.cliente_id=cl.id AND p.estado NOT IN ('Cancelado','Borrador')
+        WHERE cl.activo=1 AND cl.empresa='ANIMUS'
+        GROUP BY cl.id
+        ORDER BY saldo DESC
+    """)
+    cols = ['id','nombre','codigo','semaforo','total_pedidos','facturado','pagado','saldo','ultimo_pedido']
+    rows = [dict(zip(cols,r)) for r in c.fetchall()]
+    conn.close()
+    total_cartera = sum(r['saldo'] for r in rows if r['saldo'] > 0)
+    return jsonify({'aliados': rows, 'total_cartera': total_cartera})
+
+
+@bp.route('/api/aliados/<int:cid>', methods=['DELETE'])
+def delete_aliado(cid):
+    """Soft-delete: marca activo=0. No borra datos historicos."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("UPDATE clientes SET activo=0 WHERE id=? AND empresa='ANIMUS'", (cid,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'message': 'Aliado desactivado'})
 
 # ─── MÓDULO GERENCIA — Rutas ──────────────────────────────────
