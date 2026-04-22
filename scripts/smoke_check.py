@@ -47,74 +47,77 @@ for py_file in sorted(list(TEMPLATES_DIR.glob("*.py")) + list(BLUEPRINTS_DIR.glo
         ok(label)
 
 
-# ─── 2. JS syntax check (node --check) ───────────────────────────
-print("\n[2/3] JS syntax check (node --check)...")
+# ─── 2. JS syntax check (node --check) — import-based ───────────
+# IMPORTANT: we import the module and evaluate the Python string, then run
+# node --check on the EVALUATED output. Raw-text extraction misses bugs like
+# actual newlines in JS strings (\n in non-raw strings) because the file
+# bytes look fine but Python eval turns \n → real newline → JS SyntaxError.
+print("\n[2/3] JS syntax check (node --check via Python import)...")
 
-# These strings in a failing line indicate a known pre-existing artifact,
-# NOT a newly introduced bug. They come from Python \\' escaping or heredoc ! corruption.
-PRE_EXISTING_MARKERS = [
-    "\\\\'",   # Python \\' escaping artifact
-    "\\\\!",   # heredoc ! corruption (browsers tolerate, strict parser rejects)
-    "\\\\u",   # unicode escape artifact
-]
+import importlib, pkgutil
+sys.path.insert(0, str(REPO_ROOT))
+import api.templates_py as _tpkg
+
+SUBSTITUTIONS = {
+    '{usuario}': 'smoketest',
+    '{es_contadora}': 'false',
+    '{PIN_PLACEHOLDER}': '0000',
+}
 
 node_ok = subprocess.run(["node", "--version"], capture_output=True).returncode == 0
 if not node_ok:
     warn("node not found - skipping JS syntax check")
 else:
-    for py_file in sorted(TEMPLATES_DIR.glob("*_html.py")):
-        with open(py_file, encoding="utf-8", errors="replace") as f:
-            src = f.read()
-
-        # Handle both r"""...""" and """..."""
-        m = re.search(r'=\s*r?"""(.*?)"""', src, re.DOTALL)
-        if not m:
-            warn(py_file.name + ": no triple-quoted HTML string found")
+    for _importer, modname, _ispkg in sorted(pkgutil.iter_modules(_tpkg.__path__)):
+        full_mod = f'api.templates_py.{modname}'
+        # Force fresh import so edits are picked up on re-run
+        if full_mod in sys.modules:
+            del sys.modules[full_mod]
+        try:
+            mod = importlib.import_module(full_mod)
+        except Exception as exc:
+            err(f"{modname}.py: import failed — {exc}")
             continue
 
-        html = m.group(1)
-        s = html.find("<script>")
-        e = html.rfind("</script>")
-        if s == -1:
-            ok(py_file.name + ": no <script> block")
+        html_var = next((a for a in dir(mod) if a.endswith('_HTML')), None)
+        if not html_var:
+            continue  # not a template module
+
+        html = getattr(mod, html_var)
+        for k, v in SUBSTITUTIONS.items():
+            html = html.replace(k, v)
+
+        scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL)
+        js_code = '\n'.join(scripts)
+        if not js_code.strip():
+            ok(f"{modname}.py: no <script> block")
             continue
 
-        js = html[s + 8:e]
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False, encoding="utf-8") as tmp:
-            tmp.write(js)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False,
+                                         encoding='utf-8') as tmp:
+            tmp.write(js_code)
             tmp_path = tmp.name
 
         try:
-            result = subprocess.run(["node", "--check", tmp_path], capture_output=True, text=True)
+            result = subprocess.run(['node', '--check', tmp_path],
+                                    capture_output=True, text=True)
             if result.returncode != 0:
                 stderr = result.stderr.strip()
-                # Find the offending JS line
-                line_m = re.search(r":(\d+)\n(.+)", stderr)
-                offending = ""
+                line_m = re.search(r':(\d+)\n(.+)', stderr)
+                offending = ''
                 if line_m:
                     lineno = int(line_m.group(1))
-                    lines = js.split("\n")
+                    lines = js_code.split('\n')
                     if 0 < lineno <= len(lines):
                         offending = lines[lineno - 1].strip()
-                # Check if it's a known pre-existing artifact
-                is_known = any(p in stderr or p in offending for p in PRE_EXISTING_MARKERS)
-                # Also catch compromisos-style quote mixing artifact
-                if not is_known and "','Completado'" in offending:
-                    is_known = True
-                if not is_known and r"\!" in offending:
-                    is_known = True
-                first_line = stderr.split("\n")[0][:100]
-                if is_known:
-                    pre(py_file.name + ": " + first_line)
-                else:
-                    err(py_file.name + ": JS syntax error -- " + first_line)
-                    if offending:
-                        print("     Line: " + offending[:120])
+                first_line = stderr.split('\n')[0][:120]
+                err(f"{modname}.py: JS syntax error — {first_line}")
+                if offending:
+                    print('     Line: ' + offending[:140])
             else:
-                ok(py_file.name + ": JS OK")
+                ok(f"{modname}.py: JS OK")
         finally:
             os.unlink(tmp_path)
-
 
 # ─── 3. Dangerous pattern scan ────────────────────────────────────
 print("\n[3/3] Dangerous pattern scan...")
