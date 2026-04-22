@@ -94,12 +94,12 @@ def login():
             nxt = request.args.get('next', '')
             # Todos los usuarios van al hub; si había un ?next= válido se respeta
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
-                nxt = '/hub'
+                nxt = '/modulos'
             # Safety: non-admins must not land on admin-only pages
             from config import ADMIN_USERS as _AU
             ADMIN_ONLY = {'/gerencia'}
             if any(nxt == p or nxt.startswith(p + '/') for p in ADMIN_ONLY) and username not in _AU:
-                nxt = '/hub'
+                nxt = '/modulos'
             return redirect(nxt)
         _record_failure(ip)
         _log_sec("login_failure", username, ip)
