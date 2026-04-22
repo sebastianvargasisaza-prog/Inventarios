@@ -306,6 +306,15 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
             <button class="btn bo" style="font-size:12px;" onclick="cancelarNuevoProv()">Cancelar</button>
           </div>
         </div>
+        <div id="noc-cc-pago" style="display:none;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:700;font-size:12px;color:#92400e;margin-bottom:8px;">&#x1F4B3; Datos bancarios del beneficiario</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;font-weight:600;">Banco *</label><input id="noc-cc-banco" placeholder="Bancolombia, Davivienda..." style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Tipo de cuenta</label><select id="noc-cc-tipo" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Ahorros Damas">Ahorros Damas</option><option value="Nequi / Daviplata">Nequi / Daviplata</option></select></div>
+            <div><label style="font-size:11px;font-weight:600;">N\u00BA de cuenta / Cel</label><input id="noc-cc-cuenta" placeholder="Numero de cuenta" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">NIT / CC</label><input id="noc-cc-nit" placeholder="Documento de identidad" style="width:100%"></div>
+          </div>
+        </div>
       </div>
       <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
     </div>
@@ -906,7 +915,9 @@ function setCat(k){
   if(sel) sel.style.display=isCatalog?'':'none';
   if(txt) txt.style.display=isCatalog?'none':'';
   if(ibox) ibox.style.display='none';
-  if(lbl) lbl.textContent=isCatalog?'Proveedor':'Proveedor / Beneficiario';
+  if(lbl) lbl.textContent=isCatalog?'Proveedor':(k==='CC'?'Beneficiario / Proveedor':'Proveedor / Beneficiario');
+  var ccPago=document.getElementById('noc-cc-pago');
+  if(ccPago) ccPago.style.display=(k==='CC'?'block':'none');
   if(!isCatalog&&txt){
     var dl=document.getElementById('prov-dl');
     if(dl&&typeof PROVS!=='undefined'){
@@ -995,7 +1006,19 @@ async function submitOC(){
     :((document.getElementById('noc-prov-txt')||{value:''}).value||'').trim();
   var obs=document.getElementById('noc-obs').value;
   var fent=document.getElementById('noc-fent').value;
-  if(!prov){ alert('Selecciona un proveedor'); return; }
+  if(!prov){ alert('Selecciona un proveedor o beneficiario'); return; }
+  // For CC: encode banking data into observaciones
+  if(cat==='CC'){
+    var _banco=(document.getElementById('noc-cc-banco')||{value:''}).value.trim();
+    var _tipo=(document.getElementById('noc-cc-tipo')||{value:''}).value.trim();
+    var _cuenta=(document.getElementById('noc-cc-cuenta')||{value:''}).value.trim();
+    var _nit=(document.getElementById('noc-cc-nit')||{value:''}).value.trim();
+    var _pagoStr='';
+    if(_banco) _pagoStr+='BANCO: '+_banco+' '+_tipo;
+    if(_cuenta) _pagoStr+=(_pagoStr?' | ':'')+'CUENTA/CEL: '+_cuenta;
+    if(_nit) _pagoStr+=(_pagoStr?' | ':'')+'CED/NIT: '+_nit;
+    if(_pagoStr) obs=(_pagoStr+(obs?' | '+obs:'')).trim();
+  }
   var items=[];
   for(var i=1;i<=ITMS;i++){
     var n=document.getElementById('in'+i);
@@ -1654,6 +1677,21 @@ async function openOCDetail(num){
     if(!_pd&&o.proveedor){
       var _pf=PROVS.find(function(x){ return x.nombre===o.proveedor; });
       if(_pf) _pd={banco:_pf.banco,tipo_cuenta:_pf.tipo_cuenta,num_cuenta:_pf.num_cuenta,nit:_pf.nit,email:_pf.email,telefono:_pf.telefono};
+    }
+    // Fallback: parse observaciones for CC orders with inline banking data
+    if(!_pd&&o.observaciones&&o.observaciones.indexOf('BANCO:')>=0){
+      var _ob=o.observaciones;
+      function _xob(key){
+        var idx=_ob.indexOf(key+':'); if(idx<0) return '';
+        var rest=_ob.slice(idx+key.length+1).trim();
+        var end=rest.indexOf(' | '); return end>=0?rest.slice(0,end).trim():rest.trim();
+      }
+      var _bancoRaw=_xob('BANCO');
+      if(_bancoRaw){
+        var _bparts=_bancoRaw.split(' ');
+        _pd={banco:_bparts[0]||_bancoRaw,tipo_cuenta:_bparts.slice(1).join(' ')||'',
+          num_cuenta:_xob('CUENTA/CEL'),nit:_xob('CED/NIT')};
+      }
     }
     if(_pd&&(_pd.banco||_pd.num_cuenta)){
       h+='<div style="margin-top:14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">';
