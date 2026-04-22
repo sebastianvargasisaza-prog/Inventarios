@@ -129,7 +129,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-mp" placeholder="Buscar OC..." oninput="renderCat('mp')">
     <select id="s-mp" onchange="renderCat('mp')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
-    <button class="btn bp" onclick="openNuevaOCMP()">+ Nueva OC</button>
   </div>
   <div id="pills-mp" class="pills"></div>
   <div id="grid-mp" class="grid"></div>
@@ -139,7 +138,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-mee" placeholder="Buscar..." oninput="renderCat('mee')">
     <select id="s-mee" onchange="renderCat('mee')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option><option>Recibida</option></select>
-    <button class="btn bp" onclick="openNuevaOC('MEE')">+ Nueva OC</button>
   </div>
   <div id="pills-mee" class="pills"></div>
   <div id="grid-mee" class="grid"></div>
@@ -149,7 +147,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-svc" placeholder="Buscar..." oninput="renderCat('svc')">
     <select id="s-svc" onchange="renderCat('svc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-    <button class="btn bp" onclick="openNuevaOC('SVC')">+ Nueva OC</button>
   </div>
   <div id="pills-svc" class="pills"></div>
   <div id="grid-svc" class="grid"></div>
@@ -159,7 +156,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-adm" placeholder="Buscar..." oninput="renderCat('adm')">
     <select id="s-adm" onchange="renderCat('adm')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-    <button class="btn bp" onclick="openNuevaOC('ADM')">+ Nueva OC</button>
   </div>
   <div id="pills-adm" class="pills"></div>
   <div id="grid-adm" class="grid"></div>
@@ -169,7 +165,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-inf" placeholder="Buscar..." oninput="renderCat('inf')">
     <select id="s-inf" onchange="renderCat('inf')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-    <button class="btn bp" onclick="openNuevaOC('INF')">+ Nueva OC</button>
   </div>
   <div id="pills-inf" class="pills"></div>
   <div id="grid-inf" class="grid"></div>
@@ -189,7 +184,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar">
     <input type="text" id="q-cc" placeholder="Buscar..." oninput="renderCat('cc')">
     <select id="s-cc" onchange="renderCat('cc')"><option value="">Todos los estados</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Pagada</option></select>
-    <button class="btn bp" onclick="openNuevaOC('CC')">+ Nueva OC</button>
   </div>
   <div id="pills-cc" class="pills"></div>
   <div id="grid-cc" class="grid"></div>
@@ -255,6 +249,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <option value="Aprobada">Aprobada</option>
       <option value="Rechazada">Rechazada</option>
     </select>
+    <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -295,6 +290,15 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
       <tbody id="noc-tbody"></tbody></table>
       <button class="btn bo bs" style="margin-top:8px;" onclick="addRow()">+ Item</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px;">
+      <input type="checkbox" id="noc-iva-chk" onchange="calcTot()" style="width:16px;height:16px;cursor:pointer;">
+      <label for="noc-iva-chk" style="cursor:pointer;font-weight:600;font-size:13px;">Aplica IVA (19%)</label>
+    </div>
+    <div id="noc-iva-row" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal sin IVA</span><span id="noc-sub">$0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#92400e;"><span>IVA 19%</span><span id="noc-iva-monto">$0</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="noc-iva-total">$0</span></div>
     </div>
     <div class="total-row">Total: <span id="noc-tot">$0</span></div>
   </div>
@@ -849,7 +853,20 @@ function calcTot(){
     var el=document.getElementById('is'+i); if(el) el.textContent=fmt(s);
     tot+=s;
   }
-  document.getElementById('noc-tot').textContent=fmt(tot);
+  var ivaChk=document.getElementById('noc-iva-chk');
+  var ivaRow=document.getElementById('noc-iva-row');
+  if(ivaChk&&ivaChk.checked){
+    var iva=tot*0.19;
+    var total=tot+iva;
+    if(ivaRow) ivaRow.style.display='block';
+    var es=document.getElementById('noc-sub'); if(es) es.textContent=fmt(tot);
+    var em=document.getElementById('noc-iva-monto'); if(em) em.textContent=fmt(iva);
+    var et=document.getElementById('noc-iva-total'); if(et) et.textContent=fmt(total);
+    document.getElementById('noc-tot').textContent=fmt(total);
+  } else {
+    if(ivaRow) ivaRow.style.display='none';
+    document.getElementById('noc-tot').textContent=fmt(tot);
+  }
 }
 async function crearOC(){
   var prov=document.getElementById('noc-prov').value;
@@ -868,7 +885,11 @@ async function crearOC(){
   if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
   try{
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,items:items,creado_por:'{usuario}'})});
+      var _ivaChk=document.getElementById('noc-iva-chk');
+      var _conIva=_ivaChk&&_ivaChk.checked?1:0;
+      var _subtotal=items.reduce(function(a,it){return a+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
+      var _valorSinIva=_subtotal;
+      body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,items:items,creado_por:'{usuario}',con_iva:_conIva,valor_sin_iva:_valorSinIva})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc');
