@@ -1021,16 +1021,31 @@ async function enviarSolicitudCompra(){
   var cant=parseFloat(document.getElementById("sol-cantidad").value);
   if(!nom){alert("Escribe tu nombre");return;}
   if(!cant||cant<=0){alert("Ingresa una cantidad valida");return;}
-  var data={solicitante:nom,urgencia:document.getElementById("sol-urgencia").value,observaciones:document.getElementById("sol-obs").value,
-    items:[{codigo_mp:_solMP.cod,nombre_mp:_solMP.nom,cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
+  var btn=document.querySelector("#modal-solicitud-compra button");
+  if(btn){btn.disabled=true;btn.textContent="Enviando..."}
   try{
+    var urgEl=document.getElementById("sol-urgencia");
+    var obsEl=document.getElementById("sol-obs");
+    var data={solicitante:nom,empresa:"Espagiria",
+      urgencia:urgEl?urgEl.value:"Normal",
+      observaciones:obsEl?obsEl.value:"",
+      items:[{codigo_mp:(_solMP&&_solMP.cod)||"S/C",nombre_mp:(_solMP&&_solMP.nom)||"Sin nombre",
+              cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
     var r=await fetch("/api/solicitudes-compra",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
     var res=await r.json();
     if(r.ok){
-      document.getElementById("sol-msg").innerHTML='<div class="alert-success">&#10003; Solicitud '+res.numero+' creada correctamente.</div>';
-      setTimeout(function(){cerrarSolicitudCompra();},3000);
-    } else { document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error al crear solicitud</div>'; }
-  }catch(e){ document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error de conexion</div>'; }
+      document.getElementById("sol-msg").innerHTML='<div style="padding:12px;background:#d4edda;border:1px solid #28a745;border-radius:6px;color:#155724;font-weight:600;">&#10003; Solicitud '+res.numero+' creada. El equipo de compras fue notificado.</div>';
+      if(btn){btn.disabled=true;btn.textContent="✓ Enviado";btn.style.background="#28a745";}
+      setTimeout(function(){cerrarSolicitudCompra();},3500);
+    } else {
+      var errMsg=(res&&res.error)?res.error:"Error del servidor ("+r.status+")";
+      document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;">&#10060; '+errMsg+'</div>';
+      if(btn){btn.disabled=false;btn.textContent="✓ Enviar Solicitud";}
+    }
+  }catch(e){
+    document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;">&#10060; Error: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent="✓ Enviar Solicitud";}
+  }
 }
 function cerrarHistorial(){document.getElementById('modal-historial').style.display='none';}
 async function verHistorialLote(idx){
