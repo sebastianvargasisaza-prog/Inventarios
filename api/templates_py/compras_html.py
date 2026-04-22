@@ -287,8 +287,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <input type="hidden" id="noc-cat" value="MP">
     <div class="g2">
       <div class="fg">
-        <label>Proveedor</label>
+        <label id="noc-prov-lbl">Proveedor</label>
         <select id="noc-prov" onchange="fillProv('noc-prov','noc-ibox')"><option value="">-- Seleccionar --</option></select>
+        <input type="text" id="noc-prov-txt" list="prov-dl" placeholder="Nombre del proveedor o beneficiario" style="display:none">
+        <datalist id="prov-dl"></datalist>
         <div id="noc-ibox" class="ibox" style="display:none"></div>
       </div>
       <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
@@ -857,12 +859,30 @@ function setCat(k){
     p.classList.toggle('pill-on',p.getAttribute('data-cat')===k);
   });
   if(k==='MP') loadMPLookup();
-  // Update column header to match category context
-  var colHeaders={'MP':'Codigo MP','MEE':'Ref. MEE','SVC':'Servicio',
+  // ── Column header ──
+  var colH={'MP':'Codigo MP','MEE':'Ref. MEE','SVC':'Servicio',
     'ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
   var th=document.querySelector('#m-noc .itbl thead tr th');
-  if(th) th.textContent=colHeaders[k]||'Codigo';
-  // Rebuild rows so datalist / placeholder reflects new category
+  if(th) th.textContent=colH[k]||'Codigo';
+  // ── Provider field: select for MP/MEE, free-text for the rest ──
+  var isCatalog=(k==='MP'||k==='MEE');
+  var sel=document.getElementById('noc-prov');
+  var txt=document.getElementById('noc-prov-txt');
+  var lbl=document.getElementById('noc-prov-lbl');
+  var ibox=document.getElementById('noc-ibox');
+  if(sel) sel.style.display=isCatalog?'':'none';
+  if(txt) txt.style.display=isCatalog?'none':'';
+  if(ibox) ibox.style.display='none';
+  if(lbl) lbl.textContent=isCatalog?'Proveedor':'Proveedor / Beneficiario';
+  if(!isCatalog&&txt){
+    var dl=document.getElementById('prov-dl');
+    if(dl&&typeof PROVS!=='undefined'){
+      dl.innerHTML=PROVS.map(function(p){
+        return '<option value="'+esc(p.nombre)+'">';
+      }).join('');
+    }
+  }
+  // ── Rebuild item rows ──
   document.getElementById('noc-tbody').innerHTML='';
   ITMS=0;
   addRow(); addRow();
@@ -886,8 +906,7 @@ function openNuevaOC(catCode){
   fillProvSelect('noc-prov');
   document.getElementById('noc-prov').value='';
   initCatPills(_ocCatCode);
-  if(_ocCatCode==='MP') loadMPLookup();
-  addRow(); addRow();
+  setCat(_ocCatCode);
   openModal('m-noc');
 }
 function addRow(){
@@ -936,8 +955,11 @@ function calcTot(){
   }
 }
 async function submitOC(){
-  var prov=document.getElementById('noc-prov').value;
   var cat=document.getElementById('noc-cat').value;
+  var _isCat=(cat==='MP'||cat==='MEE');
+  var prov=_isCat
+    ?document.getElementById('noc-prov').value
+    :((document.getElementById('noc-prov-txt')||{value:''}).value||'').trim();
   var obs=document.getElementById('noc-obs').value;
   var fent=document.getElementById('noc-fent').value;
   if(!prov){ alert('Selecciona un proveedor'); return; }
@@ -994,8 +1016,20 @@ async function editarOC(oc){
     document.getElementById('noc-tbody').innerHTML='';
     ITMS=0;
     fillProvSelect('noc-prov');
-    setTimeout(function(){ document.getElementById('noc-prov').value=d.proveedor||''; },80);
     initCatPills(_ocCatCode);
+    // Toggle provider field and set value
+    var _isCat=(_ocCatCode==='MP'||_ocCatCode==='MEE');
+    var _sel=document.getElementById('noc-prov');
+    var _txt=document.getElementById('noc-prov-txt');
+    var _lbl=document.getElementById('noc-prov-lbl');
+    if(_sel) _sel.style.display=_isCat?'':'none';
+    if(_txt) _txt.style.display=_isCat?'none':'';
+    if(_lbl) _lbl.textContent=_isCat?'Proveedor':'Proveedor / Beneficiario';
+    if(_isCat){
+      setTimeout(function(){ document.getElementById('noc-prov').value=d.proveedor||''; },80);
+    } else {
+      if(_txt) _txt.value=d.proveedor||'';
+    }
     if(_ocCatCode==='MP') loadMPLookup();
     (d.items||[]).forEach(function(it){
       addRow();
