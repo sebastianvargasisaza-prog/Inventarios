@@ -529,33 +529,32 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <!-- MODAL: OC Sugerida desde alertas de stock -->
 <div id="m-oc-sug" class="ov">
-<div class="mdl mdl-lg">
+<div class="mdl mdl-lg" style="max-width:980px;">
   <div class="mh"><h3>&#x26A0;&#xFE0F; OC Sugerida &#x2014; MPs Bajo Stock</h3><button class="mx" onclick="closeModal('m-oc-sug')">&times;</button></div>
   <div class="mb">
-    <div style="font-size:12px;color:#78716c;margin-bottom:12px;">Cantidades sugeridas incluyen 20% de buffer sobre el deficit. Ajusta antes de crear.</div>
-    <div class="fg" style="margin-bottom:12px;">
-      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor</label>
-      <select id="sug-prov" onchange="fillProv('sug-prov','sug-ibox')" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></select>
-      <div id="sug-ibox" class="ibox" style="display:none;margin-top:6px;"></div>
-    </div>
+    <div style="font-size:12px;color:#78716c;margin-bottom:12px;">Cantidades incluyen 20% buffer sobre deficit. Ajusta, selecciona proveedor y crea cada OC individualmente &#x2014; o usa <strong>Crear Todas</strong> para agrupar por proveedor automaticamente.</div>
+    <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:#fef3c7;font-weight:600;color:#78350f;">
-        <th style="padding:6px 4px;text-align:left;">Material</th>
-        <th style="padding:6px 4px;text-align:right;width:80px;">Stock actual</th>
-        <th style="padding:6px 4px;text-align:right;width:70px;">Deficit</th>
-        <th style="padding:6px 4px;text-align:center;width:100px;">Cantidad (g)</th>
-        <th style="padding:6px 4px;text-align:center;width:90px;">Precio/g</th>
-        <th style="padding:6px 4px;text-align:right;width:85px;">Subtotal</th>
+        <th style="padding:6px 8px;text-align:left;">Material</th>
+        <th style="padding:6px 4px;text-align:right;width:72px;">Stock</th>
+        <th style="padding:6px 4px;text-align:right;width:68px;">Deficit</th>
+        <th style="padding:6px 4px;text-align:center;width:95px;">Cant. (g)</th>
+        <th style="padding:6px 4px;text-align:center;width:78px;">$/g</th>
+        <th style="padding:6px 4px;text-align:left;width:200px;">Proveedor</th>
+        <th style="padding:6px 4px;text-align:right;width:82px;">Subtotal</th>
+        <th style="padding:6px 4px;text-align:center;width:84px;">Accion</th>
       </tr></thead>
       <tbody id="sug-tbody"></tbody>
     </table>
+    </div>
     <div style="display:flex;justify-content:flex-end;margin-top:10px;font-size:15px;font-weight:700;color:#1c1917;">
       Total: <span id="sug-tot" style="margin-left:6px;">$0</span>
     </div>
   </div>
   <div class="mf">
     <button class="btn bo" onclick="closeModal('m-oc-sug')">Cancelar</button>
-    <button class="btn bp" onclick="crearOCSugerida()">&#x2713; Crear OC Borrador</button>
+    <button class="btn bp" onclick="crearOCSugerida()">&#x1F4E6; Crear Todas (por proveedor)</button>
   </div>
 </div>
 </div>
@@ -1483,31 +1482,39 @@ async function crearOCMP(){
 
 // ─── MP: OC Sugerida desde alertas ───────────────────────
 function openOCSugerida(){
-  if(!_ALERTAS_MP||!_ALERTAS_MP.length){ alert('No hay MPs bajo stock mínimo'); return; }
-  fillProvSelect('sug-prov');
-  document.getElementById('sug-prov').value='';
-  document.getElementById('sug-ibox').style.display='none';
+  if(!_ALERTAS_MP||!_ALERTAS_MP.length){ alert('No hay MPs bajo stock minimo'); return; }
   var tbody=document.getElementById('sug-tbody');
   tbody.innerHTML=_ALERTAS_MP.map(function(a,i){
     var mp=_MPCAT.find(function(m){ return m.codigo_mp===a.codigo_mp; });
     var pref=(mp&&mp.precio_referencia>0)?parseFloat(mp.precio_referencia).toFixed(4):'';
     var qty=Math.ceil(a.deficit*1.2/100)*100;
+    var provOpts='<option value="">-- Proveedor --</option>';
+    if(a.proveedor){ provOpts+='<option value="'+esc(a.proveedor)+'" selected>'+esc(a.proveedor)+'</option>'; }
+    PROVS.forEach(function(p){
+      if(p.nombre!==a.proveedor) provOpts+='<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>';
+    });
     return '<tr id="sugr'+i+'">'
-      +'<td style="padding:5px 4px;">'
+      +'<td style="padding:5px 8px;">'
         +'<div style="font-weight:600;font-size:12px;">'+esc(a.nombre.substring(0,35))+'</div>'
-        +'<div style="font-size:10px;color:#78716c;">'+esc(a.codigo_mp)+(a.proveedor?' · '+esc(a.proveedor):'')+'</div>'
+        +'<div style="font-size:10px;color:#78716c;">'+esc(a.codigo_mp)+'</div>'
       +'</td>'
       +'<td style="padding:5px 4px;text-align:right;font-size:12px;">'+Math.round(a.stock_actual)+'g</td>'
       +'<td style="padding:5px 4px;text-align:right;font-size:12px;color:#dc2626;font-weight:600;">'+Math.round(a.deficit)+'g</td>'
       +'<td style="padding:5px 4px;">'
         +'<input id="sugq'+i+'" type="number" value="'+qty+'" min="0" oninput="calcTotSug()"'
-        +' style="width:95px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+        +' style="width:88px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
       +'</td>'
       +'<td style="padding:5px 4px;">'
         +'<input id="sugp'+i+'" type="number" value="'+pref+'" min="0" step="0.001" placeholder="$/g" oninput="calcTotSug()"'
-        +' style="width:85px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+        +' style="width:72px;padding:4px;border:1px solid #d6d3d1;border-radius:4px;font-size:12px;text-align:right;">'
+      +'</td>'
+      +'<td style="padding:5px 4px;">'
+        +'<select id="sugprov'+i+'" style="width:100%;padding:3px 4px;border:1px solid #d6d3d1;border-radius:4px;font-size:11px;">'+provOpts+'</select>'
       +'</td>'
       +'<td id="sugs'+i+'" style="padding:5px 4px;text-align:right;font-size:12px;white-space:nowrap;">$0</td>'
+      +'<td style="padding:5px 4px;text-align:center;" id="sugact'+i+'">'
+        +'<button onclick="crearOCFila('+i+')" style="padding:3px 8px;font-size:11px;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">Crear OC</button>'
+      +'</td>'
       +'</tr>';
   }).join('');
   calcTotSug();
@@ -1525,29 +1532,68 @@ function calcTotSug(){
   var totEl=document.getElementById('sug-tot'); if(totEl) totEl.textContent=fmt(tot);
 }
 async function crearOCSugerida(){
-  var prov=document.getElementById('sug-prov').value;
-  if(!prov){ alert('Selecciona un proveedor'); return; }
-  var items=[];
+  // Group items by their per-row selected provider; skip zero-qty rows
+  var grupos={};
   for(var i=0;i<_ALERTAS_MP.length;i++){
     var a=_ALERTAS_MP[i];
     var q=parseFloat((document.getElementById('sugq'+i)||{value:0}).value||0);
     var p=parseFloat((document.getElementById('sugp'+i)||{value:0}).value||0);
+    var prov=(document.getElementById('sugprov'+i)||{value:''}).value;
     if(q<=0) continue;
-    items.push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p});
+    if(!prov){ alert('Falta proveedor para: '+a.nombre); return; }
+    if(!grupos[prov]) grupos[prov]=[];
+    grupos[prov].push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p});
   }
-  if(!items.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
+  var provList=Object.keys(grupos);
+  if(!provList.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
+  var creadas=[]; var errores=[];
+  for(var pi=0;pi<provList.length;pi++){
+    var prov=provList[pi]; var items=grupos[prov];
+    try{
+      var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
+          observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
+          items:items})});
+      var res=null; try{res=await r.json();}catch(_){res=null;}
+      if(r.ok&&res&&!res.error){ creadas.push(res.numero_oc||prov); }
+      else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
+    }catch(e){ errores.push(prov+': '+e.message); }
+  }
+  await loadData(); renderCat('mp');
+  if(errores.length){
+    alert('Creadas: '+creadas.join(', ')+'\nErrores:\n'+errores.join('\n'));
+  } else {
+    closeModal('m-oc-sug');
+    alert('OCs creadas (agrupadas por proveedor): '+creadas.join(', '));
+  }
+}
+async function crearOCFila(i){
+  var a=_ALERTAS_MP[i];
+  var q=parseFloat((document.getElementById('sugq'+i)||{value:0}).value||0);
+  var p=parseFloat((document.getElementById('sugp'+i)||{value:0}).value||0);
+  var prov=(document.getElementById('sugprov'+i)||{value:''}).value;
+  if(q<=0){ alert('Ingresa una cantidad mayor a 0'); return; }
+  if(!prov){ alert('Selecciona un proveedor para: '+a.nombre); return; }
+  var actEl=document.getElementById('sugact'+i);
+  if(actEl) actEl.innerHTML='<span style="font-size:11px;color:#78716c;">Enviando...</span>';
   try{
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
-        observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
-        items:items})});
-    var d=await r.json();
-    if(d.error){ alert('Error: '+d.error); return; }
-    closeModal('m-oc-sug');
-    await loadData();
-    renderCat('mp');
-    alert('OC sugerida creada: '+d.numero_oc);
-  }catch(e){ alert('Error de conexion: '+e); }
+        observaciones:'OC sugerida — '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
+        items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]})});
+    var res=null; try{res=await r.json();}catch(_){res=null;}
+    if(r.ok&&res&&!res.error){
+      if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
+      var row=document.getElementById('sugr'+i);
+      if(row) row.style.background='#f0fdf4';
+      await loadData(); renderCat('mp');
+    } else {
+      var msg=(res&&res.error)?res.error:'Error '+r.status;
+      if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
+    }
+  }catch(e){
+    if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(e.message)+'</span>';
+  }
 }
 
 // ─── Revisar ──────────────────────────────────────────────────────
