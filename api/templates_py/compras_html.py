@@ -292,6 +292,20 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
         <input type="text" id="noc-prov-txt" list="prov-dl" placeholder="Nombre del proveedor o beneficiario" style="display:none">
         <datalist id="prov-dl"></datalist>
         <div id="noc-ibox" class="ibox" style="display:none"></div>
+        <div id="noc-new-prov-form" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-weight:700;font-size:12px;color:#166534;margin-bottom:8px;">&#x2795; Nuevo Proveedor</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;font-weight:600;">Nombre *</label><input id="np-nombre" placeholder="Razon social o nombre" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">NIT / Cedula</label><input id="np-nit" placeholder="NIT" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Telefono</label><input id="np-tel" placeholder="Telefono" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Email</label><input id="np-email" placeholder="Email" style="width:100%"></div>
+          </div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:600;">Concepto de compra</label><input id="np-concepto" placeholder="Ej: Materias primas cosmeticas" style="width:100%"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn bg" style="font-size:12px;" onclick="guardarNuevoProv()">Guardar proveedor</button>
+            <button class="btn bo" style="font-size:12px;" onclick="cancelarNuevoProv()">Cancelar</button>
+          </div>
+        </div>
       </div>
       <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
     </div>
@@ -809,11 +823,30 @@ function fillProvSelect(selId){
   var cur=sel.value;
   sel.innerHTML='<option value="">-- Seleccionar proveedor --</option>';
   PROVS.forEach(function(p){ var o=document.createElement('option'); o.value=p.nombre; o.textContent=p.nombre; sel.appendChild(o); });
-  if(cur) sel.value=cur;
+  // Append inline-create option (only for noc-prov)
+  if(selId==='noc-prov'){
+    var no=document.createElement('option');
+    no.value='__NEW__'; no.textContent='+ Crear proveedor nuevo';
+    no.style.fontWeight='700'; no.style.color='#16a34a';
+    sel.appendChild(no);
+  }
+  if(cur&&cur!=='__NEW__') sel.value=cur;
 }
 function fillProv(selId, boxId){
   var nombre=document.getElementById(selId).value;
   var box=document.getElementById(boxId);
+  // Intercept inline-create selection
+  if(nombre==='__NEW__'){
+    box.style.display='none';
+    var frm=document.getElementById('noc-new-prov-form');
+    if(frm){
+      frm.style.display='block';
+      ['np-nombre','np-nit','np-tel','np-email','np-concepto'].forEach(function(id){
+        var el=document.getElementById(id); if(el) el.value='';
+      });
+    }
+    return;
+  }
   var p=PROVS.find(function(x){ return x.nombre===nombre; });
   if(!p||!nombre){ box.style.display='none'; return; }
   var rows=[['NIT',p.nit],['Tel',p.telefono],['Email',p.email],['Contacto',p.contacto],['Banco',p.banco],['Cuenta',(p.tipo_cuenta||'')+' '+(p.num_cuenta||'')],['Concepto',p.concepto_compra],['Direccion',p.direccion]];
@@ -1078,6 +1111,53 @@ function autoFillMP(n){
     var nameEl=document.getElementById('in'+n);
     if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_material||'';
   }
+}
+// ─── Inline provider creation ─────────────────────────────────────────
+function guardarNuevoProv(){
+  var nombre=(document.getElementById('np-nombre').value||'').trim();
+  if(!nombre){ alert('El nombre del proveedor es requerido'); return; }
+  var btn=document.querySelector('#noc-new-prov-form .btn.bg');
+  if(btn){ btn.disabled=true; btn.textContent='Guardando...'; }
+  fetch('/api/proveedores-compras',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      nombre:nombre,
+      nit:(document.getElementById('np-nit').value||'').trim(),
+      telefono:(document.getElementById('np-tel').value||'').trim(),
+      email:(document.getElementById('np-email').value||'').trim(),
+      concepto_compra:(document.getElementById('np-concepto').value||'').trim()
+    })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if(d.error){ alert('Error: '+d.error);
+      if(btn){ btn.disabled=false; btn.textContent='Guardar proveedor'; } return; }
+    reloadProvs(nombre);
+  }).catch(function(e){
+    alert('Error de conexion: '+e);
+    if(btn){ btn.disabled=false; btn.textContent='Guardar proveedor'; }
+  });
+}
+function cancelarNuevoProv(){
+  var frm=document.getElementById('noc-new-prov-form');
+  if(frm) frm.style.display='none';
+  var sel=document.getElementById('noc-prov');
+  if(sel) sel.value='';
+  var box=document.getElementById('noc-ibox');
+  if(box) box.style.display='none';
+}
+function reloadProvs(selectAfter){
+  fetch('/api/proveedores-compras').then(function(r){ return r.json(); })
+  .then(function(d){
+    PROVS=d.proveedores||[];
+    fillProvSelect('noc-prov');
+    var frm=document.getElementById('noc-new-prov-form');
+    if(frm) frm.style.display='none';
+    if(selectAfter){
+      var sel=document.getElementById('noc-prov');
+      if(sel) sel.value=selectAfter;
+      fillProv('noc-prov','noc-ibox');
+    }
+  }).catch(function(e){ console.error('Error recargando proveedores',e); });
 }
 
 
