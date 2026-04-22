@@ -92,17 +92,9 @@ def login():
             session['compras_user'] = username
             session['login_time']   = time.time()
             nxt = request.args.get('next', '')
+            # Todos los usuarios van al hub; si había un ?next= válido se respeta
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
-                # Default landing page based on role
-                from config import ADMIN_USERS, PLANTA_USERS, COMPRAS_ACCESS
-                if username in ADMIN_USERS:
-                    nxt = '/hub'
-                elif username in PLANTA_USERS:
-                    nxt = '/inventarios'
-                elif username in COMPRAS_ACCESS:
-                    nxt = '/compras'
-                else:
-                    nxt = '/hub'
+                nxt = '/hub'
             # Safety: non-admins must not land on admin-only pages
             from config import ADMIN_USERS as _AU
             ADMIN_ONLY = {'/gerencia'}
