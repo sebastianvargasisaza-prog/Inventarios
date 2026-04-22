@@ -934,7 +934,7 @@ var _OC_CATS=[
   {k:'CC',  ico:'&#x1F4B3;', l:'Cta. Cobro'}
 ];
 function initCatPills(sel){
-  var el=document.getElementById('noc-cats'); if(\!el) return;
+  var el=document.getElementById('noc-cats'); if(!el) return;
   el.innerHTML=_OC_CATS.map(function(c){
     return '<button type="button" class="oc-cat'+(c.k===sel?' sel':'')+'" onclick="setCat(\''+c.k+'\')">'+(c.ico)+' '+c.l+'</button>';
   }).join('');
@@ -948,7 +948,7 @@ function setCat(k){
   });
   if(k==='MP'){
     var dl=document.getElementById('noc-codes-dl');
-    if(dl && typeof _MPCAT \!== 'undefined') dl.innerHTML=_MPCAT.map(function(m){
+    if(dl && typeof _MPCAT !== 'undefined') dl.innerHTML=_MPCAT.map(function(m){
       return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
     }).join('');
   }
