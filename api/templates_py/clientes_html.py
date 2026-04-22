@@ -1,6 +1,6 @@
 # Auto-generado — Canal B2B HHA Group (ÁNIMUS Aliados + Espagiria Maquila 360)
 CLIENTES_HTML = """\
-<\!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -115,7 +115,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <span style="font-size:0.78em;color:rgba(255,255,255,0.5);" id="usr-lbl"></span>
 </div>
 
-<\!-- SWITCHER PRINCIPAL -->
+<!-- SWITCHER PRINCIPAL -->
 <div class="switcher">
   <div class="sw-card active-a" id="sw-animus" onclick="switchSeccion('animus')">
     <span class="sw-icon">&#x1F91D;</span>
@@ -134,7 +134,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- SECTION: ANIMUS -->
+<!-- SECTION: ANIMUS -->
 <div class="section-block active" id="sec-animus">
 <div class="module-tabs" id="tabs-animus">
   <div class="tab active-a" onclick="goTabA('ta-dash',this)">&#x1F4CA; Dashboard</div>
@@ -147,7 +147,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <div class="content">
 
 
-<\!-- DASHBOARD ÁNIMUS -->
+<!-- DASHBOARD ÁNIMUS -->
 <div id="ta-dash" class="page active">
   <div class="kpi-grid" id="kpi-animus">
     <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="ka-uds">&#x2014;</div><div class="kpi-lbl">Uds PT disponibles</div></div>
@@ -165,7 +165,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- ALIADOS -->
+<!-- ALIADOS -->
 <div id="ta-aliados" class="page">
   <div class="section-header">
     <h2>Aliados Comerciales</h2>
@@ -200,7 +200,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- PEDIDOS -->
+<!-- PEDIDOS -->
 <div id="ta-pedidos" class="page">
   <div class="section-header"><h2>Pedidos</h2>
     <button class="btn btn-ghost btn-sm" onclick="toggleForm('f-pedido')">+ Nuevo pedido</button>
@@ -242,7 +242,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- STOCK PT -->
+<!-- STOCK PT -->
 <div id="ta-stock" class="page">
   <div class="section-header"><h2>Inventario Producto Terminado</h2>
     <button class="btn btn-sm" onclick="toggleForm('f-pt')">+ Registrar PT</button>
@@ -269,7 +269,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- DESPACHOS -->
+<!-- DESPACHOS -->
 <div id="ta-despachos" class="page">
   <div class="section-header"><h2>Historial de despachos</h2></div>
   <table class="tbl"><thead><tr><th>N&#xfa;mero</th><th>Fecha</th><th>Aliado</th><th>Pedido</th><th>Operador</th><th>Estado</th></tr></thead>
@@ -277,7 +277,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 
-<\!-- CHURN -->
+<!-- CHURN -->
 <div id="ta-churn" class="page">
   <div class="section-header"><h2>&#x26a0; Riesgo Churn &#x2014; Sin pedido reciente</h2></div>
   <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.83em;color:#92400e;">
@@ -285,11 +285,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <div id="churn-list"><p style="color:#aaa;text-align:center;padding:28px;">Cargando...</p></div>
 </div>
-</div><\!-- /content animus -->
-</div><\!-- /sec-animus -->
+</div><!-- /content animus -->
+</div><!-- /sec-animus -->
 
 
-<\!-- SECTION: MAQUILA 360 -->
+<!-- SECTION: MAQUILA 360 -->
 <div class="section-block" id="sec-maquila">
 <div class="module-tabs" style="background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;">
   <div class="tab active-m" onclick="goTabM('tm-dash',this)">&#x1F4CA; Dashboard</div>
@@ -299,7 +299,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 <div class="content">
 
-<\!-- DASHBOARD MAQUILA -->
+<!-- DASHBOARD MAQUILA -->
 <div id="tm-dash" class="page active">
   <div style="background:white;border:1px solid #ede9fe;border-radius:12px;padding:18px;margin-bottom:20px;border-left:4px solid #5C4B99;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -326,7 +326,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div id="mq-ord-recientes"></div>
 </div>
 
-<\!-- PIPELINE KANBAN -->
+<!-- PIPELINE KANBAN -->
 <div id="tm-pipeline" class="page">
   <div class="section-header">
     <h2>Pipeline Maquila 360</h2>
@@ -370,7 +370,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
 </div>
 
-<\!-- PROSPECTOS TABLE -->
+<!-- PROSPECTOS TABLE -->
 <div id="tm-prospectos" class="page">
   <div class="section-header"><h2>Todos los prospectos</h2>
     <button class="btn btn-ghost-m btn-sm" onclick="toggleForm('f-prosp2')">+ Nuevo</button>
@@ -399,7 +399,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <tbody id="prosp-body"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody></table>
 </div>
 
-<\!-- ÓRDENES -->
+<!-- ÓRDENES -->
 <div id="tm-ordenes" class="page">
   <div class="section-header"><h2>&#xd3;rdenes de Maquila</h2>
     <button class="btn btn-ghost-m btn-sm" onclick="toggleForm('f-orden')">+ Nueva orden</button>
@@ -428,11 +428,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <tbody id="ordenes-body"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody></table>
 </div>
 
-</div><\!-- /content maquila -->
-</div><\!-- /sec-maquila -->
+</div><!-- /content maquila -->
+</div><!-- /sec-maquila -->
 
 
-<\!-- MODAL: Cliente 360 -->
+<!-- MODAL: Cliente 360 -->
 <div id="m-cliente360" class="mdl">
 <div class="mdl-box" style="max-width:820px;">
   <div class="mdl-hdr mdl-hdr-a">
@@ -445,7 +445,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 </div>
 
-<\!-- MODAL: Editar aliado -->
+<!-- MODAL: Editar aliado -->
 <div id="m-edit-aliado" class="mdl">
 <div class="mdl-box">
   <div class="mdl-hdr mdl-hdr-a">
@@ -481,7 +481,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 </div>
 
-<\!-- MODAL: Estado pedido -->
+<!-- MODAL: Estado pedido -->
 <div id="m-estado-ped" class="mdl">
 <div class="mdl-box">
   <div class="mdl-hdr mdl-hdr-a">
@@ -508,7 +508,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 </div>
 
-<\!-- MODAL: Etapa maquila -->
+<!-- MODAL: Etapa maquila -->
 <div id="m-etapa-maq" class="mdl">
 <div class="mdl-box">
   <div class="mdl-hdr mdl-hdr-m">
@@ -540,7 +540,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 var _seccion='animus', _pedActivo=null, _aliadoActivo=null, _prospectoActivo=null;
 
 function fmt(n){return n?('$'+parseFloat(n).toLocaleString('es-CO')):'—';}
-function fmtM(n){if(\!n)return'—';var m=n/1000000;return'$'+m.toFixed(1)+'M';}
+function fmtM(n){if(!n)return'—';var m=n/1000000;return'$'+m.toFixed(1)+'M';}
 function toggleForm(id){var f=document.getElementById(id);f.style.display=f.style.display==='block'?'none':'block';}
 function closeMdl(id){document.getElementById(id).classList.remove('show');}
 function openMdl(id){document.getElementById(id).classList.add('show');}
@@ -614,7 +614,7 @@ async function loadDashA(){
     document.getElementById('ka-ped-val').textContent=fmt(valAct);
     document.getElementById('ka-skus').textContent=skus;
     try{
-      var fm=peds.filter(function(p){return p.cliente_codigo==='CLI-002'&&p.estado\!=='Cancelado';});
+      var fm=peds.filter(function(p){return p.cliente_codigo==='CLI-002'&&p.estado!=='Cancelado';});
       if(fm.length){
         var ult=fm.sort(function(a,b){return b.fecha>a.fecha?1:-1;})[0];
         var dias=Math.floor((Date.now()-new Date(ult.fecha))/86400000);
@@ -629,7 +629,7 @@ async function loadDashA(){
       document.getElementById('ka-churn').style.color=nc>0?'#dc2626':'#16a34a';
     }catch(e){}
     var tb=document.getElementById('stock-dash-body');
-    if(\!stock.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin stock PT</td></tr>';return;}
+    if(!stock.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin stock PT</td></tr>';return;}
     tb.innerHTML=stock.map(function(s){
       var pct=s.inicial>0?Math.round((s.disponible/s.inicial)*100):0;
       var color=pct>50?'#2B7A78':(pct>20?'#f59e0b':'#ef4444');
@@ -652,7 +652,7 @@ async function loadAliados(){
     var d=await fetch('/api/clientes?empresa=ANIMUS').then(function(r){return r.json();});
     var tb=document.getElementById('aliados-body');
     var cls=d.clientes||[];
-    if(\!cls.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin aliados registrados</td></tr>';return;}
+    if(!cls.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin aliados registrados</td></tr>';return;}
     var sel=document.getElementById('ped-cliente');
     sel.innerHTML='<option value="">Seleccionar...</option>';
     cls.forEach(function(cl){sel.innerHTML+='<option value="'+cl.id+'">'+cl.nombre+'</option>';});
@@ -675,7 +675,7 @@ async function loadAliados(){
 
 async function crearAliado(){
   var nombre=document.getElementById('cli-nombre').value.trim();
-  if(\!nombre){alert('Nombre requerido');return;}
+  if(!nombre){alert('Nombre requerido');return;}
   var data={nombre:nombre,empresa:'ANIMUS',tipo:document.getElementById('cli-tipo').value,
     nit:document.getElementById('cli-nit').value,
     email:document.getElementById('cli-email').value,
@@ -716,7 +716,7 @@ async function loadPedidos(estado){
     var d=await fetch(url).then(function(r){return r.json();});
     var tb=document.getElementById('pedidos-body');
     var peds=d.pedidos||[];
-    if(\!peds.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin pedidos</td></tr>';return;}
+    if(!peds.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin pedidos</td></tr>';return;}
     tb.innerHTML=peds.map(function(p){
       return '<tr>'
         +'<td style="font-family:monospace;font-weight:700;">'+p.numero+'</td>'
@@ -742,7 +742,7 @@ function addItemPedido(){
 }
 async function crearPedido(){
   var cid=document.getElementById('ped-cliente').value;
-  if(\!cid){alert('Selecciona un aliado');return;}
+  if(!cid){alert('Selecciona un aliado');return;}
   var items=[];
   document.querySelectorAll('.ped-item-row').forEach(function(row){
     var sku=row.querySelector('.ped-sku').value.trim();
@@ -751,7 +751,7 @@ async function crearPedido(){
     var precio=parseFloat(row.querySelector('.ped-precio').value)||0;
     if((sku||desc)&&cant>0) items.push({sku:sku,descripcion:desc,cantidad:cant,precio_unitario:precio,subtotal:cant*precio});
   });
-  if(\!items.length){alert('Agrega al menos un ítem');return;}
+  if(!items.length){alert('Agrega al menos un ítem');return;}
   var data={cliente_id:parseInt(cid),fecha_entrega_est:document.getElementById('ped-fecha-ent').value,
     observaciones:document.getElementById('ped-obs').value,items:items};
   var r=await fetch('/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -770,7 +770,7 @@ function cambiarEstadoPedido(numero){
 async function confirmarEstadoPedido(){
   var nuevo=document.getElementById('m-estado-sel').value;
   var msg=document.getElementById('m-estado-msg');
-  if(\!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
+  if(!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
   var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
   var res=await r.json();
   if(r.ok){
@@ -785,7 +785,7 @@ async function loadStockPT(){
   var d=await fetch('/api/stock-pt').then(function(r){return r.json();});
   var tb=document.getElementById('stock-pt-body');
   var stock=d.stock_pt||[];
-  if(\!stock.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin stock PT</td></tr>';return;}
+  if(!stock.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin stock PT</td></tr>';return;}
   tb.innerHTML=stock.map(function(s){
     var pct=s.inicial>0?Math.round((s.disponible/s.inicial)*100):0;
     var badge=pct>50?'badge-verde':(pct>20?'badge-amarillo':'badge-rojo');
@@ -801,7 +801,7 @@ async function loadStockPT(){
 async function registrarPT(){
   var sku=(document.getElementById('pt-sku').value||'').trim().toUpperCase();
   var uds=parseInt(document.getElementById('pt-uds').value)||0;
-  if(\!sku||uds<=0){alert('SKU y unidades requeridos');return;}
+  if(!sku||uds<=0){alert('SKU y unidades requeridos');return;}
   var data={sku:sku,descripcion:document.getElementById('pt-desc').value,
     unidades:uds,lote_produccion:document.getElementById('pt-lote').value,
     precio_base:parseFloat(document.getElementById('pt-precio').value)||0};
@@ -816,7 +816,7 @@ async function loadDespachos(){
   var d=await fetch('/api/despachos').then(function(r){return r.json();});
   var tb=document.getElementById('despachos-body');
   var desps=d.despachos||[];
-  if(\!desps.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin despachos</td></tr>';return;}
+  if(!desps.length){tb.innerHTML='<tr><td colspan="6" class="empty">Sin despachos</td></tr>';return;}
   tb.innerHTML=desps.map(function(d){
     return '<tr><td style="font-family:monospace;font-weight:700;">'+d.numero+'</td>'
       +'<td style="color:#999;font-size:0.83em;">'+(d.fecha||'').substring(0,10)+'</td>'
@@ -833,7 +833,7 @@ async function loadChurn(){
   el.innerHTML='<p style="color:#aaa;text-align:center;padding:24px;">Cargando...</p>';
   var d=await fetch('/api/clientes/alertas-recompra').then(function(r){return r.json();});
   var lista=d.alertas||[];
-  if(\!lista.length){el.innerHTML='<div class="msg-ok">&#x2713; Todos los aliados con pedidos recientes.</div>';return;}
+  if(!lista.length){el.innerHTML='<div class="msg-ok">&#x2713; Todos los aliados con pedidos recientes.</div>';return;}
   var h='<table class="tbl"><thead><tr><th>Aliado</th><th>Tipo</th><th>&#xda;lt. Pedido</th><th>D&#xed;as</th><th>Total ped.</th><th>Valor</th><th>Email</th><th>Acci&#xf3;n</th></tr></thead><tbody>';
   lista.forEach(function(c){
     var nivelColor=c.nivel==='critico'?'#dc2626':'#d97706';
@@ -860,14 +860,14 @@ async function abrirCliente360(cid){
   if(d.error){el.innerHTML='<p style="color:#dc2626;">'+d.error+'</p>';return;}
   var cl=d.cliente,s=d.stats;
   var diasColor='#16a34a';
-  if(s.dias_sin_pedido\!==null&&s.dias_sin_pedido\!==undefined)
+  if(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined)
     diasColor=s.dias_sin_pedido>120?'#dc2626':(s.dias_sin_pedido>75?'#d97706':'#16a34a');
   var h='<h2 style="font-size:1.1em;font-weight:800;color:#1C2B30;margin-bottom:4px;">'+cl.nombre+'</h2>'
     +'<div style="color:#78716c;font-size:0.83em;margin-bottom:14px;">'+cl.tipo+' — '+cl.empresa+(cl.nit?' | NIT: '+cl.nit:'')+'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">'
     +'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:#16a34a;">'+s.total_pedidos+'</div><div style="font-size:0.72em;color:#166534;text-transform:uppercase;letter-spacing:1px;">Pedidos</div></div>'
     +'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.3em;font-weight:900;color:#2563eb;">'+fmt(s.valor_total)+'</div><div style="font-size:0.72em;color:#1e40af;text-transform:uppercase;letter-spacing:1px;">Total</div></div>'
-    +'<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:'+diasColor+';">'+(s.dias_sin_pedido\!==null&&s.dias_sin_pedido\!==undefined?s.dias_sin_pedido:'N/A')+'</div><div style="font-size:0.72em;color:#581c87;text-transform:uppercase;letter-spacing:1px;">D&#xed;as sin pedido</div></div>'
+    +'<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:'+diasColor+';">'+(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined?s.dias_sin_pedido:'N/A')+'</div><div style="font-size:0.72em;color:#581c87;text-transform:uppercase;letter-spacing:1px;">D&#xed;as sin pedido</div></div>'
     +'</div>';
   if(d.pedidos_recientes&&d.pedidos_recientes.length){
     h+='<div style="font-weight:700;font-size:0.88em;margin-bottom:7px;">&#xda;ltimos pedidos</div>'
@@ -931,7 +931,7 @@ async function loadPipeline(){
   ETAPAS.forEach(function(e){byEtapa[e]=[];});
   prosp.forEach(function(p){
     var e=p.etapa||'Contacto';
-    if(\!byEtapa[e]) byEtapa[e]=[];
+    if(!byEtapa[e]) byEtapa[e]=[];
     byEtapa[e].push(p);
   });
   var h='';
@@ -947,7 +947,7 @@ async function loadPipeline(){
         +'<div class="kan-card-val">'+fmt(p.valor_estimado)+'</div>'
         +'</div>';
     });
-    if(\!cards.length) h+='<div style="color:#ccc;font-size:0.78em;text-align:center;padding:10px;">Sin prospectos</div>';
+    if(!cards.length) h+='<div style="color:#ccc;font-size:0.78em;text-align:center;padding:10px;">Sin prospectos</div>';
     h+='</div>';
   });
   kw.innerHTML=h;
@@ -975,7 +975,7 @@ async function loadProspectos(){
   var data=await fetch('/api/maquila/prospectos').then(function(r){return r.json();});
   var prosp=Array.isArray(data)?data:[];
   var tb=document.getElementById('prosp-body');
-  if(\!prosp.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin prospectos</td></tr>';return;}
+  if(!prosp.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin prospectos</td></tr>';return;}
   tb.innerHTML=prosp.map(function(p){
     return '<tr>'
       +'<td style="font-weight:700;">'+p.empresa+'</td>'
@@ -994,7 +994,7 @@ async function crearProspecto2(){return crearProspectoData(2);}
 async function crearProspectoData(form){
   var suf=form===2?'2':'';
   var emp=(document.getElementById('mp'+suf+'-emp').value||'').trim();
-  if(\!emp){alert('Empresa requerida');return;}
+  if(!emp){alert('Empresa requerida');return;}
   var data={empresa:emp,contacto:document.getElementById('mp'+suf+'-cont').value,
     email:document.getElementById('mp'+suf+'-email').value,
     telefono:document.getElementById('mp'+suf+'-wa').value,
@@ -1014,7 +1014,7 @@ async function loadOrdenes(){
   var data=await fetch('/api/maquila/ordenes').then(function(r){return r.json();});
   var ords=Array.isArray(data)?data:[];
   var tb=document.getElementById('ordenes-body');
-  if(\!ords.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin órdenes</td></tr>';return;}
+  if(!ords.length){tb.innerHTML='<tr><td colspan="8" class="empty">Sin órdenes</td></tr>';return;}
   var estColors={'Cotizacion':'badge-gris','Orden':'badge-azul','Producción':'badge-amarillo','Entregado':'badge-verde','Facturado':'badge-verde'};
   tb.innerHTML=ords.map(function(o){
     return '<tr>'
@@ -1025,14 +1025,14 @@ async function loadOrdenes(){
       +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'—')+'</td>'
       +'<td><span class="badge '+(estColors[o.estado]||'badge-gris')+'">'+o.estado+'</span></td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(o.valor_total)+'</td>'
-      +'<td><button class="btn btn-ghost-m btn-xs" onclick="cambEstOrden('+o.id+',\''+o.estado+'\')">Estado</button></td>'
+      +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirEstOrden('+o.id+',\''+o.estado+'\')">Estado</button></td>'
       +'</tr>';
   }).join('');
 }
 async function crearOrden(){
   var emp=(document.getElementById('mo-emp').value||'').trim();
   var prod=(document.getElementById('mo-prod').value||'').trim();
-  if(\!emp||\!prod){alert('Empresa y producto requeridos');return;}
+  if(!emp||!prod){alert('Empresa y producto requeridos');return;}
   var data={empresa:emp,producto:prod,batch_size_kg:parseFloat(document.getElementById('mo-kg').value)||0,
     fecha_entrega:document.getElementById('mo-fe').value,estado:document.getElementById('mo-estado').value,
     valor_total:parseFloat(document.getElementById('mo-val').value)||0,
@@ -1042,18 +1042,56 @@ async function crearOrden(){
   document.getElementById('mo-msg').innerHTML=r.ok?'<div class="msg-ok">Orden creada</div>':'<div class="msg-err">Error</div>';
   if(r.ok){loadOrdenes();toggleForm('f-orden');}
 }
-async function cambEstOrden(oid,actual){
-  var estados=['Cotizacion','Orden','Producción','Entregado','Facturado'];
-  var nuevo=prompt('Estado ('+estados.join(', ')+'):',actual);
-  if(\!nuevo||\!estados.includes(nuevo)) return;
-  await fetch('/api/maquila/ordenes/'+oid,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
-  loadOrdenes();
+async function abrirEstOrden(oid,actual){
+  document.getElementById('eo-oid').value=oid;
+  document.getElementById('eo-sel').value=actual;
+  document.getElementById('eo-msg').textContent='';
+  document.getElementById('m-est-orden').style.display='flex';
+}
+async function confirmarEstOrden(){
+  var oid=document.getElementById('eo-oid').value;
+  var est=document.getElementById('eo-sel').value;
+  var msg=document.getElementById('eo-msg');
+  msg.textContent='Guardando...';
+  var r=await fetch('/api/maquila/ordenes/'+oid,{method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({estado:est})});
+  if(r.ok){document.getElementById('m-est-orden').style.display='none';loadOrdenes();}
+  else{msg.textContent='Error al guardar';}
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────
 loadDashA();
 </script>
 
+
+<!-- Modal cambio estado orden maquila -->
+<div id="m-est-orden" class="mdl" style="display:none">
+<div class="mdl-box" style="max-width:380px">
+  <div class="mdl-hdr" style="background:#5C4B99">
+    <strong style="color:white">Cambiar estado de orden</strong>
+    <button onclick="document.getElementById('m-est-orden').style.display='none'">&times;</button>
+  </div>
+  <div class="mdl-body">
+    <input type="hidden" id="eo-oid">
+    <div class="fg">
+      <label>Nuevo estado</label>
+      <select id="eo-sel" class="form-control">
+        <option>Cotizacion</option>
+        <option>Orden</option>
+        <option>Producción</option>
+        <option>Entregado</option>
+        <option>Facturado</option>
+      </select>
+    </div>
+    <p id="eo-msg" style="color:#c0392b;font-size:0.82em;margin-top:6px"></p>
+    <div class="mdl-ftr">
+      <button class="btn" style="background:#5C4B99;color:white" onclick="confirmarEstOrden()">Guardar</button>
+      <button class="btn btn-sec" onclick="document.getElementById('m-est-orden').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+</div>
 </body>
 </html>
 """
