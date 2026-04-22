@@ -104,6 +104,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 
     <div id="oc-section" style="display:none">
       <div class="oc-info" id="oc-header"></div>
+      <div id="oc-estado-warn" style="display:none;margin:10px 0;padding:12px 16px;border-radius:6px;font-weight:600;"></div>
       <div style="overflow-x:auto;">
         <table>
           <thead>
@@ -255,14 +256,8 @@ function renderOC(d) {
     '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(d.valor_total||0).toLocaleString() + '</div></div>' +
     '<div><div class="lbl">Categoria</div><div class="val">' + (d.categoria||'MP') + '</div></div>';
 
-  // Advertencia si OC ya fue procesada
+  // Advertencia si OC ya fue procesada (static div in HTML, no DOM insertion needed)
   var warnEl = document.getElementById('oc-estado-warn');
-  if (!warnEl) {
-    warnEl = document.createElement('div');
-    warnEl.id = 'oc-estado-warn';
-    warnEl.style.cssText = 'margin:10px 0;padding:12px 16px;border-radius:6px;font-weight:600;display:none';
-    document.getElementById('oc-section').insertBefore(warnEl, document.getElementById('items-body').closest('table')||document.getElementById('items-body'));
-  }
   if (d.estado === 'Recibida' || d.estado === 'Pagada') {
     warnEl.style.background = '#fef9c3'; warnEl.style.color = '#854d0e'; warnEl.style.border = '1px solid #fde047'; warnEl.style.display = 'block';
     warnEl.textContent = '\u26a0 Esta OC ya fue recibida (' + d.estado + '). Puedes consultar pero el registro de recepcion esta completo.';
