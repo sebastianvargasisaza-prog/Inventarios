@@ -33,15 +33,20 @@ bp = Blueprint('gerencia', __name__)
 
 @bp.route('/gerencia')
 def gerencia_page():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return redirect(url_for('core.login'))
+    if 'compras_user' not in session:
+        return redirect('/login?next=/gerencia')
+    if session.get('compras_user','') not in ADMIN_USERS:
+        # Autenticado pero sin permiso: ir al hub, no al login (evita loop)
+        return redirect('/hub')
     return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/gerencia-financiero')
 def gerencia_financiero_page():
     u = session.get('compras_user', '')
-    if not u or u not in FINANZAS_ACCESS:
-        return redirect(url_for('core.login'))
+    if not u:
+        return redirect('/login?next=/gerencia-financiero')
+    if u not in FINANZAS_ACCESS:
+        return redirect('/hub')
     return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/api/gerencia/kpis')

@@ -93,6 +93,20 @@ def login():
             session['login_time']   = time.time()
             nxt = request.args.get('next', '')
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
+                # Default landing page based on role
+                from config import ADMIN_USERS, PLANTA_USERS, COMPRAS_ACCESS
+                if username in ADMIN_USERS:
+                    nxt = '/hub'
+                elif username in PLANTA_USERS:
+                    nxt = '/inventarios'
+                elif username in COMPRAS_ACCESS:
+                    nxt = '/compras'
+                else:
+                    nxt = '/hub'
+            # Safety: non-admins must not land on admin-only pages
+            from config import ADMIN_USERS as _AU
+            ADMIN_ONLY = {'/gerencia'}
+            if any(nxt == p or nxt.startswith(p + '/') for p in ADMIN_ONLY) and username not in _AU:
                 nxt = '/hub'
             return redirect(nxt)
         _record_failure(ip)
