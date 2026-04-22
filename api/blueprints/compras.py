@@ -334,6 +334,39 @@ def handle_proveedores_compras():
     provs = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
     return jsonify({'proveedores': provs})
 
+@bp.route('/api/proveedores-compras/<path:nombre>', methods=['PATCH','DELETE'])
+def handle_proveedor(nombre):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'DELETE':
+        d = request.json or {}
+        motivo = (d.get('motivo') or '').strip()
+        if not motivo:
+            conn.close(); return jsonify({'error': 'El motivo de baja es requerido'}), 400
+        c.execute("SELECT id FROM proveedores WHERE nombre=? AND activo=1", (nombre,))
+        if not c.fetchone():
+            conn.close(); return jsonify({'error': 'Proveedor no encontrado'}), 404
+        c.execute(
+            "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE nombre=?",
+            (motivo, datetime.now().isoformat(), nombre)
+        )
+        conn.commit(); conn.close()
+        return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' dado de baja"})
+    # PATCH — edit
+    d = request.json or {}
+    fields = ['contacto','email','telefono','nit','direccion',
+              'banco','tipo_cuenta','num_cuenta','concepto_compra',
+              'condiciones_pago','categoria']
+    sets = [f"{f}=?" for f in fields if f in d]
+    vals = [d[f] for f in fields if f in d]
+    if not sets:
+        conn.close(); return jsonify({'error': 'No hay campos para actualizar'}), 400
+    vals.append(nombre)
+    c.execute(f"UPDATE proveedores SET {', '.join(sets)} WHERE nombre=? AND activo=1", vals)
+    if c.rowcount == 0:
+        conn.close(); return jsonify({'error': 'Proveedor no encontrado'}), 404
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' actualizado"})
+
 @bp.route('/api/proveedores-compras/<path:nombre>/ficha')
 def proveedor_ficha_360(nombre):
     """Proveedor 360: datos completos + historial OCs + scoring."""

@@ -270,6 +270,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="mb" id="ficha360-content" style="padding:0 4px;">
     <div style="text-align:center;color:#a8a29e;padding:40px;">Cargando ficha...</div>
   </div>
+  <div class="mf" id="ficha360-footer" style="gap:8px;justify-content:flex-end;"></div>
 </div>
 </div>
 
@@ -826,7 +827,120 @@ async function abrirFicha360(nombre) {
       h += '</tbody></table></div></div>';
     }
     el.innerHTML = h;
+    // Footer buttons
+    var ft=document.getElementById('ficha360-footer');
+    if(ft){
+      ft.innerHTML=
+        '<button class="btn bo" onclick="closeModal(\"m-ficha360\")">Cerrar</button>'
+        +'<button class="btn bw" style="background:#2563eb;" onclick="editarProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+        +'&#x270F; Editar</button>'
+        +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
+        +'onclick="bajaProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+        +'&#x1F6AB; Dar de baja</button>';
+    }
   } catch(e) { el.innerHTML = '<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
+}
+
+// ─── Editar proveedor 360 ──────────────────────────────────────────
+function editarProv360(nombre){
+  var el=document.getElementById('ficha360-content');
+  var ft=document.getElementById('ficha360-footer');
+  // Pre-fill from PROVS cache
+  var p=PROVS.find(function(x){ return x.nombre===nombre; })||{};
+  function fld(id,lbl,val,ph){
+    return '<div class="fg" style="margin-bottom:8px;">'
+      +'<label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">'+lbl+'</label>'
+      +'<input id="ep-'+id+'" value="'+esc(val||'')+'" placeholder="'+ph+'" '
+      +'style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
+  }
+  var h='<div style="padding:16px 20px;">';
+  h+='<div style="font-weight:800;font-size:14px;margin-bottom:14px;">&#x270F; Editar: '+esc(nombre)+'</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">';
+  h+=fld('contacto','Contacto',p.contacto,'Nombre contacto');
+  h+=fld('email','Email',p.email,'correo@ejemplo.com');
+  h+=fld('telefono','Teléfono',p.telefono,'300 000 0000');
+  h+=fld('nit','NIT / CC',p.nit,'NIT o cédula');
+  h+='<div style="grid-column:span 2;">'+fld('direccion','Dirección',p.direccion,'Dirección completa')+'</div>';
+  h+=fld('banco','Banco',p.banco,'Bancolombia, Davivienda...');
+  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">Tipo de cuenta</label>'
+    +'<select id="ep-tipo_cuenta" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'
+    +'<option value="Ahorros"'+(p.tipo_cuenta==='Ahorros'?' selected':'')+ '>Ahorros</option>'
+    +'<option value="Corriente"'+(p.tipo_cuenta==='Corriente'?' selected':'')+'>Corriente</option>'
+    +'<option value="Ahorros Damas"'+(p.tipo_cuenta==='Ahorros Damas'?' selected':'')+'>Ahorros Damas</option>'
+    +'<option value="Nequi / Daviplata"'+(p.tipo_cuenta==='Nequi / Daviplata'?' selected':'')+'>Nequi / Daviplata</option>'
+    +'</select></div>';
+  h+=fld('num_cuenta','N° de cuenta',p.num_cuenta,'Número de cuenta');
+  h+=fld('concepto_compra','Concepto de compra',p.concepto_compra,'Ej: Materias primas');
+  h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">Categoría LPA</label>'
+    +'<select id="ep-categoria" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'
+    +'<option value="">-- Sin categoría --</option>'
+    +'<option value="\uD83D\uDD34 Crítico"'+(( p.categoria||'').indexOf('rico')>=0?' selected':'')+'>🔴 Crítico</option>'
+    +'<option value="\uD83D\uDFE0 Mayor"'+((p.categoria||'').indexOf('ayor')>=0?' selected':'')+'>🟠 Mayor</option>'
+    +'<option value="\uD83D\uDFE2 No crítico"'+((p.categoria||'').indexOf('No')>=0?' selected':'')+'>🟢 No crítico</option>'
+    +'</select></div>';
+  h+='</div></div>';
+  el.innerHTML=h;
+  if(ft) ft.innerHTML=
+    '<button class="btn bo" onclick="abrirFicha360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'&#x2190; Volver</button>'
+    +'<button class="btn bg" onclick="guardarEditProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'&#x1F4BE; Guardar cambios</button>';
+}
+async function guardarEditProv360(nombre){
+  var body={};
+  var ids=['contacto','email','telefono','nit','direccion','banco','tipo_cuenta','num_cuenta','concepto_compra','categoria'];
+  ids.forEach(function(id){ var el=document.getElementById('ep-'+id); if(el) body[id]=el.value.trim(); });
+  try{
+    var r=await fetch('/api/proveedores-compras/'+encodeURIComponent(nombre),
+      {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    // Refresh PROVS and reload 360
+    var rp=await fetch('/api/proveedores-compras'); var dp=await rp.json();
+    PROVS=dp.proveedores||[];
+    abrirFicha360(nombre);
+  }catch(e){ alert('Error: '+e.message); }
+}
+function bajaProv360(nombre){
+  var el=document.getElementById('ficha360-content');
+  var ft=document.getElementById('ficha360-footer');
+  var h='<div style="padding:24px 20px;">';
+  h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:20px;">';
+  h+='<div style="font-size:28px;text-align:center;margin-bottom:8px;">&#x1F6AB;</div>';
+  h+='<div style="font-weight:800;font-size:15px;color:#dc2626;text-align:center;margin-bottom:4px;">Dar de baja al proveedor</div>';
+  h+='<div style="font-size:13px;color:#7f1d1d;text-align:center;margin-bottom:16px;">'
+    +'<strong>'+esc(nombre)+'</strong> dejará de aparecer en nuevas OCs.'
+    +'<br>El historial de compras se conserva intacto.</div>';
+  h+='<div class="fg"><label style="font-size:12px;font-weight:700;color:#7f1d1d;display:block;margin-bottom:6px;">'
+    +'Motivo de baja <span style="color:#dc2626;">*</span></label>';
+  h+='<textarea id="baja-motivo" rows="3" placeholder="Ej: Incumplimiento reiterado de fechas, pérdida de confianza, mejor alternativa disponible..." '
+    +'style="width:100%;padding:8px 10px;border:1px solid #fca5a5;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
+  h+='</div></div>';
+  el.innerHTML=h;
+  if(ft) ft.innerHTML=
+    '<button class="btn bo" onclick="abrirFicha360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'&#x2190; Cancelar</button>'
+    +'<button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" '
+    +'onclick="confirmarBajaProv360(\"'+nombre.replace(/\"/g,\"&quot;\")+'\")">'  
+    +'&#x26A0; Confirmar baja definitiva</button>';
+}
+async function confirmarBajaProv360(nombre){
+  var motivo=(document.getElementById('baja-motivo')||{value:''}).value.trim();
+  if(!motivo){ alert('El motivo de baja es obligatorio'); return; }
+  try{
+    var r=await fetch('/api/proveedores-compras/'+encodeURIComponent(nombre),
+      {method:'DELETE',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({motivo:motivo})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    // Refresh PROVS and close modal
+    var rp=await fetch('/api/proveedores-compras'); var dp=await rp.json();
+    PROVS=dp.proveedores||[];
+    fillProvSelect('noc-prov');
+    closeModal('m-ficha360');
+    renderProveedores();
+    alert('Proveedor dado de baja. Historial conservado.');
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 // ─── Proveedor autofill ────────────────────────────────────────────

@@ -689,7 +689,7 @@ def init_db():
                 'num_cuenta TEXT','tipo_cuenta TEXT','banco TEXT','cert_bancario TEXT',
                 'estado_lpa TEXT','ultima_evaluacion TEXT','vencimiento_docs TEXT',
                 'acuerdo_calidad TEXT','rut INTEGER DEFAULT 0','camara_comercio INTEGER DEFAULT 0',
-                'concepto_compra TEXT']:
+                'concepto_compra TEXT','motivo_baja TEXT','fecha_baja TEXT']:
         try: c.execute(f'ALTER TABLE proveedores ADD COLUMN {_pc}')
         except Exception: pass
 
