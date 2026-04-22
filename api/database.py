@@ -852,6 +852,26 @@ def init_db():
         c.execute("DELETE FROM capacitaciones WHERE id NOT IN (SELECT MIN(id) FROM capacitaciones GROUP BY nombre)")
         c.execute("DELETE FROM capacitaciones_empleados WHERE rowid NOT IN (SELECT MIN(rowid) FROM capacitaciones_empleados GROUP BY capacitacion_id, empleado_id)")
     except: pass
+    # ── TEMP: limpiar datos compras excepto influencers ── eliminar tras deploy ──
+    try:
+        c.execute("""DELETE FROM ordenes_compra_items WHERE numero_oc NOT IN (
+            SELECT numero_oc FROM solicitudes_compra
+            WHERE categoria='Influencer/Marketing Digital'
+            AND numero_oc IS NOT NULL AND numero_oc != ''
+        )""")
+        c.execute("""DELETE FROM ordenes_compra WHERE numero_oc NOT IN (
+            SELECT numero_oc FROM solicitudes_compra
+            WHERE categoria='Influencer/Marketing Digital'
+            AND numero_oc IS NOT NULL AND numero_oc != ''
+        )""")
+        c.execute("""DELETE FROM solicitudes_compra_items WHERE numero IN (
+            SELECT numero FROM solicitudes_compra
+            WHERE categoria != 'Influencer/Marketing Digital'
+        )""")
+        c.execute("DELETE FROM solicitudes_compra WHERE categoria != 'Influencer/Marketing Digital'")
+    except Exception as _ce:
+        print('WARN compras cleanup:', _ce)
+    # ── END TEMP compras cleanup ──────────────────────────────────────────────────
     conn.commit()
     conn.close()
 
