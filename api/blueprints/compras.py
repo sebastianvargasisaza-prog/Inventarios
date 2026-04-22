@@ -247,9 +247,25 @@ def handle_oc_detalle(numero_oc):
     oc_row = c.fetchone()
     oc_cols = [d[0] for d in c.description] if c.description else []
     c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-    items = c.fetchall(); conn.close()
-    if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
-    return jsonify({'oc': dict(zip(oc_cols, oc_row)), 'items': items})
+    items = c.fetchall()
+    if not oc_row: conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    oc_dict = dict(zip(oc_cols, oc_row))
+    prov_data = None
+    prov_name = oc_dict.get('proveedor', '')
+    if prov_name:
+        c.execute(
+            "SELECT banco, tipo_cuenta, num_cuenta, nit, email, telefono, contacto"
+            " FROM proveedores WHERE nombre=? AND activo=1 LIMIT 1",
+            (prov_name,)
+        )
+        prow = c.fetchone()
+        if prow:
+            prov_data = dict(zip(
+                ['banco', 'tipo_cuenta', 'num_cuenta', 'nit', 'email', 'telefono', 'contacto'],
+                prow
+            ))
+    conn.close()
+    return jsonify({'oc': oc_dict, 'items': items, 'prov_data': prov_data})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/editar', methods=['PATCH'])
 def editar_oc(numero_oc):

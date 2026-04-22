@@ -1649,6 +1649,34 @@ async function openOCDetail(num){
       });
       h+='</tbody></table></div>';
     } else { h+='<div style="color:#78716c;font-size:13px;">Sin items registrados</div>'; }
+    // ── Datos de Pago ──
+    var _pd=d.prov_data||null;
+    if(!_pd&&o.proveedor){
+      var _pf=PROVS.find(function(x){ return x.nombre===o.proveedor; });
+      if(_pf) _pd={banco:_pf.banco,tipo_cuenta:_pf.tipo_cuenta,num_cuenta:_pf.num_cuenta,nit:_pf.nit,email:_pf.email,telefono:_pf.telefono};
+    }
+    if(_pd&&(_pd.banco||_pd.num_cuenta)){
+      h+='<div style="margin-top:14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">';
+      h+='<div style="font-weight:800;font-size:12px;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;">';
+      if(_pd.banco) h+='<div><span style="color:#166534;font-weight:600;">Banco:</span> <strong>'+esc(_pd.banco)+'</strong></div>';
+      if(_pd.tipo_cuenta) h+='<div><span style="color:#166534;font-weight:600;">Tipo cuenta:</span> '+esc(_pd.tipo_cuenta)+'</div>';
+      if(_pd.num_cuenta) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">N\u00BA cuenta:</span> <strong style="font-family:monospace;font-size:13px;letter-spacing:.5px;">'+esc(_pd.num_cuenta)+'</strong></div>';
+      if(_pd.nit) h+='<div><span style="color:#166534;font-weight:600;">NIT / CC:</span> '+esc(_pd.nit)+'</div>';
+      if(_pd.email) h+='<div><span style="color:#166534;font-weight:600;">Email:</span> '+esc(_pd.email)+'</div>';
+      if(_pd.telefono) h+='<div><span style="color:#166534;font-weight:600;">Tel:</span> '+esc(_pd.telefono)+'</div>';
+      h+='</div>';
+      if(o.valor_total){
+        h+='<div style="margin-top:10px;padding-top:8px;border-top:1px solid #bbf7d0;">';
+        if(o.con_iva&&o.valor_sin_iva>0){
+          var _iva=Math.round(o.valor_sin_iva*0.19);
+          h+='<div style="font-size:11px;color:#166534;">Subtotal: '+fmt(o.valor_sin_iva)+'</div>';
+          h+='<div style="font-size:11px;color:#166534;">IVA 19%: '+fmt(_iva)+'</div>';
+        }
+        h+='<div style="font-size:15px;font-weight:800;color:#15803d;margin-top:3px;">Total a pagar: '+fmt(o.valor_total)+'</div>';
+      }
+      h+='</div>';
+    }
     h+='</div>';
     body.innerHTML=h;
     var fbtns='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
@@ -1904,6 +1932,34 @@ async function openSolicitudDetail(num){
     if(s.numero_oc) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">OC generada:</span> <strong style="color:#2563eb;">'+esc(s.numero_oc)+'</strong></div>';
     if(s.observaciones) h+='<div style="grid-column:span 2;"><span style="color:#78716c;">Observaciones / Justificacion:</span><br><em>'+esc(s.observaciones)+'</em></div>';
     h+='</div>';
+    // ── Payment summary for non-pending solicitudes ──
+    if(s.estado!=='Pendiente'&&s.observaciones&&s.observaciones.indexOf('BANCO:')>=0){
+      var _obs=s.observaciones;
+      function _xtr(key){
+        var idx=_obs.indexOf(key+':');
+        if(idx<0) return '';
+        var rest=_obs.slice(idx+key.length+1).trim();
+        var end=rest.indexOf(' | ');
+        return end>=0?rest.slice(0,end).trim():rest.trim();
+      }
+      var _ben=_xtr('BENEFICIARIO')||_xtr('BENEFICIARIO');
+      var _ban=_xtr('BANCO');
+      var _cta=_xtr('CUENTA/CEL');
+      var _ced=_xtr('CED/NIT');
+      var _val=_xtr('VALOR');
+      if(_ban||_cta){
+        h+='<div style="margin-top:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;">';
+        h+='<div style="font-weight:800;font-size:12px;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">&#x1F4B3; Datos de Pago</div>';
+        h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;">';
+        if(_ben) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">Beneficiario:</span> <strong>'+esc(_ben)+'</strong></div>';
+        if(_ban) h+='<div><span style="color:#166534;font-weight:600;">Banco:</span> <strong>'+esc(_ban)+'</strong></div>';
+        if(_cta) h+='<div><span style="color:#166534;font-weight:600;">Cuenta/Cel:</span> <strong style="font-family:monospace;">'+esc(_cta)+'</strong></div>';
+        if(_ced) h+='<div><span style="color:#166534;font-weight:600;">NIT/CC:</span> '+esc(_ced)+'</div>';
+        if(_val) h+='<div><span style="color:#166534;font-weight:600;">Valor:</span> <strong>$'+esc(_val)+'</strong></div>';
+        if(s.numero_oc) h+='<div style="grid-column:span 2;"><span style="color:#166534;font-weight:600;">OC:</span> <strong style="color:#2563eb;">'+esc(s.numero_oc)+'</strong></div>';
+        h+='</div></div>';
+      }
+    }
     if(items.length){
       h+='<div style="font-weight:700;font-size:12px;color:#44403c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Items solicitados</div>';
       h+='<table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Valor est.</th></tr></thead><tbody>';
