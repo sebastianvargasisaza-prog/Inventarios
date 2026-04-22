@@ -857,6 +857,15 @@ function setCat(k){
     p.classList.toggle('pill-on',p.getAttribute('data-cat')===k);
   });
   if(k==='MP') loadMPLookup();
+  // Update column header to match category context
+  var colHeaders={'MP':'Codigo MP','MEE':'Ref. MEE','SVC':'Servicio',
+    'ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
+  var th=document.querySelector('#m-noc .itbl thead tr th');
+  if(th) th.textContent=colHeaders[k]||'Codigo';
+  // Rebuild rows so datalist / placeholder reflects new category
+  document.getElementById('noc-tbody').innerHTML='';
+  ITMS=0;
+  addRow(); addRow();
 }
 function openNuevaOC(catCode){
   _ocMode='create'; _ocEditNum='';
@@ -885,9 +894,12 @@ function addRow(){
   ITMS++;
   var n=ITMS;
   var isMP=(document.getElementById('noc-cat').value==='MP');
+  var _ph={'MP':'Buscar MP...','MEE':'Ref. MEE','SVC':'Servicio','ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
+  var _ph_val=_ph[document.getElementById('noc-cat').value]||'COD';
+  var _w=isMP?'width:115px':'width:80px';
   var codCell=isMP
-    ?'<td><input id="ic'+n+'" list="mp-dl" placeholder="Buscar MP..." style="width:115px" oninput="autoFillMP('+n+')" autocomplete="off"></td>'
-    :'<td><input id="ic'+n+'" placeholder="COD" style="width:65px"></td>';
+    ?'<td><input id="ic'+n+'" list="mp-dl" placeholder="Buscar MP..." style="'+_w+'" oninput="autoFillMP('+n+')" autocomplete="off"></td>'
+    :'<td><input id="ic'+n+'" placeholder="'+_ph_val+'" style="'+_w+'"></td>';
   var tr=document.createElement('tr');
   tr.id='ir'+n;
   tr.innerHTML=codCell+
