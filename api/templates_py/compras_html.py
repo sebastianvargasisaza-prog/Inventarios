@@ -884,11 +884,11 @@ async function crearOC(){
   }
   if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
   try{
+    var _ivaChk=document.getElementById('noc-iva-chk');
+    var _conIva=_ivaChk&&_ivaChk.checked?1:0;
+    var _subtotal=items.reduce(function(a,it){return a+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
+    var _valorSinIva=_subtotal;
     var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-      var _ivaChk=document.getElementById('noc-iva-chk');
-      var _conIva=_ivaChk&&_ivaChk.checked?1:0;
-      var _subtotal=items.reduce(function(a,it){return a+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
-      var _valorSinIva=_subtotal;
       body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,items:items,creado_por:'{usuario}',con_iva:_conIva,valor_sin_iva:_valorSinIva})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
