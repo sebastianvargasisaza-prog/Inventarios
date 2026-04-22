@@ -291,6 +291,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
         <select id="noc-prov" onchange="fillProv('noc-prov','noc-ibox')"><option value="">-- Seleccionar --</option></select>
         <input type="text" id="noc-prov-txt" list="prov-dl" placeholder="Nombre del proveedor o beneficiario" style="display:none">
         <datalist id="prov-dl"></datalist>
+        <div id="noc-add-prov-link" style="display:none;margin-top:4px;">
+          <button type="button" class="btn bo" style="font-size:11px;padding:3px 10px;" onclick="showNewProvForm()">&#x2795; Crear proveedor nuevo</button>
+        </div>
         <div id="noc-ibox" class="ibox" style="display:none"></div>
         <div id="noc-new-prov-form" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">
           <div style="font-weight:700;font-size:12px;color:#166534;margin-bottom:8px;">&#x2795; Nuevo Proveedor</div>
@@ -918,6 +921,8 @@ function setCat(k){
   if(lbl) lbl.textContent=isCatalog?'Proveedor':(k==='CC'?'Beneficiario / Proveedor':'Proveedor / Beneficiario');
   var ccPago=document.getElementById('noc-cc-pago');
   if(ccPago) ccPago.style.display=(k==='CC'?'block':'none');
+  var addProvLink=document.getElementById('noc-add-prov-link');
+  if(addProvLink) addProvLink.style.display=isCatalog?'none':'block';
   if(!isCatalog&&txt){
     var dl=document.getElementById('prov-dl');
     if(dl&&typeof PROVS!=='undefined'){
@@ -1136,6 +1141,16 @@ function autoFillMP(n){
   }
 }
 // ─── Inline provider creation ─────────────────────────────────────────
+function showNewProvForm(){
+  var frm=document.getElementById('noc-new-prov-form');
+  if(!frm) return;
+  frm.style.display='block';
+  // Pre-fill nombre from free-text field if something was typed
+  var txt=document.getElementById('noc-prov-txt');
+  var nomEl=document.getElementById('np-nombre');
+  if(nomEl&&txt&&txt.value.trim()&&!nomEl.value) nomEl.value=txt.value.trim();
+  frm.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 function guardarNuevoProv(){
   var nombre=(document.getElementById('np-nombre').value||'').trim();
   if(!nombre){ alert('El nombre del proveedor es requerido'); return; }
@@ -1173,12 +1188,23 @@ function reloadProvs(selectAfter){
   .then(function(d){
     PROVS=d.proveedores||[];
     fillProvSelect('noc-prov');
+    // Also refresh datalist for free-text categories
+    var dl=document.getElementById('prov-dl');
+    if(dl) dl.innerHTML=PROVS.map(function(p){
+      return '<option value="'+esc(p.nombre)+'">';
+    }).join('');
     var frm=document.getElementById('noc-new-prov-form');
     if(frm) frm.style.display='none';
     if(selectAfter){
-      var sel=document.getElementById('noc-prov');
-      if(sel) sel.value=selectAfter;
-      fillProv('noc-prov','noc-ibox');
+      var isCat=(_ocCatCode==='MP'||_ocCatCode==='MEE');
+      if(isCat){
+        var sel=document.getElementById('noc-prov');
+        if(sel) sel.value=selectAfter;
+        fillProv('noc-prov','noc-ibox');
+      } else {
+        var txt=document.getElementById('noc-prov-txt');
+        if(txt) txt.value=selectAfter;
+      }
     }
   }).catch(function(e){ console.error('Error recargando proveedores',e); });
 }
