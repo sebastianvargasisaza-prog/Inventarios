@@ -1,5 +1,5 @@
 MODULOS_HTML = (
-    "<\\!DOCTYPE html>\n"
+    "<!DOCTYPE html>\n"
     "<html lang=\"es\">\n"
     "<head>\n"
     "<meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">\n"
