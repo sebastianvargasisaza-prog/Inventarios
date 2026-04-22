@@ -874,9 +874,9 @@ function editarProv360(nombre){
   h+='<div class="fg" style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:3px;">Categoría LPA</label>'
     +'<select id="ep-categoria" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">'
     +'<option value="">-- Sin categoría --</option>'
-    +'<option value="\uD83D\uDD34 Crítico"'+(( p.categoria||'').indexOf('rico')>=0?' selected':'')+'>🔴 Crítico</option>'
-    +'<option value="\uD83D\uDFE0 Mayor"'+((p.categoria||'').indexOf('ayor')>=0?' selected':'')+'>🟠 Mayor</option>'
-    +'<option value="\uD83D\uDFE2 No crítico"'+((p.categoria||'').indexOf('No')>=0?' selected':'')+'>🟢 No crítico</option>'
+    +'<option value="\U0001F534 Crítico"'+(( p.categoria||'').indexOf('rico')>=0?' selected':'')+'>🔴 Crítico</option>'
+    +'<option value="\U0001F7E0 Mayor"'+((p.categoria||'').indexOf('ayor')>=0?' selected':'')+'>🟠 Mayor</option>'
+    +'<option value="\U0001F7E2 No crítico"'+((p.categoria||'').indexOf('No')>=0?' selected':'')+'>🟢 No crítico</option>'
     +'</select></div>';
   h+='</div></div>';
   el.innerHTML=h;
