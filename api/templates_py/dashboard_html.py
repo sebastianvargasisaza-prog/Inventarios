@@ -1666,6 +1666,14 @@ async function registrarProd(){
   if(!prod){alert('Ingresa un producto');return;}
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
+  // Validacion: advertir si la cantidad parece inusualmente alta
+  if(kg>1000){
+    var msg='\u26a0\ufe0f ADVERTENCIA: Ingresaste '+kg.toLocaleString()+' kg de producci\u00f3n.';
+    msg+='\n\nEso equivale a '+kg.toLocaleString()+' kg ('+(kg*1000).toLocaleString()+' g).';
+    msg+='\n\n\u00bfEst\u00e1s seguro? Las producciones normales son menores a 1,000 kg.';
+    msg+='\n\nSi quer\u00edas ingresar gramos, divide entre 1000 (ej: 20 kg = ingresa 20).';
+    if(!confirm(msg)) return;
+  }
   try{
     var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:OPER_ACTUAL})});
     var res=await r.json();
