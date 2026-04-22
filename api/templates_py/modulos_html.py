@@ -42,7 +42,7 @@ MODULOS_HTML = (
     "  <div class=\"section\">\n"
     "    <div class=\"section-label\">&#x1F3ED; Productivo</div>\n"
     "    <div class=\"grid\">\n"
-    "      <a class=\"mod-card\" href=\"/inventarios\"><span class=\"mod-icon\">&#x1F4E6;</span><span class=\"mod-name\">Inventario</span></a>\n"
+    "      <a class=\"mod-card\" href=\"/inventarios\"><span class=\"mod-icon\">&#x1F4E6;</span><span class=\"mod-name\">Planta</span></a>\n"
     "      <a class=\"mod-card\" href=\"/recepcion\"><span class=\"mod-icon\">&#x1F69A;</span><span class=\"mod-name\">Recepción</span></a>\n"
     "      <a class=\"mod-card\" href=\"/hub-salida\"><span class=\"mod-icon\">&#x1F9EA;</span><span class=\"mod-name\">Maquila</span></a>\n"
     "      <a class=\"mod-card\" href=\"/calidad\"><span class=\"mod-icon\">&#x1F52C;</span><span class=\"mod-name\">Calidad</span></a>\n"

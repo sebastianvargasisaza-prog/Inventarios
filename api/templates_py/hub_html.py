@@ -89,7 +89,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 </div>
 
 <div class="quick-nav">
-  <a class="qn-btn primary" href="/inventarios">&#x1F4E6; Inventario</a>
+  <a class="qn-btn primary" href="/inventarios">&#x1F4E6; Planta</a>
   <a class="qn-btn" href="/compras">&#x1F6D2; Compras</a>
   <a class="qn-btn" href="/recepcion">&#x1F69A; Recepci&#xF3;n</a>
   <a class="qn-btn" href="/clientes">&#x1F464; Clientes</a>
@@ -115,7 +115,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   <div class="card card-full">
     <div class="card-title" style="font-size:13px;color:#e2e8f0;">&#x1F4F1; Panel de M&#xF3;dulos</div>
     <div class="module-grid" id="mod-grid">
-      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
+      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Planta</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
       <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
       <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
       <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>

@@ -151,7 +151,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <!-- DETALLE DOS COLUMNAS -->
   <div class="two-cols">
     <div class="panel">
-      <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Inventario Espagiria</div>
+      <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Planta Espagiria</div>
       <div id="detalle-inventario"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
