@@ -86,6 +86,56 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .itbl input{width:100%;border:1px solid #e7e5e4;border-radius:4px;padding:3px 6px;font-size:12px;}
 .total-row{text-align:right;margin-top:10px;font-size:15px;font-weight:700;}
 .fab{position:fixed;bottom:22px;right:22px;background:#292524;color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
+/* ── Enterprise OC Modal ──────────────────────────────── */
+.oc-mdl{max-width:760px;}
+.oc-hd{background:linear-gradient(135deg,#1c1917 0%,#3c3735 100%);color:#fff;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;border-radius:10px 10px 0 0;}
+.oc-hd-l{display:flex;align-items:center;gap:14px;}
+.oc-hd-ico{font-size:26px;line-height:1;}
+.oc-hd-title{font-size:16px;font-weight:700;}
+.oc-hd-num{font-size:11px;color:#a8a29e;margin-top:2px;font-family:monospace;letter-spacing:.3px;}
+.oc-hd .mx{color:#a8a29e!important;font-size:22px;}
+.oc-hd .mx:hover{color:#fff!important;}
+.oc-body{overflow-y:auto;max-height:calc(92vh - 180px);}
+.oc-sec{padding:14px 22px;border-bottom:1px solid #f3f4f6;}
+.oc-sec-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#78716c;margin-bottom:7px;}
+.oc-sec-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.oc-cats{display:flex;flex-wrap:wrap;gap:7px;}
+.oc-cat{padding:6px 14px;border:1.5px solid #e7e5e4;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#57534e;transition:border-color .15s,background .15s,color .15s;}
+.oc-cat:hover{border-color:#292524;color:#292524;}
+.oc-cat.sel{background:#292524;border-color:#292524;color:#fff;}
+.oc-inp-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.oc-prow{display:flex;gap:6px;}
+.oc-prow select{flex:1;}
+.oc-inp-add{padding:8px 12px;background:#f5f4f2;border:1px solid #d6d3d1;border-radius:6px;font-size:14px;cursor:pointer;color:#57534e;white-space:nowrap;}
+.oc-inp-add:hover{background:#e7e5e4;}
+.oc-inp,.oc-sel,.oc-ta{width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;color:#1c1917;background:#fff;}
+.oc-inp:focus,.oc-sel:focus,.oc-ta:focus{outline:none;border-color:#292524;box-shadow:0 0 0 2px rgba(41,37,36,.08);}
+.oc-ta{min-height:60px;resize:vertical;}
+.oc-itbl{width:100%;border-collapse:collapse;font-size:12px;}
+.oc-itbl th{background:#f5f4f2;padding:7px 6px;text-align:left;font-size:10px;font-weight:700;color:#57534e;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #e7e5e4;}
+.oc-itbl td{padding:5px 3px;border-bottom:1px solid #f5f4f2;vertical-align:middle;}
+.oc-itbl tr:last-child td{border-bottom:none;}
+.oc-itbl input{padding:5px 7px;border:1px solid #e7e5e4;border-radius:4px;font-size:12px;width:100%;background:#fff;}
+.oc-itbl input:focus{border-color:#292524;outline:none;}
+.ic-info{font-size:10px;margin-top:2px;}
+.btn-addrow{padding:5px 12px;background:#292524;color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;}
+.btn-addrow:hover{background:#44403c;}
+.btn-rmrow{padding:2px 7px;font-size:11px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:4px;cursor:pointer;}
+.btn-rmrow:hover{background:#fee2e2;}
+.oc-fin{padding:14px 22px;background:#fafaf9;border-top:2px solid #e7e5e4;}
+.oc-fin-iva-row{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+.oc-fin-iva-row input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+.oc-fin-iva-row label{cursor:pointer;font-weight:600;font-size:13px;color:#292524;}
+.oc-fin-box{border:1px solid #e7e5e4;border-radius:8px;overflow:hidden;background:#fff;}
+.oc-fin-line{display:flex;justify-content:space-between;padding:8px 14px;font-size:13px;border-bottom:1px solid #f3f4f6;color:#57534e;}
+.oc-fin-iva-l{background:#fffbeb;color:#92400e;}
+.oc-fin-tot{display:flex;justify-content:space-between;padding:11px 14px;font-size:17px;font-weight:800;color:#1c1917;background:#f9f8f7;}
+.btn-edit{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;}
+.btn-edit:hover{background:#dbeafe;}
+.btn-del{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;}
+.btn-del:hover{background:#fee2e2;}
+.oc-urgente{background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-left:5px;}
+.oc-critica{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-left:5px;}
 </style>
 </head>
 <body>
@@ -264,47 +314,102 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
-<!-- MODAL: Nueva OC -->
+<!-- MODAL: Nueva / Editar OC — Enterprise -->
 <div id="m-noc" class="ov">
-<div class="mdl mdl-lg">
-  <div class="mh"><h3>&#x1F4DD; Nueva Orden de Compra</h3><button class="mx" onclick="closeModal('m-noc')">&times;</button></div>
-  <div class="mb">
-    <div class="g2">
-      <div class="fg"><label>Categoria</label>
-        <select id="noc-cat">
-          <option value="MP">Materias Primas</option><option value="MEE">Empaque &amp; Envase</option>
-          <option value="SVC">Servicios</option><option value="ADM">Administrativo</option>
-          <option value="INF">Infraestructura</option><option value="CC">Cuenta de Cobro</option>
-        </select>
+<div class="mdl oc-mdl">
+  <!-- Header -->
+  <div class="oc-hd">
+    <div class="oc-hd-l">
+      <span class="oc-hd-ico" id="noc-hd-ico">&#x1F4CB;</span>
+      <div>
+        <div class="oc-hd-title" id="noc-hd-title">Nueva Orden de Compra</div>
+        <div class="oc-hd-num" id="noc-hd-num">N&#xFA;mero asignado al crear</div>
       </div>
-      <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
     </div>
-    <div class="fg">
-      <label>Proveedor</label>
-      <select id="noc-prov" onchange="fillProv('noc-prov','noc-ibox')"><option value="">-- Seleccionar --</option></select>
-      <div id="noc-ibox" class="ibox" style="display:none"></div>
-    </div>
-    <div class="fg"><label>Concepto / Observaciones</label><textarea id="noc-obs" placeholder="Descripcion del pedido..."></textarea></div>
-    <div>
-      <label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
-      <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
-      <tbody id="noc-tbody"></tbody></table>
-      <button class="btn bo bs" style="margin-top:8px;" onclick="addRow()">+ Item</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px;">
-      <input type="checkbox" id="noc-iva-chk" onchange="calcTot()" style="width:16px;height:16px;cursor:pointer;">
-      <label for="noc-iva-chk" style="cursor:pointer;font-weight:600;font-size:13px;">Aplica IVA (19%)</label>
-    </div>
-    <div id="noc-iva-row" style="display:none;background:#fefce8;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:4px;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Subtotal sin IVA</span><span id="noc-sub">$0</span></div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px;color:#92400e;"><span>IVA 19%</span><span id="noc-iva-monto">$0</span></div>
-      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #fde047;padding-top:4px;"><span>Total con IVA</span><span id="noc-iva-total">$0</span></div>
-    </div>
-    <div class="total-row">Total: <span id="noc-tot">$0</span></div>
+    <button class="mx" onclick="closeModal('m-noc')">&#x2715;</button>
   </div>
+  <!-- Scrollable body -->
+  <div class="oc-body">
+    <!-- Sección: Categoría -->
+    <div class="oc-sec">
+      <div class="oc-sec-lbl">Categor&#xED;a del pedido</div>
+      <div class="oc-cats" id="noc-cats"></div>
+      <input type="hidden" id="noc-cat" value="MP">
+    </div>
+    <!-- Sección: Proveedor y fechas -->
+    <div class="oc-sec">
+      <div class="oc-inp-row">
+        <div>
+          <div class="oc-sec-lbl">Proveedor *</div>
+          <div class="oc-prow">
+            <select id="noc-prov" onchange="fillProv('noc-prov','noc-ibox')" class="oc-sel">
+              <option value="">-- Seleccionar proveedor --</option>
+            </select>
+            <button class="oc-inp-add" onclick="openModal('m-nprov')" title="Crear nuevo proveedor">+</button>
+          </div>
+          <div id="noc-ibox" class="ibox" style="display:none;margin-top:6px;"></div>
+        </div>
+        <div>
+          <div class="oc-sec-lbl">Entrega estimada</div>
+          <input type="date" id="noc-fent" class="oc-inp">
+          <div class="oc-sec-lbl" style="margin-top:10px;">Urgencia</div>
+          <select id="noc-urg" class="oc-sel">
+            <option value="Normal">Normal</option>
+            <option value="Urgente">&#x1F7E0; Urgente</option>
+            <option value="Critica">&#x1F534; Cr&#xED;tica</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <!-- Sección: Items -->
+    <div class="oc-sec">
+      <div class="oc-sec-row">
+        <div class="oc-sec-lbl" style="margin:0;">&#xCD;tems del pedido</div>
+        <button class="btn-addrow" onclick="addRow()">+ &#xCD;tem</button>
+      </div>
+      <datalist id="noc-codes-dl"></datalist>
+      <div style="overflow-x:auto;margin-top:6px;">
+        <table class="oc-itbl">
+          <thead><tr>
+            <th style="width:90px;">C&#xF3;digo</th>
+            <th>Descripci&#xF3;n *</th>
+            <th style="width:78px;text-align:right;">Cant.</th>
+            <th style="width:95px;text-align:right;">Precio U.</th>
+            <th style="width:90px;text-align:right;">Subtotal</th>
+            <th style="width:30px;"></th>
+          </tr></thead>
+          <tbody id="noc-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Sección: Observaciones -->
+    <div class="oc-sec">
+      <div class="oc-sec-lbl">Observaciones / Concepto</div>
+      <textarea id="noc-obs" class="oc-ta" placeholder="Concepto del pedido, condiciones especiales, referencias..."></textarea>
+    </div>
+    <!-- Resumen financiero -->
+    <div class="oc-fin">
+      <div class="oc-fin-iva-row">
+        <input type="checkbox" id="noc-iva-chk" onchange="calcTot()">
+        <label for="noc-iva-chk">Aplica IVA (19%)</label>
+      </div>
+      <div class="oc-fin-box">
+        <div class="oc-fin-line" id="noc-sub-row" style="display:none;">
+          <span>Subtotal sin IVA</span><span id="noc-sub">$0</span>
+        </div>
+        <div class="oc-fin-line oc-fin-iva-l" id="noc-iva-row" style="display:none;">
+          <span>IVA 19%</span><span id="noc-iva-monto">$0</span>
+        </div>
+        <div class="oc-fin-tot">
+          <span>Total</span><span id="noc-tot">$0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Footer -->
   <div class="mf">
     <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
-    <button class="btn bp" onclick="crearOC()">Crear OC</button>
+    <button class="btn bp" id="noc-submit-btn" onclick="submitOC()">&#x1F4CB; Crear OC</button>
   </div>
 </div>
 </div>
@@ -675,14 +780,17 @@ function renderCat(grp){
   document.getElementById('grid-'+grp).innerHTML=list.map(function(o){ return fullCard(o,grp); }).join('');
 }
 function fullCard(o,grp){
+  var urg=o.urgencia&&o.urgencia!=='Normal'?'<span class="oc-'+(o.urgencia==='Critica'?'critica':'urgente')+'">'+esc(o.urgencia)+'</span>':'';
   var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">&#128203; Ver</button>';
+  if(o.estado==='Borrador') btns+='<button class="btn btn-edit bs" data-act="edit" data-oc="'+esc(o.numero_oc)+'">&#9998; Editar</button>';
   if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
   if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
   if(o.estado==='Pagada'&&!ES_C&&(grp==='mp'||grp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
+  if(o.estado==='Borrador'||o.estado==='Rechazada') btns+='<button class="btn btn-del bs" data-act="del" data-oc="'+esc(o.numero_oc)+'">&#x1F5D1; Eliminar</button>';
   return '<div class="card">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
-    '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span></div>'+
+    '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span>'+urg+'</div>'+
     (o.observaciones?'<div class="cobs">'+esc((o.observaciones||'').substring(0,90))+'</div>':'')+
     '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
@@ -813,34 +921,86 @@ function openModal(id){ document.getElementById(id).classList.add('on'); }
 function closeModal(id){ document.getElementById(id).classList.remove('on'); }
 document.querySelectorAll('.ov').forEach(function(ov){ ov.addEventListener('click',function(e){ if(e.target===ov) ov.classList.remove('on'); }); });
 
-// ─── Nueva OC ─────────────────────────────────────────────────────
+// ─── OC Form Enterprise ───────────────────────────────────────────────
+var _ocMode='create';
+var _ocEditNum='';
 var _catMap={'mp':'MP','mee':'MEE','svc':'SVC','adm':'ADM','inf':'INF','cc':'CC'};
+var _OC_CATS=[
+  {k:'MP',  ico:'&#x1F9EA;', l:'Mat. Primas'},
+  {k:'MEE', ico:'&#x1F4E6;', l:'Empaque'},
+  {k:'SVC', ico:'&#x1F527;', l:'Servicios'},
+  {k:'ADM', ico:'&#x1F4CB;', l:'Administrativo'},
+  {k:'INF', ico:'&#x1F3D7;', l:'Infraestructura'},
+  {k:'CC',  ico:'&#x1F4B3;', l:'Cta. Cobro'}
+];
+function initCatPills(sel){
+  var el=document.getElementById('noc-cats'); if(\!el) return;
+  el.innerHTML=_OC_CATS.map(function(c){
+    return '<button type="button" class="oc-cat'+(c.k===sel?' sel':'')+'" onclick="setCat(\''+c.k+'\')">'+(c.ico)+' '+c.l+'</button>';
+  }).join('');
+}
+var _catIco={MP:'&#x1F9EA;',MEE:'&#x1F4E6;',SVC:'&#x1F527;',ADM:'&#x1F4CB;',INF:'&#x1F3D7;',CC:'&#x1F4B3;'};
+function setCat(k){
+  document.getElementById('noc-cat').value=k;
+  var ico=document.getElementById('noc-hd-ico'); if(ico) ico.innerHTML=_catIco[k]||'&#x1F4CB;';
+  document.querySelectorAll('.oc-cat').forEach(function(p){
+    p.classList.toggle('sel', p.getAttribute('onclick')==="setCat('"+k+"')");
+  });
+  if(k==='MP'){
+    var dl=document.getElementById('noc-codes-dl');
+    if(dl && typeof _MPCAT \!== 'undefined') dl.innerHTML=_MPCAT.map(function(m){
+      return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
+    }).join('');
+  }
+}
 function openNuevaOC(catCode){
-  if(catCode==='MP'||catCode==='mp'){ openNuevaOCMP(); return; }
-  var cat=_catMap[catCode]||catCode||'MP';
+  _ocMode='create'; _ocEditNum='';
+  var cat=_catMap[(catCode||'').toLowerCase()]||catCode||'MP';
   document.getElementById('noc-cat').value=cat;
   document.getElementById('noc-fent').value='';
   document.getElementById('noc-obs').value='';
   document.getElementById('noc-ibox').style.display='none';
   document.getElementById('noc-tot').textContent='$0';
   document.getElementById('noc-tbody').innerHTML='';
+  document.getElementById('noc-iva-chk').checked=false;
+  var ivr=document.getElementById('noc-iva-row'); if(ivr) ivr.style.display='none';
+  var sbr=document.getElementById('noc-sub-row'); if(sbr) sbr.style.display='none';
   ITMS=0;
   fillProvSelect('noc-prov');
   document.getElementById('noc-prov').value='';
+  var urg=document.getElementById('noc-urg'); if(urg) urg.value='Normal';
+  initCatPills(cat); setCat(cat);
+  var ti=document.getElementById('noc-hd-title'); if(ti) ti.textContent='Nueva Orden de Compra';
+  var nu=document.getElementById('noc-hd-num'); if(nu) nu.textContent='Número asignado al crear';
+  var sb=document.getElementById('noc-submit-btn'); if(sb) sb.innerHTML='&#x1F4CB; Crear OC';
   addRow(); addRow();
   openModal('m-noc');
 }
 function addRow(){
   ITMS++;
   var n=ITMS;
+  var cat=(document.getElementById('noc-cat')||{value:''}).value;
+  var isMP=(cat==='MP');
   var tr=document.createElement('tr');
   tr.id='ir'+n;
-  tr.innerHTML='<td><input id="ic'+n+'" placeholder="COD" style="width:65px"></td>'+
-    '<td><input id="in'+n+'" placeholder="Descripcion" style="width:150px"></td>'+
-    '<td><input id="iq'+n+'" type="number" value="1" min="0" oninput="calcTot()" style="width:55px"></td>'+
-    '<td><input id="ip'+n+'" type="number" value="0" min="0" step="0.01" oninput="calcTot()" style="width:75px"></td>'+
-    '<td id="is'+n+'" style="white-space:nowrap">$0</td>'+
-    '<td><button class="btn bo" style="padding:2px 7px;font-size:11px;" onclick="rmRow('+n+')">x</button></td>';
+  if(isMP){
+    tr.innerHTML=
+      '<td><input id="ic'+n+'" list="noc-codes-dl" placeholder="C\u00f3digo" style="width:82px;"
+       onchange="nocMPLookup('+n+')" oninput="nocMPDebounce('+n+')"></td>'+
+      '<td><div style="min-width:150px;"><input id="in'+n+'" placeholder="Descripci\u00f3n" style="width:100%;">'+'<div id="ii'+n+'" class="ic-info"></div></div></td>'+
+      '<td><input id="iq'+n+'" type="number" value="1" min="0" step="0.001" oninput="calcTot()" style="text-align:right;"></td>'+
+      '<td><input id="ip'+n+'" type="number" value="0" min="0" step="0.0001" oninput="calcTot()" style="text-align:right;"></td>'+
+      '<td id="is'+n+'" style="text-align:right;font-weight:600;white-space:nowrap;">$0</td>'+
+      '<td><button class="btn-rmrow" onclick="rmRow('+n+')">&#x2715;</button></td>';
+  } else {
+    tr.innerHTML=
+      '<td><input id="ic'+n+'" placeholder="Ref." style="width:82px;"></td>'+
+      '<td><div style="min-width:160px;"><input id="in'+n+'" placeholder="Descripci\u00f3n del \u00edtem *" style="width:100%;"></div></td>'+
+      '<td><input id="iq'+n+'" type="number" value="1" min="0" oninput="calcTot()" style="text-align:right;"></td>'+
+      '<td><input id="ip'+n+'" type="number" value="0" min="0" step="0.01" oninput="calcTot()" style="text-align:right;"></td>'+
+      '<td id="is'+n+'" style="text-align:right;font-weight:600;white-space:nowrap;">$0</td>'+
+      '<td><button class="btn-rmrow" onclick="rmRow('+n+')">&#x2715;</button></td>';
+  }
   document.getElementById('noc-tbody').appendChild(tr);
 }
 function rmRow(n){var e=document.getElementById('ir'+n);if(e)e.remove();calcTot();}
@@ -855,48 +1015,159 @@ function calcTot(){
   }
   var ivaChk=document.getElementById('noc-iva-chk');
   var ivaRow=document.getElementById('noc-iva-row');
+  var subRow=document.getElementById('noc-sub-row');
   if(ivaChk&&ivaChk.checked){
-    var iva=tot*0.19;
-    var total=tot+iva;
-    if(ivaRow) ivaRow.style.display='block';
+    var iva=tot*0.19, total=tot+iva;
+    if(ivaRow) ivaRow.style.display='flex';
+    if(subRow) subRow.style.display='flex';
     var es=document.getElementById('noc-sub'); if(es) es.textContent=fmt(tot);
     var em=document.getElementById('noc-iva-monto'); if(em) em.textContent=fmt(iva);
-    var et=document.getElementById('noc-iva-total'); if(et) et.textContent=fmt(total);
     document.getElementById('noc-tot').textContent=fmt(total);
   } else {
     if(ivaRow) ivaRow.style.display='none';
+    if(subRow) subRow.style.display='none';
     document.getElementById('noc-tot').textContent=fmt(tot);
   }
 }
-async function crearOC(){
+// ─── submitOC: maneja crear Y editar OC ────────────────────────────────────────
+async function submitOC(){
   var prov=document.getElementById('noc-prov').value;
   var cat=document.getElementById('noc-cat').value;
   var obs=document.getElementById('noc-obs').value;
   var fent=document.getElementById('noc-fent').value;
-  if(!prov){ alert('Selecciona un proveedor'); return; }
+  var urgEl=document.getElementById('noc-urg');
+  var urg=urgEl?urgEl.value:'Normal';
+  if(!prov){
+    var sel=document.getElementById('noc-prov');
+    if(sel){ sel.style.outline='2px solid #dc2626'; sel.focus(); setTimeout(function(){sel.style.outline='';},2000); }
+    return;
+  }
   var items=[];
   for(var i=1;i<=ITMS;i++){
     var n=document.getElementById('in'+i);
     if(!n||(n.value||'').trim()==='') continue;
-    items.push({codigo_mp:(document.getElementById('ic'+i)||{value:''}).value,nombre_mp:n.value.trim(),
+    items.push({
+      codigo_mp:(document.getElementById('ic'+i)||{value:''}).value,
+      nombre_mp:n.value.trim(),
       cantidad_g:parseFloat((document.getElementById('iq'+i)||{value:1}).value||1),
-      precio_unitario:parseFloat((document.getElementById('ip'+i)||{value:0}).value||0)});
+      precio_unitario:parseFloat((document.getElementById('ip'+i)||{value:0}).value||0)
+    });
   }
-  if(!items.length){ alert('Agrega al menos un item con descripcion'); return; }
+  if(!items.length){ alert('Agrega al menos un \u00edtem con descripci\u00f3n'); return; }
+  var ivaChk=document.getElementById('noc-iva-chk');
+  var conIva=ivaChk&&ivaChk.checked?1:0;
+  var subtotal=items.reduce(function(a,it){return a+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
+  var body={proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,
+    items:items,creado_por:'{usuario}',con_iva:conIva,valor_sin_iva:subtotal,urgencia:urg};
+  var btn=document.getElementById('noc-submit-btn');
+  if(btn){btn.disabled=true;btn.textContent='Guardando...';}
   try{
-    var _ivaChk=document.getElementById('noc-iva-chk');
-    var _conIva=_ivaChk&&_ivaChk.checked?1:0;
-    var _subtotal=items.reduce(function(a,it){return a+(it.cantidad_g||0)*(it.precio_unitario||0);},0);
-    var _valorSinIva=_subtotal;
-    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({proveedor:prov,categoria:cat,observaciones:obs,fecha_entrega_est:fent,items:items,creado_por:'{usuario}',con_iva:_conIva,valor_sin_iva:_valorSinIva})});
+    var url=_ocMode==='edit'
+      ?'/api/ordenes-compra/'+encodeURIComponent(_ocEditNum)+'/editar'
+      :'/api/ordenes-compra';
+    var method=_ocMode==='edit'?'PATCH':'POST';
+    var r=await fetch(url,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
-    if(d.error){ alert('Error: '+d.error); return; }
+    if(d.error){alert('Error: '+d.error);return;}
     closeModal('m-noc');
     await loadData();
-    renderCat(_catMap[Object.keys(_catMap).find(function(k){ return _catMap[k]===cat; })||'']||'mp');
-    alert('Creada: '+d.numero_oc);
-  }catch(e){ alert('Error de conexion: '+e); }
+    var catTab=({'MP':'mp','MEE':'mee','SVC':'svc','ADM':'adm','INF':'inf','CC':'cc'})[cat]||'mp';
+    document.querySelectorAll('.tn').forEach(function(b){b.classList.remove('on');});
+    document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('on');});
+    var tn=document.querySelector('.tn[data-tab="'+catTab+'"]');
+    if(tn) tn.classList.add('on');
+    var pn=document.getElementById('pane-'+catTab);
+    if(pn) pn.classList.add('on');
+    renderCat(catTab);
+  }catch(e){alert('Error de conexi\u00f3n: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.innerHTML=_ocMode==='edit'?'&#x1F4BE; Guardar cambios':'&#x1F4CB; Crear OC';}}
+}
+// Alias para compatibilidad con código existente
+function crearOC(){ submitOC(); }
+
+// ─── MP lookup para modal unificado ────────────────────────────────────────────
+var _nocLT={};
+function nocMPDebounce(n){if(_nocLT[n])clearTimeout(_nocLT[n]);_nocLT[n]=setTimeout(function(){nocMPLookup(n);},280);}
+function nocMPLookup(n){
+  var ce=document.getElementById('ic'+n),ne=document.getElementById('in'+n),
+      ie=document.getElementById('ii'+n),pe=document.getElementById('ip'+n);
+  if(!ce||!ie) return;
+  var cod=(ce.value||'').trim();
+  if(!cod){ie.textContent='';return;}
+  var mp=_MPCAT.find(function(m){return m.codigo_mp===cod;});
+  if(!mp&&cod.length>=4){
+    var q=cod.toLowerCase();
+    mp=_MPCAT.find(function(m){
+      return(m.nombre_comercial||'').toLowerCase().indexOf(q)>=0||(m.nombre_inci||'').toLowerCase().indexOf(q)>=0;
+    });
+  }
+  if(!mp){ie.textContent='';ie.style.color='#78716c';return;}
+  if(!(ne.value||'').trim()) ne.value=mp.nombre_comercial||mp.nombre_inci||cod;
+  if((!pe.value||parseFloat(pe.value)===0)&&mp.precio_referencia>0){
+    pe.value=parseFloat(mp.precio_referencia).toFixed(4);calcTot();
+  }
+  var al=_ALERTAS_MP.find(function(a){return a.codigo_mp===mp.codigo_mp;});
+  if(al){ie.style.color='#dc2626';ie.textContent='\u26A0 Stock: '+Math.round(al.stock_actual)+'g | D\u00e9ficit: '+Math.round(al.deficit)+'g';}
+  else{ie.style.color='#16a34a';ie.textContent='\u2713 Stock OK'+(mp.precio_referencia?' | Ref: $'+parseFloat(mp.precio_referencia).toFixed(2)+'/g':'');}
+}
+
+// ─── Editar OC ──────────────────────────────────────────────────────────────────
+async function editarOC(num){
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(num));
+    var d=await r.json();
+    if(d.error){alert('Error cargando OC: '+d.error);return;}
+    var o=d.oc||{}; var items=d.items||[];
+    _ocMode='edit'; _ocEditNum=num;
+    var cat=o.categoria||'MP';
+    document.getElementById('noc-cat').value=cat;
+    document.getElementById('noc-fent').value=(o.fecha_entrega_est||'').substring(0,10);
+    document.getElementById('noc-obs').value=o.observaciones||'';
+    document.getElementById('noc-iva-chk').checked=!!(o.con_iva);
+    document.getElementById('noc-tbody').innerHTML='';
+    var ivr=document.getElementById('noc-iva-row'); if(ivr) ivr.style.display='none';
+    var sbr=document.getElementById('noc-sub-row'); if(sbr) sbr.style.display='none';
+    ITMS=0;
+    fillProvSelect('noc-prov');
+    document.getElementById('noc-prov').value=o.proveedor||'';
+    if(o.proveedor) fillProv('noc-prov','noc-ibox');
+    initCatPills(cat); setCat(cat);
+    // Pre-cargar items
+    items.forEach(function(it){
+      addRow(); var n=ITMS;
+      var cod=it.codigo_mp||it[1]||'', nom=it.nombre_mp||it[2]||'';
+      var qty=it.cantidad_g!==undefined?it.cantidad_g:(it[3]||1);
+      var pu=it.precio_unitario!==undefined?it.precio_unitario:(it[4]||0);
+      var ce=document.getElementById('ic'+n); if(ce) ce.value=cod;
+      var ne=document.getElementById('in'+n); if(ne) ne.value=nom;
+      var qe=document.getElementById('iq'+n); if(qe) qe.value=qty;
+      var pe=document.getElementById('ip'+n); if(pe) pe.value=pu;
+    });
+    calcTot();
+    var ti=document.getElementById('noc-hd-title'); if(ti) ti.textContent='Editar Orden de Compra';
+    var nu=document.getElementById('noc-hd-num'); if(nu) nu.textContent=num;
+    var sb=document.getElementById('noc-submit-btn'); if(sb) sb.innerHTML='&#x1F4BE; Guardar cambios';
+    openModal('m-noc');
+  }catch(e){alert('Error: '+e.message);}
+}
+
+// ─── Eliminar OC ────────────────────────────────────────────────────────────────
+async function eliminarOC(num){
+  var oc=OCS.find(function(o){return o.numero_oc===num;})||{};
+  var msg='\u00bfEliminar '+num+'?'+(oc.proveedor?'\nProveedor: '+oc.proveedor:'')+'\n\nEsta acci\u00f3n no se puede deshacer.';
+  if(!confirm(msg)) return;
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(num),{method:'DELETE'});
+    var d=await r.json();
+    if(d.error){alert('Error: '+d.error);return;}
+    await loadData();
+    var activeTab=document.querySelector('.tn.on');
+    if(activeTab){
+      var tab=activeTab.getAttribute('data-tab');
+      if(tab==='dash') renderDash();
+      else if(tab&&tab!=='prov'&&tab!=='solic'&&tab!=='influencer') renderCat(tab);
+    }
+  }catch(e){alert('Error: '+e.message);}
 }
 
 
@@ -920,6 +1191,20 @@ function renderMPAlerts(){
 }
 
 // ─── MP: Nueva OC con catálogo ───────────────────────────
+function openNuevaOCMP_legacy(prefillItems){
+  // Ahora usa el modal unificado. Mantenido para compatibilidad interna.
+  openNuevaOC('MP');
+  if(!prefillItems||!prefillItems.length) return;
+  // Pre-cargar items si vienen de sugeridas
+  document.getElementById('noc-tbody').innerHTML=''; ITMS=0;
+  setCat('MP');
+  prefillItems.forEach(function(it){ addRow(); var n=ITMS;
+    var ce=document.getElementById('ic'+n); if(ce) ce.value=it.codigo_mp||'';
+    var ne=document.getElementById('in'+n); if(ne) ne.value=it.nombre_mp||'';
+    var qe=document.getElementById('iq'+n); if(qe) qe.value=it.cantidad_g||1;
+    var pe=document.getElementById('ip'+n); if(pe) pe.value=it.precio_unitario||0;
+  }); calcTot();
+}
 function openNuevaOCMP(prefillItems){
   MP_ITMS=0;
   document.getElementById('nmp-tbody').innerHTML='';
@@ -1286,6 +1571,8 @@ document.addEventListener('click',function(e){
   else if(act==='rev') openRev(oc,btn.getAttribute('data-prov')||'',parseFloat(btn.getAttribute('data-val')||0),btn.getAttribute('data-obs')||'');
   else if(act==='rec') marcarRecibida(oc);
   else if(act==='det') openOCDetail(oc);
+  else if(act==='edit') editarOC(oc);
+  else if(act==='del') eliminarOC(oc);
   else if(act==='sdet') openSolicitudDetail(btn.getAttribute('data-sol')||'');
 });
 

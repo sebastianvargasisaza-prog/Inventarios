@@ -219,9 +219,22 @@ def handle_ordenes_compra():
     rows = c.fetchall(); conn.close()
     return jsonify({'ordenes': [dict(zip(cols, r)) for r in rows]})
 
-@bp.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT'])
+@bp.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT','DELETE'])
 def handle_oc_detalle(numero_oc):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+        _row = c.fetchone()
+        if not _row:
+            conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        if _row[0] not in ('Borrador', 'Rechazada'):
+            conn.close()
+            return jsonify({'error': f'No se puede eliminar una OC en estado {_row[0]}. Solo Borrador o Rechazada.'}), 400
+        c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
+        c.execute('DELETE FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
+        conn.commit(); conn.close()
+        return jsonify({'ok': True, 'message': f'OC {numero_oc} eliminada'})
+
     if request.method == 'PUT':
         d = request.json
         nuevo_estado = d.get('estado','')
@@ -237,6 +250,46 @@ def handle_oc_detalle(numero_oc):
     items = c.fetchall(); conn.close()
     if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
     return jsonify({'oc': dict(zip(oc_cols, oc_row)), 'items': items})
+
+@bp.route('/api/ordenes-compra/<numero_oc>/editar', methods=['PATCH'])
+def editar_oc(numero_oc):
+    """Edita una OC en estado Borrador: reemplaza items y actualiza campos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute('SELECT estado FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
+    row = c.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    if row[0] != 'Borrador':
+        conn.close()
+        return jsonify({'error': f'Solo se pueden editar OCs en Borrador (estado actual: {row[0]})'}), 400
+    d = request.json or {}
+    if not d.get('proveedor'):
+        conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
+    con_iva = 1 if d.get('con_iva') else 0
+    valor_sin_iva = float(d.get('valor_sin_iva', 0))
+    c.execute("""
+        UPDATE ordenes_compra SET
+            proveedor=?, categoria=?, observaciones=?,
+            fecha_entrega_est=?, con_iva=?, valor_sin_iva=?
+        WHERE numero_oc=?""",
+        (d['proveedor'], d.get('categoria', 'MP'), d.get('observaciones', ''),
+         d.get('fecha_entrega_est', ''), con_iva, valor_sin_iva, numero_oc))
+    # Reemplazar items completo
+    c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
+    valor_total = 0.0
+    for it in (d.get('items') or []):
+        subtotal = round(float(it.get('cantidad_g', 0)) * float(it.get('precio_unitario', 0)), 2)
+        c.execute('INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)',
+                  (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
+                   float(it.get('cantidad_g', 0)), float(it.get('precio_unitario', 0)), subtotal))
+        valor_total += subtotal
+    if con_iva:
+        valor_total = round(valor_total * 1.19, 2)
+    c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'message': f'OC {numero_oc} actualizada', 'valor_total': valor_total})
 
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
