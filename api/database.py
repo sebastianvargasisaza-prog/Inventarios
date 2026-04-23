@@ -463,12 +463,12 @@ def init_db():
     c.execute("""INSERT OR IGNORE INTO clientes
                  (codigo,nombre,empresa,tipo,contacto,email,condiciones_pago,descuento_pct,fecha_creacion)
                  VALUES
-                 ('CLI-001','ANIMUS Lab','ANIMUS','Interno','Sebastian Vargas',
+                 ('CLI-001','ANIMUS Lab','Espagiria','Maquila','Sebastian Vargas',
                   'sebastianvargasisaza@gmail.com','Inmediato',0,datetime('now')),
-                 ('CLI-002','Fernando Mesa','ANIMUS','Distribuidor','Fernando Mesa',
+                 ('CLI-002','Fernando Mesa','Espagiria','Maquila','Fernando Mesa',
                   '','30 dias',0,datetime('now'))""")
-    # Ensure seeded clients are always active (may have been deactivated)
-    c.execute("UPDATE clientes SET activo=1 WHERE codigo IN ('CLI-001','CLI-002')")
+    # Ensure seeded clients are always active + in correct empresa
+    c.execute("UPDATE clientes SET activo=1, empresa='Espagiria', tipo='Maquila' WHERE codigo IN ('CLI-001','CLI-002')")
 
     # ââ MAQUILA 360 ââââââââââââââââââââââââââââââââââââââââââââââ
     c.execute("""CREATE TABLE IF NOT EXISTS maquila_prospectos (

@@ -218,8 +218,17 @@ def handle_pedidos():
     rows = c.fetchall(); conn.close()
     return jsonify({'pedidos': [dict(zip(cols, r)) for r in rows]})
 
-@bp.route('/api/pedidos/<numero>', methods=['GET','PATCH'])
+@bp.route('/api/pedidos/<numero>', methods=['GET','PATCH','DELETE'])
 def handle_pedido_detalle(numero):
+    if request.method == 'DELETE':
+        if session.get('compras_user') not in ADMIN_USERS:
+            return jsonify({'error':'Solo admins'}), 403
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute('DELETE FROM pedidos WHERE numero=?', (numero,))
+        if c.rowcount == 0:
+            conn.close(); return jsonify({'error':'No encontrado'}), 404
+        conn.commit(); conn.close()
+        return jsonify({'ok':True, 'eliminado':numero})
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == 'PATCH':
         d = request.json or {}
