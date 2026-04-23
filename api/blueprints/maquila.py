@@ -37,12 +37,17 @@ def api_maquila_prospectos():
             conn.close(); return jsonify({'error':'Empresa requerida'}), 400
         c.execute('''INSERT INTO maquila_prospectos
                      (empresa,contacto,email,whatsapp,categoria_producto,etapa,
-                      observaciones,valor_estimado_lote,creado_por)
-                     VALUES (?,?,?,?,?,?,?,?,?)''',
+                      observaciones,valor_estimado_lote,nivel_servicio,
+                      kam_asignado,es_incubacion,contacto_referido,creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                   (empresa, d.get('contacto',''), d.get('email',''),
                    d.get('telefono',''), d.get('producto_tipo',''),
                    d.get('etapa','Contacto'), d.get('notas',''),
                    float(d.get('valor_estimado',0)),
+                   d.get('nivel_servicio',''),
+                   d.get('kam_asignado','Luz'),
+                   1 if d.get('es_incubacion') else 0,
+                   d.get('contacto_referido',''),
                    session.get('compras_user') or d.get('operador','sistema')))
         conn.commit(); pid = c.lastrowid; conn.close()
         return jsonify({'id': pid}), 201
@@ -52,10 +57,15 @@ def api_maquila_prospectos():
                         etapa,
                         COALESCE(observaciones,'') as notas,
                         COALESCE(valor_estimado_lote,0) as valor_estimado,
-                        fecha_creacion as fecha_contacto
+                        fecha_creacion as fecha_contacto,
+                        COALESCE(nivel_servicio,'') as nivel_servicio,
+                        COALESCE(kam_asignado,'Luz') as kam_asignado,
+                        COALESCE(es_incubacion,0) as es_incubacion,
+                        COALESCE(contacto_referido,'') as contacto_referido
                  FROM maquila_prospectos ORDER BY id DESC''')
     cols=['id','empresa','contacto','email','telefono','producto_tipo',
-          'etapa','notas','valor_estimado','fecha_contacto']
+          'etapa','notas','valor_estimado','fecha_contacto',
+          'nivel_servicio','kam_asignado','es_incubacion','contacto_referido']
     rows=[dict(zip(cols,r)) for r in c.fetchall()]
     conn.close(); return jsonify(rows)
 
@@ -70,6 +80,12 @@ def api_maquila_prospecto_patch(pid):
                   (float(d['valor_estimado']), pid))
     if 'notas' in d:
         c.execute('UPDATE maquila_prospectos SET observaciones=? WHERE id=?', (d['notas'], pid))
+    if 'nivel_servicio' in d:
+        c.execute('UPDATE maquila_prospectos SET nivel_servicio=? WHERE id=?', (d['nivel_servicio'], pid))
+    if 'kam_asignado' in d:
+        c.execute('UPDATE maquila_prospectos SET kam_asignado=? WHERE id=?', (d['kam_asignado'], pid))
+    if 'es_incubacion' in d:
+        c.execute('UPDATE maquila_prospectos SET es_incubacion=? WHERE id=?', (1 if d['es_incubacion'] else 0, pid))
     conn.commit(); conn.close()
     return jsonify({'ok': True})
 

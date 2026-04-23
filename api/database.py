@@ -501,6 +501,33 @@ def init_db():
                  estado TEXT DEFAULT 'Activo',
                  creado_por TEXT DEFAULT '',
                  fecha_creacion TEXT DEFAULT (datetime('now')))""")
+    for _col in [
+        "es_incubacion INTEGER DEFAULT 0",
+        "nivel_servicio TEXT DEFAULT ''",
+        "kam_asignado TEXT DEFAULT 'Luz'",
+        "contacto_referido TEXT DEFAULT ''",
+    ]:
+        try: c.execute(f"ALTER TABLE maquila_prospectos ADD COLUMN {_col}")
+        except: pass
+
+    # Seed real maquila clients
+    c.execute("""INSERT OR IGNORE INTO maquila_prospectos
+        (id, empresa, contacto, email, whatsapp, etapa, nivel_servicio,
+         kam_asignado, categoria_producto, observaciones, valor_estimado_lote,
+         ticket_mes, es_incubacion, estado, fecha_creacion)
+        VALUES
+        (1, 'Kelly Guerra', 'Kelly Guerra', '', '', 'Orden',
+         'Asistida', 'Luz', 'Skincare - Hidratacion y cuidado facial',
+         'Contacto referido: Fernando Mesa (esposo). Cliente activa de maquila.',
+         500000, 2000000, 0, 'Activo', '2026-04-18'),
+        (2, 'Camila & Chomim', 'Camila', '', '', 'Contacto',
+         'Operativa', 'Luz', 'Skincare - Corrector ojeras, Serum, Limpiador',
+         'Programa incubacion. Emprendedoras con audiencia digital. Sin capital de arranque.',
+         300000, 900000, 1, 'Activo', '2026-04-23')""")
+    # Update Fernando Mesa to be contact reference for Kelly's project
+    c.execute("UPDATE clientes SET observaciones='Contacto del cliente Kelly Guerra (esposo). La clienta de maquila es Kelly Guerra.' WHERE codigo='CLI-002'")
+
+
     c.execute("""CREATE TABLE IF NOT EXISTS maquila_ordenes (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  numero TEXT UNIQUE,

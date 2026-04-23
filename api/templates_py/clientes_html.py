@@ -992,10 +992,20 @@ async function loadPipeline(){
     h+='<div class="kan-col">'
       +'<div class="kan-col-hdr"><span style="color:'+col+';">'+etapa+'</span><span class="cnt">'+cards.length+'</span></div>';
     cards.forEach(function(p){
+      var nivelColor={'Operativa':'#6b7280','Asistida':'#2563eb','Integral':'#7c3aed'};
+      var nivelBg={'Operativa':'#f3f4f6','Asistida':'#dbeafe','Integral':'#ede9fe'};
+      var niv=p.nivel_servicio||'';
+      var nivelBadge=niv?('<span style="background:'+( nivelBg[niv]||'#f3f4f6')+';color:'+( nivelColor[niv]||'#6b7280')+';font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;">'+niv+'</span>'):'';
+      var incubBadge=p.es_incubacion?'<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;">🌱 Incubacion</span>':'';
+      var kamBadge=p.kam_asignado?('<span style="color:#6b7280;font-size:10px;">KAM: '+p.kam_asignado+'</span>'):'';
       h+='<div class="kan-card" onclick="abrirMoverEtapa('+p.id+')">'
         +'<div class="kan-card-emp">'+p.empresa+'</div>'
+        +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin:3px 0;">'+nivelBadge+incubBadge+'</div>'
         +'<div class="kan-card-prod">'+(p.producto_tipo||'—')+'</div>'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">'
         +'<div class="kan-card-val">'+fmt(p.valor_estimado)+'</div>'
+        +kamBadge
+        +'</div>'
         +'</div>';
     });
     if(!cards.length) h+='<div style="color:#ccc;font-size:0.78em;text-align:center;padding:10px;">Sin prospectos</div>';
