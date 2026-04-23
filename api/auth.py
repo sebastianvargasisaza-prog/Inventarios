@@ -91,7 +91,7 @@ def register_hooks(app):
         """
         if not request.path.startswith('/api/'):
             return  # Rutas HTML se manejan individualmente
-        PUBLIC_API = {'/api/login', '/api/logout'}
+        PUBLIC_API = {'/api/login', '/api/logout', '/api/health'}
         if request.path in PUBLIC_API:
             return
         if not session.get('compras_user'):

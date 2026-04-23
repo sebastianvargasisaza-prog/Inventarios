@@ -17,6 +17,13 @@ from flask import Flask, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+
+# Garantizar directorio de DB antes de importar blueprints (evita crash en Render)
+import pathlib as _pl
+_db_dir = _pl.Path(DB_PATH).parent
+if str(_db_dir) not in ('', '.', '/'):
+    _db_dir.mkdir(parents=True, exist_ok=True)
+del _pl, _db_dir
 from auth import (
     _client_ip, _is_locked, _record_failure, _clear_attempts,
     _log_sec, register_hooks,

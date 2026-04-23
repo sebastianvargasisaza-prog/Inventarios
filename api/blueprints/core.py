@@ -27,6 +27,36 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 bp = Blueprint('core', __name__)
 
 
+
+@bp.route('/api/health')
+def health():
+    """Diagnostico publico — version, DB, tablas clave."""
+    import sqlite3 as _sq, os as _os, subprocess as _sp
+    try:
+        commit = _sp.check_output(['git','rev-parse','--short','HEAD'],
+            cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            stderr=_sp.DEVNULL).decode().strip()
+    except Exception:
+        commit = 'unknown'
+    db_exists = _os.path.exists(DB_PATH)
+    db_size = round(_os.path.getsize(DB_PATH)/1024, 1) if db_exists else 0
+    tables = {}
+    try:
+        conn = _sq.connect(DB_PATH)
+        for tbl in ['maestro_mps','solicitudes_compra','ordenes_compra','movimientos']:
+            try:
+                tables[tbl] = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
+            except: tables[tbl] = 'err'
+        try:
+            tables['planta_pendientes'] = conn.execute(
+                "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' AND area='Produccion' AND (numero_oc IS NULL OR numero_oc='')").fetchone()[0]
+        except: pass
+        conn.close()
+    except Exception as e:
+        tables['error'] = str(e)
+    return jsonify({'status':'ok','commit':commit,'db_exists':db_exists,
+                    'db_size_kb':db_size,'tables':tables})
+
 @bp.route('/')
 def index():
     # Redirigir a login si no hay sesion activa; a /hub si ya esta autenticado
