@@ -175,6 +175,26 @@ def generar_oc_automatica():
 
 
 # ── MÓDULO COMPRAS ──────────────────────────────────────────────────────────
+@bp.route('/api/solicitudes-compra/<numero>', methods=['DELETE'])
+def eliminar_solicitud(numero):
+    """Elimina una solicitud de compra. Solo Pendiente o Rechazada (sin OC generada)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT estado, numero_oc FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    row = c.fetchone()
+    if not row:
+        conn.close(); return jsonify({'error': 'No encontrada'}), 404
+    estado, numero_oc = row
+    if numero_oc and numero_oc.strip():
+        conn.close()
+        return jsonify({'error': 'No se puede eliminar: tiene OC vinculada '+numero_oc}), 400
+    c.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+    c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'eliminada': numero.upper()})
+
+
 @bp.route('/api/ordenes-compra', methods=['GET','POST'])
 def handle_ordenes_compra():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()

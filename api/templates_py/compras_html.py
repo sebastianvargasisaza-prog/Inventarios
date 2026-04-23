@@ -2002,6 +2002,7 @@ document.addEventListener('click',function(e){
   else if(act==='rec') marcarRecibida(oc);
   else if(act==='det') openOCDetail(oc);
   else if(act==='sdet') openSolicitudDetail(btn.getAttribute('data-sol')||'');
+  else if(act==='del-sol') eliminarSolicitud(btn.getAttribute('data-sol')||'');
   else if(act==='edit') editarOC(oc);
   else if(act==='del') eliminarOC(oc);
 });
@@ -2328,7 +2329,7 @@ function renderSolicitudes(){
       +'<span>'+esc(s.categoria||'-')+'</span>'
       +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
       +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
-      +'<div class="acts"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button></div>'
+      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button>'+(s.numero_oc?'':'<button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button>')+'</div>'
       +'</div>';
   }).join('');
 }
@@ -2367,7 +2368,7 @@ function renderCCSolicitudes(){
       +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
       +(s.fecha_requerida?'<span>Req: '+fdate(s.fecha_requerida)+'</span>':'')+'</div>'
       +(obs?'<div class="cobs">'+esc(obs)+'</div>':'')
-      +'<div class="acts"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4CB; Revisar &amp; Aprobar</button></div>'
+      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#x1F4CB; Revisar &amp; Aprobar</button><button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button></div>'
       +'</div>';
   }).join('');
 }
@@ -3235,6 +3236,16 @@ async function loadPlanta(){
   }catch(e){
     document.getElementById('planta-body').innerHTML='<div class="err">Error cargando: '+esc(e.message)+'</div>';
   }
+}
+
+async function eliminarSolicitud(num){
+  if(!confirm('Eliminar '+num+'? Sin deshacer.')) return;
+  try{
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num),{method:'DELETE'});
+    var d=await r.json();
+    if(d.ok){alert('Eliminada.');await Promise.all([loadSolicitudes(),loadMarketing(),loadCCSolicitudes()]);}
+    else alert('Error: '+(d.error||''));
+  }catch(e){alert('Error: '+e.message);}
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
