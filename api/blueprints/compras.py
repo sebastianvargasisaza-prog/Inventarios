@@ -1008,6 +1008,37 @@ def buscar_remision(remision_code):
 # MEE — Materiales de Envase & Empaque
 # ════════════════════════════════════════════
 
+@bp.route('/api/admin/cleanup-ocs', methods=['DELETE'])
+def cleanup_test_ocs():
+    """One-time admin endpoint: elimina todas las OCs que NO sean Influencer/CC.
+    Solo accesible por ADMIN_USERS. Afecta solo ordenes_compra y sus items."""
+    if session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Find OCs to delete (everything except Influencer/Marketing Digital and CC)
+    c.execute("""SELECT numero_oc FROM ordenes_compra
+                 WHERE (categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro','CC')
+                        OR categoria IS NULL)""")
+    to_delete = [r[0] for r in c.fetchall()]
+    if not to_delete:
+        conn.close()
+        return jsonify({'ok': True, 'deleted': 0, 'message': 'Nada que limpiar'})
+    placeholders = ','.join('?' * len(to_delete))
+    c.execute(f'DELETE FROM ordenes_compra_items WHERE numero_oc IN ({placeholders})', to_delete)
+    items_deleted = c.rowcount
+    c.execute(f'DELETE FROM ordenes_compra WHERE numero_oc IN ({placeholders})', to_delete)
+    ocs_deleted = c.rowcount
+    # Also clean orphaned solicitudes that pointed to these OCs
+    c.execute("""UPDATE solicitudes_compra SET numero_oc=NULL, estado='Pendiente'
+                 WHERE numero_oc IN ("""+','.join('?'*len(to_delete))+")",
+                 to_delete)
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'ocs_deleted': ocs_deleted,
+                    'items_deleted': items_deleted,
+                    'ocs': to_delete})
+
+
 @bp.route('/api/mee', methods=['GET','POST'])
 def handle_mee():
     conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
