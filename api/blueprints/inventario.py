@@ -2032,8 +2032,17 @@ def acondicionamiento_list():
     return jsonify(rows)
 
 
-@bp.route('/api/acondicionamiento/<int:aid>', methods=['PATCH'])
+@bp.route('/api/acondicionamiento/<int:aid>', methods=['PATCH','DELETE'])
 def acondicionamiento_update(aid):
+    if request.method == 'DELETE':
+        if session.get('compras_user') not in ADMIN_USERS:
+            return jsonify({'error': 'Solo admins'}), 403
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute('DELETE FROM acondicionamiento WHERE id=?', (aid,))
+        if c.rowcount == 0:
+            conn.close(); return jsonify({'error': 'No encontrado'}), 404
+        conn.commit(); conn.close()
+        return jsonify({'ok': True, 'deleted': aid})
     d = request.get_json(silent=True) or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if 'estado' in d: c.execute("UPDATE acondicionamiento SET estado=? WHERE id=?", (d['estado'], aid))
