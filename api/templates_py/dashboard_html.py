@@ -987,6 +987,8 @@ document.addEventListener('DOMContentLoaded',function(){
   if(OPER_ACTUAL){
     if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
     loadDashboardCompleto();loadFormulas();
+  // Pre-load Envasado selector so options are ready when tab is clicked
+  setTimeout(cargarEnvasadoTab, 1500);
   } else {
     // Sin operador identificado: mostrar modal antes de cargar
     document.getElementById('modal-operador').style.display='flex';
@@ -2872,27 +2874,30 @@ function _checkMEEMsg(){
   if(msg) msg.style.display=(cont&&cont.children.length===0)?"block":"none";
 }
 var _envPresCount=0,_envMEE=[];
-var _envTabLoaded=false;
 async function cargarEnvasadoTab(){
   var sel=document.getElementById('env-prod-sel');if(!sel) return;
-  if(!_envTabLoaded) sel.innerHTML='<option value="">Cargando...</option>';
+  // Only reload if selector is empty or has just the placeholder
+  var needsLoad=(sel.options.length<=1);
+  if(needsLoad) sel.innerHTML='<option value="">Cargando producciones...</option>';
   try{
     var rp=await fetch('/api/produccion');var dp=await rp.json();
     var rm=await fetch('/api/mee');var dm=await rm.json();
     var prods=(dp.producciones||[]).filter(function(p){return p.estado==='Completado';});
     _envMEE=dm.items||[];
-    sel.innerHTML='<option value="">-- Selecciona produccion terminada --</option>';
-    prods.forEach(function(p){
-      var op=document.createElement('option');
-      op.value=p.id;
-      op.dataset.producto=p.producto||'';
-      op.dataset.lote=p.lote||('PROD-'+String(p.id).padStart(5,'0'));
-      op.dataset.batch=p.cantidad||0;
-      op.text=(p.lote||'PROD-'+String(p.id).padStart(5,'0'))+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);
-      sel.appendChild(op);
-    });
-    _envTabLoaded=true;
-  }catch(e){sel.innerHTML='<option value="">Error - recarga la pagina</option>';}
+    // Only rebuild if we got real data
+    if(prods.length>0){
+      sel.innerHTML='<option value="">-- Selecciona produccion terminada --</option>';
+      prods.forEach(function(p){
+        var op=document.createElement('option');
+        op.value=p.id;
+        op.dataset.producto=p.producto||'';
+        op.dataset.lote=p.lote||('PROD-'+String(p.id).padStart(5,'0'));
+        op.dataset.batch=p.cantidad||0;
+        op.text=(p.lote||'PROD-'+String(p.id).padStart(5,'0'))+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);
+        sel.appendChild(op);
+      });
+    }
+  }catch(e){if(needsLoad) sel.innerHTML='<option value="">Error - recarga la pagina</option>';}
   await cargarHistEnvasado();
   if(!document.getElementById('env-pres-rows').children.length){
     _envPresCount=0;addEnvPres();
