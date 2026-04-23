@@ -814,6 +814,130 @@ def get_comprobante(numero_oc):
     return jsonify({'imagen': row[0]})
 
 
+
+@bp.route('/api/compras/planta', methods=['GET'])
+def get_planta_solicitudes():
+    """Retorna solicitudes Aprobadas de area=Produccion con items+proveedor de maestro_mps."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""
+        SELECT numero, fecha, solicitante, urgencia, observaciones
+        FROM solicitudes_compra
+        WHERE estado='Aprobada' AND area='Produccion'
+        AND (numero_oc IS NULL OR numero_oc='')
+        ORDER BY
+            CASE urgencia WHEN 'Urgente' THEN 0 WHEN 'Alta' THEN 1 ELSE 2 END,
+            fecha ASC
+    """)
+    cols = ['numero','fecha','solicitante','urgencia','observaciones']
+    solicitudes = [dict(zip(cols, r)) for r in c.fetchall()]
+
+    if not solicitudes:
+        conn.close()
+        return jsonify({'items': [], 'solicitudes': []})
+
+    numeros = [s['numero'] for s in solicitudes]
+    placeholders = ','.join('?' * len(numeros))
+
+    c.execute(f"""
+        SELECT si.id, si.numero, si.codigo_mp, si.nombre_mp,
+               si.cantidad_g, si.unidad, COALESCE(si.justificacion,''),
+               COALESCE(mp.proveedor,'') as proveedor,
+               COALESCE(mp.precio_referencia,0) as precio_ref
+        FROM solicitudes_compra_items si
+        LEFT JOIN maestro_mps mp ON si.codigo_mp = mp.codigo_mp
+        WHERE si.numero IN ({placeholders})
+        ORDER BY si.nombre_mp
+    """, numeros)
+
+    item_cols = ['id','solic_numero','codigo_mp','nombre_mp','cantidad_g','unidad',
+                 'justificacion','proveedor','precio_ref']
+    items = [dict(zip(item_cols, r)) for r in c.fetchall()]
+    conn.close()
+
+    # Enrich with urgencia + sort: proveedores asignados primero, sin asignar al final
+    solic_map = {s['numero']: s for s in solicitudes}
+    for it in items:
+        it['urgencia'] = solic_map.get(it['solic_numero'], {}).get('urgencia', 'Normal')
+
+    items_con = sorted([i for i in items if i.get('proveedor')],
+                       key=lambda x: (x.get('proveedor',''), x.get('nombre_mp','')))
+    items_sin = sorted([i for i in items if not i.get('proveedor')],
+                       key=lambda x: x.get('nombre_mp',''))
+    return jsonify({'items': items_con + items_sin, 'solicitudes': solicitudes})
+
+
+@bp.route('/api/compras/planta/generar-oc', methods=['POST'])
+def planta_generar_oc():
+    """Genera una OC por proveedor a partir de los items del tab Planta."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    items = d.get('items', [])
+    creado_por = session.get('compras_user', 'catalina')
+    if not items:
+        return jsonify({'error': 'Sin items'}), 400
+
+    grupos = {}
+    for it in items:
+        prov = (it.get('proveedor') or '').strip() or '__SIN_ASIGNAR__'
+        grupos.setdefault(prov, []).append(it)
+
+    if '__SIN_ASIGNAR__' in grupos:
+        sin = [i['nombre_mp'] for i in grupos['__SIN_ASIGNAR__']]
+        return jsonify({'error': f"Hay {len(sin)} items sin proveedor: {', '.join(sin[:5])}"}), 400
+
+    # Collect ALL solic_numeros BEFORE the loop (avoids scope bug)
+    all_solic_numeros = list(set(it.get('solic_numero','') for it in items if it.get('solic_numero')))
+
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    ocs_creadas = []
+    try:
+        for prov, prov_items in grupos.items():
+            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?",
+                      (f"OC-{datetime.now().strftime('%Y')}-%",))
+            num = (c.fetchone()[0] or 0) + 1
+            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
+            sn_prov = list(set(it.get('solic_numero','') for it in prov_items if it.get('solic_numero')))
+            obs = 'Generada desde Planta. Solicitudes: ' + ', '.join(sorted(sn_prov))
+            valor_total = 0.0
+            con_iva_flag = any(bool(it.get('iva')) for it in prov_items)
+            for it in prov_items:
+                precio = float(it.get('precio_unitario', 0) or 0)
+                cant_kg = float(it.get('cantidad_g', 0) or 0) / 1000.0
+                sub = round(precio * cant_kg * (1.19 if it.get('iva') else 1), 2)
+                valor_total += sub
+            c.execute("""INSERT INTO ordenes_compra
+                         (numero_oc,fecha,estado,proveedor,observaciones,creado_por,categoria,valor_total,con_iva)
+                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                      (numero_oc, datetime.now().isoformat(), 'Borrador', prov, obs,
+                       creado_por, 'mp', round(valor_total,2), 1 if con_iva_flag else 0))
+            for it in prov_items:
+                precio = float(it.get('precio_unitario', 0) or 0)
+                cant_g = float(it.get('cantidad_g', 0) or 0)
+                sub = round(precio * cant_g/1000 * (1.19 if it.get('iva') else 1), 2)
+                c.execute("""INSERT INTO ordenes_compra_items
+                             (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal)
+                             VALUES (?,?,?,?,?,?)""",
+                          (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                           cant_g, precio, sub))
+                if it.get('codigo_mp') and prov:
+                    c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=? AND (proveedor IS NULL OR proveedor='')",
+                              (prov, it['codigo_mp']))
+            ocs_creadas.append({'numero_oc': numero_oc, 'proveedor': prov, 'items': len(prov_items), 'valor': round(valor_total,2)})
+
+        if ocs_creadas and all_solic_numeros:
+            first_oc = ocs_creadas[0]['numero_oc']
+            for sn in all_solic_numeros:
+                c.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=? AND (numero_oc IS NULL OR numero_oc='')",
+                          (first_oc, sn))
+        conn.commit(); conn.close()
+        return jsonify({'ocs_creadas': ocs_creadas, 'total': len(ocs_creadas)}), 201
+    except Exception as e:
+        conn.rollback(); conn.close()
+        import traceback as _tb
+        return jsonify({'error': str(e), 'detail': _tb.format_exc()[-600:]}), 500
+
+
 @bp.route('/api/compras/oc/<numero_oc>/rechazar', methods=['POST'])
 def rechazar_oc(numero_oc):
     if 'compras_user' not in session:

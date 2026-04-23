@@ -102,6 +102,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .ptbl th{background:#f5f5f4;color:#78716c;font-weight:600;padding:8px 10px;text-align:left;border-bottom:2px solid #e7e5e4;}
 .ptbl td{padding:8px 10px;border-bottom:1px solid #f0edec;vertical-align:middle;}
 .ptbl tr:hover td{background:#fafafa;}
+.ptbl-planta{width:100%;border-collapse:collapse;font-size:12px;}
+.ptbl-planta th{background:#f5f5f4;color:#78716c;font-weight:700;padding:7px 8px;text-align:left;border-bottom:2px solid #e7e5e4;white-space:nowrap;}
+.ptbl-planta td{padding:6px 8px;border-bottom:1px solid #f0edec;vertical-align:middle;}
+.ptbl-planta tr:hover td{background:#fafaf9;}
+.ptbl-planta input[type=text],.ptbl-planta input[type=number]{width:100%;padding:4px 7px;border:1px solid #d6d3d1;border-radius:5px;font-size:12px;background:#fff;}
+.ptbl-planta input:focus{border-color:#ea580c;outline:none;}
+.ptbl-planta input.prov-sin{border-color:#dc2626;background:#fff5f5;}
+.pgrp-card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;margin-bottom:14px;overflow:hidden;}
 </style>
 </head>
 <body>
@@ -115,6 +123,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
   <button class="tn"     data-tab="ocs">&#x1F4CB; &#xD3;rdenes de Compra</button>
   <button class="tn"     data-tab="pagos">&#x1F4B8; Pagos</button>
+  <button class="tn" data-tab="planta" id="tn-planta">&#x1F331; Planta</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
   <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
@@ -188,6 +197,64 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="pagos-wrap">
     <div class="empty">Cargando pagos...</div>
   </div>
+</div>
+
+<div id="pane-influencer" class="pane">
+  <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;"></div>
+  <div class="bar">
+    <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
+    <select id="s-influencer" onchange="renderInfluencers()">
+      <option value="">Todos los estados</option>
+      <option value="Aprobada">Por pagar</option>
+      <option value="Pagada">Pagadas</option>
+      <option value="Rechazada">Rechazadas</option>
+    </select>
+  </div>
+  <div id="pills-influencer" class="pills"></div>
+  <div id="grid-influencer" class="grid"></div>
+</div>
+<!-- Modal rechazo influencer -->
+<div id="m-rechazar-inf" class="ov">
+  <div class="mdl" style="max-width:440px;">
+    <div class="mh" style="background:#fef2f2;border-bottom:1px solid #fecaca;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;line-height:1;">&#x274C;</span>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#991b1b;">Rechazar solicitud</div>
+          <div id="m-rechazar-inf-sub" style="font-size:12px;color:#b91c1c;margin-top:1px;"></div>
+        </div>
+      </div>
+      <button class="mx" onclick="closeModal('m-rechazar-inf')">&#x2715;</button>
+    </div>
+    <div class="mb">
+      <div class="fg">
+        <label>Motivo del rechazo <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:#78716c;">(visible para el solicitante)</span></label>
+        <textarea id="motivo-rechazo-inf" rows="4" placeholder="Ej: Falta información de cuenta, monto incorrecto, valor no coincide..."></textarea>
+      </div>
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
+        ⚠️ El solicitante recibirá un correo con este motivo. Sé específico para evitar reenvíos innecesarios.
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;">Cancelar</button>
+      <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">&#x274C; Confirmar Rechazo</button>
+    </div>
+  </div>
+</div>
+
+<div id="pane-planta" class="pane">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:700;font-size:15px;color:#1c1917;">&#x1F331; Centro de Operaciones &#x2014; Planta</div>
+      <div style="font-size:12px;color:#78716c;margin-top:2px;">Solicitudes aprobadas de Producci&#xF3;n &middot; Asigna proveedor, precio e IVA &rarr; genera OCs</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" style="background:#16a34a;color:#fff;font-size:13px;padding:7px 18px;" onclick="generarOCsPlanta()">&#x1F4CB; Generar OCs</button>
+      <button class="btn bo bs" onclick="loadPlanta()">&#x21BA; Actualizar</button>
+    </div>
+  </div>
+  <div id="planta-summary" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>
+  <div id="planta-body"><div class="empty">Cargando solicitudes de Producci&#xF3;n...</div></div>
 </div>
 
 <div id="pane-influencer" class="pane">
@@ -583,6 +650,8 @@ var MP_ITMS = 0;
 var _MPCAT = [];
 var _ALERTAS_MP = [];
 var _ocsCatFilter = 'ALL';
+var _PLANTA_ITEMS = [];   // raw from API
+var _PLANTA_EDITS = {};   // {id: {proveedor, precio, iva}}
 var PAGOS = [];
 
 // Mapa categoria → grupos de strings
@@ -625,12 +694,13 @@ document.querySelectorAll('.tn').forEach(function(btn){
     if(tab==='dash') renderDash();
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
+    else if(tab==='planta'){ loadPlanta(); }
     else if(tab==='influencer') loadInfluencers();
     else if(tab==='consol') loadConsolidado();
     else if(tab==='ocs'){ renderOCS(); }
     else if(tab==='pagos'){ loadPagos(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='planta'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab==='ocs'?(_ocsCatFilter==='ALL'?'':_ocsCatFilter.toUpperCase()):tab.toUpperCase();
       openNuevaOC(cat);
@@ -2402,6 +2472,7 @@ async function openSolicitudDetail(num){
       h+='<textarea id="sol-motivo" placeholder="Razon de aprobacion o rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
       h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
       h+='<input type="hidden" id="sol-det-cat" value="'+esc(s.categoria||'MP')+'">';
+      h+='<input type="hidden" id="sol-det-area" value="'+esc(s.area||'')+'">';
       h+='</div>';
     }
     h+='</div>';
@@ -2413,6 +2484,8 @@ async function openSolicitudDetail(num){
         fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#7c3aed;">&#x1F4B8; Pagar directamente</button>';
       } else if(s.categoria==='Cuenta de Cobro'){
         fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#d97706;">&#x1F4B3; Aprobar Cuenta de Cobro</button>';
+      } else if(s.area==='Produccion'){
+        fbtns+='<button class="btn bg" onclick="_solDetApr()" style="background:#16a34a;">&#x1F331; Aprobar &rarr; Planta</button>';
       } else {
         fbtns+='<button class="btn bg" onclick="_solDetApr()">&#9654; Enviar a Autorización</button>';
       }
@@ -2433,15 +2506,18 @@ async function gestionarSol(decision){
   if(decision==='Rechazada'&&!motivo){
     if(!confirm('Rechazar sin motivo. Confirmar?')) return;
   }
+  var _areaEl=document.getElementById('sol-det-area');
+  var _esProduccion=(_areaEl&&_areaEl.value.trim()==='Produccion');
   var body={estado:decision,observaciones:motivo};
   if(decision==='Aprobada'){
-    body.crear_oc=true;
+    if(_esProduccion){ body.crear_oc=false; } else { body.crear_oc=true;
     body.proveedor=prov||'Por definir';
     if(valor>0) body.valor_total=valor;
     if(fent) body.fecha_entrega_est=fent;
     var catEl=document.getElementById('sol-det-cat');
     if(catEl) body.categoria=catEl.value;
     body.observaciones_oc=motivo||('Generado desde '+num);
+    }
   }
   try{
     var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -2923,6 +2999,262 @@ function escConH(s){
   var d = document.createElement('div');
   d.appendChild(document.createTextNode(s||''));
   return d.innerHTML;
+}
+
+function renderPlanta(){
+  var body=document.getElementById('planta-body');
+  var sumEl=document.getElementById('planta-summary');
+  if(!_PLANTA_ITEMS.length){
+    body.innerHTML='<div class="empty" style="padding:40px;">&#x1F389; No hay solicitudes aprobadas de Planta pendientes de ordenar.<br><small style="color:#a8a29e;margin-top:8px;display:block;">Cuando Planta env\u00EDe solicitudes y sean aprobadas, aparecer\u00E1n aqu\u00ED.</small></div>';
+    sumEl.innerHTML='';
+    return;
+  }
+
+  // Group by proveedor (using EDITS as source of truth)
+  var grupos={};
+  _PLANTA_ITEMS.forEach(function(it){
+    var ed=_PLANTA_EDITS[it.id]||{};
+    var prov=(ed.proveedor||'').trim()||'__SIN_ASIGNAR__';
+    if(!grupos[prov]) grupos[prov]=[];
+    grupos[prov].push(it);
+  });
+
+  var sinProv=grupos['__SIN_ASIGNAR__']||[];
+  var nProv=Object.keys(grupos).filter(function(p){return p!=='__SIN_ASIGNAR__';}).length;
+  var totalItems=_PLANTA_ITEMS.length;
+
+  // Summary pills
+  sumEl.innerHTML=
+    '<span style="background:#dbeafe;color:#1e40af;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">'+totalItems+' items</span>'+
+    '<span style="background:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">'+nProv+' proveedores</span>'+
+    (sinProv.length?'<span style="background:#fef2f2;color:#dc2626;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">&#x26A0;\uFE0F '+sinProv.length+' sin proveedor</span>':'');
+
+  var html='';
+
+  // Sin asignar group at top (warning)
+  if(sinProv.length){
+    html+='<div class="pgrp-card" style="border-color:#fca5a5;">';
+    html+='<div class="pgrp-hdr" style="background:#fef2f2;color:#dc2626;">&#x26A0;\uFE0F Sin proveedor asignado <span style="font-size:11px;font-weight:400;color:#78716c;margin-left:auto;">Asigna un proveedor para poder generar OC</span></div>';
+    html+=buildPlantaTable(sinProv, true);
+    html+='</div>';
+  }
+
+  // Per-provider groups
+  Object.keys(grupos).filter(function(p){return p!=='__SIN_ASIGNAR__';}).sort().forEach(function(prov){
+    var its=grupos[prov];
+    var subtotal=calcGrupoTotal(its);
+    html+='<div class="pgrp-card">';
+    html+='<div class="pgrp-hdr">&#x1F3ED; '+esc(prov)+
+      '<span style="font-size:11px;font-weight:400;color:#78716c;margin-left:8px;">'+its.length+' items</span>'+
+      '<span style="margin-left:auto;font-size:13px;color:#16a34a;">'+fmt(subtotal)+'</span></div>';
+    html+=buildPlantaTable(its, false);
+    html+='</div>';
+  });
+
+  body.innerHTML=html;
+}
+
+function buildPlantaTable(items, isSinProv){
+  var h='<div style="overflow-x:auto;">';
+  h+='<table class="ptbl-planta"><thead><tr>';
+  h+='<th style="width:30px;">#</th><th>Materia Prima</th><th style="width:90px;">Cantidad</th>';
+  h+='<th style="width:160px;">Proveedor</th><th style="width:110px;">Precio/kg</th>';
+  h+='<th style="width:60px;text-align:center;">IVA</th><th style="width:90px;text-align:right;">Subtotal</th>';
+  h+='<th style="width:120px;">Solicitud</th>';
+  h+='</tr></thead><tbody>';
+  items.forEach(function(it, idx){
+    var ed=_PLANTA_EDITS[it.id]||{proveedor:'',precio:0,iva:false};
+    var cantKg=(parseFloat(it.cantidad_g)||0)/1000;
+    var cantStr=cantKg>=1?(cantKg.toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'):((parseFloat(it.cantidad_g)||0).toLocaleString('es-CO',{maximumFractionDigits:0})+' g');
+    var sub=calcItemSubtotal(it);
+    var urg=it.urgencia||'Normal';
+    var urgBadge=urg==='Urgente'?'<span class="ubadge-u">URG</span>':urg==='Alta'?'<span class="ubadge-a">ALT</span>':'';
+    var rowId='pit-'+it.id;
+    h+='<tr id="'+rowId+'">';
+    h+='<td style="color:#78716c;">'+(idx+1)+'</td>';
+    h+='<td><div style="font-weight:600;font-size:12px;">'+esc(it.nombre_mp)+' '+urgBadge+'</div>';
+    if(it.codigo_mp) h+='<div style="font-size:10px;color:#a8a29e;">'+esc(it.codigo_mp)+'</div>';
+    if(it.justificacion) h+='<div style="font-size:10px;color:#78716c;font-style:italic;">'+esc(it.justificacion)+'</div>';
+    h+='</td>';
+    h+='<td style="white-space:nowrap;">'+esc(cantStr)+'</td>';
+    h+='<td><input type="text" list="prov-dl" class="'+(isSinProv?'prov-sin':'')+'" value="'+esc(ed.proveedor)+'" placeholder="Proveedor..." data-id="'+it.id+'" data-mp="'+esc(it.codigo_mp||'')+'" onchange="onProvChange(this)" oninput="onProvChange(this)"></td>';
+    h+='<td><input type="number" min="0" step="1000" value="'+(ed.precio||0)+'" placeholder="0" data-id="'+it.id+'" onchange="onPrecioChange(this)" style="text-align:right;"></td>';
+    h+='<td style="text-align:center;"><input type="checkbox" '+(ed.iva?'checked':'')+' data-id="'+it.id+'" onchange="onIvaChange(this)" style="width:auto;"></td>';
+    h+='<td style="text-align:right;font-weight:700;color:#16a34a;" id="sub-'+it.id+'">'+fmt(sub)+'</td>';
+    h+='<td style="font-size:11px;color:#78716c;">'+esc(it.solic_numero||'')+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+
+function calcItemSubtotal(it){
+  var ed=_PLANTA_EDITS[it.id]||{};
+  var precio=parseFloat(ed.precio)||0;
+  var cantKg=(parseFloat(it.cantidad_g)||0)/1000;
+  var sub=precio*cantKg;
+  if(ed.iva) sub=sub*1.19;
+  return sub;
+}
+
+function calcGrupoTotal(items){
+  return items.reduce(function(s,it){return s+calcItemSubtotal(it);},0);
+}
+
+// Debounce timer for proveedor save
+var _provSaveTimer={};
+function onProvChange(inp){
+  var id=inp.dataset.id;
+  var mp=inp.dataset.mp;
+  var val=inp.value.trim();
+  if(!_PLANTA_EDITS[id]) _PLANTA_EDITS[id]={proveedor:'',precio:0,iva:false};
+  _PLANTA_EDITS[id].proveedor=val;
+  inp.classList.toggle('prov-sin',!val);
+  // Debounced save to maestro_mps
+  if(mp){
+    clearTimeout(_provSaveTimer[id]);
+    _provSaveTimer[id]=setTimeout(function(){
+      fetch('/api/maestro-mps/'+encodeURIComponent(mp)+'/proveedor',{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({proveedor:val})
+      }).catch(function(){});
+    },800);
+  }
+  updateSubtotalRow(id);
+  updateSummaryPills();
+}
+
+function onPrecioChange(inp){
+  var id=inp.dataset.id;
+  if(!_PLANTA_EDITS[id]) _PLANTA_EDITS[id]={proveedor:'',precio:0,iva:false};
+  _PLANTA_EDITS[id].precio=parseFloat(inp.value)||0;
+  updateSubtotalRow(id);
+}
+
+function onIvaChange(chk){
+  var id=chk.dataset.id;
+  if(!_PLANTA_EDITS[id]) _PLANTA_EDITS[id]={proveedor:'',precio:0,iva:false};
+  _PLANTA_EDITS[id].iva=chk.checked;
+  updateSubtotalRow(id);
+}
+
+function updateSubtotalRow(id){
+  var it=_PLANTA_ITEMS.find(function(x){return String(x.id)===String(id);});
+  if(!it) return;
+  var sub=calcItemSubtotal(it);
+  var el=document.getElementById('sub-'+id);
+  if(el) el.textContent=fmt(sub);
+}
+
+function updateSummaryPills(){
+  var sinProv=_PLANTA_ITEMS.filter(function(it){
+    return !(_PLANTA_EDITS[it.id]||{}).proveedor;
+  });
+  var nProv=new Set(_PLANTA_ITEMS.map(function(it){
+    return ((_PLANTA_EDITS[it.id]||{}).proveedor||'').trim();
+  }).filter(Boolean)).size;
+  var sumEl=document.getElementById('planta-summary');
+  if(!sumEl) return;
+  sumEl.innerHTML=
+    '<span style="background:#dbeafe;color:#1e40af;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">'+_PLANTA_ITEMS.length+' items</span>'+
+    '<span style="background:#dcfce7;color:#166534;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">'+nProv+' proveedores</span>'+
+    (sinProv.length?'<span style="background:#fef2f2;color:#dc2626;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;">&#x26A0;\uFE0F '+sinProv.length+' sin proveedor</span>':'');
+}
+
+async function generarOCsPlanta(){
+  if(!_PLANTA_ITEMS.length){
+    alert('No hay items de Planta para generar OCs.'); return;
+  }
+  var sinProv=_PLANTA_ITEMS.filter(function(it){
+    return !(_PLANTA_EDITS[it.id]||{}).proveedor;
+  });
+  if(sinProv.length){
+    alert('\u26A0\uFE0F Hay '+sinProv.length+' items sin proveedor asignado:\n'+
+      sinProv.slice(0,5).map(function(it){return '\u2022 '+it.nombre_mp;}).join('\n')+
+      (sinProv.length>5?'\n... y '+(sinProv.length-5)+' m\u00E1s':''));
+    return;
+  }
+
+  // Build summary for confirm
+  var grupos={};
+  _PLANTA_ITEMS.forEach(function(it){
+    var prov=(_PLANTA_EDITS[it.id]||{}).proveedor||'';
+    if(!grupos[prov]) grupos[prov]={items:0,total:0};
+    grupos[prov].items++;
+    grupos[prov].total+=calcItemSubtotal(it);
+  });
+  var msg='Se crear\u00E1n '+Object.keys(grupos).length+' \u00F3rdenes de compra:\n\n';
+  Object.keys(grupos).sort().forEach(function(p){
+    msg+='\u2022 '+p+' \u2014 '+grupos[p].items+' items \u2014 '+fmt(grupos[p].total)+'\n';
+  });
+  msg+='\n\u00BFConfirmar?';
+  if(!confirm(msg)) return;
+
+  // Build payload
+  var items=_PLANTA_ITEMS.map(function(it){
+    var ed=_PLANTA_EDITS[it.id]||{};
+    return {
+      id: it.id,
+      solic_numero: it.solic_numero,
+      codigo_mp: it.codigo_mp,
+      nombre_mp: it.nombre_mp,
+      cantidad_g: it.cantidad_g,
+      unidad: it.unidad,
+      proveedor: ed.proveedor||'',
+      precio_unitario: parseFloat(ed.precio)||0,
+      iva: ed.iva||false
+    };
+  });
+
+  try{
+    var r=await fetch('/api/compras/planta/generar-oc',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({items:items})
+    });
+    var d=await r.json();
+    if(!r.ok){ alert('\u274C Error: '+(d.error||r.status)); return; }
+    var msg2='\u2705 Listo\u0021 Se crearon '+d.total+' OCs:\n\n';
+    (d.ocs_creadas||[]).forEach(function(oc){
+      msg2+='\u2022 '+oc.numero_oc+' \u2014 '+oc.proveedor+' ('+oc.items+' items) \u2014 '+fmt(oc.valor)+'\n';
+    });
+    alert(msg2);
+    // Reload + switch to OCS tab
+    await loadData();
+    document.querySelectorAll('.tn').forEach(function(b){b.classList.remove('on');});
+    document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('on');});
+    var ocsBtn=document.querySelector('[data-tab="ocs"]');
+    if(ocsBtn) ocsBtn.classList.add('on');
+    var ocsPane=document.getElementById('pane-ocs');
+    if(ocsPane) ocsPane.classList.add('on');
+    renderOCS();
+  }catch(e){
+    alert('\u274C Error de red: '+e.message);
+  }
+}
+
+async function loadPlanta(){
+  document.getElementById('planta-body').innerHTML='<div class="empty">Cargando\u2026</div>';
+  document.getElementById('planta-summary').innerHTML='';
+  _PLANTA_ITEMS=[]; _PLANTA_EDITS={};
+  try{
+    var r=await fetch('/api/compras/planta');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var d=await r.json();
+    _PLANTA_ITEMS=d.items||[];
+    // Seed edits from backend data
+    _PLANTA_ITEMS.forEach(function(it){
+      _PLANTA_EDITS[it.id]={
+        proveedor: it.proveedor||'',
+        precio: it.precio_ref||0,
+        iva: false
+      };
+    });
+    renderPlanta();
+  }catch(e){
+    document.getElementById('planta-body').innerHTML='<div class="err">Error cargando: '+esc(e.message)+'</div>';
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
