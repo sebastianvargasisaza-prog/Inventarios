@@ -497,9 +497,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:20px;">
       <h3 style="color:#856404;margin-bottom:10px;">&#128308; MPs bajo stock minimo (basado en plan anual)</h3>
       <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:0.85em;color:#664d03;flex:1;">Edita el proveedor de cada MP directamente — se guarda automaticamente en el maestro.</span>
+        <button onclick="solicitarTodasMPs()" style="background:#2B7A78;color:white;padding:8px 18px;border-radius:6px;font-weight:700;font-size:0.88em;">
+          Enviar todas a Compras
+        </button>
+      </div>
       <div id="alertas-reabas-tabla">
         <table class="table">
-          <thead><tr><th>Tipo</th><th>Código</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Mínimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Déficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Acción</th></tr></thead>
+          <thead><tr><th>Tipo</th><th>Codigo</th><th>Material</th><th>Proveedor (editable)</th><th style="text-align:right;">Minimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Deficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Accion</th></tr></thead>
           <tbody id="reabas-body"><tr><td colspan="9" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
         </table>
       </div>
@@ -1000,6 +1006,62 @@ async function archivarMP(){
   }
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
+var _provSaveTimers={};
+function guardarProveedorMP(inp){
+  var cod=inp.dataset.cod;
+  var val=inp.value.trim();
+  if(!cod) return;
+  inp.style.borderColor='#ffc107';
+  clearTimeout(_provSaveTimers[cod]);
+  _provSaveTimers[cod]=setTimeout(function(){
+    fetch('/api/maestro-mps/'+encodeURIComponent(cod)+'/proveedor',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({proveedor:val})
+    }).then(function(r){
+      if(r.ok){
+        inp.style.borderColor='#28a745';
+        setTimeout(function(){inp.style.borderColor='#ccc';},1500);
+        // Update _alertasData so solicitarTodasMPs uses fresh data
+        var ad=window._alertasData||[];
+        var found=ad.find(function(a){return a.codigo_mp===cod;});
+        if(found) found.proveedor=val;
+      } else {
+        inp.style.borderColor='#dc3545';
+      }
+    }).catch(function(){inp.style.borderColor='#dc3545';});
+  },600);
+}
+
+async function solicitarTodasMPs(){
+  var alertas=(window._alertasData||[]).filter(function(a){return a.tipo!=='MEE';});
+  if(!alertas.length){alert('No hay MPs bajo minimo para solicitar.');return;}
+  var sinProv=alertas.filter(function(a){return !a.proveedor;});
+  if(sinProv.length){
+    var names=sinProv.slice(0,5).map(function(a){return a.nombre;}).join(', ');
+    if(!confirm('Hay '+sinProv.length+' MP(s) sin proveedor asignado: '+names+'. Se incluiran de todas formas. Continuar?')) return;
+  }
+  var sol=OPER_ACTUAL||'Planta';
+  var items=alertas.map(function(a){
+    return {codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:a.deficit>0?a.deficit:a.stock_minimo,
+            unidad:'g',justificacion:'Bajo stock minimo. Stock actual: '+a.stock_actual+'g / Minimo: '+a.stock_minimo+'g'};
+  });
+  var data={solicitante:sol,empresa:'Espagiria',area:'Produccion',
+            categoria:'Materia Prima',tipo:'Compra',urgencia:'Alta',
+            observaciones:'Solicitud automatica desde alertas de stock — '+items.length+' MPs',
+            items:items};
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok&&res.numero){
+      alert('Solicitud '+res.numero+' enviada a Compras con '+items.length+' MPs. En Compras > Tab Planta podras asignar precios y generar OCs por proveedor.');
+    } else {
+      alert('Error: '+(res.error||'desconocido'));
+    }
+  }catch(e){alert('Error de red: '+e.message);}
+}
+
 function abrirSolIdx(ri){
   var a=(window._alertasData||[])[ri];if(!a)return;
   abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
@@ -1806,7 +1868,15 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:center;">'+tipoBadge+'</td>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td>';
       h+='<td style="font-weight:600;">'+a.nombre+'</td>';
-      h+='<td style="font-size:0.85em;color:#666;">'+a.proveedor+'</td>';
+      var provId='prov-inp-'+a.codigo_mp.replace(/[^a-zA-Z0-9]/g,'');
+      h+='<td style="min-width:140px;">';
+      h+='<input type="text" id="'+provId+'" value="'+(a.proveedor||'')+'"';
+      h+=' data-cod="'+a.codigo_mp+'"';
+      h+=' placeholder="Sin proveedor"';
+      h+=' style="width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:0.82em;"';
+      h+=' onchange="guardarProveedorMP(this)"';
+      h+=' title="Edita y presiona Enter o Tab para guardar">';
+      h+='</td>';
       h+='<td style="text-align:right;font-weight:600;">'+a.stock_minimo.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+' '+unidad+'</td>';
