@@ -2068,17 +2068,8 @@ def liberacion_list():
     return jsonify(rows)
 
 
-@bp.route('/api/liberacion/<int:lid>', methods=['PATCH','DELETE'])
+@bp.route('/api/liberacion/<int:lid>', methods=['PATCH'])
 def liberacion_update(lid):
-    if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
-            return jsonify({'error': 'Solo admins'}), 403
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute('DELETE FROM liberaciones WHERE id=?', (lid,))
-        if c.rowcount == 0:
-            conn.close(); return jsonify({'error': 'No encontrado'}), 404
-        conn.commit(); conn.close()
-        return jsonify({'ok': True, 'deleted': lid})
     u = session.get('compras_user', '')
     d = request.get_json(silent=True) or {}
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
