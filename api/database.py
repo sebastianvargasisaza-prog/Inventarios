@@ -858,6 +858,28 @@ def init_db():
     except: pass
     # ── One-time production data corrections ──────────────────────────────────
     apply_production_corrections(c)
+    # ── Envasado ─────────────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS envasado (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        produccion_id       INTEGER DEFAULT 0,
+        lote                TEXT NOT NULL,
+        producto            TEXT NOT NULL,
+        presentacion        TEXT DEFAULT '',
+        batch_g             REAL DEFAULT 0,
+        unidades            INTEGER DEFAULT 0,
+        envase_codigo       TEXT DEFAULT '',
+        tapa_codigo         TEXT DEFAULT '',
+        operador            TEXT DEFAULT '',
+        fecha               TEXT DEFAULT '',
+        estado              TEXT DEFAULT 'Completado',
+        observaciones       TEXT DEFAULT ''
+    )""")
+    # Add envasado_id to acondicionamiento if not present
+    try:
+        c.execute("ALTER TABLE acondicionamiento ADD COLUMN envasado_id INTEGER DEFAULT 0")
+    except: pass
+
+
     conn.commit()
     conn.close()
 

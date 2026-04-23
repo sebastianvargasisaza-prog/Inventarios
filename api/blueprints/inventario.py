@@ -1987,6 +1987,115 @@ def _init_acondicionamiento():
 _init_acondicionamiento()
 
 
+
+# ══════════════════════════════════════════════════════════════════
+# ENVASADO — Paso entre Produccion y Acondicionamiento
+# ══════════════════════════════════════════════════════════════════
+
+@bp.route('/api/envasado', methods=['GET', 'POST'])
+def envasado_list():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        produccion_id = int(d.get('produccion_id', 0))
+        lote = d.get('lote', '').strip()
+        producto = d.get('producto', '').strip()
+        presentacion = d.get('presentacion', '').strip()
+        batch_g = float(d.get('batch_g', 0) or 0)
+        unidades = int(d.get('unidades', 0) or 0)
+        envase_codigo = d.get('envase_codigo', '').strip()
+        tapa_codigo = d.get('tapa_codigo', '').strip()
+        operador = d.get('operador', session.get('compras_user', '')).strip()
+        fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+        obs = d.get('observaciones', '').strip()
+
+        if not lote or not producto:
+            conn.close(); return jsonify({'error': 'lote y producto son requeridos'}), 400
+
+        # Insert envasado record
+        c.execute("""INSERT INTO envasado
+            (produccion_id, lote, producto, presentacion, batch_g, unidades,
+             envase_codigo, tapa_codigo, operador, fecha, estado, observaciones)
+            VALUES (?,?,?,?,?,?,?,?,?,?,'Completado',?)""",
+            (produccion_id, lote, producto, presentacion, batch_g, unidades,
+             envase_codigo, tapa_codigo, operador, fecha, obs))
+        nuevo_id = c.lastrowid
+
+        # Descontar MEE: envase + tapa
+        alertas_mee = []
+        for codigo_mee, cant in [(envase_codigo, unidades), (tapa_codigo, unidades)]:
+            if not codigo_mee or cant <= 0:
+                continue
+            c.execute("SELECT stock_actual, stock_minimo, descripcion FROM maestro_mee WHERE codigo=?", (codigo_mee,))
+            row = c.fetchone()
+            if not row:
+                continue
+            nuevo_stock = max(0, row[0] - cant)
+            c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo_stock, codigo_mee))
+            c.execute("""INSERT INTO movimientos_mee
+                (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha)
+                VALUES (?,?,?,?,?,?,?)""",
+                (codigo_mee, 'Salida', cant, lote,
+                 'Envasado ' + lote + ' - ' + producto + ' ' + presentacion,
+                 operador, fecha))
+            if nuevo_stock < row[1]:
+                deficit = row[1] - nuevo_stock
+                alertas_mee.append({'codigo': codigo_mee, 'nombre': row[2],
+                    'stock': nuevo_stock, 'minimo': row[1], 'deficit': deficit})
+
+        # Si hay MEE bajo minimo, crear solicitud de compra automatica en Compras
+        if alertas_mee:
+            try:
+                c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
+                          (f"SOL-{datetime.now().strftime('%Y')}-%",))
+                n_sol = (c.fetchone()[0] or 0) + 1
+                num_sol = f"SOL-{datetime.now().strftime('%Y')}-{n_sol:04d}"
+                obs_sol = 'Alerta automatica envasado ' + lote + ': MEE bajo minimo'
+                c.execute("""INSERT INTO solicitudes_compra
+                    (numero, fecha, estado, solicitante, urgencia, observaciones,
+                     area, empresa, categoria, tipo)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (num_sol, datetime.now().isoformat(), 'Pendiente',
+                     operador, 'Alta', obs_sol,
+                     'Produccion', 'Espagiria', 'Material de Empaque', 'Compra'))
+                for a in alertas_mee:
+                    c.execute("""INSERT INTO solicitudes_compra_items
+                        (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion)
+                        VALUES (?,?,?,?,?,?)""",
+                        (num_sol, a['codigo'], a['nombre'], a['deficit'], 'und',
+                         'Deficit MEE post-envasado ' + lote))
+            except Exception as _e:
+                print(f'[envasado] solicitud auto error: {_e}')
+
+        conn.commit(); conn.close()
+        return jsonify({'ok': True, 'id': nuevo_id, 'alertas_mee': alertas_mee}), 201
+
+    # GET
+    prod_id = request.args.get('produccion_id', '')
+    if prod_id:
+        c.execute("SELECT * FROM envasado WHERE produccion_id=? ORDER BY id DESC", (prod_id,))
+    else:
+        c.execute("SELECT * FROM envasado ORDER BY id DESC LIMIT 100")
+    cols = [d[0] for d in c.description]
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'envasados': rows})
+
+
+@bp.route('/api/envasado/pendientes-acond', methods=['GET'])
+def envasado_pendientes():
+    """Retorna envasados Completado que no tienen acondicionamiento asociado."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT e.* FROM envasado e
+                 LEFT JOIN acondicionamiento a ON a.envasado_id = e.id
+                 WHERE a.id IS NULL
+                 ORDER BY e.id DESC""")
+    cols = [d[0] for d in c.description]
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'pendientes': rows})
+
+
 @bp.route('/api/acondicionamiento', methods=['GET', 'POST'])
 def acondicionamiento_list():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -1994,12 +2103,15 @@ def acondicionamiento_list():
         d = request.get_json(silent=True) or {}
         u = session.get('compras_user', '')
         mee_items = d.get('mee_consumido', [])
+        envasado_id = int(d.get('envasado_id', 0) or 0)
+        batch_g = float(d.get('batch_g', 0) or d.get('cantidad_batch_g', 0) or 0)
+        uds = int(d.get('unidades', 0) or d.get('unidades_producidas', 0) or 0)
         c.execute("""INSERT INTO acondicionamiento
-            (produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
+            (envasado_id, produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
              presentacion, mee_consumido, fecha, operador, observaciones, sku, precio_base)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (int(d.get('produccion_id', 0)), d.get('lote', ''), d.get('producto', ''),
-             float(d.get('cantidad_batch_g', 0)), int(d.get('unidades_producidas', 0)),
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (envasado_id, int(d.get('produccion_id', 0)), d.get('lote', ''), d.get('producto', ''),
+             batch_g, uds,
              d.get('presentacion', ''), json.dumps(mee_items),
              d.get('fecha', datetime.now().strftime('%Y-%m-%d')), u,
              d.get('observaciones', ''), d.get('sku', '').strip(),

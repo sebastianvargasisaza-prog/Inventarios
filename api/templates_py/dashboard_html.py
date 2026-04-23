@@ -139,6 +139,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
     <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
+    <button class="tab-button" onclick="switchTab('envasado',this)">&#128230; Envasado</button>
     <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
     <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
@@ -852,18 +853,72 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 
+<div id="envasado" class="tab-content">
+<div style="padding:18px">
+<h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
+<p style="color:#666;font-size:13px;margin-bottom:16px;">Selecciona el batch de produccion terminado. El sistema descuenta frascos y tapas del inventario MEE automaticamente.</p>
+<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+<div>
+  <label style="font-size:12px;color:#555;font-weight:600">Batch de Produccion</label>
+  <select id="env-prod-sel" onchange="cargarDatosProduccion()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
+    <option value="">-- Selecciona produccion terminada --</option>
+  </select>
+</div>
+<div>
+  <label style="font-size:12px;color:#555">Producto</label>
+  <input id="env-producto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
+</div>
+<div>
+  <label style="font-size:12px;color:#555">Lote</label>
+  <input id="env-lote" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
+</div>
+<div>
+  <label style="font-size:12px;color:#555">Batch disponible (g)</label>
+  <input id="env-batch-total" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
+</div>
+</div>
+<div id="env-presentaciones">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <label style="font-size:13px;font-weight:600;color:#333">Presentaciones (max 2)</label>
+    <button onclick="addEnvPres()" id="env-add-pres-btn" style="background:#2B7A78;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px">+ Agregar presentacion</button>
+  </div>
+  <div id="env-pres-rows"></div>
+</div>
+<div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="env-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
+<button onclick="registrarEnvasado()" style="margin-top:12px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">&#9989; Registrar Envasado</button>
+<div id="env-msg" style="margin-top:8px;"></div>
+</div>
+<div id="env-historial">
+<h3 style="margin:0 0 10px;color:#2B7A78">&#128202; Historial Envasado</h3>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:7px">Lote</th><th style="padding:7px">Producto</th><th style="padding:7px">Presentacion</th><th style="padding:7px">Uds</th><th style="padding:7px">Envase</th><th style="padding:7px">Tapa</th><th style="padding:7px">Fecha</th><th style="padding:7px">Operador</th></tr></thead>
+<tbody id="env-tbody"></tbody>
+</table>
+</div>
+</div>
+</div>
+
 <div id="acondicionamiento" class="tab-content">
 <div style="padding:18px">
 <h2 style="margin:0 0 14px;color:#1a4a7a">&#128230; Acondicionamiento PT</h2>
 <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
 <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Batch de Acondicionamiento</h3>
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-<div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Presentación</label><input id="ac-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="2000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Unidades Producidas</label><input id="ac-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div style="grid-column:span 3">
+  <label style="font-size:12px;color:#555;font-weight:600">Batch Envasado (carga automatico los datos)</label>
+  <select id="ac-envasado-sel" onchange="cargarDesdeEnvasado()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
+    <option value="">-- Selecciona batch envasado listo --</option>
+  </select>
+</div>
+<div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Presentacion</label><input id="ac-pres" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="Auto" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<div><label style="font-size:12px;color:#555">Unidades</label><input id="ac-uds" type="number" placeholder="Auto" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
+<input type="hidden" id="ac-envasado-id" value="">
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
 <div><label style="font-size:12px;color:#555">SKU PT</label><input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
@@ -1250,6 +1305,8 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='stock'){loadStock();loadMEE();}
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
   if(tabId==='produccion') cargarHistProd();
+  if(tabId==='envasado') cargarEnvasadoTab();
+  if(tabId==='acondicionamiento'){ cargarEnvasadosPendientes(); loadAcond(); }
   if(tabId==='cuarentena') cargarCuarentena();
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
@@ -2814,6 +2871,98 @@ function _checkMEEMsg(){
   var msg=document.getElementById("ac-mee-msg");
   if(msg) msg.style.display=(cont&&cont.children.length===0)?"block":"none";
 }
+var _envPresCount=0,_envMEE=[];
+async function cargarEnvasadoTab(){
+  var sel=document.getElementById('env-prod-sel');if(!sel) return;
+  try{var r=await fetch('/api/produccion');var d=await r.json();
+    var prods=(d.producciones||[]).filter(function(p){return p.estado==='Completado';});
+    sel.innerHTML='<option value="">-- Selecciona produccion terminada --</option>';
+    prods.forEach(function(p){var op=document.createElement('option');op.value=p.id;op.dataset.producto=p.producto||'';op.dataset.lote='PROD-'+String(p.id).padStart(5,'0');op.dataset.batch=p.cantidad||0;op.text=op.dataset.lote+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);sel.appendChild(op);});
+  }catch(e){}
+  try{var r2=await fetch('/api/mee');var d2=await r2.json();_envMEE=d2.items||[];}catch(e){_envMEE=[];}
+  await cargarHistEnvasado();
+  _envPresCount=0;document.getElementById('env-pres-rows').innerHTML='';addEnvPres();
+}
+function cargarDatosProduccion(){
+  var sel=document.getElementById('env-prod-sel');if(!sel) return;
+  var opt=sel.options[sel.selectedIndex];if(!opt||!opt.value) return;
+  var p=document.getElementById('env-producto');var l=document.getElementById('env-lote');var b=document.getElementById('env-batch-total');
+  if(p) p.value=opt.dataset.producto||'';
+  if(l) l.value=opt.dataset.lote||'';
+  if(b) b.value=(parseFloat(opt.dataset.batch||0)*1000).toFixed(0)+' g';
+}
+function addEnvPres(){
+  if(_envPresCount>=2){alert('Maximo 2 presentaciones');return;}
+  _envPresCount++;var n=_envPresCount;
+  var cats=['Envase','Frasco','Gotero'];
+  var optEnv=_envMEE.filter(function(m){return cats.indexOf(m.categoria)>=0;}).map(function(m){return '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';}).join('');
+  var optTap=_envMEE.filter(function(m){return m.categoria==='Tapa';}).map(function(m){return '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';}).join('');
+  var div=document.createElement('div');div.id='env-pres-'+n;div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:8px;';
+  div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><strong style="font-size:13px;color:#1a4a7a">Presentacion '+n+'</strong>'+(n>1?'<button onclick="rmEnvPres('+n+')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">Quitar</button>':'')+'</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"><div><label style="font-size:11px">Presentacion</label><input id="ep'+n+'-pres" placeholder="Ej: 30ml" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;"></div><div><label style="font-size:11px">Envase</label><select id="ep'+n+'-env" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:11px;"><option value="">--</option>'+optEnv+'</select></div><div><label style="font-size:11px">Tapa</label><select id="ep'+n+'-tap" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:11px;"><option value="">--</option>'+optTap+'</select></div><div><label style="font-size:11px">Unidades</label><input id="ep'+n+'-uds" type="number" min="1" placeholder="0" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;"></div></div>';
+  document.getElementById('env-pres-rows').appendChild(div);
+  if(_envPresCount>=2){var btn=document.getElementById('env-add-pres-btn');if(btn)btn.style.display='none';}
+}
+function rmEnvPres(n){var el=document.getElementById('env-pres-'+n);if(el)el.remove();_envPresCount--;var btn=document.getElementById('env-add-pres-btn');if(btn)btn.style.display='';}
+async function registrarEnvasado(){
+  var prodSel=document.getElementById('env-prod-sel');
+  if(!prodSel||!prodSel.value){alert('Selecciona un batch de produccion');return;}
+  var prodId=parseInt(prodSel.value);
+  var lote=(document.getElementById('env-lote')||{value:''}).value.trim();
+  var producto=(document.getElementById('env-producto')||{value:''}).value.trim();
+  var obs=(document.getElementById('env-obs')||{value:''}).value.trim();
+  var presentaciones=[];
+  for(var i=1;i<=2;i++){
+    var presEl=document.getElementById('ep'+i+'-pres');if(!presEl) continue;
+    var pres=presEl.value.trim();
+    var envCod=(document.getElementById('ep'+i+'-env')||{value:''}).value;
+    var tapCod=(document.getElementById('ep'+i+'-tap')||{value:''}).value;
+    var uds=parseInt((document.getElementById('ep'+i+'-uds')||{value:0}).value||0);
+    if(!pres||uds<=0) continue;
+    presentaciones.push({presentacion:pres,envase_codigo:envCod,tapa_codigo:tapCod,unidades:uds});
+  }
+  if(!presentaciones.length){alert('Agrega al menos una presentacion con unidades');return;}
+  var msg=document.getElementById('env-msg');
+  if(msg) msg.innerHTML='<span style="color:#666;">Registrando...</span>';
+  var allAlertas=[];
+  for(var j=0;j<presentaciones.length;j++){
+    var p=presentaciones[j];
+    try{
+      var r=await fetch('/api/envasado',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({produccion_id:prodId,lote:lote,producto:producto,presentacion:p.presentacion,unidades:p.unidades,envase_codigo:p.envase_codigo,tapa_codigo:p.tapa_codigo,operador:OPER_ACTUAL||'Operario',observaciones:obs})});
+      var d=await r.json();
+      if(!r.ok){if(msg)msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>';return;}
+      if(d.alertas_mee) allAlertas=allAlertas.concat(d.alertas_mee);
+    }catch(e){if(msg)msg.innerHTML='<div style="color:#dc3545;">Error: '+e.message+'</div>';return;}
+  }
+  var alertTxt=allAlertas.length?' | MEE bajo minimo: '+allAlertas.map(function(a){return a.nombre+' deficit '+a.deficit;}).join(', ')+'. Solicitud enviada a Compras.':'';
+  if(msg) msg.innerHTML='<div style="color:#28a745;padding:8px;background:#d4edda;border-radius:4px;">Envasado registrado. MEE descontado.'+alertTxt+'</div>';
+  await cargarHistEnvasado();
+  if(typeof loadAlertasMEE==='function') setTimeout(loadAlertasMEE,500);
+}
+async function cargarHistEnvasado(){
+  var tb=document.getElementById('env-tbody');if(!tb) return;
+  try{
+    var r=await fetch('/api/envasado');var d=await r.json();var rows=d.envasados||[];
+    if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>';return;}
+    tb.innerHTML=rows.map(function(e){return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;font-family:monospace;font-size:12px;">'+e.lote+'</td><td style="padding:6px;">'+e.producto+'</td><td style="padding:6px;">'+e.presentacion+'</td><td style="padding:6px;text-align:center;">'+e.unidades+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.envase_codigo+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.tapa_codigo+'</td><td style="padding:6px;font-size:12px;">'+e.fecha+'</td><td style="padding:6px;font-size:12px;">'+e.operador+'</td></tr>';}).join('');
+  }catch(e){if(tb)tb.innerHTML='<tr><td colspan="8">Error</td></tr>';}
+}
+async function cargarEnvasadosPendientes(){
+  var sel=document.getElementById('ac-envasado-sel');if(!sel) return;
+  try{
+    var r=await fetch('/api/envasado/pendientes-acond');var d=await r.json();var pend=d.pendientes||[];
+    sel.innerHTML='<option value="">-- Selecciona batch envasado listo --</option>';
+    pend.forEach(function(e){var op=document.createElement('option');op.value=e.id;op.dataset.lote=e.lote||'';op.dataset.producto=e.producto||'';op.dataset.pres=e.presentacion||'';op.dataset.uds=e.unidades||0;op.dataset.batch=e.batch_g||0;op.text=e.lote+' - '+e.producto+' '+e.presentacion+' ('+e.unidades+' uds) '+e.fecha;sel.appendChild(op);});
+  }catch(e){}
+}
+function cargarDesdeEnvasado(){
+  var sel=document.getElementById('ac-envasado-sel');if(!sel||!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var f=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  f('ac-envasado-id',opt.value);f('ac-lote',opt.dataset.lote||'');f('ac-prod',opt.dataset.producto||'');
+  f('ac-pres',opt.dataset.pres||'');f('ac-uds',opt.dataset.uds||'');f('ac-batch',opt.dataset.batch||'');
+}
+
 function registrarAcond(){
   var lote=document.getElementById("ac-lote").value;
   var prod=document.getElementById("ac-prod").value;
