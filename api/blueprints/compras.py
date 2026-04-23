@@ -1190,6 +1190,7 @@ def consolidado_por_proveedor():
         LEFT JOIN ordenes_compra_items i ON o.numero_oc = i.numero_oc
         LEFT JOIN proveedores pv ON LOWER(TRIM(o.proveedor)) = LOWER(TRIM(pv.nombre))
         WHERE o.estado IN ({placeholders})
+        AND o.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro','CC')
         ORDER BY o.proveedor, o.numero_oc, i.nombre_mp
     """, estados_activos)
 
