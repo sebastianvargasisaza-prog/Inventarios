@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: inventarios
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn api.index:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --access-logfile - --error-logfile -
+    envVars:
+      - key: DB_PATH
+        value: /var/data/inventario.db
+      - key: SECRET_KEY
+        generateValue: true
+    disk:
+      name: inventario-db
+      mountPath: /var/data
+      sizeGB: 1
