@@ -178,8 +178,11 @@ def handle_produccion():
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas.'
         return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
-    c.execute('SELECT producto, cantidad, fecha, estado, operador, COALESCE(presentacion,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
-    prod = [{'producto': r[0], 'cantidad': r[1], 'fecha': r[2], 'estado': r[3], 'operador': r[4] or '', 'presentacion': r[5] or ''} for r in c.fetchall()]
+    c.execute('SELECT id, producto, cantidad, fecha, estado, operador, COALESCE(presentacion,""), COALESCE(lote,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
+    prod = [{'id': r[0], 'lote': r[7] or f'PROD-{r[0]:05d}',
+             'producto': r[1], 'cantidad': r[2], 'fecha': r[3],
+             'estado': r[4], 'operador': r[5] or '', 'presentacion': r[6] or ''}
+            for r in c.fetchall()]
     conn.close()
     return jsonify({'producciones': prod})
 
