@@ -3170,13 +3170,11 @@ async function generarOCsPlanta(){
     return !(_PLANTA_EDITS[it.id]||{}).proveedor;
   });
   if(sinProv.length){
-    alert('\u26A0\uFE0F Hay '+sinProv.length+' items sin proveedor asignado:\n'+
-      sinProv.slice(0,5).map(function(it){return '\u2022 '+it.nombre_mp;}).join('\n')+
-      (sinProv.length>5?'\n... y '+(sinProv.length-5)+' m\u00E1s':''));
+    var names=sinProv.slice(0,5).map(function(it){return it.nombre_mp;}).join(', ');
+    alert('Sin proveedor (' + sinProv.length + ' items): ' + names +
+      (sinProv.length>5?' y '+(sinProv.length-5)+' mas':'')+'. Asigna proveedores primero.');
     return;
   }
-
-  // Build summary for confirm
   var grupos={};
   _PLANTA_ITEMS.forEach(function(it){
     var prov=(_PLANTA_EDITS[it.id]||{}).proveedor||'';
@@ -3184,43 +3182,27 @@ async function generarOCsPlanta(){
     grupos[prov].items++;
     grupos[prov].total+=calcItemSubtotal(it);
   });
-  var msg='Se crear\u00E1n '+Object.keys(grupos).length+' \u00F3rdenes de compra:\n\n';
-  Object.keys(grupos).sort().forEach(function(p){
-    msg+='\u2022 '+p+' \u2014 '+grupos[p].items+' items \u2014 '+fmt(grupos[p].total)+'\n';
-  });
-  msg+='\n\u00BFConfirmar?';
-  if(!confirm(msg)) return;
-
-  // Build payload
+  var resumen=Object.keys(grupos).sort().map(function(p){
+    return p+' ('+grupos[p].items+' items, '+fmt(grupos[p].total)+')';
+  }).join(' | ');
+  if(!confirm('Generar ' + Object.keys(grupos).length + ' OC(s): ' + resumen + '. Confirmar?')) return;
   var items=_PLANTA_ITEMS.map(function(it){
     var ed=_PLANTA_EDITS[it.id]||{};
-    return {
-      id: it.id,
-      solic_numero: it.solic_numero,
-      codigo_mp: it.codigo_mp,
-      nombre_mp: it.nombre_mp,
-      cantidad_g: it.cantidad_g,
-      unidad: it.unidad,
-      proveedor: ed.proveedor||'',
-      precio_unitario: parseFloat(ed.precio)||0,
-      iva: ed.iva||false
-    };
+    return {id:it.id,solic_numero:it.solic_numero,codigo_mp:it.codigo_mp,
+      nombre_mp:it.nombre_mp,cantidad_g:it.cantidad_g,unidad:it.unidad,
+      proveedor:ed.proveedor||'',precio_unitario:parseFloat(ed.precio)||0,iva:ed.iva||false};
   });
-
   try{
     var r=await fetch('/api/compras/planta/generar-oc',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+      method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({items:items})
     });
     var d=await r.json();
-    if(!r.ok){ alert('\u274C Error: '+(d.error||r.status)); return; }
-    var msg2='\u2705 Listo\u0021 Se crearon '+d.total+' OCs:\n\n';
-    (d.ocs_creadas||[]).forEach(function(oc){
-      msg2+='\u2022 '+oc.numero_oc+' \u2014 '+oc.proveedor+' ('+oc.items+' items) \u2014 '+fmt(oc.valor)+'\n';
-    });
-    alert(msg2);
-    // Reload + switch to OCS tab
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var ocList=(d.ocs_creadas||[]).map(function(oc){
+      return oc.numero_oc+' - '+oc.proveedor+' ('+oc.items+' items)';
+    }).join(', ');
+    alert('Listo! '+d.total+' OC(s) creadas: '+ocList);
     await loadData();
     document.querySelectorAll('.tn').forEach(function(b){b.classList.remove('on');});
     document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('on');});
@@ -3229,9 +3211,7 @@ async function generarOCsPlanta(){
     var ocsPane=document.getElementById('pane-ocs');
     if(ocsPane) ocsPane.classList.add('on');
     renderOCS();
-  }catch(e){
-    alert('\u274C Error de red: '+e.message);
-  }
+  }catch(e){ alert('Error de red: '+e.message); }
 }
 
 async function loadPlanta(){
