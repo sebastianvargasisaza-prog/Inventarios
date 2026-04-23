@@ -2872,16 +2872,31 @@ function _checkMEEMsg(){
   if(msg) msg.style.display=(cont&&cont.children.length===0)?"block":"none";
 }
 var _envPresCount=0,_envMEE=[];
+var _envTabLoaded=false;
 async function cargarEnvasadoTab(){
   var sel=document.getElementById('env-prod-sel');if(!sel) return;
-  try{var r=await fetch('/api/produccion');var d=await r.json();
-    var prods=(d.producciones||[]).filter(function(p){return p.estado==='Completado';});
+  if(!_envTabLoaded) sel.innerHTML='<option value="">Cargando...</option>';
+  try{
+    var rp=await fetch('/api/produccion');var dp=await rp.json();
+    var rm=await fetch('/api/mee');var dm=await rm.json();
+    var prods=(dp.producciones||[]).filter(function(p){return p.estado==='Completado';});
+    _envMEE=dm.items||[];
     sel.innerHTML='<option value="">-- Selecciona produccion terminada --</option>';
-    prods.forEach(function(p){var op=document.createElement('option');op.value=p.id;op.dataset.producto=p.producto||'';op.dataset.lote='PROD-'+String(p.id).padStart(5,'0');op.dataset.batch=p.cantidad||0;op.text=op.dataset.lote+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);sel.appendChild(op);});
-  }catch(e){}
-  try{var r2=await fetch('/api/mee');var d2=await r2.json();_envMEE=d2.items||[];}catch(e){_envMEE=[];}
+    prods.forEach(function(p){
+      var op=document.createElement('option');
+      op.value=p.id;
+      op.dataset.producto=p.producto||'';
+      op.dataset.lote=p.lote||('PROD-'+String(p.id).padStart(5,'0'));
+      op.dataset.batch=p.cantidad||0;
+      op.text=(p.lote||'PROD-'+String(p.id).padStart(5,'0'))+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);
+      sel.appendChild(op);
+    });
+    _envTabLoaded=true;
+  }catch(e){sel.innerHTML='<option value="">Error - recarga la pagina</option>';}
   await cargarHistEnvasado();
-  _envPresCount=0;document.getElementById('env-pres-rows').innerHTML='';addEnvPres();
+  if(!document.getElementById('env-pres-rows').children.length){
+    _envPresCount=0;addEnvPres();
+  }
 }
 function cargarDatosProduccion(){
   var sel=document.getElementById('env-prod-sel');if(!sel) return;
