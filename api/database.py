@@ -883,6 +883,20 @@ def init_db():
     except: pass
 
 
+    # ── Limpieza permanente OCs de prueba (cargadas desde Excel) ──────────────
+    # Estas OCs son datos de prueba identificados por su numero (formato OC-YYMMNN)
+    # y por no tener categoria Influencer/CC. Se eliminan en cada startup.
+    _test_ocs = [
+        'OC-260403','OC-260406','OC-260402-ESP','OC-260402-ETQ',
+        'OC-260320','OC-260317','OC-260316','OC-260313','OC-260312',
+        'OC-260309','OC-260307','OC-260304','OC-260301','OC-260401',
+        'OC-260207','OC-260202','OC-260127','OC-251216','OC-251209'
+    ]
+    _ph = ','.join('?' * len(_test_ocs))
+    c.execute(f'DELETE FROM ordenes_compra_items WHERE numero_oc IN ({_ph})', _test_ocs)
+    c.execute(f'DELETE FROM ordenes_compra WHERE numero_oc IN ({_ph})', _test_ocs)
+
+
     conn.commit()
     conn.close()
 
