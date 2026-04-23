@@ -2099,6 +2099,24 @@ def envasado_pendientes():
     return jsonify({'pendientes': rows})
 
 
+
+@bp.route('/api/acondicionamiento/pendientes-lib', methods=['GET'])
+def acond_pendientes_lib():
+    """Retorna acondicionamientos completados sin liberacion asociada."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""SELECT a.id, a.lote, a.producto, a.unidades_producidas,
+                        a.presentacion, a.cantidad_batch_g, a.fecha,
+                        a.sku, a.precio_base
+                 FROM acondicionamiento a
+                 LEFT JOIN liberaciones l ON l.acondicionamiento_id = a.id
+                 WHERE l.id IS NULL
+                 ORDER BY a.id DESC""")
+    cols = ['id','lote','producto','unidades','presentacion','batch_g','fecha','sku','precio_base']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    conn.close()
+    return jsonify({'pendientes': rows})
+
+
 @bp.route('/api/acondicionamiento', methods=['GET', 'POST'])
 def acondicionamiento_list():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()

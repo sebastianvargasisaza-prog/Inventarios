@@ -878,6 +878,9 @@ def init_db():
     try:
         c.execute("ALTER TABLE acondicionamiento ADD COLUMN envasado_id INTEGER DEFAULT 0")
     except: pass
+    try:
+        c.execute("ALTER TABLE liberaciones ADD COLUMN acondicionamiento_id INTEGER DEFAULT 0")
+    except: pass
 
 
     conn.commit()

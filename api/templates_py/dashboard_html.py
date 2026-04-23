@@ -949,6 +949,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
 <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para Liberación</h3>
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+<div style="grid-column:span 3">
+  <label style="font-size:12px;color:#555;font-weight:600">Batch Acondicionado (carga automatico)</label>
+  <select id="lb-acond-sel" onchange="cargarDesdeAcond()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
+    <option value="">-- Selecciona batch acondicionado --</option>
+  </select>
+</div>
+<input type="hidden" id="lb-acond-id" value="">
 <div><label style="font-size:12px;color:#555">Lote PT</label><input id="lb-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Producto</label><input id="lb-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 <div><label style="font-size:12px;color:#555">Presentación</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
@@ -989,6 +996,7 @@ document.addEventListener('DOMContentLoaded',function(){
     loadDashboardCompleto();loadFormulas();
   // Pre-load Envasado selector so options are ready when tab is clicked
   setTimeout(cargarEnvasadoTab, 1500);
+  setTimeout(cargarAcondPendientesLib, 2000);
   } else {
     // Sin operador identificado: mostrar modal antes de cargar
     document.getElementById('modal-operador').style.display='flex';
@@ -1309,6 +1317,7 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='produccion') cargarHistProd();
   if(tabId==='envasado') cargarEnvasadoTab();
   if(tabId==='acondicionamiento'){ cargarEnvasadosPendientes(); loadAcond(); }
+  if(tabId==='liberacion') cargarAcondPendientesLib();
   if(tabId==='cuarentena') cargarCuarentena();
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
@@ -3051,6 +3060,33 @@ function updateAcond(id,estado){
   fetch("/api/acondicionamiento/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:estado})})
   .then(function(){loadAcond();});
 }
+async function cargarAcondPendientesLib(){
+  var sel=document.getElementById('lb-acond-sel');if(!sel) return;
+  if(sel.options.length>1) return;
+  try{
+    var r=await fetch('/api/acondicionamiento/pendientes-lib');
+    var d=await r.json();var pend=d.pendientes||[];
+    sel.innerHTML='<option value="">-- Selecciona batch acondicionado --</option>';
+    pend.forEach(function(a){
+      var op=document.createElement('option');
+      op.value=a.id;op.dataset.lote=a.lote||'';op.dataset.producto=a.producto||'';
+      op.dataset.pres=a.presentacion||'';op.dataset.uds=a.unidades||0;op.dataset.fecha=a.fecha||'';
+      op.text=(a.lote||'?')+' - '+(a.producto||'?')+' '+a.presentacion+' ('+a.unidades+' uds)';
+      sel.appendChild(op);
+    });
+  }catch(e){}
+}
+function cargarDesdeAcond(){
+  var sel=document.getElementById('lb-acond-sel');if(!sel||!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var f=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  f('lb-acond-id',opt.value);f('lb-lote',opt.dataset.lote||'');
+  f('lb-prod',opt.dataset.producto||'');f('lb-pres',opt.dataset.pres||'');
+  f('lb-uds',opt.dataset.uds||'');
+  var fechaEl=document.getElementById('lb-fprod');
+  if(fechaEl&&opt.dataset.fecha) fechaEl.value=(opt.dataset.fecha||'').slice(0,10);
+}
+
 function registrarLiberacion(){
   var d={lote:document.getElementById("lb-lote").value,producto:document.getElementById("lb-prod").value,presentacion:document.getElementById("lb-pres").value,unidades:parseInt(document.getElementById("lb-uds").value)||0,fecha_produccion:document.getElementById("lb-fprod").value,destino:document.getElementById("lb-dest").value,cliente:document.getElementById("lb-cli").value,observaciones:document.getElementById("lb-obs").value};
   if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
