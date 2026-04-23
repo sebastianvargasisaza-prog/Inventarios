@@ -60,6 +60,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 .refresh-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
 .refresh-btn:hover{background:rgba(255,255,255,0.15);color:white;}
 .ultima-act{font-size:0.72em;color:rgba(255,255,255,0.25);margin-left:10px;}
+.prog-bar-wrap{background:rgba(255,255,255,0.08);border-radius:20px;height:10px;overflow:hidden;margin:6px 0 3px;}
+.prog-bar{height:100%;border-radius:20px;transition:width 0.8s ease;background:linear-gradient(90deg,#2B7A78,#7ACFCC);}
+.prog-bar.danger{background:linear-gradient(90deg,#ef4444,#f87171);}
+.prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#fcd34d);}
+.churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.churn-item:last-child{border-bottom:none;}
+.badge-crit{background:rgba(239,68,68,0.2);color:#fca5a5;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-atenc{background:rgba(245,158,11,0.2);color:#fcd34d;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
 </style>
 </head>
 <body>
@@ -87,10 +95,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
   <!-- FINANCIERO (inputs manuales) -->
   <div class="section-title">💰 Financiero del mes</div>
-  <div class="finanzas-grid">
+  <div class="finanzas-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
     <div class="fin-card"><div class="fin-val" id="fin-caja">—</div><div class="fin-lbl">Saldo de caja</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-animus">—</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-maquila">—</div><div class="fin-lbl">Ingresos Maquila</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#fcd34d;">—</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:rgba(255,255,255,0.3);margin-top:3px;" id="fin-nomina-emp"></div></div>
   </div>
 
   <!-- ESPAGIRIA -->
@@ -233,6 +242,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
       <div id="gx-maquila"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
     </div>
+    <div class="panel">
+      <div class="panel-title">📊 Meta Maquila 2026</div>
+      <div id="gx-maquila-target"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:12px;">
+    <div class="panel">
+      <div class="panel-title">💄 Inversion Influencers YTD</div>
+      <div id="gx-influencer"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📦 Valor Inventario MP (COP)</div>
+      <div id="gx-inv-cop"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">&#128276; Alertas recompra clientes</div>
+      <div id="gx-churn"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:28px;">
     <div class="panel">
@@ -276,6 +303,9 @@ async function loadKPIs(){
     document.getElementById('fin-caja').textContent=fmt(f.saldo_caja);
     document.getElementById('fin-animus').textContent=fmt(f.ingresos_animus);
     document.getElementById('fin-maquila').textContent=fmt(f.ingresos_maquila);
+    var nom=d.nomina||{};
+    document.getElementById('fin-nomina').textContent=nom.total&&nom.total>0?fmt(nom.total):'—';
+    document.getElementById('fin-nomina-emp').textContent=nom.empleados?nom.empleados+' activos':'';
 
     // Espagiria KPIs
     var mpsBajos=e.mps_bajo_minimo||0;
@@ -287,31 +317,31 @@ async function loadKPIs(){
     document.getElementById('val-mee-bajos').textContent=meeBajos;
     setKPIColor('kpi-mee-bajos','val-mee-bajos',meeBajos>3?'rojo':(meeBajos>0?'amarillo':'verde'));
 
-    var v30=e.lotes_vencen_30d||0;
+    var v30=e.lotes_vence_30||0;
     document.getElementById('val-vencen30').textContent=v30;
-    document.getElementById('sub-vencen60').textContent='En 60 días: '+(e.lotes_vencen_60d||0)+' lotes';
+    document.getElementById('sub-vencen60').textContent='En 60 dias: '+(e.lotes_vence_60||0)+' lotes';
     setKPIColor('kpi-vencen30','val-vencen30',v30>0?'rojo':'verde');
 
-    document.getElementById('val-lotes-mes').textContent=e.lotes_produccion_mes||0;
-    document.getElementById('sub-kg-mes').textContent=(e.kg_producidos_mes||0)+' kg producidos';
+    document.getElementById('val-lotes-mes').textContent=e.prod_mes||0;
+    document.getElementById('sub-kg-mes').textContent=parseFloat(e.kg_mes||0).toFixed(1)+' kg producidos';
 
-    var ocs=e.ocs_pendientes_aprobacion||0;
+    var ocs=e.ocs_pendientes||0;
     document.getElementById('val-ocs').textContent=ocs;
-    document.getElementById('sub-ocs-val').textContent='Valor: '+fmt(e.valor_ocs_pendientes||0);
+    document.getElementById('sub-ocs-val').textContent='';
     setKPIColor('kpi-ocs','val-ocs',ocs>3?'amarillo':'verde');
     var solPend=e.sol_pendientes||0;
     document.getElementById('val-sol-pend').textContent=solPend;
     setKPIColor('kpi-sol-pend','val-sol-pend',solPend>0?'amarillo':'verde');
 
     // ÁNIMUS KPIs
-    document.getElementById('val-uds-pt').textContent=fmtN(a.unidades_pt_disponibles||0);
-    document.getElementById('sub-skus-pt').textContent=(a.skus_con_stock_pt||0)+' SKUs con stock';
+    document.getElementById('val-uds-pt').textContent=fmtN(a.uds_pt||0);
+    document.getElementById('sub-skus-pt').textContent=(a.skus_stock||0)+' SKUs con stock';
 
     var pedAct=a.pedidos_activos||0;
     document.getElementById('val-pedidos-act').textContent=pedAct;
     document.getElementById('sub-pedidos-val').textContent='Valor: '+fmt(a.valor_pedidos_activos||0);
 
-    var diasFM=a.dias_desde_ultimo_pedido_fm;
+    var diasFM=a.dias_desde_fm;
     var diasFMEl=document.getElementById('val-fm-dias');
     diasFMEl.textContent=diasFM!=null?diasFM+' días':'Sin pedidos';
     setKPIColor('kpi-fm','val-fm-dias',diasFM>62?'amarillo':'verde');
@@ -326,16 +356,16 @@ async function loadKPIs(){
     di+='<div class="data-row"><span class="data-lbl">MEE bajo mínimo</span><span class="data-val '+(meeBajos>0?'amarillo':'verde')+'">'+meeBajos+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Déficit total</span><span class="data-val '+(e.deficit_total_kg>0?'amarillo':'verde')+'">'+((e.deficit_total_kg||0).toFixed(1))+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 30d</span><span class="data-val '+(v30>0?'rojo':'verde')+'">'+v30+'</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vencen_60d>0?'amarillo':'verde')+'">'+(e.lotes_vencen_60d||0)+'</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+(e.lotes_produccion_mes||0)+' lotes / '+(e.kg_producidos_mes||0)+' kg</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vence_60>0?'amarillo':'verde')+'">'+(e.lotes_vence_60||0)+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+( e.prod_mes||0)+' lotes / '+parseFloat(e.kg_mes||0).toFixed(1)+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:rgba(255,255,255,0.5);font-size:0.82em;">→ ver</a></span></div>';
     document.getElementById('detalle-inventario').innerHTML=di;
 
     // Detalle ÁNIMUS
     var da='';
-    da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.unidades_pt_disponibles||0)+'</span></div>';
-    da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_con_stock_pt||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.uds_pt||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_stock||0)+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+' ('+fmt(a.valor_pedidos_activos||0)+')</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Último pedido FM</span><span class="data-val">'+(a.ultimo_pedido_fm||'Sin datos')+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'—')+'</span></div>';
@@ -349,7 +379,7 @@ async function loadKPIs(){
     if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
     if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> — Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
     if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
-    if(f.saldo_caja>0&&f.nomina_total>0&&f.saldo_caja<f.nomina_total*2) alertas.push({icon:'🔴',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nóminas.'});
+    var nomVal=(nom&&nom.total)||0; if(f.saldo_caja>0&&nomVal>0&&f.saldo_caja<nomVal*2) alertas.push({icon:'&#128308;',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nominas (nomina: '+fmt(nomVal)+')'});
 
     var panel=document.getElementById('alertas-panel');
     if(alertas.length>0){
@@ -365,7 +395,7 @@ async function loadKPIs(){
     if(f.saldo_caja) document.getElementById('inp-caja').value=f.saldo_caja;
     if(f.ingresos_animus) document.getElementById('inp-animus').value=f.ingresos_animus;
     if(f.ingresos_maquila) document.getElementById('inp-maquila').value=f.ingresos_maquila;
-    if(f.nomina_total) document.getElementById('inp-nomina').value=f.nomina_total;
+    if(nom.total) document.getElementById('inp-nomina').value=nom.total;
     if(f.notas) document.getElementById('inp-notas').value=f.notas;
 
   }catch(e){console.error(e);}
@@ -539,6 +569,44 @@ async function loadGerenciaExtra() {
       elSec.innerHTML = secH;
     }
 
+
+    // Maquila target
+    var mt=d.maquila_target||{}; var elMT=document.getElementById('gx-maquila-target');
+    if(elMT){
+      var pctE=Math.min(mt.pct_espagiria||0,100); var pctH=Math.min(mt.pct_hha||0,100);
+      elMT.innerHTML='<div class="data-row"><span class="data-lbl">Meta Espagiria $30M</span><span class="data-val '+(pctE>=80?'verde':(pctE>=40?'amarillo':'rojo'))+'">'+pctE+'%</span></div>'
+        +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctE<40?'danger':(pctE<80?'warn':''))+'" style="width:'+pctE+'%"></div></div>'
+        +'<div class="data-row" style="margin-top:8px;"><span class="data-lbl">Meta HHA $76M</span><span class="data-val '+(pctH>=80?'verde':(pctH>=40?'amarillo':'rojo'))+'">'+pctH+'%</span></div>'
+        +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctH<40?'danger':(pctH<80?'warn':''))+'" style="width:'+pctH+'%"></div></div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);margin-top:6px;">YTD: '+fmtV(mt.ytd||0)+'</div>';
+    }
+    // Influencer spend
+    var inf=d.influencer_spend||{}; var elInf=document.getElementById('gx-influencer');
+    if(elInf){
+      var infV=inf.ytd||0;
+      elInf.innerHTML='<div class="data-row"><span class="data-lbl">Total YTD</span><span class="data-val '+(infV>5000000?'amarillo':'verde')+'">'+fmtV(infV)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">OCs generadas</span><span class="data-val">'+(inf.ocs||0)+'</span></div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.3);margin-top:6px;">Categorias: Influencer + Marketing</div>';
+    }
+    // Inventory COP
+    var invC=d.inventory_cop||0; var elIC=document.getElementById('gx-inv-cop');
+    if(elIC){
+      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:#7ACFCC;padding:8px 0 4px;">'+fmtV(invC)+'</div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);">Precio promedio OC x lotes activos</div>';
+    }
+    // Churn alerts
+    var churns=d.churn_alerts||[]; var elCh=document.getElementById('gx-churn');
+    if(elCh){
+      if(!churns.length){ elCh.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
+      else{
+        elCh.innerHTML=churns.slice(0,5).map(function(ch){
+          return '<div class="churn-item"><div><div style="font-size:0.85em;color:rgba(255,255,255,0.8);">'+(ch.nombre||'')+'</div>'
+            +'<div style="font-size:0.72em;color:rgba(255,255,255,0.35);">Ultimo: '+(ch.ultimo_pedido||'—')+'</div></div>'
+            +'<span class="'+(ch.nivel==='critico'?'badge-crit':'badge-atenc')+'">'+(ch.dias||0)+'d</span></div>';
+        }).join('');
+        if(churns.length>5) elCh.innerHTML+='<div style="font-size:0.75em;color:rgba(255,255,255,0.3);padding:4px 0;">+'+(churns.length-5)+' mas</div>';
+      }
+    }
   } catch(e){ console.error('loadGerenciaExtra:', e); }
 }
 

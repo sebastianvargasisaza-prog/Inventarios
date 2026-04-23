@@ -89,6 +89,43 @@ def gerencia_kpis():
     row = c.fetchone()
     cols_inp = ['periodo','saldo_caja','ingresos_animus','ingresos_maquila','notas','fecha']
     inputs_manuales = dict(zip(cols_inp, row)) if row else {}
+    # Nomina real: suma de salarios netos del periodo actual
+    from datetime import date as _date2
+    periodo_nom = _date2.today().strftime('%Y-%m')
+    try:
+        c.execute("SELECT COALESCE(SUM(nr.salario_neto),0), COUNT(*) FROM nomina_registros nr WHERE nr.periodo=?", (periodo_nom,))
+        nom_row = c.fetchone()
+        nomina_total_real = nom_row[0] or 0
+        nomina_empleados = nom_row[1] or 0
+    except Exception:
+        nomina_total_real = 0
+        nomina_empleados = 0
+    if nomina_total_real == 0:
+        try:
+            c.execute("SELECT COALESCE(SUM(salario_base),0), COUNT(*) FROM empleados WHERE estado='Activo'")
+            fb = c.fetchone()
+            nomina_total_real = fb[0] or 0
+            nomina_empleados = fb[1] or 0
+        except Exception:
+            pass
+    # Produccion kg este mes
+    mes_str_prod = _date2.today().strftime('%Y-%m')
+    try:
+        c.execute("SELECT COALESCE(SUM(cantidad_kg),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
+                  (mes_str_prod+'%',))
+        prod_row = c.fetchone()
+        kg_mes = prod_row[0] or 0
+        lotes_mes = prod_row[1] or 0
+    except Exception:
+        try:
+            c.execute("SELECT COALESCE(SUM(cantidad),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
+                      (mes_str_prod+'%',))
+            prod_row = c.fetchone()
+            kg_mes = (prod_row[0] or 0)
+            lotes_mes = prod_row[1] or 0
+        except Exception:
+            kg_mes = 0
+            lotes_mes = 0
     conn.close()
     semaforos = {
         'mps': 'rojo' if mps_bajo_minimo > 5 else ('amarillo' if mps_bajo_minimo > 0 else 'verde'),
@@ -100,8 +137,10 @@ def gerencia_kpis():
     }
     return jsonify({'espagiria': {'mps_bajo_minimo': mps_bajo_minimo, 'mee_bajo_minimo': mee_bajo_minimo,
                                    'lotes_vence_30': lotes_vence_30,
-                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes, 'sol_pendientes': sol_pendientes},
+                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes, 'sol_pendientes': sol_pendientes,
+                                   'kg_mes': kg_mes, 'lotes_mes': lotes_mes},
                     'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
+                    'nomina': {'total': nomina_total_real, 'empleados': nomina_empleados, 'periodo': periodo_nom},
                     'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
 
 @bp.route('/api/gerencia/flujo-operacional')
@@ -322,11 +361,71 @@ def gerencia_dashboard_extra():
     except Exception:
         security = {'success_7d': 0, 'fail_7d': 0, 'last_event': None}
 
+    # Maquila YTD vs targets
+    try:
+        c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')", (year_str+'%',))
+        maquila_ytd = c.fetchone()[0] or 0
+    except Exception:
+        maquila_ytd = 0
+    try:
+        c.execute("SELECT COALESCE(SUM(p.valor_total),0) FROM pedidos p JOIN clientes cl ON p.cliente_id=cl.id WHERE cl.tipo='Maquila' AND p.fecha LIKE ? AND p.estado NOT IN ('Cancelado')", (year_str+'%',))
+        maquila_ytd += (c.fetchone()[0] or 0)
+    except Exception:
+        pass
+    maquila_target = {
+        'ytd': maquila_ytd,
+        'meta_espagiria': 30_000_000,
+        'meta_hha': 76_000_000,
+        'pct_espagiria': round(maquila_ytd / 30_000_000 * 100, 1) if maquila_ytd > 0 else 0,
+        'pct_hha': round(maquila_ytd / 76_000_000 * 100, 1) if maquila_ytd > 0 else 0,
+    }
+    # Influencer spend YTD
+    try:
+        c.execute("SELECT COALESCE(SUM(oc.valor_total),0), COUNT(DISTINCT oc.numero_oc) FROM ordenes_compra oc WHERE oc.fecha LIKE ? AND (oc.area_solicitante IN ('Influencer','Marketing') OR oc.proveedor LIKE '%Influenc%') AND oc.estado NOT IN ('Cancelada','Borrador')", (year_str+'%',))
+        inf_row = c.fetchone()
+        influencer_ytd = inf_row[0] or 0
+        influencer_ocs = inf_row[1] or 0
+    except Exception:
+        influencer_ytd = 0
+        influencer_ocs = 0
+    try:
+        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo LIKE ? AND (categoria LIKE '%Influencer%' OR categoria LIKE '%Marketing%')", (year_str+'%',))
+        influencer_ytd += (c.fetchone()[0] or 0)
+    except Exception:
+        pass
+    influencer_spend = {'ytd': influencer_ytd, 'ocs': influencer_ocs}
+    # Valor inventario MP en COP
+    try:
+        c.execute("SELECT l.codigo_mp, l.cantidad_g, COALESCE((SELECT AVG(oci.precio_unitario) FROM ordenes_compra_items oci WHERE oci.codigo_mp=l.codigo_mp AND oci.precio_unitario>0),0) as precio_u FROM lotes l WHERE l.estado='activo' AND l.cantidad_g>0")
+        lotes_rows = c.fetchall()
+        inventory_cop = sum((r[1] or 0) * (r[2] or 0) / 1000.0 for r in lotes_rows)
+    except Exception:
+        inventory_cop = 0.0
+    # Churn alerts — clientes activos sin pedido >75 dias
+    churn_alerts = []
+    try:
+        c.execute("SELECT cl.nombre, cl.tipo, MAX(p.fecha) as ult FROM clientes cl LEFT JOIN pedidos p ON p.cliente_id=cl.id WHERE cl.activo=1 GROUP BY cl.id HAVING ult IS NOT NULL")
+        from datetime import date as _dc
+        hoy_dc = _dc.today()
+        for r in c.fetchall():
+            try:
+                dias_c = (hoy_dc - _dc.fromisoformat(r[2][:10])).days
+            except Exception:
+                dias_c = 0
+            if dias_c >= 75:
+                churn_alerts.append({'nombre': r[0], 'tipo': r[1], 'ultimo_pedido': r[2][:10], 'dias': dias_c, 'nivel': 'critico' if dias_c >= 120 else 'atencion'})
+        churn_alerts.sort(key=lambda x: x['dias'], reverse=True)
+    except Exception:
+        pass
     conn.close()
     return jsonify({
         'ingresos_mes': ingresos_mes,
         'ar': ar, 'ap': ap,
         'maquila_pipeline': maquila_pipeline,
+        'maquila_target': maquila_target,
+        'influencer_spend': influencer_spend,
+        'inventory_cop': inventory_cop,
+        'churn_alerts': churn_alerts,
         'stock_critico': stock_critico,
         'sgsst_proximos': sgsst_proximos,
         'security': security,

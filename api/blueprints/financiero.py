@@ -408,7 +408,7 @@ def financiero_pnl():
                       'margen_pct': margen_pct, 'ingresos_ytd': ytd_ing,
                       'egresos_ytd': ytd_egr, 'ebitda': margen},
     }
-    # Histórico 6 meses
+    # Historico 6 meses
     historico = []
     for i in range(5, -1, -1):
         ref   = today.replace(day=1) - timedelta(days=i * 28)
@@ -418,8 +418,36 @@ def financiero_pnl():
         h_egr = egr_total(p)
         historico.append({'periodo': label, 'ingresos': h_ing,
                           'egresos': h_egr, 'margen': h_ing - h_egr})
+    # YTD vs anio anterior
+    prev_year = str(int(year_str) - 1)
+    ytd_prev_ing = ing_animus(prev_year) + ing_maquila(prev_year)
+    ytd_prev_egr = egr_total(prev_year)
+    ytd_crecimiento = round((ytd_ing - ytd_prev_ing) / ytd_prev_ing * 100, 1) if ytd_prev_ing > 0 else None
+    # Mes actual vs mismo mes anio anterior
+    mes_prev = today.replace(year=today.year - 1).strftime('%Y-%m')
+    prev_mes_ing = ing_animus(mes_prev) + ing_maquila(mes_prev)
+    prev_mes_egr = egr_total(mes_prev)
+    mes_crecimiento = round((total_ing - prev_mes_ing) / prev_mes_ing * 100, 1) if prev_mes_ing > 0 else None
+    # Nomina este mes (para costo laboral en P&L)
+    try:
+        c.execute("SELECT COALESCE(SUM(salario_neto),0) FROM nomina_registros WHERE periodo=?", (mes_str,))
+        nomina_mes = c.fetchone()[0] or 0
+    except Exception:
+        try:
+            c.execute("SELECT COALESCE(SUM(salario_base),0) FROM empleados WHERE estado='Activo'")
+            nomina_mes = c.fetchone()[0] or 0
+        except Exception:
+            nomina_mes = 0
+    ebitda = total_ing - total_egr - nomina_mes
     conn.close()
-    return jsonify({'empresas': empresas, 'historico': historico, 'periodo': periodo})
+    return jsonify({
+        'empresas': empresas, 'historico': historico, 'periodo': periodo,
+        'ytd': {'ingresos': ytd_ing, 'egresos': ytd_egr, 'margen': ytd_ing - ytd_egr,
+                'prev_ingresos': ytd_prev_ing, 'crecimiento_pct': ytd_crecimiento},
+        'mes_vs_prior': {'ingresos': total_ing, 'prev_ingresos': prev_mes_ing, 'crecimiento_pct': mes_crecimiento},
+        'nomina_mes': nomina_mes,
+        'ebitda': ebitda,
+    })
 
 # ===============================================================
 # INVENTARIO v2 - NUEVOS ENDPOINTS

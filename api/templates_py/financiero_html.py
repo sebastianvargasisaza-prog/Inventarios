@@ -261,6 +261,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Ingresos, egresos y margen operacional por empresa y consolidado. Actualización mensual.</p>
     <div id="pnl-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;"></div>
     <div id="pnl-brands" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;"></div>
+    <div id="pnl-ytd" style="margin-bottom:16px;"></div>
     <div class="section-title" style="font-size:0.9em;margin-bottom:8px;">📈 Histórico 6 meses</div>
     <canvas id="pnl-chart" height="100"></canvas>
   </div>
@@ -535,7 +536,7 @@ async function loadPreciosMayorista(){
       h+='<td style="padding:8px 6px;">'+s.descripcion+'</td>';
       h+='<td style="padding:8px 6px;text-align:right;"><input type="number" id="pm-'+s.sku+'" value="'+(s.precio_mayorista||0)+'" min="0" step="100" style="width:120px;padding:5px 8px;border:1px solid #dde;border-radius:6px;text-align:right;font-size:0.95em;"></td>';
       h+='<td style="padding:8px 6px;text-align:center;color:#888;">'+s.unidad+'</td>';
-      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(\\''+s.sku+'\\')" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
+      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(&apos;'+s.sku+'&apos;)" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
       h+='</tr>';
     });
     h+='</tbody></table>';
@@ -972,6 +973,153 @@ async function cargarHistorialConteos(){
     });
     tb.innerHTML = h;
   }catch(e){}
+}
+
+var _chartPNL = null;
+
+async function loadPNL(){
+  try{
+    var d=await fetch('/api/financiero/pnl').then(function(r){return r.json();});
+    var fmt2=function(n){if(!n&&n!==0)return '—';return '$'+Math.abs(parseFloat(n)||0).toLocaleString('es-CO',{maximumFractionDigits:0});};
+    var tot=d.empresas&&d.empresas['TOTAL']||{};
+    var ytd=d.ytd||{}; var mvp=d.mes_vs_prior||{};
+    var crec=ytd.crecimiento_pct;
+    var crecMes=mvp.crecimiento_pct;
+    // KPI cards
+    var kh='';
+    kh+='<div style="background:rgba(43,122,120,0.12);border:1px solid rgba(43,122,120,0.3);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#7ACFCC;">'+fmt2(tot.ingresos)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Ingresos este mes</div>';
+    if(crecMes!=null) kh+='<div style="font-size:0.75em;color:'+(crecMes>=0?'#27ae60':'#e74c3c');
+    if(crecMes!=null) kh+=';margin-top:3px;">'+(crecMes>=0?'&#8593;':'&#8595;')+Math.abs(crecMes)+'% vs mismo mes año ant.</div>';
+    kh+='</div>';
+    kh+='<div style="background:rgba(192,57,43,0.08);border:1px solid rgba(192,57,43,0.2);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#e74c3c;">'+fmt2(tot.egresos)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Egresos este mes</div></div>';
+    kh+='<div style="background:rgba(39,174,96,0.1);border:1px solid rgba(39,174,96,0.25);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#27ae60;">'+fmt2(tot.margen)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Margen mes ('+( tot.margen_pct||0)+'%)</div></div>';
+    kh+='<div style="background:rgba(52,152,219,0.1);border:1px solid rgba(52,152,219,0.25);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#3498db;">'+fmt2(ytd.ingresos)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Ingresos YTD</div>';
+    if(crec!=null) kh+='<div style="font-size:0.75em;color:'+(crec>=0?'#27ae60':'#e74c3c')+';margin-top:3px;">'+(crec>=0?'&#8593;':'&#8595;')+Math.abs(crec)+'% vs año anterior</div>';
+    kh+='</div>';
+    kh+='<div style="background:rgba(155,89,182,0.1);border:1px solid rgba(155,89,182,0.25);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#9b59b6;">'+fmt2(d.nomina_mes)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Nomina mes</div></div>';
+    kh+='<div style="background:rgba(230,126,34,0.1);border:1px solid rgba(230,126,34,0.25);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#e67e22;">'+fmt2(d.ebitda)+'</div>';
+    kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">EBITDA aprox.</div></div>';
+    document.getElementById('pnl-kpis').innerHTML=kh;
+    // Brands
+    var bh='';
+    ['ANIMUS','ESPAGIRIA'].forEach(function(k){
+      var b=d.empresas&&d.empresas[k]||{};
+      bh+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:10px;padding:16px;">';
+      bh+='<div style="font-weight:700;font-size:0.9em;color:#2B7A78;margin-bottom:12px;">'+k+'</div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">Ingresos mes</span><span style="font-weight:700;">'+fmt2(b.ingresos)+'</span></div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">YTD</span><span style="font-weight:700;color:#3498db;">'+fmt2(b.ingresos_ytd)+'</span></div>';
+      bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:#666;">Margen</span><span style="font-weight:700;color:#27ae60;">'+fmt2(b.margen)+'</span></div>';
+      bh+='</div>';
+    });
+    document.getElementById('pnl-brands').innerHTML=bh;
+    // Chart
+    if(d.historico&&d.historico.length){
+      var labels=d.historico.map(function(h){return h.periodo;});
+      var ings=d.historico.map(function(h){return h.ingresos||0;});
+      var egrs=d.historico.map(function(h){return h.egresos||0;});
+      var mars=d.historico.map(function(h){return h.margen||0;});
+      if(_chartPNL)_chartPNL.destroy();
+      _chartPNL=new Chart(document.getElementById('pnl-chart'),{
+        type:'bar',
+        data:{labels:labels,datasets:[
+          {label:'Ingresos',data:ings,backgroundColor:'rgba(43,122,120,0.7)',borderRadius:4},
+          {label:'Egresos',data:egrs,backgroundColor:'rgba(192,57,43,0.5)',borderRadius:4},
+          {label:'Margen',data:mars,type:'line',borderColor:'#27ae60',backgroundColor:'rgba(39,174,96,0.1)',tension:0.3,fill:true}
+        ]},
+        options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:function(v){return '$'+Math.round(v/1000000)+'M';}}}}}
+      });
+    }
+  }catch(e){console.error('loadPNL:',e);}
+}
+
+var _chartAR=null;
+async function loadARaging(){
+  try{
+    var d=await fetch('/api/financiero/ar-aging').then(function(r){return r.json();});
+    var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
+    var el=document.getElementById('ar-content');
+    if(!el)return;
+    var bk=d.buckets||{};
+    var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
+    h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Bucket</th><th style="text-align:right;padding:8px;">Total</th><th style="text-align:right;padding:8px;"># Pedidos</th></tr>';
+    var buckets=[['corriente','Corriente (0-30d)','#27ae60'],['dias_30','31-60 dias','#e67e22'],['dias_60','61-90 dias','#e74c3c'],['dias_90','>90 dias','#8e44ad']];
+    buckets.forEach(function(b){
+      var bdata=bk[b[0]]||{};
+      h+='<tr style="border-bottom:1px solid #e9ecef;"><td style="padding:8px;color:'+b[2]+';">'+b[1]+'</td>';
+      h+='<td style="text-align:right;padding:8px;font-weight:700;">'+fmt2(bdata.total)+'</td>';
+      h+='<td style="text-align:right;padding:8px;">'+(bdata.count||0)+'</td></tr>';
+    });
+    h+='<tr style="font-weight:900;background:#f8f9fa;"><td style="padding:8px;">TOTAL AR</td><td style="text-align:right;padding:8px;">'+fmt2(d.ar_total)+'</td><td style="text-align:right;padding:8px;">'+(d.count||0)+'</td></tr>';
+    h+='</table>';
+    el.innerHTML=h;
+  }catch(e){console.error('loadARaging:',e);}
+}
+
+var _chartAP=null;
+async function loadAPaging(){
+  try{
+    var d=await fetch('/api/financiero/ap-aging').then(function(r){return r.json();});
+    var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
+    var el=document.getElementById('ap-content');
+    if(!el)return;
+    var bk=d.buckets||{};
+    var h='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
+    h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Bucket</th><th style="text-align:right;padding:8px;">Total</th><th style="text-align:right;padding:8px;"># OCs</th></tr>';
+    var buckets=[['corriente','Corriente (0-30d)','#27ae60'],['dias_30','31-60 dias','#e67e22'],['dias_60','61-90 dias','#e74c3c'],['dias_90','>90 dias','#8e44ad']];
+    buckets.forEach(function(b){
+      var bdata=bk[b[0]]||{};
+      h+='<tr style="border-bottom:1px solid #e9ecef;"><td style="padding:8px;color:'+b[2]+';">'+b[1]+'</td>';
+      h+='<td style="text-align:right;padding:8px;font-weight:700;">'+fmt2(bdata.total)+'</td>';
+      h+='<td style="text-align:right;padding:8px;">'+(bdata.count||0)+'</td></tr>';
+    });
+    h+='<tr style="font-weight:900;background:#f8f9fa;"><td style="padding:8px;">TOTAL AP</td><td style="text-align:right;padding:8px;">'+fmt2(d.ap_total)+'</td><td style="text-align:right;padding:8px;">'+(d.count||0)+'</td></tr>';
+    h+='</table>';
+    el.innerHTML=h;
+  }catch(e){console.error('loadAPaging:',e);}
+}
+
+async function loadWorkingCapital(){
+  try{
+    var d=await fetch('/api/financiero/working-capital').then(function(r){return r.json();});
+    var fmt2=function(n){return '$'+Math.abs(parseFloat(n||0)).toLocaleString('es-CO',{maximumFractionDigits:0});};
+    var el=document.getElementById('wc-content');
+    if(!el)return;
+    var wc=d.working_capital||0;
+    var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;">';
+    var cards=[
+      ['Working Capital',fmt2(wc),wc>=0?'#27ae60':'#e74c3c'],
+      ['AR Total',fmt2(d.ar_total),'#2B7A78'],
+      ['AP Total',fmt2(d.ap_total),'#e67e22'],
+      ['Inventario MP',fmt2(d.inventory_value),'#3498db'],
+      ['Caja',fmt2(d.cash),'#9b59b6'],
+      ['Burn Rate/mes',fmt2(d.burn_rate),'#e74c3c'],
+      ['Runway',d.runway_meses?(d.runway_meses.toFixed(1)+' meses'):'—','#27ae60'],
+    ];
+    cards.forEach(function(c){
+      h+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:12px;text-align:center;">';
+      h+='<div style="font-size:1.3em;font-weight:900;color:'+c[2]+';">'+c[1]+'</div>';
+      h+='<div style="font-size:0.72em;color:#666;text-transform:uppercase;margin-top:4px;">'+c[0]+'</div></div>';
+    });
+    h+='</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
+    h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Métrica</th><th style="text-align:right;padding:8px;">Valor</th></tr>';
+    [['DSO (días cobro)',d.dso?d.dso.toFixed(0)+'d':'—'],['DPO (días pago)',d.dpo?d.dpo.toFixed(0)+'d':'—'],['DIO (días inventario)',d.dio?d.dio.toFixed(0)+'d':'—'],['CCC (ciclo caja)',d.ccc?d.ccc.toFixed(0)+'d':'—']].forEach(function(r){
+      h+='<tr style="border-bottom:1px solid #e9ecef;"><td style="padding:8px;">'+r[0]+'</td><td style="text-align:right;padding:8px;font-weight:700;">'+r[1]+'</td></tr>';
+    });
+    h+='</table>';
+    el.innerHTML=h;
+  }catch(e){console.error('loadWorkingCapital:',e);}
 }
 document.addEventListener('DOMContentLoaded',function(){
   var hoy=new Date().toISOString().substring(0,10);
