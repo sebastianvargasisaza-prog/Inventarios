@@ -186,9 +186,17 @@ def eliminar_solicitud(numero):
     if not row:
         conn.close(); return jsonify({'error': 'No encontrada'}), 404
     estado, numero_oc = row
+    # If OC exists, try to clean it up too (only if in Borrador state)
     if numero_oc and numero_oc.strip():
-        conn.close()
-        return jsonify({'error': 'No se puede eliminar: tiene OC vinculada '+numero_oc}), 400
+        cur = conn.cursor()
+        cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+        oc_row = cur.fetchone()
+        if oc_row and oc_row[0] in ('Borrador', 'Rechazada'):
+            cur.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+            cur.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+        elif oc_row:
+            # OC exists and is active — unlink solicitud from OC but keep OC
+            pass  # just delete the solicitud
     c.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
     c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
     conn.commit(); conn.close()

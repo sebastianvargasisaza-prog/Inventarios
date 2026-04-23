@@ -2228,6 +2228,8 @@ function renderInfluencers(){
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#dc2626;color:#fff;font-size:13px;">&#x2715; Rechazar</button>';
     } else if(s.estado==='Pendiente'){
       btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">&#x1F5D1; Eliminar</button>';
+    } else if(s.estado==='Rechazada'){
+      btns='<span style="color:#991b1b;font-weight:600;font-size:13px;">&#x2715; Rechazada</span>&nbsp;<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">&#x1F5D1;</button>';
     } else if(s.estado==='Pagada'){
       btns='<span style="color:#065f46;font-weight:600;font-size:13px;">&#x2713; Pagado</span>';
     } else if(s.estado==='Rechazada'){
@@ -2333,7 +2335,7 @@ function renderSolicitudes(){
       +'<span>'+esc(s.categoria||'-')+'</span>'
       +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
       +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
-      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button>'+(s.numero_oc?'':'<button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button>')+'</div>'
+      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button>'+'<button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button>'+'</div>'
       +'</div>';
   }).join('');
 }
@@ -3243,12 +3245,22 @@ async function loadPlanta(){
 }
 
 async function eliminarSolicitud(num){
-  if(!confirm('Eliminar '+num+'? Sin deshacer.')) return;
+  if(!confirm('Eliminar solicitud '+num+'?')) return;
   try{
     var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num),{method:'DELETE'});
     var d=await r.json();
-    if(d.ok){alert('Eliminada.');await Promise.all([loadSolicitudes(),loadMarketing(),loadCCSolicitudes()]);}
-    else alert('Error: '+(d.error||''));
+    if(d.ok){
+      // Remove card from DOM immediately for snappy UX
+      var card=document.querySelector('[data-sol="'+num+'"]');
+      if(card){var parent=card.closest('.card');if(parent)parent.remove();}
+      // Reload all relevant data
+      if(typeof loadSolicitudes==='function') loadSolicitudes();
+      if(typeof loadCCSolicitudes==='function') loadCCSolicitudes();
+      if(typeof loadMarketing==='function') loadMarketing();
+      else if(typeof renderMarketing==='function') renderMarketing();
+    } else {
+      alert('No se pudo eliminar: '+(d.error||'error desconocido'));
+    }
   }catch(e){alert('Error: '+e.message);}
 }
 
