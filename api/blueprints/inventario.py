@@ -1948,6 +1948,7 @@ def _init_acondicionamiento():
     c.execute("""CREATE TABLE IF NOT EXISTS acondicionamiento (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
         produccion_id       INTEGER DEFAULT 0,
+        envasado_id         INTEGER DEFAULT 0,
         lote                TEXT NOT NULL DEFAULT '',
         producto            TEXT NOT NULL DEFAULT '',
         cantidad_batch_g    REAL DEFAULT 0,

@@ -34,3 +34,8 @@ venv/
 .vscode/
 .idea/
 *.swp
+
+# Local env files — never commit real credentials
+.env.production
+.env.local
+.env
