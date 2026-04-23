@@ -446,12 +446,12 @@ def init_db():
                  activo INTEGER DEFAULT 1)""")
     fm_skus = [
         ('LBHA-30', 'Limpiador Balanceador HA 30ml', 42000, 29400, 'unidad'),
-        ('TRX-15', 'TÃ³nico Reparador 15ml', 38000, 26600, 'unidad'),
-        ('NIAC-30', 'SÃ©rum Niacinamida 30ml', 55000, 38500, 'unidad'),
-        ('AZHC-30', 'SÃ©rum AZ+HC 30ml', 52000, 36400, 'unidad'),
-        ('SBHA-30', 'SÃ©rum SalicÃ­lico BHA 30ml', 48000, 33600, 'unidad'),
-        ('ECEN-30', 'SÃ©rum Encapsulado Centella 30ml', 58000, 40600, 'unidad'),
-        ('EILU-30', 'EmulsiÃ³n Iluminadora 30ml', 45000, 31500, 'unidad'),
+        ('TRX-15', 'Tonico Reparador 15ml', 38000, 26600, 'unidad'),
+        ('NIAC-30', 'Serum Niacinamida 30ml', 55000, 38500, 'unidad'),
+        ('AZHC-30', 'Serum AZ+HC 30ml', 52000, 36400, 'unidad'),
+        ('SBHA-30', 'Serum Salicilico BHA 30ml', 48000, 33600, 'unidad'),
+        ('ECEN-30', 'Serum Encapsulado Centella 30ml', 58000, 40600, 'unidad'),
+        ('EILU-30', 'Emulsion Iluminadora 30ml', 45000, 31500, 'unidad'),
         ('CUREA-50', 'Crema Urea 50ml', 40000, 28000, 'unidad'),
         ('GELH-120', 'Gel Hidratante 120ml', 35000, 24500, 'unidad'),
     ]
@@ -467,6 +467,8 @@ def init_db():
                   'sebastianvargasisaza@gmail.com','Inmediato',0,datetime('now')),
                  ('CLI-002','Fernando Mesa','ANIMUS','Distribuidor','Fernando Mesa',
                   '','30 dias',0,datetime('now'))""")
+    # Ensure seeded clients are always active (may have been deactivated)
+    c.execute("UPDATE clientes SET activo=1 WHERE codigo IN ('CLI-001','CLI-002')")
 
     # ââ MAQUILA 360 ââââââââââââââââââââââââââââââââââââââââââââââ
     c.execute("""CREATE TABLE IF NOT EXISTS maquila_prospectos (
