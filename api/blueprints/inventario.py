@@ -579,6 +579,26 @@ def update_stock_minimo(codigo):
     conn.commit(); conn.close()
     return jsonify({'message': f'Stock minimo de {codigo} actualizado a {nuevo_min}'})
 
+
+@bp.route('/api/maestro-mps/<codigo>/proveedor', methods=['PUT'])
+def update_mp_proveedor(codigo):
+    """Actualiza el proveedor asignado a una MP en maestro_mps.
+    Usado por guardarProveedorMP() en el dashboard de Planta."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    proveedor = (d.get('proveedor') or '').strip()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?", (proveedor, codigo))
+    updated = c.rowcount
+    conn.commit()
+    conn.close()
+    if updated == 0:
+        return jsonify({'error': 'MP no encontrada', 'codigo': codigo}), 404
+    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
+
+
 @bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])
 def update_mee_stock_minimo(codigo):
     """Actualiza el stock minimo de un MEE."""
