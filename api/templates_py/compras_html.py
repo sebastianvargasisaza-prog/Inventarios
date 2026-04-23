@@ -2226,6 +2226,8 @@ function renderInfluencers(){
     if(s.estado==='Aprobada'){
       btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;font-size:13px;">&#x1F4B8; Pagar</button>'
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#dc2626;color:#fff;font-size:13px;">&#x2715; Rechazar</button>';
+    } else if(s.estado==='Pendiente'){
+      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">&#x1F5D1; Eliminar</button>';
     } else if(s.estado==='Pagada'){
       btns='<span style="color:#065f46;font-weight:600;font-size:13px;">&#x2713; Pagado</span>';
     } else if(s.estado==='Rechazada'){
@@ -2246,8 +2248,10 @@ function renderInfluencers(){
   gel.onclick=function(e){
     var bp=e.target.closest('.inf-pagar');
     var br=e.target.closest('.inf-rechazar');
+    var bd=e.target.closest('[data-act="del-sol"]');
     if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
     if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
+    if(bd) eliminarSolicitud(bd.dataset.sol);
   };
 }
 // ─── Pagar influencer ───────────────────────────────────────────────
