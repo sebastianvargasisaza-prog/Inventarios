@@ -44,6 +44,84 @@ def get_db():
         # Sin app context: scripts de init, tests, herramientas CLI
         return _configure_conn(sqlite3.connect(DB_PATH))
 
+
+# ─── Sistema de migración de esquema ─────────────────────────────────────────
+# Reglas:
+#   • Añadir migraciones SOLO al final de la lista. Nunca modificar existentes.
+#   • Cada versión es idempotente: los errores de "duplicate column name" se
+#     ignoran, cualquier otro error de SQLite propaga la excepción.
+#   • Versión 1 = baseline: toda la estructura inicial de init_db() ya existe
+#     en producción — se registra sin ejecutar sentencias.
+#
+# Para añadir una columna nueva a una tabla existente:
+#   1. Agregar tupla al final de MIGRATIONS con la sentencia ALTER TABLE.
+#   2. NO añadir try/except inline en init_db() — usar solo este sistema.
+MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (1, "baseline — sistema de migraciones instalado", []),
+    (2, "maestro_mps: proveedor_preferido", [
+        "ALTER TABLE maestro_mps ADD COLUMN proveedor_preferido TEXT DEFAULT \'\'",
+    ]),
+    (3, "clientes: monto_credito_cop, dias_credito", [
+        "ALTER TABLE clientes ADD COLUMN monto_credito_cop REAL DEFAULT 0",
+        "ALTER TABLE clientes ADD COLUMN dias_credito INTEGER DEFAULT 30",
+    ]),
+    (4, "pedidos: canal_venta, descuento_total_cop", [
+        "ALTER TABLE pedidos ADD COLUMN canal_venta TEXT DEFAULT \'Directo\'",
+        "ALTER TABLE pedidos ADD COLUMN descuento_total_cop REAL DEFAULT 0",
+    ]),
+    # Próximas migraciones aquí — nunca modificar las anteriores
+]
+
+
+def run_migrations(conn: "sqlite3.Connection") -> int:
+    """Aplica migraciones de esquema pendientes y retorna cuántas se aplicaron.
+
+    Diseñado para ejecutarse en cada arranque de la app y en scripts de deploy.
+    Seguro ante múltiples workers: el commit por migración usa el lock de SQLite
+    como barrera — si dos workers arrancan simultáneamente, el segundo encontrará
+    la versión ya registrada en schema_migrations y la saltará.
+
+    Args:
+        conn: Conexión SQLite activa (no necesita row_factory).
+
+    Returns:
+        Número de migraciones nuevas aplicadas en esta llamada.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version     INTEGER PRIMARY KEY,
+            applied_at  TEXT    NOT NULL DEFAULT (datetime('now', 'utc')),
+            description TEXT    NOT NULL DEFAULT ''
+        )
+    """)
+    conn.commit()
+
+    applied: set[int] = {
+        row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+    }
+    applied_count = 0
+
+    for version, description, stmts in MIGRATIONS:
+        if version in applied:
+            continue
+        for stmt in stmts:
+            try:
+                conn.execute(stmt)
+            except Exception as exc:
+                # "duplicate column name" → columna ya existe (OK en idempotencia)
+                if "duplicate column name" not in str(exc).lower():
+                    raise RuntimeError(
+                        f"Migración {version} falló en: {stmt!r}"
+                    ) from exc
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, description) VALUES(?,?)",
+            (version, description),
+        )
+        conn.commit()
+        applied_count += 1
+
+    return applied_count
+
 def init_db():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
@@ -1228,6 +1306,10 @@ def init_db():
     import time as _time
     c.execute("DELETE FROM rate_limit WHERE locked_until < ? AND locked_until > 0",
               (_time.time(),))
+
+
+    # ─── Migraciones de esquema: aplicar al arranque ─────────────────────────
+    run_migrations(conn)
 
     conn.commit()
     conn.close()

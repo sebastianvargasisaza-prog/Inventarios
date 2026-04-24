@@ -31,7 +31,7 @@ from auth import (
     _log_sec, register_hooks,
 )
 
-from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db
+from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db, run_migrations, MIGRATIONS
 
 app = Flask(__name__)
 _secret = os.environ.get('SECRET_KEY')
@@ -152,9 +152,13 @@ app.register_blueprint(tecnica_bp)
 app.register_blueprint(marketing_bp)
 app.register_blueprint(animus_bp)
 
-# ─── DB init (idempotente) ──────────────────────────────────────────────────
-init_db()
+# ─── DB init + migraciones de esquema (idempotente) ────────────────────────
+init_db()   # crea tablas + ejecuta run_migrations() internamente
 run_seed_rrhh()
+import logging as _log
+_log.getLogger(__name__).info(
+    "schema_migrations: %d versiones registradas", len(MIGRATIONS)
+)
 
 
 
