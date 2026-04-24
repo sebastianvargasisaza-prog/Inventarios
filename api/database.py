@@ -1109,6 +1109,16 @@ def init_db():
               ('ghl_api_key', 'pit-3db1d41c-6103-4e02-8a0e-063d67a137a1'))
     c.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
               ('ghl_location_id', '5r0teMcpx8CM57bcQqFB'))
+    # Credenciales desde variables de entorno de Render (no hardcoded en código)
+    import os as _os
+    for _clave, _env in [
+        ('shopify_token',    'SHOPIFY_TOKEN'),
+        ('shopify_shop',     'SHOPIFY_SHOP'),
+        ('anthropic_api_key','ANTHROPIC_API_KEY'),
+    ]:
+        _val = _os.environ.get(_env)
+        if _val:
+            c.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)", (_clave, _val))
 
     c.execute("""CREATE TABLE IF NOT EXISTS animus_shopify_orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
