@@ -926,7 +926,46 @@ def init_db():
     c.execute(f'DELETE FROM ordenes_compra WHERE numero_oc IN ({_ph})', _test_ocs)
 
 
-    conn.commit()
+    # ── Empleados reales HHA Group (seeded 2026-04-23) ──────────────────
+    # Primero eliminar empleados dummy sin referencias (cedulas ficticias del seed previo)
+    _dummy_ced = ('1090432100','1090512210','1043218870','1090388900','1092101530','1090600610','1043320780')
+    for _dc in _dummy_ced:
+        try:
+            _row = c.execute("SELECT id FROM empleados WHERE cedula=?", (_dc,)).fetchone()
+            if _row:
+                _refs = c.execute("SELECT COUNT(*) FROM nomina_registros WHERE empleado_id=?", (_row[0],)).fetchone()[0]
+                if _refs == 0:
+                    c.execute("DELETE FROM empleados WHERE cedula=?", (_dc,))
+        except Exception:
+            pass
+    # Insertar empleados reales (cedulas reales — INSERT OR IGNORE protege contra re-runs)
+    _emp_data = [
+        ("HHA001","Alvaro Julio","Gonz\u00e1lez Londo\u00f1o","16632635","Mensajero","Log\u00edstica","\u00c1NIMUS Lab","Indefinido","2021-06-01","Activo",1750905,1),
+        ("HHA002","Daniela","Murillo Sol\u00eds","1143874047","Log\u00edstica Despachos","Log\u00edstica","\u00c1NIMUS Lab","Indefinido","2022-05-16","Activo",3000000,1),
+        ("HHA003","Haidy Samira","Garc\u00eda Mosquera","1128724125","Auxiliar de Despachos","Log\u00edstica","\u00c1NIMUS Lab","Indefinido","2021-03-08","Activo",1750905,1),
+        ("HHA004","Jefferson","Mu\u00f1oz Cachimbo","1026560691","Marketing","Marketing","\u00c1NIMUS Lab","Indefinido","2023-01-16","Activo",1850905,1),
+        ("HHA005","Valentina","Mu\u00f1oz Cachimbo","1026560690","Ventas","Ventas","\u00c1NIMUS Lab","Indefinido","2022-09-01","Activo",1750905,1),
+        ("HHA006","Karol Yulieth","Cer\u00f3n Trullo","1109663762","Auxiliar de Despachos","Log\u00edstica","\u00c1NIMUS Lab","Indefinido","2023-10-01","Activo",1750905,1),
+        ("HHA007","Lina Marcela","Gaviria Pati\u00f1o","1098307374","Oficios Varios","Servicios","\u00c1NIMUS Lab","Indefinido","2023-10-15","Activo",1750905,1),
+        ("HHA008","Sebasti\u00e1n","Vargas Isaza","1097397765","Gerente Ejecutivo","Gerencia","HHA Group","Indefinido","2025-02-01","Activo",6000000,1),
+        ("ESP001","Catalina","Erazo Aristizabal","1006054219","Asistente de Gerencia","Administraci\u00f3n","Espagiria","Indefinido","2023-06-02","Activo",1750905,1),
+        ("ESP002","Luz Adriana","Torres Garc\u00eda","1007854652","Aux. Admtiva. Producci\u00f3n y Compras","Administraci\u00f3n","Espagiria","Indefinido","2021-02-15","Activo",2000000,2),
+        ("ESP003","Maierlin","Rivera Mej\u00eda","1005875757","Operaria Producci\u00f3n","Producci\u00f3n","Espagiria","Indefinido","2021-03-08","Activo",1750905,2),
+        ("ESP004","Yeison Camilo","Garc\u00eda Mosquera","1007601298","Auxiliar de Bodega MP y Empaque","Bodega","Espagiria","Indefinido","2022-03-01","Activo",1750905,2),
+        ("ESP005","Mar\u00eda Yuliel","Rivera Vargas","43976397","Jefe Control de Calidad","Calidad","Espagiria","Indefinido","2024-03-04","Activo",3000000,2),
+        ("ESP006","Johan Sebasti\u00e1n","Murillo Sol\u00eds","1143846075","Operario Envasado","Producci\u00f3n","Espagiria","Indefinido","2024-10-21","Activo",1750905,2),
+        ("ESP007","Hernando","Acevedo D\u00edaz","1044912921","Director T\u00e9cnico","Direcci\u00f3n T\u00e9cnica","Espagiria","Indefinido","2024-10-28","Activo",8500000,2),
+        ("ESP008","Miguel","Valencia Medina","1007932197","Jefe de Aseguramiento de la Calidad","Calidad","Espagiria","Indefinido","2026-03-19","Activo",3500000,2),
+        ("ESP009","Luis Enrique","Dorronsoro Gamboa","14639995","Jefe de Producci\u00f3n","Producci\u00f3n","Espagiria","Indefinido","2026-03-19","Activo",5500000,2),
+        ("ESP010","Laura Isabel","Gonz\u00e1lez Largo","1193447691","Jefe de Calidad","Calidad","Espagiria","Indefinido","2026-01-05","Activo",4500000,2),
+        ("ESP011","Sergio Andr\u00e9s","Burbano Pardo","1001937292","Operario Producci\u00f3n","Producci\u00f3n","Espagiria","Indefinido","2026-01-13","Activo",1750905,2),
+    ]
+    for _e in _emp_data:
+        try:
+            c.execute("INSERT OR IGNORE INTO empleados (codigo,nombre,apellido,cedula,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,nivel_riesgo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", _e)
+        except Exception:
+            pass
+        conn.commit()
     conn.close()
 
 
