@@ -173,48 +173,74 @@ textarea{resize:vertical;min-height:80px;}
 <!-- TAB: DASHBOARD -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-dashboard" class="tab-panel active">
-  <div class="page-title">&#x1F3AF; Dashboard Marketing</div>
-  <div class="page-sub" id="dash-fecha">Cargando...</div>
-
-  <div class="kpi-grid" id="dash-kpis">
-    <div class="kpi-card"><div class="kpi-label">Campañas</div><div class="kpi-val">—</div></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
+    <div>
+      <div class="page-title" style="margin-bottom:2px;">&#x2726; ÁNIMUS Lab — Dashboard</div>
+      <div class="page-sub" id="dash-fecha">Cargando...</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div id="pill-shopify" class="platform-pill pill-off">🛍️ Shopify</div>
+      <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
+      <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
+      <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
+      <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
+      <button id="btn-sync-ig" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
+      <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
+    </div>
   </div>
 
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 20px;">
-    <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Integraciones</span>
-    <div id="pill-shopify" class="platform-pill pill-off">🛍️ Shopify</div>
-    <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
-    <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
-    <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')" style="margin-left:8px;">↻ Sync Shopify</button>
-    <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ Sync GHL</button>
-    <button id="btn-sync-ig" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ Sync IG</button>
-    <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
+  <!-- KPIs Shopify -->
+  <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify — Ventas reales</div>
+  <div class="kpi-grid" id="dash-shopify-kpis">
+    <div class="kpi-card yellow"><div class="kpi-label">Revenue 30d</div><div class="kpi-val" id="sh-rev30">—</div><div class="kpi-sub" id="sh-rev7">Últimos 7d: —</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Pedidos 30d</div><div class="kpi-val" id="sh-ped30">—</div><div class="kpi-sub" id="sh-ped-total">Total: —</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Ticket promedio</div><div class="kpi-val" id="sh-ticket">—</div><div class="kpi-sub" id="sh-clientes">Clientes: —</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Clientes nuevos 30d</div><div class="kpi-val" id="sh-nuevos">—</div><div class="kpi-sub" id="sh-recurrentes">Recurrentes: —</div></div>
+    <div class="kpi-card"><div class="kpi-label">Revenue total</div><div class="kpi-val" id="sh-rev-total" style="font-size:16px;">—</div><div class="kpi-sub">Histórico</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">—</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: —</div></div>
   </div>
 
+  <!-- Gráfica de ventas + Top SKUs -->
+  <div class="grid2" style="margin:20px 0;">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">📈 Ventas mensuales Shopify</span></div>
+      <div class="card-body" id="dash-chart" style="min-height:160px;">Cargando...</div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">🏆 Top SKUs por revenue (30d)</span></div>
+      <div class="card-body" id="dash-top-skus">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Campañas + Ciudades -->
   <div class="grid2" style="margin-bottom:20px;">
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F4E2; Campañas Activas</span></div>
+      <div class="card-hdr">
+        <span class="card-title">📢 Campañas activas</span>
+        <div class="kpi-grid" id="dash-kpis" style="display:none;"></div>
+      </div>
       <div class="card-body">
         <table><thead><tr><th>Nombre</th><th>Canal</th><th>Estado</th><th>Budget</th><th>Ventas</th></tr></thead>
         <tbody id="dash-campanas"><tr class="empty-row"><td colspan="5">Cargando...</td></tr></tbody></table>
       </div>
     </div>
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F4C8; Tendencias SKU (últimos 90d)</span></div>
-      <div class="card-body" id="dash-tendencias">Cargando...</div>
+      <div class="card-hdr"><span class="card-title">🌎 Top ciudades Shopify</span></div>
+      <div class="card-body" id="dash-ciudades">Cargando...</div>
     </div>
   </div>
 
+  <!-- Contenido + Canal -->
   <div class="grid2">
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F4F1; Contenido Reciente</span></div>
+      <div class="card-hdr"><span class="card-title">📱 Contenido reciente</span></div>
       <div class="card-body">
         <table><thead><tr><th>Tipo</th><th>Plataforma</th><th>Estado</th><th>Alcance</th></tr></thead>
         <tbody id="dash-contenido"><tr class="empty-row"><td colspan="4">Cargando...</td></tr></tbody></table>
       </div>
     </div>
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F4B0; Presupuesto por Canal</span></div>
+      <div class="card-hdr"><span class="card-title">💰 Presupuesto por canal</span></div>
       <div class="card-body" id="dash-canales">Cargando...</div>
     </div>
   </div>
@@ -721,62 +747,142 @@ function loadTab(name) {
 async function loadDashboard() {
   loadConnections();
   const data = await fetch('/api/marketing/dashboard').then(r=>r.json());
-  const k = data.kpis;
+  const k = data.kpis || {};
+  const sh = data.shopify || {};
+  const ghl = data.ghl || {};
+
   document.getElementById('dash-fecha').textContent = 'Actualizado: '+new Date().toLocaleString('es-CO');
-  document.getElementById('dash-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Campañas totales</div><div class="kpi-val">${k.total_campanas}</div><div class="kpi-sub">${k.activas} activas</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Presupuesto Total</div><div class="kpi-val" style="font-size:18px;">${fmtM(k.presupuesto_total)}</div><div class="kpi-sub">${fmtM(k.presupuesto_gastado)} ejecutado (${k.pct_ejecutado}%)</div></div>
-    <div class="kpi-card ${k.roi_global>=0?'green':'red'}"><div class="kpi-label">ROI Global</div><div class="kpi-val">${k.roi_global>0?'+':''}${k.roi_global}%</div><div class="kpi-sub">Ventas ${fmtM(k.ventas_total)}</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Influencers activos</div><div class="kpi-val">${k.total_influencers}</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Contenido publicado</div><div class="kpi-val">${k.contenido_publicado}</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Conversiones</div><div class="kpi-val">${fmt(k.total_conversiones)}</div><div class="kpi-sub">Alcance ${fmt(k.total_alcance)}</div></div>
-  `;
 
-  // Campañas activas
+  // ── Shopify KPIs ──────────────────────────────────────────────────────────
+  const fmt2 = v => v==null?'—':String(v);
+  const fmtCOP = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
+  document.getElementById('sh-rev30').textContent    = fmtCOP(sh.revenue_30d);
+  document.getElementById('sh-rev7').textContent     = 'Últimos 7d: '+fmtCOP(sh.revenue_7d);
+  document.getElementById('sh-ped30').textContent    = fmt2(sh.pedidos_30d);
+  document.getElementById('sh-ped-total').textContent= 'Total: '+fmt2(sh.pedidos_total);
+  document.getElementById('sh-ticket').textContent   = fmtCOP(sh.ticket_promedio);
+  document.getElementById('sh-clientes').textContent = 'Clientes: '+fmt2(sh.clientes_total);
+  document.getElementById('sh-nuevos').textContent   = fmt2(sh.clientes_nuevos_30d);
+  document.getElementById('sh-recurrentes').textContent = 'Recurrentes: '+fmt2(sh.clientes_recurrentes_30d);
+  document.getElementById('sh-rev-total').textContent = fmtCOP(sh.revenue_total);
+  document.getElementById('ghl-total').textContent   = fmt2(ghl.contactos_total);
+  document.getElementById('ghl-nuevos').textContent  = 'Nuevos 30d: '+fmt2(ghl.contactos_nuevos_30d);
+
+  // ── Gráfica ventas mensuales (SVG bar chart) ──────────────────────────────
+  const mensual = sh.mensual || [];
+  const chartEl = document.getElementById('dash-chart');
+  if (!mensual.length) {
+    chartEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de ventas</div>';
+  } else {
+    const W=560, H=140, PAD_L=52, PAD_B=32, PAD_T=10, PAD_R=10;
+    const plotW = W-PAD_L-PAD_R;
+    const plotH = H-PAD_T-PAD_B;
+    const maxV = Math.max(...mensual.map(m=>m.total||0), 1);
+    const barW = Math.max(6, Math.floor(plotW/mensual.length)-4);
+    const scale = v => plotH - Math.round((v/maxV)*plotH);
+    const fmtK = v => v>=1000000 ? (v/1000000).toFixed(1)+'M' : v>=1000 ? Math.round(v/1000)+'k' : String(v);
+    const bars = mensual.map((m,i)=>{
+      const x = PAD_L + Math.round(i*(plotW/mensual.length)) + Math.round((plotW/mensual.length-barW)/2);
+      const y = PAD_T + scale(m.total||0);
+      const bH = plotH - scale(m.total||0);
+      const label = (m.mes||'').slice(5,7)+'/'+((m.mes||'').slice(2,4));
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(2,bH)}" fill="#d4af37" rx="2" opacity="0.85"/>
+<text x="${x+barW/2}" y="${PAD_T+plotH+16}" text-anchor="middle" font-size="9" fill="#94a3b8">${label}</text>`;
+    }).join('\n');
+    // Y axis labels
+    const yLabels = [0,0.25,0.5,0.75,1].map(pct=>{
+      const val = Math.round(maxV*pct);
+      const y = PAD_T + plotH - Math.round(pct*plotH);
+      return `<line x1="${PAD_L-4}" y1="${y}" x2="${PAD_L+plotW}" y2="${y}" stroke="#1e293b" stroke-width="1"/>
+<text x="${PAD_L-6}" y="${y+3}" text-anchor="end" font-size="9" fill="#64748b">${fmtK(val)}</text>`;
+    }).join('\n');
+    chartEl.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block;">
+${yLabels}
+${bars}
+</svg>`;
+  }
+
+  // ── Top SKUs ──────────────────────────────────────────────────────────────
+  const skuEl = document.getElementById('dash-top-skus');
+  const topSkus = sh.top_skus || [];
+  if (!topSkus.length) {
+    skuEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de SKUs</div>';
+  } else {
+    const maxSku = topSkus[0].total || 1;
+    skuEl.innerHTML = topSkus.map((s,i)=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:#d4af37;font-weight:700;min-width:18px;">#${i+1}</span>
+        <span style="flex:1;font-weight:600;font-size:12px;">${s.sku||'—'}</span>
+        <div style="flex:2;">
+          <div style="background:#1e293b;border-radius:3px;height:6px;">
+            <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
+          </div>
+        </div>
+        <span style="color:#34d399;font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
+        <span style="color:#64748b;font-size:11px;min-width:36px;text-align:right;">${fmt2(s.uds)} uds</span>
+      </div>`).join('');
+  }
+
+  // ── Ciudades ──────────────────────────────────────────────────────────────
+  const ciudEl = document.getElementById('dash-ciudades');
+  const ciudades = sh.ciudades || [];
+  if (!ciudades.length) {
+    ciudEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de ciudades</div>';
+  } else {
+    const maxCiud = ciudades[0].pedidos || 1;
+    ciudEl.innerHTML = ciudades.map((c,i)=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:#94a3b8;min-width:18px;font-size:11px;">${i+1}</span>
+        <span style="flex:1;font-size:12px;">${c.ciudad||'—'}</span>
+        <div style="flex:2;">
+          <div style="background:#1e293b;border-radius:3px;height:6px;">
+            <div style="background:#6366f1;height:6px;border-radius:3px;width:${Math.round((c.pedidos/maxCiud)*100)}%;"></div>
+          </div>
+        </div>
+        <span style="color:#94a3b8;font-size:11px;min-width:54px;text-align:right;">${fmt2(c.pedidos)} pedidos</span>
+      </div>`).join('');
+  }
+
+  // ── Campañas activas ──────────────────────────────────────────────────────
   const cBody = document.getElementById('dash-campanas');
-  if(!data.campanas_activas.length) { cBody.innerHTML='<tr class="empty-row"><td colspan="5">Sin campañas</td></tr>'; }
-  else cBody.innerHTML = data.campanas_activas.map(c=>`
-    <tr>
-      <td style="font-weight:700;">${c.nombre}</td>
-      <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
-      <td>${badgeEstadoCamp(c.estado)}</td>
-      <td>${fmtM(c.presupuesto)}</td>
-      <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
-    </tr>`).join('');
+  if (!data.campanas_activas || !data.campanas_activas.length) {
+    cBody.innerHTML = '<tr class="empty-row"><td colspan="5">Sin campañas</td></tr>';
+  } else {
+    cBody.innerHTML = data.campanas_activas.map(c=>`
+      <tr>
+        <td style="font-weight:700;">${c.nombre}</td>
+        <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
+        <td>${badgeEstadoCamp(c.estado)}</td>
+        <td>${fmtM(c.presupuesto)}</td>
+        <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
+      </tr>`).join('');
+  }
 
-  // Tendencias
-  const tends = {};
-  data.tendencias.forEach(t=>{ if(!tends[t.sku]) tends[t.sku]=0; tends[t.sku]+=t.total_liberado; });
-  const tendArr = Object.entries(tends).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const maxVal = tendArr[0]?tendArr[0][1]:1;
-  document.getElementById('dash-tendencias').innerHTML = tendArr.length
-    ? tendArr.map(([sku,val])=>`
-      <div class="trend-item">
-        <span class="trend-sku">${sku}</span>
-        <div class="trend-bar"><div class="progress-bar"><div class="progress-fill" style="width:${Math.round(val/maxVal*100)}%;"></div></div></div>
-        <span class="trend-flat">${fmt(val)} uds</span>
-      </div>`).join('')
-    : '<div style="color:#64748b;text-align:center;padding:20px;">Sin datos de liberaciones</div>';
-
-  // Contenido reciente
+  // ── Contenido reciente ────────────────────────────────────────────────────
   const coBody = document.getElementById('dash-contenido');
-  if(!data.contenido_reciente.length) { coBody.innerHTML='<tr class="empty-row"><td colspan="4">Sin contenido</td></tr>'; }
-  else coBody.innerHTML = data.contenido_reciente.map(c=>`
-    <tr><td>${c.tipo}</td><td>${c.plataforma}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
+  if (!data.contenido_reciente || !data.contenido_reciente.length) {
+    coBody.innerHTML = '<tr class="empty-row"><td colspan="4">Sin contenido</td></tr>';
+  } else {
+    coBody.innerHTML = data.contenido_reciente.map(c=>`
+      <tr><td>${c.tipo}</td><td>${c.plataforma}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
+  }
 
-  // Por canal
+  // ── Por canal ─────────────────────────────────────────────────────────────
   const chEl = document.getElementById('dash-canales');
-  if(!data.por_canal.length) { chEl.innerHTML='<div style="color:#64748b;text-align:center;padding:20px;">Sin datos de campañas por canal</div>'; }
-  else chEl.innerHTML = data.por_canal.map(ch=>`
-    <div style="padding:10px 0;border-bottom:1px solid #1e293b;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span style="font-weight:700;">${ch.canal}</span>
-        <span style="color:#34d399;">${fmtM(ch.ventas_total)} ventas</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;">
-        <span>${ch.campanas} campaña${ch.campanas!=1?'s':''} · ${fmtM(ch.presupuesto_total)} invertido</span>
-      </div>
-    </div>`).join('');
+  if (!data.por_canal || !data.por_canal.length) {
+    chEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Sin datos de campañas por canal</div>';
+  } else {
+    chEl.innerHTML = data.por_canal.map(ch=>`
+      <div style="padding:10px 0;border-bottom:1px solid #1e293b;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-weight:700;">${ch.canal}</span>
+          <span style="color:#34d399;">${fmtM(ch.ventas_total)} ventas</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;">
+          <span>${ch.campanas} campaña${ch.campanas!=1?'s':''} · ${fmtM(ch.presupuesto_total)} invertido</span>
+        </div>
+      </div>`).join('');
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

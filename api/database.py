@@ -1104,6 +1104,9 @@ def init_db():
         valor TEXT,
         actualizado TEXT DEFAULT (datetime('now'))
     )""")
+    # Seed credenciales ÁNIMUS Lab
+    c.execute("INSERT OR IGNORE INTO animus_config(clave,valor) VALUES(?,?)",
+              ('ghl_api_key', 'pit-9ee0660c-5851-4162-b505-b017dc2d5847'))
 
     c.execute("""CREATE TABLE IF NOT EXISTS animus_shopify_orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

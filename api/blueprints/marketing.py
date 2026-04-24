@@ -171,6 +171,89 @@ def mkt_dashboard():
             GROUP BY canal ORDER BY presupuesto_total DESC
         """).fetchall())
 
+        # ── Shopify: datos reales ────────────────────────────────────────────
+        hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        hace7  = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        sh_30 = c.execute("""
+            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
+                   COUNT(DISTINCT email) as clientes
+            FROM animus_shopify_orders WHERE creado_en >= ?
+        """, (hace30,)).fetchone()
+
+        sh_7 = c.execute("""
+            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos
+            FROM animus_shopify_orders WHERE creado_en >= ?
+        """, (hace7,)).fetchone()
+
+        sh_total = c.execute("""
+            SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
+                   COUNT(DISTINCT email) as clientes
+            FROM animus_shopify_orders
+        """).fetchone()
+
+        sh_ticket = round(sh_30["rev"] / sh_30["pedidos"], 0) if sh_30["pedidos"] > 0 else 0
+
+        # Clientes nuevos vs recurrentes (30d)
+        sh_nuevos = c.execute("""
+            SELECT COUNT(DISTINCT o.email) as n FROM animus_shopify_orders o
+            WHERE o.creado_en >= ?
+            AND (SELECT COUNT(*) FROM animus_shopify_orders o2
+                 WHERE o2.email=o.email AND o2.creado_en < ?) = 0
+        """, (hace30, hace30)).fetchone()["n"]
+
+        # Top SKUs por revenue Shopify (30d)
+        sh_top_skus_raw = _fmt_many(c.execute("""
+            SELECT sku_items, SUM(total) as rev, SUM(unidades_total) as uds
+            FROM animus_shopify_orders WHERE creado_en >= ?
+            GROUP BY sku_items ORDER BY rev DESC LIMIT 20
+        """, (hace30,)).fetchall())
+
+        # Agregar revenue ERP (liberaciones)
+        erp_rev = {}
+        for row in c.execute("""
+            SELECT sku, SUM(unidades) as uds FROM liberaciones
+            WHERE creado_en >= ? AND sku IS NOT NULL GROUP BY sku
+        """, (hace30,)).fetchall():
+            precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (row["sku"],)).fetchone()
+            p = precio["p"] if precio and precio["p"] else 0
+            erp_rev[row["sku"]] = {"uds": row["uds"], "rev": round(row["uds"] * p, 0)}
+
+        top_skus_combined = sorted(erp_rev.items(), key=lambda x: -x[1]["rev"])[:6]
+        sh_top_skus = [{"sku": k, "total": v["rev"], "uds": v["uds"]} for k, v in top_skus_combined]
+
+        # Ventas mensuales Shopify (últimos 6 meses)
+        sh_mensual = _fmt_many(c.execute("""
+            SELECT strftime('%Y-%m', creado_en) as mes,
+                   COALESCE(SUM(total),0) as total,
+                   COUNT(*) as pedidos
+            FROM animus_shopify_orders
+            GROUP BY mes ORDER BY mes DESC LIMIT 6
+        """).fetchall())
+        sh_mensual.reverse()
+
+        # Liberaciones mensuales ERP (últimos 6 meses)
+        erp_mensual = _fmt_many(c.execute("""
+            SELECT strftime('%Y-%m', creado_en) as mes,
+                   COALESCE(SUM(unidades),0) as uds
+            FROM liberaciones WHERE sku IS NOT NULL
+            GROUP BY mes ORDER BY mes DESC LIMIT 6
+        """).fetchall())
+        erp_mensual.reverse()
+
+        # Top ciudades
+        sh_ciudades = _fmt_many(c.execute("""
+            SELECT ciudad, COUNT(*) as pedidos, COALESCE(SUM(total),0) as total
+            FROM animus_shopify_orders WHERE ciudad != ''
+            GROUP BY ciudad ORDER BY total DESC LIMIT 5
+        """).fetchall())
+
+        # GHL: contactos y pipeline
+        ghl_total = c.execute("SELECT COUNT(*) as n FROM animus_ghl_contacts").fetchone()["n"]
+        ghl_nuevos = c.execute("""
+            SELECT COUNT(*) as n FROM animus_ghl_contacts WHERE creado_en >= ?
+        """, (hace30,)).fetchone()["n"]
+
         return jsonify({
             "kpis": {
                 "total_campanas": total_campanas,
@@ -184,6 +267,24 @@ def mkt_dashboard():
                 "total_alcance": total_alcance,
                 "ventas_total": round(ventas_total, 0),
                 "roi_global": roi,
+            },
+            "shopify": {
+                "revenue_30d": round(sh_30["rev"], 0),
+                "revenue_7d":  round(sh_7["rev"], 0),
+                "revenue_total": round(sh_total["rev"], 0),
+                "pedidos_30d": sh_30["pedidos"],
+                "clientes_30d": sh_30["clientes"],
+                "clientes_total": sh_total["clientes"],
+                "clientes_nuevos_30d": sh_nuevos,
+                "clientes_recurrentes_30d": sh_30["clientes"] - sh_nuevos,
+                "ticket_promedio": sh_ticket,
+                "mensual": sh_mensual,
+                "top_skus": sh_top_skus,
+                "ciudades": sh_ciudades,
+            },
+            "ghl": {
+                "contactos_total": ghl_total,
+                "contactos_nuevos_30d": ghl_nuevos,
             },
             "top_influencer": _fmt(top_inf),
             "campanas_activas": campanas_activas,
