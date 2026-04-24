@@ -337,12 +337,13 @@ def rrhh_comprobante(periodo, eid):
     emp = c.fetchone()
     if not emp: conn.close(); return "<p>No encontrado</p>", 404
     eid2, nom, ape, ced, cargo, empresa, sal, riesgo, banco, num_cta, tipo_cta = emp
-    c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
+    c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en,pagado_por,pagado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
     nr = c.fetchone(); conn.close()
     dias = nr[0] if nr else 30; vhe = nr[1] if nr else 0
     bonos = nr[2] if nr else 0; otros = nr[3] if nr else 0
     estado = nr[4] if nr else "No guardada"
     ap_por = nr[5] if nr else ""; ap_en = nr[6] if nr else ""
+    pag_por = nr[7] if nr else ""; pag_en = nr[8] if nr else ""
     arl_rates = {1:0.00522, 2:0.01044, 3:0.02436, 4:0.04350, 5:0.06960}
     aux = AUX if sal <= 2*SMMLV else 0
     ds = round(sal*0.04); dp = round(sal*0.04)
@@ -351,8 +352,14 @@ def rrhh_comprobante(periodo, eid):
     ap_sena=round(sal*0.02); ap_icbf=round(sal*0.03); ap_caja=round(sal*0.04)
     ap_tot = ap_s+ap_p+ap_arl+ap_sena+ap_icbf+ap_caja
     def cop(v): return "${:,.0f}".format(v).replace(",",".")
-    badge = "background:#dcfce7;color:#166534" if estado in ("Aprobada","Pagada") else "background:#fef3c7;color:#92400e"
+    if estado == "Pagada":
+        badge = "background:#166534;color:#fff"
+    elif estado == "Aprobada":
+        badge = "background:#dcfce7;color:#166534"
+    else:
+        badge = "background:#fef3c7;color:#92400e"
     aprobado_txt = (" &nbsp;|&nbsp; Aprobada por: <strong>"+ap_por+"</strong> el "+ap_en) if ap_por else ""
+    pagado_txt = (" &nbsp;|&nbsp; &#128184; Pagada por: <strong>"+pag_por+"</strong> el "+pag_en) if pag_por else ""
     html = (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<title>Comprobante "+periodo+" - "+nom+" "+ape+"</title>"
@@ -371,7 +378,7 @@ def rrhh_comprobante(periodo, eid):
         "<p><strong>HHA Group &mdash; Laboratorio Espagiria / &Aacute;NIMUS Lab</strong></p>"
         "<p>Per&iacute;odo: <strong>"+periodo+"</strong> &nbsp;|&nbsp; "
         "Estado: <span style='display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;"+badge+"'>"+estado+"</span>"
-        +aprobado_txt+"</p></div>"
+        +aprobado_txt+pagado_txt+"</p></div>"
         "<table>"
         "<tr><td class='lbl'>Nombre:</td><td><strong>"+nom+" "+ape+"</strong></td>"
         "<td class='lbl'>C&eacute;dula:</td><td><strong>"+ced+"</strong></td></tr>"
@@ -426,6 +433,27 @@ def rrhh_nomina_aprobar(periodo):
     c.execute("UPDATE nomina_registros SET estado='Aprobada',aprobado_por=?,aprobado_en=? WHERE periodo=?", (u, ts, periodo))
     updated = c.rowcount; conn.commit(); conn.close()
     return jsonify({"ok": True, "periodo": periodo, "aprobados": updated, "por": u})
+
+
+@bp.route("/api/rrhh/nomina/<periodo>/pagar", methods=["PATCH"])
+def rrhh_nomina_pagar(periodo):
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Sin permiso"}), 403
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Only mark as Pagada if all records are already Aprobada
+    c.execute("SELECT COUNT(*) FROM nomina_registros WHERE periodo=?", (periodo,))
+    total = c.fetchone()[0]
+    if total == 0:
+        conn.close(); return jsonify({"error": "No hay registros para este período"}), 404
+    c.execute("SELECT COUNT(*) FROM nomina_registros WHERE periodo=? AND estado != 'Aprobada'", (periodo,))
+    no_aprobados = c.fetchone()[0]
+    if no_aprobados > 0:
+        conn.close(); return jsonify({"error": "La nómina debe estar aprobada antes de marcar como pagada"}), 400
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    c.execute("UPDATE nomina_registros SET estado='Pagada',pagado_por=?,pagado_en=? WHERE periodo=?", (u, ts, periodo))
+    pagados = c.rowcount; conn.commit(); conn.close()
+    return jsonify({"ok": True, "periodo": periodo, "pagados": pagados, "por": u, "fecha": ts})
 
 
 @bp.route("/api/rrhh/nomina/importar-excel", methods=["POST"])

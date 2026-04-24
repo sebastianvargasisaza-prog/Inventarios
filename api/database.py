@@ -883,8 +883,9 @@ def init_db():
             except Exception: pass
     seed_compromisos(c)
     # Dedup RRHH seed tables (run once, idempotent)
-    # ── Migrate nomina_registros: add aprobado_por, aprobado_en if missing ──
-    for _col, _def in [("aprobado_por","TEXT DEFAULT NULL"), ("aprobado_en","TEXT DEFAULT NULL")]:
+    # ── Migrate nomina_registros: add aprobado_por, aprobado_en, pagado_por, pagado_en if missing ──
+    for _col, _def in [("aprobado_por","TEXT DEFAULT NULL"), ("aprobado_en","TEXT DEFAULT NULL"),
+                       ("pagado_por","TEXT DEFAULT NULL"), ("pagado_en","TEXT DEFAULT NULL")]:
         try:
             c.execute("ALTER TABLE nomina_registros ADD COLUMN "+_col+" "+_def)
         except Exception:

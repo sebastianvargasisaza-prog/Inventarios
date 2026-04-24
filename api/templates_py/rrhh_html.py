@@ -212,6 +212,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <label class="btn" style="background:#7c3aed;color:#fff;cursor:pointer;margin-left:4px;" title="Importar Excel de nomina">&#128194; Importar Excel<input type="file" accept=".xlsx" style="display:none;" onchange="importarExcel(this)"></label>
     <button class="btn btn-success" onclick="guardarNomina()" style="margin-left:auto;">&#128190; Guardar</button>
     <button class="btn" id="btn-aprobar" style="display:none;background:#16a34a;color:#fff;" onclick="aprobarNomina()">&#10003; Aprobar</button>
+    <button class="btn" id="btn-pagar" style="display:none;background:#166534;color:#fff;" onclick="pagarNomina()">&#128184; Marcar como Pagada</button>
     <button class="btn" onclick="exportarNomina()" style="background:#0284c7;color:#fff;" title="Descargar Excel">&#11015; Excel</button>
     <span id="nom-estado-badge" style="margin-left:8px;"></span>
   </div>
@@ -780,18 +781,31 @@ async function checkEstadoNomina(){
   try{
     var res=await fetch('/api/rrhh/nomina/'+periodo).then(r=>r.json());
     var estados=res.map(e=>e.estado||'').filter(Boolean);
+    var pagadas=estados.filter(s=>s==='Pagada').length;
     var aprobadas=estados.filter(s=>s==='Aprobada').length;
     var badge=document.getElementById('nom-estado-badge');
     var btnAp=document.getElementById('btn-aprobar');
-    if(aprobadas>0 && aprobadas===estados.length){
-      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#10003; Aprobada</span>';
+    var btnPag=document.getElementById('btn-pagar');
+    if(pagadas>0 && pagadas===estados.length){
+      badge.innerHTML='<span style="background:#166534;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700;">&#128184; Pagada</span>';
       if(btnAp) btnAp.style.display='none';
+      if(btnPag) btnPag.style.display='none';
+    } else if(aprobadas>0 && aprobadas===estados.length){
+      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#10003; Aprobada — pendiente pago</span>';
+      if(btnAp) btnAp.style.display='none';
+      if(btnPag && window._esAdmin) btnPag.style.display='inline-block';
     } else if(estados.length>0){
-      badge.innerHTML='<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Pendiente aprobaci\u00f3n</span>';
+      badge.innerHTML='<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Pendiente aprobación</span>';
       if(btnAp && window._esAdmin) btnAp.style.display='inline-block';
-    } else { badge.innerHTML=''; }
+      if(btnPag) btnPag.style.display='none';
+    } else {
+      badge.innerHTML='';
+      if(btnAp) btnAp.style.display='none';
+      if(btnPag) btnPag.style.display='none';
+    }
   } catch(e){}
 }
+
 
 async function aprobarNomina(){
   var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
@@ -805,6 +819,18 @@ async function aprobarNomina(){
   } catch(e){alert('Error: '+e.message);}
 }
 
+
+async function pagarNomina(){
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
+  var periodo=anio+'-'+mes+'-'+quinc;
+  if(!confirm('¿Marcar nómina '+periodo+' como PAGADA? Registrará fecha y usuario. Esta acción no se puede deshacer.')) return;
+  try{
+    var r=await fetch('/api/rrhh/nomina/'+periodo+'/pagar',{method:'PATCH'});
+    var d=await r.json();
+    if(d.ok) { alert('✅ Nómina '+periodo+' marcada como Pagada por '+d.por+' el '+d.fecha); checkEstadoNomina(); }
+    else alert(d.error||'Sin permiso');
+  } catch(e){alert('Error: '+e.message);}
+}
 function verComprobante(empId){
   var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
   var periodo=anio+'-'+mes+'-'+quinc;
