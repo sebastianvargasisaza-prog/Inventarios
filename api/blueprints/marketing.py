@@ -1022,6 +1022,33 @@ def mkt_sync(platform):
             user_id = _cfg(conn, "instagram_user_id")
             if not token or not user_id:
                 return jsonify({"error": "Instagram no configurado."}), 400
+
+            # Auto-refresh: renovar token antes de usarlo si tenemos app credentials
+            # Los tokens de larga duracion se pueden renovar en cualquier momento
+            app_id     = _cfg(conn, "meta_app_id")
+            app_secret = _cfg(conn, "meta_app_secret")
+            if app_id and app_secret:
+                try:
+                    refresh_url = (
+                        f"https://graph.facebook.com/v19.0/oauth/access_token"
+                        f"?grant_type=fb_exchange_token"
+                        f"&client_id={app_id}&client_secret={app_secret}"
+                        f"&fb_exchange_token={token}"
+                    )
+                    rreq = urllib.request.Request(refresh_url)
+                    with urllib.request.urlopen(rreq, timeout=10) as rr:
+                        rdata = json.loads(rr.read())
+                    new_token = rdata.get("access_token")
+                    if new_token:
+                        token = new_token
+                        conn.execute(
+                            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                            ("instagram_token", new_token)
+                        )
+                        conn.commit()
+                except Exception:
+                    pass  # Si falla el refresh, continuar con el token existente
+
             fields = "id,media_type,caption,media_url,permalink,like_count,comments_count,timestamp"
             url = f"https://graph.instagram.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
             req = urllib.request.Request(url)
