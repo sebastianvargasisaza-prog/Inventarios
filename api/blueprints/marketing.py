@@ -1127,43 +1127,100 @@ def mkt_ig_refresh():
 # ── INSTAGRAM TOKEN UPDATE (desde el dashboard) ──────────────────────────────
 @bp.route("/api/marketing/ig-update-token", methods=["POST"])
 def mkt_ig_update_token():
-    """Guarda un nuevo token de IG (desde el dashboard) y lo intercambia por uno de 60 dias."""
+    """Cadena completa:
+    1. Recibe token corto del Graph API Explorer
+    2. Lo intercambia por token largo (60 dias)
+    3. Llama /me/accounts para obtener Page Access Token permanente
+    4. Verifica cual pagina tiene el IG account vinculado
+    5. Guarda ese Page Token — NO EXPIRA NUNCA
+    """
     u, err, code = _auth()
     if err: return err, code
     data = request.get_json() or {}
-    new_token = (data.get("token") or "").strip()
-    if not new_token or not new_token.startswith("EAA"):
+    short_token = (data.get("token") or "").strip()
+    if not short_token or not short_token.startswith("EAA"):
         return jsonify({"error": "Token invalido — debe comenzar con EAA"}), 400
+
     conn = _db()
     try:
-        # Guardar token recibido
-        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
-                     ("instagram_token", new_token))
-        conn.commit()
-        # Intentar exchange por token de larga duracion
         app_id     = _cfg(conn, "meta_app_id")
         app_secret = _cfg(conn, "meta_app_secret")
-        exchanged  = False
+        ig_user_id = _cfg(conn, "instagram_user_id") or "17841445400789819"
+        steps      = []
+
+        # Paso 1: guardar token corto como fallback
+        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                     ("instagram_token", short_token))
+        conn.commit()
+        steps.append("token_corto_guardado")
+
+        # Paso 2: exchange a token largo (60 dias)
+        long_token = short_token
         if app_id and app_secret:
             try:
                 exch_url = (
                     f"https://graph.facebook.com/v19.0/oauth/access_token"
                     f"?grant_type=fb_exchange_token"
                     f"&client_id={app_id}&client_secret={app_secret}"
-                    f"&fb_exchange_token={new_token}"
+                    f"&fb_exchange_token={short_token}"
                 )
                 r = urllib.request.urlopen(urllib.request.Request(exch_url), timeout=12)
                 rd = json.loads(r.read())
-                long_token = rd.get("access_token")
-                if long_token:
+                if rd.get("access_token"):
+                    long_token = rd["access_token"]
                     conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
                                  ("instagram_token", long_token))
                     conn.commit()
-                    exchanged = True
-            except Exception:
-                pass  # Token corto guardado, se usara tal cual
-        return jsonify({"ok": True, "exchanged": exchanged,
-                        "msg": "Token de 60 dias guardado" if exchanged else "Token guardado (corta duracion)"})
+                    steps.append("exchange_60d_ok")
+            except Exception as ex:
+                steps.append(f"exchange_error:{ex}")
+
+        # Paso 3: obtener Page Access Token permanente via /me/accounts
+        permanent_token = None
+        try:
+            pages_url = f"https://graph.facebook.com/v19.0/me/accounts?access_token={long_token}"
+            r2 = urllib.request.urlopen(urllib.request.Request(pages_url), timeout=12)
+            pages_data = json.loads(r2.read())
+            pages = pages_data.get("data", [])
+            steps.append(f"pages_encontradas:{len(pages)}")
+
+            # Paso 4: identificar cual pagina tiene el IG account vinculado
+            for page in pages:
+                page_id    = page.get("id")
+                page_token = page.get("access_token")
+                if not page_id or not page_token:
+                    continue
+                try:
+                    ig_url = (f"https://graph.facebook.com/v19.0/{page_id}"
+                              f"?fields=instagram_business_account&access_token={page_token}")
+                    r3 = urllib.request.urlopen(urllib.request.Request(ig_url), timeout=10)
+                    ig_data = json.loads(r3.read())
+                    linked_ig = ig_data.get("instagram_business_account", {}).get("id")
+                    if linked_ig == ig_user_id:
+                        permanent_token = page_token
+                        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                                     ("instagram_token", page_token))
+                        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                                     ("instagram_page_id", page_id))
+                        conn.commit()
+                        steps.append(f"page_token_permanente_ok:pagina={page.get('name')}")
+                        break
+                except Exception:
+                    continue
+        except Exception as ex:
+            steps.append(f"pages_error:{ex}")
+
+        token_type = "permanente" if permanent_token else ("60_dias" if "exchange_60d_ok" in steps else "corto")
+        return jsonify({
+            "ok": True,
+            "token_type": token_type,
+            "steps": steps,
+            "msg": {
+                "permanente": "✅ Token permanente de Pagina guardado — nunca expira",
+                "60_dias":    "✅ Token de 60 dias guardado (se renueva solo al sincronizar)",
+                "corto":      "⚠️ Token corto guardado — expira en ~2h",
+            }[token_type]
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
