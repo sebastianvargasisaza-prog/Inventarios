@@ -276,6 +276,44 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     </div>
   </div>
 
+
+  <!-- Capa 4: Feed Aliados → Gerencia -->
+  <div class="section-title" style="margin-top:32px;">🤝 Canal Aliados — Vista Gerencia</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+
+    <!-- Mix de canales -->
+    <div class="panel">
+      <div class="panel-title">📊 Mix canales · este mes</div>
+      <div id="g4-mix">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- Concentración de riesgo -->
+    <div class="panel">
+      <div class="panel-title">⚠️ Concentración de riesgo</div>
+      <div id="g4-riesgo">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- Estado del canal -->
+    <div class="panel">
+      <div class="panel-title">🔋 Estado del canal</div>
+      <div id="g4-estado">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tendencia ticket por mes -->
+  <div class="panel" style="margin-bottom:28px;">
+    <div class="panel-title">📈 Tendencia ticket promedio — canal aliados (6 meses)</div>
+    <div id="g4-trend" style="display:flex;gap:8px;align-items:flex-end;padding:8px 0;min-height:80px;">
+      <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 
 <script>
@@ -612,6 +650,96 @@ async function loadGerenciaExtra() {
 
 loadGerenciaExtra();
 setInterval(loadGerenciaExtra, 300000);
+loadAliados4();
+setInterval(loadAliados4, 300000);
+
+async function loadAliados4() {
+  try {
+    var d = await fetch('/api/gerencia/aliados-feed').then(function(r){ return r.json(); });
+    if(d.error){ console.error('aliados-feed:', d.error); return; }
+    var fv = function(n){ if(n==null) return '—'; var v=Math.abs(n); return '$'+(v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO')); };
+
+    // Mix canales
+    var canal = d.canal || {};
+    var g4mix = document.getElementById('g4-mix');
+    if(g4mix){
+      var momTxt = canal.mom_aliados>0 ? '▲'+canal.mom_aliados+'%' : canal.mom_aliados<0 ? '▼'+Math.abs(canal.mom_aliados)+'%' : '=0%';
+      var momClr = canal.mom_aliados>0 ? 'verde' : canal.mom_aliados<0 ? 'rojo' : '';
+      // Mini bar aliados vs shopify
+      var pctA = canal.pct_ali_mes || 0;
+      var pctS = canal.pct_shp_mes || 0;
+      g4mix.innerHTML =
+        '<div style="margin-bottom:8px;">'
+        +'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:6px;">'
+        +'<div style="width:'+pctA+'%;background:#a78bfa;" title="Aliados '+pctA+'%"></div>'
+        +'<div style="width:'+pctS+'%;background:#34d399;" title="Shopify '+pctS+'%"></div>'
+        +'</div>'
+        +'<div style="display:flex;justify-content:space-between;font-size:10px;">'
+        +'<span style="color:#a78bfa;">■ Aliados '+pctA+'%</span>'
+        +'<span style="color:#34d399;">■ Shopify '+pctS+'%</span>'
+        +'</div>'
+        +'</div>'
+        +'<div class="data-row"><span class="data-lbl">Aliados</span><span class="data-val verde">'+fv(canal.aliados_mes)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Shopify</span><span class="data-val verde">'+fv(canal.shopify_mes)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">MoM canal</span><span class="data-val '+momClr+'">'+momTxt+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl">Total mes</span><span class="data-val verde"><strong>'+fv(canal.total_mes)+'</strong></span></div>';
+    }
+
+    // Concentración de riesgo
+    var riesgo = d.riesgo || {};
+    var g4riesgo = document.getElementById('g4-riesgo');
+    if(g4riesgo){
+      var c1 = riesgo.concentracion_top1 || 0;
+      var c3 = riesgo.concentracion_top3 || 0;
+      var riesgoClr = c1 >= 50 ? 'rojo' : c1 >= 30 ? 'amarillo' : 'verde';
+      var top3html = (riesgo.top3_aliados || []).map(function(a,i){
+        return '<div class="data-row"><span class="data-lbl">'+(i+1)+'. '+a.nombre+'</span><span class="data-val">'+a.pct+'%</span></div>';
+      }).join('');
+      g4riesgo.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Top 1 aliado</span><span class="data-val '+riesgoClr+'">'+c1+'%</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Top 3 aliados</span><span class="data-val '+(c3>=70?'amarillo':'verde')+'">'+c3+'%</span></div>'
+        +'<div style="margin:8px 0 4px;font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;">Top 3 detalle</div>'
+        + top3html;
+    }
+
+    // Estado del canal
+    var g4estado = document.getElementById('g4-estado');
+    if(g4estado){
+      var vrClr = (riesgo.valor_en_riesgo||0) > 1000000 ? 'rojo' : (riesgo.valor_en_riesgo||0) > 0 ? 'amarillo' : 'verde';
+      var vcClr = (riesgo.aliados_vencidos_prediccion||0) > 0 ? 'amarillo' : 'verde';
+      g4estado.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Activos (&lt;60d)</span><span class="data-val verde">'+(riesgo.aliados_activos||0)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Dormidos (&gt;60d)</span><span class="data-val '+(riesgo.aliados_dormidos>0?'rojo':'verde')+'">'+(riesgo.aliados_dormidos||0)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Valor en riesgo</span><span class="data-val '+vrClr+'">'+fv(riesgo.valor_en_riesgo)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Compra vencida</span><span class="data-val '+vcClr+'">'+(riesgo.aliados_vencidos_prediccion||0)+' aliados</span></div>';
+    }
+
+    // Tendencia ticket SVG
+    var g4trend = document.getElementById('g4-trend');
+    var trend = d.ticket_trend || [];
+    if(g4trend && trend.length){
+      var maxT = Math.max.apply(null, trend.map(function(t){ return t.ticket; })) || 1;
+      var barH = 70;
+      g4trend.innerHTML = trend.map(function(t){
+        var h = Math.round((t.ticket / maxT) * barH);
+        var mes = t.mes ? t.mes.slice(5) : ''; // MM
+        var meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        var mesN = parseInt(mes,10);
+        var mesNm = meses[mesN] || mes;
+        return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">'
+          +'<div style="font-size:9px;color:rgba(255,255,255,0.5);">'+fv(t.ticket)+'</div>'
+          +'<div style="width:100%;max-width:40px;height:'+h+'px;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 0 0;align-self:flex-end;"></div>'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.6);">'+mesNm+'</div>'
+          +'<div style="font-size:9px;color:rgba(255,255,255,0.3);">'+t.pedidos+'p</div>'
+          +'</div>';
+      }).join('');
+    } else if(g4trend){
+      g4trend.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin historial suficiente</div>';
+    }
+
+  } catch(e){ console.error('loadAliados4:', e); }
+}
+
 </script>
 </body>
 </html>"""

@@ -689,4 +689,164 @@ def mee_set_stock():
                     'stock_minimo': stock_minimo, 'bajo_minimo': bajo})
 
 
+
+@bp.route('/api/gerencia/aliados-feed')
+def gerencia_aliados_feed():
+    """Capa 4 — Feed aliados a gerencia:
+    mix de canales (aliados vs Shopify), concentracion de riesgo,
+    valor en riesgo, tendencia de ticket mensual, MoM canal.
+    """
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        hoy          = datetime.now()
+        mes_ini      = hoy.replace(day=1).strftime("%Y-%m-%d")
+        primer_ant   = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+        hace6m       = (hoy - timedelta(days=180)).strftime("%Y-%m-%d")
+        hace60       = (hoy - timedelta(days=60)).strftime("%Y-%m-%d")
+        anio_ini     = hoy.replace(month=1, day=1).strftime("%Y-%m-%d")
+
+        BASE_A = "cl.empresa='ANIMUS' AND cl.activo=1 AND p.estado NOT IN ('Cancelado','Borrador')"
+
+        # ── Revenue canal aliados ─────────────────────────────────────────────
+        rev_ali_mes = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (mes_ini,)).fetchone()[0] or 0
+
+        rev_ali_ant = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ? AND p.fecha < ?
+        """, (primer_ant, mes_ini)).fetchone()[0] or 0
+
+        rev_ali_anio = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (anio_ini,)).fetchone()[0] or 0
+
+        mom_ali = round((rev_ali_mes - rev_ali_ant) / rev_ali_ant * 100, 1) if rev_ali_ant > 0 else (100.0 if rev_ali_mes > 0 else 0.0)
+
+        # ── Revenue Shopify (directo) ─────────────────────────────────────────
+        rev_shp_mes = c.execute(
+            "SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en >= ?",
+            (mes_ini,)
+        ).fetchone()[0] or 0
+
+        rev_shp_anio = c.execute(
+            "SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en >= ?",
+            (anio_ini,)
+        ).fetchone()[0] or 0
+
+        # ── Mix de canales ────────────────────────────────────────────────────
+        total_mes  = (rev_ali_mes  or 0) + (rev_shp_mes  or 0)
+        total_anio = (rev_ali_anio or 0) + (rev_shp_anio or 0)
+        pct_ali_mes  = round(rev_ali_mes  / total_mes  * 100, 1) if total_mes  > 0 else 0
+        pct_shp_mes  = round(rev_shp_mes  / total_mes  * 100, 1) if total_mes  > 0 else 0
+        pct_ali_anio = round(rev_ali_anio / total_anio * 100, 1) if total_anio > 0 else 0
+        pct_shp_anio = round(rev_shp_anio / total_anio * 100, 1) if total_anio > 0 else 0
+
+        # ── Concentracion: top aliados por revenue total ──────────────────────
+        ranking = c.execute(f"""
+            SELECT cl.nombre, COALESCE(SUM(p.valor_total),0) as rev
+            FROM clientes cl JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A}
+            GROUP BY cl.id ORDER BY rev DESC
+        """).fetchall()
+        total_hist = sum(r[1] for r in ranking) or 1
+        top3 = [{'nombre': r[0], 'revenue': round(r[1],0),
+                 'pct': round(r[1]/total_hist*100,1)} for r in ranking[:3]]
+        conc_top1 = top3[0]['pct'] if top3 else 0
+        conc_top3 = round(sum(r['pct'] for r in top3), 1)
+
+        # ── Valor en riesgo (aliados dormidos >60d) ───────────────────────────
+        activos_ids = [r[0] for r in c.execute(f"""
+            SELECT DISTINCT cl.id FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (hace60,)).fetchall()]
+
+        n_total   = c.execute("SELECT COUNT(*) FROM clientes WHERE empresa='ANIMUS' AND activo=1").fetchone()[0] or 0
+        n_activos = len(activos_ids)
+        n_dormidos = max(n_total - n_activos, 0)
+
+        valor_riesgo = 0
+        if n_dormidos > 0:
+            excl = f"AND cl.id NOT IN ({','.join('?'*len(activos_ids))})" if activos_ids else ""
+            valor_riesgo = c.execute(f"""
+                SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+                JOIN pedidos p ON p.cliente_id=cl.id
+                WHERE {BASE_A} AND p.fecha >= ? {excl}
+            """, [anio_ini] + activos_ids).fetchone()[0] or 0
+
+        # ── Tendencia ticket promedio mensual (6 meses) ───────────────────────
+        ticket_rows = c.execute(f"""
+            SELECT strftime('%Y-%m', p.fecha) as mes,
+                   ROUND(AVG(p.valor_total),0) as ticket,
+                   COUNT(p.numero) as pedidos,
+                   ROUND(SUM(p.valor_total),0) as revenue
+            FROM clientes cl JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+            GROUP BY mes ORDER BY mes
+        """, (hace6m,)).fetchall()
+
+        ticket_trend = [{'mes': r[0], 'ticket': round(r[1] or 0, 0),
+                         'pedidos': r[2], 'revenue': round(r[3] or 0, 0)}
+                        for r in ticket_rows]
+
+        # ── Alertas: aliados vencidos en prediccion de compra ─────────────────
+        # Contar aliados con proxima compra estimada ya vencida
+        aliados_vencidos = 0
+        all_ali = c.execute(
+            "SELECT id FROM clientes WHERE empresa='ANIMUS' AND activo=1"
+        ).fetchall()
+        for (aid,) in all_ali:
+            fechas_r = c.execute(
+                "SELECT fecha FROM pedidos WHERE cliente_id=? AND estado NOT IN ('Cancelado','Borrador') ORDER BY fecha ASC",
+                (aid,)
+            ).fetchall()
+            fechas = [r[0][:10] for r in fechas_r if r[0]]
+            if len(fechas) >= 2:
+                deltas = []
+                for i in range(1, len(fechas)):
+                    d1 = datetime.strptime(fechas[i-1], "%Y-%m-%d")
+                    d2 = datetime.strptime(fechas[i],   "%Y-%m-%d")
+                    deltas.append((d2-d1).days)
+                frec = sum(deltas)/len(deltas)
+                ultima = datetime.strptime(fechas[-1], "%Y-%m-%d")
+                proxima = ultima + timedelta(days=frec)
+                if proxima < hoy:
+                    aliados_vencidos += 1
+
+        conn.close()
+        return jsonify({
+            'canal': {
+                'aliados_mes':   round(rev_ali_mes, 0),
+                'shopify_mes':   round(rev_shp_mes, 0),
+                'total_mes':     round(total_mes, 0),
+                'pct_ali_mes':   pct_ali_mes,
+                'pct_shp_mes':   pct_shp_mes,
+                'aliados_anio':  round(rev_ali_anio, 0),
+                'shopify_anio':  round(rev_shp_anio, 0),
+                'total_anio':    round(total_anio, 0),
+                'pct_ali_anio':  pct_ali_anio,
+                'pct_shp_anio':  pct_shp_anio,
+                'mom_aliados':   mom_ali,
+            },
+            'riesgo': {
+                'concentracion_top1': conc_top1,
+                'concentracion_top3': conc_top3,
+                'top3_aliados':       top3,
+                'valor_en_riesgo':    round(valor_riesgo, 0),
+                'aliados_activos':    n_activos,
+                'aliados_dormidos':   n_dormidos,
+                'aliados_vencidos_prediccion': aliados_vencidos,
+            },
+            'ticket_trend': ticket_trend,
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
 # ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────
