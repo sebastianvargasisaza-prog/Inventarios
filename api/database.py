@@ -973,6 +973,9 @@ def init_db():
             pass
 
 
+    conn.commit()
+    conn.close()
+
 def seed_compromisos(c):
     items = [
         ('Revisar procedimiento limpieza con Fredy â definicion aseo profundo','Miguel Valencia','Calidad','2026-04-17','Completado','Alta','ACTA-ESP-2026-04-14-001','Espagiria'),
