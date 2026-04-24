@@ -242,6 +242,221 @@ def rrhh_sgsst_upd(sid):
     prox=d.get("proximo_vencimiento","") or (ddate.today()+timedelta(days=freq_days.get(row[0] if row else "Anual",365))).isoformat()
     c.execute("UPDATE sgsst_items SET estado='Cumplido',ultimo_cumplimiento=?,proximo_vencimiento=? WHERE id=?", (hoy,prox,sid))
     conn.commit(); conn.close(); return jsonify({"ok":True})
+@bp.route("/api/rrhh/nomina/<periodo>/export")
+def rrhh_nomina_export(periodo):
+    """Export nomina as xlsx."""
+    import io
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        return jsonify({"error": "openpyxl no disponible"}), 500
+    SMMLV = 1423500; AUX = 202000
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,nivel_riesgo FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
+    emps = c.fetchall()
+    c.execute("SELECT empleado_id,dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos FROM nomina_registros WHERE periodo=?", (periodo,))
+    ex = {r[0]: r for r in c.fetchall()}
+    conn.close()
+    arl_rates = {1:0.00522, 2:0.01044, 3:0.02436, 4:0.04350, 5:0.06960}
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Nomina " + periodo
+    thin = Side(style="thin", color="D6D3D1")
+    brd = Border(left=thin, right=thin, top=thin, bottom=thin)
+    hf = PatternFill("solid", fgColor="1C1917")
+    hfont = Font(color="FFFFFF", bold=True, size=10)
+    ws.merge_cells("A1:N1")
+    ws["A1"] = "NOMINA PERIODO " + periodo + " - HHA GROUP"
+    ws["A1"].font = Font(bold=True, size=13); ws["A1"].alignment = Alignment(horizontal="center")
+    hdrs = ["#","Cedula","Empleado","Cargo","Empresa","Dias","Sal.Base","Aux.Trans","H.Extras","Bonos","-Salud 4%","-Pension 4%","-Otros","NETO"]
+    for col, h in enumerate(hdrs, 1):
+        cell = ws.cell(row=3, column=col, value=h)
+        cell.fill = hf; cell.font = hfont; cell.alignment = Alignment(horizontal="center"); cell.border = brd
+    for i, w in enumerate([4,14,28,22,14,6,14,12,12,12,12,12,10,14], 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    total_neto = 0; total_ap = 0
+    alt = PatternFill("solid", fgColor="F9F8F7")
+    for idx2, e in enumerate(emps, 1):
+        eid, nom, ape, cargo, sal, emp, riesgo = e
+        xr = ex.get(eid)
+        dias = xr[1] if xr else 30; vhe = xr[2] if xr else 0
+        bonos = xr[3] if xr else 0; otros = xr[4] if xr else 0
+        aux = AUX if sal <= 2*SMMLV else 0
+        ds = round(sal*0.04); dp = round(sal*0.04)
+        neto = sal + aux + vhe + bonos - ds - dp - otros
+        ap = round(sal*(0.085+0.12+arl_rates.get(riesgo,0.00522)+0.02+0.03+0.04))
+        total_neto += neto; total_ap += ap
+        row = idx2 + 3
+        vals = [idx2, eid, nom+" "+ape, cargo, emp, dias, sal, aux, vhe, bonos, -ds, -dp, -otros if otros else 0, neto]
+        for col, val in enumerate(vals, 1):
+            cell = ws.cell(row=row, column=col, value=val)
+            if idx2 % 2 == 0: cell.fill = alt
+            cell.border = brd
+            if col >= 7: cell.number_format = "#,##0"
+            if col == 14: cell.font = Font(bold=True, color="6D28D9")
+    tr = len(emps) + 4
+    ws.cell(tr, 1, "TOTAL").font = Font(bold=True)
+    ws.cell(tr, 14, total_neto).font = Font(bold=True, color="6D28D9")
+    ws.cell(tr, 14).number_format = "#,##0"
+    ws.cell(tr+1, 1, "Aportes empleador:").font = Font(size=9, color="78716C")
+    ws.cell(tr+1, 14, total_ap).number_format = "#,##0"
+    ws.cell(tr+2, 1, "Costo total empresa:").font = Font(bold=True)
+    ws.cell(tr+2, 14, total_neto + total_ap).font = Font(bold=True)
+    ws.cell(tr+2, 14).number_format = "#,##0"
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return Response(buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Nomina_"+periodo+".xlsx"})
+
+
+@bp.route("/api/rrhh/nomina/<periodo>/comprobante/<int:eid>")
+def rrhh_comprobante(periodo, eid):
+    """Print-ready HTML pay stub for one employee."""
+    SMMLV = 1423500; AUX = 202000
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT id,nombre,apellido,cedula,cargo,empresa,salario_base,nivel_riesgo FROM empleados WHERE id=?", (eid,))
+    emp = c.fetchone()
+    if not emp: conn.close(); return "<p>No encontrado</p>", 404
+    eid2, nom, ape, ced, cargo, empresa, sal, riesgo = emp
+    c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
+    nr = c.fetchone(); conn.close()
+    dias = nr[0] if nr else 30; vhe = nr[1] if nr else 0
+    bonos = nr[2] if nr else 0; otros = nr[3] if nr else 0
+    estado = nr[4] if nr else "No guardada"
+    ap_por = nr[5] if nr else ""; ap_en = nr[6] if nr else ""
+    arl_rates = {1:0.00522, 2:0.01044, 3:0.02436, 4:0.04350, 5:0.06960}
+    aux = AUX if sal <= 2*SMMLV else 0
+    ds = round(sal*0.04); dp = round(sal*0.04)
+    neto = sal + aux + vhe + bonos - ds - dp - otros
+    ap_s=round(sal*0.085); ap_p=round(sal*0.12); ap_arl=round(sal*arl_rates.get(riesgo,0.00522))
+    ap_sena=round(sal*0.02); ap_icbf=round(sal*0.03); ap_caja=round(sal*0.04)
+    ap_tot = ap_s+ap_p+ap_arl+ap_sena+ap_icbf+ap_caja
+    def cop(v): return "${:,.0f}".format(v).replace(",",".")
+    badge = "background:#dcfce7;color:#166534" if estado in ("Aprobada","Pagada") else "background:#fef3c7;color:#92400e"
+    aprobado_txt = (" &nbsp;|&nbsp; Aprobada por: <strong>"+ap_por+"</strong> el "+ap_en) if ap_por else ""
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<title>Comprobante "+periodo+" - "+nom+" "+ape+"</title>"
+        "<style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#1C1917;}"
+        ".hdr{text-align:center;border-bottom:2px solid #1C1917;padding-bottom:8px;margin-bottom:12px;}"
+        ".hdr h2{margin:0;font-size:15px;}.hdr p{margin:2px;font-size:11px;color:#555;}"
+        "table{width:100%;border-collapse:collapse;margin-bottom:8px;}"
+        "td{padding:4px 8px;}tr:nth-child(even){background:#F9F8F7;}"
+        ".lbl{color:#666;}.val{text-align:right;font-weight:600;}"
+        ".sec{background:#1C1917;color:#fff;padding:3px 8px;font-weight:700;font-size:11px;margin-top:8px;}"
+        ".neto{font-size:18px;font-weight:700;color:#6D28D9;text-align:right;padding:8px;border-top:2px solid #6D28D9;}"
+        ".footer{font-size:10px;color:#999;text-align:center;margin-top:16px;border-top:1px solid #ddd;padding-top:6px;}"
+        "@media print{button{display:none;}}"
+        "</style></head><body>"
+        "<div class='hdr'><h2>COMPROBANTE DE PAGO</h2>"
+        "<p><strong>HHA Group &mdash; Laboratorio Espagiria / &Aacute;NIMUS Lab</strong></p>"
+        "<p>Per&iacute;odo: <strong>"+periodo+"</strong> &nbsp;|&nbsp; "
+        "Estado: <span style='display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;"+badge+"'>"+estado+"</span>"
+        +aprobado_txt+"</p></div>"
+        "<table>"
+        "<tr><td class='lbl'>Nombre:</td><td><strong>"+nom+" "+ape+"</strong></td>"
+        "<td class='lbl'>C&eacute;dula:</td><td><strong>"+ced+"</strong></td></tr>"
+        "<tr><td class='lbl'>Cargo:</td><td>"+cargo+"</td><td class='lbl'>Empresa:</td><td>"+empresa+"</td></tr>"
+        "<tr><td class='lbl'>D&iacute;as trabajados:</td><td>"+str(dias)+" d&iacute;as</td>"
+        "<td class='lbl'>Riesgo ARL:</td><td>Nivel "+str(riesgo)+"</td></tr>"
+        "</table>"
+        "<div class='sec'>DEVENGADO</div><table>"
+        "<tr><td class='lbl'>Salario base</td><td class='val'>"+cop(sal)+"</td></tr>"
+        "<tr><td class='lbl'>Auxilio de transporte</td><td class='val'>"+cop(aux)+"</td></tr>"
+        "<tr><td class='lbl'>Valor horas extras</td><td class='val'>"+cop(vhe)+"</td></tr>"
+        "<tr><td class='lbl'>Bonificaciones</td><td class='val'>"+cop(bonos)+"</td></tr>"
+        "<tr style='font-weight:700'><td>Total devengado</td><td class='val'>"+cop(sal+aux+vhe+bonos)+"</td></tr>"
+        "</table>"
+        "<div class='sec'>DEDUCCIONES</div><table>"
+        "<tr><td class='lbl'>Salud (4%)</td><td class='val'>&minus;"+cop(ds)+"</td></tr>"
+        "<tr><td class='lbl'>Pensi&oacute;n (4%)</td><td class='val'>&minus;"+cop(dp)+"</td></tr>"
+        "<tr><td class='lbl'>Otros descuentos</td><td class='val'>&minus;"+cop(otros)+"</td></tr>"
+        "<tr style='font-weight:700'><td>Total deducciones</td><td class='val'>&minus;"+cop(ds+dp+otros)+"</td></tr>"
+        "</table>"
+        "<div class='neto'>NETO A PAGAR: "+cop(neto)+"</div>"
+        "<div class='sec' style='margin-top:12px'>APORTES EMPLEADOR (informativo)</div><table>"
+        "<tr><td class='lbl'>Salud (8.5%)</td><td class='val'>"+cop(ap_s)+"</td>"
+        "<td class='lbl'>Pensi&oacute;n (12%)</td><td class='val'>"+cop(ap_p)+"</td></tr>"
+        "<tr><td class='lbl'>ARL (Nivel "+str(riesgo)+")</td><td class='val'>"+cop(ap_arl)+"</td>"
+        "<td class='lbl'>SENA (2%)</td><td class='val'>"+cop(ap_sena)+"</td></tr>"
+        "<tr><td class='lbl'>ICBF (3%)</td><td class='val'>"+cop(ap_icbf)+"</td>"
+        "<td class='lbl'>Caja comp. (4%)</td><td class='val'>"+cop(ap_caja)+"</td></tr>"
+        "<tr style='font-weight:700'><td>Total aportes empleador</td><td class='val'>"+cop(ap_tot)+"</td>"
+        "<td class='lbl'>Costo total empresa</td><td class='val' style='color:#6D28D9'>"+cop(neto+ap_tot)+"</td></tr>"
+        "</table>"
+        "<div class='footer'>Generado por Sistema HHA Group &nbsp;|&nbsp; "+periodo+"</div>"
+        "<div style='text-align:center;margin-top:10px'>"
+        "<button onclick='window.print()' style='padding:8px 20px;background:#1C1917;color:#fff;border:none;border-radius:6px;cursor:pointer'>&#128424; Imprimir</button>"
+        "</div></body></html>"
+    )
+    return Response(html, mimetype="text/html")
+
+
+@bp.route("/api/rrhh/nomina/<periodo>/aprobar", methods=["PATCH"])
+def rrhh_nomina_aprobar(periodo):
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Sin permiso"}), 403
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    c.execute("UPDATE nomina_registros SET estado='Aprobada',aprobado_por=?,aprobado_en=? WHERE periodo=?", (u, ts, periodo))
+    updated = c.rowcount; conn.commit(); conn.close()
+    return jsonify({"ok": True, "periodo": periodo, "aprobados": updated, "por": u})
+
+
+@bp.route("/api/rrhh/nomina/importar-excel", methods=["POST"])
+def rrhh_nomina_importar():
+    u = session.get("compras_user", "")
+    if "file" not in request.files:
+        return jsonify({"error": "No se recibio archivo"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith((".xlsx", ".xls")):
+        return jsonify({"error": "Solo se aceptan archivos .xlsx"}), 400
+    try:
+        import openpyxl, io as _io
+        wb = openpyxl.load_workbook(_io.BytesIO(f.read()), data_only=True)
+    except Exception as ex2:
+        return jsonify({"error": "No se pudo leer: " + str(ex2)}), 400
+    # Scan sheets newest-first for employee rows
+    sheet_data = []
+    for sh_name in reversed(wb.sheetnames):
+        ws = wb[sh_name]
+        rows = list(ws.iter_rows(values_only=True))
+        hdr_idx = None
+        for ri, row in enumerate(rows):
+            if row[1] and str(row[1]).strip().upper() in ("C.C.", "C.C"):
+                hdr_idx = ri; break
+        if hdr_idx is None:
+            continue
+        for row in rows[hdr_idx + 2:]:
+            num = row[0]; cc = row[1]; nombre = row[2]
+            if not (isinstance(num, (int, float)) and cc and nombre):
+                if row[0] is None and row[1] is None:
+                    break
+                continue
+            dias = row[6] if len(row) > 6 and isinstance(row[6], (int, float)) else 15
+            sheet_data.append({
+                "cedula": str(int(cc)) if isinstance(cc, float) else str(cc).strip(),
+                "dias": int(dias) if dias else 15,
+            })
+        if sheet_data:
+            break
+    if not sheet_data:
+        return jsonify({"error": "No se encontraron datos en el archivo"}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    cedulas = [d["cedula"] for d in sheet_data]
+    ph = ",".join("?" * len(cedulas))
+    c.execute("SELECT id,cedula,nombre,apellido FROM empleados WHERE cedula IN ("+ph+")", cedulas)
+    db_emps = {r[1]: {"id": r[0], "nombre": r[2]+" "+r[3]} for r in c.fetchall()}
+    conn.close()
+    result = []
+    for d in sheet_data:
+        if d["cedula"] in db_emps:
+            emp = db_emps[d["cedula"]]
+            result.append({"empleado_id": emp["id"], "nombre": emp["nombre"],
+                           "cedula": d["cedula"], "dias_trabajados": d["dias"]})
+    return jsonify({"ok": True, "matched": len(result), "total_excel": len(sheet_data), "data": result})
+
+
 
 # ═══════════════════════════════════════════════════════
 #  CALIDAD BPM — Página + API

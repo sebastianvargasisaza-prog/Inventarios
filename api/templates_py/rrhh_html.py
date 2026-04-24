@@ -204,14 +204,18 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     </select>
     <select id="nom-anio"><option>2026</option><option>2025</option></select>
     <button class="btn btn-primary" onclick="loadNomina()">Calcular</button>
-    <button class="btn btn-success" onclick="guardarNomina()" style="margin-left:auto;">&#128190; Guardar N&oacute;mina</button>
+    <label class="btn" style="background:#7c3aed;color:#fff;cursor:pointer;margin-left:4px;" title="Importar Excel de nomina">&#128194; Importar Excel<input type="file" accept=".xlsx" style="display:none;" onchange="importarExcel(this)"></label>
+    <button class="btn btn-success" onclick="guardarNomina()" style="margin-left:auto;">&#128190; Guardar</button>
+    <button class="btn" id="btn-aprobar" style="display:none;background:#16a34a;color:#fff;" onclick="aprobarNomina()">&#10003; Aprobar</button>
+    <button class="btn" onclick="exportarNomina()" style="background:#0284c7;color:#fff;" title="Descargar Excel">&#11015; Excel</button>
+    <span id="nom-estado-badge" style="margin-left:8px;"></span>
   </div>
   <div class="card" style="overflow-x:auto;">
     <table id="nom-table">
       <thead><tr>
         <th>Empleado</th><th>Empresa</th><th>D&iacute;as</th>
         <th>Salario Base</th><th>Aux.Trans</th><th>H.Extras</th><th>Bonos</th>
-        <th>-Salud(4%)</th><th>-Pens.(4%)</th><th>NETO</th>
+        <th>-Salud(4%)</th><th>-Pens.(4%)</th><th>NETO</th><th></th>
       </tr></thead>
       <tbody id="nom-body"></tbody>
     </table>
@@ -637,7 +641,9 @@ function initNomina(){
   var now = new Date();
   document.getElementById('nom-mes').value = String(now.getMonth()+1).padStart(2,'0');
   document.getElementById('nom-anio').value = String(now.getFullYear());
+  window._esAdmin = (typeof USUARIO !== 'undefined' && (USUARIO==='Sebastian' || USUARIO==='Alejandro'));
   loadNomina();
+  checkEstadoNomina();
 }
 
 async function loadNomina(){
@@ -683,6 +689,7 @@ function renderNomina(){
       '<td style="color:#dc2626;">-'+fmt(e.desc_salud)+'</td>' +
       '<td style="color:#dc2626;">-'+fmt(e.desc_pension)+'</td>' +
       '<td style="font-weight:700;color:#6d28d9;">'+fmt(neto)+'</td>' +
+      '<td><button class="btn" style="padding:2px 8px;font-size:11px;" onclick="verComprobante('+e.id+')" title="Ver comprobante">&#128424;</button></td>' +
       '</tr>';
   }).join('');
 
@@ -716,9 +723,71 @@ async function guardarNomina(){
   try {
     var r = await fetch('/api/rrhh/nomina/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodo:periodo,registros:nominaData})});
     var d = await r.json();
-    if(d.ok) alert('N\u00f3mina guardada: '+d.registros+' registros para '+periodo);
+    if(d.ok){ alert('N\u00f3mina guardada: '+d.registros+' registros para '+periodo);
+      checkEstadoNomina(); }
     else alert(d.error||'Error');
   } catch(e){alert('Error: '+e.message);}
+}
+
+async function checkEstadoNomina(){
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
+  var periodo=anio+'-'+mes;
+  try{
+    var res=await fetch('/api/rrhh/nomina/'+periodo).then(r=>r.json());
+    var estados=res.map(e=>e.estado||'').filter(Boolean);
+    var aprobadas=estados.filter(s=>s==='Aprobada').length;
+    var badge=document.getElementById('nom-estado-badge');
+    var btnAp=document.getElementById('btn-aprobar');
+    if(aprobadas>0 && aprobadas===estados.length){
+      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#10003; Aprobada</span>';
+      if(btnAp) btnAp.style.display='none';
+    } else if(estados.length>0){
+      badge.innerHTML='<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Pendiente aprobaci\u00f3n</span>';
+      if(btnAp && window._esAdmin) btnAp.style.display='inline-block';
+    } else { badge.innerHTML=''; }
+  } catch(e){}
+}
+
+async function aprobarNomina(){
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
+  var periodo=anio+'-'+mes;
+  if(!confirm('\u00bfAprobar n\u00f3mina '+periodo+'? Esta acci\u00f3n quedar\u00e1 registrada.')) return;
+  try{
+    var r=await fetch('/api/rrhh/nomina/'+periodo+'/aprobar',{method:'PATCH'});
+    var d=await r.json();
+    if(d.ok) { alert('\u2713 N\u00f3mina '+periodo+' aprobada por '+d.por+' ('+d.aprobados+' registros)'); checkEstadoNomina(); }
+    else alert(d.error||'Sin permiso');
+  } catch(e){alert('Error: '+e.message);}
+}
+
+function verComprobante(empId){
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
+  var periodo=anio+'-'+mes;
+  window.open('/api/rrhh/nomina/'+periodo+'/comprobante/'+empId,'_blank','width=700,height=900');
+}
+
+function exportarNomina(){
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
+  window.location.href='/api/rrhh/nomina/'+anio+'-'+mes+'/export';
+}
+
+async function importarExcel(input){
+  var file=input.files[0]; if(!file) return;
+  var fd=new FormData(); fd.append('file',file);
+  try{
+    var r=await fetch('/api/rrhh/nomina/importar-excel',{method:'POST',body:fd});
+    var d=await r.json();
+    if(!d.ok){ alert(d.error||'Error al importar'); return; }
+    var matched=d.data||[];
+    matched.forEach(function(row){
+      var idx=nominaData.findIndex(function(e){return e.id===row.empleado_id;});
+      if(idx>=0) nominaData[idx].dias_trabajados=row.dias_trabajados;
+    });
+    renderNomina();
+    alert('\u2713 Importado: '+matched.length+' empleados de '+d.total_excel+' en el Excel ('+
+          (d.total_excel-matched.length)+' no coincidieron). Revisa y guarda.');
+  } catch(e){alert('Error: '+e.message);}
+  input.value='';
 }
 
 // ─── AUSENCIAS ───────────────────────────────────────

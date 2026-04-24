@@ -880,6 +880,12 @@ def init_db():
             except Exception: pass
     seed_compromisos(c)
     # Dedup RRHH seed tables (run once, idempotent)
+    # ── Migrate nomina_registros: add aprobado_por, aprobado_en if missing ──
+    for _col, _def in [("aprobado_por","TEXT DEFAULT NULL"), ("aprobado_en","TEXT DEFAULT NULL")]:
+        try:
+            c.execute("ALTER TABLE nomina_registros ADD COLUMN "+_col+" "+_def)
+        except Exception:
+            pass  # column already exists
     try:
         c.execute("DELETE FROM sgsst_items WHERE id NOT IN (SELECT MIN(id) FROM sgsst_items GROUP BY descripcion)")
         c.execute("DELETE FROM capacitaciones WHERE id NOT IN (SELECT MIN(id) FROM capacitaciones GROUP BY nombre)")
