@@ -368,6 +368,8 @@ def mkt_dashboard():
                 "revenue_7d":  round(sh_7["rev"], 0),
                 "revenue_total": round(sh_total["rev"], 0),
                 "pedidos_30d": sh_30["pedidos"],
+                "pedidos_7d": sh_7["pedidos"],
+                "pedidos_total": sh_total["pedidos"],
                 "clientes_30d": sh_30["clientes"],
                 "clientes_total": sh_total["clientes"],
                 "clientes_nuevos_30d": sh_nuevos,

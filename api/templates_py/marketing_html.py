@@ -145,8 +145,27 @@ textarea{resize:vertical;min-height:80px;}
 .cal-item.published{background:#065f46;color:#6ee7b7;}
 .cal-item.draft{background:#334155;color:#94a3b8;}
 .cal-item.scheduled{background:#1e3a8a;color:#93c5fd;}
+.platform-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:default;transition:all .2s;}
+.pill-off{background:#1e293b;color:#475569;border:1px solid #334155;}
+.pill-shopify{background:#0d2e1a;color:#34d399;border:1px solid #065f46;}
+.pill-ghl{background:#1a1033;color:#a78bfa;border:1px solid #4c1d95;}
+.pill-ig{background:#2d1520;color:#f9a8d4;border:1px solid #831843;}
 </style>
 </head>
+
+<div id="toast-container" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+<script>
+function showToast(msg, type) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  const bg = type==='error'?'#7f1d1d':type==='success'?'#064e3b':type==='warning'?'#78350f':'#1e293b';
+  const border = type==='error'?'#ef4444':type==='success'?'#10b981':type==='warning'?'#f59e0b':'#475569';
+  t.style.cssText = `background:${bg};border:1px solid ${border};color:#f1f5f9;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(), 400); }, 3200);
+}
+</script>
 <body>
 
 <div class="hdr">
@@ -1570,7 +1589,7 @@ async function verResultadoLog(id) {
   } else {
     content = data.resultado || '(sin resultado)';
   }
-  document.getElementById('modal-agent-content').textContent = content;
+  document.getElementById('modal-agent-content').innerHTML = content;
   document.getElementById('modal-agente-result').classList.add('open');
 }
 
@@ -1639,10 +1658,10 @@ async function loadAnalyticsTendencias() {
   const data = await fetch(`/api/marketing/analytics/tendencias?meses=${meses}`).then(r=>r.json());
   const cont = document.getElementById('an-tendencias-body');
   if(!data.crecimiento.length) { cont.innerHTML='<div style="color:#64748b;padding:16px;">Sin datos de liberaciones</div>'; return; }
-  const maxAbs = Math.max(...data.crecimiento.map(t=>Math.abs(t.variacion_pct)),1);
+  const maxAbs = Math.max(...data.crecimiento.map(t=>Math.abs(t.crecimiento_pct)),1);
   cont.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;">` +
     data.crecimiento.map(t=>{
-      const pct = t.variacion_pct;
+      const pct = t.crecimiento_pct;
       const color = pct>20?'#34d399':pct<-20?'#f87171':'#94a3b8';
       const barW = Math.round(Math.abs(pct)/maxAbs*100);
       return `<div style="background:#0f172a;border-radius:8px;padding:12px;">
