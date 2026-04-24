@@ -8,7 +8,7 @@ import json
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
 
-from config import DB_PATH, ADMIN_USERS
+from config import DB_PATH, ADMIN_USERS, MARKETING_USERS
 
 bp = Blueprint("marketing", __name__)
 CALENDARIO_COSMETICO = [
@@ -24,7 +24,7 @@ CALENDARIO_COSMETICO = [
     {"evento": "Fin de Año / Rituales",  "fecha": "2026-12-31", "color": "#6a1b9a", "multiplicador": 2.0},
 ]
 
-MARKETING_USERS = {"jefferson", "sebastian", "alejandro", "felipe"}
+# MARKETING_USERS importado desde config (fuente única de verdad para accesos)
 
 
 def _db():

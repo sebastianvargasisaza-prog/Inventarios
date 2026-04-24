@@ -9,6 +9,33 @@ services:
         value: /var/data/inventario.db
       - key: SECRET_KEY
         generateValue: true
+      # ── GoHighLevel (ÁNIMUS Lab CRM) ──────────────────────────────────────
+      - key: GHL_API_KEY
+        sync: false   # Cargar manualmente en Render Dashboard → Environment
+      - key: GHL_LOCATION_ID
+        sync: false
+      # ── Shopify ───────────────────────────────────────────────────────────
+      - key: SHOPIFY_TOKEN
+        sync: false
+      - key: SHOPIFY_SHOP
+        sync: false
+      # ── Meta / Instagram ──────────────────────────────────────────────────
+      - key: INSTAGRAM_TOKEN
+        sync: false
+      - key: INSTAGRAM_USER_ID
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      # ── Anthropic API ─────────────────────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # ── Email / SMTP ──────────────────────────────────────────────────────
+      - key: EMAIL_REMITENTE
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
     disk:
       name: inventario-db
       mountPath: /var/data

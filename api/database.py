@@ -587,45 +587,9 @@ def init_db():
     for clave, valor, desc in maquila_configs:
         c.execute("INSERT OR IGNORE INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?)", (clave, valor, desc))
 
-    # ââ maquila tables ââââââââââââââââââââââââââââââââââââââââââââââââââ
-    c.execute("""CREATE TABLE IF NOT EXISTS maquila_prospectos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        empresa TEXT NOT NULL,
-        contacto TEXT DEFAULT '',
-        email TEXT DEFAULT '',
-        telefono TEXT DEFAULT '',
-        producto_tipo TEXT DEFAULT '',
-        etapa TEXT DEFAULT 'Contacto',
-        notas TEXT DEFAULT '',
-        valor_estimado REAL DEFAULT 0,
-        fecha_contacto TEXT DEFAULT (date('now')),
-        usuario TEXT DEFAULT ''
-    )""")
-    c.execute("""CREATE TABLE IF NOT EXISTS maquila_ordenes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        empresa TEXT NOT NULL,
-        producto TEXT NOT NULL,
-        batch_size_kg REAL DEFAULT 0,
-        fecha_inicio TEXT DEFAULT '',
-        fecha_entrega TEXT DEFAULT '',
-        estado TEXT DEFAULT 'Pendiente',
-        valor_total REAL DEFAULT 0,
-        observaciones TEXT DEFAULT '',
-        fecha_creacion TEXT DEFAULT (date('now')),
-        usuario TEXT DEFAULT ''
-    )""")
-    c.execute("""CREATE TABLE IF NOT EXISTS maquila_cotizaciones (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        empresa TEXT DEFAULT '',
-        producto_tipo TEXT DEFAULT '',
-        batch_size_kg REAL DEFAULT 0,
-        costo_mp REAL DEFAULT 0,
-        costo_proceso REAL DEFAULT 0,
-        margen_pct REAL DEFAULT 0,
-        valor_total REAL DEFAULT 0,
-        fecha TEXT DEFAULT (date('now')),
-        usuario TEXT DEFAULT ''
-    )""")
+    # maquila_prospectos y maquila_ordenes definidas arriba en el bloque MAQUILA 360.
+    # Segunda definicion eliminada (schema incompleto, IF NOT EXISTS garantiza que
+    # la primera definicion con schema completo siempre prevalece en produccion).
     c.execute("""CREATE TABLE IF NOT EXISTS empleados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         codigo TEXT UNIQUE, nombre TEXT, apellido TEXT, cedula TEXT UNIQUE,
@@ -1113,14 +1077,11 @@ def init_db():
         valor TEXT,
         actualizado TEXT DEFAULT (datetime('now'))
     )""")
-    # Seed credenciales ÁNIMUS Lab
-    c.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
-              ('ghl_api_key', 'pit-3db1d41c-6103-4e02-8a0e-063d67a137a1'))
-    c.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
-              ('ghl_location_id', '5r0teMcpx8CM57bcQqFB'))
-    # Credenciales desde variables de entorno de Render (no hardcoded en código)
+    # Todas las credenciales desde variables de entorno de Render — nunca hardcodeadas
     import os as _os
     for _clave, _env in [
+        ('ghl_api_key',      'GHL_API_KEY'),        # GoHighLevel API key
+        ('ghl_location_id',  'GHL_LOCATION_ID'),    # GoHighLevel Location ID
         ('shopify_token',    'SHOPIFY_TOKEN'),
         ('shopify_shop',     'SHOPIFY_SHOP'),
         ('anthropic_api_key','ANTHROPIC_API_KEY'),

@@ -32,7 +32,17 @@ from auth import (
 from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'hha-group-2026-secretkey-x9kq')
+_secret = os.environ.get('SECRET_KEY')
+if not _secret:
+    import warnings
+    warnings.warn(
+        "SECRET_KEY no configurado como variable de entorno. "
+        "Las sesiones son predecibles. Configura SECRET_KEY en Render → Environment.",
+        stacklevel=2
+    )
+    _secret = 'hha-group-2026-secretkey-x9kq'  # fallback solo para desarrollo local
+app.secret_key = _secret
+del _secret
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=True,

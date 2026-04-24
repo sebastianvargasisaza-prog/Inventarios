@@ -34,6 +34,7 @@ COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "daniela", "alejandro", "sebastia
 FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
 CLIENTES_ACCESS = {"mayra", "luz", "catalina", "valentina", "daniela", "alejandro", "sebastian"}
 TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
+MARKETING_USERS = {"jefferson", "sebastian", "alejandro", "felipe"}
 
 # PIN para desbloquear vista de cantidades en Formulas (cambiar via env var FORMULA_PIN)
 FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")
