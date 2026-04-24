@@ -822,6 +822,35 @@ def mkt_agentes_log():
 
 # ── CONEXIONES / SYNC ─────────────────────────────────────────────────────────
 
+@bp.route("/api/marketing/ghl-debug")
+def ghl_debug():
+    """Diagnóstico: key en BD + 3 variantes de llamada a GHL."""
+    import urllib.error as _ue
+    with get_db() as conn:
+        key = _cfg(conn, "ghl_api_key") or ""
+        loc = _cfg(conn, "ghl_location_id") or ""
+    results = {}
+    tests = [
+        ("v2_con_loc", f"https://services.leadconnectorhq.com/contacts/?locationId={loc}&limit=1"),
+        ("v2_sin_loc", "https://services.leadconnectorhq.com/contacts/?limit=1"),
+        ("v1",         "https://rest.gohighlevel.com/v1/contacts/?limit=1"),
+    ]
+    for label, url in tests:
+        try:
+            req = urllib.request.Request(url, headers={
+                "Authorization": f"Bearer {key}",
+                "Accept": "application/json",
+                "Version": "2021-07-28",
+                "User-Agent": "GHL-Integration/1.0",
+            })
+            with urllib.request.urlopen(req, timeout=10) as r:
+                results[label] = {"status": r.status, "preview": r.read().decode()[:200]}
+        except _ue.HTTPError as e:
+            results[label] = {"status": e.code, "body": e.read().decode("utf-8", errors="replace")[:300]}
+        except Exception as ex:
+            results[label] = {"error": str(ex)}
+    return jsonify({"key_preview": key[:12]+"..." if key else "VACÍA", "loc_id": loc, "tests": results})
+
 @bp.route("/api/marketing/connections")
 def mkt_connections():
     u, err, code = _auth()
@@ -892,6 +921,8 @@ def mkt_sync(platform):
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                     "Version": "2021-07-28",
+                    "Accept": "application/json",
+                    "User-Agent": "GHL-Integration/1.0",
                 })
                 try:
                     with urllib.request.urlopen(req, timeout=20) as r:
