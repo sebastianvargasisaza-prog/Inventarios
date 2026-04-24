@@ -241,6 +241,88 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button class="btn btn-ghost btn-sm" onclick="loadSeguimiento()">&#x21BB; Actualizar</button>
   </div>
 
+
+  <!-- Capa 1: Salud del Canal -->
+  <div id="canal-salud-section" style="margin-bottom:24px;">
+    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+      📡 Salud del Canal · <span style="font-weight:400;text-transform:none;">mes en curso</span>
+    </div>
+    <!-- Row 1: Revenue MoM + activos/dormidos + retención + concentración -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+
+      <!-- Revenue este mes -->
+      <div style="background:#0f172a;border-radius:12px;padding:16px;color:#fff;">
+        <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Revenue canal · mes</div>
+        <div style="font-size:1.7em;font-weight:900;" id="cs-rev-mes">—</div>
+        <div style="margin-top:6px;font-size:12px;" id="cs-rev-mom">
+          <span id="cs-mom-badge" style="padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px;">—</span>
+          <span style="color:#94a3b8;margin-left:4px;">vs mes ant.</span>
+        </div>
+        <div style="font-size:10px;color:#64748b;margin-top:4px;" id="cs-rev-anio">Año: —</div>
+      </div>
+
+      <!-- Activos vs Dormidos -->
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Aliados · estado</div>
+        <div style="display:flex;align-items:flex-end;gap:12px;">
+          <div>
+            <div style="font-size:1.5em;font-weight:900;color:#16a34a;" id="cs-activos">—</div>
+            <div style="font-size:10px;color:#16a34a;font-weight:600;">Activos</div>
+          </div>
+          <div style="color:#e2e8f0;font-size:1.5em;font-weight:300;">|</div>
+          <div>
+            <div style="font-size:1.5em;font-weight:900;color:#dc2626;" id="cs-dormidos">—</div>
+            <div style="font-size:10px;color:#dc2626;font-weight:600;">Dormidos &gt;60d</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#94a3b8;" id="cs-valor-riesgo">Valor en riesgo: —</div>
+      </div>
+
+      <!-- Tasa de Retención -->
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Retención · 90d</div>
+        <div style="position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+          <svg viewBox="0 0 80 80" width="80" height="80" style="transform:rotate(-90deg)">
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#f1f5f9" stroke-width="8"/>
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#16a34a" stroke-width="8"
+              stroke-dasharray="213.6" id="cs-ret-circle" stroke-dashoffset="213.6" stroke-linecap="round"/>
+          </svg>
+          <div style="position:absolute;font-size:1.1em;font-weight:900;color:#0f172a;" id="cs-ret-pct">—</div>
+        </div>
+      </div>
+
+      <!-- Concentración -->
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Concentración top</div>
+        <div style="margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+            <span style="color:#475569;">Top 1</span><span style="font-weight:700;color:#0f172a;" id="cs-top1-pct">—</span>
+          </div>
+          <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+            <div id="cs-top1-bar" style="height:100%;background:#f59e0b;border-radius:3px;width:0%;transition:width .5s;"></div>
+          </div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+            <span style="color:#475569;">Top 3</span><span style="font-weight:700;color:#0f172a;" id="cs-top3-pct">—</span>
+          </div>
+          <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+            <div id="cs-top3-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width .5s;"></div>
+          </div>
+        </div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:8px;">% del revenue total del canal</div>
+      </div>
+    </div>
+
+    <!-- Row 2: Top aliados por revenue -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+      <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:10px;">🏆 Top aliados · revenue acumulado</div>
+      <div id="cs-top-aliados" style="display:flex;flex-direction:column;gap:8px;">
+        <div style="color:#94a3b8;font-size:12px;">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
@@ -1273,7 +1355,70 @@ loadDashA();
 // ── SEGUIMIENTO DE ALIADOS ─────────────────────────────────────────────────
 var _segData = null;
 
+
+async function loadCanalSalud() {
+  try {
+    const d = await fetch('/api/aliados/canal-salud').then(r=>r.json());
+    if(d.error){ console.error('canal-salud:', d.error); return; }
+
+    // Revenue mes
+    document.getElementById('cs-rev-mes').textContent = fmtCOP(d.revenue_mes_actual||0);
+    document.getElementById('cs-rev-anio').textContent = 'Año: ' + fmtCOP(d.revenue_anio||0);
+
+    // MoM badge
+    const pct = d.pct_mom;
+    const momBadge = document.getElementById('cs-mom-badge');
+    if(pct!=null){
+      const up = pct>=0;
+      momBadge.textContent = (up?'▲':'▼')+' '+Math.abs(pct).toFixed(1)+'%';
+      momBadge.style.background = up ? '#dcfce7' : '#fee2e2';
+      momBadge.style.color      = up ? '#15803d' : '#b91c1c';
+    }
+
+    // Activos / dormidos
+    document.getElementById('cs-activos').textContent  = d.aliados_activos  ?? '—';
+    document.getElementById('cs-dormidos').textContent = d.aliados_dormidos ?? '—';
+    document.getElementById('cs-valor-riesgo').textContent = 'Valor en riesgo: ' + fmtCOP(d.valor_en_riesgo||0);
+
+    // Retención donut
+    const ret = d.tasa_retencion ?? 0;
+    document.getElementById('cs-ret-pct').textContent = ret + '%';
+    const circum = 213.6;
+    const offset = circum * (1 - ret/100);
+    document.getElementById('cs-ret-circle').setAttribute('stroke-dashoffset', offset.toFixed(1));
+    const retColor = ret>=80 ? '#16a34a' : ret>=50 ? '#f59e0b' : '#dc2626';
+    document.getElementById('cs-ret-circle').setAttribute('stroke', retColor);
+
+    // Concentración
+    const c1 = d.concentracion_top1 ?? 0;
+    const c3 = d.concentracion_top3 ?? 0;
+    document.getElementById('cs-top1-pct').textContent = c1.toFixed(1)+'%';
+    document.getElementById('cs-top3-pct').textContent = c3.toFixed(1)+'%';
+    document.getElementById('cs-top1-bar').style.width = Math.min(c1,100)+'%';
+    document.getElementById('cs-top3-bar').style.width = Math.min(c3,100)+'%';
+
+    // Top aliados list
+    const topEl = document.getElementById('cs-top-aliados');
+    const tops  = d.top_aliados || [];
+    if(!tops.length){ topEl.innerHTML='<div style="color:#94a3b8;font-size:12px;">Sin datos</div>'; return; }
+    const maxRev = tops[0].revenue || 1;
+    topEl.innerHTML = tops.map((t,i)=>{
+      const barW = Math.round((t.revenue/maxRev)*100);
+      const medals = ['🥇','🥈','🥉','4.','5.'];
+      return `<div style="display:grid;grid-template-columns:24px 180px 1fr 90px;align-items:center;gap:8px;">
+        <span style="font-size:13px;">${medals[i]||i+1+'.'}</span>
+        <span style="font-size:12px;font-weight:600;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${t.nombre}</span>
+        <div style="height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;background:#6366f1;border-radius:4px;width:${barW}%;"></div>
+        </div>
+        <span style="font-size:12px;font-weight:700;color:#6366f1;text-align:right;">${fmtCOP(t.revenue)} <span style="font-weight:400;color:#94a3b8;">${t.pct.toFixed(1)}%</span></span>
+      </div>`;
+    }).join('');
+  } catch(e){ console.error('loadCanalSalud:', e); }
+}
+
 async function loadSeguimiento() {
+  loadCanalSalud();  // Capa 1 — runs independently, non-blocking
   const data = await fetch('/api/aliados/analytics').then(r=>r.json());
   if(data.error){ console.error(data.error); return; }
   _segData = data;
