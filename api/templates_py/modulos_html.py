@@ -55,7 +55,7 @@ MODULOS_HTML = (
     "    <div class=\"grid\">\n"
     "      <a class=\"mod-card\" href=\"/clientes\"><span class=\"mod-icon\">&#x1F91D;</span><span class=\"mod-name\">Clientes</span></a>\n"
     "      <a class=\"mod-card\" href=\"/compras\"><span class=\"mod-icon\">&#x1F6D2;</span><span class=\"mod-name\">Compras</span></a>\n"
-    "      <a class=\"mod-card\" href=\"/solicitudes\"><span class=\"mod-icon\">&#x1F4DD;</span><span class=\"mod-name\">Solicitudes</span></a>\n"
+    "      <a class=\"mod-card\" href=\"/solicitudes\"><span class=\"mod-icon\">&#x1F4DD;</span><span class=\"mod-name\">Solicitudes</span></a>\n      <a class=\"mod-card\" href=\"/marketing\"><span class=\"mod-icon\">&#x1F4E3;</span><span class=\"mod-name\">Marketing</span></a>\n"
     "    </div>\n"
     "  </div>\n"
     "\n"

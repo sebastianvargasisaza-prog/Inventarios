@@ -166,3 +166,12 @@ def compras():
     resp = Response(html, mimetype='text/html; charset=utf-8')
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp
+
+@bp.route('/marketing')
+def marketing():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/marketing')
+    from templates_py.marketing_html import MARKETING_HTML
+    usuario = session.get('compras_user', '').capitalize()
+    return Response(MARKETING_HTML.replace('{usuario}', usuario), mimetype='text/html; charset=utf-8')
+

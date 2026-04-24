@@ -92,6 +92,7 @@ from blueprints.despachos import bp as despachos_bp
 from blueprints.rrhh import bp as rrhh_bp
 from blueprints.calidad import bp as calidad_bp
 from blueprints.tecnica import bp as tecnica_bp
+from blueprints.marketing import bp as marketing_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -105,6 +106,7 @@ app.register_blueprint(despachos_bp)
 app.register_blueprint(rrhh_bp)
 app.register_blueprint(calidad_bp)
 app.register_blueprint(tecnica_bp)
+app.register_blueprint(marketing_bp)
 
 # ─── DB init (idempotente) ──────────────────────────────────────────────────
 init_db()

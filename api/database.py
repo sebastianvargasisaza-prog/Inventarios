@@ -1013,6 +1013,90 @@ def init_db():
 
 
 
+
+    # ── Módulo Marketing ─────────────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS marketing_campanas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        tipo TEXT DEFAULT 'Digital',
+        estado TEXT DEFAULT 'Planificada',
+        presupuesto REAL DEFAULT 0,
+        presupuesto_gastado REAL DEFAULT 0,
+        fecha_inicio TEXT,
+        fecha_fin TEXT,
+        sku_objetivo TEXT,
+        objetivo_unidades INTEGER DEFAULT 0,
+        resultado_unidades INTEGER DEFAULT 0,
+        resultado_ventas REAL DEFAULT 0,
+        canal TEXT,
+        notas TEXT,
+        creada_por TEXT,
+        fecha_creacion TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS marketing_influencers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        red_social TEXT DEFAULT 'Instagram',
+        usuario_red TEXT,
+        seguidores INTEGER DEFAULT 0,
+        engagement_rate REAL DEFAULT 0,
+        nicho TEXT,
+        tarifa REAL DEFAULT 0,
+        estado TEXT DEFAULT 'Activo',
+        email TEXT,
+        telefono TEXT,
+        notas TEXT,
+        fecha_registro TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS marketing_campana_influencer (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campana_id INTEGER NOT NULL,
+        influencer_id INTEGER NOT NULL,
+        monto_pactado REAL DEFAULT 0,
+        monto_pagado REAL DEFAULT 0,
+        fecha_pago TEXT,
+        alcance_real INTEGER DEFAULT 0,
+        impresiones INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        conversiones INTEGER DEFAULT 0,
+        estado TEXT DEFAULT 'Pendiente',
+        notas TEXT
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS marketing_contenido (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campana_id INTEGER,
+        influencer_id INTEGER,
+        tipo TEXT DEFAULT 'Post',
+        plataforma TEXT DEFAULT 'Instagram',
+        fecha_publicacion TEXT,
+        estado TEXT DEFAULT 'Borrador',
+        caption TEXT,
+        url_publicacion TEXT,
+        likes INTEGER DEFAULT 0,
+        comentarios INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        guardados INTEGER DEFAULT 0,
+        alcance INTEGER DEFAULT 0,
+        impresiones INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        conversiones INTEGER DEFAULT 0,
+        notas TEXT,
+        creado_por TEXT,
+        fecha_creacion TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS marketing_agentes_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agente TEXT NOT NULL,
+        accion TEXT,
+        resultado TEXT,
+        fecha TEXT DEFAULT (datetime('now')),
+        ejecutado_por TEXT
+    )""")
+
     conn.commit()
     conn.close()
 
