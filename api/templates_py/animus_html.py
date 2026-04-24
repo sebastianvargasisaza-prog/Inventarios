@@ -859,6 +859,17 @@ function formatAgentResult(agente, d) {
   } else {
     html += `<pre style="font-size:11px;white-space:pre-wrap;overflow:auto;max-height:200px">${JSON.stringify(d,null,2)}</pre>`;
   }
+
+  // Análisis IA — siempre al final si está disponible
+  if(d.analisis_ia) {
+    html += `<div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <span style="font-size:16px">🤖</span>
+        <span style="font-size:11px;font-weight:700;color:var(--gold);letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
+      </div>
+      <div style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-line">${d.analisis_ia}</div>
+    </div>`;
+  }
   return html;
 }
 

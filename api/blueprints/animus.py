@@ -1,4 +1,4 @@
-import sqlite3, json, traceback
+import sqlite3, json, traceback, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS
@@ -38,6 +38,42 @@ def _fmt_many(rows):
 def _cfg(conn, clave, default=None):
     row = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (clave,)).fetchone()
     return row["valor"] if row else default
+
+def _call_claude(conn, agente, datos):
+    """Llama Claude API para generar análisis inteligente en español sobre los datos del agente."""
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        return None
+    PROMPTS = {
+        "estacionalidad": "Eres el director comercial de ÁNIMUS Lab (skincare premium colombiano). Analiza el stock vs demanda proyectada para los próximos eventos del calendario cosmético. Identifica los SKUs en riesgo, calcula fechas límite de producción y da instrucciones concretas. Máximo 200 palabras, en español.",
+        "oportunidad":    "Eres el director comercial de ÁNIMUS Lab. Analiza los SKUs con alto stock y baja rotación. Propón acciones de marketing específicas (descuentos, bundles, campañas) con fechas y porcentajes concretos. Máximo 200 palabras, en español.",
+        "roi":            "Eres el CFO de ÁNIMUS Lab. Analiza el ROI de las campañas activas. Señala cuáles escalar, pausar o ajustar y por qué. Incluye recomendaciones de presupuesto. Máximo 200 palabras, en español.",
+        "tendencias":     "Eres el analista de datos de ÁNIMUS Lab. Analiza las tendencias de ventas por SKU (ERP vs Shopify). Identifica los productos con mayor momentum y los que están cayendo. Da recomendaciones de producción y marketing. Máximo 200 palabras, en español.",
+        "brief":          "Eres el director creativo de ÁNIMUS Lab. Basado en los SKUs top, genera briefs de contenido detallados: canal recomendado, formato, claim principal, tono y ángulo de diferenciación científica. Máximo 200 palabras, en español.",
+        "pricing":        "Eres el director de pricing de ÁNIMUS Lab. Analiza qué SKUs tienen margen para descuento sin comprometer rentabilidad. Da recomendaciones de precios promocionales concretos con porcentajes. Máximo 200 palabras, en español.",
+        "reorden":        "Eres el jefe de supply chain de ÁNIMUS Lab. Analiza los patrones de compra B2B y predice cuándo hará su próximo pedido cada cliente. Da fechas concretas y recomendaciones de seguimiento proactivo. Máximo 200 palabras, en español.",
+        "canibal":        "Eres el director de marketing de ÁNIMUS Lab. Detecta conflictos entre campañas activas (mismo SKU, canal, fechas). Propón un calendario de campañas optimizado para maximizar el impacto sin canibalización. Máximo 200 palabras, en español.",
+        "contenido_auto": "Eres el community manager de ÁNIMUS Lab (skincare científico premium para piel latina). Revisa los captions generados y da feedback sobre tono, claims científicos y potencial de conversión. Sugiere mejoras concretas. Máximo 200 palabras, en español.",
+        "alerta_stock":   "Eres el director de operaciones de ÁNIMUS Lab. Analiza los SKUs con cobertura crítica cruzando ERP y Shopify. Da instrucciones específicas de producción urgente con cantidades y fechas. Máximo 200 palabras, en español.",
+    }
+    prompt = PROMPTS.get(agente, "Analiza estos datos de ÁNIMUS Lab y da recomendaciones accionables en español. Máximo 200 palabras.")
+    payload = json.dumps({
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 500,
+        "messages": [{"role": "user", "content": prompt + "\n\nDatos del sistema:\n" + json.dumps(datos, ensure_ascii=False, default=str)[:3000]}]
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["content"][0]["text"]
+    except Exception:
+        return None
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -847,6 +883,14 @@ def animus_agente(agente):
                                     "accion": f"{'REPOSICIÓN URGENTE' if nivel=='critico' else 'Planificar producción'}: {sku} tiene {dias_real} días de cobertura considerando demanda Shopify."})
             alertas.sort(key=lambda x: x["dias_cobertura_real"])
             resultado = {"titulo": "Alertas de Stock vs Demanda Real", "alertas": alertas, "total": len(alertas)}
+
+        # Enriquecer con Claude IA
+        try:
+            analisis = _call_claude(conn, agente, resultado)
+            if analisis:
+                resultado["analisis_ia"] = analisis
+        except Exception:
+            pass  # Claude opcional — no bloquea si falla
 
         # Guardar log
         c.execute("""INSERT INTO marketing_agentes_log(agente,accion,resultado,ejecutado_por)
