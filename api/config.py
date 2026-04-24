@@ -10,6 +10,7 @@ COMPRAS_USERS = {
     "daniela":    os.environ.get("PASS_DANIELA",    "hha2026"),
     "valentina":  os.environ.get("PASS_VALENTINA",  "espagiria2026"),
     "jefferson":  os.environ.get("PASS_JEFFERSON",  "espagiria2026"),
+    "felipe":     os.environ.get("PASS_FELIPE",     "animus2026"),
     "mayra":      os.environ.get("PASS_MAYRA",      "hha2026"),
     "gloria":     os.environ.get("PASS_GLORIA",     "hha2026"),
     "laura":      os.environ.get("PASS_LAURA",      "espagiria2026"),

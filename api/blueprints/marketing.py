@@ -24,7 +24,7 @@ CALENDARIO_COSMETICO = [
     {"evento": "Fin de Año / Rituales",  "fecha": "2026-12-31", "color": "#6a1b9a", "multiplicador": 2.0},
 ]
 
-MARKETING_USERS = {"jefferson", "valentina", "sebastian", "alejandro"}
+MARKETING_USERS = {"jefferson", "sebastian", "alejandro", "felipe"}
 
 
 def _db():
@@ -37,6 +37,8 @@ def _auth():
     u = session.get("compras_user", "")
     if not u:
         return None, jsonify({"error": "No autenticado"}), 401
+    if u not in MARKETING_USERS:
+        return None, jsonify({"error": "Sin acceso al módulo Marketing"}), 403
     return u, None, None
 
 

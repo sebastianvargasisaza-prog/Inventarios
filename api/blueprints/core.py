@@ -92,8 +92,17 @@ def modulos():
     if 'compras_user' not in session:
         return redirect('/login?next=/modulos')
     from templates_py.modulos_html import MODULOS_HTML
+    from blueprints.marketing import MARKETING_USERS
     usuario = session.get('compras_user', '')
-    return Response(MODULOS_HTML.replace('{usuario}', usuario), mimetype='text/html')
+    html = MODULOS_HTML.replace('{usuario}', usuario)
+    # Ocultar tarjeta ANIMUS Lab para usuarios sin acceso a Marketing
+    if usuario not in MARKETING_USERS:
+        import re
+        html = re.sub(
+            r'<a class="mod-card" href="/marketing"[^>]*>.*?</a>',
+            '', html, flags=re.DOTALL
+        )
+    return Response(html, mimetype='text/html')
 
 @bp.route('/login', methods=['GET','POST'])
 def login():
