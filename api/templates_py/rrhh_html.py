@@ -1,9 +1,10 @@
 # Auto-extraído de index.py — Fase A refactor
 RRHH_HTML = r"""
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>RRHH — HHA Group</title>
 <style>
@@ -214,8 +215,8 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <table id="nom-table">
       <thead><tr>
         <th>Empleado</th><th>Empresa</th><th>D&iacute;as</th>
-        <th>Salario Base</th><th>Aux.Trans</th><th>H.Extras</th><th>Bonos</th>
-        <th>-Salud(4%)</th><th>-Pens.(4%)</th><th>NETO</th><th></th>
+        <th>Salario Base</th><th>Aux. Transporte</th><th>H. Extras</th><th>Bonos</th>
+        <th>-Salud (4%)</th><th>-Pensi&oacute;n (4%)</th><th>NETO</th><th></th>
       </tr></thead>
       <tbody id="nom-body"></tbody>
     </table>
