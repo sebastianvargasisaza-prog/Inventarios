@@ -823,6 +823,26 @@ def mkt_analytics_roi():
         hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         hace60 = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
         hoy    = datetime.now().strftime("%Y-%m-%d")
+        mes_ini_sh = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+
+        # Cobertura real de datos
+        cobertura = c.execute(
+            "SELECT MIN(creado_en) as desde, MAX(creado_en) as hasta, COUNT(*) as total FROM animus_shopify_orders"
+        ).fetchone()
+        datos_desde = cobertura["desde"] if cobertura["desde"] else None
+        datos_hasta = cobertura["hasta"] if cobertura["hasta"] else None
+
+        # Días reales de cobertura
+        if datos_desde:
+            try:
+                d_desde = datetime.strptime(datos_desde, "%Y-%m-%d")
+                cobertura_dias = max((datetime.now() - d_desde).days + 1, 1)
+            except Exception:
+                cobertura_dias = 30
+        else:
+            cobertura_dias = 0
+
+        # Revenue usando ventana real de datos (no asumir 30d si hay menos)
         sh_30 = c.execute(
             "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders WHERE creado_en >= ?",
             (hace30,)
@@ -831,6 +851,12 @@ def mkt_analytics_roi():
             "SELECT COALESCE(SUM(total),0) as rev FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
             (hace60, hace30)
         ).fetchone()
+        # Revenue mes calendario actual
+        sh_mes = c.execute(
+            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders WHERE creado_en >= ?",
+            (mes_ini_sh,)
+        ).fetchone()
+
         sh_rev_30 = round(sh_30["rev"], 0)
         sh_rev_prev = round(sh_60["rev"], 0)
         sh_growth = round((sh_rev_30 - sh_rev_prev) / sh_rev_prev * 100, 1) if sh_rev_prev > 0 else (100.0 if sh_rev_30 > 0 else 0.0)
@@ -840,10 +866,16 @@ def mkt_analytics_roi():
             "influencers": influencers,
             "por_canal": por_canal,
             "shopify_kpis": {
-                "revenue_30d": sh_rev_30,
+                "revenue_30d":      sh_rev_30,
                 "revenue_prev_30d": sh_rev_prev,
-                "crecimiento_pct": sh_growth,
-                "pedidos_30d": sh_30["pedidos"]
+                "crecimiento_pct":  sh_growth,
+                "pedidos_30d":      sh_30["pedidos"],
+                "revenue_mes":      round(sh_mes["rev"], 0),
+                "pedidos_mes":      sh_mes["pedidos"],
+                "datos_desde":      datos_desde,
+                "datos_hasta":      datos_hasta,
+                "cobertura_dias":   cobertura_dias,
+                "cobertura_parcial": cobertura_dias < 25,  # aviso si menos de 25 días
             }
         })
     finally:
@@ -1076,10 +1108,12 @@ def mkt_sync(platform):
                 return jsonify({"error": "Shopify no configurado. Falta shopify_token o shopify_shop."}), 400
 
             # Sync incremental: sólo órdenes posteriores al último registro
+            # full=1 → sync histórico completo (ignora incremental)
+            full_sync = request.args.get("full") == "1"
             last = conn.execute(
                 "SELECT MAX(creado_en) as m FROM animus_shopify_orders"
             ).fetchone()["m"]
-            since = f"&created_at_min={last}T00:00:00Z" if last else ""
+            since = ("" if full_sync else f"&created_at_min={last}T00:00:00Z") if last else ""
 
             # Paginación cursor-based (Link header rel=next)
             url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250{since}"

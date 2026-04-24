@@ -202,6 +202,7 @@ function showToast(msg, type) {
       <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
       <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
       <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
+      <button class="btn btn-outline btn-sm" style="color:#f59e0b;border-color:#f59e0b;font-size:10px;" onclick="syncPlatform('shopify',true)" title="Trae todo el historial">📥 Histórico</button>
       <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
       <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
       <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
@@ -211,9 +212,10 @@ function showToast(msg, type) {
 
   <!-- KPIs Shopify -->
   <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify — Ventas reales</div>
-  <div class="kpi-grid" id="dash-shopify-kpis">
-    <div class="kpi-card yellow"><div class="kpi-label">Revenue 30d</div><div class="kpi-val" id="sh-rev30">—</div><div class="kpi-sub" id="sh-rev7">Últimos 7d: —</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Pedidos 30d</div><div class="kpi-val" id="sh-ped30">—</div><div class="kpi-sub" id="sh-ped-total">Total: —</div></div>
+  <div id="sh-cobertura-banner" style="display:none;background:#78350f;color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
+<div class="kpi-grid" id="dash-shopify-kpis">
+    <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">—</div><div class="kpi-sub" id="sh-rev7">vs período ant.: —</div></div>
+    <div class="kpi-card blue"><div class="kpi-label" id="sh-ped30-label">Pedidos</div><div class="kpi-val" id="sh-ped30">—</div><div class="kpi-sub" id="sh-ped-total">Total: —</div></div>
     <div class="kpi-card green"><div class="kpi-label">Ticket promedio</div><div class="kpi-val" id="sh-ticket">—</div><div class="kpi-sub" id="sh-clientes">Clientes: —</div></div>
     <div class="kpi-card purple"><div class="kpi-label">Clientes nuevos 30d</div><div class="kpi-val" id="sh-nuevos">—</div><div class="kpi-sub" id="sh-recurrentes">Recurrentes: —</div></div>
     <div class="kpi-card"><div class="kpi-label">Revenue total</div><div class="kpi-val" id="sh-rev-total" style="font-size:16px;">—</div><div class="kpi-sub">Histórico</div></div>
@@ -845,6 +847,19 @@ async function loadDashboard() {
   // ── Shopify KPIs ──────────────────────────────────────────────────────────
   const fmt2 = v => v==null?'—':String(v);
   const fmtCOP = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
+  // Cobertura real de datos Shopify
+  var shBanner = document.getElementById('sh-cobertura-banner');
+  if(sh.datos_desde){
+    var dias = sh.cobertura_dias || 0;
+    var lRev = dias < 25 ? 'Revenue ('+dias+'d)' : 'Revenue 30d';
+    var lPed = dias < 25 ? 'Pedidos ('+dias+'d)' : 'Pedidos 30d';
+    if(document.getElementById('sh-rev30-label')) document.getElementById('sh-rev30-label').textContent = lRev;
+    if(document.getElementById('sh-ped30-label')) document.getElementById('sh-ped30-label').textContent = lPed;
+    if(sh.cobertura_parcial && shBanner){
+      shBanner.style.display='block';
+      shBanner.innerHTML = '⚠️ Datos Shopify disponibles desde <strong>'+sh.datos_desde+'</strong> ('+dias+' días). '+'Usa <strong>Sync histórico</strong> para traer el historial completo.';
+    } else if(shBanner){ shBanner.style.display='none'; }
+  }
   document.getElementById('sh-rev30').textContent    = fmtCOP(sh.revenue_30d);
   document.getElementById('sh-rev7').textContent     = 'Últimos 7d: '+fmtCOP(sh.revenue_7d);
   document.getElementById('sh-ped30').textContent    = fmt2(sh.pedidos_30d);
@@ -1329,13 +1344,13 @@ const AGENT_LABELS = {
   alerta_stock: 'Ver alertas stock'
 };
 
-async function syncPlatform(platform) {
+async function syncPlatform(platform, full) {
   const btn = document.getElementById('btn-sync-'+platform);
   const status = document.getElementById('sync-status');
   btn.disabled = true; btn.textContent = 'Sincronizando...';
   status.textContent = '';
   try {
-    const resp = await fetch(`/api/marketing/sync/${platform}`, {method:'POST'});
+    const resp = await fetch(`/api/marketing/sync/${platform}${full?'?full=1':''}`, {method:'POST'});
     const data = await resp.json();
     if(data.ok) {
       status.style.color = '#34d399';
