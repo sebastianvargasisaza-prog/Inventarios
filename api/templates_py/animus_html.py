@@ -23,8 +23,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .topbar-logo .brand{font-size:18px;font-weight:700;color:var(--gold);letter-spacing:.5px}
 .topbar-logo .sub{font-size:11px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:1px}
 .topbar-divider{width:1px;height:24px;background:var(--border2)}
-.topbar-nav{display:flex;gap:4px;flex:1}
-.tn-btn{padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--text2);font-size:13px;font-weight:500;cursor:pointer;transition:.2s;display:flex;align-items:center;gap:6px}
+.topbar-nav{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tn-btn{padding:5px 10px;border-radius:6px;border:none;background:transparent;color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;transition:.2s;display:flex;align-items:center;gap:4px;white-space:nowrap}
 .tn-btn:hover{background:var(--bg3);color:var(--text)}
 .tn-btn.active{background:linear-gradient(135deg,rgba(212,175,55,.15),rgba(212,175,55,.05));color:var(--gold);border:1px solid rgba(212,175,55,.2)}
 .tn-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
