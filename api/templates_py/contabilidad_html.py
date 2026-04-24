@@ -101,6 +101,7 @@ tr:hover td{background:#202020}
 <div id="app-screen" class="app" style="display:none">
   <div class="topbar">
     <div class="topbar-left">
+      <a href="/modulos" style="color:#888;font-size:12px;text-decoration:none;margin-right:4px">&#x2190; Modulos</a>
       <span class="topbar-title">Contabilidad — HHA Group</span>
       <span id="topbar-user" class="topbar-user"></span>
     </div>
@@ -396,6 +397,10 @@ async function checkSession(){
     document.getElementById('app-screen').style.display='flex';
     document.getElementById('topbar-user').textContent = d.usuario;
     initApp();
+  } else {
+    // Si ya tiene sesion del sistema pero no acceso, redirigir a modulos
+    const me2 = await fetch('/api/contabilidad/me').then(x=>x.json());
+    // Mostrar login screen (ya esta visible por default)
   }
 }
 

@@ -14,10 +14,14 @@ CONT_USERS = CONTADORA_USERS | ADMIN_USERS
 
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
 def _auth():
-    return session.get('cont_user', '') in CONT_USERS
+    # Acepta sesion propia del modulo O la sesion principal del sistema
+    return (
+        session.get('cont_user', '') in CONT_USERS
+        or session.get('compras_user', '') in CONT_USERS
+    )
 
 def _user():
-    return session.get('cont_user', 'sistema')
+    return session.get('cont_user', '') or session.get('compras_user', 'sistema')
 
 
 # ─── Numeración secuencial atómica ───────────────────────────────────────────
@@ -297,7 +301,7 @@ def cont_logout():
 
 @bp.route('/api/contabilidad/me')
 def cont_me():
-    u = session.get('cont_user', '')
+    u = session.get('cont_user', '') or session.get('compras_user', '')
     return jsonify({'autenticado': u in CONT_USERS, 'usuario': u})
 
 
