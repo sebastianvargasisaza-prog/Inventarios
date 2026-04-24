@@ -885,25 +885,62 @@ def mkt_sync(platform):
             token = _cfg(conn, "shopify_token")
             shop  = _cfg(conn, "shopify_shop")
             if not token or not shop:
-                return jsonify({"error": "Shopify no configurado. Contacta al administrador."}), 400
-            url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
-            req = urllib.request.Request(url, headers={"X-Shopify-Access-Token": token})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                orders = json.loads(r.read())["orders"]
+                return jsonify({"error": "Shopify no configurado. Falta shopify_token o shopify_shop."}), 400
+
+            # Sync incremental: sólo órdenes posteriores al último registro
+            last = conn.execute(
+                "SELECT MAX(creado_en) as m FROM animus_shopify_orders"
+            ).fetchone()["m"]
+            since = f"&created_at_min={last}T00:00:00Z" if last else ""
+
+            # Paginación cursor-based (Link header rel=next)
+            url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250{since}"
             synced = 0
-            for o in orders:
-                items_sku = json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)} for li in o.get("line_items",[])])
-                total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                addr = o.get("billing_address") or {}
-                conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
-                    (shopify_id,nombre,email,total,moneda,estado,estado_pago,sku_items,unidades_total,ciudad,pais,creado_en,synced_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
-                    (str(o["id"]), o.get("name",""), o.get("email",""),
-                     float(o.get("total_price",0)), o.get("currency","COP"),
-                     o.get("fulfillment_status",""), o.get("financial_status",""),
-                     items_sku, total_uds, addr.get("city",""), addr.get("country_code","CO"),
-                     o.get("created_at","")[:10]))
-                synced += 1
+            while url:
+                req = urllib.request.Request(url, headers={
+                    "X-Shopify-Access-Token": token,
+                    "Content-Type": "application/json",
+                })
+                try:
+                    with urllib.request.urlopen(req, timeout=20) as r:
+                        orders = json.loads(r.read()).get("orders", [])
+                        # Extraer página siguiente del header Link
+                        link_hdr = r.headers.get("Link", "")
+                        next_url = None
+                        for part in link_hdr.split(","):
+                            if 'rel="next"' in part:
+                                next_url = part.strip().split(";")[0].strip().strip("<>")
+                                break
+                        url = next_url
+                except urllib.error.HTTPError as he:
+                    body = he.read().decode("utf-8", errors="replace")[:400]
+                    return jsonify({"error": f"Shopify HTTP {he.code}", "detalle": body}), 400
+
+                for o in orders:
+                    line_items = o.get("line_items", [])
+                    items_sku  = json.dumps([
+                        {"sku": li.get("sku") or li.get("name",""), "qty": li.get("quantity",0)}
+                        for li in line_items
+                    ])
+                    total_uds = sum(li.get("quantity", 0) for li in line_items)
+                    addr = o.get("shipping_address") or o.get("billing_address") or {}
+                    ciudad = addr.get("city") or addr.get("province") or ""
+                    conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
+                        (shopify_id,nombre,email,total,moneda,estado,estado_pago,
+                         sku_items,unidades_total,ciudad,pais,creado_en,synced_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                        (str(o["id"]), o.get("name",""), o.get("email",""),
+                         float(o.get("total_price") or 0),
+                         o.get("currency","COP"),
+                         o.get("fulfillment_status") or "unfulfilled",
+                         o.get("financial_status",""),
+                         items_sku, total_uds, ciudad,
+                         addr.get("country_code","CO"),
+                         (o.get("created_at") or "")[:10]))
+                    synced += 1
+                if not orders:
+                    break
+
             conn.commit()
             return jsonify({"ok": True, "synced": synced, "platform": "shopify"})
 
