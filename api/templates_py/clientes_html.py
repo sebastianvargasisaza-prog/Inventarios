@@ -323,6 +323,37 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     </div>
   </div>
 
+
+  <!-- Capa 2: Score Individual -->
+  <div id="scores-section" style="margin-bottom:24px;">
+    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+      🏅 Score Individual · <span style="font-weight:400;text-transform:none;">ranking automático 0-100</span>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">#</th>
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Aliado</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Score</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Recencia</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Frec.</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">LTV</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Este mes</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">MoM</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Próxima compra</th>
+          </tr>
+        </thead>
+        <tbody id="scores-body">
+          <tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:#94a3b8;padding-left:4px;">
+      Score = Recencia (30) + Frecuencia (25) + Crecimiento MoM (25) + LTV relativo (20)
+    </div>
+  </div>
+
   <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
@@ -1356,6 +1387,87 @@ loadDashA();
 var _segData = null;
 
 
+
+async function loadScores() {
+  try {
+    const d = await fetch('/api/aliados/scores').then(r=>r.json());
+    if(d.error){ console.error('scores:', d.error); return; }
+    const tbody = document.getElementById('scores-body');
+    const items = d.scores || [];
+    if(!items.length){
+      tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">Sin aliados con historial de compras</td></tr>';
+      return;
+    }
+    const medals = ['🥇','🥈','🥉'];
+    tbody.innerHTML = items.map((s, i) => {
+      // Score badge color
+      const sc = s.score || 0;
+      const scColor  = sc>=75 ? '#16a34a' : sc>=50 ? '#f59e0b' : sc>=25 ? '#f97316' : '#dc2626';
+      const scBg     = sc>=75 ? '#dcfce7' : sc>=50 ? '#fef9c3' : sc>=25 ? '#ffedd5' : '#fee2e2';
+
+      // Score bar 0-100
+      const barW = sc;
+      const barColor = scColor;
+
+      // Recencia badge
+      const rec = s.recencia_dias;
+      const recTxt  = rec>=9999 ? 'Sin compras' : rec+'d';
+      const recColor = rec<=30 ? '#16a34a' : rec<=60 ? '#f59e0b' : '#dc2626';
+      const recBg    = rec<=30 ? '#dcfce7' : rec<=60 ? '#fef9c3' : '#fee2e2';
+
+      // Frecuencia
+      const frec = s.frecuencia_dias;
+      const frecTxt   = frec!=null ? frec+'d' : '—';
+      const frecColor = frec==null ? '#94a3b8' : frec<=30 ? '#16a34a' : frec<=60 ? '#f59e0b' : '#dc2626';
+
+      // MoM badge
+      const mom = s.mom_pct;
+      const momTxt   = mom>0 ? '▲'+mom+'%' : mom<0 ? '▼'+Math.abs(mom)+'%' : '=0%';
+      const momColor = mom>0 ? '#16a34a' : mom<0 ? '#dc2626' : '#94a3b8';
+      const momBg    = mom>0 ? '#dcfce7' : mom<0 ? '#fee2e2' : '#f1f5f9';
+
+      // Próxima compra
+      let proximaTxt = '—';
+      let proximaColor = '#94a3b8';
+      if(s.dias_proxima!=null){
+        if(s.dias_proxima < 0){
+          proximaTxt = 'Vencida '+Math.abs(s.dias_proxima)+'d';
+          proximaColor = '#dc2626';
+        } else if(s.dias_proxima <= 7){
+          proximaTxt = 'En '+s.dias_proxima+'d ⚡';
+          proximaColor = '#f59e0b';
+        } else {
+          proximaTxt = 'En '+s.dias_proxima+'d';
+          proximaColor = '#475569';
+        }
+      }
+
+      return `<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:10px 14px;font-size:14px;">${medals[i]||'<span style="color:#94a3b8;">'+(i+1)+'</span>'}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#1e293b;">${s.nombre}</td>
+        <td style="padding:10px 14px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="background:${scBg};color:${scColor};font-weight:800;font-size:13px;padding:3px 10px;border-radius:12px;min-width:38px;text-align:center;">${sc}</span>
+            <div style="flex:1;height:5px;background:#f1f5f9;border-radius:3px;min-width:60px;overflow:hidden;">
+              <div style="height:100%;width:${barW}%;background:${barColor};border-radius:3px;"></div>
+            </div>
+          </div>
+        </td>
+        <td style="padding:10px 14px;text-align:center;">
+          <span style="background:${recBg};color:${recColor};font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;">${recTxt}</span>
+        </td>
+        <td style="padding:10px 14px;text-align:center;font-weight:700;color:${frecColor};">${frecTxt}</td>
+        <td style="padding:10px 14px;text-align:right;font-weight:700;color:#0f172a;">${fmtCOP(s.ltv)}</td>
+        <td style="padding:10px 14px;text-align:right;color:#16a34a;font-weight:600;">${fmtCOP(s.rev_mes)}</td>
+        <td style="padding:10px 14px;text-align:center;">
+          <span style="background:${momBg};color:${momColor};font-weight:700;font-size:11px;padding:2px 8px;border-radius:10px;">${momTxt}</span>
+        </td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;font-weight:600;color:${proximaColor};">${proximaTxt}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){ console.error('loadScores:', e); }
+}
+
 async function loadCanalSalud() {
   try {
     const d = await fetch('/api/aliados/canal-salud').then(r=>r.json());
@@ -1419,6 +1531,7 @@ async function loadCanalSalud() {
 
 async function loadSeguimiento() {
   loadCanalSalud();  // Capa 1 — runs independently, non-blocking
+  loadScores();       // Capa 2 — score individual, non-blocking
   const data = await fetch('/api/aliados/analytics').then(r=>r.json());
   if(data.error){ console.error(data.error); return; }
   _segData = data;

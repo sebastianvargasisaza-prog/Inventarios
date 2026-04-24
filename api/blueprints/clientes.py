@@ -198,6 +198,307 @@ def cliente_ficha_360(cid):
 
 
 
+
+@bp.route('/api/aliados/canal-salud')
+def aliados_canal_salud():
+    """Capa 1 — Salud del canal aliados: revenue MoM, retención, concentración, activos vs dormidos."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        hoy       = datetime.now()
+        mes_ini   = hoy.replace(day=1).strftime("%Y-%m-%d")
+        # Primer día del mes anterior
+        primer_mes_ant = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+        anio_ini  = hoy.replace(month=1, day=1).strftime("%Y-%m-%d")
+        hace60    = (hoy - timedelta(days=60)).strftime("%Y-%m-%d")
+        hace90    = (hoy - timedelta(days=90)).strftime("%Y-%m-%d")
+        hoy_s     = hoy.strftime("%Y-%m-%d")
+
+        BASE = "cl.empresa='ANIMUS' AND cl.activo=1 AND p.estado NOT IN ('Cancelado','Borrador')"
+
+        # Revenue mes actual
+        rev_mes = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE} AND p.fecha >= ?
+        """, (mes_ini,)).fetchone()[0] or 0
+
+        # Revenue mes anterior
+        rev_ant = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE} AND p.fecha >= ? AND p.fecha < ?
+        """, (primer_mes_ant, mes_ini)).fetchone()[0] or 0
+
+        pct_mom = round((rev_mes - rev_ant) / rev_ant * 100, 1) if rev_ant > 0 else (100.0 if rev_mes > 0 else 0.0)
+
+        # Revenue acumulado año
+        rev_anio = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE} AND p.fecha >= ?
+        """, (anio_ini,)).fetchone()[0] or 0
+
+        # Total aliados activos en sistema
+        total_aliados = c.execute(
+            "SELECT COUNT(*) FROM clientes WHERE empresa='ANIMUS' AND activo=1"
+        ).fetchone()[0] or 0
+
+        # Aliados que compraron en últimos 60 días
+        activos_ids = [r[0] for r in c.execute(f"""
+            SELECT DISTINCT cl.id FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE} AND p.fecha >= ?
+        """, (hace60,)).fetchall()]
+        n_activos = len(activos_ids)
+        n_dormidos = max(total_aliados - n_activos, 0)
+
+        # Revenue de aliados dormidos (valor en riesgo)
+        valor_en_riesgo = 0
+        if n_dormidos > 0:
+            ph = ','.join('?' * len(activos_ids)) if activos_ids else "''"
+            excl = f"AND cl.id NOT IN ({ph})" if activos_ids else ""
+            valor_en_riesgo = c.execute(f"""
+                SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+                JOIN pedidos p ON p.cliente_id=cl.id
+                WHERE {BASE} AND p.fecha >= ? {excl}
+            """, [anio_ini] + activos_ids).fetchone()[0] or 0
+
+        # Tasa de retención: aliados que compraron en últimos 90d Y tenían historial previo
+        ret_count = c.execute(f"""
+            SELECT COUNT(DISTINCT p.cliente_id) FROM pedidos p
+            JOIN clientes cl ON p.cliente_id=cl.id
+            WHERE cl.empresa='ANIMUS' AND cl.activo=1
+              AND p.estado NOT IN ('Cancelado','Borrador')
+              AND p.fecha >= ?
+              AND EXISTS (
+                  SELECT 1 FROM pedidos p2
+                  WHERE p2.cliente_id=p.cliente_id
+                    AND p2.estado NOT IN ('Cancelado','Borrador')
+                    AND p2.fecha < ?
+              )
+        """, (hace90, hace90)).fetchone()[0] or 0
+
+        aliados_con_historial = c.execute(f"""
+            SELECT COUNT(DISTINCT cliente_id) FROM pedidos p
+            JOIN clientes cl ON p.cliente_id=cl.id
+            WHERE cl.empresa='ANIMUS' AND cl.activo=1
+              AND p.estado NOT IN ('Cancelado','Borrador')
+              AND p.fecha < ?
+        """, (hace90,)).fetchone()[0] or 0
+
+        tasa_ret = round(ret_count / aliados_con_historial * 100, 1) if aliados_con_historial > 0 else 0
+
+        # Concentración por aliado (revenue histórico total)
+        rev_ranking = c.execute(f"""
+            SELECT cl.nombre, COALESCE(SUM(p.valor_total),0) as rev
+            FROM clientes cl JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE}
+            GROUP BY cl.id ORDER BY rev DESC
+        """).fetchall()
+
+        total_hist = sum(r[1] for r in rev_ranking) or 1
+        top_aliados = [{'nombre': r[0], 'revenue': round(r[1], 0),
+                        'pct': round(r[1] / total_hist * 100, 1)} for r in rev_ranking[:5]]
+        conc_top1 = top_aliados[0]['pct'] if top_aliados else 0
+        conc_top3 = round(sum(r['pct'] for r in top_aliados[:3]), 1)
+
+        conn.close()
+        return jsonify({
+            'revenue_mes_actual':  round(rev_mes, 0),
+            'revenue_mes_anterior': round(rev_ant, 0),
+            'pct_mom':             pct_mom,
+            'revenue_anio':        round(rev_anio, 0),
+            'total_aliados':       total_aliados,
+            'aliados_activos':     n_activos,
+            'aliados_dormidos':    n_dormidos,
+            'valor_en_riesgo':     round(valor_en_riesgo, 0),
+            'tasa_retencion':      tasa_ret,
+            'concentracion_top1':  conc_top1,
+            'concentracion_top3':  conc_top3,
+            'top_aliados':         top_aliados,
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/aliados/scores')
+def aliados_scores():
+    """Capa 2 — Score individual por aliado: recencia, frecuencia, MoM, LTV relativo.
+    Score 0-100:
+      Recencia  (30 pts) — días desde última compra
+      Frecuencia (25 pts) — intervalo medio entre pedidos
+      MoM       (25 pts) — crecimiento revenue mes actual vs anterior
+      LTV rel   (20 pts) — posición en ranking de revenue total
+    """
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        hoy       = datetime.now()
+        mes_ini   = hoy.replace(day=1).strftime("%Y-%m-%d")
+        primer_mes_ant = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+
+        # ── Traer todos los aliados activos ──────────────────────────────────
+        aliados = c.execute("""
+            SELECT id, nombre FROM clientes
+            WHERE empresa='ANIMUS' AND activo=1
+        """).fetchall()
+
+        if not aliados:
+            conn.close()
+            return jsonify({'scores': []})
+
+        scores = []
+        ltvs = []  # para calcular percentil LTV después
+
+        for (aid, nombre) in aliados:
+            BASE = "p.estado NOT IN ('Cancelado','Borrador') AND p.cliente_id=?"
+
+            # Todas las fechas de pedido ordenadas
+            fechas_rows = c.execute(
+                f"SELECT fecha FROM pedidos WHERE {BASE} ORDER BY fecha ASC", (aid,)
+            ).fetchall()
+            fechas = [r[0][:10] for r in fechas_rows if r[0]]
+
+            # Recencia: días desde última compra
+            if fechas:
+                from datetime import date as date_cls
+                ultima = datetime.strptime(fechas[-1], "%Y-%m-%d")
+                recencia_dias = (hoy - ultima).days
+            else:
+                recencia_dias = 9999
+
+            # Frecuencia: intervalo medio entre pedidos consecutivos
+            if len(fechas) >= 2:
+                deltas = []
+                for i in range(1, len(fechas)):
+                    d1 = datetime.strptime(fechas[i-1], "%Y-%m-%d")
+                    d2 = datetime.strptime(fechas[i],   "%Y-%m-%d")
+                    deltas.append((d2 - d1).days)
+                frecuencia_dias = round(sum(deltas) / len(deltas))
+            elif len(fechas) == 1:
+                frecuencia_dias = None
+            else:
+                frecuencia_dias = None
+
+            # Predicción próxima compra
+            if fechas and frecuencia_dias:
+                ultima_dt = datetime.strptime(fechas[-1], "%Y-%m-%d")
+                proxima_est = ultima_dt + timedelta(days=frecuencia_dias)
+                dias_para_proxima = (proxima_est - hoy).days
+                proxima_str = proxima_est.strftime("%Y-%m-%d")
+            else:
+                dias_para_proxima = None
+                proxima_str = None
+
+            # Revenue mes actual
+            rev_mes = c.execute(
+                f"SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE {BASE} AND fecha >= ?",
+                (aid, mes_ini)
+            ).fetchone()[0] or 0
+
+            # Revenue mes anterior
+            rev_ant = c.execute(
+                f"SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE {BASE} AND fecha >= ? AND fecha < ?",
+                (aid, primer_mes_ant, mes_ini)
+            ).fetchone()[0] or 0
+
+            mom_pct = round((rev_mes - rev_ant) / rev_ant * 100, 1) if rev_ant > 0 else (100.0 if rev_mes > 0 else 0.0)
+
+            # LTV total histórico
+            ltv = c.execute(
+                f"SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE {BASE}",
+                (aid,)
+            ).fetchone()[0] or 0
+
+            ltvs.append(ltv)
+
+            scores.append({
+                'id':              aid,
+                'nombre':          nombre,
+                'recencia_dias':   recencia_dias,
+                'frecuencia_dias': frecuencia_dias,
+                'rev_mes':         round(rev_mes, 0),
+                'rev_mes_ant':     round(rev_ant, 0),
+                'mom_pct':         mom_pct,
+                'ltv':             round(ltv, 0),
+                'proxima_est':     proxima_str,
+                'dias_proxima':    dias_para_proxima,
+            })
+
+        # ── Score compuesto 0-100 ─────────────────────────────────────────────
+        max_ltv = max(ltvs) if ltvs else 1
+        # Percentiles LTV (top 20%, 40%, 60%)
+        sorted_ltvs = sorted(ltvs, reverse=True)
+        n = len(sorted_ltvs)
+        ltv_p20 = sorted_ltvs[max(0, int(n*0.2)-1)]
+        ltv_p40 = sorted_ltvs[max(0, int(n*0.4)-1)]
+        ltv_p60 = sorted_ltvs[max(0, int(n*0.6)-1)]
+
+        for s in scores:
+            # Recencia (30 pts)
+            r = s['recencia_dias']
+            if r <= 30:
+                pts_rec = 30
+            elif r <= 60:
+                pts_rec = 18
+            elif r <= 90:
+                pts_rec = 8
+            else:
+                pts_rec = 0
+
+            # Frecuencia (25 pts)
+            f = s['frecuencia_dias']
+            if f is None:
+                pts_frec = 8  # solo 1 compra → crédito parcial
+            elif f <= 30:
+                pts_frec = 25
+            elif f <= 60:
+                pts_frec = 17
+            elif f <= 90:
+                pts_frec = 10
+            else:
+                pts_frec = 3
+
+            # MoM (25 pts)
+            m = s['mom_pct']
+            if m >= 20:
+                pts_mom = 25
+            elif m > 0:
+                pts_mom = 15
+            elif m == 0:
+                pts_mom = 8
+            else:
+                pts_mom = 0
+
+            # LTV relativo (20 pts)
+            ltv = s['ltv']
+            if ltv >= ltv_p20:
+                pts_ltv = 20
+            elif ltv >= ltv_p40:
+                pts_ltv = 13
+            elif ltv >= ltv_p60:
+                pts_ltv = 7
+            else:
+                pts_ltv = 2
+
+            s['score'] = pts_rec + pts_frec + pts_mom + pts_ltv
+            s['score_detalle'] = {
+                'recencia': pts_rec,
+                'frecuencia': pts_frec,
+                'mom': pts_mom,
+                'ltv_rel': pts_ltv,
+            }
+
+        # Ordenar por score desc
+        scores.sort(key=lambda x: x['score'], reverse=True)
+
+        conn.close()
+        return jsonify({'scores': scores})
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
 @bp.route('/api/aliados/analytics')
 def aliados_analytics():
     """Ventas mensuales por aliado, frecuencia de compra y top SKUs."""
