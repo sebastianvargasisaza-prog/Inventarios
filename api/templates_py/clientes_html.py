@@ -354,6 +354,42 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     </div>
   </div>
 
+
+  <!-- Capa 3: SKUs por Segmento + Cartera -->
+  <div id="capa3-section" style="margin-bottom:24px;">
+    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+      🧪 SKUs por Segmento &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;">qué compra cada tipo de aliada</span>
+    </div>
+
+    <!-- SKUs por categoría — tarjetas dinámicas -->
+    <div id="skus-segmento-wrap" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px;">
+      <div style="color:#94a3b8;font-size:12px;padding:16px;">Cargando segmentos...</div>
+    </div>
+
+    <!-- Cartera por aliado -->
+    <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">
+      💳 Cartera por Aliado &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;">saldo pendiente de cobro</span>
+      &nbsp;<span id="cartera-total-badge" style="background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;padding:2px 10px;border-radius:12px;"></span>
+    </div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+            <th style="padding:10px 14px;text-align:left;font-weight:700;color:#475569;">Aliado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Facturado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Pagado</th>
+            <th style="padding:10px 14px;text-align:right;font-weight:700;color:#475569;">Saldo</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Estado</th>
+            <th style="padding:10px 14px;text-align:center;font-weight:700;color:#475569;">Últ. pedido</th>
+          </tr>
+        </thead>
+        <tbody id="c3-cartera-body">
+          <tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- KPIs -->
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
@@ -1388,6 +1424,94 @@ var _segData = null;
 
 
 
+
+async function loadSkusSegmento() {
+  try {
+    const d = await fetch('/api/aliados/skus-segmento').then(r=>r.json());
+    if(d.error){ console.error('skus-segmento:', d.error); return; }
+    const wrap = document.getElementById('skus-segmento-wrap');
+    const segs = d.segmentos || [];
+    if(!segs.length){
+      wrap.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:16px;">Sin datos — aliadas sin categoría asignada</div>';
+      return;
+    }
+    const paleta = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#f97316'];
+    wrap.innerHTML = segs.map((seg, si) => {
+      const color = paleta[si % paleta.length];
+      const maxRev = seg.top_skus.length ? Math.max(...seg.top_skus.map(s=>s.revenue),1) : 1;
+      const skuRows = seg.top_skus.map(sk => {
+        const barW = Math.round((sk.revenue / maxRev) * 100);
+        return `<div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
+            <span style="font-size:11px;font-weight:700;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:150px;" title="${sk.descripcion||sk.sku}">${sk.sku}</span>
+            <span style="font-size:10px;color:#64748b;white-space:nowrap;margin-left:6px;">${sk.uds} uds &nbsp;${fmtCOP(sk.revenue)}</span>
+          </div>
+          <div style="height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${barW}%;background:${color};border-radius:3px;opacity:.75;"></div>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div>
+            <div style="font-size:13px;font-weight:800;color:#0f172a;">${seg.categoria}</div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${seg.total_pedidos} pedidos &nbsp;·&nbsp; ${fmtCOP(seg.total_revenue)}</div>
+          </div>
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
+        </div>
+        ${skuRows || '<div style="color:#94a3b8;font-size:11px;">Sin items registrados</div>'}
+      </div>`;
+    }).join('');
+  } catch(e){ console.error('loadSkusSegmento:', e); }
+}
+
+async function loadCartera3() {
+  try {
+    const d = await fetch('/api/clientes/cartera').then(r=>r.json());
+    if(d.error){ console.error('cartera:', d.error); return; }
+
+    // Total badge
+    const badge = document.getElementById('cartera-total-badge');
+    if(badge && d.total_cartera > 0){
+      badge.textContent = 'Total por cobrar: ' + fmtCOP(d.total_cartera);
+    } else if(badge){
+      badge.style.display='none';
+    }
+
+    const tbody = document.getElementById('c3-cartera-body');
+    const rows  = d.aliados || [];
+    if(!rows.length){
+      tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Sin aliados registrados</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const saldo = r.saldo || 0;
+      const pct   = r.facturado > 0 ? Math.round((r.pagado/r.facturado)*100) : 100;
+      const saldoColor = saldo > 500000 ? '#dc2626' : saldo > 0 ? '#f59e0b' : '#16a34a';
+      const saldoBg    = saldo > 500000 ? '#fee2e2' : saldo > 0 ? '#fef9c3' : '#dcfce7';
+      const semMap = {'verde':'🟢','amarillo':'🟡','rojo':'🔴'};
+      const sem = semMap[r.semaforo] || '⚪';
+      return `<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:10px 14px;font-weight:600;color:#1e293b;">${sem} ${r.nombre}</td>
+        <td style="padding:10px 14px;text-align:right;color:#475569;">${fmtCOP(r.facturado)}</td>
+        <td style="padding:10px 14px;text-align:right;">
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+            <div style="width:40px;height:4px;background:#f1f5f9;border-radius:2px;overflow:hidden;">
+              <div style="height:100%;width:${pct}%;background:#16a34a;border-radius:2px;"></div>
+            </div>
+            <span style="color:#16a34a;">${fmtCOP(r.pagado)}</span>
+          </div>
+        </td>
+        <td style="padding:10px 14px;text-align:right;">
+          <span style="background:${saldoBg};color:${saldoColor};font-weight:800;padding:2px 10px;border-radius:10px;">${fmtCOP(saldo)}</span>
+        </td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#475569;">${pct}% cobrado</td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#94a3b8;">${r.ultimo_pedido ? r.ultimo_pedido.slice(0,10) : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){ console.error('loadCartera3:', e); }
+}
+
 async function loadScores() {
   try {
     const d = await fetch('/api/aliados/scores').then(r=>r.json());
@@ -1532,6 +1656,8 @@ async function loadCanalSalud() {
 async function loadSeguimiento() {
   loadCanalSalud();  // Capa 1 — runs independently, non-blocking
   loadScores();       // Capa 2 — score individual, non-blocking
+  loadSkusSegmento(); // Capa 3 — SKUs por segmento, non-blocking
+  loadCartera3();     // Capa 3 — cartera por aliado, non-blocking
   const data = await fetch('/api/aliados/analytics').then(r=>r.json());
   if(data.error){ console.error(data.error); return; }
   _segData = data;

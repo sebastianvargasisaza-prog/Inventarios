@@ -322,6 +322,76 @@ def aliados_canal_salud():
         return jsonify({'error': str(e)}), 500
 
 
+
+@bp.route('/api/aliados/skus-segmento')
+def aliados_skus_segmento():
+    """Capa 3 — Top SKUs comprados por categoria_profesional de aliados ANIMUS.
+    Retorna: { segmentos: [{categoria, total_revenue, total_pedidos, top_skus:[{sku,descripcion,uds,pedidos,revenue}]}] }
+    """
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        # SKUs por categoría: join clientes -> pedidos -> pedidos_items
+        rows = c.execute("""
+            SELECT
+                COALESCE(NULLIF(TRIM(cl.categoria_profesional),''), 'Sin categoría') as cat,
+                pi.sku,
+                COALESCE(pi.descripcion, pi.sku) as descripcion,
+                SUM(pi.cantidad) as uds,
+                COUNT(DISTINCT p.numero) as pedidos,
+                SUM(pi.subtotal) as revenue
+            FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            JOIN pedidos_items pi ON pi.numero_pedido=p.numero
+            WHERE cl.empresa='ANIMUS' AND cl.activo=1
+              AND p.estado NOT IN ('Cancelado','Borrador')
+            GROUP BY cat, pi.sku
+            ORDER BY cat, revenue DESC
+        """).fetchall()
+
+        # Agrupar por categoría
+        from collections import defaultdict
+        cats = defaultdict(lambda: {'total_revenue':0,'total_pedidos':set(),'skus':[]})
+        for (cat, sku, desc, uds, peds, rev) in rows:
+            cats[cat]['total_revenue'] += rev or 0
+            cats[cat]['skus'].append({
+                'sku': sku,
+                'descripcion': desc,
+                'uds': int(uds or 0),
+                'pedidos': int(peds or 0),
+                'revenue': round(rev or 0, 0),
+            })
+
+        # Revenue total de pedidos por categoría (sin repetir pedido)
+        rev_cat = c.execute("""
+            SELECT
+                COALESCE(NULLIF(TRIM(cl.categoria_profesional),''), 'Sin categoría') as cat,
+                COUNT(DISTINCT p.numero) as total_pedidos,
+                SUM(p.valor_total) as rev_total
+            FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE cl.empresa='ANIMUS' AND cl.activo=1
+              AND p.estado NOT IN ('Cancelado','Borrador')
+            GROUP BY cat
+        """).fetchall()
+
+        rev_cat_map = {r[0]: {'total_pedidos': int(r[1]), 'total_revenue': round(r[2] or 0, 0)} for r in rev_cat}
+
+        segmentos = []
+        for cat, data in sorted(cats.items(), key=lambda x: -x[1]['total_revenue']):
+            meta = rev_cat_map.get(cat, {})
+            segmentos.append({
+                'categoria':      cat,
+                'total_revenue':  meta.get('total_revenue', round(data['total_revenue'],0)),
+                'total_pedidos':  meta.get('total_pedidos', 0),
+                'top_skus':       data['skus'][:6],  # top 6 por revenue
+            })
+
+        conn.close()
+        return jsonify({'segmentos': segmentos})
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
+
 @bp.route('/api/aliados/scores')
 def aliados_scores():
     """Capa 2 — Score individual por aliado: recencia, frecuencia, MoM, LTV relativo.
