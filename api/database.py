@@ -1308,6 +1308,57 @@ def init_db():
               (_time.time(),))
 
 
+
+    # ── Contabilidad: Facturación ─────────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS facturas (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        numero          TEXT    UNIQUE NOT NULL,
+        tipo            TEXT    NOT NULL DEFAULT 'Factura',
+        numero_pedido   TEXT    DEFAULT '',
+        cliente_id      INTEGER,
+        cliente_nombre  TEXT    DEFAULT '',
+        cliente_nit     TEXT    DEFAULT '',
+        empresa         TEXT    NOT NULL DEFAULT 'ANIMUS',
+        fecha_emision   TEXT    NOT NULL,
+        fecha_vencimiento TEXT  DEFAULT '',
+        subtotal        REAL    DEFAULT 0,
+        descuento       REAL    DEFAULT 0,
+        iva_pct         REAL    DEFAULT 0,
+        iva_valor       REAL    DEFAULT 0,
+        total           REAL    DEFAULT 0,
+        estado          TEXT    DEFAULT 'Emitida',
+        notas           TEXT    DEFAULT '',
+        creado_por      TEXT    DEFAULT '',
+        fecha_creacion  TEXT    DEFAULT (datetime('now'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS facturas_items (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        numero_factura  TEXT    NOT NULL,
+        sku             TEXT    DEFAULT '',
+        descripcion     TEXT    DEFAULT '',
+        cantidad        INTEGER DEFAULT 0,
+        precio_unitario REAL    DEFAULT 0,
+        descuento_pct   REAL    DEFAULT 0,
+        subtotal        REAL    DEFAULT 0
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS facturas_pagos (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        numero_factura  TEXT    NOT NULL,
+        fecha           TEXT    NOT NULL,
+        monto           REAL    NOT NULL,
+        medio           TEXT    DEFAULT 'Transferencia',
+        referencia      TEXT    DEFAULT '',
+        registrado_por  TEXT    DEFAULT '',
+        fecha_creacion  TEXT    DEFAULT (datetime('now'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS config_facturacion (
+        empresa         TEXT    NOT NULL,
+        anio            INTEGER NOT NULL,
+        tipo            TEXT    NOT NULL DEFAULT 'FV',
+        siguiente       INTEGER DEFAULT 1,
+        PRIMARY KEY (empresa, anio, tipo)
+    )""")
+
     # ─── Migraciones de esquema: aplicar al arranque ─────────────────────────
     run_migrations(conn)
 
