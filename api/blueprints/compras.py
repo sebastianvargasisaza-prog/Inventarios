@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, USER_EMAILS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -25,7 +26,6 @@ from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('compras', __name__)
-
 
 def _notificar_solicitante_email(dest_email, asunto, body_html):
     """Envia email al solicitante de forma no-bloqueante.
@@ -46,12 +46,11 @@ def _notificar_solicitante_email(dest_email, asunto, body_html):
     except Exception as _e:
         print(f'[notificar_solicitante] email error (non-critical): {_e}')
 
-
 @bp.route('/api/dashboard-stats')
 def dashboard_stats():
     from datetime import date
     hoy = date.today().isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
 
     # Vencimientos por mes (próximos 6 meses)
     venc_por_mes = {}
@@ -87,7 +86,6 @@ def dashboard_stats():
     c.execute("SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos")
     stock_total_g = c.fetchone()[0] or 0
 
-    conn.close()
     return jsonify({
         'vencimientos_por_mes': venc_por_mes,
         'mps_bajo_minimo': mps_bajo_minimo,
@@ -96,11 +94,10 @@ def dashboard_stats():
         'stock_total_kg': round(stock_total_g/1000, 1)
     })
 
-
 @bp.route('/api/generar-oc-automatica', methods=['POST'])
 def generar_oc_automatica():
     """Genera OCs automaticas por proveedor para todas las MPs bajo minimo"""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
 
     # Obtener MPs bajo minimo
     c.execute("""SELECT m.codigo_mp, m.nombre_comercial, m.proveedor, m.stock_minimo,
@@ -114,7 +111,6 @@ def generar_oc_automatica():
     alertas = c.fetchall()
 
     if not alertas:
-        conn.close()
         return jsonify({'message': 'No hay MPs bajo stock minimo', 'ordenes': []})
 
     # Agrupar por proveedor
@@ -167,12 +163,11 @@ def generar_oc_automatica():
             'email_body': email_body
         })
 
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({
         'message': f'{len(ordenes_creadas)} OC(s) generadas automaticamente',
         'ordenes': ordenes_creadas
     }), 201
-
 
 # ── MÓDULO COMPRAS ──────────────────────────────────────────────────────────
 @bp.route('/api/solicitudes-compra/<numero>', methods=['DELETE'])
@@ -180,11 +175,11 @@ def eliminar_solicitud(numero):
     """Elimina una solicitud de compra. Solo Pendiente o Rechazada (sin OC generada)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT estado, numero_oc FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
     row = c.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'No encontrada'}), 404
+        return jsonify({'error': 'No encontrada'}), 404
     estado, numero_oc = row
     # If OC exists, try to clean it up too (only if in Borrador state)
     if numero_oc and numero_oc.strip():
@@ -199,16 +194,15 @@ def eliminar_solicitud(numero):
             pass  # just delete the solicitud
     c.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
     c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'eliminada': numero.upper()})
-
 
 @bp.route('/api/ordenes-compra', methods=['GET','POST'])
 def handle_ordenes_compra():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json
-        if not d.get('proveedor'): conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
+        if not d.get('proveedor'): return jsonify({'error': 'Proveedor requerido'}), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
         numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
         categoria = d.get('categoria', 'MP')
@@ -226,7 +220,7 @@ def handle_ordenes_compra():
         )
         if valor_total_calc > 0:
             c.execute("UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?", (valor_total_calc, numero_oc))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'message': f'OC {numero_oc} creada', 'numero_oc': numero_oc}), 201
     cat_filter = request.args.get('categoria', '')
     _sql = (
@@ -244,23 +238,22 @@ def handle_ordenes_compra():
     cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones',
             'creado_por','num_items','categoria','remision_code','autorizado_por','valor_total',
             'con_iva','valor_sin_iva']
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
     return jsonify({'ordenes': [dict(zip(cols, r)) for r in rows]})
 
 @bp.route('/api/ordenes-compra/<numero_oc>', methods=['GET','PUT','DELETE'])
 def handle_oc_detalle(numero_oc):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
         c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
         _row = c.fetchone()
         if not _row:
-            conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+            return jsonify({'error': 'OC no encontrada'}), 404
         if _row[0] not in ('Borrador', 'Rechazada'):
-            conn.close()
             return jsonify({'error': f'No se puede eliminar una OC en estado {_row[0]}. Solo Borrador o Rechazada.'}), 400
         c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
         c.execute('DELETE FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'ok': True, 'message': f'OC {numero_oc} eliminada'})
 
     if request.method == 'PUT':
@@ -268,15 +261,15 @@ def handle_oc_detalle(numero_oc):
         nuevo_estado = d.get('estado','')
         usuario_actual = session.get('compras_user','')
         if usuario_actual in CONTADORA_USERS and nuevo_estado in ('Aprobada','Pagada'):
-            conn.close(); return jsonify({'error':'Sin permiso para esta accion'}), 403
+            return jsonify({'error':'Sin permiso para esta accion'}), 403
         if d.get('estado'): c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
-        conn.commit(); conn.close(); return jsonify({'message': f'OC {numero_oc} actualizada'})
+        conn.commit(); return jsonify({'message': f'OC {numero_oc} actualizada'})
     c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc_row = c.fetchone()
     oc_cols = [d[0] for d in c.description] if c.description else []
     c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items = c.fetchall()
-    if not oc_row: conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+    if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
     oc_dict = dict(zip(oc_cols, oc_row))
     prov_data = None
     prov_name = oc_dict.get('proveedor', '')
@@ -292,7 +285,6 @@ def handle_oc_detalle(numero_oc):
                 ['banco', 'tipo_cuenta', 'num_cuenta', 'nit', 'email', 'telefono', 'contacto'],
                 prow
             ))
-    conn.close()
     return jsonify({'oc': oc_dict, 'items': items, 'prov_data': prov_data})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/editar', methods=['PATCH'])
@@ -300,17 +292,16 @@ def editar_oc(numero_oc):
     """Edita una OC en estado Borrador: reemplaza items y actualiza campos."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute('SELECT estado FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
     row = c.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     if row[0] != 'Borrador':
-        conn.close()
         return jsonify({'error': f'Solo se pueden editar OCs en Borrador (estado actual: {row[0]})'}), 400
     d = request.json or {}
     if not d.get('proveedor'):
-        conn.close(); return jsonify({'error': 'Proveedor requerido'}), 400
+        return jsonify({'error': 'Proveedor requerido'}), 400
     con_iva = 1 if d.get('con_iva') else 0
     valor_sin_iva = float(d.get('valor_sin_iva', 0))
     c.execute("""
@@ -332,15 +323,15 @@ def editar_oc(numero_oc):
     if con_iva:
         valor_total = round(valor_total * 1.19, 2)
     c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'message': f'OC {numero_oc} actualizada', 'valor_total': valor_total})
 
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json
-        if not d.get('nombre'): conn.close(); return jsonify({'error': 'Nombre requerido'}), 400
+        if not d.get('nombre'): return jsonify({'error': 'Nombre requerido'}), 400
         try:
             c.execute("""INSERT INTO proveedores
                 (nombre,contacto,email,telefono,categoria,condiciones_pago,
@@ -351,33 +342,33 @@ def handle_proveedores_compras():
                  d.get('nit',''),d.get('direccion',''),d.get('num_cuenta',''),
                  d.get('tipo_cuenta',''),d.get('banco',''),d.get('concepto_compra',d.get('concepto','')),
                  datetime.now().isoformat()))
-            conn.commit(); conn.close()
+            conn.commit()
             return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
-        except Exception as e: conn.close(); return jsonify({'error': str(e)}), 400
+        except Exception as e: return jsonify({'error': str(e)}), 400
     c.execute("""SELECT nombre,contacto,email,telefono,categoria,condiciones_pago,
                        nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra
                 FROM proveedores WHERE activo=1 ORDER BY nombre""")
     cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago',
             'nit','direccion','num_cuenta','tipo_cuenta','banco','concepto_compra']
-    provs = [dict(zip(cols, r)) for r in c.fetchall()]; conn.close()
+    provs = [dict(zip(cols, r)) for r in c.fetchall()]
     return jsonify({'proveedores': provs})
 
 @bp.route('/api/proveedores-compras/<path:nombre>', methods=['PATCH','DELETE'])
 def handle_proveedor(nombre):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
         d = request.json or {}
         motivo = (d.get('motivo') or '').strip()
         if not motivo:
-            conn.close(); return jsonify({'error': 'El motivo de baja es requerido'}), 400
+            return jsonify({'error': 'El motivo de baja es requerido'}), 400
         c.execute("SELECT id FROM proveedores WHERE nombre=? AND activo=1", (nombre,))
         if not c.fetchone():
-            conn.close(); return jsonify({'error': 'Proveedor no encontrado'}), 404
+            return jsonify({'error': 'Proveedor no encontrado'}), 404
         c.execute(
             "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE nombre=?",
             (motivo, datetime.now().isoformat(), nombre)
         )
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' dado de baja"})
     # PATCH — edit
     d = request.json or {}
@@ -387,18 +378,18 @@ def handle_proveedor(nombre):
     sets = [f"{f}=?" for f in fields if f in d]
     vals = [d[f] for f in fields if f in d]
     if not sets:
-        conn.close(); return jsonify({'error': 'No hay campos para actualizar'}), 400
+        return jsonify({'error': 'No hay campos para actualizar'}), 400
     vals.append(nombre)
     c.execute(f"UPDATE proveedores SET {', '.join(sets)} WHERE nombre=? AND activo=1", vals)
     if c.rowcount == 0:
-        conn.close(); return jsonify({'error': 'Proveedor no encontrado'}), 404
-    conn.commit(); conn.close()
+        return jsonify({'error': 'Proveedor no encontrado'}), 404
+    conn.commit()
     return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' actualizado"})
 
 @bp.route('/api/proveedores-compras/<path:nombre>/ficha')
 def proveedor_ficha_360(nombre):
     """Proveedor 360: datos completos + historial OCs + scoring."""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, nombre, contacto, email, telefono, categoria,
                         nit, direccion, num_cuenta, tipo_cuenta, banco, concepto_compra,
                         id_interno, estado_lpa, ultima_evaluacion, vencimiento_docs,
@@ -406,7 +397,7 @@ def proveedor_ficha_360(nombre):
                  FROM proveedores WHERE nombre=? AND activo=1""", (nombre,))
     row = c.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'Proveedor no encontrado'}), 404
+        return jsonify({'error': 'Proveedor no encontrado'}), 404
     cols = ['id','nombre','contacto','email','telefono','categoria',
             'nit','direccion','num_cuenta','tipo_cuenta','banco','concepto_compra',
             'id_interno','estado_lpa','ultima_evaluacion','vencimiento_docs',
@@ -441,7 +432,6 @@ def proveedor_ficha_360(nombre):
                  ORDER BY total_g DESC LIMIT 15""", (nombre,))
     mps = [{'codigo': r[0], 'nombre': r[1], 'veces': r[2], 'total_g': round(r[3] or 0, 1)}
            for r in c.fetchall()]
-    conn.close()
     return jsonify({
         'proveedor': prov,
         'stats': {
@@ -453,13 +443,12 @@ def proveedor_ficha_360(nombre):
         'materiales': mps
     })
 
-
 @bp.route('/api/solicitudes-compra', methods=['GET','POST'])
 def handle_solicitudes_compra():
     if request.method == 'POST':
         conn = None
         try:
-            conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+            conn = get_db(); c = conn.cursor()
             d = request.json or {}
             c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?", (f"SOL-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
             numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
@@ -482,15 +471,15 @@ def handle_solicitudes_compra():
                           (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
                            it.get('cantidad_g',0), it.get('unidad','g'),
                            it.get('justificacion',''), it.get('valor_estimado',0)))
-            conn.commit(); conn.close()
+            conn.commit()
             return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
         except Exception as e:
             if conn:
-                try: conn.rollback(); conn.close()
+                try: conn.rollback()
                 except: pass
             import traceback as _tb
             return jsonify({'error': str(e), 'detail': _tb.format_exc()[-500:]}), 500
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
@@ -516,17 +505,14 @@ def handle_solicitudes_compra():
         row['numero_oc'] = extra[0] if extra else None
         c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
         row['valor'] = c2.fetchone()[0] or 0
-    conn.close()
     return jsonify({'solicitudes': rows_sol})
-
 
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
 def get_solicitud_estado(numero):
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT numero,fecha,estado,solicitante,urgencia,observaciones,numero_oc FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
     row = c.fetchone()
     if not row:
-        conn.close()
         return jsonify({'error': 'No encontrada'}), 404
     cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','numero_oc']
     sol = dict(zip(cols, row))
@@ -538,7 +524,6 @@ def get_solicitud_estado(numero):
         except: pass
     c.execute("SELECT codigo_mp,nombre_mp,cantidad_g,unidad,valor_estimado FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
     items = [dict(zip(['codigo_mp','nombre_mp','cantidad_g','unidad','valor_estimado'], r)) for r in c.fetchall()]
-    conn.close()
     return jsonify({'solicitud': sol, 'items': items})
 
 @bp.route('/solicitudes')
@@ -546,7 +531,6 @@ def solicitudes_page():
     if 'compras_user' not in session:
         return redirect('/login?next=/solicitudes')
     return Response(SOLICITUDES_HTML, mimetype='text/html')
-
 
 @bp.route('/api/solicitudes-compra/<numero>/estado', methods=['PATCH'])
 def actualizar_estado_solicitud(numero):
@@ -556,7 +540,7 @@ def actualizar_estado_solicitud(numero):
     nuevo = d.get('estado', 'Aprobada')
     numero_oc_param = d.get('numero_oc', '')
     obs = d.get('observaciones', '')
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("""UPDATE solicitudes_compra SET estado=?, aprobado_por=?, fecha_aprobacion=?
                  WHERE numero=?""",
               (nuevo, session.get('compras_user',''), datetime.now().isoformat(), numero.upper()))
@@ -615,7 +599,7 @@ def actualizar_estado_solicitud(numero):
     cur.execute("SELECT email_solicitante FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
     _em_row = cur.fetchone()
     _notif_dest = (_em_row[0] if _em_row else '').strip()
-    conn.commit(); conn.close()
+    conn.commit()
     # Notificacion al solicitante (no-blocking, best-effort)
     if _notif_dest:
         if nuevo == 'Rechazada':
@@ -650,13 +634,13 @@ def actualizar_estado_solicitud(numero):
 def recibir_oc(numero_oc):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT estado, proveedor, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc_row = cur.fetchone()
     if not oc_row:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     if oc_row[0] not in ('Autorizada', 'Parcial'):
-        conn.close(); return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
+        return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
     cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
@@ -717,7 +701,7 @@ def recibir_oc(numero_oc):
             (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre, numero_oc))
     except Exception:
         cur.execute("UPDATE ordenes_compra SET estado=?, fecha_recepcion=? WHERE numero_oc=?", (nuevo_estado, fecha, numero_oc))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos, 'estado': nuevo_estado, 'parcial': es_parcial})
 
 # ============================================================
@@ -729,7 +713,7 @@ def revisar_oc(numero_oc):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     d = request.get_json() or {}
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     sets = ["estado='Revisada'"]; params = []
     if d.get('proveedor'):
         sets.append('proveedor=?'); params.append(str(d['proveedor']))
@@ -742,7 +726,7 @@ def revisar_oc(numero_oc):
     sets.append('valor_sin_iva=?'); params.append(float(d.get('valor_sin_iva') or 0))
     params.append(numero_oc)
     cur.execute(f"UPDATE ordenes_compra SET {', '.join(sets)} WHERE numero_oc=?", params)
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'estado': 'Revisada'})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/autorizar', methods=['PATCH'])
@@ -752,11 +736,11 @@ def autorizar_oc(numero_oc):
     usuario_actual = session.get('compras_user', '')
     if usuario_actual in CONTADORA_USERS:
         return jsonify({'error': 'Sin permiso para autorizar OCs'}), 403
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     fecha_hoy = datetime.now().strftime('%Y%m%d')
     cur.execute("SELECT remision_code FROM ordenes_compra WHERE remision_code LIKE ? ORDER BY remision_code DESC LIMIT 1",
                 (f'REM-ESP-{fecha_hoy}-%',))
@@ -766,7 +750,7 @@ def autorizar_oc(numero_oc):
     fecha_aut = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Autorizada', remision_code=?, autorizado_por=?, fecha_autorizacion=? WHERE numero_oc=?",
                 (remision_code, usuario_actual, fecha_aut, numero_oc))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'estado': 'Autorizada', 'remision_code': remision_code})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/pagar', methods=['PATCH'])
@@ -784,11 +768,11 @@ def pagar_oc(numero_oc):
     # Limit image size to ~4MB base64 to avoid DB bloat
     if len(comprobante_imagen) > 4_000_000:
         comprobante_imagen = comprobante_imagen[:4_000_000]
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT estado, categoria, proveedor, valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     categoria = row[1] or 'MP'
     proveedor = row[2] or ''
     if not monto: monto = float(row[3] or 0)
@@ -804,7 +788,7 @@ def pagar_oc(numero_oc):
                     'compras', numero_oc, usuario_actual, f'{medio}. {obs}'))
     except Exception:
         pass
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'estado': 'Pagada', 'monto': monto})
 
 @bp.route('/api/compras/pagos', methods=['GET'])
@@ -812,7 +796,7 @@ def get_pagos():
     """Return all paid OCs with payment metadata (no image data)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("""
         SELECT numero_oc, proveedor, categoria, valor_total,
                medio_pago, fecha_pago, pagado_por,
@@ -824,29 +808,24 @@ def get_pagos():
     """)
     cols = [d[0] for d in cur.description]
     pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
-    conn.close()
     return jsonify({'pagos': pagos})
-
 
 @bp.route('/api/ordenes-compra/<numero_oc>/comprobante', methods=['GET'])
 def get_comprobante(numero_oc):
     """Return only the comprobante_imagen for a specific OC (lazy load)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT comprobante_imagen FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
-    conn.close()
     if not row or not row[0]:
         return jsonify({'error': 'Sin comprobante'}), 404
     return jsonify({'imagen': row[0]})
 
-
-
 @bp.route('/api/compras/planta', methods=['GET'])
 def get_planta_solicitudes():
     """Retorna solicitudes Aprobadas de area=Produccion con items+proveedor de maestro_mps."""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""
         SELECT numero, fecha, solicitante, urgencia, observaciones
         FROM solicitudes_compra
@@ -860,7 +839,6 @@ def get_planta_solicitudes():
     solicitudes = [dict(zip(cols, r)) for r in c.fetchall()]
 
     if not solicitudes:
-        conn.close()
         return jsonify({'items': [], 'solicitudes': []})
 
     numeros = [s['numero'] for s in solicitudes]
@@ -880,8 +858,6 @@ def get_planta_solicitudes():
     item_cols = ['id','solic_numero','codigo_mp','nombre_mp','cantidad_g','unidad',
                  'justificacion','proveedor','precio_ref']
     items = [dict(zip(item_cols, r)) for r in c.fetchall()]
-    conn.close()
-
     # Enrich with urgencia + sort: proveedores asignados primero, sin asignar al final
     solic_map = {s['numero']: s for s in solicitudes}
     for it in items:
@@ -892,7 +868,6 @@ def get_planta_solicitudes():
     items_sin = sorted([i for i in items if not i.get('proveedor')],
                        key=lambda x: x.get('nombre_mp',''))
     return jsonify({'items': items_con + items_sin, 'solicitudes': solicitudes})
-
 
 @bp.route('/api/compras/planta/generar-oc', methods=['POST'])
 def planta_generar_oc():
@@ -917,7 +892,7 @@ def planta_generar_oc():
     # Collect ALL solic_numeros BEFORE the loop (avoids scope bug)
     all_solic_numeros = list(set(it.get('solic_numero','') for it in items if it.get('solic_numero')))
 
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     ocs_creadas = []
     try:
         for prov, prov_items in grupos.items():
@@ -958,13 +933,12 @@ def planta_generar_oc():
             for sn in all_solic_numeros:
                 c.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=? AND (numero_oc IS NULL OR numero_oc='')",
                           (first_oc, sn))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'ocs_creadas': ocs_creadas, 'total': len(ocs_creadas)}), 201
     except Exception as e:
-        conn.rollback(); conn.close()
+        conn.rollback()
         import traceback as _tb
         return jsonify({'error': str(e), 'detail': _tb.format_exc()[-600:]}), 500
-
 
 @bp.route('/api/compras/oc/<numero_oc>/rechazar', methods=['POST'])
 def rechazar_oc(numero_oc):
@@ -973,11 +947,11 @@ def rechazar_oc(numero_oc):
     usuario_actual = session.get('compras_user', '')
     d = request.get_json() or {}
     motivo = d.get('motivo', 'Sin motivo especificado')[:300]
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT estado, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     # Mark OC as Rechazada
     cur.execute("UPDATE ordenes_compra SET estado='Rechazada', observaciones=COALESCE(observaciones,'')||' | RECHAZADA: '||? WHERE numero_oc=?",
                 (motivo, numero_oc))
@@ -995,7 +969,7 @@ def rechazar_oc(numero_oc):
         _sr = cur.fetchone()
         _sol_nombre = (_sr[0] if _sr else '').lower().strip()
         _sol_email_directo = (_sr[1] if _sr and len(_sr) > 1 else '').strip()
-    conn.commit(); conn.close()
+    conn.commit()
     # Email destino: primero el email directo de la solicitud, luego el mapa USER_EMAILS
     _dest_email = _sol_email_directo or USER_EMAILS.get(_sol_nombre, '')
     if sol and _dest_email:
@@ -1018,19 +992,16 @@ def rechazar_oc(numero_oc):
 def buscar_remision(remision_code):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT * FROM ordenes_compra WHERE remision_code=?", (remision_code,))
     oc_row = cur.fetchone()
     oc_cols = [d[0] for d in cur.description] if cur.description else []
     if not oc_row:
-        conn.close(); return jsonify({'error': 'No encontrado'}), 404
+        return jsonify({'error': 'No encontrado'}), 404
     oc = dict(zip(oc_cols, oc_row))
     cur.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (oc['numero_oc'],))
     items = cur.fetchall()
-    conn.close()
     return jsonify({'oc': oc, 'items': items})
-
-
 
 # ════════════════════════════════════════════
 # MEE — Materiales de Envase & Empaque
@@ -1038,11 +1009,11 @@ def buscar_remision(remision_code):
 
 @bp.route('/api/mee', methods=['GET','POST'])
 def handle_mee():
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
         d = request.get_json()
         if not d.get('codigo') or not d.get('descripcion'):
-            conn.close(); return jsonify({'error':'codigo y descripcion requeridos'}), 400
+            return jsonify({'error':'codigo y descripcion requeridos'}), 400
         try:
             cur.execute("""INSERT INTO maestro_mee (codigo,descripcion,categoria,proveedor,fabricante,estado,stock_actual,stock_minimo,unidad,fecha_creacion)
                 VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -1050,10 +1021,10 @@ def handle_mee():
                  d.get('categoria','Otro'), d.get('proveedor',''), d.get('fabricante',''),
                  'Activo', float(d.get('stock_actual',2000)), float(d.get('stock_minimo',1000)),
                  'und', datetime.now().isoformat()))
-            conn.commit(); conn.close()
+            conn.commit()
             return jsonify({'message':f"MEE '{d['codigo']}' creado"}), 201
         except Exception as e:
-            conn.close(); return jsonify({'error':str(e)}), 400
+            return jsonify({'error':str(e)}), 400
     # GET
     cat = request.args.get('cat','')
     q   = request.args.get('q','')
@@ -1067,49 +1038,48 @@ def handle_mee():
     cur.execute(sql, params)
     cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo','estado']
     items=[dict(zip(cols,r)) for r in cur.fetchall()]
-    conn.close()
     return jsonify({'items':items})
 
 @bp.route('/api/mee/<codigo>', methods=['GET','PUT'])
 def handle_mee_item(codigo):
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     if request.method == 'PUT':
         d = request.get_json()
         fields=[]; vals=[]
         for f in ['descripcion','categoria','proveedor','stock_minimo','estado']:
             if f in d: fields.append(f'{f}=?'); vals.append(d[f])
-        if not fields: conn.close(); return jsonify({'error':'nada que actualizar'}), 400
+        if not fields: return jsonify({'error':'nada que actualizar'}), 400
         vals.append(codigo)
         cur.execute(f"UPDATE maestro_mee SET {','.join(fields)} WHERE codigo=?", vals)
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'message':'actualizado'})
     cur.execute("SELECT * FROM maestro_mee WHERE codigo=?", (codigo,))
-    row=cur.fetchone(); conn.close()
+    row=cur.fetchone()
     if not row: return jsonify({'error':'no encontrado'}), 404
     cols=[d[0] for d in cur.description]
     return jsonify(dict(zip(cols,row)))
 
 @bp.route('/api/mee/<codigo>/ajuste', methods=['POST'])
 def ajuste_mee(codigo):
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     d = request.get_json()
     nuevo = float(d.get('nuevo_stock',0))
     obs = d.get('observaciones','Ajuste manual')
     oper = d.get('operador','Sistema')
     cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (codigo,))
     row=cur.fetchone()
-    if not row: conn.close(); return jsonify({'error':'MEE no encontrado'}), 404
+    if not row: return jsonify({'error':'MEE no encontrado'}), 404
     anterior=row[0]
     diff=nuevo-anterior
     cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,codigo))
     cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
                 (codigo,'Ajuste',diff,'ajuste_manual',obs,oper,datetime.now().isoformat()))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok':True,'nuevo_stock':nuevo})
 
 @bp.route('/api/movimientos-mee', methods=['GET','POST'])
 def handle_movimientos_mee():
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
         d = request.get_json()
         cod  = d.get('codigo_mee') or d.get('mee_codigo', '')
@@ -1118,17 +1088,17 @@ def handle_movimientos_mee():
         ref  = d.get('referencia','')
         obs  = d.get('observaciones','')
         oper = d.get('operador','')
-        if not cod or cant<=0: conn.close(); return jsonify({'error':'datos invalidos'}), 400
+        if not cod or cant<=0: return jsonify({'error':'datos invalidos'}), 400
         cur.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,))
         row=cur.fetchone()
-        if not row: conn.close(); return jsonify({'error':'MEE no encontrado'}), 404
+        if not row: return jsonify({'error':'MEE no encontrado'}), 404
         delta = cant if tipo in ('Entrada','entrada') else -cant
         nuevo = row[0]+delta
-        if nuevo<0: conn.close(); return jsonify({'error':f'Stock insuficiente (actual: {row[0]})'}), 400
+        if nuevo<0: return jsonify({'error':f'Stock insuficiente (actual: {row[0]})'}), 400
         cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
         cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
                     (cod,tipo,cant,ref,obs,oper,datetime.now().isoformat()))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'ok':True,'nuevo_stock':nuevo}), 201
     # GET con filtros
     codigo = request.args.get('codigo','')
@@ -1143,12 +1113,11 @@ def handle_movimientos_mee():
     cur.execute(sql, params)
     cols=['id','mee_codigo','descripcion','tipo','cantidad','lote_ref','observaciones','responsable','fecha']
     rows=[dict(zip(cols,r)) for r in cur.fetchall()]
-    conn.close()
     return jsonify({'movimientos':rows})
 
 @bp.route('/api/movimientos-mee/lote', methods=['POST'])
 def movimientos_mee_lote():
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     d = request.get_json()
     movs = d.get('movimientos',[])
     oper = d.get('operador','')
@@ -1165,22 +1134,19 @@ def movimientos_mee_lote():
         cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,cod))
         cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
                     (cod,'Salida',cant,ref,'Consumo produccion',oper,datetime.now().isoformat()))
-    conn.commit(); conn.close()
+    conn.commit()
     if errores: return jsonify({'ok':True,'advertencias':errores})
     return jsonify({'ok':True})
 
 @bp.route('/api/alertas-mee', methods=['GET'])
 def alertas_mee():
-    conn = sqlite3.connect(DB_PATH); cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("""SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo
                    FROM maestro_mee WHERE estado='Activo' AND stock_actual < stock_minimo
                    ORDER BY (stock_actual - stock_minimo) ASC""")
     cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo']
     alertas=[dict(zip(cols,r)) for r in cur.fetchall()]
-    conn.close()
     return jsonify({'alertas':alertas,'total':len(alertas)})
-
-
 
 @bp.route('/api/compras/consolidado-proveedor', methods=['GET'])
 def consolidado_por_proveedor():
@@ -1195,7 +1161,7 @@ def consolidado_por_proveedor():
     estados_activos = request.args.getlist('estados') or ['Borrador', 'Revisada', 'Autorizada']
     placeholders = ','.join('?' * len(estados_activos))
 
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute(f"""
         SELECT
             o.proveedor,
@@ -1223,8 +1189,6 @@ def consolidado_por_proveedor():
     """, estados_activos)
 
     rows = c.fetchall()
-    conn.close()
-
     from collections import OrderedDict
     proveedores = OrderedDict()
 

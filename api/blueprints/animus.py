@@ -2,6 +2,7 @@ import sqlite3, json, traceback, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS
+from database import get_db
 
 bp = Blueprint("animus", __name__)
 
@@ -19,8 +20,8 @@ CALENDARIO_COSMETICO = [
 ]
 
 def _db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_db()
+
     return conn
 
 def _auth():
@@ -98,7 +99,7 @@ def animus_config():
         }
         return jsonify({"config": cfg, "connected": connected})
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── SYNC ────────────────────────────────────────────────────────────────────
 
@@ -195,7 +196,7 @@ def animus_sync(platform):
         else:
             return jsonify({"error": "Plataforma desconocida"}), 400
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── COMANDO GENERAL ──────────────────────────────────────────────────────────
 
@@ -306,7 +307,7 @@ def animus_comando():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INTELIGENCIA DE PRODUCTO ─────────────────────────────────────────────────
 
@@ -365,7 +366,7 @@ def animus_productos():
         resultado.sort(key=lambda x: x["revenue_30d"], reverse=True)
         return jsonify({"skus": resultado, "total": len(resultado)})
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INTELIGENCIA DE CLIENTES ─────────────────────────────────────────────────
 
@@ -418,7 +419,7 @@ def animus_clientes():
             "clientes_dormidos": dormidos,
         })
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INSTAGRAM PANEL ──────────────────────────────────────────────────────────
 
@@ -457,7 +458,7 @@ def animus_instagram():
             "top_posts": top,
         })
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── GENERADOR DE CONTENIDO ────────────────────────────────────────────────────
 
@@ -550,7 +551,7 @@ DON'Ts: No comparar con otras marcas, no hacer claims médicos
             "stock_disponible": stock,
         })
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/animus/contenido/historial")
 def animus_contenido_historial():
@@ -565,7 +566,7 @@ def animus_contenido_historial():
         """).fetchall()
         return jsonify(_fmt_many(rows))
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/animus/contenido/<int:cid>/usar", methods=["POST"])
 def animus_contenido_usar(cid):
@@ -578,7 +579,7 @@ def animus_contenido_usar(cid):
         row = conn.execute("SELECT * FROM animus_contenido_generado WHERE id=?", (cid,)).fetchone()
         return jsonify(_fmt(row))
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── AGENTES IA ───────────────────────────────────────────────────────────────
 
@@ -905,7 +906,7 @@ def animus_agente(agente):
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── CALENDARIO COSMÉTICO ──────────────────────────────────────────────────────
 
@@ -919,7 +920,6 @@ def animus_calendario():
         dias = (datetime.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
         eventos.append({**ev, "dias_restantes": dias, "pasado": dias < 0})
     return jsonify({"eventos": eventos})
-
 
 # ── REDIRECT /animus → /marketing ────────────────────────────────────────────
 from flask import redirect as flask_redirect

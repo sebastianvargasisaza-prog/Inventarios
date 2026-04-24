@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -26,29 +27,26 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('despachos', __name__)
 
-
 @bp.route('/recepcion')
 def recepcion_panel():
     if 'compras_user' not in session:
         return redirect('/login?next=/recepcion')
     return Response(RECEPCION_HTML, mimetype='text/html')
 
-
 @bp.route('/api/recepcion/detalle/<numero_oc>')
 def recepcion_detalle_oc(numero_oc):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute(
         'SELECT numero_oc, proveedor, estado, categoria, fecha, '
         'COALESCE(valor_total,0), creado_por, observaciones '
         'FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
     oc = c.fetchone()
     if oc is None:
-        conn.close(); return jsonify({'error': 'OC no encontrada'}), 404
+        return jsonify({'error': 'OC no encontrada'}), 404
     _INTANGIBLE = ('SVC', 'CC', 'Influencer/Marketing Digital')
     if oc[3] in _INTANGIBLE:
-        conn.close()
         return jsonify({
             'error': f'La OC {oc[0]} es de tipo {oc[3]} (intangible). '
                      'No requiere recepcion fisica — se gestiona directamente en Compras.'
@@ -59,7 +57,6 @@ def recepcion_detalle_oc(numero_oc):
         'COALESCE(lote_asignado,"") '
         'FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
     items = c.fetchall()
-    conn.close()
     return jsonify({
         'numero_oc': oc[0], 'proveedor': oc[1], 'estado': oc[2],
         'categoria': oc[3], 'fecha': oc[4], 'valor_total': oc[5],
@@ -71,12 +68,11 @@ def recepcion_detalle_oc(numero_oc):
         ]
     })
 
-
 @bp.route('/api/recepcion/seguimiento')
 def recepcion_seguimiento():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute(
         'SELECT numero_oc, fecha, estado, proveedor, categoria, '
         'COALESCE(valor_total,0), COALESCE(fecha_recepcion,""), '
@@ -87,7 +83,6 @@ def recepcion_seguimiento():
         "AND categoria NOT IN ('SVC','CC','Influencer/Marketing Digital') "
         'ORDER BY fecha DESC LIMIT 200')
     rows = c.fetchall()
-    conn.close()
     return jsonify([
         {'numero_oc': r[0], 'fecha': r[1], 'estado': r[2], 'proveedor': r[3],
          'categoria': r[4], 'valor_total': r[5], 'fecha_recepcion': r[6],
@@ -96,22 +91,19 @@ def recepcion_seguimiento():
         for r in rows
     ])
 
-
 @bp.route('/api/recepcion/lotes-cuarentena')
 def recepcion_lotes_cuarentena():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, material_id, material_nombre, cantidad, lote,
                         fecha_vencimiento, proveedor, fecha, numero_oc
                  FROM movimientos
                  WHERE tipo='Entrada' AND (estado_lote='Cuarentena' OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))
                  ORDER BY fecha DESC LIMIT 100""")
     rows = c.fetchall()
-    conn.close()
     cols = ['id','material_id','material_nombre','cantidad','lote','fecha_vencimiento','proveedor','fecha','numero_oc']
     return jsonify([dict(zip(cols, r)) for r in rows])
-
 
 @bp.route('/api/recepcion/aprobar-lote', methods=['POST'])
 def recepcion_aprobar_lote():
@@ -123,18 +115,17 @@ def recepcion_aprobar_lote():
     if not mov_id:
         return jsonify({'error': 'mov_id requerido'}), 400
     usuario = session.get('compras_user', '')
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("UPDATE movimientos SET estado_lote=?, operador=? WHERE id=?",
               (nuevo_estado, usuario, mov_id))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'estado': nuevo_estado})
-
 
 @bp.route('/api/recepcion/trazabilidad/<path:lote>')
 def recepcion_trazabilidad_lote(lote):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.cantidad,
                         m.lote, m.fecha_vencimiento, m.proveedor, m.fecha,
                         m.estado_lote, m.numero_oc, m.operador
@@ -151,9 +142,7 @@ def recepcion_trazabilidad_lote(lote):
         oc_row = c.fetchone()
         if oc_row:
             oc_info = dict(zip(['numero_oc','fecha','proveedor','estado','valor_total','recibido_por'], oc_row))
-    conn.close()
     return jsonify({'lote': lote, 'movimientos': movs, 'oc': oc_info})
-
 
 # ─── Recursos Humanos ────────────────────────────────────────────────────────
 

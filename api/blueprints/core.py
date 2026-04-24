@@ -26,8 +26,6 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('core', __name__)
 
-
-
 @bp.route('/api/health')
 def health():
     """Diagnostico publico — version, DB, tablas clave."""
@@ -51,7 +49,6 @@ def health():
             tables['planta_pendientes'] = conn.execute(
                 "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' AND area='Produccion' AND (numero_oc IS NULL OR numero_oc='')").fetchone()[0]
         except: pass
-        conn.close()
     except Exception as e:
         tables['error'] = str(e)
     return jsonify({'status':'ok','commit':commit,'db_exists':db_exists,
@@ -78,7 +75,6 @@ def inventarios():
     return resp
 
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
-
 
 @bp.route('/hub')
 def hub():

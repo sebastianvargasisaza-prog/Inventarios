@@ -29,7 +29,7 @@ from auth import (
     _log_sec, register_hooks,
 )
 
-from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh
+from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db
 
 app = Flask(__name__)
 _secret = os.environ.get('SECRET_KEY')
@@ -50,6 +50,26 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 register_hooks(app)
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    """Cierra la conexion SQLite al final de cada request (incluso si hay error).
+    Esto garantiza que get_db() nunca deja conexiones abiertas, independientemente
+    de si la funcion del blueprint llama conn.close() o no.
+    """
+    db = None
+    try:
+        from flask import g
+        db = g.pop("db", None)
+    except RuntimeError:
+        pass
+    if db is not None:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
 
 @app.route('/api/email-status')
 def email_status():

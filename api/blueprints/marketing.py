@@ -9,6 +9,7 @@ from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
 
 from config import DB_PATH, ADMIN_USERS, MARKETING_USERS
+from database import get_db
 
 bp = Blueprint("marketing", __name__)
 CALENDARIO_COSMETICO = [
@@ -26,12 +27,10 @@ CALENDARIO_COSMETICO = [
 
 # MARKETING_USERS importado desde config (fuente única de verdad para accesos)
 
-
 def _db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    conn = get_db()
 
+    return conn
 
 def _ig_resolve_token(conn):
     """Resuelve el Page Access Token y el IG user ID correcto.
@@ -112,7 +111,6 @@ def _ig_resolve_token(conn):
     # Fallback: usar lo que hay almacenado
     return token, stored_uid
 
-
 def _auth():
     u = session.get("compras_user", "")
     if not u:
@@ -121,14 +119,11 @@ def _auth():
         return None, jsonify({"error": "Sin acceso al módulo Marketing"}), 403
     return u, None, None
 
-
 def _fmt(row):
     return dict(row) if row else None
 
-
 def _fmt_many(rows):
     return [dict(r) for r in rows]
-
 
 def _cfg(conn, clave, default=None):
     """Lee configuración de animus_config (tabla compartida con Centro de Mando)."""
@@ -137,7 +132,6 @@ def _cfg(conn, clave, default=None):
         return row["valor"] if row else default
     except Exception:
         return default
-
 
 def _call_claude(conn, agente, datos):
     """Enriquece el resultado del agente con análisis IA usando Claude API."""
@@ -174,7 +168,6 @@ def _call_claude(conn, agente, datos):
             return data["content"][0]["text"]
     except Exception:
         return None
-
 
 def _ig_check_refresh(conn):
     """Auto-renueva el token de IG si vence en < 10 dias.
@@ -239,7 +232,6 @@ def _ig_check_refresh(conn):
         "refreshed":   refreshed,
         "expired":     days_left <= 0 and not refreshed and bool(expiry_str),
     }
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD
@@ -471,8 +463,7 @@ def mkt_dashboard():
             "por_canal": por_canal,
         })
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CAMPAÑAS
@@ -531,8 +522,7 @@ def mkt_campanas():
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/campanas/<int:cid>", methods=["GET", "PUT", "DELETE"])
 def mkt_campana_detail(cid):
@@ -587,8 +577,7 @@ def mkt_campana_detail(cid):
             conn.commit()
             return jsonify({"ok": True})
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # INFLUENCERS
@@ -646,8 +635,7 @@ def mkt_influencers():
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/influencers/<int:iid>", methods=["GET", "PUT", "DELETE"])
 def mkt_influencer_detail(iid):
@@ -693,8 +681,7 @@ def mkt_influencer_detail(iid):
             conn.commit()
             return jsonify({"ok": True})
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ASIGNACIÓN CAMPAÑA ↔ INFLUENCER
@@ -726,8 +713,7 @@ def mkt_asignar_influencer():
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/campana-influencer/<int:rid>", methods=["PUT"])
 def mkt_update_asignacion(rid):
@@ -749,8 +735,7 @@ def mkt_update_asignacion(rid):
         conn.commit()
         return jsonify({"ok": True})
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONTENIDO
@@ -803,8 +788,7 @@ def mkt_contenido():
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/contenido/<int:cid>", methods=["PUT", "DELETE"])
 def mkt_contenido_detail(cid):
@@ -831,8 +815,7 @@ def mkt_contenido_detail(cid):
         conn.commit()
         return jsonify({"ok": True})
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ANALYTICS
@@ -951,8 +934,7 @@ def mkt_analytics_roi():
             }
         })
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/analytics/tendencias")
 def mkt_analytics_tendencias():
@@ -1072,8 +1054,7 @@ def mkt_analytics_tendencias():
             "fuente": "shopify" if rows_rec else "sin_datos"
         })
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AGENTES IA (internos — sin API externa)
@@ -1083,7 +1064,6 @@ def _log_agente(c, agente, accion, resultado, user):
         INSERT INTO marketing_agentes_log (agente, accion, resultado, ejecutado_por)
         VALUES (?,?,?,?)
     """, (agente, accion, json.dumps(resultado, ensure_ascii=False), user))
-
 
 @bp.route("/api/marketing/agentes/log")
 def mkt_agentes_log():
@@ -1109,8 +1089,7 @@ def mkt_agentes_log():
             """).fetchall()
         return jsonify(_fmt_many(rows))
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── CONEXIONES / SYNC ─────────────────────────────────────────────────────────
 
@@ -1164,8 +1143,7 @@ def mkt_connections():
                 last_sync[plat] = None
         return jsonify({"connected": connected, "last_sync": last_sync})
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/sync/<platform>", methods=["POST"])
 def mkt_sync(platform):
@@ -1328,8 +1306,7 @@ def mkt_sync(platform):
     except Exception as e:
         return jsonify({"error": str(e)}), 502
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INSTAGRAM TOKEN REFRESH ──────────────────────────────────────────────────
 @bp.route("/api/marketing/ig-refresh", methods=["POST"])
@@ -1381,8 +1358,7 @@ def mkt_ig_refresh():
     except Exception as e:
         return jsonify({"error": str(e)}), 502
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INSTAGRAM TOKEN UPDATE (desde el dashboard) ──────────────────────────────
 @bp.route("/api/marketing/ig-update-token", methods=["POST"])
@@ -1491,8 +1467,7 @@ def mkt_ig_update_token():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── INSTAGRAM DEBUG ───────────────────────────────────────────────────────────
 @bp.route("/api/marketing/ig-debug", methods=["GET"])
@@ -1589,8 +1564,7 @@ def mkt_ig_debug():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 # ── AGENTES IA (10 agentes ÁNIMUS con Claude) ─────────────────────────────────
 
@@ -1892,8 +1866,7 @@ def mkt_ejecutar_agente(agente):
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
     finally:
-        conn.close()
-
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/agentes/log/<int:log_id>")
 def mkt_agente_log_detalle(log_id):
@@ -1913,4 +1886,4 @@ def mkt_agente_log_detalle(log_id):
             pass
         return jsonify(r)
     finally:
-        conn.close()
+        pass  # conexión cerrada automáticamente por teardown_appcontext

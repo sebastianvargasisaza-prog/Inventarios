@@ -8,6 +8,29 @@ from datetime import datetime
 from config import DB_PATH
 
 
+def get_db():
+    """Conexion SQLite por request usando Flask g.
+    
+    Patron recomendado por Flask: una conexion por request, cerrada
+    automaticamente por teardown_appcontext al final del request (incluso
+    si hay excepcion). Elimina la necesidad de conn.close() manual en cada
+    funcion y evita connection leaks en error paths.
+    
+    Fuera de contexto de request (scripts, init_db) usa conexion directa
+    con row_factory ya configurada.
+    """
+    try:
+        from flask import g
+        if "db" not in g:
+            g.db = sqlite3.connect(DB_PATH)
+            g.db.row_factory = sqlite3.Row
+        return g.db
+    except RuntimeError:
+        # Sin app context (init scripts, tests, CLI tools)
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
 def init_db():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -29,7 +30,6 @@ from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('gerencia', __name__)
-
 
 @bp.route('/gerencia')
 def gerencia_page():
@@ -53,7 +53,7 @@ def gerencia_financiero_page():
 def gerencia_kpis():
     if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
     mps_bajo_minimo = c.fetchone()[0] or 0
     try:
@@ -126,7 +126,6 @@ def gerencia_kpis():
         except Exception:
             kg_mes = 0
             lotes_mes = 0
-    conn.close()
     semaforos = {
         'mps': 'rojo' if mps_bajo_minimo > 5 else ('amarillo' if mps_bajo_minimo > 0 else 'verde'),
         'mee': 'rojo' if mee_bajo_minimo > 3 else ('amarillo' if mee_bajo_minimo > 0 else 'verde'),
@@ -149,7 +148,7 @@ def gerencia_flujo_operacional():
         return jsonify({'error': 'No autorizado'}), 401
     from datetime import date
     today = date.today()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # OCs en tránsito (Autorizada, sin recepción)
     c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total
                  FROM ordenes_compra oc
@@ -185,7 +184,6 @@ def gerencia_flujo_operacional():
                  ORDER BY d.fecha DESC LIMIT 10""")
     dsp_cols = ['numero','cliente','fecha','numero_pedido','estado']
     despachos_recientes = [dict(zip(dsp_cols, r)) for r in c.fetchall()]
-    conn.close()
     return jsonify({
         'ocs_transito': ocs_transito,
         'recepciones_disc': recepciones_disc,
@@ -199,7 +197,7 @@ def admin_security_log():
         return jsonify({'error': 'Solo admins'}), 401
     limit  = min(int(request.args.get('limit', 200)), 500)
     event  = request.args.get('event', '')
-    conn   = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if event:
         c.execute('SELECT * FROM security_events WHERE event=? ORDER BY id DESC LIMIT ?', (event, limit))
     else:
@@ -209,7 +207,6 @@ def admin_security_log():
     # Summary counts
     c.execute('SELECT event, COUNT(*) FROM security_events GROUP BY event')
     summary = {r[0]: r[1] for r in c.fetchall()}
-    conn.close()
     return jsonify({'events': rows, 'summary': summary})
 
 @bp.route('/api/admin/generate-hash', methods=['POST'])
@@ -237,7 +234,7 @@ def gerencia_dashboard_extra():
     mes_str  = today.strftime('%Y-%m')
     year_str = today.strftime('%Y')
     cutoff7  = (today - timedelta(days=7)).isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
 
     # Ingresos del mes desde transacciones reales
     # B2B / aliados — pedidos internos ANIMUS
@@ -438,7 +435,6 @@ def gerencia_dashboard_extra():
         churn_alerts.sort(key=lambda x: x['dias'], reverse=True)
     except Exception:
         pass
-    conn.close()
     return jsonify({
         'ingresos_mes': ingresos_mes,
         'ar': ar, 'ap': ap,
@@ -458,7 +454,7 @@ def admin_cleanup_test_data():
     d = request.get_json() or {}
     if not d.get('confirm'):
         return jsonify({'error': 'Enviar confirm:true para confirmar'}), 400
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     deleted = {}
     # Test OCs from audit
     test_oc_nums = ['OC-2026-0002','OC-2026-0003']
@@ -476,7 +472,7 @@ def admin_cleanup_test_data():
     # Test lotes
     c.execute("DELETE FROM movimientos WHERE lote LIKE '%AUDIT%' OR lote LIKE '%TEST%' OR lote LIKE '%-test-%'")
     deleted['lotes'] = c.rowcount
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'deleted': deleted, 'message': 'Test data cleaned up'})
 
 @bp.route('/api/gerencia/input-manual', methods=['POST'])
@@ -485,7 +481,7 @@ def gerencia_input_manual():
         return jsonify({'error': 'No autorizado'}), 401
     d = request.json or {}
     periodo = d.get('periodo', datetime.now().strftime('%Y-%m'))
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.execute("""INSERT INTO gerencia_inputs (periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha)
                     VALUES (?,?,?,?,?,datetime('now'))
                     ON CONFLICT(periodo) DO UPDATE SET saldo_caja=excluded.saldo_caja,
@@ -493,9 +489,8 @@ def gerencia_input_manual():
                     notas=excluded.notas, fecha=excluded.fecha""",
                  (periodo, float(d.get('saldo_caja',0)), float(d.get('ingresos_animus',0)),
                   float(d.get('ingresos_maquila',0)), d.get('notas','')))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'message': f'Inputs de {periodo} guardados'})
-
 
 # ─── ADMIN — Carga MEE desde xlsx (stdlib, sin dependencias extra) ────────────
 
@@ -571,7 +566,6 @@ def _parse_xlsx_bytes(raw):
         data_rows = [get_row(i) for i in range(h_idx + 1, max_row + 1)]
         return headers, data_rows
 
-
 @bp.route('/api/admin/seed-mee-xlsx', methods=['POST'])
 def seed_mee_xlsx():
     if 'compras_user' not in session or session.get('compras_user', '') not in ADMIN_USERS:
@@ -635,7 +629,7 @@ def seed_mee_xlsx():
     FECHA = '2026-04-19'
     inserted = skipped = dups = 0
     codigos_vistos = set()
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     try:
         cur = conn.cursor()
         for row in data_rows:
@@ -672,7 +666,7 @@ def seed_mee_xlsx():
             inserted += 1
         conn.commit()
     except Exception as e:
-        conn.rollback(); conn.close()
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
 
     c2 = conn.cursor()
@@ -681,15 +675,12 @@ def seed_mee_xlsx():
     bajo = c2.fetchone()[0]
     c2.execute("SELECT categoria, COUNT(*) c, SUM(stock_actual) s FROM maestro_mee GROUP BY categoria ORDER BY c DESC")
     cats = [{'cat': r[0], 'count': r[1], 'stock': r[2]} for r in c2.fetchall()]
-    conn.close()
-
     return jsonify({
         'ok': True, 'inserted': inserted, 'skipped': skipped, 'dups': dups,
         'total_mee': total, 'bajo_minimo': bajo,
         'mapa_columnas': {k: headers[v] for k, v in mapa.items()},
         'por_categoria': cats
     })
-
 
 @bp.route('/api/admin/mee-set-stock', methods=['POST'])
 def mee_set_stock():
@@ -699,17 +690,14 @@ def mee_set_stock():
     data = request.get_json(silent=True) or {}
     stock_actual = float(data.get('stock_actual', 2000))
     stock_minimo = float(data.get('stock_minimo', 1000))
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("UPDATE maestro_mee SET stock_actual=?, stock_minimo=?", (stock_actual, stock_minimo))
     updated = c.rowcount
     conn.commit()
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE stock_actual < stock_minimo AND stock_minimo > 0")
     bajo = c.fetchone()[0]
-    conn.close()
     return jsonify({'ok': True, 'updated': updated, 'stock_actual': stock_actual,
                     'stock_minimo': stock_minimo, 'bajo_minimo': bajo})
-
-
 
 @bp.route('/api/gerencia/aliados-feed')
 def gerencia_aliados_feed():
@@ -717,7 +705,7 @@ def gerencia_aliados_feed():
     mix de canales (aliados vs Shopify), concentracion de riesgo,
     valor en riesgo, tendencia de ticket mensual, MoM canal.
     """
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     try:
         hoy          = datetime.now()
         mes_ini      = hoy.replace(day=1).strftime("%Y-%m-%d")
@@ -840,7 +828,6 @@ def gerencia_aliados_feed():
                 if proxima < hoy:
                     aliados_vencidos += 1
 
-        conn.close()
         return jsonify({
             'canal': {
                 'aliados_mes':   round(rev_ali_mes, 0),
@@ -867,7 +854,6 @@ def gerencia_aliados_feed():
             'ticket_trend': ticket_trend,
         })
     except Exception as e:
-        conn.close()
         return jsonify({'error': str(e)}), 500
 
 # ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────
