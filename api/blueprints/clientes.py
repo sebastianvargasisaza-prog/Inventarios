@@ -62,7 +62,7 @@ def handle_clientes():
                         COALESCE(cl.ciudad,'') as ciudad,
                         COALESCE(cl.categoria_profesional,'') as categoria_profesional,
                         COALESCE(cl.canal_captacion,'') as canal_captacion,
-                        COALESCE(cl.redes_sociales,'{}') as redes_sociales,
+                        COALESCE(cl.redes_sociales,'{{}}') as redes_sociales,
                         COALESCE(cl.notas_seguimiento,'') as notas_seguimiento
                  FROM clientes cl
                  LEFT JOIN pedidos p ON p.cliente_id = cl.id
