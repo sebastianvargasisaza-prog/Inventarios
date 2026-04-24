@@ -1317,19 +1317,31 @@ def mkt_ig_debug():
                 f"https://graph.facebook.com/v19.0/me?access_token={raw_token}")
             result["step1_me"] = me or me_err
 
-            # Step 2: intentar leer IG account del /me id
+            # Step 2: intentar leer IG account del /me id — capturar error también
             if me:
                 me_id = me.get("id", "")
-                ig_from_me, _ = _fetch_debug(
+                ig_from_me, ig_from_me_err = _fetch_debug(
                     f"https://graph.facebook.com/v19.0/{me_id}"
-                    f"?fields=instagram_business_account&access_token={raw_token}")
+                    f"?fields=instagram_business_account,name,link&access_token={raw_token}")
                 result["step2_ig_from_me"] = ig_from_me
+                if ig_from_me_err:
+                    result["step2_error"] = ig_from_me_err
+
+                # Step 2b: probar con campos básicos solamente (permiso básico de página)
+                page_basic, page_basic_err = _fetch_debug(
+                    f"https://graph.facebook.com/v19.0/{me_id}"
+                    f"?fields=name,id,category&access_token={raw_token}")
+                result["step2b_page_basic"] = page_basic
+                if page_basic_err:
+                    result["step2b_error"] = page_basic_err
 
             # Step 3: /me/accounts (solo funciona con UAT)
-            accounts, _ = _fetch_debug(
+            accounts, accounts_err = _fetch_debug(
                 f"https://graph.facebook.com/v19.0/me/accounts"
                 f"?access_token={raw_token}&limit=10")
             result["step3_accounts"] = accounts
+            if accounts_err:
+                result["step3_error"] = accounts_err
 
             # Step 4: por cada página, buscar instagram_business_account
             if accounts:
