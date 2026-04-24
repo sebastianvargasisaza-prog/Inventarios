@@ -226,6 +226,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Importa las órdenes de compra recibidas como egresos de MPs automáticamente.</p>
     <button class="btn btn-ghost" onclick="importarOCs()">📦 Importar OCs recibidas como egresos</button>
     <div id="import-msg" style="margin-top:10px;"></div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #2d2420;">
+      <div style="font-size:0.82em;color:#dc2626;font-weight:600;margin-bottom:8px;">⚠️ Zona de peligro — solo admin</div>
+      <p style="font-size:0.82em;color:#9C8B7A;margin-bottom:10px;">Elimina <strong>todos</strong> los registros de flujo de egresos e ingresos (útil si hay datos incorrectos importados).</p>
+      <button class="btn btn-ghost" style="border-color:#dc2626;color:#dc2626;" onclick="limpiarFlujo()">🗑️ Limpiar todo el flujo (egresos e ingresos)</button>
+      <div id="limpiar-msg" style="margin-top:8px;font-size:0.82em;"></div>
+    </div>
   </div>
   <div class="card">
     <div class="section-title">💲 Precios Mayorista por SKU</div>
@@ -514,6 +520,25 @@ async function guardarEgreso(){
   var d=await r.json();
   document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:#c0392b;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('egr-concepto').value='';document.getElementById('egr-monto').value='';document.getElementById('egr-ref').value='';loadEgresos();}
+}
+
+async function limpiarFlujo(){
+  if(!confirm('⚠️ Esto eliminará TODOS los registros de egresos e ingresos del flujo de caja.\n\n¿Estás seguro?')) return;
+  if(!confirm('Segunda confirmación: ¿BORRAR definitivamente todos los registros de flujo?')) return;
+  var msg=document.getElementById('limpiar-msg');
+  msg.textContent='Eliminando...'; msg.style.color='#f59e0b';
+  try{
+    var r=await fetch('/api/financiero/limpiar-flujo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmar:'LIMPIAR_TODO'})});
+    var d=await r.json();
+    if(d.ok){
+      msg.textContent='✅ '+d.message; msg.style.color='#4ade80';
+      setTimeout(()=>loadKPIs(),800);
+    } else {
+      msg.textContent='❌ '+(d.error||'Error'); msg.style.color='#f87171';
+    }
+  }catch(e){
+    msg.textContent='❌ Error de conexión'; msg.style.color='#f87171';
+  }
 }
 
 async function importarOCs(){

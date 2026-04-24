@@ -176,6 +176,71 @@ def _call_claude(conn, agente, datos):
         return None
 
 
+def _ig_check_refresh(conn):
+    """Auto-renueva el token de IG si vence en < 10 dias.
+    Funciona con long-lived User Tokens (60 dias) y Page Access Tokens que
+    heredan la duracion del User Token. Llama a fb_exchange_token para
+    extender automaticamente antes de que expire.
+    Retorna dict con estado del token para incluir en la respuesta del dashboard.
+    """
+    from datetime import date as _date, timedelta as _td
+
+    raw_token  = _cfg(conn, "instagram_token")
+    app_id     = _cfg(conn, "meta_app_id")
+    app_secret = _cfg(conn, "meta_app_secret")
+    expiry_str = _cfg(conn, "instagram_token_expiry")  # e.g. "2026-06-20"
+
+    today = _date.today()
+
+    # Calcular dias restantes segun expiry guardado
+    if expiry_str:
+        try:
+            expiry_date = _date.fromisoformat(expiry_str)
+            days_left = (expiry_date - today).days
+        except Exception:
+            days_left = 0
+    else:
+        # Sin expiry registrado: asumir que hay que renovar (token inicial sin fecha)
+        days_left = 0
+
+    near_expiry = days_left < 10
+    refreshed   = False
+
+    # Intentar refresh si esta cerca de expirar y tenemos las credenciales de la app
+    if near_expiry and raw_token and app_id and app_secret:
+        try:
+            exch_url = (
+                f"https://graph.facebook.com/v19.0/oauth/access_token"
+                f"?grant_type=fb_exchange_token"
+                f"&client_id={app_id}&client_secret={app_secret}"
+                f"&fb_exchange_token={raw_token}"
+            )
+            with urllib.request.urlopen(urllib.request.Request(exch_url), timeout=10) as r:
+                data = json.loads(r.read())
+            new_token  = data.get("access_token")
+            expires_in = data.get("expires_in", 5184000)  # 60 dias default
+            if new_token:
+                new_expiry = (_date.today() + _td(seconds=int(expires_in))).isoformat()
+                conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                             ("instagram_token", new_token))
+                conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                             ("instagram_token_expiry", new_expiry))
+                conn.commit()
+                days_left  = int(expires_in) // 86400
+                expiry_str = new_expiry
+                refreshed  = True
+        except Exception:
+            pass  # Token expirado del todo — usuario debe ingresar nuevo token manual
+
+    return {
+        "expiry_date": expiry_str,
+        "days_left":   days_left,
+        "near_expiry": near_expiry and not refreshed,
+        "refreshed":   refreshed,
+        "expired":     days_left <= 0 and not refreshed and bool(expiry_str),
+    }
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD
 # ──────────────────────────────────────────────────────────────────────────────
@@ -348,6 +413,8 @@ def mkt_dashboard():
             ORDER BY (likes + comentarios*3) DESC LIMIT 5
         """).fetchall())
         ig_configured   = bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id"))
+        # Auto-refresh token si vence en < 10 dias (silencioso)
+        ig_token_status = _ig_check_refresh(conn) if ig_configured else {"expiry_date": None, "days_left": 0, "near_expiry": False, "refreshed": False, "expired": False}
 
         return jsonify({
             "kpis": {
@@ -391,6 +458,11 @@ def mkt_dashboard():
                 "comentarios_30d": ig_comments_30d,
                 "avg_likes": ig_avg_likes,
                 "top_posts": ig_top_posts,
+                "token_expiry_date":  ig_token_status["expiry_date"],
+                "token_days_left":    ig_token_status["days_left"],
+                "token_near_expiry":  ig_token_status["near_expiry"],
+                "token_refreshed":    ig_token_status["refreshed"],
+                "token_expired":      ig_token_status["expired"],
             },
             "top_influencer": _fmt(top_inf),
             "campanas_activas": campanas_activas,
@@ -1290,13 +1362,19 @@ def mkt_ig_refresh():
         expires_in = data.get("expires_in", 0)
         if not long_token:
             return jsonify({"error": "Facebook no devolvio token", "detail": data}), 502
+        from datetime import date as _d2, timedelta as _td2
         conn.execute(
             "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
             ("instagram_token", long_token)
         )
+        new_expiry = (_d2.today() + _td2(seconds=int(expires_in))).isoformat()
+        conn.execute(
+            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+            ("instagram_token_expiry", new_expiry)
+        )
         conn.commit()
         days = round(expires_in / 86400)
-        return jsonify({"ok": True, "expires_days": days, "msg": f"Token renovado — valido {days} dias"})
+        return jsonify({"ok": True, "expires_days": days, "expiry_date": new_expiry, "msg": f"Token renovado — valido {days} dias hasta {new_expiry}"})
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
         return jsonify({"error": f"HTTP {e.code}", "detalle": body}), 502
@@ -1393,6 +1471,13 @@ def mkt_ig_update_token():
             steps.append(f"pages_error:{ex}")
 
         token_type = "permanente" if permanent_token else ("60_dias" if "exchange_60d_ok" in steps else "corto")
+        # Guardar fecha de vencimiento (60 dias desde hoy — aplica a todos los tipos)
+        from datetime import date as _d3, timedelta as _td3
+        expiry_60 = (_d3.today() + _td3(days=60)).isoformat()
+        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                     ("instagram_token_expiry", expiry_60))
+        conn.commit()
+        steps.append(f"expiry_guardado:{expiry_60}")
         return jsonify({
             "ok": True,
             "token_type": token_type,

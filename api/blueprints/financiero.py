@@ -204,6 +204,37 @@ def financiero_importar_ocs():
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
 
+
+@bp.route('/api/financiero/limpiar-flujo', methods=['POST'])
+def financiero_limpiar_flujo():
+    """Elimina todos los registros de flujo_egresos y flujo_ingresos.
+    Solo admin. Util para borrar datos de prueba o importaciones erroneas.
+    """
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or u not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json() or {}
+    # Requiere confirmacion explicita en el body para evitar borrados accidentales
+    if data.get('confirmar') != 'LIMPIAR_TODO':
+        return jsonify({'error': 'Falta confirmacion. Envia {"confirmar":"LIMPIAR_TODO"}'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        egr_count = c.execute('SELECT COUNT(*) FROM flujo_egresos').fetchone()[0]
+        ing_count = c.execute('SELECT COUNT(*) FROM flujo_ingresos').fetchone()[0]
+        c.execute('DELETE FROM flujo_egresos')
+        c.execute('DELETE FROM flujo_ingresos')
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'eliminados': {'egresos': egr_count, 'ingresos': ing_count},
+            'message': f'Limpieza completa: {egr_count} egresos y {ing_count} ingresos eliminados'
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
 @bp.route('/api/financiero/precios-mayorista', methods=['GET'])
 def get_precios_mayorista():
     if 'compras_user' not in session:

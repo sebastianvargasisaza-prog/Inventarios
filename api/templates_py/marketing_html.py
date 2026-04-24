@@ -206,6 +206,7 @@ function showToast(msg, type) {
       <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
       <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
       <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
+      <span id="ig-token-status" style="font-size:10px;padding:2px 8px;border-radius:10px;display:none;"></span>
       <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
     </div>
   </div>
@@ -987,6 +988,43 @@ ${bars}
   // ── Instagram Top Posts ───────────────────────────────────────────────────
   const igEl = document.getElementById('dash-ig-posts');
   const topPosts = ig.top_posts || [];
+  // ── Token status badge ───────────────────────────────────────────────────
+  const igStatusEl = document.getElementById('ig-token-status');
+  if (igStatusEl && ig.configurado) {
+    const daysLeft = ig.token_days_left || 0;
+    const expired  = ig.token_expired;
+    const refreshed = ig.token_refreshed;
+    const nearExp  = ig.token_near_expiry;
+    if (expired) {
+      igStatusEl.style.display = '';
+      igStatusEl.style.background = '#7f1d1d';
+      igStatusEl.style.color = '#fca5a5';
+      igStatusEl.textContent = '⚠️ Token expirado — renovar manualmente';
+    } else if (refreshed) {
+      igStatusEl.style.display = '';
+      igStatusEl.style.background = '#14532d';
+      igStatusEl.style.color = '#86efac';
+      igStatusEl.textContent = '🔄 Token renovado automáticamente (' + daysLeft + 'd)';
+    } else if (nearExp) {
+      igStatusEl.style.display = '';
+      igStatusEl.style.background = '#78350f';
+      igStatusEl.style.color = '#fde68a';
+      igStatusEl.textContent = '⚠️ Token vence en ' + daysLeft + ' días';
+    } else if (daysLeft > 0) {
+      igStatusEl.style.display = '';
+      igStatusEl.style.background = '#0f2d1a';
+      igStatusEl.style.color = '#4ade80';
+      igStatusEl.textContent = '🔑 Token válido — ' + daysLeft + 'd restantes';
+    } else {
+      igStatusEl.style.display = 'none';
+    }
+    // Si se auto-renovó silenciosamente, notificar una vez
+    if (refreshed && !window._igRefreshToastShown) {
+      window._igRefreshToastShown = true;
+      showToast('🔄 Token de Instagram renovado automáticamente por 60 días', 'success');
+    }
+  }
+
   if (!ig.configurado) {
     igEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">⚠️ Instagram no configurado — agrega INSTAGRAM_TOKEN en Render</div>';
   } else if (!topPosts.length) {
