@@ -971,8 +971,6 @@ def init_db():
             c.execute("INSERT OR IGNORE INTO empleados (codigo,nombre,apellido,cedula,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,nivel_riesgo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", _e)
         except Exception:
             pass
-        conn.commit()
-    conn.close()
 
 
 def seed_compromisos(c):

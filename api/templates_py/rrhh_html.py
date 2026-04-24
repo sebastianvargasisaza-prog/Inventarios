@@ -452,6 +452,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 
 <script>
 // ─── state ───────────────────────────────────────────
+var USUARIO = "{usuario}";
 var allEmps = [];
 var currentEmpId = null;
 var nominaData = [];
@@ -547,13 +548,14 @@ function renderEmpleados(list) {
   g.innerHTML = list.map(function(e){
     var initials = (e.nombre||'?').charAt(0)+(e.apellido||'').charAt(0);
     var color = avatarColor(e.nombre+e.apellido);
-    return '<div class="emp-card" onclick="openEmpModal('+e.id+')">' +
+    return '<div class="emp-card">' +
       '<div class="emp-avatar" style="background:'+color+';">'+initials+'</div>' +
       '<div class="emp-name">'+e.nombre+' '+e.apellido+'</div>' +
       '<div class="emp-cargo">'+e.cargo+'</div>' +
       '<div class="emp-meta">'+badgeEmpresa(e.empresa)+' '+badgeContrato(e.tipo_contrato)+
       ' <span class="badge '+(e.estado==='Activo'?'badge-activo':'badge-inactivo')+'">'+e.estado+'</span></div>' +
       '<div style="margin-top:10px;font-size:13px;font-weight:700;color:#6d28d9;">'+fmt(e.salario_base)+'</div>' +
+      '<button onclick="openEmpModal('+e.id+')" style="margin-top:10px;width:100%;padding:7px;background:#f3f0ff;border:1px solid #c4b5fd;border-radius:7px;color:#6d28d9;font-weight:600;cursor:pointer;font-size:13px;">&#9998; Editar colaborador</button>' +
       '</div>';
   }).join('');
 }
@@ -643,7 +645,7 @@ function initNomina(){
   var now = new Date();
   document.getElementById('nom-mes').value = String(now.getMonth()+1).padStart(2,'0');
   document.getElementById('nom-anio').value = String(now.getFullYear());
-  window._esAdmin = (typeof USUARIO !== 'undefined' && (USUARIO==='Sebastian' || USUARIO==='Alejandro'));
+  window._esAdmin = (typeof USUARIO !== 'undefined' && (USUARIO.toLowerCase()==='sebastian' || USUARIO.toLowerCase()==='alejandro'));
   loadNomina();
   checkEstadoNomina();
 }
