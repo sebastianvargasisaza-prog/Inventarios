@@ -184,7 +184,7 @@ textarea{resize:vertical;min-height:80px;}
       <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
       <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
       <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
-      <button id="btn-sync-ig" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
+      <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
       <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
       <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
     </div>
@@ -1322,6 +1322,7 @@ async function syncPlatform(platform) {
       status.style.color = '#34d399';
       status.textContent = `✓ ${platform}: ${data.synced} registros sincronizados`;
       loadConnections();
+      setTimeout(loadDashboard, 600);
     } else {
       status.style.color = '#f87171';
       const det = data.detalle ? ' → ' + data.detalle.slice(0,200) : '';
