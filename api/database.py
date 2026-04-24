@@ -1097,6 +1097,100 @@ def init_db():
         ejecutado_por TEXT
     )""")
 
+
+    # ── Centro de Mando ÁNIMUS Lab ──────────────────────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_config (
+        clave TEXT PRIMARY KEY,
+        valor TEXT,
+        actualizado TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_shopify_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shopify_id TEXT UNIQUE,
+        nombre TEXT,
+        email TEXT,
+        total REAL DEFAULT 0,
+        moneda TEXT DEFAULT 'COP',
+        estado TEXT,
+        estado_pago TEXT,
+        sku_items TEXT,
+        unidades_total INTEGER DEFAULT 0,
+        ciudad TEXT,
+        pais TEXT DEFAULT 'CO',
+        creado_en TEXT,
+        synced_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_shopify_customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shopify_id TEXT UNIQUE,
+        nombre TEXT,
+        email TEXT,
+        telefono TEXT,
+        total_gastado REAL DEFAULT 0,
+        num_pedidos INTEGER DEFAULT 0,
+        ciudad TEXT,
+        pais TEXT DEFAULT 'CO',
+        tags TEXT,
+        creado_en TEXT,
+        synced_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_ghl_contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ghl_id TEXT UNIQUE,
+        nombre TEXT,
+        email TEXT,
+        telefono TEXT,
+        etiquetas TEXT,
+        pipeline_etapa TEXT,
+        valor_oportunidad REAL DEFAULT 0,
+        fuente TEXT,
+        creado_en TEXT,
+        synced_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_ghl_oportunidades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ghl_id TEXT UNIQUE,
+        contacto_nombre TEXT,
+        pipeline TEXT,
+        etapa TEXT,
+        valor REAL DEFAULT 0,
+        estado TEXT,
+        creado_en TEXT,
+        synced_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_instagram_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instagram_id TEXT UNIQUE,
+        tipo TEXT,
+        descripcion TEXT,
+        url_media TEXT,
+        url_permalink TEXT,
+        likes INTEGER DEFAULT 0,
+        comentarios INTEGER DEFAULT 0,
+        alcance INTEGER DEFAULT 0,
+        impresiones INTEGER DEFAULT 0,
+        guardados INTEGER DEFAULT 0,
+        publicado_en TEXT,
+        synced_at TEXT DEFAULT (datetime('now'))
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS animus_contenido_generado (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sku TEXT,
+        tipo TEXT,
+        plataforma TEXT,
+        tono TEXT,
+        contenido TEXT,
+        usado INTEGER DEFAULT 0,
+        generado_por TEXT,
+        creado_en TEXT DEFAULT (datetime('now'))
+    )""")
+
     conn.commit()
     conn.close()
 

@@ -167,6 +167,14 @@ def compras():
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp
 
+@bp.route('/animus')
+def animus():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/animus')
+    from templates_py.animus_html import ANIMUS_HTML
+    usuario = session.get('compras_user', '').capitalize()
+    return Response(ANIMUS_HTML.replace('{usuario}', usuario), mimetype='text/html; charset=utf-8')
+
 @bp.route('/marketing')
 def marketing():
     if 'compras_user' not in session:
