@@ -59,10 +59,10 @@ def health():
 
 @bp.route('/')
 def index():
-    # Redirigir a login si no hay sesion activa; a /hub si ya esta autenticado
+    # Redirigir a login si no hay sesion activa; a /modulos si ya esta autenticado
     if 'compras_user' not in session:
         return redirect('/login')
-    return redirect('/hub')
+    return redirect('/modulos')
 
 @bp.route('/inventarios')
 @bp.route('/planta')
@@ -83,7 +83,7 @@ def inventarios():
 @bp.route('/hub')
 def hub():
     if 'compras_user' not in session:
-        return redirect('/login?next=/hub')
+        return redirect('/login?next=/modulos')
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
 
@@ -107,9 +107,9 @@ def modulos():
 @bp.route('/login', methods=['GET','POST'])
 def login():
     error = ''
-    next_url = request.args.get('next', '/hub')
+    next_url = request.args.get('next', '/modulos')
     if not next_url.startswith('/') or next_url.startswith('//'):
-        next_url = '/hub'
+        next_url = '/modulos'
     if request.method == 'POST':
         ip = _client_ip()
         if _is_locked(ip):
