@@ -220,7 +220,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
       <thead><tr>
         <th>Empleado</th><th>Empresa</th><th>D&iacute;as</th>
         <th>Salario Base</th><th>Aux. Transporte</th><th>H. Extras</th><th>Bonos</th>
-        <th>-Salud (4%)</th><th>-Pensi&oacute;n (4%)</th><th>NETO</th><th></th>
+        <th>-Salud (4%)</th><th>-Pensi&oacute;n (4%)</th><th>NETO</th><th>Banco / Cuenta</th><th></th>
       </tr></thead>
       <tbody id="nom-body"></tbody>
     </table>
@@ -334,6 +334,27 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
         <div class="form-group"><label>Tel&eacute;fono</label><input id="f-tel" type="tel"></div>
         <div class="form-group"><label>Estado</label>
           <select id="f-estado"><option>Activo</option><option>Inactivo</option></select>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;">
+        <div style="font-weight:700;color:#166534;margin-bottom:10px;font-size:13px;">&#127981; Datos Bancarios (para pago nómina)</div>
+        <div class="form-grid">
+          <div class="form-group"><label>Banco</label>
+            <select id="f-banco">
+              <option value="">— Sin registrar —</option>
+              <option>BANCOLOMBIA</option><option>DAVIVIENDA</option><option>BANCO DE BOGOTA</option>
+              <option>BBVA</option><option>AV VILLAS</option><option>BANCO CAJA SOCIAL</option>
+              <option>NEQUI</option><option>DAVIPLATA</option><option>BANCO POPULAR</option>
+              <option>SCOTIABANK COLPATRIA</option><option>GNB SUDAMERIS</option><option>Otro</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Tipo de cuenta</label>
+            <select id="f-tipo-cta">
+              <option value="">— Sin registrar —</option>
+              <option>AHORROS</option><option>CORRIENTE</option><option>AHORROS DAMAS</option><option>NEQUI</option><option>DAVIPLATA</option>
+            </select>
+          </div>
+          <div class="form-group"><label>N&uacute;mero de cuenta</label><input id="f-num-cta" type="text" placeholder="Ej: 06250043821"></div>
         </div>
       </div>
       <div class="form-group" style="margin-top:12px;"><label>Observaciones</label><textarea id="f-obs" rows="2" style="resize:vertical;"></textarea></div>
@@ -601,6 +622,9 @@ async function openEmpModal(id) {
       document.getElementById('f-tel').value = d.telefono||'';
       document.getElementById('f-estado').value = d.estado||'Activo';
       document.getElementById('f-obs').value = d.observaciones||'';
+      document.getElementById('f-banco').value = d.banco||'';
+      document.getElementById('f-tipo-cta').value = d.tipo_cuenta||'';
+      document.getElementById('f-num-cta').value = d.numero_cuenta||'';
     } catch(e){console.error(e);}
   } else {
     fields.forEach(function(f){var el=document.getElementById('f-'+f);if(el)el.value='';});
@@ -609,6 +633,9 @@ async function openEmpModal(id) {
     document.getElementById('f-area').value='Producción';
     document.getElementById('f-estado').value='Activo';
     document.getElementById('f-riesgo').value='1';
+    document.getElementById('f-banco').value='';
+    document.getElementById('f-tipo-cta').value='';
+    document.getElementById('f-num-cta').value='';
   }
   openModal('m-emp');
 }
@@ -632,7 +659,10 @@ async function saveEmp() {
     email: document.getElementById('f-email').value.trim(),
     telefono: document.getElementById('f-tel').value.trim(),
     estado: document.getElementById('f-estado').value,
-    observaciones: document.getElementById('f-obs').value.trim()
+    observaciones: document.getElementById('f-obs').value.trim(),
+    banco: document.getElementById('f-banco').value.trim(),
+    tipo_cuenta: document.getElementById('f-tipo-cta').value.trim(),
+    numero_cuenta: document.getElementById('f-num-cta').value.trim()
   };
   if (!payload.nombre || !payload.cargo) {alert('Nombre y cargo son obligatorios.');return;}
   var url = currentEmpId ? '/api/rrhh/empleados/'+currentEmpId : '/api/rrhh/empleados';
@@ -700,6 +730,9 @@ function renderNomina(){
       '<td style="color:#dc2626;">-'+fmt(e.desc_salud)+'</td>' +
       '<td style="color:#dc2626;">-'+fmt(e.desc_pension)+'</td>' +
       '<td style="font-weight:700;color:#6d28d9;">'+fmt(neto)+'</td>' +
+      '<td style="font-size:12px;color:#374151;">' +
+        (e.banco ? '<span style="display:block;font-weight:600;">'+e.banco+'</span><span style="color:#6b7280;">'+(e.tipo_cuenta||'')+'</span><span style="display:block;font-family:monospace;font-size:11px;color:#6d28d9;">'+(e.numero_cuenta||'')+'</span>' : '<span style="color:#d1d5db;font-style:italic;">Sin registrar</span>') +
+      '</td>' +
       '<td><button class="btn" style="padding:2px 8px;font-size:11px;" onclick="verComprobante('+e.id+')" title="Ver comprobante">&#128424;</button></td>' +
       '</tr>';
   }).join('');

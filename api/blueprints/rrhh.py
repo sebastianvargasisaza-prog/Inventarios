@@ -93,8 +93,8 @@ def rrhh_empleados():
         d = request.get_json(silent=True) or {}
         c.execute("SELECT COUNT(*) FROM empleados"); n = c.fetchone()[0]+1
         codigo = "EMP"+str(n).zfill(4)
-        c.execute("INSERT INTO empleados (codigo,nombre,apellido,cedula,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,eps,afp,arl,caja_compensacion,email,telefono,nivel_riesgo,observaciones) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 (codigo,d.get("nombre",""),d.get("apellido",""),d.get("cedula",""),d.get("cargo",""),d.get("area",""),d.get("empresa","Espagiria"),d.get("tipo_contrato","Indefinido"),d.get("fecha_ingreso",""),"Activo",float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones","")))
+        c.execute("INSERT INTO empleados (codigo,nombre,apellido,cedula,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,eps,afp,arl,caja_compensacion,email,telefono,nivel_riesgo,observaciones,banco,numero_cuenta,tipo_cuenta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 (codigo,d.get("nombre",""),d.get("apellido",""),d.get("cedula",""),d.get("cargo",""),d.get("area",""),d.get("empresa","Espagiria"),d.get("tipo_contrato","Indefinido"),d.get("fecha_ingreso",""),"Activo",float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta","")))
         conn.commit(); new_id=c.lastrowid; conn.close()
         return jsonify({"ok":True,"id":new_id,"codigo":codigo}),201
     c.execute("SELECT id,codigo,nombre,apellido,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,email,telefono,eps,afp,nivel_riesgo FROM empleados ORDER BY empresa,nombre")
@@ -108,8 +108,8 @@ def rrhh_empleado_det(eid):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     if request.method == "PUT":
         d = request.get_json(silent=True) or {}
-        c.execute("UPDATE empleados SET nombre=?,apellido=?,cargo=?,area=?,empresa=?,tipo_contrato=?,salario_base=?,eps=?,afp=?,arl=?,caja_compensacion=?,email=?,telefono=?,nivel_riesgo=?,observaciones=?,estado=? WHERE id=?",
-                 (d.get("nombre",""),d.get("apellido",""),d.get("cargo",""),d.get("area",""),d.get("empresa",""),d.get("tipo_contrato",""),float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("estado","Activo"),eid))
+        c.execute("UPDATE empleados SET nombre=?,apellido=?,cargo=?,area=?,empresa=?,tipo_contrato=?,salario_base=?,eps=?,afp=?,arl=?,caja_compensacion=?,email=?,telefono=?,nivel_riesgo=?,observaciones=?,estado=?,banco=?,numero_cuenta=?,tipo_cuenta=? WHERE id=?",
+                 (d.get("nombre",""),d.get("apellido",""),d.get("cargo",""),d.get("area",""),d.get("empresa",""),d.get("tipo_contrato",""),float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("estado","Activo"),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta",""),eid))
         conn.commit(); conn.close(); return jsonify({"ok":True})
     c.execute("SELECT * FROM empleados WHERE id=?", (eid,))
     r=c.fetchone()
@@ -125,14 +125,14 @@ def rrhh_nomina(periodo):
     # Quincenal: periodo formato YYYY-MM-Q1 o YYYY-MM-Q2
     es_q2 = periodo.endswith("-Q2")
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
-    c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,area,nivel_riesgo FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
+    c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,area,nivel_riesgo,banco,numero_cuenta,tipo_cuenta FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
     emps=c.fetchall()
     c.execute("SELECT empleado_id,dias_trabajados,horas_extras,valor_horas_extras,bonificaciones,otros_descuentos FROM nomina_registros WHERE periodo=?", (periodo,))
     ex={r[0]:r for r in c.fetchall()}; conn.close()
     result=[]
     arl_rates={1:0.00522,2:0.01044,3:0.02436,4:0.04350,5:0.06960}
     for e in emps:
-        eid,nom,ape,cargo,sal,emp,area,riesgo=e
+        eid,nom,ape,cargo,sal,emp,area,riesgo,banco,num_cta,tipo_cta=e
         xr=ex.get(eid)
         # Quincenal: base de pago es la mitad del salario mensual
         sal_q = round(sal / 2)
@@ -157,6 +157,7 @@ def rrhh_nomina(periodo):
             "aux_transporte":aux_prop,"horas_extras":he,"valor_horas_extras":vhe,
             "bonificaciones":bonos,"desc_salud":desc_salud,"desc_pension":desc_pension,
             "otros_descuentos":otros,"neto":neto,
+            "banco":banco or "","numero_cuenta":num_cta or "","tipo_cuenta":tipo_cta or "",
             "aportes_empleador":{"salud":ap_s,"pension":ap_p,"arl":ap_arl,"sena":ap_sena,"icbf":ap_icbf,"caja":ap_caja,"total":ap_tot}})
     return jsonify(result)
 
@@ -332,10 +333,10 @@ def rrhh_comprobante(periodo, eid):
     """Print-ready HTML pay stub for one employee."""
     SMMLV = 1423500; AUX = 202000
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("SELECT id,nombre,apellido,cedula,cargo,empresa,salario_base,nivel_riesgo FROM empleados WHERE id=?", (eid,))
+    c.execute("SELECT id,nombre,apellido,cedula,cargo,empresa,salario_base,nivel_riesgo,banco,numero_cuenta,tipo_cuenta FROM empleados WHERE id=?", (eid,))
     emp = c.fetchone()
     if not emp: conn.close(); return "<p>No encontrado</p>", 404
-    eid2, nom, ape, ced, cargo, empresa, sal, riesgo = emp
+    eid2, nom, ape, ced, cargo, empresa, sal, riesgo, banco, num_cta, tipo_cta = emp
     c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
     nr = c.fetchone(); conn.close()
     dias = nr[0] if nr else 30; vhe = nr[1] if nr else 0
@@ -392,7 +393,12 @@ def rrhh_comprobante(periodo, eid):
         "<tr style='font-weight:700'><td>Total deducciones</td><td class='val'>&minus;"+cop(ds+dp+otros)+"</td></tr>"
         "</table>"
         "<div class='neto'>NETO A PAGAR: "+cop(neto)+"</div>"
-        "<div class='sec' style='margin-top:12px'>APORTES EMPLEADOR (informativo)</div><table>"
+        +(("<div class='sec' style='margin-top:12px;background:#15803d'>DATOS BANCARIOS PARA PAGO</div><table>"
+        "<tr><td class='lbl'>Banco:</td><td><strong>"+(banco or "Sin registrar")+"</strong></td>"
+        "<td class='lbl'>Tipo de cuenta:</td><td>"+(tipo_cta or "—")+"</td></tr>"
+        "<tr><td class='lbl'>N&uacute;mero de cuenta:</td><td colspan='3' style='font-family:monospace;font-weight:700;color:#166534;font-size:13px;'>"+(num_cta or "—")+"</td></tr>"
+        "</table>") if (banco or num_cta) else "")
+        +"<div class='sec' style='margin-top:12px'>APORTES EMPLEADOR (informativo)</div><table>"
         "<tr><td class='lbl'>Salud (8.5%)</td><td class='val'>"+cop(ap_s)+"</td>"
         "<td class='lbl'>Pensi&oacute;n (12%)</td><td class='val'>"+cop(ap_p)+"</td></tr>"
         "<tr><td class='lbl'>ARL (Nivel "+str(riesgo)+")</td><td class='val'>"+cop(ap_arl)+"</td>"

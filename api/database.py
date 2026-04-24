@@ -627,6 +627,9 @@ def init_db():
         caja_compensacion TEXT, email TEXT, telefono TEXT,
         nivel_riesgo INTEGER DEFAULT 1, observaciones TEXT,
         creado_en TEXT DEFAULT (datetime('now')))""")
+    for _col in ["banco TEXT DEFAULT NULL","numero_cuenta TEXT DEFAULT NULL","tipo_cuenta TEXT DEFAULT NULL"]:
+        try: c.execute(f"ALTER TABLE empleados ADD COLUMN {_col}")
+        except: pass
     c.execute("""CREATE TABLE IF NOT EXISTS nomina_registros (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         periodo TEXT, empleado_id INTEGER, salario_base REAL,
