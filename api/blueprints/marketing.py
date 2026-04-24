@@ -1108,10 +1108,18 @@ def mkt_sync(platform):
                 return jsonify({"error": "Instagram no configurado o token inválido."}), 400
 
             fields = "id,media_type,caption,media_url,permalink,like_count,comments_count,timestamp"
-            url = f"https://graph.facebook.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
+            url = f"https://graph.facebook.com/v21.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=15) as r:
-                posts = json.loads(r.read()).get("data", [])
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    posts = json.loads(r.read()).get("data", [])
+            except urllib.error.HTTPError as he:
+                body = {}
+                try:
+                    body = json.loads(he.read().decode())
+                except Exception:
+                    pass
+                return jsonify({"error": f"Media API error {he.code}", "detalle": json.dumps(body)}), 502
             synced = 0
             for p in posts:
                 conn.execute("""INSERT OR REPLACE INTO animus_instagram_posts
