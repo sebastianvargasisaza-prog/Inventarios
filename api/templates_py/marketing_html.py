@@ -185,6 +185,7 @@ textarea{resize:vertical;min-height:80px;}
       <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')">↻ Shopify</button>
       <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ GHL</button>
       <button id="btn-sync-ig" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
+      <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
       <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
     </div>
   </div>
@@ -760,6 +761,24 @@ function loadTab(name) {
 // ──────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ──────────────────────────────────────────────────────────────────────────────
+async function refreshIgToken() {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳ Renovando...';
+  try {
+    const r = await fetch('/api/marketing/ig-refresh', {method:'POST', headers:{'Content-Type':'application/json'}});
+    const d = await r.json();
+    if (d.ok) {
+      showToast('✅ ' + d.msg, 'success');
+    } else {
+      showToast('❌ ' + (d.error||'Error al renovar'), 'error');
+    }
+  } catch(e) {
+    showToast('❌ Error de conexion', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔑 Renovar token IG';
+  }
+}
+
 async function loadDashboard() {
   loadConnections();
   const data = await fetch('/api/marketing/dashboard').then(r=>r.json());

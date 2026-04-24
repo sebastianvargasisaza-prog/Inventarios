@@ -1117,6 +1117,8 @@ def init_db():
         ('anthropic_api_key','ANTHROPIC_API_KEY'),
         ('instagram_token',  'INSTAGRAM_TOKEN'),
         ('instagram_user_id','INSTAGRAM_USER_ID'),
+        ('meta_app_id',      'META_APP_ID'),
+        ('meta_app_secret',  'META_APP_SECRET'),
     ]:
         _val = _os.environ.get(_env)
         if _val:

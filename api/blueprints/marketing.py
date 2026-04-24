@@ -1048,6 +1048,50 @@ def mkt_sync(platform):
         conn.close()
 
 
+# ── INSTAGRAM TOKEN REFRESH ──────────────────────────────────────────────────
+@bp.route("/api/marketing/ig-refresh", methods=["POST"])
+def mkt_ig_refresh():
+    """Intercambia el token de Instagram corto por uno de 60 dias.
+    Requiere META_APP_ID y META_APP_SECRET en animus_config (o env vars).
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    try:
+        short_token = _cfg(conn, "instagram_token")
+        app_id      = _cfg(conn, "meta_app_id")
+        app_secret  = _cfg(conn, "meta_app_secret")
+        if not short_token:
+            return jsonify({"error": "No hay instagram_token configurado"}), 400
+        if not app_id or not app_secret:
+            return jsonify({"error": "Falta meta_app_id o meta_app_secret en config"}), 400
+        url = (
+            f"https://graph.facebook.com/v19.0/oauth/access_token"
+            f"?grant_type=fb_exchange_token"
+            f"&client_id={app_id}"
+            f"&client_secret={app_secret}"
+            f"&fb_exchange_token={short_token}"
+        )
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+        long_token = data.get("access_token")
+        expires_in = data.get("expires_in", 0)
+        if not long_token:
+            return jsonify({"error": "Facebook no devolvio token", "detail": data}), 502
+        conn.execute(
+            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+            ("instagram_token", long_token)
+        )
+        conn.commit()
+        days = round(expires_in / 86400)
+        return jsonify({"ok": True, "expires_days": days, "msg": f"Token renovado — valido {days} dias"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    finally:
+        conn.close()
+
+
 # ── AGENTES IA (10 agentes ÁNIMUS con Claude) ─────────────────────────────────
 
 AGENTES_DISPONIBLES = {
