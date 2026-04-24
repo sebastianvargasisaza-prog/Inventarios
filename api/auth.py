@@ -8,10 +8,9 @@ from flask import request, session, redirect, jsonify
 
 from config import DB_PATH
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
-_LOGIN_ATTEMPTS = {}
-_MAX_ATTEMPTS   = 5
-_LOCKOUT_SECS   = 900
+# ── Rate limiter persistente (SQLite — multi-worker safe) ────────────────────
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SECS = 900   # 15 minutos
 
 
 def _client_ip():
@@ -20,22 +19,57 @@ def _client_ip():
 
 
 def _is_locked(ip):
-    rec = _LOGIN_ATTEMPTS.get(ip)
-    if not rec: return False
-    if time.time() < rec['locked_until']: return True
-    _LOGIN_ATTEMPTS.pop(ip, None)
-    return False
+    """Verifica si la IP está bloqueada. Lee de SQLite — funciona con N workers."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        row = conn.execute(
+            "SELECT locked_until FROM rate_limit WHERE ip=?", (ip,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return False
+        if time.time() < row[0]:
+            return True
+        # Bloqueo expirado — limpiar
+        _clear_attempts(ip)
+        return False
+    except Exception:
+        return False   # En caso de error de DB, no bloquear
 
 
 def _record_failure(ip):
-    rec = _LOGIN_ATTEMPTS.setdefault(ip, {'count': 0, 'locked_until': 0.0})
-    rec['count'] += 1
-    if rec['count'] >= _MAX_ATTEMPTS:
-        rec['locked_until'] = time.time() + _LOCKOUT_SECS
+    """Registra un intento fallido. Usa INSERT OR REPLACE para atomicidad."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("""
+            INSERT INTO rate_limit(ip, attempts, locked_until, last_attempt)
+            VALUES(?, 1, 0, ?)
+            ON CONFLICT(ip) DO UPDATE SET
+                attempts     = attempts + 1,
+                last_attempt = excluded.last_attempt,
+                locked_until = CASE
+                    WHEN attempts + 1 >= ? THEN ? + excluded.last_attempt
+                    ELSE locked_until
+                END
+        """, (ip, time.time(), _MAX_ATTEMPTS, _LOCKOUT_SECS))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _clear_attempts(ip):
-    _LOGIN_ATTEMPTS.pop(ip, None)
+    """Borra el registro de intentos para la IP (login exitoso)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("DELETE FROM rate_limit WHERE ip=?", (ip,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _log_sec(event, username=None, ip=None, details=None):

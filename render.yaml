@@ -3,23 +3,25 @@ services:
     name: inventarios
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn api.index:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --access-logfile - --error-logfile -
+    startCommand: gunicorn api.index:app --bind 0.0.0.0:$PORT --workers $WEB_CONCURRENCY --worker-class sync --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --access-logfile - --error-logfile -
     envVars:
       - key: DB_PATH
         value: /var/data/inventario.db
       - key: SECRET_KEY
         generateValue: true
-      # ── GoHighLevel (ÁNIMUS Lab CRM) ──────────────────────────────────────
+      - key: WEB_CONCURRENCY
+        value: "3"                # 3 workers para 1GB RAM (~300MB por worker)
+      # ── GoHighLevel (ANIMUS Lab CRM) ────────────────────────────────────────
       - key: GHL_API_KEY
-        sync: false   # Cargar manualmente en Render Dashboard → Environment
+        sync: false
       - key: GHL_LOCATION_ID
         sync: false
-      # ── Shopify ───────────────────────────────────────────────────────────
+      # ── Shopify ─────────────────────────────────────────────────────────────
       - key: SHOPIFY_TOKEN
         sync: false
       - key: SHOPIFY_SHOP
         sync: false
-      # ── Meta / Instagram ──────────────────────────────────────────────────
+      # ── Meta / Instagram ────────────────────────────────────────────────────
       - key: INSTAGRAM_TOKEN
         sync: false
       - key: INSTAGRAM_USER_ID
@@ -28,10 +30,10 @@ services:
         sync: false
       - key: META_APP_SECRET
         sync: false
-      # ── Anthropic API ─────────────────────────────────────────────────────
+      # ── Anthropic API ────────────────────────────────────────────────────────
       - key: ANTHROPIC_API_KEY
         sync: false
-      # ── Email / SMTP ──────────────────────────────────────────────────────
+      # ── Email / SMTP ─────────────────────────────────────────────────────────
       - key: EMAIL_REMITENTE
         sync: false
       - key: EMAIL_PASSWORD
@@ -40,3 +42,4 @@ services:
       name: inventario-db
       mountPath: /var/data
       sizeGB: 1
+    healthCheckPath: /api/health

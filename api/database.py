@@ -8,28 +8,41 @@ from datetime import datetime
 from config import DB_PATH
 
 
+def _configure_conn(conn):
+    """Aplica pragmas de performance y seguridad a cada conexion SQLite.
+    
+    WAL (Write-Ahead Log): permite N lectores concurrentes mientras hay
+    un escritor activo. Critico para multiples workers Gunicorn.
+    busy_timeout: los workers esperan hasta 5s por el lock de escritura
+    en lugar de fallar inmediatamente — elimina 'database is locked'.
+    cache_size: 20MB de cache en memoria por conexion.
+    temp_store: tablas temporales en RAM (mas rapido para sorts/joins).
+    """
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")   # durabilidad vs velocidad optima
+    conn.execute("PRAGMA cache_size=-20000")    # 20MB cache (negativo = KB)
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA busy_timeout=5000")    # 5s espera por lock — multi-worker
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
 def get_db():
-    """Conexion SQLite por request usando Flask g.
+    """Conexion SQLite per-request usando Flask g (patron recomendado Flask).
     
-    Patron recomendado por Flask: una conexion por request, cerrada
-    automaticamente por teardown_appcontext al final del request (incluso
-    si hay excepcion). Elimina la necesidad de conn.close() manual en cada
-    funcion y evita connection leaks en error paths.
-    
-    Fuera de contexto de request (scripts, init_db) usa conexion directa
-    con row_factory ya configurada.
+    Cerrada automaticamente por teardown_appcontext al final del request
+    incluyendo error paths. Con WAL mode y busy_timeout, segura para uso
+    con multiples workers Gunicorn simultaneos.
     """
     try:
         from flask import g
         if "db" not in g:
-            g.db = sqlite3.connect(DB_PATH)
-            g.db.row_factory = sqlite3.Row
+            g.db = _configure_conn(sqlite3.connect(DB_PATH))
         return g.db
     except RuntimeError:
-        # Sin app context (init scripts, tests, CLI tools)
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
+        # Sin app context: scripts de init, tests, herramientas CLI
+        return _configure_conn(sqlite3.connect(DB_PATH))
 
 def init_db():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
@@ -1202,6 +1215,19 @@ def init_db():
         generado_por TEXT,
         creado_en TEXT DEFAULT (datetime('now'))
     )""")
+
+
+    # ── Rate limiter persistente (multi-worker safe) ──────────────────────────
+    c.execute("""CREATE TABLE IF NOT EXISTS rate_limit (
+        ip   TEXT PRIMARY KEY,
+        attempts   INTEGER DEFAULT 0,
+        locked_until REAL DEFAULT 0,
+        last_attempt REAL DEFAULT 0
+    )""")
+    # Limpiar bloqueos vencidos de sesiones anteriores al arrancar
+    import time as _time
+    c.execute("DELETE FROM rate_limit WHERE locked_until < ? AND locked_until > 0",
+              (_time.time(),))
 
     conn.commit()
     conn.close()

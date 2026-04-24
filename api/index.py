@@ -1,5 +1,7 @@
 import os
 import sys
+import logging
+import time as _time_module
 
 # Garantizar que api/ esté en sys.path sin importar cómo Gunicorn arranca el app.
 # Con 'gunicorn api.index:app' desde la raíz, Python importa api.index como
@@ -50,6 +52,16 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 register_hooks(app)
+
+
+# ── Logging estructurado para producción ─────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',   # JSON puro — Render/Datadog lo parsea directamente
+)
+_logger = logging.getLogger("inventario")
+_APP_START = _time_module.time()
+
 
 @app.teardown_appcontext
 def close_db(exception=None):
@@ -144,6 +156,60 @@ app.register_blueprint(animus_bp)
 init_db()
 run_seed_rrhh()
 
+
+
+@app.after_request
+def log_request(response):
+    """Log estructurado de cada request — parseable por Render/Datadog/Grafana."""
+    try:
+        import json as _json
+        duration_ms = round((_time_module.time() - getattr(request, '_start_time', _time_module.time())) * 1000, 1)
+        _logger.info(_json.dumps({
+            "ts":       __import__('datetime').datetime.utcnow().isoformat() + "Z",
+            "method":   request.method,
+            "path":     request.path,
+            "status":   response.status_code,
+            "ms":       duration_ms,
+            "user":     session.get("compras_user", "-"),
+            "ip":       request.headers.get("X-Forwarded-For", request.remote_addr or "-").split(",")[0].strip(),
+        }, ensure_ascii=False))
+    except Exception:
+        pass
+    return response
+
+@app.before_request
+def mark_start_time():
+    request._start_time = _time_module.time()
+
+
+@app.route('/api/health')
+def health_check():
+    """Health check completo — usado por Render, load balancers y monitoreo externo.
+    No requiere autenticacion — es publico por diseno.
+    Retorna 200 si todo OK, 503 si la DB no responde.
+    """
+    import os as _os
+    try:
+        from database import get_db
+        db = get_db()
+        tables = db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+        db_size_mb = round(_os.path.getsize(DB_PATH) / 1024 / 1024, 2) if _os.path.exists(DB_PATH) else 0
+        wal_mode = db.execute("PRAGMA journal_mode").fetchone()[0]
+        uptime_s  = round(_time_module.time() - _APP_START)
+        uptime_h  = f"{uptime_s//3600}h {(uptime_s%3600)//60}m"
+        return jsonify({
+            "status":   "ok",
+            "uptime":   uptime_h,
+            "db": {
+                "tables":    tables,
+                "size_mb":   db_size_mb,
+                "wal_mode":  wal_mode == "wal",
+            },
+            "version":  "2.0.0",
+            "workers":  int(_os.environ.get("WEB_CONCURRENCY", 1)),
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 503
 
 @app.errorhandler(404)
 def not_found(e):

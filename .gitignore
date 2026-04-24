@@ -1,41 +1,17 @@
-# Python
+# Secrets y datos locales — NUNCA a Git
+.env.local
+.env
+*.db
+*.db-wal
+*.db-shm
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-
-# Backups generados por scripts de refactor
-*.bak
-*.bak_*
-
-# Scripts de refactor (solo para uso local, no van al repo)
-patch_*.py
-push_*.py
-cargar_*.py
-recargar_*.py
-run_refactor_*.py
-create_database_py.py
-extract_templates.py
-
-# Archivos de configuración local
-*.bat
-formulas_data.json
-
-# Entornos virtuales
-venv/
-.env/
+.pytest_cache/
+.DS_Store
+*.egg-info/
+dist/
+build/
 .venv/
-
-# Variables de entorno
-.env
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-
-# Local env files — never commit real credentials
-.env.production
-.env.local
-.env
+venv/
+node_modules/
