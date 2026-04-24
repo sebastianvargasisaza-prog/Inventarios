@@ -1124,6 +1124,52 @@ def mkt_ig_refresh():
         conn.close()
 
 
+# ── INSTAGRAM TOKEN UPDATE (desde el dashboard) ──────────────────────────────
+@bp.route("/api/marketing/ig-update-token", methods=["POST"])
+def mkt_ig_update_token():
+    """Guarda un nuevo token de IG (desde el dashboard) y lo intercambia por uno de 60 dias."""
+    u, err, code = _auth()
+    if err: return err, code
+    data = request.get_json() or {}
+    new_token = (data.get("token") or "").strip()
+    if not new_token or not new_token.startswith("EAA"):
+        return jsonify({"error": "Token invalido — debe comenzar con EAA"}), 400
+    conn = _db()
+    try:
+        # Guardar token recibido
+        conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                     ("instagram_token", new_token))
+        conn.commit()
+        # Intentar exchange por token de larga duracion
+        app_id     = _cfg(conn, "meta_app_id")
+        app_secret = _cfg(conn, "meta_app_secret")
+        exchanged  = False
+        if app_id and app_secret:
+            try:
+                exch_url = (
+                    f"https://graph.facebook.com/v19.0/oauth/access_token"
+                    f"?grant_type=fb_exchange_token"
+                    f"&client_id={app_id}&client_secret={app_secret}"
+                    f"&fb_exchange_token={new_token}"
+                )
+                r = urllib.request.urlopen(urllib.request.Request(exch_url), timeout=12)
+                rd = json.loads(r.read())
+                long_token = rd.get("access_token")
+                if long_token:
+                    conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                                 ("instagram_token", long_token))
+                    conn.commit()
+                    exchanged = True
+            except Exception:
+                pass  # Token corto guardado, se usara tal cual
+        return jsonify({"ok": True, "exchanged": exchanged,
+                        "msg": "Token de 60 dias guardado" if exchanged else "Token guardado (corta duracion)"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+
 # ── INSTAGRAM DEBUG ───────────────────────────────────────────────────────────
 @bp.route("/api/marketing/ig-debug", methods=["GET"])
 def mkt_ig_debug():

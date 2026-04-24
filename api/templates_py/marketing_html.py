@@ -239,6 +239,20 @@ textarea{resize:vertical;min-height:80px;}
     </div>
   </div>
 
+  <!-- Instagram token update form -->
+  <div id="ig-token-form" style="background:#0f172a;border:1px solid #e1306c44;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:none;">
+    <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado — pega un nuevo token de Graph API Explorer</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="ig-token-input" type="text" placeholder="EAANXh..." 
+        style="flex:1;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
+      <button onclick="saveIgToken()" class="btn btn-sm" style="background:#e1306c;color:#fff;border:none;white-space:nowrap;">Guardar y activar</button>
+      <button onclick="document.getElementById('ig-token-form').style.display='none'" class="btn btn-outline btn-sm">✕</button>
+    </div>
+    <div style="font-size:10px;color:#64748b;margin-top:6px;">
+      Ve a <a href="https://developers.facebook.com/tools/explorer" target="_blank" style="color:#6366f1;">Graph API Explorer</a> → selecciona "Inventario ÁNIMUS" → Generate Access Token → pega aquí
+    </div>
+  </div>
+
   <!-- Instagram Top Posts -->
   <div class="card" style="margin-bottom:20px;" id="dash-ig-posts-section">
     <div class="card-hdr"><span class="card-title">📸 Top posts Instagram (por engagement)</span></div>
@@ -761,6 +775,27 @@ function loadTab(name) {
 // ──────────────────────────────────────────────────────────────────────────────
 // DASHBOARD
 // ──────────────────────────────────────────────────────────────────────────────
+async function saveIgToken() {
+  const token = document.getElementById('ig-token-input').value.trim();
+  if (!token || !token.startsWith('EAA')) { showToast('Token invalido', 'error'); return; }
+  try {
+    const r = await fetch('/api/marketing/ig-update-token', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('✅ Token guardado — sincronizando...', 'success');
+      document.getElementById('ig-token-form').style.display = 'none';
+      document.getElementById('ig-token-input').value = '';
+      setTimeout(() => syncPlatform('instagram'), 800);
+    } else {
+      showToast('❌ ' + (d.error||'Error'), 'error');
+    }
+  } catch(e) { showToast('❌ Error de conexion', 'error'); }
+}
+
 async function refreshIgToken() {
   const btn = event.target;
   btn.disabled = true; btn.textContent = '⏳ Renovando...';
@@ -1289,8 +1324,12 @@ async function syncPlatform(platform) {
       loadConnections();
     } else {
       status.style.color = '#f87171';
-      const det = data.detalle ? ' → ' + data.detalle.slice(0,120) : '';
+      const det = data.detalle ? ' → ' + data.detalle.slice(0,200) : '';
       status.textContent = (data.error || 'Error al sincronizar') + det;
+      // Si falla Instagram por auth, mostrar formulario de token
+      if (platform === 'instagram') {
+        document.getElementById('ig-token-form').style.display = 'block';
+      }
     }
   } catch(e) {
     status.style.color = '#f87171';
