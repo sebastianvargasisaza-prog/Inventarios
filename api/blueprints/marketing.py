@@ -881,22 +881,38 @@ def mkt_sync(platform):
         elif platform == "ghl":
             api_key = _cfg(conn, "ghl_api_key")
             loc_id  = _cfg(conn, "ghl_location_id")
-            if not api_key:
-                return jsonify({"error": "GHL no configurado."}), 400
-            url = f"https://rest.gohighlevel.com/v1/contacts/?locationId={loc_id}&limit=100" if loc_id else "https://rest.gohighlevel.com/v1/contacts/?limit=100"
-            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                contacts = json.loads(r.read()).get("contacts", [])
+            if not api_key or not loc_id:
+                return jsonify({"error": "GHL no configurado (falta api_key o location_id)."}), 400
+            # GHL v2 API — tokens pit- requieren services.leadconnectorhq.com + Version header
+            page = 1
             synced = 0
-            for c in contacts:
-                tags = json.dumps(c.get("tags", []))
-                conn.execute("""INSERT OR REPLACE INTO animus_ghl_contacts
-                    (ghl_id,nombre,email,telefono,etiquetas,fuente,creado_en,synced_at)
-                    VALUES(?,?,?,?,?,?,?,datetime('now'))""",
-                    (c.get("id",""), f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
-                     c.get("email",""), c.get("phone",""), tags,
-                     c.get("source",""), c.get("dateAdded","")[:10] if c.get("dateAdded") else ""))
-                synced += 1
+            while True:
+                url = f"https://services.leadconnectorhq.com/contacts/?locationId={loc_id}&limit=100&page={page}"
+                req = urllib.request.Request(url, headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Version": "2021-07-28",
+                })
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    payload = json.loads(r.read())
+                contacts = payload.get("contacts", [])
+                if not contacts:
+                    break
+                for ct in contacts:
+                    tags = json.dumps(ct.get("tags", []))
+                    fecha = (ct.get("dateAdded") or ct.get("createdAt") or "")[:10]
+                    conn.execute("""INSERT OR REPLACE INTO animus_ghl_contacts
+                        (ghl_id,nombre,email,telefono,etiquetas,fuente,creado_en,synced_at)
+                        VALUES(?,?,?,?,?,?,?,datetime('now'))""",
+                        (ct.get("id",""),
+                         f"{ct.get('firstName','')} {ct.get('lastName','')}".strip(),
+                         ct.get("email",""), ct.get("phone",""),
+                         tags, ct.get("source",""), fecha))
+                    synced += 1
+                # Stop if fewer than 100 returned (last page)
+                if len(contacts) < 100:
+                    break
+                page += 1
             conn.commit()
             return jsonify({"ok": True, "synced": synced, "platform": "ghl"})
 
