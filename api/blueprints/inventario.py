@@ -586,20 +586,34 @@ def update_stock_minimo(codigo):
 @bp.route('/api/maestro-mps/<codigo>/proveedor', methods=['PUT'])
 def update_mp_proveedor(codigo):
     """Actualiza el proveedor asignado a una MP en maestro_mps.
-    Usado por guardarProveedorMP() en el dashboard de Planta."""
+    Si la MP aun no tiene fila en maestro_mps, la crea a partir de movimientos."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     d = request.json or {}
     proveedor = (d.get('proveedor') or '').strip()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
+    # Intento 1: UPDATE normal
     c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?", (proveedor, codigo))
     updated = c.rowcount
+
+    if updated == 0:
+        # MP no existe en maestro_mps — crearla con info de movimientos
+        mov = c.execute(
+            "SELECT material_nombre FROM movimientos WHERE material_id=? LIMIT 1", (codigo,)
+        ).fetchone()
+        nombre = mov[0] if mov else codigo
+        c.execute("""
+            INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, proveedor, stock_minimo, activo)
+            VALUES (?, ?, '', 'MP', ?, 0, 1)
+            ON CONFLICT(codigo_mp) DO UPDATE SET proveedor=excluded.proveedor
+        """, (codigo, nombre, proveedor))
+        updated = c.rowcount
+
     conn.commit()
     conn.close()
-    if updated == 0:
-        return jsonify({'error': 'MP no encontrada', 'codigo': codigo}), 404
-    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
+    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor, 'created': updated > 0})
 
 
 @bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])

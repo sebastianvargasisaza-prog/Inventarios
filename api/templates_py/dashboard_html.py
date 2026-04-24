@@ -1077,25 +1077,35 @@ function guardarProveedorMP(inp){
   var val=inp.value.trim();
   if(!cod) return;
   inp.style.borderColor='#ffc107';
+  inp.title='Guardando...';
   clearTimeout(_provSaveTimers[cod]);
   _provSaveTimers[cod]=setTimeout(function(){
     fetch('/api/maestro-mps/'+encodeURIComponent(cod)+'/proveedor',{
       method:'PUT',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({proveedor:val})
-    }).then(function(r){
-      if(r.ok){
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){
         inp.style.borderColor='#28a745';
-        setTimeout(function(){inp.style.borderColor='#ccc';},1500);
-        // Update _alertasData so solicitarTodasMPs uses fresh data
+        inp.title='Proveedor guardado: '+val;
+        setTimeout(function(){ inp.style.borderColor=''; inp.title=''; },2000);
+        // Actualizar _alertasData para que solicitarTodasMPs use datos frescos
         var ad=window._alertasData||[];
         var found=ad.find(function(a){return a.codigo_mp===cod;});
         if(found) found.proveedor=val;
+        // Actualizar tambien el datalist de compras si esta disponible
+        if(window._proveedoresList && val && !window._proveedoresList.includes(val)){
+          window._proveedoresList.push(val);
+        }
       } else {
         inp.style.borderColor='#dc3545';
+        inp.title='Error al guardar: '+(d.error||'desconocido');
       }
-    }).catch(function(){inp.style.borderColor='#dc3545';});
-  },600);
+    }).catch(function(e){
+      inp.style.borderColor='#dc3545';
+      inp.title='Error de conexion';
+    });
+  },700);
 }
 
 async function solicitarTodasMPs(){
@@ -1942,7 +1952,7 @@ async function loadAlertasReabas(){
       h+=' data-cod="'+a.codigo_mp+'"';
       h+=' placeholder="Sin proveedor"';
       h+=' style="width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:0.82em;"';
-      h+=' onchange="guardarProveedorMP(this)"';
+      h+=' onchange="guardarProveedorMP(this)" oninput="guardarProveedorMP(this)"';
       h+=' title="Edita y presiona Enter o Tab para guardar">';
       h+='</td>';
       h+='<td style="text-align:right;font-weight:600;">'+a.stock_minimo.toLocaleString()+' '+unidad+'</td>';
