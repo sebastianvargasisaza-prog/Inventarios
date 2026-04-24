@@ -594,9 +594,10 @@ async function loadComando() {
 
     // Update platform pills
     const conn = cmdData.connected;
-    ['shopify','ghl','instagram'].forEach(p => {
-      const el = document.getElementById('pill-' + p);
-      if(conn[p]) el.className = 'platform-pill pill-' + p;
+    [['shopify','shopify'],['ghl','ghl'],['instagram','ig']].forEach(([k,pid]) => {
+      const el = document.getElementById('pill-' + pid);
+      if(!el) return;
+      if(conn[k]) el.className = 'platform-pill pill-' + pid;
       else el.className = 'platform-pill pill-off';
     });
 
