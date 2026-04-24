@@ -95,10 +95,10 @@ def mkt_dashboard():
         # Tendencias mensuales: liberaciones PT últimos 6 meses por SKU
         seis_meses = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
         tendencias = _fmt_many(c.execute("""
-            SELECT sku, COALESCE(SUM(cantidad),0) as total_liberado,
-                   strftime('%Y-%m', fecha) as mes
+            SELECT sku, COALESCE(SUM(unidades),0) as total_liberado,
+                   strftime('%Y-%m', creado_en) as mes
             FROM liberaciones
-            WHERE fecha >= ? AND sku IS NOT NULL AND sku != ''
+            WHERE creado_en >= ? AND sku IS NOT NULL AND sku != ''
             GROUP BY sku, mes ORDER BY mes DESC, total_liberado DESC
             LIMIT 30
         """, (seis_meses,)).fetchall())
@@ -133,9 +133,6 @@ def mkt_dashboard():
             "tendencias": tendencias,
             "por_canal": por_canal,
         })
-    except Exception as _e:
-        import traceback as _tb
-        return jsonify({"_debug_error": str(_e), "_debug_trace": _tb.format_exc()[-800:]}), 200
     finally:
         conn.close()
 
@@ -575,11 +572,11 @@ def mkt_analytics_tendencias():
 
         # Liberaciones por SKU y mes
         por_sku_mes = _fmt_many(c.execute("""
-            SELECT sku, strftime('%Y-%m', fecha) as mes,
-                   SUM(cantidad) as unidades,
+            SELECT sku, strftime('%Y-%m', creado_en) as mes,
+                   SUM(unidades) as unidades,
                    COUNT(*) as liberaciones
             FROM liberaciones
-            WHERE fecha >= ? AND sku IS NOT NULL AND sku != ''
+            WHERE creado_en >= ? AND sku IS NOT NULL AND sku != ''
             GROUP BY sku, mes ORDER BY mes DESC, unidades DESC
         """, (desde,)).fetchall())
 
@@ -590,16 +587,16 @@ def mkt_analytics_tendencias():
 
         reciente = {}
         for row in c.execute("""
-            SELECT sku, SUM(cantidad) as total FROM liberaciones
-            WHERE fecha BETWEEN ? AND ? AND sku IS NOT NULL
+            SELECT sku, SUM(unidades) as total FROM liberaciones
+            WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL
             GROUP BY sku
         """, (hace90, hoy)).fetchall():
             reciente[row["sku"]] = row["total"]
 
         anterior = {}
         for row in c.execute("""
-            SELECT sku, SUM(cantidad) as total FROM liberaciones
-            WHERE fecha BETWEEN ? AND ? AND sku IS NOT NULL
+            SELECT sku, SUM(unidades) as total FROM liberaciones
+            WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL
             GROUP BY sku
         """, (hace180, hace90)).fetchall():
             anterior[row["sku"]] = row["total"]
@@ -686,8 +683,8 @@ def mkt_ejecutar_agente(agente):
             hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
             stock_rows = c.execute("""
-                SELECT sku, SUM(cantidad) as stock_total, precio_base
-                FROM stock_pt GROUP BY sku ORDER BY stock_total DESC LIMIT 20
+                SELECT sku, SUM(unidades_disponible) as stock_total, MAX(precio_base) as precio_base
+                FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock_total DESC LIMIT 20
             """).fetchall()
 
             recomendaciones = []
@@ -697,13 +694,13 @@ def mkt_ejecutar_agente(agente):
                 precio = row["precio_base"] or 0
 
                 lib_90 = c.execute("""
-                    SELECT COALESCE(SUM(cantidad),0) FROM liberaciones
-                    WHERE sku=? AND fecha >= ?
+                    SELECT COALESCE(SUM(unidades),0) FROM liberaciones
+                    WHERE sku=? AND creado_en >= ?
                 """, (sku, hace90)).fetchone()[0]
 
                 lib_30 = c.execute("""
-                    SELECT COALESCE(SUM(cantidad),0) FROM liberaciones
-                    WHERE sku=? AND fecha >= ?
+                    SELECT COALESCE(SUM(unidades),0) FROM liberaciones
+                    WHERE sku=? AND creado_en >= ?
                 """, (sku, hace30)).fetchone()[0]
 
                 # Ratio de rotación (unidades/mes en últimos 90d)
@@ -809,13 +806,13 @@ def mkt_ejecutar_agente(agente):
             hoy = datetime.now().strftime("%Y-%m-%d")
 
             reciente = {r["sku"]: r["total"] for r in c.execute("""
-                SELECT sku, SUM(cantidad) as total FROM liberaciones
-                WHERE fecha BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
+                SELECT sku, SUM(unidades) as total FROM liberaciones
+                WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
             """, (hace90, hoy)).fetchall()}
 
             anterior = {r["sku"]: r["total"] for r in c.execute("""
-                SELECT sku, SUM(cantidad) as total FROM liberaciones
-                WHERE fecha BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
+                SELECT sku, SUM(unidades) as total FROM liberaciones
+                WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
             """, (hace180, hace90)).fetchall()}
 
             tendencias = []
@@ -861,8 +858,8 @@ def mkt_ejecutar_agente(agente):
             # Top SKUs recientes para sugerir en brief
             hace60 = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
             top_skus = c.execute("""
-                SELECT sku, SUM(cantidad) as total FROM liberaciones
-                WHERE fecha >= ? AND sku IS NOT NULL
+                SELECT sku, SUM(unidades) as total FROM liberaciones
+                WHERE creado_en >= ? AND sku IS NOT NULL
                 GROUP BY sku ORDER BY total DESC LIMIT 5
             """, (hace60,)).fetchall()
             top_skus_list = [r["sku"] for r in top_skus]
