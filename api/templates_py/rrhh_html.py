@@ -180,7 +180,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
       <input type="text" id="emp-search" placeholder="Buscar empleado..." style="padding:8px 12px;border:1.5px solid #e0ddd8;border-radius:7px;font-size:13px;min-width:220px;" oninput="filterEmps()">
       <select id="emp-filter-empresa" style="padding:8px 12px;border:1.5px solid #e0ddd8;border-radius:7px;font-size:13px;" onchange="filterEmps()">
         <option value="">Todas las empresas</option>
-        <option>Espagiria</option><option>ANIMUS</option><option>HHA Group</option>
+        <option>Espagiria</option><option>ÁNIMUS Lab</option><option>HHA Group</option>
       </select>
       <select id="emp-filter-estado" style="padding:8px 12px;border:1.5px solid #e0ddd8;border-radius:7px;font-size:13px;" onchange="filterEmps()">
         <option value="">Todos</option><option>Activo</option><option>Inactivo</option>
@@ -300,13 +300,15 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
         <div class="form-group"><label>Cargo *</label><input id="f-cargo" type="text"></div>
         <div class="form-group"><label>&Aacute;rea</label>
           <select id="f-area">
-            <option>Gerencia</option><option>Operaciones</option><option>Control de Calidad</option>
-            <option>Laboratorio</option><option>Planta</option><option>Administrativa</option>
-            <option>Comercial</option><option>Log&iacute;stica</option>
+            <option>Gerencia</option><option>Administraci&oacute;n</option><option>Producci&oacute;n</option>
+            <option>Control de Calidad</option><option>Direcci&oacute;n T&eacute;cnica</option>
+            <option>Log&iacute;stica</option><option>Bodega</option><option>Marketing</option>
+            <option>Ventas</option><option>Servicios</option><option>Laboratorio</option>
+            <option>Operaciones</option>
           </select>
         </div>
         <div class="form-group"><label>Empresa</label>
-          <select id="f-empresa"><option>Espagiria</option><option>ANIMUS</option><option>HHA Group</option></select>
+          <select id="f-empresa"><option>Espagiria</option><option>ÁNIMUS Lab</option><option>HHA Group</option></select>
         </div>
         <div class="form-group"><label>Tipo de contrato</label>
           <select id="f-contrato">
@@ -490,7 +492,7 @@ function avatarColor(name) {
 }
 
 function badgeEmpresa(e) {
-  var m={'Espagiria':'badge-esp','ANIMUS':'badge-ani','HHA Group':'badge-hha'};
+  var m={'Espagiria':'badge-esp','ÁNIMUS Lab':'badge-ani','HHA Group':'badge-hha'};
   return '<span class="badge '+(m[e]||'badge-indef')+'">'+e+'</span>';
 }
 
@@ -578,7 +580,7 @@ async function openEmpModal(id) {
       document.getElementById('f-apellido').value = d.apellido||'';
       document.getElementById('f-cedula').value = d.cedula||'';
       document.getElementById('f-cargo').value = d.cargo||'';
-      document.getElementById('f-area').value = d.area||'Operaciones';
+      document.getElementById('f-area').value = d.area||'Producción';
       document.getElementById('f-empresa').value = d.empresa||'Espagiria';
       document.getElementById('f-contrato').value = d.tipo_contrato||'Indefinido';
       document.getElementById('f-ingreso').value = (d.fecha_ingreso||'').slice(0,10);
@@ -597,7 +599,7 @@ async function openEmpModal(id) {
     fields.forEach(function(f){var el=document.getElementById('f-'+f);if(el)el.value='';});
     document.getElementById('f-empresa').value='Espagiria';
     document.getElementById('f-contrato').value='Indefinido';
-    document.getElementById('f-area').value='Operaciones';
+    document.getElementById('f-area').value='Producción';
     document.getElementById('f-estado').value='Activo';
     document.getElementById('f-riesgo').value='1';
   }
