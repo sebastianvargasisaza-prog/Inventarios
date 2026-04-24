@@ -1050,7 +1050,7 @@ def mkt_sync(platform):
                     pass  # Si falla el refresh, continuar con el token existente
 
             fields = "id,media_type,caption,media_url,permalink,like_count,comments_count,timestamp"
-            url = f"https://graph.instagram.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
+            url = f"https://graph.facebook.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=15) as r:
                 posts = json.loads(r.read()).get("data", [])
@@ -1113,8 +1113,46 @@ def mkt_ig_refresh():
         conn.commit()
         days = round(expires_in / 86400)
         return jsonify({"ok": True, "expires_days": days, "msg": f"Token renovado — valido {days} dias"})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        return jsonify({"error": f"HTTP {e.code}", "detalle": body}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 502
+    finally:
+        conn.close()
+
+
+# ── INSTAGRAM DEBUG ───────────────────────────────────────────────────────────
+@bp.route("/api/marketing/ig-debug", methods=["GET"])
+def mkt_ig_debug():
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    try:
+        token   = _cfg(conn, "instagram_token")
+        user_id = _cfg(conn, "instagram_user_id")
+        app_id  = _cfg(conn, "meta_app_id")
+        result  = {"token_ok": bool(token), "user_id": user_id, "app_id_ok": bool(app_id)}
+        if token and user_id:
+            # Test 1: /me endpoint con el token
+            try:
+                r1 = urllib.request.urlopen(
+                    f"https://graph.facebook.com/v19.0/me?access_token={token}", timeout=10)
+                result["me"] = json.loads(r1.read())
+            except urllib.error.HTTPError as e:
+                result["me_error"] = json.loads(e.read().decode())
+            # Test 2: media del IG user
+            try:
+                fields = "id,media_type,caption,like_count,timestamp"
+                r2 = urllib.request.urlopen(
+                    f"https://graph.facebook.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=3",
+                    timeout=10)
+                result["media"] = json.loads(r2.read())
+            except urllib.error.HTTPError as e:
+                result["media_error"] = json.loads(e.read().decode())
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
 
