@@ -893,8 +893,12 @@ def mkt_sync(platform):
                     "Content-Type": "application/json",
                     "Version": "2021-07-28",
                 })
-                with urllib.request.urlopen(req, timeout=20) as r:
-                    payload = json.loads(r.read())
+                try:
+                    with urllib.request.urlopen(req, timeout=20) as r:
+                        payload = json.loads(r.read())
+                except urllib.error.HTTPError as http_err:
+                    body = http_err.read().decode("utf-8", errors="replace")[:500]
+                    return jsonify({"error": f"GHL HTTP {http_err.code}", "detalle": body}), 400
                 contacts = payload.get("contacts", [])
                 if not contacts:
                     break
