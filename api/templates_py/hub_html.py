@@ -101,6 +101,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   <a class="qn-btn" href="/hub-salida">&#x1F9EA; Maquila</a>
   <a class="qn-btn" href="/compromisos">&#x2705; Compromisos</a>
   <a class="qn-btn" href="/solicitudes">&#x1F4DD; Solicitudes</a>
+  <a class="qn-btn" href="/contabilidad" style="background:#0f2d1f;border-color:#16a34a;color:#4ade80;font-weight:600;">&#x1F4B0; Contabilidad</a>
   <div class="qn-sep"></div>
   <a class="qn-btn" href="/modulos" style="background:#1e3a5f;border-color:#3b82f6;color:#93c5fd;font-weight:700;">&#x1F4F1; Panel de M&#xF3;dulos</a>
   <div class="qn-sep"></div>
@@ -127,6 +128,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
       <a class="mod-btn" href="/tecnica"><span class="mod-icon">&#x1F527;</span><span class="mod-name">Técnica</span><span class="mod-badge mb-ok">activo</span></a>
       <a class="mod-btn" href="/rrhh"><span class="mod-icon">&#x1F465;</span><span class="mod-name">RRHH</span><span class="mod-badge mb-ok">activo</span></a>
       <a class="mod-btn" href="/solicitudes"><span class="mod-icon">&#x1F4DD;</span><span class="mod-name">Solicitudes</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/contabilidad"><span class="mod-icon">&#x1F4B0;</span><span class="mod-name">Contabilidad</span><span class="mod-badge mb-ok">activo</span></a>
     </div>
   </div>
 
