@@ -531,10 +531,15 @@ async function loadGerenciaExtra() {
     // Ingresos del mes
     var ig = d.ingresos_mes||{};
     var elI = document.getElementById('gx-ingresos');
-    if(elI) elI.innerHTML =
-      '<div class="data-row"><span class="data-lbl">ANIMUS</span><span class="data-val verde">'+fmtV(ig.animus)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
-      +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+    if(elI){
+      var shpMom = ig.shopify>0 ? ' <span style="font-size:10px;color:#34d399;">Shopify ✓</span>' : '';
+      elI.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Aliados B2B</span><span class="data-val verde">'+fmtV(ig.aliados||ig.animus)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Shopify DTC'+shpMom+'</span><span class="data-val verde">'+fmtV(ig.shopify)+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.08);margin-top:3px;padding-top:3px;"><span class="data-lbl">ÁNIMUS total</span><span class="data-val verde">'+fmtV(ig.animus_total)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Grand Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+    }
 
     // AR
     var ar = d.ar||{};

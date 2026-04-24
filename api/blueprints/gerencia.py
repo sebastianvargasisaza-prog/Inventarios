@@ -240,11 +240,22 @@ def gerencia_dashboard_extra():
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
 
     # Ingresos del mes desde transacciones reales
+    # B2B / aliados — pedidos internos ANIMUS
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
               "WHERE fecha LIKE ? AND estado NOT IN ('Cancelado')"
               " AND (empresa='ANIMUS' OR empresa IS NULL OR empresa='')",
               (mes_str+'%',))
-    ing_animus = c.fetchone()[0] or 0
+    ing_aliados = c.fetchone()[0] or 0
+
+    # DTC — Shopify directo
+    try:
+        c.execute("SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (mes_str+'%',))
+        ing_shopify = c.fetchone()[0] or 0
+    except Exception:
+        ing_shopify = 0
+
+    # Maquila
     try:
         c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes "
                   "WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')",
@@ -252,7 +263,17 @@ def gerencia_dashboard_extra():
         ing_maquila = c.fetchone()[0] or 0
     except Exception:
         ing_maquila = 0
-    ingresos_mes = {'animus': ing_animus, 'maquila': ing_maquila, 'total': ing_animus + ing_maquila}
+
+    ing_animus_total = ing_aliados + ing_shopify
+    ingresos_mes = {
+        'aliados':       ing_aliados,        # B2B pedidos internos
+        'shopify':       ing_shopify,         # DTC Shopify directo
+        'animus_total':  ing_animus_total,    # ANIMUS total (aliados + shopify)
+        'maquila':       ing_maquila,
+        'total':         ing_animus_total + ing_maquila,
+        # compat legacy
+        'animus':        ing_aliados,
+    }
 
     # AR — cuentas por cobrar
     c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM pedidos "

@@ -78,6 +78,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">—</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
     <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">—</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
     <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">—</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
+    <div class="kpi" style="--c:#10b981;border-left:3px solid #10b981;"><div class="kpi-val" id="kpi-shopify" style="color:#10b981;">—</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="chart-wrap">
@@ -318,6 +319,11 @@ async function loadDashboard(){
     var hoy=new Date();
     document.getElementById('periodo-label').textContent=hoy.toLocaleString('es',{month:'long',year:'numeric'});
     document.getElementById('kpi-ing-mes').textContent=fmt(d.ing_mes||0);
+    // Shopify real-time
+    if(document.getElementById('kpi-shopify')){
+      document.getElementById('kpi-shopify').textContent=fmt(d.shopify_mes||0);
+      document.getElementById('kpi-shopify-sub').textContent=(d.shopify_pedidos||0)+' pedidos · YTD '+fmt(d.shopify_anio||0);
+    }
     document.getElementById('kpi-ing-sub').textContent=(d.ing_count||0)+' transacciones';
     document.getElementById('kpi-egr-mes').textContent=fmt(d.egr_mes||0);
     document.getElementById('kpi-egr-sub').textContent=(d.egr_count||0)+' transacciones';

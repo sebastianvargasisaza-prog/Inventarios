@@ -125,10 +125,25 @@ def financiero_kpis():
         c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo=?", (p,))
         egr = c.fetchone()[0]
         historico.append({'periodo': p, 'ingresos': ing, 'egresos': egr})
+    # Shopify real-time (DTC directo) — no está en flujo_ingresos manual
+    try:
+        c.execute("SELECT COALESCE(SUM(total),0), COUNT(*) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (periodo_actual+'%',))
+        shp_row = c.fetchone()
+        shopify_mes = round(shp_row[0] or 0, 0)
+        shopify_pedidos = shp_row[1] or 0
+        # YTD Shopify
+        anio_ini = datetime.now().strftime('%Y')
+        c.execute("SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (anio_ini+'%',))
+        shopify_anio = round(c.fetchone()[0] or 0, 0)
+    except Exception:
+        shopify_mes = 0; shopify_pedidos = 0; shopify_anio = 0
     conn.close()
     return jsonify({'ing_mes': ing_mes, 'ing_count': ing_count, 'egr_mes': egr_mes, 'egr_count': egr_count,
                     'saldo_caja': saldo_caja, 'desglose_ing': desglose_ing, 'desglose_egr': desglose_egr,
-                    'historico': historico, 'periodo': periodo_actual})
+                    'historico': historico, 'periodo': periodo_actual,
+                    'shopify_mes': shopify_mes, 'shopify_pedidos': shopify_pedidos, 'shopify_anio': shopify_anio})
 
 @bp.route('/api/financiero/flujo-mensual')
 def financiero_flujo_mensual():
