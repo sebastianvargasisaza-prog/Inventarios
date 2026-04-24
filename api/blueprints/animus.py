@@ -217,7 +217,7 @@ def animus_comando():
 
         # Alertas de calidad activas
         alertas_calidad = c.execute("""
-            SELECT COUNT(*) as n FROM calidad_tareas
+            SELECT COUNT(*) as n FROM compromisos
             WHERE estado IN ('Pendiente','En Proceso') AND prioridad IN ('Critico','Alta')
         """).fetchone()["n"]
 
@@ -268,7 +268,7 @@ def animus_comando():
             "last_sync": last_sync,
         })
     except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 200
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
 
