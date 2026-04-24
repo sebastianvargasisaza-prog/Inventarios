@@ -3,6 +3,7 @@ marketing.py — Blueprint módulo Marketing
 Campañas, Influencers, Contenido, Analytics, 5 Agentes IA internos
 """
 import sqlite3
+import traceback
 import json
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
@@ -132,6 +133,8 @@ def mkt_dashboard():
             "tendencias": tendencias,
             "por_canal": por_canal,
         })
+    except Exception as _e:
+        return jsonify({"error": str(_e), "trace": traceback.format_exc()}), 500
     finally:
         conn.close()
 
