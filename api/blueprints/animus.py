@@ -267,6 +267,8 @@ def animus_comando():
             "connected": connected,
             "last_sync": last_sync,
         })
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 200
     finally:
         conn.close()
 
