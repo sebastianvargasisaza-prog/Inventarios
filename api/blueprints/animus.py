@@ -919,3 +919,12 @@ def animus_calendario():
         dias = (datetime.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
         eventos.append({**ev, "dias_restantes": dias, "pasado": dias < 0})
     return jsonify({"eventos": eventos})
+
+
+# ── REDIRECT /animus → /marketing ────────────────────────────────────────────
+from flask import redirect as flask_redirect
+
+@bp.route("/animus")
+def animus_redirect():
+    return flask_redirect("/marketing", code=301)
+

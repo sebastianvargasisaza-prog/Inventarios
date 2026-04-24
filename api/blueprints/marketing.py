@@ -2,7 +2,7 @@
 marketing.py — Blueprint módulo Marketing
 Campañas, Influencers, Contenido, Analytics, 5 Agentes IA internos
 """
-import sqlite3
+import sqlite3, urllib.request
 import traceback
 import json
 from datetime import datetime, date, timedelta
@@ -11,6 +11,18 @@ from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS
 
 bp = Blueprint("marketing", __name__)
+CALENDARIO_COSMETICO = [
+    {"evento": "Día de la Mujer",       "fecha": "2026-03-08", "color": "#e91e8c", "multiplicador": 1.8},
+    {"evento": "Día de la Madre",        "fecha": "2026-05-10", "color": "#d4af37", "multiplicador": 3.0},
+    {"evento": "Mitad de Año",           "fecha": "2026-06-30", "color": "#4fc3f7", "multiplicador": 1.5},
+    {"evento": "Día del Padre",          "fecha": "2026-06-21", "color": "#81c784", "multiplicador": 1.4},
+    {"evento": "Amor y Amistad",         "fecha": "2026-09-19", "color": "#ff8a65", "multiplicador": 2.2},
+    {"evento": "Halloween",              "fecha": "2026-10-31", "color": "#ff6f00", "multiplicador": 1.3},
+    {"evento": "Black Friday",           "fecha": "2026-11-27", "color": "#212121", "multiplicador": 3.5},
+    {"evento": "Cyber Monday",           "fecha": "2026-11-30", "color": "#1565c0", "multiplicador": 2.5},
+    {"evento": "Navidad",                "fecha": "2026-12-25", "color": "#c62828", "multiplicador": 2.8},
+    {"evento": "Fin de Año / Rituales",  "fecha": "2026-12-31", "color": "#6a1b9a", "multiplicador": 2.0},
+]
 
 MARKETING_USERS = {"jefferson", "valentina", "sebastian", "alejandro"}
 
@@ -34,6 +46,52 @@ def _fmt(row):
 
 def _fmt_many(rows):
     return [dict(r) for r in rows]
+
+
+def _cfg(conn, clave, default=None):
+    """Lee configuración de animus_config (tabla compartida con Centro de Mando)."""
+    try:
+        row = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (clave,)).fetchone()
+        return row["valor"] if row else default
+    except Exception:
+        return default
+
+
+def _call_claude(conn, agente, datos):
+    """Enriquece el resultado del agente con análisis IA usando Claude API."""
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        return None
+    PROMPTS = {
+        "estacionalidad": "Eres el director comercial de ÁNIMUS Lab (skincare premium colombiano). Analiza el stock vs demanda proyectada para los próximos eventos del calendario cosmético. Identifica los SKUs en riesgo, calcula fechas límite de producción y da instrucciones concretas. Máximo 200 palabras, en español.",
+        "oportunidad":    "Eres el director comercial de ÁNIMUS Lab. Analiza los SKUs con alto stock y baja rotación. Propón acciones de marketing específicas (descuentos, bundles, campañas) con fechas y porcentajes concretos. Máximo 200 palabras, en español.",
+        "roi":            "Eres el CFO de ÁNIMUS Lab. Analiza el ROI de las campañas activas. Señala cuáles escalar, pausar o ajustar y por qué. Incluye recomendaciones de presupuesto. Máximo 200 palabras, en español.",
+        "tendencias":     "Eres el analista de datos de ÁNIMUS Lab. Analiza las tendencias de ventas por SKU (ERP vs Shopify). Identifica los productos con mayor momentum y los que están cayendo. Da recomendaciones de producción y marketing. Máximo 200 palabras, en español.",
+        "brief":          "Eres el director creativo de ÁNIMUS Lab. Basado en los SKUs top, genera briefs de contenido detallados: canal recomendado, formato, claim principal, tono y ángulo de diferenciación científica. Máximo 200 palabras, en español.",
+        "pricing":        "Eres el director de pricing de ÁNIMUS Lab. Analiza qué SKUs tienen margen para descuento sin comprometer rentabilidad. Da recomendaciones de precios promocionales concretos con porcentajes. Máximo 200 palabras, en español.",
+        "reorden":        "Eres el jefe de supply chain de ÁNIMUS Lab. Analiza los patrones de compra B2B y predice cuándo hará su próximo pedido cada cliente. Da fechas concretas y recomendaciones de seguimiento proactivo. Máximo 200 palabras, en español.",
+        "canibal":        "Eres el director de marketing de ÁNIMUS Lab. Detecta conflictos entre campañas activas (mismo SKU, canal, fechas). Propón un calendario de campañas optimizado para maximizar el impacto sin canibalización. Máximo 200 palabras, en español.",
+        "contenido_auto": "Eres el community manager de ÁNIMUS Lab (skincare científico premium para piel latina). Revisa los captions generados y da feedback sobre tono, claims científicos y potencial de conversión. Sugiere mejoras concretas. Máximo 200 palabras, en español.",
+        "alerta_stock":   "Eres el director de operaciones de ÁNIMUS Lab. Analiza los SKUs con cobertura crítica cruzando ERP y Shopify. Da instrucciones específicas de producción urgente con cantidades y fechas. Máximo 200 palabras, en español.",
+    }
+    prompt = PROMPTS.get(agente, "Analiza estos datos de ÁNIMUS Lab y da recomendaciones accionables en español. Máximo 200 palabras.")
+    payload = json.dumps({
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 500,
+        "messages": [{"role": "user", "content": prompt + "\n\nDatos del sistema:\n" + json.dumps(datos, ensure_ascii=False, default=str)[:3000]}]
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=payload,
+        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data["content"][0]["text"]
+    except Exception:
+        return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -661,322 +719,416 @@ def mkt_agentes_log():
         conn.close()
 
 
+# ── CONEXIONES / SYNC ─────────────────────────────────────────────────────────
+
+@bp.route("/api/marketing/connections")
+def mkt_connections():
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    try:
+        connected = {
+            "shopify":   bool(_cfg(conn, "shopify_token") and _cfg(conn, "shopify_shop")),
+            "ghl":       bool(_cfg(conn, "ghl_api_key")),
+            "instagram": bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id")),
+        }
+        last_sync = {}
+        tables = {"shopify": "animus_shopify_orders", "ghl": "animus_ghl_contacts", "instagram": "animus_instagram_posts"}
+        for plat, tbl in tables.items():
+            try:
+                row = conn.execute(f"SELECT MAX(synced_at) as ts FROM {tbl}").fetchone()
+                last_sync[plat] = row["ts"] if row else None
+            except Exception:
+                last_sync[plat] = None
+        return jsonify({"connected": connected, "last_sync": last_sync})
+    finally:
+        conn.close()
+
+
+@bp.route("/api/marketing/sync/<platform>", methods=["POST"])
+def mkt_sync(platform):
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    try:
+        if platform == "shopify":
+            token = _cfg(conn, "shopify_token")
+            shop  = _cfg(conn, "shopify_shop")
+            if not token or not shop:
+                return jsonify({"error": "Shopify no configurado. Contacta al administrador."}), 400
+            url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+            req = urllib.request.Request(url, headers={"X-Shopify-Access-Token": token})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                orders = json.loads(r.read())["orders"]
+            synced = 0
+            for o in orders:
+                items_sku = json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)} for li in o.get("line_items",[])])
+                total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+                addr = o.get("billing_address") or {}
+                conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
+                    (shopify_id,nombre,email,total,moneda,estado,estado_pago,sku_items,unidades_total,ciudad,pais,creado_en,synced_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                    (str(o["id"]), o.get("name",""), o.get("email",""),
+                     float(o.get("total_price",0)), o.get("currency","COP"),
+                     o.get("fulfillment_status",""), o.get("financial_status",""),
+                     items_sku, total_uds, addr.get("city",""), addr.get("country_code","CO"),
+                     o.get("created_at","")[:10]))
+                synced += 1
+            conn.commit()
+            return jsonify({"ok": True, "synced": synced, "platform": "shopify"})
+
+        elif platform == "ghl":
+            api_key = _cfg(conn, "ghl_api_key")
+            loc_id  = _cfg(conn, "ghl_location_id")
+            if not api_key:
+                return jsonify({"error": "GHL no configurado."}), 400
+            url = f"https://rest.gohighlevel.com/v1/contacts/?locationId={loc_id}&limit=100" if loc_id else "https://rest.gohighlevel.com/v1/contacts/?limit=100"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                contacts = json.loads(r.read()).get("contacts", [])
+            synced = 0
+            for c in contacts:
+                tags = json.dumps(c.get("tags", []))
+                conn.execute("""INSERT OR REPLACE INTO animus_ghl_contacts
+                    (ghl_id,nombre,email,telefono,etiquetas,fuente,creado_en,synced_at)
+                    VALUES(?,?,?,?,?,?,?,datetime('now'))""",
+                    (c.get("id",""), f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
+                     c.get("email",""), c.get("phone",""), tags,
+                     c.get("source",""), c.get("dateAdded","")[:10] if c.get("dateAdded") else ""))
+                synced += 1
+            conn.commit()
+            return jsonify({"ok": True, "synced": synced, "platform": "ghl"})
+
+        elif platform == "instagram":
+            token   = _cfg(conn, "instagram_token")
+            user_id = _cfg(conn, "instagram_user_id")
+            if not token or not user_id:
+                return jsonify({"error": "Instagram no configurado."}), 400
+            fields = "id,media_type,caption,media_url,permalink,like_count,comments_count,timestamp"
+            url = f"https://graph.instagram.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                posts = json.loads(r.read()).get("data", [])
+            synced = 0
+            for p in posts:
+                conn.execute("""INSERT OR REPLACE INTO animus_instagram_posts
+                    (instagram_id,tipo,descripcion,url_media,url_permalink,likes,comentarios,publicado_en,synced_at)
+                    VALUES(?,?,?,?,?,?,?,?,datetime('now'))""",
+                    (p.get("id",""), p.get("media_type",""),
+                     (p.get("caption","") or "")[:500],
+                     p.get("media_url",""), p.get("permalink",""),
+                     p.get("like_count",0), p.get("comments_count",0),
+                     p.get("timestamp","")[:10] if p.get("timestamp") else ""))
+                synced += 1
+            conn.commit()
+            return jsonify({"ok": True, "synced": synced, "platform": "instagram"})
+        else:
+            return jsonify({"error": "Plataforma desconocida"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    finally:
+        conn.close()
+
+
+# ── AGENTES IA (10 agentes ÁNIMUS con Claude) ─────────────────────────────────
+
+AGENTES_DISPONIBLES = {
+    "estacionalidad", "oportunidad", "roi", "tendencias",
+    "brief", "pricing", "reorden", "canibal", "contenido_auto", "alerta_stock"
+}
+
 @bp.route("/api/marketing/agentes/<agente>", methods=["POST"])
 def mkt_ejecutar_agente(agente):
     u, err, code = _auth()
     if err:
         return err, code
-
-    agentes_validos = {"oportunidad", "roi", "tendencias", "brief", "presupuesto"}
-    if agente not in agentes_validos:
-        return jsonify({"error": f"Agente desconocido. Válidos: {agentes_validos}"}), 400
+    if agente not in AGENTES_DISPONIBLES:
+        return jsonify({"error": f"Agente desconocido. Válidos: {list(AGENTES_DISPONIBLES)}"}), 400
 
     conn = _db()
     c = conn.cursor()
     try:
+        hoy    = datetime.now()
+        hace30 = (hoy - timedelta(days=30)).strftime("%Y-%m-%d")
+        hace90 = (hoy - timedelta(days=90)).strftime("%Y-%m-%d")
         resultado = {}
 
-        # ── Agente 1: Oportunidad ────────────────────────────────────────────
-        if agente == "oportunidad":
-            # SKUs con alto stock y baja liberación reciente → candidatos a impulsar
-            hace90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-            hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        # ── Agente 1: Estacionalidad ──────────────────────────────────────────
+        if agente == "estacionalidad":
+            alertas = []
+            for ev in CALENDARIO_COSMETICO:
+                dias = (datetime.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
+                if dias < 0 or dias > 120: continue
+                campanas = c.execute("""
+                    SELECT nombre, sku_objetivo, objetivo_unidades, fecha_inicio
+                    FROM marketing_campanas
+                    WHERE fecha_inicio <= ? AND estado IN ('Planificada','Activa')
+                    ORDER BY fecha_inicio
+                """, (ev["fecha"],)).fetchall()
+                skus_revisados = set()
+                for cmp in campanas:
+                    sku = cmp["sku_objetivo"]
+                    if not sku or sku in skus_revisados: continue
+                    skus_revisados.add(sku)
+                    stock = c.execute("SELECT COALESCE(SUM(unidades_disponible),0) as s FROM stock_pt WHERE sku=? AND estado='Disponible'", (sku,)).fetchone()["s"]
+                    lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                    rotacion = lib_90 / 3.0
+                    demanda_ev = round(rotacion * ev["multiplicador"])
+                    deficit = max(0, demanda_ev - stock)
+                    semanas_prod = max(3, round(deficit / max(rotacion / 4.0, 1))) if deficit > 0 else 0
+                    deadline_prod = (datetime.strptime(ev["fecha"], "%Y-%m-%d") - timedelta(weeks=semanas_prod)).strftime("%Y-%m-%d") if deficit > 0 else None
+                    estado = "ok" if deficit == 0 else ("advertencia" if deficit < demanda_ev * 0.3 else "critico")
+                    alertas.append({"evento": ev["evento"], "fecha_evento": ev["fecha"],
+                        "color": ev["color"], "dias_restantes": dias, "sku": sku,
+                        "campana": cmp["nombre"], "stock_actual": stock,
+                        "demanda_proyectada": demanda_ev, "deficit": deficit,
+                        "deadline_produccion": deadline_prod, "semanas_para_producir": semanas_prod,
+                        "estado": estado, "multiplicador": ev["multiplicador"]})
+                if not campanas:
+                    top_skus = c.execute("SELECT sku, SUM(unidades_disponible) as stock FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock DESC LIMIT 3").fetchall()
+                    for s in top_skus:
+                        sku = s["sku"]
+                        if sku in skus_revisados: continue
+                        skus_revisados.add(sku)
+                        lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                        rotacion = lib_90 / 3.0
+                        demanda_ev = round(rotacion * ev["multiplicador"])
+                        deficit = max(0, demanda_ev - s["stock"])
+                        alertas.append({"evento": ev["evento"], "fecha_evento": ev["fecha"],
+                            "color": ev["color"], "dias_restantes": dias, "sku": sku,
+                            "campana": None, "stock_actual": s["stock"],
+                            "demanda_proyectada": demanda_ev, "deficit": deficit,
+                            "deadline_produccion": None, "semanas_para_producir": 0,
+                            "estado": "ok" if deficit == 0 else "advertencia",
+                            "multiplicador": ev["multiplicador"]})
+            alertas.sort(key=lambda x: (x["estado"] == "ok", x["dias_restantes"]))
+            criticos = [a for a in alertas if a["estado"] == "critico"]
+            resultado = {"titulo": "Análisis de Estacionalidad", "total_alertas": len(alertas),
+                "criticos": len(criticos), "alertas": alertas[:20],
+                "resumen": f"{len(criticos)} SKUs en estado crítico para eventos próximos."}
 
+        # ── Agente 2: Oportunidad ─────────────────────────────────────────────
+        elif agente == "oportunidad":
             stock_rows = c.execute("""
-                SELECT sku, SUM(unidades_disponible) as stock_total, MAX(precio_base) as precio_base
-                FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock_total DESC LIMIT 20
+                SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
+                FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock DESC LIMIT 15
             """).fetchall()
-
-            recomendaciones = []
+            recos = []
             for row in stock_rows:
-                sku = row["sku"]
-                stock = row["stock_total"]
-                precio = row["precio_base"] or 0
+                sku, stock, precio = row["sku"], row["stock"], row["precio"] or 0
+                lib_30 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace30)).fetchone()["t"]
+                lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                rotacion = lib_90 / 3.0
+                meses_cob = round(stock / rotacion, 1) if rotacion > 0 else 99
+                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
+                score = 0; razones = []
+                if meses_cob > 3: score += 1; razones.append(f"{meses_cob} meses de inventario")
+                if rotacion < 10 and stock > 50: score += 1; razones.append("baja rotación")
+                if shopify_30 == 0 and stock > 20: score += 1; razones.append("sin ventas Shopify en 30d")
+                if score > 0:
+                    recos.append({"sku": sku, "stock": stock, "precio": precio,
+                        "rotacion_mes": round(rotacion,1), "lib_30d": lib_30,
+                        "meses_cobertura": meses_cob, "shopify_30d": shopify_30,
+                        "score": score, "razones": razones,
+                        "accion": f"Campaña {'urgente' if score>=2 else 'recomendada'} para {sku}: {stock} uds. Canal: {'Shopify + Influencer' if shopify_30==0 else 'Influencer + Promo'}."})
+            recos.sort(key=lambda x: -x["score"])
+            resultado = {"titulo": "SKUs con Oportunidad de Campaña", "recomendaciones": recos[:10], "total": len(recos)}
 
-                lib_90 = c.execute("""
-                    SELECT COALESCE(SUM(unidades),0) FROM liberaciones
-                    WHERE sku=? AND creado_en >= ?
-                """, (sku, hace90)).fetchone()[0]
-
-                lib_30 = c.execute("""
-                    SELECT COALESCE(SUM(unidades),0) FROM liberaciones
-                    WHERE sku=? AND creado_en >= ?
-                """, (sku, hace30)).fetchone()[0]
-
-                # Ratio de rotación (unidades/mes en últimos 90d)
-                rotacion_mensual = round(lib_90 / 3, 1)
-                meses_inventario = round(stock / rotacion_mensual, 1) if rotacion_mensual > 0 else 99
-
-                # Score oportunidad: alto stock + baja rotación reciente
-                score = 0
-                razones = []
-                if stock > 500:
-                    score += 2
-                    razones.append(f"Stock alto ({int(stock)} uds)")
-                if meses_inventario > 3:
-                    score += 3
-                    razones.append(f"{meses_inventario} meses de inventario")
-                if lib_30 < lib_90 / 3 * 0.7:
-                    score += 2
-                    razones.append("Ventas cayendo vs promedio 90d")
-                if precio > 0 and stock * precio > 5000000:
-                    score += 2
-                    razones.append(f"Capital inmovilizado ${int(stock * precio):,}")
-
-                if score >= 3:
-                    recomendaciones.append({
-                        "sku": sku,
-                        "stock": int(stock),
-                        "precio": precio,
-                        "lib_30d": int(lib_30),
-                        "lib_90d": int(lib_90),
-                        "rotacion_mensual": rotacion_mensual,
-                        "meses_inventario": meses_inventario,
-                        "score": score,
-                        "razones": razones,
-                        "accion_sugerida": f"Campaña urgente para {sku}: {meses_inventario}m de stock. Canal recomendado: Influencer + Promo Digital."
-                    })
-
-            recomendaciones.sort(key=lambda x: x["score"], reverse=True)
-            resultado = {
-                "agente": "Oportunidad",
-                "titulo": "SKUs con oportunidad de impulso",
-                "fecha": datetime.now().isoformat(),
-                "recomendaciones": recomendaciones[:10],
-                "resumen": f"{len(recomendaciones)} SKUs identificados con oportunidad de campaña. "
-                           f"Prioridad máxima: {recomendaciones[0]['sku'] if recomendaciones else 'N/A'}"
-            }
-            _log_agente(c, "oportunidad", "scan_stock_liberaciones", resultado, u)
-
-        # ── Agente 2: ROI ────────────────────────────────────────────────────
+        # ── Agente 3: ROI ──────────────────────────────────────────────────────
         elif agente == "roi":
             campanas = c.execute("""
-                SELECT id, nombre, tipo, canal, presupuesto_gastado, resultado_ventas,
-                       resultado_unidades, objetivo_unidades,
-                       CASE WHEN presupuesto_gastado > 0
-                            THEN ROUND((resultado_ventas - presupuesto_gastado) / presupuesto_gastado * 100, 1)
-                            ELSE NULL END as roi_pct
-                FROM marketing_campanas
-                WHERE presupuesto_gastado > 0
-                ORDER BY roi_pct DESC NULLS LAST
+                SELECT id, nombre, canal, tipo, presupuesto, presupuesto_gastado,
+                       resultado_ventas, resultado_unidades, fecha_inicio, fecha_fin
+                FROM marketing_campanas WHERE presupuesto_gastado > 0
             """).fetchall()
+            analisis = []
+            for cp in campanas:
+                gastado = cp["presupuesto_gastado"] or 0
+                ventas  = cp["resultado_ventas"] or 0
+                roi = round((ventas - gastado) / gastado * 100, 1) if gastado > 0 else 0
+                analisis.append({**dict(cp), "roi_pct": roi,
+                    "estado_roi": "excelente" if roi >= 200 else ("bueno" if roi >= 50 else ("neutro" if roi >= 0 else "negativo"))})
+            analisis.sort(key=lambda x: -x["roi_pct"])
+            shopify_rev = c.execute("SELECT COALESCE(SUM(total),0) as t FROM animus_shopify_orders WHERE creado_en>=?", (hace30,)).fetchone()["t"]
+            resultado = {"titulo": "Análisis de ROI por Campaña", "campanas": analisis, "shopify_revenue_30d": shopify_rev}
 
-            campanas_data = []
-            for row in campanas:
-                r = dict(row)
-                inf_count = c.execute(
-                    "SELECT COUNT(*) FROM marketing_campana_influencer WHERE campana_id=?",
-                    (r["id"],)
-                ).fetchone()[0]
-                r["influencers"] = inf_count
-                campanas_data.append(r)
-
-            mejor = campanas_data[0] if campanas_data else None
-            peor = campanas_data[-1] if len(campanas_data) > 1 else None
-
-            total_invertido = sum(r["presupuesto_gastado"] for r in campanas_data)
-            total_ventas = sum(r["resultado_ventas"] or 0 for r in campanas_data)
-            roi_global = round((total_ventas - total_invertido) / total_invertido * 100, 1) if total_invertido > 0 else 0
-
-            recomendaciones = []
-            for r in campanas_data:
-                if r["roi_pct"] and r["roi_pct"] < 0:
-                    recomendaciones.append(f"Revisar campaña '{r['nombre']}': ROI negativo ({r['roi_pct']}%)")
-                elif r["roi_pct"] and r["roi_pct"] > 200:
-                    recomendaciones.append(f"Escalar campaña '{r['nombre']}': ROI excelente ({r['roi_pct']}%)")
-
-            resultado = {
-                "agente": "ROI",
-                "titulo": "Análisis de retorno por campaña",
-                "fecha": datetime.now().isoformat(),
-                "roi_global_pct": roi_global,
-                "total_invertido": total_invertido,
-                "total_ventas_atribuidas": total_ventas,
-                "campanas": campanas_data,
-                "mejor_campana": mejor["nombre"] if mejor and mejor.get("roi_pct") else "Sin datos",
-                "peor_campana": peor["nombre"] if peor and peor.get("roi_pct") else "Sin datos",
-                "recomendaciones": recomendaciones
-            }
-            _log_agente(c, "roi", "calcular_roi_campanas", resultado, u)
-
-        # ── Agente 3: Tendencias ─────────────────────────────────────────────
+        # ── Agente 4: Tendencias ───────────────────────────────────────────────
         elif agente == "tendencias":
-            hace90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-            hace180 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
-            hoy = datetime.now().strftime("%Y-%m-%d")
-
-            reciente = {r["sku"]: r["total"] for r in c.execute("""
-                SELECT sku, SUM(unidades) as total FROM liberaciones
-                WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
-            """, (hace90, hoy)).fetchall()}
-
-            anterior = {r["sku"]: r["total"] for r in c.execute("""
-                SELECT sku, SUM(unidades) as total FROM liberaciones
-                WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku
-            """, (hace180, hace90)).fetchall()}
-
+            hace180 = (hoy - timedelta(days=180)).strftime("%Y-%m-%d")
+            skus = c.execute("SELECT DISTINCT sku FROM liberaciones WHERE creado_en>=?", (hace180,)).fetchall()
             tendencias = []
-            for sku in set(list(reciente.keys()) + list(anterior.keys())):
-                rec = reciente.get(sku, 0)
-                ant = anterior.get(sku, 0)
-                pct = round((rec - ant) / ant * 100, 1) if ant > 0 else (100.0 if rec > 0 else 0.0)
-                tendencias.append({"sku": sku, "reciente_90d": rec, "anterior_90d": ant, "variacion_pct": pct})
-            tendencias.sort(key=lambda x: x["variacion_pct"], reverse=True)
+            for s in skus:
+                sku = s["sku"]
+                r = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                a = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=? AND creado_en<?", (sku, hace180, hace90)).fetchone()["t"]
+                if a > 0:
+                    cambio = round((r - a) / a * 100, 1)
+                    tendencias.append({"sku": sku, "reciente": r, "anterior": a, "cambio_pct": cambio,
+                        "tendencia": "alza" if cambio > 15 else ("baja" if cambio < -15 else "estable")})
+            tendencias.sort(key=lambda x: -abs(x["cambio_pct"]))
+            shopify_trend = _fmt_many(c.execute("""
+                SELECT strftime('%Y-%m', creado_en) as mes, SUM(total) as ventas, COUNT(*) as pedidos
+                FROM animus_shopify_orders GROUP BY mes ORDER BY mes DESC LIMIT 6
+            """).fetchall())
+            resultado = {"titulo": "Tendencias de Producto y Ventas", "tendencias_erp": tendencias[:10], "shopify_mensual": shopify_trend}
 
-            en_alza = [t for t in tendencias if t["variacion_pct"] > 20][:5]
-            en_caida = [t for t in tendencias if t["variacion_pct"] < -20][:5]
-            estables = [t for t in tendencias if abs(t["variacion_pct"]) <= 20][:5]
-
-            alertas = []
-            for t in en_alza:
-                alertas.append(f"SKU {t['sku']} subiendo {t['variacion_pct']}% — reforzar stock y marketing")
-            for t in en_caida:
-                alertas.append(f"SKU {t['sku']} bajando {t['variacion_pct']}% — campaña de reactivación recomendada")
-
-            resultado = {
-                "agente": "Tendencias",
-                "titulo": "Análisis de tendencias por SKU",
-                "fecha": datetime.now().isoformat(),
-                "en_alza": en_alza,
-                "en_caida": en_caida,
-                "estables": estables,
-                "alertas": alertas,
-                "total_skus_analizados": len(tendencias)
-            }
-            _log_agente(c, "tendencias", "analizar_liberaciones", resultado, u)
-
-        # ── Agente 4: Brief ──────────────────────────────────────────────────
+        # ── Agente 5: Brief ────────────────────────────────────────────────────
         elif agente == "brief":
             params = request.get_json() or {}
             campana_id = params.get("campana_id")
             campana = None
             if campana_id:
                 row = c.execute("SELECT * FROM marketing_campanas WHERE id=?", (campana_id,)).fetchone()
-                if row:
-                    campana = dict(row)
-
-            # Top SKUs recientes para sugerir en brief
-            hace60 = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
-            top_skus = c.execute("""
-                SELECT sku, SUM(unidades) as total FROM liberaciones
-                WHERE creado_en >= ? AND sku IS NOT NULL
+                if row: campana = dict(row)
+            top = c.execute("""
+                SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en>=?
                 GROUP BY sku ORDER BY total DESC LIMIT 5
-            """, (hace60,)).fetchall()
-            top_skus_list = [r["sku"] for r in top_skus]
+            """, (hace90,)).fetchall()
+            briefs = []
+            for t in top:
+                sku = t["sku"]
+                precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()["p"] or 0
+                ig_mentions = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE descripcion LIKE ?", (f'%{sku}%',)).fetchone()["n"]
+                briefs.append({"sku": sku, "uds_90d": t["total"], "precio": precio, "ig_menciones": ig_mentions,
+                    "brief": f"SKU {sku}: {t['total']} uds liberadas en 90d. Canal recomendado: {'Instagram Reels' if ig_mentions==0 else 'Instagram + stories'}. Claim: activos para piel latina. Formato: video 30s."})
+            resultado = {"titulo": "Brief de Contenido por SKU Top", "briefs": briefs, "campana": campana}
 
-            nombre_campana = campana["nombre"] if campana else "Nueva Campaña"
-            sku_objetivo = campana["sku_objetivo"] if campana else ", ".join(top_skus_list[:3])
-            presupuesto = campana["presupuesto"] if campana else 0
-            fecha_inicio = campana["fecha_inicio"] if campana else datetime.now().strftime("%Y-%m-%d")
-
-            brief = {
-                "titulo": f"Brief Campaña: {nombre_campana}",
-                "marca": "ÁNIMUS Lab",
-                "concepto": "Skincare científico para piel latina — belleza auténtica, respaldada por ciencia",
-                "productos_objetivo": sku_objetivo,
-                "objetivo_principal": "Generar conversiones directas y aumentar reconocimiento de marca",
-                "kpis": ["Tasa de conversión > 2%", "Alcance mínimo 50,000", "Engagement rate > 3.5%", "CPM < $15,000 COP"],
-                "mensajes_clave": [
-                    "Formulación dermatológicamente probada",
-                    "Ingredientes activos de alta concentración",
-                    "Desarrollado para el clima y la piel latinoamericana",
-                    "Sin parabenos, sin colorantes artificiales"
-                ],
-                "entregables": ["1 Reel (30-60s)", "3 Stories (product demo)", "1 Post carrusel", "1 Foto lifestyle"],
-                "lineamientos_creativos": [
-                    "Mostrar textura y aplicación del producto",
-                    "Resultados antes/después (reales, no editados)",
-                    "Tono: profesional pero cercano",
-                    "Colores: paleta nude/blanco/dorado de ÁNIMUS"
-                ],
-                "restricciones": [
-                    "No comparar con competencia por nombre",
-                    "No hacer claims médicos",
-                    "Incluir #AnimalFree #Dermatologicamente si aplica"
-                ],
-                "hashtags_sugeridos": ["#ANIMUSLab", "#SkincareColombiano", "#PielLatina", "#SkincareCientifico"],
-                "presupuesto_indicativo": f"${int(presupuesto):,} COP" if presupuesto > 0 else "Por definir",
-                "fecha_inicio": fecha_inicio,
-                "aprobacion_contenido": "Todo contenido debe ser aprobado 48h antes de publicar",
-                "contacto": "marketing@animuslab.com"
-            }
-
-            resultado = {
-                "agente": "Brief",
-                "titulo": "Brief para influencer generado",
-                "fecha": datetime.now().isoformat(),
-                "brief": brief,
-                "campana_id": campana_id
-            }
-            _log_agente(c, "brief", f"generar_brief_campana_{campana_id}", resultado, u)
-
-        # ── Agente 5: Presupuesto ────────────────────────────────────────────
-        elif agente == "presupuesto":
-            params = request.get_json() or {}
-            presupuesto_total = params.get("presupuesto_total", 5000000)
-
-            # Calcular ROI histórico por canal para distribuir
-            canales = c.execute("""
-                SELECT canal,
-                       COUNT(*) as campanas,
-                       AVG(CASE WHEN presupuesto_gastado > 0
-                                THEN (resultado_ventas - presupuesto_gastado) / presupuesto_gastado * 100
-                                ELSE NULL END) as roi_promedio,
-                       SUM(presupuesto_gastado) as total_invertido,
-                       SUM(resultado_ventas) as total_ventas
-                FROM marketing_campanas
-                WHERE canal IS NOT NULL AND canal != '' AND presupuesto_gastado > 0
-                GROUP BY canal
+        # ── Agente 6: Pricing ──────────────────────────────────────────────────
+        elif agente == "pricing":
+            stock_rows = c.execute("""
+                SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
+                FROM stock_pt WHERE estado='Disponible' AND precio_base > 0 GROUP BY sku
             """).fetchall()
+            propuestas = []
+            for row in stock_rows:
+                sku, stock, precio = row["sku"], row["stock"], row["precio"]
+                lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                rotacion = lib_90 / 3.0
+                meses_cob = round(stock / rotacion, 1) if rotacion > 0 else 99
+                precio_costo_aprox = precio * 0.35
+                margen_actual = ((precio - precio_costo_aprox) / precio) * 100
+                max_dto_seguro = int(max(0, margen_actual - 40))
+                if meses_cob > 4 and max_dto_seguro >= 5:
+                    propuestas.append({"sku": sku, "stock": stock, "precio_normal": precio,
+                        "max_descuento_pct": max_dto_seguro,
+                        "precio_promo": round(precio * (1 - max_dto_seguro/100), 0),
+                        "meses_cobertura": meses_cob,
+                        "razon": f"{meses_cob} meses de inventario → descuento del {max_dto_seguro}% mantiene margen ≥40%"})
+            propuestas.sort(key=lambda x: -x["meses_cobertura"])
+            resultado = {"titulo": "Propuestas de Pricing y Promociones", "propuestas": propuestas[:8]}
 
-            canales_data = [dict(r) for r in canales]
-            # Si no hay datos históricos, usar distribución por defecto
-            if not canales_data:
-                canales_data = [
-                    {"canal": "Influencer Instagram", "roi_promedio": 180, "recomendacion_pct": 40},
-                    {"canal": "Influencer TikTok",    "roi_promedio": 220, "recomendacion_pct": 30},
-                    {"canal": "Email Marketing",      "roi_promedio": 350, "recomendacion_pct": 15},
-                    {"canal": "Pauta Digital",        "roi_promedio": 120, "recomendacion_pct": 15},
-                ]
-                distribucion = canales_data
-            else:
-                # Distribuir proporcionalmente al ROI promedio
-                roi_total = sum(max(r.get("roi_promedio") or 0, 0) for r in canales_data)
-                for r in canales_data:
-                    roi = max(r.get("roi_promedio") or 0, 0)
-                    r["recomendacion_pct"] = round(roi / roi_total * 100) if roi_total > 0 else 0
-                distribucion = canales_data
+        # ── Agente 7: Reorden B2B ──────────────────────────────────────────────
+        elif agente == "reorden":
+            clientes_b2b = c.execute("""
+                SELECT email, COUNT(*) as pedidos, SUM(total) as revenue,
+                       MIN(creado_en) as primer_pedido, MAX(creado_en) as ultimo_pedido,
+                       AVG(total) as ticket_promedio
+                FROM animus_shopify_orders GROUP BY email HAVING pedidos >= 2
+                ORDER BY revenue DESC LIMIT 10
+            """).fetchall()
+            predicciones = []
+            for cl in clientes_b2b:
+                primer = cl["primer_pedido"]; ultimo = cl["ultimo_pedido"]; pedidos = cl["pedidos"]
+                if primer and ultimo and primer != ultimo:
+                    d1 = datetime.strptime(primer[:10], "%Y-%m-%d")
+                    d2 = datetime.strptime(ultimo[:10], "%Y-%m-%d")
+                    intervalo_dias = (d2 - d1).days / max(pedidos - 1, 1)
+                    proximo = (d2 + timedelta(days=intervalo_dias)).strftime("%Y-%m-%d")
+                    dias_para_reorden = (datetime.strptime(proximo, "%Y-%m-%d") - hoy).days
+                    predicciones.append({"email": cl["email"], "pedidos": pedidos,
+                        "revenue_total": round(cl["revenue"], 0),
+                        "ticket_promedio": round(cl["ticket_promedio"], 0),
+                        "intervalo_dias": round(intervalo_dias),
+                        "ultimo_pedido": ultimo[:10],
+                        "proximo_reorden_estimado": proximo,
+                        "dias_para_reorden": dias_para_reorden,
+                        "urgencia": "hoy" if dias_para_reorden <= 0 else ("esta semana" if dias_para_reorden <= 7 else ("este mes" if dias_para_reorden <= 30 else "próximos meses"))})
+            predicciones.sort(key=lambda x: x["dias_para_reorden"])
+            resultado = {"titulo": "Predicción de Reórdenes B2B", "predicciones": predicciones, "total": len(predicciones)}
 
-            # Asignar montos
-            for r in distribucion:
-                r["monto_sugerido"] = round(presupuesto_total * r["recomendacion_pct"] / 100, 0)
+        # ── Agente 8: Canibalización ───────────────────────────────────────────
+        elif agente == "canibal":
+            activas = list(c.execute("""
+                SELECT id, nombre, canal, sku_objetivo, fecha_inicio, fecha_fin
+                FROM marketing_campanas WHERE estado IN ('Activa','Planificada')
+            """).fetchall())
+            conflictos = []
+            for i in range(len(activas)):
+                for j in range(i+1, len(activas)):
+                    a, b = activas[i], activas[j]
+                    mismo_sku = a["sku_objetivo"] and b["sku_objetivo"] and a["sku_objetivo"] == b["sku_objetivo"]
+                    mismo_canal = a["canal"] == b["canal"]
+                    try:
+                        ai, af = a["fecha_inicio"] or "9999", a["fecha_fin"] or "9999"
+                        bi, bf = b["fecha_inicio"] or "9999", b["fecha_fin"] or "9999"
+                        solapan = ai <= bf and bi <= af
+                    except: solapan = False
+                    if solapan and (mismo_canal or mismo_sku):
+                        conflictos.append({"campana_a": a["nombre"], "campana_b": b["nombre"],
+                            "conflicto": "Mismo SKU" if mismo_sku else "Mismo canal",
+                            "canal": a["canal"], "sku": a["sku_objetivo"],
+                            "recomendacion": "Escalonar al menos 2 semanas entre campañas."})
+            resultado = {"titulo": "Detección de Canibalización", "conflictos": conflictos, "campanas_revisadas": len(activas)}
 
-            # Proyección de ventas esperadas
-            roi_promedio_global = sum(
-                (r.get("roi_promedio") or 0) * r["recomendacion_pct"] / 100
-                for r in distribucion
-            )
-            ventas_proyectadas = round(presupuesto_total * (1 + roi_promedio_global / 100), 0)
+        # ── Agente 9: Contenido Auto ───────────────────────────────────────────
+        elif agente == "contenido_auto":
+            top_skus = c.execute("""
+                SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en>=?
+                GROUP BY sku ORDER BY total DESC LIMIT 3
+            """, (hace30,)).fetchall()
+            generados = []
+            for s in top_skus:
+                sku = s["sku"]
+                precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()["p"] or 0
+                caption = f"✨ {sku} — tu aliado para una piel que brilla.\n\n🧬 Activos de última generación para piel latina.\n💛 ÁNIMUS Lab | Ciencia para tu piel\n.\n#AnimusLab #SkincareLatino #PielLatina"
+                generados.append({"sku": sku, "uds_30d": s["total"], "precio": precio,
+                    "caption_instagram": caption,
+                    "asunto_email": f"{sku} — Tu piel lo estaba esperando",
+                    "texto_whatsapp": f"Hola\! Te cuento sobre {sku} de ÁNIMUS Lab. ¿Te interesa? 🧴✨"})
+            resultado = {"titulo": "Contenido Auto-Generado para Top SKUs", "piezas": generados}
 
-            resultado = {
-                "agente": "Presupuesto",
-                "titulo": "Recomendación de distribución de presupuesto",
-                "fecha": datetime.now().isoformat(),
-                "presupuesto_total": presupuesto_total,
-                "distribucion": distribucion,
-                "ventas_proyectadas": ventas_proyectadas,
-                "roi_proyectado_pct": round(roi_promedio_global, 1),
-                "notas": [
-                    "Distribución basada en ROI histórico de campañas anteriores",
-                    "Email marketing ofrece mejor ROI si la base de datos está activa",
-                    "Influencers TikTok muestran mejor engagement en target 18-28",
-                    "Reservar 10% como fondo de contingencia para oportunidades emergentes"
-                ]
-            }
-            _log_agente(c, "presupuesto", f"calcular_distribucion_{presupuesto_total}", resultado, u)
+        # ── Agente 10: Alerta Stock ────────────────────────────────────────────
+        elif agente == "alerta_stock":
+            stock_rows = c.execute("""
+                SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
+                FROM stock_pt WHERE estado='Disponible' GROUP BY sku
+            """).fetchall()
+            alertas = []
+            for row in stock_rows:
+                sku, stock, precio = row["sku"], row["stock"], row["precio"] or 0
+                lib_30 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace30)).fetchone()["t"]
+                rotacion = lib_30
+                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
+                demanda_total = rotacion + shopify_30
+                dias_real = round(stock / (demanda_total / 30.0), 0) if demanda_total > 0 else 999
+                nivel = "critico" if dias_real <= 7 else ("advertencia" if dias_real <= 21 else "ok")
+                if nivel != "ok":
+                    alertas.append({"sku": sku, "stock": stock, "dias_cobertura_real": dias_real,
+                        "rotacion_erp": rotacion, "demanda_shopify_30d": shopify_30, "nivel": nivel,
+                        "accion": f"{'REPOSICIÓN URGENTE' if nivel=='critico' else 'Planificar producción'}: {sku} tiene {dias_real} días de cobertura."})
+            alertas.sort(key=lambda x: x["dias_cobertura_real"])
+            resultado = {"titulo": "Alertas de Stock vs Demanda Real", "alertas": alertas, "total": len(alertas)}
 
+        # Enriquecer con Claude IA
+        try:
+            analisis = _call_claude(conn, agente, resultado)
+            if analisis:
+                resultado["analisis_ia"] = analisis
+        except Exception:
+            pass
+
+        # Guardar log
+        c.execute("""INSERT INTO marketing_agentes_log(agente,accion,resultado,ejecutado_por)
+            VALUES(?,?,?,?)""",
+            (agente.capitalize(), "Ejecutado",
+             json.dumps(resultado, ensure_ascii=False)[:2000], u))
         conn.commit()
+        resultado["agente"] = agente
+        resultado["fecha"] = datetime.now().isoformat()
         return jsonify(resultado)
+
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
     finally:
         conn.close()
 

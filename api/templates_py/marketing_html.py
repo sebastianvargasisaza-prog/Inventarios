@@ -180,6 +180,17 @@ textarea{resize:vertical;min-height:80px;}
     <div class="kpi-card"><div class="kpi-label">Campañas</div><div class="kpi-val">—</div></div>
   </div>
 
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 20px;">
+    <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Integraciones</span>
+    <div id="pill-shopify" class="platform-pill pill-off">🛍️ Shopify</div>
+    <div id="pill-ghl" class="platform-pill pill-off">📋 GHL</div>
+    <div id="pill-ig" class="platform-pill pill-off">📸 Instagram</div>
+    <button id="btn-sync-shopify" class="btn btn-outline btn-sm" onclick="syncPlatform('shopify')" style="margin-left:8px;">↻ Sync Shopify</button>
+    <button id="btn-sync-ghl" class="btn btn-outline btn-sm" onclick="syncPlatform('ghl')">↻ Sync GHL</button>
+    <button id="btn-sync-ig" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ Sync IG</button>
+    <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
+  </div>
+
   <div class="grid2" style="margin-bottom:20px;">
     <div class="card">
       <div class="card-hdr"><span class="card-title">&#x1F4E2; Campañas Activas</span></div>
@@ -298,25 +309,35 @@ textarea{resize:vertical;min-height:80px;}
 <!-- TAB: AGENTES IA -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-agentes" class="tab-panel">
-  <div class="page-title">&#x1F916; Agentes IA Marketing</div>
-  <div class="page-sub">5 agentes inteligentes que analizan datos internos y generan recomendaciones accionables.</div>
+  <div class="page-title">&#x1F916; Agentes IA — ÁNIMUS Lab</div>
+  <div class="page-sub">10 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
 
   <div class="agents-grid">
 
     <div class="agent-card">
+      <div class="agent-icon">&#x1F4C6;</div>
+      <div class="agent-name">Estacionalidad</div>
+      <div class="agent-desc">Cruza stock PT vs demanda proyectada para eventos del calendario cosmético (Día de la Madre, Black Friday...). Detecta déficits y calcula deadlines de producción.</div>
+      <button class="btn-agent" id="btn-estacionalidad" onclick="runAgent('estacionalidad')">
+        <span>&#x25B6; Analizar estacionalidad</span>
+      </button>
+      <div class="agent-result" id="result-estacionalidad"></div>
+    </div>
+
+    <div class="agent-card">
       <div class="agent-icon">&#x1F50D;</div>
-      <div class="agent-name">Agente Oportunidad</div>
-      <div class="agent-desc">Escanea el stock de PT y las liberaciones recientes para identificar SKUs con alto inventario y baja rotación — candidatos urgentes para una campaña.</div>
+      <div class="agent-name">Oportunidad</div>
+      <div class="agent-desc">Detecta SKUs con alto stock, baja rotación o sin ventas en Shopify. Propone acciones de campaña urgentes o recomendadas con canal sugerido.</div>
       <button class="btn-agent" id="btn-oportunidad" onclick="runAgent('oportunidad')">
-        <span>&#x25B6; Ejecutar análisis</span>
+        <span>&#x25B6; Detectar oportunidades</span>
       </button>
       <div class="agent-result" id="result-oportunidad"></div>
     </div>
 
     <div class="agent-card">
       <div class="agent-icon">&#x1F4B0;</div>
-      <div class="agent-name">Agente ROI</div>
-      <div class="agent-desc">Calcula el ROI real de cada campaña y cada influencer. Identifica qué canal entrega más por peso invertido y qué campañas deben escalarse o frenarse.</div>
+      <div class="agent-name">ROI</div>
+      <div class="agent-desc">Calcula el ROI real por campaña cruzando inversión vs ventas atribuidas. Incluye revenue Shopify de los últimos 30 días.</div>
       <button class="btn-agent" id="btn-roi" onclick="runAgent('roi')">
         <span>&#x25B6; Calcular ROI</span>
       </button>
@@ -325,18 +346,18 @@ textarea{resize:vertical;min-height:80px;}
 
     <div class="agent-card">
       <div class="agent-icon">&#x1F4C8;</div>
-      <div class="agent-name">Agente Tendencias</div>
-      <div class="agent-desc">Analiza el patrón de liberaciones por SKU en los últimos 6 meses para detectar qué productos están en alza, cuáles están cayendo y cuáles son estables.</div>
+      <div class="agent-name">Tendencias</div>
+      <div class="agent-desc">Compara liberaciones ERP e histórico Shopify mes a mes. Identifica SKUs en alza, en caída y estables con variación porcentual.</div>
       <button class="btn-agent" id="btn-tendencias" onclick="runAgent('tendencias')">
-        <span>&#x25B6; Analizar tendencias</span>
+        <span>&#x25B6; Ver tendencias</span>
       </button>
       <div class="agent-result" id="result-tendencias"></div>
     </div>
 
     <div class="agent-card">
       <div class="agent-icon">&#x1F4CB;</div>
-      <div class="agent-name">Agente Brief</div>
-      <div class="agent-desc">Genera automáticamente un brief completo para influencers: mensajes clave, entregables, hashtags, lineamientos creativos y restricciones de marca ÁNIMUS Lab.</div>
+      <div class="agent-name">Brief de Contenido</div>
+      <div class="agent-desc">Genera briefs por SKU top: canal recomendado, claim científico, formato, menciones en Instagram. Listo para enviar a influencers.</div>
       <div style="margin-bottom:10px;">
         <label style="font-size:11px;color:#64748b;">Campaña (opcional)</label>
         <select id="brief-campana-sel" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;width:100%;margin-top:4px;">
@@ -350,18 +371,53 @@ textarea{resize:vertical;min-height:80px;}
     </div>
 
     <div class="agent-card">
-      <div class="agent-icon">&#x1F4CA;</div>
-      <div class="agent-name">Agente Presupuesto</div>
-      <div class="agent-desc">Basándose en el ROI histórico por canal, recomienda cómo distribuir el presupuesto de tu próxima campaña y proyecta las ventas esperadas.</div>
-      <div style="margin-bottom:10px;">
-        <label style="font-size:11px;color:#64748b;">Presupuesto total (COP)</label>
-        <input type="number" id="presupuesto-input" value="5000000" min="0" step="100000"
-               style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;width:100%;margin-top:4px;">
-      </div>
-      <button class="btn-agent" id="btn-presupuesto" onclick="runAgent('presupuesto')">
-        <span>&#x25B6; Calcular distribución</span>
+      <div class="agent-icon">&#x1F3F7;&#xFE0F;</div>
+      <div class="agent-name">Pricing</div>
+      <div class="agent-desc">Calcula el descuento máximo seguro por SKU manteniendo margen ≥40%. Para SKUs con >4 meses de cobertura — activa promociones sin destruir rentabilidad.</div>
+      <button class="btn-agent" id="btn-pricing" onclick="runAgent('pricing')">
+        <span>&#x25B6; Calcular precios promo</span>
       </button>
-      <div class="agent-result" id="result-presupuesto"></div>
+      <div class="agent-result" id="result-pricing"></div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-icon">&#x1F504;</div>
+      <div class="agent-name">Reorden B2B</div>
+      <div class="agent-desc">Analiza patrones de compra de clientes B2B en Shopify. Predice cuándo hará su próximo pedido cada cliente y clasifica urgencia (hoy / esta semana / este mes).</div>
+      <button class="btn-agent" id="btn-reorden" onclick="runAgent('reorden')">
+        <span>&#x25B6; Predecir reórdenes</span>
+      </button>
+      <div class="agent-result" id="result-reorden"></div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-icon">&#x26A0;&#xFE0F;</div>
+      <div class="agent-name">Canibalización</div>
+      <div class="agent-desc">Detecta campañas activas que compiten por el mismo SKU o canal en fechas solapadas. Propone calendario optimizado para evitar conflictos.</div>
+      <button class="btn-agent" id="btn-canibal" onclick="runAgent('canibal')">
+        <span>&#x25B6; Detectar conflictos</span>
+      </button>
+      <div class="agent-result" id="result-canibal"></div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-icon">&#x270D;&#xFE0F;</div>
+      <div class="agent-name">Contenido Auto</div>
+      <div class="agent-desc">Genera captions para Instagram, asuntos de email y textos de WhatsApp para los 3 SKUs con mayor rotación del último mes.</div>
+      <button class="btn-agent" id="btn-contenido_auto" onclick="runAgent('contenido_auto')">
+        <span>&#x25B6; Generar contenido</span>
+      </button>
+      <div class="agent-result" id="result-contenido_auto"></div>
+    </div>
+
+    <div class="agent-card">
+      <div class="agent-icon">&#x1F6A8;</div>
+      <div class="agent-name">Alerta Stock</div>
+      <div class="agent-desc">Cruza stock ERP + demanda Shopify para detectar SKUs con cobertura crítica (≤7d) o en advertencia (≤21d). Dispara alertas de reposición urgente.</div>
+      <button class="btn-agent" id="btn-alerta_stock" onclick="runAgent('alerta_stock')">
+        <span>&#x25B6; Ver alertas stock</span>
+      </button>
+      <div class="agent-result" id="result-alerta_stock"></div>
     </div>
 
   </div>
@@ -655,7 +711,7 @@ function loadTab(name) {
   else if(name==='campanas') loadCampanas();
   else if(name==='influencers') loadInfluencers();
   else if(name==='contenido') loadContenido();
-  else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); }
+  else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
   else if(name==='analytics') loadAnalytics();
 }
 
@@ -663,6 +719,7 @@ function loadTab(name) {
 // DASHBOARD
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadDashboard() {
+  loadConnections();
   const data = await fetch('/api/marketing/dashboard').then(r=>r.json());
   const k = data.kpis;
   document.getElementById('dash-fecha').textContent = 'Actualizado: '+new Date().toLocaleString('es-CO');
@@ -1029,9 +1086,54 @@ async function loadInfluencersForSelect(selId) {
 // ──────────────────────────────────────────────────────────────────────────────
 // AGENTES IA
 // ──────────────────────────────────────────────────────────────────────────────
+const AGENT_LABELS = {
+  estacionalidad: 'Analizar estacionalidad', oportunidad: 'Detectar oportunidades',
+  roi: 'Calcular ROI', tendencias: 'Ver tendencias', brief: 'Generar brief',
+  pricing: 'Calcular precios promo', reorden: 'Predecir reórdenes',
+  canibal: 'Detectar conflictos', contenido_auto: 'Generar contenido',
+  alerta_stock: 'Ver alertas stock'
+};
+
+async function syncPlatform(platform) {
+  const btn = document.getElementById('btn-sync-'+platform);
+  const status = document.getElementById('sync-status');
+  btn.disabled = true; btn.textContent = 'Sincronizando...';
+  status.textContent = '';
+  try {
+    const resp = await fetch(`/api/marketing/sync/${platform}`, {method:'POST'});
+    const data = await resp.json();
+    if(data.ok) {
+      status.style.color = '#34d399';
+      status.textContent = `✓ ${platform}: ${data.synced} registros sincronizados`;
+      loadConnections();
+    } else {
+      status.style.color = '#f87171';
+      status.textContent = data.error || 'Error al sincronizar';
+    }
+  } catch(e) {
+    status.style.color = '#f87171';
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '↻ Sync ' + (platform==='instagram'?'IG':platform.charAt(0).toUpperCase()+platform.slice(1));
+  }
+}
+
+async function loadConnections() {
+  try {
+    const data = await fetch('/api/marketing/connections').then(r=>r.json());
+    const conn = data.connected || {};
+    [['shopify','shopify'],['ghl','ghl'],['instagram','ig']].forEach(([k,pid])=>{
+      const el = document.getElementById('pill-'+pid);
+      if(!el) return;
+      el.className = 'platform-pill ' + (conn[k] ? 'pill-'+pid : 'pill-off');
+    });
+  } catch(e) {}
+}
+
 async function runAgent(agente) {
   const btn = document.getElementById('btn-'+agente);
   const resultDiv = document.getElementById('result-'+agente);
+  if(!btn||!resultDiv) return;
   btn.classList.add('running');
   btn.innerHTML = '<span class="spin"></span> Ejecutando...';
   resultDiv.classList.remove('show');
@@ -1040,8 +1142,6 @@ async function runAgent(agente) {
   if(agente==='brief') {
     const sel = document.getElementById('brief-campana-sel');
     if(sel && sel.value) body.campana_id = parseInt(sel.value);
-  } else if(agente==='presupuesto') {
-    body.presupuesto_total = parseFloat(document.getElementById('presupuesto-input').value)||5000000;
   }
 
   try {
@@ -1049,79 +1149,180 @@ async function runAgent(agente) {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
     });
     const data = await resp.json();
-    resultDiv.innerHTML = '<pre>'+formatAgentResult(agente, data)+'</pre>';
+    if(data.error) {
+      resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${data.error}</pre>`;
+    } else {
+      resultDiv.innerHTML = formatAgentResult(agente, data);
+    }
     resultDiv.classList.add('show');
     loadAgentLog();
   } catch(e) {
-    resultDiv.innerHTML = '<pre style="color:#f87171;">Error: '+e.message+'</pre>';
+    resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${e.message}</pre>`;
     resultDiv.classList.add('show');
   } finally {
     btn.classList.remove('running');
-    btn.innerHTML = '<span>&#x25B6; '+(agente==='oportunidad'?'Ejecutar análisis':agente==='roi'?'Calcular ROI':agente==='tendencias'?'Analizar tendencias':agente==='brief'?'Generar brief':'Calcular distribución')+'</span>';
+    btn.innerHTML = `<span>&#x25B6; ${AGENT_LABELS[agente]||agente}</span>`;
   }
 }
 
+function fmtIA(data) {
+  if(!data.analisis_ia) return '';
+  return `<div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:10px">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span style="font-size:15px">🤖</span>
+      <span style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
+    </div>
+    <div style="font-size:13px;color:#e2e8f0;line-height:1.7;white-space:pre-line">${data.analisis_ia}</div>
+  </div>`;
+}
+
 function formatAgentResult(agente, data) {
-  if(agente==='oportunidad') {
-    if(!data.recomendaciones||!data.recomendaciones.length) return '✅ Sin SKUs con oportunidad crítica identificados.';
-    let out = `🎯 ${data.titulo}\n${'─'.repeat(40)}\n`;
-    out += `📊 ${data.resumen}\n\n`;
-    data.recomendaciones.forEach((r,i)=>{
-      out += `${i+1}. ${r.sku} — Score: ${r.score}/9\n`;
-      out += `   Stock: ${fmt(r.stock)} uds | Rotación: ${r.rotacion_mensual}/mes | ${r.meses_inventario}m inventario\n`;
-      out += `   Razones: ${r.razones.join(', ')}\n`;
-      out += `   ➜ ${r.accion_sugerida}\n\n`;
-    });
-    return out;
+  let out = '';
+
+  if(agente==='estacionalidad') {
+    if(!data.alertas||!data.alertas.length) { out='✅ Sin alertas de estacionalidad en los próximos 120 días.'; }
+    else {
+      out += `📅 ${data.titulo}\n${'─'.repeat(40)}\n`;
+      out += `Total alertas: ${data.total_alertas} | Críticos: ${data.criticos}\n\n`;
+      data.alertas.forEach(a=>{
+        const icon = a.estado==='critico'?'🔴':a.estado==='advertencia'?'🟡':'🟢';
+        out += `${icon} ${a.evento} (${a.fecha_evento}) — ${a.dias_restantes}d\n`;
+        out += `   SKU: ${a.sku} | Stock: ${fmt(a.stock_actual)} | Demanda: ${fmt(a.demanda_proyectada)}\n`;
+        if(a.deficit>0) out += `   Déficit: ${fmt(a.deficit)} uds | Deadline prod: ${a.deadline_produccion||'—'}\n`;
+        out += '\n';
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
   }
+
+  if(agente==='oportunidad') {
+    if(!data.recomendaciones||!data.recomendaciones.length) { out='✅ Sin SKUs con oportunidad crítica identificados.'; }
+    else {
+      out += `🎯 ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.recomendaciones.forEach((r,i)=>{
+        out += `${i+1}. ${r.sku} — Score: ${r.score}\n`;
+        out += `   Stock: ${fmt(r.stock)} uds | Rotación: ${r.rotacion_mes}/mes | ${r.meses_cobertura}m inventario\n`;
+        out += `   Razones: ${r.razones.join(', ')}\n`;
+        out += `   ➜ ${r.accion}\n\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
   if(agente==='roi') {
-    let out = `💰 ${data.titulo}\n${'─'.repeat(40)}\n`;
-    out += `ROI Global: ${data.roi_global_pct>0?'+':''}${data.roi_global_pct}% | Invertido: ${fmtM(data.total_invertido)} | Ventas: ${fmtM(data.total_ventas_atribuidas)}\n\n`;
+    out += `💰 ${data.titulo}\n${'─'.repeat(40)}\n`;
+    out += `Shopify revenue 30d: ${fmtM(data.shopify_revenue_30d||0)}\n\n`;
     if(data.campanas&&data.campanas.length) {
       out += 'CAMPAÑAS:\n';
       data.campanas.forEach(c=>{
-        out += `  • ${c.nombre}: ROI ${c.roi_pct!==null?c.roi_pct+'%':'sin datos'} | ${fmtM(c.presupuesto_gastado)} → ${fmtM(c.resultado_ventas)}\n`;
+        const icon = c.estado_roi==='excelente'?'🟢':c.estado_roi==='bueno'?'🟡':'🔴';
+        out += `  ${icon} ${c.nombre}: ROI ${c.roi_pct}% | ${fmtM(c.presupuesto_gastado)} → ${fmtM(c.resultado_ventas)}\n`;
+      });
+    } else out += 'Sin campañas con inversión registrada.\n';
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
+  if(agente==='tendencias') {
+    out += `📈 ${data.titulo}\n${'─'.repeat(40)}\n`;
+    if(data.tendencias_erp&&data.tendencias_erp.length) {
+      out += 'ERP — TOP VARIACIONES:\n';
+      data.tendencias_erp.forEach(t=>{
+        const icon = t.tendencia==='alza'?'🟢':t.tendencia==='baja'?'🔴':'⚪';
+        out += `  ${icon} ${t.sku}: ${t.cambio_pct>0?'+':''}${t.cambio_pct}% (${t.reciente} vs ${t.anterior} uds)\n`;
       });
     }
-    if(data.recomendaciones&&data.recomendaciones.length) {
-      out += '\n⚠️ ACCIONES:\n'+data.recomendaciones.map(r=>'  • '+r).join('\n');
+    if(data.shopify_mensual&&data.shopify_mensual.length) {
+      out += '\nSHOPIFY MENSUAL:\n';
+      data.shopify_mensual.forEach(m=>out+=`  ${m.mes}: ${fmtM(m.ventas)} (${m.pedidos} pedidos)\n`);
     }
-    return out;
+    return `<pre>${out}</pre>${fmtIA(data)}`;
   }
-  if(agente==='tendencias') {
-    let out = `📈 ${data.titulo}\n${'─'.repeat(40)}\n`;
-    out += `Total SKUs analizados: ${data.total_skus_analizados}\n\n`;
-    if(data.en_alza.length) { out += '🟢 EN ALZA:\n'; data.en_alza.forEach(t=>out+=`  • ${t.sku}: +${t.variacion_pct}% (${t.reciente_90d} vs ${t.anterior_90d} uds)\n`); }
-    if(data.en_caida.length) { out += '\n🔴 EN CAÍDA:\n'; data.en_caida.forEach(t=>out+=`  • ${t.sku}: ${t.variacion_pct}% (${t.reciente_90d} vs ${t.anterior_90d} uds)\n`); }
-    if(data.alertas.length) { out += '\n⚠️ ALERTAS:\n'+data.alertas.map(a=>'  • '+a).join('\n'); }
-    return out;
-  }
+
   if(agente==='brief') {
-    const b = data.brief;
-    let out = `📋 ${b.titulo}\n${'─'.repeat(40)}\n`;
-    out += `Marca: ${b.marca}\nConcepto: ${b.concepto}\n`;
-    out += `Productos objetivo: ${b.productos_objetivo}\n`;
-    out += `Presupuesto: ${b.presupuesto_indicativo}\n\n`;
-    out += `MENSAJES CLAVE:\n${b.mensajes_clave.map(m=>'  • '+m).join('\n')}\n\n`;
-    out += `ENTREGABLES:\n${b.entregables.map(e=>'  • '+e).join('\n')}\n\n`;
-    out += `KPIs:\n${b.kpis.map(k=>'  • '+k).join('\n')}\n\n`;
-    out += `HASHTAGS: ${b.hashtags_sugeridos.join(' ')}\n`;
-    out += `\nAprobación: ${b.aprobacion_contenido}\nContacto: ${b.contacto}`;
-    return out;
+    if(!data.briefs||!data.briefs.length) { out='Sin SKUs con liberaciones recientes.'; }
+    else {
+      out += `📋 ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.briefs.forEach(b=>{
+        out += `\nSKU: ${b.sku} (${fmt(b.uds_90d)} uds / 90d)\n`;
+        out += `Precio: ${fmtM(b.precio)} | Menciones IG: ${b.ig_menciones}\n`;
+        out += `Brief: ${b.brief}\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
   }
-  if(agente==='presupuesto') {
-    let out = `💼 ${data.titulo}\n${'─'.repeat(40)}\n`;
-    out += `Presupuesto total: ${fmtM(data.presupuesto_total)}\n`;
-    out += `Ventas proyectadas: ${fmtM(data.ventas_proyectadas)} (+${data.roi_proyectado_pct}% ROI)\n\n`;
-    out += 'DISTRIBUCIÓN:\n';
-    data.distribucion.forEach(d=>{
-      out += `  • ${d.canal||d.canal}: ${d.recomendacion_pct}% → ${fmtM(d.monto_sugerido)}\n`;
-      if(d.roi_promedio) out += `    ROI histórico promedio: ${d.roi_promedio.toFixed(1)}%\n`;
-    });
-    if(data.notas) { out += '\nNOTAS:\n'+data.notas.map(n=>'  • '+n).join('\n'); }
-    return out;
+
+  if(agente==='pricing') {
+    if(!data.propuestas||!data.propuestas.length) { out='Sin SKUs elegibles para promoción.'; }
+    else {
+      out += `🏷️ ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.propuestas.forEach(p=>{
+        out += `\n${p.sku} — ${p.meses_cobertura}m de inventario\n`;
+        out += `  Precio normal: ${fmtM(p.precio_normal)} → Precio promo: ${fmtM(p.precio_promo)} (-${p.max_descuento_pct}%)\n`;
+        out += `  ${p.razon}\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
   }
-  return JSON.stringify(data, null, 2);
+
+  if(agente==='reorden') {
+    if(!data.predicciones||!data.predicciones.length) { out='Sin clientes B2B con 2+ pedidos detectados.'; }
+    else {
+      out += `🔄 ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.predicciones.forEach(p=>{
+        const icon = p.urgencia==='hoy'?'🔴':p.urgencia==='esta semana'?'🟡':'🟢';
+        out += `\n${icon} ${p.email}\n`;
+        out += `  Pedidos: ${p.pedidos} | Revenue: ${fmtM(p.revenue_total)} | Ticket: ${fmtM(p.ticket_promedio)}\n`;
+        out += `  Intervalo: ${p.intervalo_dias}d | Próximo: ${p.proximo_reorden_estimado} (${p.dias_para_reorden}d) — ${p.urgencia}\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
+  if(agente==='canibal') {
+    if(!data.conflictos||!data.conflictos.length) {
+      out = `✅ Sin conflictos detectados. ${data.campanas_revisadas} campañas revisadas.`;
+    } else {
+      out += `⚠️ ${data.titulo}\n${'─'.repeat(40)}\n`;
+      out += `${data.conflictos.length} conflictos en ${data.campanas_revisadas} campañas.\n\n`;
+      data.conflictos.forEach((c,i)=>{
+        out += `${i+1}. "${c.campana_a}" vs "${c.campana_b}"\n`;
+        out += `   Tipo: ${c.conflicto} | Canal: ${c.canal||'—'} | SKU: ${c.sku||'—'}\n`;
+        out += `   ➜ ${c.recomendacion}\n\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
+  if(agente==='contenido_auto') {
+    if(!data.piezas||!data.piezas.length) { out='Sin SKUs con liberaciones recientes.'; }
+    else {
+      out += `✍️ ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.piezas.forEach(p=>{
+        out += `\n📦 ${p.sku} (${fmt(p.uds_30d)} uds / 30d | ${fmtM(p.precio)})\n`;
+        out += `\nINSTAGRAM:\n${p.caption_instagram}\n`;
+        out += `\nEMAIL — Asunto: ${p.asunto_email}\n`;
+        out += `\nWHATSAPP: ${p.texto_whatsapp}\n`;
+        out += '\n'+'─'.repeat(30)+'\n';
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
+  if(agente==='alerta_stock') {
+    if(!data.alertas||!data.alertas.length) { out='✅ Sin alertas de stock. Todos los SKUs tienen cobertura adecuada.'; }
+    else {
+      out += `🚨 ${data.titulo}\n${'─'.repeat(40)}\n`;
+      data.alertas.forEach(a=>{
+        const icon = a.nivel==='critico'?'🔴':'🟡';
+        out += `${icon} ${a.sku} — ${a.dias_cobertura_real}d de cobertura\n`;
+        out += `   Stock: ${fmt(a.stock)} | ERP: ${fmt(a.rotacion_erp)} uds/mes | Shopify: ${fmt(a.demanda_shopify_30d)} uds/30d\n`;
+        out += `   ➜ ${a.accion}\n\n`;
+      });
+    }
+    return `<pre>${out}</pre>${fmtIA(data)}`;
+  }
+
+  return `<pre>${JSON.stringify(data, null, 2)}</pre>${fmtIA(data)}`;
 }
 
 async function loadAgentLog() {
