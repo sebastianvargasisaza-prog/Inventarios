@@ -35,7 +35,10 @@ def rrhh_panel():
     if u not in RRHH_USERS:
         return Response(sin_acceso_html("Recursos Humanos"), mimetype="text/html")
     usuario = u.capitalize()
-    return Response(RRHH_HTML.replace("{usuario}", usuario), mimetype="text/html")
+    resp = Response(RRHH_HTML.replace("{usuario}", usuario), mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @bp.route("/api/rrhh/dashboard")
