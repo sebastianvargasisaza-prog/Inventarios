@@ -33,6 +33,86 @@ def _db():
     return conn
 
 
+def _ig_resolve_token(conn):
+    """Resuelve el Page Access Token y el IG user ID correcto.
+
+    El token guardado puede ser:
+    - User Access Token (UAT): /me devuelve el usuario.
+      → Se llama /me/accounts para obtener páginas y sus Page Tokens.
+      → Por cada página se verifica si tiene instagram_business_account.
+    - Page Access Token (PAT): /me devuelve la página.
+      → Se prueba directamente el instagram_business_account de esa página.
+
+    Retorna (token_resuelto, ig_user_id) o (None, None) si falla todo.
+    """
+    token = _cfg(conn, "instagram_token")
+    stored_uid = _cfg(conn, "instagram_user_id")
+    if not token:
+        return None, None
+
+    def _fetch(url):
+        import urllib.request, json
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                return json.loads(r.read()), None
+        except Exception as e:
+            return None, str(e)
+
+    # Paso 1: ¿qué devuelve /me con este token?
+    me_data, me_err = _fetch(f"https://graph.facebook.com/v19.0/me?access_token={token}")
+    if me_err or not me_data:
+        return token, stored_uid   # fallback
+
+    me_id = me_data.get("id", "")
+
+    # Paso 2a: probar como si token ya es page token
+    # → GET /{me_id}?fields=instagram_business_account
+    ig_data, _ = _fetch(
+        f"https://graph.facebook.com/v19.0/{me_id}"
+        f"?fields=instagram_business_account&access_token={token}"
+    )
+    if ig_data:
+        linked = (ig_data.get("instagram_business_account") or {}).get("id")
+        if linked:
+            # Token ya es un page token y tiene IG conectado
+            return token, linked
+
+    # Paso 2b: token es UAT → obtener pages con /me/accounts
+    accounts_data, _ = _fetch(
+        f"https://graph.facebook.com/v19.0/me/accounts?access_token={token}&limit=20"
+    )
+    if accounts_data:
+        for page in accounts_data.get("data", []):
+            pt = page.get("access_token")
+            pid = page.get("id")
+            if not pt or not pid:
+                continue
+            ig2, _ = _fetch(
+                f"https://graph.facebook.com/v19.0/{pid}"
+                f"?fields=instagram_business_account&access_token={pt}"
+            )
+            if ig2:
+                linked2 = (ig2.get("instagram_business_account") or {}).get("id")
+                if linked2:
+                    # Guardar el page token permanente
+                    try:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                            ("instagram_token", pt)
+                        )
+                        conn.execute(
+                            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
+                            ("instagram_user_id", linked2)
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
+                    return pt, linked2
+
+    # Fallback: usar lo que hay almacenado
+    return token, stored_uid
+
+
 def _auth():
     u = session.get("compras_user", "")
     if not u:
@@ -1020,36 +1100,12 @@ def mkt_sync(platform):
             return jsonify({"ok": True, "synced": synced, "platform": "ghl"})
 
         elif platform == "instagram":
-            token   = _cfg(conn, "instagram_token")
-            user_id = _cfg(conn, "instagram_user_id")
+            # _ig_resolve_token autodescubre el Page Access Token correcto
+            # y el IG user ID real desde /me/accounts → instagram_business_account.
+            # Los Page Access Tokens son permanentes (no necesitan refresh).
+            token, user_id = _ig_resolve_token(conn)
             if not token or not user_id:
-                return jsonify({"error": "Instagram no configurado."}), 400
-
-            # Auto-refresh: renovar token antes de usarlo si tenemos app credentials
-            # Los tokens de larga duracion se pueden renovar en cualquier momento
-            app_id     = _cfg(conn, "meta_app_id")
-            app_secret = _cfg(conn, "meta_app_secret")
-            if app_id and app_secret:
-                try:
-                    refresh_url = (
-                        f"https://graph.facebook.com/v19.0/oauth/access_token"
-                        f"?grant_type=fb_exchange_token"
-                        f"&client_id={app_id}&client_secret={app_secret}"
-                        f"&fb_exchange_token={token}"
-                    )
-                    rreq = urllib.request.Request(refresh_url)
-                    with urllib.request.urlopen(rreq, timeout=10) as rr:
-                        rdata = json.loads(rr.read())
-                    new_token = rdata.get("access_token")
-                    if new_token:
-                        token = new_token
-                        conn.execute(
-                            "INSERT OR REPLACE INTO animus_config(clave,valor) VALUES(?,?)",
-                            ("instagram_token", new_token)
-                        )
-                        conn.commit()
-                except Exception:
-                    pass  # Si falla el refresh, continuar con el token existente
+                return jsonify({"error": "Instagram no configurado o token inválido."}), 400
 
             fields = "id,media_type,caption,media_url,permalink,like_count,comments_count,timestamp"
             url = f"https://graph.facebook.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=50"
@@ -1234,27 +1290,78 @@ def mkt_ig_debug():
     if err: return err, code
     conn = _db()
     try:
-        token   = _cfg(conn, "instagram_token")
-        user_id = _cfg(conn, "instagram_user_id")
-        app_id  = _cfg(conn, "meta_app_id")
-        result  = {"token_ok": bool(token), "user_id": user_id, "app_id_ok": bool(app_id)}
-        if token and user_id:
-            # Test 1: /me endpoint con el token
+        raw_token  = _cfg(conn, "instagram_token")
+        stored_uid = _cfg(conn, "instagram_user_id")
+        app_id     = _cfg(conn, "meta_app_id")
+        result = {
+            "stored_user_id": stored_uid,
+            "app_id_ok": bool(app_id),
+            "raw_token_present": bool(raw_token),
+        }
+
+        def _fetch_debug(url):
             try:
-                r1 = urllib.request.urlopen(
-                    f"https://graph.facebook.com/v19.0/me?access_token={token}", timeout=10)
-                result["me"] = json.loads(r1.read())
+                with urllib.request.urlopen(url, timeout=10) as r:
+                    return json.loads(r.read()), None
             except urllib.error.HTTPError as e:
-                result["me_error"] = json.loads(e.read().decode())
-            # Test 2: media del IG user
-            try:
-                fields = "id,media_type,caption,like_count,timestamp"
-                r2 = urllib.request.urlopen(
-                    f"https://graph.facebook.com/v19.0/{user_id}/media?fields={fields}&access_token={token}&limit=3",
-                    timeout=10)
-                result["media"] = json.loads(r2.read())
-            except urllib.error.HTTPError as e:
-                result["media_error"] = json.loads(e.read().decode())
+                try:
+                    return None, json.loads(e.read().decode())
+                except Exception:
+                    return None, {"http_status": e.code}
+            except Exception as ex:
+                return None, {"exception": str(ex)}
+
+        if raw_token:
+            # Step 1: /me con el token almacenado
+            me, me_err = _fetch_debug(
+                f"https://graph.facebook.com/v19.0/me?access_token={raw_token}")
+            result["step1_me"] = me or me_err
+
+            # Step 2: intentar leer IG account del /me id
+            if me:
+                me_id = me.get("id", "")
+                ig_from_me, _ = _fetch_debug(
+                    f"https://graph.facebook.com/v19.0/{me_id}"
+                    f"?fields=instagram_business_account&access_token={raw_token}")
+                result["step2_ig_from_me"] = ig_from_me
+
+            # Step 3: /me/accounts (solo funciona con UAT)
+            accounts, _ = _fetch_debug(
+                f"https://graph.facebook.com/v19.0/me/accounts"
+                f"?access_token={raw_token}&limit=10")
+            result["step3_accounts"] = accounts
+
+            # Step 4: por cada página, buscar instagram_business_account
+            if accounts:
+                pages_ig = []
+                for page in accounts.get("data", []):
+                    pt = page.get("access_token")
+                    pid = page.get("id")
+                    pname = page.get("name")
+                    if pt and pid:
+                        ig2, _ = _fetch_debug(
+                            f"https://graph.facebook.com/v19.0/{pid}"
+                            f"?fields=instagram_business_account&access_token={pt}")
+                        linked = (ig2.get("instagram_business_account") or {}).get("id") if ig2 else None
+                        pages_ig.append({
+                            "page_id": pid, "page_name": pname,
+                            "ig_account_id": linked
+                        })
+                result["step4_pages_ig"] = pages_ig
+
+        # Step 5: resolución automática + test de media
+        resolved_token, resolved_uid = _ig_resolve_token(conn)
+        result["step5_resolved"] = {
+            "token_resolved": bool(resolved_token),
+            "ig_user_id": resolved_uid,
+        }
+        if resolved_token and resolved_uid:
+            fields = "id,media_type,caption,like_count,timestamp"
+            media, media_err = _fetch_debug(
+                f"https://graph.facebook.com/v19.0/{resolved_uid}/media"
+                f"?fields={fields}&access_token={resolved_token}&limit=3")
+            result["step5_media"] = media or media_err
+
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
