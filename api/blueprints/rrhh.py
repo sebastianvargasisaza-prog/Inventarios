@@ -122,6 +122,8 @@ def rrhh_empleado_det(eid):
 def rrhh_nomina(periodo):
     u = session.get("compras_user", "")
     SMMLV=1423500; AUX=202000
+    # Quincenal: periodo formato YYYY-MM-Q1 o YYYY-MM-Q2
+    es_q2 = periodo.endswith("-Q2")
     conn=sqlite3.connect(DB_PATH); c=conn.cursor()
     c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,area,nivel_riesgo FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
     emps=c.fetchall()
@@ -132,16 +134,30 @@ def rrhh_nomina(periodo):
     for e in emps:
         eid,nom,ape,cargo,sal,emp,area,riesgo=e
         xr=ex.get(eid)
-        dias=xr[1] if xr else 30; he=xr[2] if xr else 0; vhe=xr[3] if xr else 0
+        # Quincenal: base de pago es la mitad del salario mensual
+        sal_q = round(sal / 2)
+        dias=xr[1] if xr else 15; he=xr[2] if xr else 0; vhe=xr[3] if xr else 0
         bonos=xr[4] if xr else 0; otros=xr[5] if xr else 0
-        aux=AUX if sal<=2*SMMLV else 0
-        desc_salud=round(sal*0.04); desc_pension=round(sal*0.04)
-        neto=sal+aux+vhe+bonos-desc_salud-desc_pension-otros
-        ap_s=round(sal*0.085); ap_p=round(sal*0.12)
-        ap_arl=round(sal*arl_rates.get(riesgo,0.00522))
-        ap_sena=round(sal*0.02); ap_icbf=round(sal*0.03); ap_caja=round(sal*0.04)
+        # Pro-rateo por días trabajados sobre 15
+        sal_prop = round(sal_q * dias / 15)
+        # Aux transporte quincenal (solo si salario <= 2 SMMLV)
+        aux = round(AUX / 2) if sal <= 2*SMMLV else 0
+        aux_prop = round(aux * dias / 15)
+        # Deducciones sobre el devengado quincenal proporcional
+        desc_salud = round(sal_prop * 0.04)
+        desc_pension = round(sal_prop * 0.04)
+        neto = sal_prop + aux_prop + vhe + bonos - desc_salud - desc_pension - otros
+        # Aportes empleador (calculados sobre salario mensual / 2)
+        ap_s=round(sal_q*0.085); ap_p=round(sal_q*0.12)
+        ap_arl=round(sal_q*arl_rates.get(riesgo,0.00522))
+        ap_sena=round(sal_q*0.02); ap_icbf=round(sal_q*0.03); ap_caja=round(sal_q*0.04)
         ap_tot=ap_s+ap_p+ap_arl+ap_sena+ap_icbf+ap_caja
-        result.append({"id":eid,"nombre":nom+" "+ape,"cargo":cargo,"empresa":emp,"area":area,"salario_base":sal,"dias_trabajados":dias,"aux_transporte":aux,"horas_extras":he,"valor_horas_extras":vhe,"bonificaciones":bonos,"desc_salud":desc_salud,"desc_pension":desc_pension,"otros_descuentos":otros,"neto":neto,"aportes_empleador":{"salud":ap_s,"pension":ap_p,"arl":ap_arl,"sena":ap_sena,"icbf":ap_icbf,"caja":ap_caja,"total":ap_tot}})
+        result.append({"id":eid,"nombre":nom+" "+ape,"cargo":cargo,"empresa":emp,"area":area,
+            "salario_base":sal,"salario_quincenal":sal_q,"dias_trabajados":dias,
+            "aux_transporte":aux_prop,"horas_extras":he,"valor_horas_extras":vhe,
+            "bonificaciones":bonos,"desc_salud":desc_salud,"desc_pension":desc_pension,
+            "otros_descuentos":otros,"neto":neto,
+            "aportes_empleador":{"salud":ap_s,"pension":ap_p,"arl":ap_arl,"sena":ap_sena,"icbf":ap_icbf,"caja":ap_caja,"total":ap_tot}})
     return jsonify(result)
 
 

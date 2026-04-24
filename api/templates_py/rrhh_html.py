@@ -204,6 +204,10 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
       <option value="11">Noviembre</option><option value="12">Diciembre</option>
     </select>
     <select id="nom-anio"><option>2026</option><option>2025</option></select>
+    <select id="nom-quinc" style="font-weight:600;">
+      <option value="Q1">1&ordf; Quincena (1&#8209;15)</option>
+      <option value="Q2">2&ordf; Quincena (16&#8209;fin)</option>
+    </select>
     <button class="btn btn-primary" onclick="loadNomina()">Calcular</button>
     <label class="btn" style="background:#7c3aed;color:#fff;cursor:pointer;margin-left:4px;" title="Importar Excel de nomina">&#128194; Importar Excel<input type="file" accept=".xlsx" style="display:none;" onchange="importarExcel(this)"></label>
     <button class="btn btn-success" onclick="guardarNomina()" style="margin-left:auto;">&#128190; Guardar</button>
@@ -646,6 +650,7 @@ function initNomina(){
   var now = new Date();
   document.getElementById('nom-mes').value = String(now.getMonth()+1).padStart(2,'0');
   document.getElementById('nom-anio').value = String(now.getFullYear());
+  document.getElementById('nom-quinc').value = now.getDate() <= 15 ? 'Q1' : 'Q2';
   window._esAdmin = (typeof USUARIO !== 'undefined' && (USUARIO.toLowerCase()==='sebastian' || USUARIO.toLowerCase()==='alejandro'));
   loadNomina();
   checkEstadoNomina();
@@ -654,7 +659,8 @@ function initNomina(){
 async function loadNomina(){
   var mes = document.getElementById('nom-mes').value;
   var anio = document.getElementById('nom-anio').value;
-  var periodo = anio+'-'+mes;
+  var quinc = document.getElementById('nom-quinc').value;
+  var periodo = anio+'-'+mes+'-'+quinc;
   try {
     nominaData = await fetch('/api/rrhh/nomina/'+periodo).then(function(r){return r.json();});
     renderNomina();
@@ -723,7 +729,8 @@ function renderNomina(){
 async function guardarNomina(){
   var mes = document.getElementById('nom-mes').value;
   var anio = document.getElementById('nom-anio').value;
-  var periodo = anio+'-'+mes;
+  var quinc = document.getElementById('nom-quinc').value;
+  var periodo = anio+'-'+mes+'-'+quinc;
   nominaData.forEach(function(e){e.neto=calcNeto(e);});
   try {
     var r = await fetch('/api/rrhh/nomina/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodo:periodo,registros:nominaData})});
@@ -735,8 +742,8 @@ async function guardarNomina(){
 }
 
 async function checkEstadoNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
-  var periodo=anio+'-'+mes;
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
+  var periodo=anio+'-'+mes+'-'+quinc;
   try{
     var res=await fetch('/api/rrhh/nomina/'+periodo).then(r=>r.json());
     var estados=res.map(e=>e.estado||'').filter(Boolean);
@@ -754,8 +761,8 @@ async function checkEstadoNomina(){
 }
 
 async function aprobarNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
-  var periodo=anio+'-'+mes;
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
+  var periodo=anio+'-'+mes+'-'+quinc;
   if(!confirm('\u00bfAprobar n\u00f3mina '+periodo+'? Esta acci\u00f3n quedar\u00e1 registrada.')) return;
   try{
     var r=await fetch('/api/rrhh/nomina/'+periodo+'/aprobar',{method:'PATCH'});
@@ -766,14 +773,14 @@ async function aprobarNomina(){
 }
 
 function verComprobante(empId){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
-  var periodo=anio+'-'+mes;
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
+  var periodo=anio+'-'+mes+'-'+quinc;
   window.open('/api/rrhh/nomina/'+periodo+'/comprobante/'+empId,'_blank','width=700,height=900');
 }
 
 function exportarNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value;
-  window.location.href='/api/rrhh/nomina/'+anio+'-'+mes+'/export';
+  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
+  window.location.href='/api/rrhh/nomina/'+anio+'-'+mes+'-'+quinc+'/export';
 }
 
 async function importarExcel(input){
