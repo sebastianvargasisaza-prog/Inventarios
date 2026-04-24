@@ -1115,6 +1115,8 @@ def init_db():
         ('shopify_token',    'SHOPIFY_TOKEN'),
         ('shopify_shop',     'SHOPIFY_SHOP'),
         ('anthropic_api_key','ANTHROPIC_API_KEY'),
+        ('instagram_token',  'INSTAGRAM_TOKEN'),
+        ('instagram_user_id','INSTAGRAM_USER_ID'),
     ]:
         _val = _os.environ.get(_env)
         if _val:

@@ -254,6 +254,19 @@ def mkt_dashboard():
             SELECT COUNT(*) as n FROM animus_ghl_contacts WHERE creado_en >= ?
         """, (hace30,)).fetchone()["n"]
 
+        # Instagram: metricas desde posts sincronizados
+        ig_total_posts  = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts").fetchone()["n"]
+        ig_posts_30d    = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["n"]
+        ig_likes_30d    = c.execute("SELECT COALESCE(SUM(likes),0) as s FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["s"]
+        ig_comments_30d = c.execute("SELECT COALESCE(SUM(comentarios),0) as s FROM animus_instagram_posts WHERE publicado_en >= ?", (hace30,)).fetchone()["s"]
+        ig_avg_likes    = round(ig_likes_30d / ig_posts_30d, 1) if ig_posts_30d > 0 else 0
+        ig_top_posts    = _fmt_many(c.execute("""
+            SELECT instagram_id, tipo, descripcion, likes, comentarios, url_permalink, publicado_en
+            FROM animus_instagram_posts
+            ORDER BY (likes + comentarios*3) DESC LIMIT 5
+        """).fetchall())
+        ig_configured   = bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id"))
+
         return jsonify({
             "kpis": {
                 "total_campanas": total_campanas,
@@ -285,6 +298,15 @@ def mkt_dashboard():
             "ghl": {
                 "contactos_total": ghl_total,
                 "contactos_nuevos_30d": ghl_nuevos,
+            },
+            "instagram": {
+                "configurado": ig_configured,
+                "total_posts": ig_total_posts,
+                "posts_30d": ig_posts_30d,
+                "likes_30d": ig_likes_30d,
+                "comentarios_30d": ig_comments_30d,
+                "avg_likes": ig_avg_likes,
+                "top_posts": ig_top_posts,
             },
             "top_influencer": _fmt(top_inf),
             "campanas_activas": campanas_activas,

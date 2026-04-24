@@ -200,6 +200,14 @@ textarea{resize:vertical;min-height:80px;}
     <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">—</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: —</div></div>
   </div>
 
+  <!-- Instagram KPIs -->
+  <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram — Engagement real</div>
+  <div class="kpi-grid" id="dash-ig-kpis">
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Posts 30d</div><div class="kpi-val" id="ig-posts30">—</div><div class="kpi-sub" id="ig-posts-total">Total: —</div></div>
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Likes 30d</div><div class="kpi-val" id="ig-likes30">—</div><div class="kpi-sub" id="ig-avg-likes">Promedio: —</div></div>
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Comentarios 30d</div><div class="kpi-val" id="ig-comments30">—</div><div class="kpi-sub">@animuslb</div></div>
+  </div>
+
   <!-- Gráfica de ventas + Top SKUs -->
   <div class="grid2" style="margin:20px 0;">
     <div class="card">
@@ -227,6 +235,14 @@ textarea{resize:vertical;min-height:80px;}
     <div class="card">
       <div class="card-hdr"><span class="card-title">🌎 Top ciudades Shopify</span></div>
       <div class="card-body" id="dash-ciudades">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Instagram Top Posts -->
+  <div class="card" style="margin-bottom:20px;" id="dash-ig-posts-section">
+    <div class="card-hdr"><span class="card-title">📸 Top posts Instagram (por engagement)</span></div>
+    <div class="card-body" id="dash-ig-posts">
+      <div style="color:#64748b;text-align:center;padding:20px;">Conecta Instagram y sincroniza para ver tus mejores posts</div>
     </div>
   </div>
 
@@ -865,6 +881,46 @@ ${bars}
   } else {
     coBody.innerHTML = data.contenido_reciente.map(c=>`
       <tr><td>${c.tipo}</td><td>${c.plataforma}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
+  }
+
+  // ── Instagram KPIs ───────────────────────────────────────────────────────
+  const ig = data.instagram || {};
+  document.getElementById('ig-posts30').textContent    = fmt2(ig.posts_30d);
+  document.getElementById('ig-posts-total').textContent = 'Total: '+fmt2(ig.total_posts);
+  document.getElementById('ig-likes30').textContent    = fmt2(ig.likes_30d);
+  document.getElementById('ig-avg-likes').textContent  = 'Promedio: '+fmt2(ig.avg_likes)+' ♥/post';
+  document.getElementById('ig-comments30').textContent = fmt2(ig.comentarios_30d);
+
+  // ── Instagram Top Posts ───────────────────────────────────────────────────
+  const igEl = document.getElementById('dash-ig-posts');
+  const topPosts = ig.top_posts || [];
+  if (!ig.configurado) {
+    igEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">⚠️ Instagram no configurado — agrega INSTAGRAM_TOKEN en Render</div>';
+  } else if (!topPosts.length) {
+    igEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Sin posts — haz clic en ↻ IG para sincronizar</div>';
+  } else {
+    igEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:12px;">' +
+      topPosts.map(p => {
+        const eng = (p.likes||0) + (p.comentarios||0)*3;
+        const desc = (p.descripcion||'').slice(0,80) + ((p.descripcion||'').length>80?'…':'');
+        const date = (p.publicado_en||'').slice(0,10);
+        const tipo = p.tipo||'IMAGE';
+        const icon = tipo==='VIDEO'?'🎬':tipo==='CAROUSEL_ALBUM'?'🗂️':'📸';
+        return `<div style="flex:1;min-width:200px;max-width:260px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:11px;color:#94a3b8;">${icon} ${tipo}</span>
+            <span style="font-size:10px;color:#64748b;">${date}</span>
+          </div>
+          <div style="font-size:11px;color:#cbd5e1;margin-bottom:8px;line-height:1.4;">${desc||'(sin caption)'}</div>
+          <div style="display:flex;gap:12px;font-size:11px;">
+            <span style="color:#e1306c;">♥ ${p.likes||0}</span>
+            <span style="color:#64748b;">💬 ${p.comentarios||0}</span>
+            <span style="color:#d4af37;margin-left:auto;">eng ${eng}</span>
+          </div>
+          ${p.url_permalink?`<a href="${p.url_permalink}" target="_blank" style="display:block;margin-top:6px;font-size:10px;color:#6366f1;">Ver en IG →</a>`:''}
+        </div>`;
+      }).join('') +
+    '</div>';
   }
 
   // ── Por canal ─────────────────────────────────────────────────────────────
