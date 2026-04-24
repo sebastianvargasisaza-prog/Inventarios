@@ -819,7 +819,33 @@ def mkt_analytics_roi():
             GROUP BY canal ORDER BY roi_pct DESC
         """).fetchall())
 
-        return jsonify({"campanas": campanas, "influencers": influencers, "por_canal": por_canal})
+        # ── Shopify baseline KPIs (shown when campaigns are empty) ────────────
+        hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        hace60 = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+        hoy    = datetime.now().strftime("%Y-%m-%d")
+        sh_30 = c.execute(
+            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders WHERE creado_en >= ?",
+            (hace30,)
+        ).fetchone()
+        sh_60 = c.execute(
+            "SELECT COALESCE(SUM(total),0) as rev FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            (hace60, hace30)
+        ).fetchone()
+        sh_rev_30 = round(sh_30["rev"], 0)
+        sh_rev_prev = round(sh_60["rev"], 0)
+        sh_growth = round((sh_rev_30 - sh_rev_prev) / sh_rev_prev * 100, 1) if sh_rev_prev > 0 else (100.0 if sh_rev_30 > 0 else 0.0)
+
+        return jsonify({
+            "campanas": campanas,
+            "influencers": influencers,
+            "por_canal": por_canal,
+            "shopify_kpis": {
+                "revenue_30d": sh_rev_30,
+                "revenue_prev_30d": sh_rev_prev,
+                "crecimiento_pct": sh_growth,
+                "pedidos_30d": sh_30["pedidos"]
+            }
+        })
     finally:
         conn.close()
 
@@ -833,57 +859,113 @@ def mkt_analytics_tendencias():
     c = conn.cursor()
     try:
         meses = int(request.args.get("meses", 6))
-        desde = (datetime.now() - timedelta(days=meses * 30)).strftime("%Y-%m-%d")
-
-        # Liberaciones por SKU y mes
-        por_sku_mes = _fmt_many(c.execute("""
-            SELECT sku, strftime('%Y-%m', creado_en) as mes,
-                   SUM(unidades) as unidades,
-                   COUNT(*) as liberaciones
-            FROM liberaciones
-            WHERE creado_en >= ? AND sku IS NOT NULL AND sku != ''
-            GROUP BY sku, mes ORDER BY mes DESC, unidades DESC
-        """, (desde,)).fetchall())
-
-        # Top SKUs últimos 90 días vs anteriores 90 (crecimiento)
-        hoy = datetime.now().strftime("%Y-%m-%d")
-        hace90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        hoy   = datetime.now().strftime("%Y-%m-%d")
+        hace90  = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         hace180 = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        desde   = (datetime.now() - timedelta(days=meses * 30)).strftime("%Y-%m-%d")
 
-        reciente = {}
-        for row in c.execute("""
-            SELECT sku, SUM(unidades) as total FROM liberaciones
-            WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL
-            GROUP BY sku
-        """, (hace90, hoy)).fetchall():
-            reciente[row["sku"]] = row["total"]
+        # ── Parse sku_items JSON from Shopify orders ─────────────────────────
+        def _parse_orders_skus(rows):
+            """Return {sku: {rev, qty}} from animus_shopify_orders rows."""
+            result = {}
+            for row in rows:
+                try:
+                    items = json.loads(row["sku_items"] or "[]")
+                    if not items:
+                        continue
+                    rev_per = row["total"] / len(items)
+                    for item in items:
+                        sku = (item.get("sku") or "").strip()
+                        if not sku or sku in ("", "null", "None"):
+                            continue
+                        if sku not in result:
+                            result[sku] = {"rev": 0.0, "qty": 0}
+                        result[sku]["rev"] += rev_per
+                        result[sku]["qty"] += int(item.get("qty") or 0)
+                except Exception:
+                    pass
+            return result
 
-        anterior = {}
-        for row in c.execute("""
-            SELECT sku, SUM(unidades) as total FROM liberaciones
-            WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL
-            GROUP BY sku
-        """, (hace180, hace90)).fetchall():
-            anterior[row["sku"]] = row["total"]
+        rows_rec = c.execute(
+            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            (hace90, hoy)
+        ).fetchall()
+        rows_ant = c.execute(
+            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            (hace180, hace90)
+        ).fetchall()
 
+        reciente_sh = _parse_orders_skus(rows_rec)
+        anterior_sh = _parse_orders_skus(rows_ant)
+
+        # ── Also include ERP liberaciones (if any) ───────────────────────────
+        reciente_erp, anterior_erp = {}, {}
+        try:
+            for row in c.execute(
+                "SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku",
+                (hace90, hoy)
+            ).fetchall():
+                reciente_erp[row["sku"]] = row["total"]
+            for row in c.execute(
+                "SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en BETWEEN ? AND ? AND sku IS NOT NULL GROUP BY sku",
+                (hace180, hace90)
+            ).fetchall():
+                anterior_erp[row["sku"]] = row["total"]
+        except Exception:
+            pass
+
+        # ── Merge sources, build crecimiento list ────────────────────────────
+        todos_sku = set(
+            list(reciente_sh.keys()) + list(anterior_sh.keys()) +
+            list(reciente_erp.keys()) + list(anterior_erp.keys())
+        )
         crecimiento = []
-        todos_sku = set(list(reciente.keys()) + list(anterior.keys()))
         for sku in todos_sku:
-            rec = reciente.get(sku, 0)
-            ant = anterior.get(sku, 0)
-            if ant > 0:
-                pct = round((rec - ant) / ant * 100, 1)
-            elif rec > 0:
+            rec_rev = reciente_sh.get(sku, {}).get("rev", 0) + reciente_erp.get(sku, 0)
+            ant_rev = anterior_sh.get(sku, {}).get("rev", 0) + anterior_erp.get(sku, 0)
+            rec_qty = reciente_sh.get(sku, {}).get("qty", 0) + reciente_erp.get(sku, 0)
+            ant_qty = anterior_sh.get(sku, {}).get("qty", 0) + anterior_erp.get(sku, 0)
+            if ant_rev > 0:
+                pct = round((rec_rev - ant_rev) / ant_rev * 100, 1)
+            elif rec_rev > 0:
                 pct = 100.0
             else:
                 pct = 0.0
-            crecimiento.append({"sku": sku, "reciente_90d": rec, "anterior_90d": ant, "crecimiento_pct": pct})
+            crecimiento.append({
+                "sku": sku,
+                "reciente_90d": round(rec_rev, 0),
+                "anterior_90d": round(ant_rev, 0),
+                "crecimiento_pct": pct
+            })
         crecimiento.sort(key=lambda x: x["crecimiento_pct"], reverse=True)
+
+        # ── Ventas mensuales por SKU (period window for sparklines) ──────────
+        rows_periodo = c.execute("""
+            SELECT sku_items, total, strftime('%Y-%m', creado_en) as mes
+            FROM animus_shopify_orders WHERE creado_en >= ?
+        """, (desde,)).fetchall()
+        por_sku_mes_map = {}
+        for row in rows_periodo:
+            try:
+                items = json.loads(row["sku_items"] or "[]")
+                if not items:
+                    continue
+                rev_per = row["total"] / len(items)
+                for item in items:
+                    sku = (item.get("sku") or "").strip()
+                    if not sku:
+                        continue
+                    key = (sku, row["mes"])
+                    por_sku_mes_map[key] = por_sku_mes_map.get(key, 0.0) + rev_per
+            except Exception:
+                pass
+        por_sku_mes = [{"sku": k[0], "mes": k[1], "revenue": round(v, 0)} for k, v in sorted(por_sku_mes_map.items())]
 
         return jsonify({
             "por_sku_mes": por_sku_mes,
             "crecimiento": crecimiento[:20],
-            "periodo_meses": meses
+            "periodo_meses": meses,
+            "fuente": "shopify" if rows_rec else "sin_datos"
         })
     finally:
         conn.close()

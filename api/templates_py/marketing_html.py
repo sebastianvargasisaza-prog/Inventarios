@@ -1602,34 +1602,55 @@ async function loadAnalytics() {
 
 async function loadAnalyticsROI() {
   const data = await fetch('/api/marketing/analytics/roi').then(r=>r.json());
+  const sh = data.shopify_kpis || {};
 
-  // KPIs
-  const totalInv = data.campanas.reduce((s,c)=>s+(c.presupuesto_gastado||0),0);
+  // KPIs — usa campañas si hay datos, sino usa Shopify como baseline
+  const totalInv    = data.campanas.reduce((s,c)=>s+(c.presupuesto_gastado||0),0);
   const totalVentas = data.campanas.reduce((s,c)=>s+(c.resultado_ventas||0),0);
-  const roiGlobal = totalInv>0 ? ((totalVentas-totalInv)/totalInv*100).toFixed(1) : 0;
-  document.getElementById('an-roi').textContent = (roiGlobal>=0?'+':'')+roiGlobal+'%';
-  document.getElementById('an-ventas').textContent = fmtM(totalVentas);
-  const mejorCamp = data.campanas.find(c=>c.roi_pct!==null);
-  document.getElementById('an-mejor').textContent = mejorCamp ? mejorCamp.nombre : '—';
+  const hasCampanas = data.campanas.some(c=>(c.presupuesto_gastado||0)>0);
+
+  if(hasCampanas) {
+    const roiGlobal = totalInv>0 ? ((totalVentas-totalInv)/totalInv*100).toFixed(1) : 0;
+    document.getElementById('an-roi').textContent = (roiGlobal>=0?'+':'')+roiGlobal+'%';
+    document.getElementById('an-ventas').textContent = fmtM(totalVentas);
+  } else {
+    // Fallback: mostrar crecimiento Shopify 30d vs 30d anterior
+    const grow = sh.crecimiento_pct || 0;
+    document.getElementById('an-roi').textContent = (grow>=0?'+':'')+grow+'%';
+    document.getElementById('an-ventas').textContent = fmtM(sh.revenue_30d||0);
+    // Update subtitles
+    const roiCard = document.querySelector('#an-roi')?.closest('.kpi-card');
+    const ventasCard = document.querySelector('#an-ventas')?.closest('.kpi-card');
+    if(roiCard) roiCard.querySelector('.kpi-sub').textContent = 'Crecimiento Shopify 30d';
+    if(ventasCard) ventasCard.querySelector('.kpi-sub').textContent = 'Revenue Shopify 30d';
+  }
+
+  const mejorCamp = data.campanas.find(c=>c.roi_pct!==null && c.roi_pct>0);
+  document.getElementById('an-mejor').textContent = mejorCamp ? mejorCamp.nombre : (sh.pedidos_30d ? sh.pedidos_30d+' pedidos' : '—');
   const mejorCanal = data.por_canal[0];
-  document.getElementById('an-canal').textContent = mejorCanal ? mejorCanal.canal : '—';
+  document.getElementById('an-canal').textContent = mejorCanal ? mejorCanal.canal : 'Shopify';
 
   // Tabla campañas ROI
   const cBody = document.getElementById('an-campanas-body');
-  if(!data.campanas.length) { cBody.innerHTML='<tr class="empty-row"><td colspan="6">Sin campañas con datos</td></tr>'; }
-  else cBody.innerHTML = data.campanas.map(c=>`
-    <tr>
-      <td style="font-weight:700;">${c.nombre}</td>
-      <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
-      <td>${fmtM(c.presupuesto_gastado)}</td>
-      <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
-      <td>${roiBadge(c.roi_pct)}</td>
-      <td>${c.pct_objetivo?c.pct_objetivo+'%':'—'}</td>
-    </tr>`).join('');
+  if(!data.campanas.length) {
+    cBody.innerHTML = sh.revenue_30d
+      ? `<tr><td colspan="6" style="color:#94a3b8;padding:12px;">Sin campañas registradas. Revenue Shopify 30d: <strong style="color:#34d399;">${fmtM(sh.revenue_30d)}</strong> (${sh.pedidos_30d} pedidos)</td></tr>`
+      : '<tr class="empty-row"><td colspan="6">Sin campañas con datos</td></tr>';
+  } else {
+    cBody.innerHTML = data.campanas.map(c=>`
+      <tr>
+        <td style="font-weight:700;">${c.nombre}</td>
+        <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
+        <td>${fmtM(c.presupuesto_gastado)}</td>
+        <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
+        <td>${roiBadge(c.roi_pct)}</td>
+        <td>${c.pct_objetivo?c.pct_objetivo+'%':'—'}</td>
+      </tr>`).join('');
+  }
 
   // Tabla influencers ROI
   const iBody = document.getElementById('an-infl-body');
-  if(!data.influencers.length) { iBody.innerHTML='<tr class="empty-row"><td colspan="6">Sin datos</td></tr>'; }
+  if(!data.influencers.length) { iBody.innerHTML='<tr class="empty-row"><td colspan="6">Sin influencers registrados</td></tr>'; }
   else iBody.innerHTML = data.influencers.map(i=>`
     <tr>
       <td style="font-weight:700;">${i.nombre}</td>
