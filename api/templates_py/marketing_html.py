@@ -837,7 +837,12 @@ async function refreshIgToken() {
 
 async function loadDashboard() {
   loadConnections();
-  const data = await fetch('/api/marketing/dashboard').then(r=>r.json());
+  let _dashResp;
+  try { _dashResp = await fetch('/api/marketing/dashboard'); }
+  catch(e) { console.error('dashboard fetch:', e); return; }
+  if(!_dashResp.ok && _dashResp.status===401){ location.reload(); return; }
+  const data = await _dashResp.json().catch(()=>null);
+  if(!data){ console.error('dashboard: respuesta no es JSON'); return; }
   const k = data.kpis || {};
   const sh = data.shopify || {};
   const ghl = data.ghl || {};
@@ -1359,8 +1364,21 @@ async function syncPlatform(platform, full) {
       setTimeout(loadDashboard, 600);
     } else {
       status.style.color = '#f87171';
-      const det = data.detalle ? ' → ' + data.detalle.slice(0,200) : '';
-      status.textContent = (data.error || 'Error al sincronizar') + det;
+      let errMsg = data.error || 'Error al sincronizar';
+      let det = data.detalle || '';
+      // Detectar token Meta expirado (code 190) y mostrar mensaje claro
+      if(det.includes('190') || det.includes('Session has expired') || det.includes('OAuthException')){
+        errMsg = '🔑 Token de Instagram expirado — genera uno nuevo en developers.facebook.com/tools/explorer y pégalo abajo';
+        det = '';
+      } else if(det.includes('400') || det.includes('401')){
+        errMsg = '🔑 Error de autenticación Meta — token inválido';
+        det = '';
+      } else if(det.length > 120){
+        det = ' → ' + det.slice(0,120) + '...';
+      } else if(det){
+        det = ' → ' + det;
+      }
+      status.textContent = errMsg + det;
       // Si falla Instagram por auth, mostrar formulario de token
       if (platform === 'instagram') {
         document.getElementById('ig-token-form').style.display = 'block';
@@ -1368,7 +1386,11 @@ async function syncPlatform(platform, full) {
     }
   } catch(e) {
     status.style.color = '#f87171';
-    status.textContent = 'Error: ' + e.message;
+    let msg = e.message || 'Error desconocido';
+    if(msg.includes('<!DOCTYPE') || msg.includes('JSON')){
+      msg = 'La sesión expiró — recarga la página (F5)';
+    }
+    status.textContent = '⚠️ ' + msg;
   } finally {
     btn.disabled = false; btn.textContent = '↻ Sync ' + (platform==='instagram'?'IG':platform.charAt(0).toUpperCase()+platform.slice(1));
   }
