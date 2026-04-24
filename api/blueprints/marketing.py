@@ -134,7 +134,8 @@ def mkt_dashboard():
             "por_canal": por_canal,
         })
     except Exception as _e:
-        return jsonify({"error": str(_e), "trace": traceback.format_exc()}), 500
+        import traceback as _tb
+        return jsonify({"_debug_error": str(_e), "_debug_trace": _tb.format_exc()[-800:]}), 200
     finally:
         conn.close()
 
