@@ -976,6 +976,42 @@ def init_db():
         except Exception:
             pass
 
+    # Seed banco/cuenta bancaria por cedula (UPDATE seguro — no falla si ya existe)
+    _bank_data = [
+        # ANIMUS Lab (8 empleados)
+        ("16632635",    "BBVA",         "813000200051521",    "AHORROS"),
+        ("1143874047",  "DAVIVIENDA",   "10470059592",        "AHORROS"),
+        ("1128724125",  "BANCOLOMBIA",  "91220528389",        "AHORROS"),
+        ("1026560691",  "BANCOLOMBIA",  "91291991802",        "AHORROS"),
+        ("1026560690",  "BANCOLOMBIA",  "91246950747",        "AHORROS"),
+        ("1109663762",  "BANCOLOMBIA",  "6160474104",         "AHORROS"),
+        ("1098307374",  "DAVIVIENDA",   "0550488436467077",   "AHORROS DAMAS"),
+        ("1097397765",  "BANCOLOMBIA",  "91273689724",        "AHORROS"),
+        # Genesis (posible 9no de ANIMUS Lab)
+        ("1235252199",  "BANCOLOMBIA",  "6107281001",         "AHORROS"),
+        # Espagiria (11 empleados)
+        ("1006054219",  "AV-VILLAS",    "148707529",          "AHORROS"),
+        ("1007854652",  "BANCOLOMBIA",  "91219764516",        "AHORROS"),
+        ("1005875757",  "BANCOLOMBIA",  "91219757421",        "AHORROS"),
+        ("1007601298",  "BANCOLOMBIA",  "3146792620",         "NEQUI"),
+        ("43976397",    "BANCOLOMBIA",  "81583095349",        "AHORROS"),
+        ("1143846075",  "DAVIVIENDA",   "0570019170026397",   "AHORROS"),
+        ("1044912921",  "BANCOLOMBIA",  "80798012383",        "AHORROS"),
+        ("1007932197",  "DAVIVIENDA",   "0570488471748506",   "AHORROS"),
+        ("14639995",    "BANCOLOMBIA",  "60566122726",        "AHORROS"),
+        ("1193447691",  "CAJA SOCIAL",  "24103175746",        "AHORROS"),
+        ("1001937292",  "BANCO BOGOTA", "164579443",          "AHORROS"),
+    ]
+    for _ced, _banco, _num_cta, _tipo in _bank_data:
+        try:
+            c.execute(
+                "UPDATE empleados SET banco=?, numero_cuenta=?, tipo_cuenta=? WHERE cedula=?",
+                (_banco, _num_cta, _tipo, _ced)
+            )
+        except Exception:
+            pass
+
+
 
     conn.commit()
     conn.close()
