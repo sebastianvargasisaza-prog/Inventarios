@@ -511,6 +511,48 @@ def rrhh_nomina_importar():
 
 
 
+
+@bp.route("/api/rrhh/admin/seed-bancos", methods=["POST"])
+def rrhh_seed_bancos():
+    """Admin: fuerza UPDATE de banco/cuenta en todos los empleados reales."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Sin permiso"}), 403
+    _bank_data = [
+        ("16632635",   "BBVA",         "813000200051521",   "AHORROS"),
+        ("1143874047", "DAVIVIENDA",   "10470059592",       "AHORROS"),
+        ("1128724125", "BANCOLOMBIA",  "91220528389",       "AHORROS"),
+        ("1026560691", "BANCOLOMBIA",  "91291991802",       "AHORROS"),
+        ("1026560690", "BANCOLOMBIA",  "91246950747",       "AHORROS"),
+        ("1109663762", "BANCOLOMBIA",  "6160474104",        "AHORROS"),
+        ("1098307374", "DAVIVIENDA",   "0550488436467077",  "AHORROS DAMAS"),
+        ("1097397765", "BANCOLOMBIA",  "91273689724",       "AHORROS"),
+        ("1235252199", "BANCOLOMBIA",  "6107281001",        "AHORROS"),
+        ("1006054219", "AV-VILLAS",    "148707529",         "AHORROS"),
+        ("1007854652", "BANCOLOMBIA",  "91219764516",       "AHORROS"),
+        ("1005875757", "BANCOLOMBIA",  "91219757421",       "AHORROS"),
+        ("1007601298", "BANCOLOMBIA",  "3146792620",        "NEQUI"),
+        ("43976397",   "BANCOLOMBIA",  "81583095349",       "AHORROS"),
+        ("1143846075", "DAVIVIENDA",   "0570019170026397",  "AHORROS"),
+        ("1044912921", "BANCOLOMBIA",  "80798012383",       "AHORROS"),
+        ("1007932197", "DAVIVIENDA",   "0570488471748506",  "AHORROS"),
+        ("14639995",   "BANCOLOMBIA",  "60566122726",       "AHORROS"),
+        ("1193447691", "CAJA SOCIAL",  "24103175746",       "AHORROS"),
+        ("1001937292", "BANCO BOGOTA", "164579443",         "AHORROS"),
+    ]
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    actualizados = 0
+    detalles = []
+    for ced, banco, num, tipo in _bank_data:
+        c.execute("UPDATE empleados SET banco=?, numero_cuenta=?, tipo_cuenta=? WHERE cedula=?",
+                  (banco, num, tipo, ced))
+        if c.rowcount > 0:
+            actualizados += 1
+            detalles.append(ced)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, "actualizados": actualizados, "cedulas": detalles})
+
+
 # ═══════════════════════════════════════════════════════
 #  CALIDAD BPM — Página + API
 # ═══════════════════════════════════════════════════════
