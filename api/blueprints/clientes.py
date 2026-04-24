@@ -35,12 +35,15 @@ def handle_clientes():
         try:
             c.execute("""INSERT INTO clientes
                          (codigo,nombre,empresa,tipo,contacto,email,telefono,nit,
-                          condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones,ciudad)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?,?)""",
+                          condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones,ciudad,
+                          categoria_profesional,canal_captacion,redes_sociales,notas_seguimiento)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?,?,?,?,?,?)""",
                       (codigo, d['nombre'], d.get('empresa','ANIMUS'), d.get('tipo','Distribuidor'),
                        d.get('contacto',''), d.get('email',''), d.get('telefono',''),
                        d.get('nit',''), d.get('condiciones_pago','Pago anticipado'),
-                       float(d.get('descuento_pct',0)), d.get('observaciones',''), d.get('ciudad','')))
+                       float(d.get('descuento_pct',0)), d.get('observaciones',''), d.get('ciudad',''),
+                       d.get('categoria_profesional',''), d.get('canal_captacion',''),
+                       json.dumps(d.get('redes_sociales',{})), d.get('notas_seguimiento','')))
             conn.commit(); conn.close()
             return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
         except Exception as e:
@@ -56,7 +59,11 @@ def handle_clientes():
                         COALESCE(cl.nivel_aliado,'Ingreso') as nivel_aliado,
                         COALESCE(cl.semaforo,'verde') as semaforo,
                         COALESCE(cl.fecha_vinculacion,'') as fecha_vinculacion,
-                        COALESCE(cl.ciudad,'') as ciudad
+                        COALESCE(cl.ciudad,'') as ciudad,
+                        COALESCE(cl.categoria_profesional,'') as categoria_profesional,
+                        COALESCE(cl.canal_captacion,'') as canal_captacion,
+                        COALESCE(cl.redes_sociales,'{}') as redes_sociales,
+                        COALESCE(cl.notas_seguimiento,'') as notas_seguimiento
                  FROM clientes cl
                  LEFT JOIN pedidos p ON p.cliente_id = cl.id
                  WHERE cl.activo=1 {q_filter}
@@ -65,7 +72,8 @@ def handle_clientes():
     cols = ['id','codigo','nombre','empresa','tipo','contacto','email','telefono',
             'condiciones_pago','descuento_pct','activo','fecha_creacion',
             'total_pedidos','facturado_total','ultimo_pedido',
-            'nivel_aliado','semaforo','fecha_vinculacion','ciudad']
+            'nivel_aliado','semaforo','fecha_vinculacion','ciudad',
+            'categoria_profesional','canal_captacion','redes_sociales','notas_seguimiento']
     clientes = [dict(zip(cols, r)) for r in c.fetchall()]
     conn.close(); return jsonify({'clientes': clientes})
 
@@ -187,6 +195,132 @@ def cliente_ficha_360(cid):
         'top_skus': top_skus
     })
 
+
+
+
+@bp.route('/api/aliados/analytics')
+def aliados_analytics():
+    """Ventas mensuales por aliado, frecuencia de compra y top SKUs."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    try:
+        hace6m = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+
+        # ── Ventas netas por aliado por mes (últimos 6 meses) ────────────────
+        c.execute("""
+            SELECT cl.id, cl.nombre,
+                   strftime('%Y-%m', p.fecha) as mes,
+                   COALESCE(SUM(p.valor_total),0) as ventas,
+                   COUNT(p.numero) as pedidos
+            FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE cl.activo=1 AND cl.empresa='ANIMUS'
+              AND p.estado NOT IN ('Cancelado','Borrador')
+              AND p.fecha >= ?
+            GROUP BY cl.id, mes
+            ORDER BY cl.nombre, mes
+        """, (hace6m,))
+        ventas_mes = [dict(zip(['id','nombre','mes','ventas','pedidos'], r)) for r in c.fetchall()]
+
+        # ── Frecuencia de compra por aliado ──────────────────────────────────
+        c.execute("""
+            SELECT cl.id, cl.nombre, GROUP_CONCAT(p.fecha ORDER BY p.fecha ASC) as fechas
+            FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE cl.activo=1 AND cl.empresa='ANIMUS'
+              AND p.estado NOT IN ('Cancelado','Borrador')
+            GROUP BY cl.id
+        """)
+        frecuencia = []
+        for row in c.fetchall():
+            cid_, nombre_, fechas_str = row
+            fechas = [f[:10] for f in (fechas_str or '').split(',') if f]
+            if len(fechas) >= 2:
+                gaps = []
+                for i in range(1, len(fechas)):
+                    try:
+                        d1 = datetime.strptime(fechas[i-1], '%Y-%m-%d')
+                        d2 = datetime.strptime(fechas[i], '%Y-%m-%d')
+                        gaps.append((d2-d1).days)
+                    except Exception:
+                        pass
+                avg_dias = round(sum(gaps)/len(gaps), 0) if gaps else None
+            else:
+                avg_dias = None
+            frecuencia.append({
+                'id': cid_, 'nombre': nombre_,
+                'total_pedidos': len(fechas),
+                'frecuencia_dias': avg_dias,
+                'primer_pedido': fechas[0] if fechas else None,
+                'ultimo_pedido': fechas[-1] if fechas else None
+            })
+
+        # ── Top SKUs por aliado ───────────────────────────────────────────────
+        c.execute("""
+            SELECT p.cliente_id, cl.nombre,
+                   pi.sku, pi.descripcion,
+                   SUM(pi.cantidad) as uds,
+                   SUM(pi.subtotal) as revenue
+            FROM pedidos_items pi
+            JOIN pedidos p ON pi.numero_pedido=p.numero
+            JOIN clientes cl ON p.cliente_id=cl.id
+            WHERE cl.activo=1 AND cl.empresa='ANIMUS'
+              AND p.estado NOT IN ('Cancelado','Borrador')
+            GROUP BY p.cliente_id, pi.sku
+            ORDER BY p.cliente_id, revenue DESC
+        """)
+        top_skus_raw = c.fetchall()
+        top_skus = {}
+        for row in top_skus_raw:
+            cid_ = row[0]
+            if cid_ not in top_skus:
+                top_skus[cid_] = []
+            if len(top_skus[cid_]) < 5:
+                top_skus[cid_].append({
+                    'sku': row[2], 'descripcion': row[3],
+                    'uds': row[4], 'revenue': round(row[5] or 0, 0)
+                })
+
+        # ── Resumen por aliado (para tabla principal) ─────────────────────────
+        c.execute("""
+            SELECT cl.id, cl.nombre, cl.codigo, cl.nivel_aliado, cl.semaforo,
+                   cl.categoria_profesional, cl.canal_captacion,
+                   cl.redes_sociales, cl.ciudad, cl.notas_seguimiento,
+                   COALESCE(SUM(p.valor_total),0) as total_facturado,
+                   COALESCE(SUM(CASE WHEN p.fecha >= ? THEN p.valor_total ELSE 0 END),0) as mes_actual,
+                   MAX(p.fecha) as ultimo_pedido,
+                   COUNT(p.numero) as total_pedidos
+            FROM clientes cl
+            LEFT JOIN pedidos p ON p.cliente_id=cl.id
+              AND p.estado NOT IN ('Cancelado','Borrador')
+            WHERE cl.activo=1 AND cl.empresa='ANIMUS'
+            GROUP BY cl.id
+            ORDER BY total_facturado DESC
+        """, ((datetime.now().replace(day=1)).strftime("%Y-%m-%d"),))
+        cols_res = ['id','nombre','codigo','nivel_aliado','semaforo',
+                    'categoria_profesional','canal_captacion','redes_sociales',
+                    'ciudad','notas_seguimiento','total_facturado','mes_actual',
+                    'ultimo_pedido','total_pedidos']
+        resumen = []
+        for row in c.fetchall():
+            r = dict(zip(cols_res, row))
+            r['top_skus'] = top_skus.get(r['id'], [])
+            freq = next((f for f in frecuencia if f['id'] == r['id']), None)
+            r['frecuencia_dias'] = freq['frecuencia_dias'] if freq else None
+            try:
+                r['redes_sociales'] = json.loads(r['redes_sociales'] or '{}')
+            except Exception:
+                r['redes_sociales'] = {}
+            resumen.append(r)
+
+        conn.close()
+        return jsonify({
+            'resumen': resumen,
+            'ventas_mes': ventas_mes,
+            'frecuencia': frecuencia
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/pedidos', methods=['GET','POST'])
 def handle_pedidos():
@@ -314,6 +448,15 @@ def patch_aliado(cid):
         campos.append('fecha_vinculacion=?'); vals.append(d['fecha_vinculacion'])
     if 'ciudad' in d:
         campos.append('ciudad=?'); vals.append(d['ciudad'])
+    if 'categoria_profesional' in d:
+        campos.append('categoria_profesional=?'); vals.append(d['categoria_profesional'])
+    if 'canal_captacion' in d:
+        campos.append('canal_captacion=?'); vals.append(d['canal_captacion'])
+    if 'redes_sociales' in d:
+        campos.append('redes_sociales=?')
+        vals.append(json.dumps(d['redes_sociales']) if isinstance(d['redes_sociales'], dict) else d['redes_sociales'])
+    if 'notas_seguimiento' in d:
+        campos.append('notas_seguimiento=?'); vals.append(d['notas_seguimiento'])
     if campos:
         vals.append(cid)
         c.execute(f"UPDATE clientes SET {','.join(campos)} WHERE id=?", vals)

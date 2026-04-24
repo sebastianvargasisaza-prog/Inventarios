@@ -378,6 +378,15 @@ def init_db():
     except: pass
     try: c.execute("ALTER TABLE pedidos ADD COLUMN estado_pago TEXT DEFAULT 'Pendiente'")
     except: pass
+    # ── Aliados: campos de seguimiento Valentina ─────────────────────────────
+    try: c.execute("ALTER TABLE clientes ADD COLUMN categoria_profesional TEXT DEFAULT ''")
+    except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN canal_captacion TEXT DEFAULT ''")
+    except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN redes_sociales TEXT DEFAULT '{}'")
+    except: pass
+    try: c.execute("ALTER TABLE clientes ADD COLUMN notas_seguimiento TEXT DEFAULT ''")
+    except: pass
     # Desactivar ghost aliados seeded incorrectamente (ANIMUS Lab interno + seed placeholder)
     try: c.execute("UPDATE clientes SET activo=0 WHERE codigo IN ('CLI-001','CLI-002') AND empresa='ANIMUS'")
     except: pass

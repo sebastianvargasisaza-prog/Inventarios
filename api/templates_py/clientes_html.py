@@ -139,6 +139,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <div class="module-tabs" id="tabs-animus">
   <div class="tab active-a" onclick="goTabA('ta-dash',this)">&#x1F4CA; Dashboard</div>
   <div class="tab" onclick="goTabA('ta-aliados',this)">&#x1F3ED; Aliados</div>
+  <div class="tab" onclick="goTabA('ta-seguimiento',this)">&#x1F4CA; Seguimiento</div>
   <div class="tab" onclick="goTabA('ta-pedidos',this)">&#x1F4CB; Pedidos</div>
   <div class="tab" onclick="goTabA('ta-cartera',this)">&#x1F4B0; Cartera / Pagos</div>
   <div class="tab" onclick="goTabA('ta-churn',this)">&#x26A0; Riesgo Churn</div>
@@ -183,6 +184,40 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="form-row triple"><div class="fg"><label>Email</label><input type="email" id="cli-email"></div>
       <div class="fg"><label>Tel&#xe9;fono</label><input type="text" id="cli-tel"></div>
       <div class="fg"><label>Ciudad</label><input type="text" id="cli-ciudad" placeholder="Cali, Bogot&#xe1;..."></div></div>
+    <div class="form-row triple">
+      <div class="fg"><label>Categor&#xED;a profesional</label>
+        <select id="cli-categoria">
+          <option value="">-- Seleccionar --</option>
+          <option>Cosmet&#xF3;loga</option>
+          <option>Esteticista</option>
+          <option>Dermacosmet&#xF3;loga</option>
+          <option>Revendedora independiente</option>
+          <option>Distribuidora</option>
+          <option>Sal&#xF3;n de belleza</option>
+          <option>Spa / Cl&#xED;nica est&#xe9;tica</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Canal de captaci&#xF3;n</label>
+        <select id="cli-canal">
+          <option value="">-- Seleccionar --</option>
+          <option>Instagram</option>
+          <option>TikTok</option>
+          <option>Facebook</option>
+          <option>WhatsApp</option>
+          <option>Referido</option>
+          <option>Evento / Feria</option>
+          <option>Web / E-commerce</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Notas de seguimiento</label><input type="text" id="cli-notas" placeholder="Observaciones internas..."></div>
+    </div>
+    <div class="form-row triple">
+      <div class="fg"><label>&#x1F4F8; Instagram</label><input type="text" id="cli-ig" placeholder="@usuario"></div>
+      <div class="fg"><label>&#x1F3B5; TikTok</label><input type="text" id="cli-tiktok" placeholder="@usuario"></div>
+      <div class="fg"><label>&#x1F4F1; WhatsApp / otro</label><input type="text" id="cli-wa" placeholder="+57..."></div>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
       <button class="btn btn-ghost btn-sm" onclick="toggleForm('f-aliado')">Cancelar</button>
       <button class="btn btn-sm" onclick="crearAliado()">Guardar</button>
@@ -196,6 +231,107 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <table class="tbl"><thead><tr><th>C&#xf3;d.</th><th>Aliado</th><th>Ciudad</th><th>Nivel</th><th>Sem&#xe1;foro</th><th>Pedidos</th><th>Facturado</th><th>Cartera</th><th>&#xda;lt. pedido</th><th>Acci&#xf3;n</th></tr></thead>
   <tbody id="aliados-body"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody></table>
+</div>
+
+
+<!-- SEGUIMIENTO -->
+<div id="ta-seguimiento" class="page">
+  <div class="section-header">
+    <h2>&#x1F4CA; Seguimiento de Aliados</h2>
+    <button class="btn btn-ghost btn-sm" onclick="loadSeguimiento()">&#x21BB; Actualizar</button>
+  </div>
+
+  <!-- KPIs -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;">Total facturado</div>
+      <div style="font-size:1.6em;font-weight:800;color:#15803d;" id="seg-total">—</div>
+    </div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:#2563eb;text-transform:uppercase;">Este mes</div>
+      <div style="font-size:1.6em;font-weight:800;color:#1d4ed8;" id="seg-mes">—</div>
+    </div>
+    <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:#ca8a04;text-transform:uppercase;">Ticket promedio</div>
+      <div style="font-size:1.6em;font-weight:800;color:#a16207;" id="seg-ticket">—</div>
+    </div>
+    <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;font-weight:700;color:#9333ea;text-transform:uppercase;">Frec. promedio</div>
+      <div style="font-size:1.6em;font-weight:800;color:#7e22ce;" id="seg-frec">—</div>
+      <div style="font-size:10px;color:#9333ea;">días entre compras</div>
+    </div>
+  </div>
+
+  <!-- Chart ventas por mes -->
+  <div style="background:white;border:1px solid #E8E4DE;border-radius:10px;padding:16px;margin-bottom:18px;">
+    <div style="font-size:0.85em;font-weight:700;color:#1C2B30;margin-bottom:12px;">Ventas netas por aliado — últimos 6 meses</div>
+    <div id="seg-chart" style="overflow-x:auto;"></div>
+  </div>
+
+  <!-- Tabla principal -->
+  <div style="background:white;border:1px solid #E8E4DE;border-radius:10px;overflow:hidden;">
+    <table class="tbl">
+      <thead><tr>
+        <th>Aliado</th><th>Categoría</th><th>Canal</th><th>Redes</th>
+        <th style="text-align:right;">Total comprado</th>
+        <th style="text-align:right;">Este mes</th>
+        <th style="text-align:center;">Frecuencia</th>
+        <th>Top SKU</th>
+        <th>Acción</th>
+      </tr></thead>
+      <tbody id="seg-body"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal editar seguimiento aliado -->
+<div id="modal-seg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:14px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <h3 style="font-size:1em;font-weight:700;color:#1C2B30;" id="modal-seg-title">Editar aliado</h3>
+      <button onclick="closeModalSeg()" style="background:none;border:none;font-size:1.3em;cursor:pointer;color:#7A9E9C;">&#x2715;</button>
+    </div>
+    <input type="hidden" id="seg-edit-id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">Categoría profesional</label>
+        <select id="seg-cat" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;">
+          <option value="">-- Sin categoría --</option>
+          <option>Cosmetóloga</option><option>Esteticista</option>
+          <option>Dermacosmetóloga</option><option>Revendedora independiente</option>
+          <option>Distribuidora</option><option>Salón de belleza</option>
+          <option>Spa / Clínica estética</option><option>Otro</option>
+        </select>
+      </div>
+      <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">Canal de captación</label>
+        <select id="seg-canal" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;">
+          <option value="">-- Sin canal --</option>
+          <option>Instagram</option><option>TikTok</option><option>Facebook</option>
+          <option>WhatsApp</option><option>Referido</option>
+          <option>Evento / Feria</option><option>Web / E-commerce</option><option>Otro</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">📸 Instagram</label>
+        <input type="text" id="seg-ig" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+      </div>
+      <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">🎵 TikTok</label>
+        <input type="text" id="seg-tt" placeholder="@usuario" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+      </div>
+      <div><label style="font-size:11px;font-weight:600;color:#7A9E9C;">📱 WhatsApp</label>
+        <input type="text" id="seg-wa" placeholder="+57..." style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;">
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:11px;font-weight:600;color:#7A9E9C;">Notas de seguimiento</label>
+      <textarea id="seg-notas" rows="3" placeholder="Observaciones, acuerdos, próximos pasos..." style="width:100%;padding:7px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-top:3px;box-sizing:border-box;resize:vertical;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeModalSeg()" class="btn btn-ghost btn-sm">Cancelar</button>
+      <button onclick="guardarSeguimiento()" class="btn btn-sm">Guardar cambios</button>
+    </div>
+    <div id="seg-msg" style="margin-top:8px;font-size:12px;"></div>
+  </div>
 </div>
 
 
@@ -592,6 +728,7 @@ function switchSeccion(sec){
 
 // ─── ÁNIMUS TABS ──────────────────────────────────────────────────────────
 function goTabA(id,btn){
+  if(id==='ta-seguimiento') loadSeguimiento();
   document.querySelectorAll('#sec-animus .page').forEach(function(p){p.classList.remove('active');});
   document.querySelectorAll('#tabs-animus .tab').forEach(function(t){t.classList.remove('active-a');});
   document.getElementById(id).classList.add('active');
@@ -691,7 +828,13 @@ async function crearAliado(){
     telefono:document.getElementById('cli-tel').value,
     ciudad:document.getElementById('cli-ciudad').value,
     condiciones_pago:document.getElementById('cli-pago').value,
-    nivel_aliado:document.getElementById('cli-nivel').value};
+    nivel_aliado:document.getElementById('cli-nivel').value,
+    categoria_profesional:(document.getElementById('cli-categoria')||{}).value||'',
+    canal_captacion:(document.getElementById('cli-canal')||{}).value||'',
+    notas_seguimiento:(document.getElementById('cli-notas')||{}).value||'',
+    redes_sociales:{instagram:(document.getElementById('cli-ig')||{}).value||'',
+                    tiktok:(document.getElementById('cli-tiktok')||{}).value||'',
+                    whatsapp:(document.getElementById('cli-wa')||{}).value||''}};
   try{
     var r=await fetch('/api/clientes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
@@ -1126,6 +1269,153 @@ async function confirmarEstOrden(){
 
 // ─── INIT ─────────────────────────────────────────────────────────────────
 loadDashA();
+
+// ── SEGUIMIENTO DE ALIADOS ─────────────────────────────────────────────────
+var _segData = null;
+
+async function loadSeguimiento() {
+  const data = await fetch('/api/aliados/analytics').then(r=>r.json());
+  if(data.error){ console.error(data.error); return; }
+  _segData = data;
+  const res = data.resumen || [];
+
+  // KPIs
+  const totalFact = res.reduce((s,r)=>s+(r.total_facturado||0),0);
+  const totalMes  = res.reduce((s,r)=>s+(r.mes_actual||0),0);
+  const totalPed  = res.reduce((s,r)=>s+(r.total_pedidos||0),0);
+  const ticket    = totalPed>0 ? totalFact/totalPed : 0;
+  const freqs     = res.filter(r=>r.frecuencia_dias!=null).map(r=>r.frecuencia_dias);
+  const frecProm  = freqs.length>0 ? Math.round(freqs.reduce((s,f)=>s+f,0)/freqs.length) : null;
+
+  document.getElementById('seg-total').textContent  = fmtCOP(totalFact);
+  document.getElementById('seg-mes').textContent    = fmtCOP(totalMes);
+  document.getElementById('seg-ticket').textContent = fmtCOP(ticket);
+  document.getElementById('seg-frec').textContent   = frecProm!=null ? frecProm : '—';
+
+  // Chart
+  renderSegChart(data.ventas_mes || []);
+
+  // Tabla
+  const tbody = document.getElementById('seg-body');
+  if(!res.length){ tbody.innerHTML='<tr><td colspan="9" class="empty">Sin aliados registrados</td></tr>'; return; }
+  tbody.innerHTML = res.map(r => {
+    const redes = r.redes_sociales || {};
+    const redesHtml = [
+      redes.instagram ? '<a href="https://instagram.com/'+redes.instagram.replace('@','')+'" target="_blank" style="color:#e1306c;text-decoration:none;" title="Instagram">📸</a>' : '',
+      redes.tiktok    ? '<span title="TikTok: '+redes.tiktok+'">🎵</span>' : '',
+      redes.whatsapp  ? '<a href="https://wa.me/'+redes.whatsapp.replace(/[^0-9]/g,'')+'" target="_blank" style="color:#25D366;" title="WhatsApp">📱</a>' : ''
+    ].filter(Boolean).join(' ');
+    const topSku = (r.top_skus||[])[0];
+    const freqBadge = r.frecuencia_dias!=null
+      ? `<span style="background:${r.frecuencia_dias<=30?'#dcfce7':r.frecuencia_dias<=60?'#fef9c3':'#fee2e2'};color:${r.frecuencia_dias<=30?'#15803d':r.frecuencia_dias<=60?'#a16207':'#b91c1c'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">${r.frecuencia_dias}d</span>`
+      : '<span style="color:#aaa;font-size:11px;">—</span>';
+    return `<tr>
+      <td><strong>${r.nombre}</strong><br><span style="font-size:10px;color:#94a3b8;">${r.ciudad||''}</span></td>
+      <td><span style="font-size:11px;background:#f1f5f9;padding:2px 7px;border-radius:10px;">${r.categoria_profesional||'—'}</span></td>
+      <td><span style="font-size:11px;color:#64748b;">${r.canal_captacion||'—'}</span></td>
+      <td style="text-align:center;">${redesHtml||'—'}</td>
+      <td style="text-align:right;font-weight:700;">${fmtCOP(r.total_facturado)}</td>
+      <td style="text-align:right;color:#16a34a;font-weight:600;">${fmtCOP(r.mes_actual)}</td>
+      <td style="text-align:center;">${freqBadge}</td>
+      <td style="font-size:11px;">${topSku?topSku.sku+' <span style="color:#94a3b8;">('+topSku.uds+' uds)</span>':'—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="abrirModalSeg(${r.id})">Editar</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function fmtCOP(v) {
+  if(!v) return '$0';
+  if(v>=1000000) return '$'+(v/1000000).toFixed(1)+'M';
+  if(v>=1000) return '$'+(v/1000).toFixed(0)+'K';
+  return '$'+Math.round(v).toLocaleString();
+}
+
+function renderSegChart(ventas_mes) {
+  if(!ventas_mes.length){ document.getElementById('seg-chart').innerHTML='<p style="color:#aaa;text-align:center;padding:20px;">Sin datos de ventas</p>'; return; }
+
+  // Build meses and aliados
+  const meses = [...new Set(ventas_mes.map(v=>v.mes))].sort();
+  const aliados = [...new Map(ventas_mes.map(v=>[v.id,v.nombre])).entries()];
+  const maxV = Math.max(...ventas_mes.map(v=>v.ventas), 1);
+
+  const COLORS = ['#2B7A78','#5C4B99','#e85d04','#4cc9f0','#7b2d8b','#2a9d8f'];
+  const barW = 32, gap = 8, grpGap = 24;
+  const grpW = aliados.length*(barW+gap) + grpGap;
+  const W = meses.length*grpW + 60;
+  const H = 180;
+
+  let svgBars = '';
+  meses.forEach((mes, mi) => {
+    aliados.forEach(([aid, anom], ai) => {
+      const v = ventas_mes.find(r=>r.mes===mes&&r.id===aid);
+      const val = v ? v.ventas : 0;
+      const barH = Math.round((val/maxV)*(H-40));
+      const x = 40 + mi*grpW + ai*(barW+gap);
+      const y = H - 30 - barH;
+      const col = COLORS[ai % COLORS.length];
+      svgBars += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${col}" rx="3" opacity="0.85">
+        <title>${anom} — ${mes}: $${Math.round(val/1000)}K</title></rect>`;
+      if(barH>14) svgBars += `<text x="${x+barW/2}" y="${y+barH-4}" text-anchor="middle" font-size="8" fill="white" font-weight="700">${Math.round(val/1000)}K</text>`;
+    });
+    // Month label
+    const lx = 40 + mi*grpW + (aliados.length*(barW+gap))/2;
+    svgBars += `<text x="${lx}" y="${H-8}" text-anchor="middle" font-size="9" fill="#64748b">${mes}</text>`;
+  });
+
+  // Legend
+  let legend = '';
+  aliados.forEach(([aid,anom],ai)=>{
+    legend += `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;">
+      <span style="display:inline-block;width:10px;height:10px;background:${COLORS[ai%COLORS.length]};border-radius:2px;"></span>${anom}</span>`;
+  });
+
+  document.getElementById('seg-chart').innerHTML =
+    `<svg width="${W}" height="${H}" style="display:block;min-width:${W}px;">${svgBars}</svg>` +
+    `<div style="margin-top:8px;">${legend}</div>`;
+}
+
+function abrirModalSeg(id) {
+  const r = (_segData?.resumen||[]).find(x=>x.id===id);
+  if(!r) return;
+  document.getElementById('seg-edit-id').value = id;
+  document.getElementById('modal-seg-title').textContent = 'Editar: '+r.nombre;
+  document.getElementById('seg-cat').value   = r.categoria_profesional||'';
+  document.getElementById('seg-canal').value = r.canal_captacion||'';
+  const rs = r.redes_sociales||{};
+  document.getElementById('seg-ig').value   = rs.instagram||'';
+  document.getElementById('seg-tt').value   = rs.tiktok||'';
+  document.getElementById('seg-wa').value   = rs.whatsapp||'';
+  document.getElementById('seg-notas').value= r.notas_seguimiento||'';
+  document.getElementById('seg-msg').textContent='';
+  document.getElementById('modal-seg').style.display='flex';
+}
+
+function closeModalSeg() { document.getElementById('modal-seg').style.display='none'; }
+
+async function guardarSeguimiento() {
+  const id = document.getElementById('seg-edit-id').value;
+  const payload = {
+    categoria_profesional: document.getElementById('seg-cat').value,
+    canal_captacion: document.getElementById('seg-canal').value,
+    redes_sociales: {
+      instagram: document.getElementById('seg-ig').value.trim(),
+      tiktok:    document.getElementById('seg-tt').value.trim(),
+      whatsapp:  document.getElementById('seg-wa').value.trim()
+    },
+    notas_seguimiento: document.getElementById('seg-notas').value
+  };
+  const r = await fetch('/api/aliados/'+id, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const d = await r.json();
+  if(d.ok){
+    document.getElementById('seg-msg').style.color='#16a34a';
+    document.getElementById('seg-msg').textContent='✅ Guardado';
+    setTimeout(()=>{ closeModalSeg(); loadSeguimiento(); },700);
+  } else {
+    document.getElementById('seg-msg').style.color='#dc2626';
+    document.getElementById('seg-msg').textContent='Error: '+(d.error||'desconocido');
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 </script>
 
 
