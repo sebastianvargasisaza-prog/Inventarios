@@ -912,18 +912,23 @@ def mkt_sync(platform):
             loc_id  = _cfg(conn, "ghl_location_id")
             if not api_key or not loc_id:
                 return jsonify({"error": "GHL no configurado (falta api_key o location_id)."}), 400
-            # GHL v2 API — tokens pit- requieren services.leadconnectorhq.com + Version header
-            page = 1
+            # GHL v2 API — paginación por cursor (startAfter/startAfterId)
             synced = 0
+            start_after = None
+            start_after_id = None
+            ghl_headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Version": "2021-07-28",
+                "Accept": "application/json",
+                "User-Agent": "GHL-Integration/1.0",
+            }
             while True:
-                url = f"https://services.leadconnectorhq.com/contacts/?locationId={loc_id}&limit=100&page={page}"
-                req = urllib.request.Request(url, headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "Version": "2021-07-28",
-                    "Accept": "application/json",
-                    "User-Agent": "GHL-Integration/1.0",
-                })
+                params = f"locationId={loc_id}&limit=100"
+                if start_after:
+                    params += f"&startAfter={start_after}&startAfterId={start_after_id}"
+                url = f"https://services.leadconnectorhq.com/contacts/?{params}"
+                req = urllib.request.Request(url, headers=ghl_headers)
                 try:
                     with urllib.request.urlopen(req, timeout=20) as r:
                         payload = json.loads(r.read())
@@ -944,10 +949,12 @@ def mkt_sync(platform):
                          ct.get("email",""), ct.get("phone",""),
                          tags, ct.get("source",""), fecha))
                     synced += 1
-                # Stop if fewer than 100 returned (last page)
-                if len(contacts) < 100:
+                # Cursor para siguiente página
+                meta = payload.get("meta", {})
+                start_after    = meta.get("startAfter")
+                start_after_id = meta.get("startAfterId")
+                if not start_after or len(contacts) < 100:
                     break
-                page += 1
             conn.commit()
             return jsonify({"ok": True, "synced": synced, "platform": "ghl"})
 
