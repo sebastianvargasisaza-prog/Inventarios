@@ -1214,7 +1214,8 @@ async function syncPlatform(platform) {
       loadConnections();
     } else {
       status.style.color = '#f87171';
-      status.textContent = data.error || 'Error al sincronizar';
+      const det = data.detalle ? ' → ' + data.detalle.slice(0,120) : '';
+      status.textContent = (data.error || 'Error al sincronizar') + det;
     }
   } catch(e) {
     status.style.color = '#f87171';
