@@ -290,6 +290,9 @@ def _norm_mp_name(name):
     import unicodedata as _ud
     import re as _re
     s = str(name or '').strip()
+    # Strip embedded control characters (Excel import artifacts)
+    import re as _re2
+    s = _re2.sub(r'[\x00-\x1f\x7f]', '', s)
     # Strip accents
     s = ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn')
     s = s.upper()
@@ -298,11 +301,25 @@ def _norm_mp_name(name):
     # Hyphens and slashes to space
     s = _re.sub(r'[-/]', ' ', s)
     # Add space between digit and letter: 50KD -> 50 KD, 300KD -> 300 KD
-    s = _re.sub(r'(\d)([A-Z])', r' ', s)
-    s = _re.sub(r'([A-Z])(\d)', r' ', s)
+    s = _re.sub(r'(\d)([A-Z])', r'\1 \2', s)
+    s = _re.sub(r'([A-Z])(\d)', r'\1 \2', s)
     # Collapse multiple spaces
     s = _re.sub(r'\s+', ' ', s).strip()
     return s
+
+
+# MPs that are always available (own production equipment — effectively infinite stock)
+_MP_UNLIMITED = {
+    'AGUA DESIONIZADA', 'AGUA PURIFICADA', 'AGUA DESTILADA',
+    'AGUA PURIFICADA TOTAL', 'AGUA', 'AQUA',
+}
+_MP_UNLIMITED_NORM = set()  # populated lazily in _get_mp_stock
+
+
+def _is_unlimited_mp(nombre):
+    """Return True if the MP is produced on-site (water equipment, etc.)."""
+    n = str(nombre or '').strip().upper()
+    return n in _MP_UNLIMITED or any(u in n for u in ('AGUA DESIONIZADA', 'AGUA PURIFICADA'))
 
 
 def _get_mp_stock(conn):
@@ -592,19 +609,21 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
                 needed_g = float(item['cantidad_g_por_lote']) * kg_scale
-                # Try lookup order: formula material_id (MPACARLI01) → exact name →
-                # normalised name (strips accents/hyphens/parentheses) → 0
-                if mid in mp_stock:
+                # Try lookup order: unlimited → material_id → exact name → normalised name → 0
+                nombre_raw = str(item.get('material_nombre', '')).strip()
+                if _is_unlimited_mp(nombre_raw):
+                    # Water and other on-site produced MPs: always available
+                    available_g = float('inf')
+                elif mid in mp_stock:
                     available_g = mp_stock[mid]
                 else:
-                    nombre_raw = str(item.get('material_nombre', '')).strip()
                     nombre_exact = nombre_raw.upper()
                     if nombre_exact in mp_stock:
                         available_g = mp_stock[nombre_exact]
                     else:
                         nombre_norm = _norm_mp_name(nombre_raw)
                         available_g = mp_stock.get(nombre_norm, 0)
-                deficit_g = max(0, needed_g - available_g)
+                deficit_g = 0 if available_g == float('inf') else max(0, needed_g - available_g)
                 ok = deficit_g < 1
                 if not ok:
                     can_produce = False
@@ -612,7 +631,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                     'material_id': mid,
                     'nombre': item['material_nombre'],
                     'needed_g': round(needed_g, 1),
-                    'available_g': available_g,
+                    'available_g': '∞' if available_g == float('inf') else available_g,
                     'deficit_g': round(deficit_g, 1),
                     'ok': ok,
                 })
