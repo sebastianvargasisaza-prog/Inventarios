@@ -643,7 +643,8 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         kg_scale   = planned_kg / ref_kg  # e.g. 50kg planned / 35kg ref = 1.43x
 
         mp_check = []
-        can_produce = True
+        can_produce = True        # False only if MP found-in-system but insufficient
+        has_data_gap = False      # True if any MP not found in movimientos at all
         items_with_qty = [i for i in items if i.get('cantidad_g_por_lote', 0) > 0]
         if not items_with_qty:
             can_produce = None  # formula sin cantidades definidas
@@ -651,8 +652,9 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
                 needed_g = float(item['cantidad_g_por_lote']) * kg_scale
-                # Lookup order: unlimited → id → exact name → norm name → alias → 0
                 nombre_raw = str(item.get('material_nombre', '')).strip()
+                # Lookup order: unlimited → id → exact name → norm name → alias → NOT_FOUND
+                mp_found = True
                 if _is_unlimited_mp(nombre_raw):
                     available_g = float('inf')
                 elif mid in mp_stock:
@@ -666,13 +668,19 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                         if nombre_norm in mp_stock:
                             available_g = mp_stock[nombre_norm]
                         else:
-                            # Static alias: known brand/typo/language differences
-                            alias_key = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_raw.upper())
-                            available_g = mp_stock.get(alias_key, 0) if alias_key else 0
+                            alias_key = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_exact)
+                            if alias_key and alias_key in mp_stock:
+                                available_g = mp_stock[alias_key]
+                            else:
+                                available_g = 0
+                                mp_found = False  # genuinely not in movimientos
                 deficit_g = 0 if available_g == float('inf') else max(0, needed_g - available_g)
                 ok = deficit_g < 1
                 if not ok:
-                    can_produce = False
+                    if mp_found:
+                        can_produce = False  # confirmed deficit: found but insufficient
+                    else:
+                        has_data_gap = True  # data gap: not in movimientos, unknown stock
                 mp_check.append({
                     'material_id': mid,
                     'nombre': item['material_nombre'],
@@ -680,6 +688,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                     'available_g': '∞' if available_g == float('inf') else available_g,
                     'deficit_g': round(deficit_g, 1),
                     'ok': ok,
+                    'mp_found': mp_found,
                 })
 
         missing_mp = [m for m in mp_check if not m['ok']]
@@ -741,7 +750,9 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             'prox_produccion': prox_prod,
             'cal_ok': cal_ok,
             'mp_lista': can_produce,
+            'mp_data_gap': has_data_gap,
             'n_mp_faltantes': len(missing_mp),
+            'n_mp_sin_datos': len([m for m in mp_check if not m.get('mp_found', True)]),
             'semaforo': semaforo,
             'mp_check': mp_check,
         })

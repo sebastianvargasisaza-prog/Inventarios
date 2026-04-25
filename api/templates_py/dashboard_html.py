@@ -3585,7 +3585,13 @@ function _renderProgramacion(d){
     tbody.innerHTML = d.proyeccion.map(function(p){
       var semColor = p.semaforo === 'verde' ? '#28a745' : p.semaforo === 'amarillo' ? '#fd7e14' : '#dc3545';
       var semEmoji = p.semaforo === 'verde' ? '\u2705' : p.semaforo === 'amarillo' ? '\u26A0\uFE0F' : '🚨';
-      var mpIcon = p.mp_lista === null ? '?' : (p.mp_lista ? '\u2705' : '\u274C');
+      // MPs: ✅ all OK | ⚠️ data gap (not in movimientos) | ❌ confirmed deficit
+      var mpIcon = p.mp_lista === null ? '?' :
+                   (p.mp_lista === true ? '\u2705' :
+                   (p.mp_lista === false ? '\u274C' :
+                   (p.mp_data_gap ? '\u26A0\uFE0F' : '?')));
+      // If no confirmed deficit but has data gaps, show warning instead of X
+      if (p.mp_lista !== false && p.mp_data_gap) mpIcon = '\u26A0\uFE0F';
       var skuKey = p.sku || p.producto;
       var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
       var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
