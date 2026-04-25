@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Fix: Agregar Solicitudes al Home</title>
+<style>
+body{font-family:monospace;background:#111;color:#0f0;padding:20px;}
+h2{color:#0ff;}
+input,textarea{width:100%;background:#1a1a1a;color:#0f0;border:1px solid #0f0;padding:8px;margin:6px 0;}
+button{background:#004400;color:#0f0;border:1px solid #0f0;padding:10px 24px;cursor:pointer;font-size:14px;}
+button:hover{background:#006600;}
+#log{color:#ff0;margin-top:12px;white-space:pre;}
+</style>
+</head>
+<body>
+<h2>🔧 Fix: Re-agregar Solicitudes al Portal Home</h2>
+<p>Pega tu GitHub Personal Access Token (repo scope):</p>
+<input type="password" id="tok" placeholder="ghp_xxxxxxxxxxxx">
+<br>
+<button onclick="doPush()">🚀 Aplicar Fix y Push a GitHub</button>
+<div id="log">Listo para ejecutar...</div>
+
+<script>
+async function doPush(){
+  const tok = document.getElementById('tok').value.trim();
+  if(!tok){alert('Necesitas el token'); return;}
+  document.getElementById('log').textContent = 'Leyendo archivo...';
+
+  const REPO = 'sebastianvargasisaza-prog/Inventarios';
+  const PATH = 'api/templates_py/home_html.py';
+
+  // Get current file
+  const metaR = await fetch(`https://api.github.com/repos/${REPO}/contents/${PATH}`, {
+    headers:{'Authorization':'token '+tok}
+  });
+  const meta = await metaR.json();
+  if(!meta.sha){ document.getElementById('log').textContent = 'ERROR leyendo: '+JSON.stringify(meta); return; }
+
+  const rawR = await fetch(`https://raw.githubusercontent.com/${REPO}/main/${PATH}`);
+  const raw = await rawR.text();
+
+  document.getElementById('log').textContent = 'Archivo leido: '+raw.length+' bytes\nBuscando anchor...';
+
+  const OLD = `    <a href="/calidad" class="card"><div class="card-icon">&#x2705;</div><div class="card-name">Calidad BPM</div><div class="card-desc">CC lotes, NC, calibraciones</div></a>
+  </div>
+  <div class="sect">Gerencia</div>`;
+
+  const NEW = `    <a href="/calidad" class="card"><div class="card-icon">&#x2705;</div><div class="card-name">Calidad BPM</div><div class="card-desc">CC lotes, NC, calibraciones</div></a>
+    <a href="/solicitudes" class="card"><div class="card-icon">&#x1F4CB;</div><div class="card-name">Solicitudes</div><div class="card-desc">Pedir materiales e insumos</div></a>
+  </div>
+  <div class="sect">Gerencia</div>`;
+
+  if(!raw.includes(OLD)){
+    document.getElementById('log').textContent = 'ERROR: Anchor no encontrado en el archivo.\nVerifica que el archivo no haya cambiado.';
+    return;
+  }
+
+  const patched = raw.replace(OLD, NEW);
+  document.getElementById('log').textContent = 'Patch aplicado (+1 card Solicitudes)\nHaciendo push...';
+
+  const bytes = new TextEncoder().encode(patched);
+  let bin = ''; for(let b of bytes) bin += String.fromCharCode(b);
+  const b64 = btoa(bin);
+
+  const pushR = await fetch(`https://api.github.com/repos/${REPO}/contents/${PATH}`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json','Authorization':'token '+tok},
+    body: JSON.stringify({
+      message: 'fix: re-agregar card Solicitudes al portal home',
+      content: b64,
+      sha: meta.sha
+    })
+  });
+  const pushRes = await pushR.json();
+  if(pushRes.commit){
+    document.getElementById('log').textContent = '✅ LISTO!\nCommit: '+pushRes.commit.sha+'\nRender desplegará en ~60s.\nSolicitudes ya aparecerá en el portal.';
+  } else {
+    document.getElementById('log').textContent = 'ERROR push: '+JSON.stringify(pushRes).substring(0,300);
+  }
+}
+</script>
+</body>
+</html>

@@ -139,8 +139,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
     <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
-    <button class="tab-button" onclick="switchTab('envasado',this)">&#128230; Envasado</button>
-    <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
     <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
   </div>
@@ -153,7 +151,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
   <div id="bar-prodHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
-    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Lote</button>
+    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Fabricación</button>
+    <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
+    <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
@@ -857,6 +857,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
   <p style="color:#666;font-size:13px;margin-bottom:16px">Registra el uso de envases y tapas por lote de produccion terminado.</p>
 
+  <div id="cola-sin-envasar" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0;font-size:14px;color:#1b5e20">&#128230; Cola: lotes listos para envasar</h3>
+      <button onclick="loadColaSinEnvasar()" style="background:#1b5e20;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+    </div>
+    <div id="cola-env-tbody-wrap" style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#2e7d32;color:#fff">
+          <th style="padding:7px">Lote</th><th style="padding:7px">Producto</th><th style="padding:7px">Batch (kg)</th><th style="padding:7px">Fecha</th><th style="padding:7px">Operador</th><th style="padding:7px">Accion</th>
+        </tr></thead>
+        <tbody id="cola-env-tbody"><tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
     <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -926,6 +941,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div style="padding:18px">
   <h2 style="margin:0 0 4px;color:#1a4a7a">&#128295; Acondicionamiento PT</h2>
   <p style="color:#666;font-size:13px;margin-bottom:16px">Registra etiquetas, plegadizas y unidades salientes para entrega al cliente.</p>
+
+  <div id="cola-sin-acond" style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:14px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="margin:0;font-size:14px;color:#0d47a1">&#128295; Cola: lotes listos para acondicionar</h3>
+      <button onclick="loadColaAcond()" style="background:#0d47a1;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#1565c0;color:#fff">
+          <th style="padding:7px">Lote</th><th style="padding:7px">Producto</th><th style="padding:7px">Uds</th><th style="padding:7px">Presentacion</th><th style="padding:7px">Fecha</th><th style="padding:7px">Accion</th>
+        </tr></thead>
+        <tbody id="cola-acond-tbody"><tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 
   <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
     <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Acondicionamiento</h3>
@@ -3186,6 +3216,69 @@ function registrarAcond(){
     _toast("Error de red: "+e,0);
     if(msgEl) msgEl.innerHTML='<span style="color:red;">Error de red: '+e+'</span>';
   });
+}
+function loadColaSinEnvasar(){
+  var tb=document.getElementById('cola-env-tbody');
+  if(!tb)return;
+  tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr>';
+  fetch('/api/producciones/sin-envasar')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var rows=d.cola||[];
+      if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#27ae60;padding:10px">&#10003; Sin lotes pendientes de envasar</td></tr>';return;}
+      tb.innerHTML=rows.map(function(r){
+        return '<tr style="border-bottom:1px solid #c8e6c9">'+
+          '<td style="padding:7px;font-weight:600">'+(r.lote||'S/L')+'</td>'+
+          '<td style="padding:7px">'+r.producto+'</td>'+
+          '<td style="padding:7px;text-align:center">'+(r.cantidad_kg||0)+' kg</td>'+
+          '<td style="padding:7px">'+(r.fecha||'')+'</td>'+
+          '<td style="padding:7px">'+(r.operador||'')+'</td>'+
+          '<td style="padding:7px"><button onclick="prefillEnvasado('+JSON.stringify(r)+')" '+
+          'style="background:#1b5e20;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">'+
+          '&#128393; Envasar</button></td>'+
+          '</tr>';
+      }).join('');
+    })
+    .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center">Error cargando cola</td></tr>';});
+}
+function prefillEnvasado(lote_obj){
+  var sel=document.getElementById('env-prod-sel');
+  if(sel){for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===lote_obj.producto||sel.options[i].text.includes(lote_obj.producto)){sel.value=sel.options[i].value;break;}}}
+  var fl=document.getElementById('env-lote');if(fl)fl.value=lote_obj.lote||'';
+  var fp=document.getElementById('env-pres');if(fp)fp.value=lote_obj.presentacion||'';
+  var el=document.getElementById('env-lote');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function loadColaAcond(){
+  var tb=document.getElementById('cola-acond-tbody');
+  if(!tb)return;
+  tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr>';
+  fetch('/api/envasado/pendientes-acond')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var rows=d.pendientes||[];
+      if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#27ae60;padding:10px">&#10003; Sin lotes pendientes de acondicionar</td></tr>';return;}
+      tb.innerHTML=rows.map(function(r){
+        return '<tr style="border-bottom:1px solid #bbdefb">'+
+          '<td style="padding:7px;font-weight:600">'+(r.lote||'S/L')+'</td>'+
+          '<td style="padding:7px">'+r.producto+'</td>'+
+          '<td style="padding:7px;text-align:center">'+(r.unidades||0)+'</td>'+
+          '<td style="padding:7px">'+(r.presentacion||'')+'</td>'+
+          '<td style="padding:7px">'+(r.fecha||'')+'</td>'+
+          '<td style="padding:7px"><button onclick="prefillAcond('+JSON.stringify(r)+')" '+
+          'style="background:#0d47a1;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">'+
+          '&#128393; Acondicionar</button></td>'+
+          '</tr>';
+      }).join('');
+    })
+    .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center">Error cargando cola</td></tr>';});
+}
+function prefillAcond(env){
+  var fl=document.getElementById('ac-lote');if(fl)fl.value=env.lote||'';
+  var fp=document.getElementById('ac-prod');if(fp)fp.value=env.producto||'';
+  var fps=document.getElementById('ac-pres');if(fps)fps.value=env.presentacion||'';
+  var fb=document.getElementById('ac-batch');if(fb)fb.value=env.batch_g||'';
+  var fu=document.getElementById('ac-uds');if(fu)fu.value=env.unidades||'';
+  var el=document.getElementById('ac-lote');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
 }
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){

@@ -1941,6 +1941,22 @@ _init_acondicionamiento()
 # ENVASADO — Paso entre Produccion y Acondicionamiento
 # ══════════════════════════════════════════════════════════════════
 
+@bp.route('/api/producciones/sin-envasar', methods=['GET'])
+def producciones_sin_envasar():
+    """Cola de producciones sin registro de envasado vinculado."""
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        SELECT p.id, p.lote, p.producto, p.cantidad, p.fecha, p.operador, p.presentacion
+        FROM producciones p
+        LEFT JOIN envasado e ON e.produccion_id = p.id
+        WHERE e.id IS NULL
+          AND COALESCE(p.estado,'') NOT IN ('cancelado','Cancelado')
+        ORDER BY p.id DESC LIMIT 100
+    """)
+    cols = ['id','lote','producto','cantidad_kg','fecha','operador','presentacion']
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    return jsonify({'cola': rows})
+
 @bp.route('/api/envasado', methods=['GET', 'POST'])
 def envasado_list():
     conn = get_db(); c = conn.cursor()

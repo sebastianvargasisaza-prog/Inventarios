@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Fix JS SyntaxError — iniciarConteoProgramado</title>
+<style>
+body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+#log { white-space: pre-wrap; }
+.ok  { color: #0f0; }
+.err { color: #f44; }
+.info{ color: #ff0; }
+</style>
+</head>
+<body>
+<h2 style="color:#fff">Fix JS SyntaxError — dashboard_html.py</h2>
+<div id="log">Iniciando...
+</div>
+<script>
+const TOKEN  = "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";
+const OWNER  = "espagiria";
+const REPO   = "hha-portal";
+const BRANCH = "main";
+const PATH   = "api/templates_py/dashboard_html.py";
+const API    = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
+
+const log = (msg, cls='ok') => {
+  document.getElementById('log').innerHTML += '<span class="'+cls+'">'+msg+'</span>\n';
+};
+
+/*
+  ROOT CAUSE:
+  Python """...""" string evaluates \' as just ' (stripping backslash).
+  So JS gets ''  (adjacent string literals) → SyntaxError: Unexpected string
+
+  FIX:
+  Replace \' (one backslash + quote) with \\' (two backslashes + quote) in the
+  Python source. Python then evaluates \\' as \' which JS correctly interprets
+  as an escaped single quote inside a single-quoted string.
+
+  In the raw file bytes:
+    OLD: ... ConteoProgramado(\' '+s.estanteria+'\')" ...
+         i.e. bytes: ( 0x5C 0x27 0x27 +s... 0x27 0x5C 0x27 )
+    NEW: ... ConteoProgramado(\\'+s.estanteria+\\')" ...
+         i.e. bytes: ( 0x5C 0x5C 0x27 0x27 +s... 0x27 0x5C 0x5C 0x27 )
+
+  JS string representation (in "..." delimiters, \\ = one backslash, ' = quote):
+    OLD = "iniciarConteoProgramado(\\''+s.estanteria+'\\')\""
+    NEW = "iniciarConteoProgramado(\\\\''+s.estanteria+'\\\\')\""
+
+  Verification for NEW string "iniciarConteoProgramado(\\\\''+s.estanteria+'\\\\')" :
+    \\   = backslash byte
+    \\   = backslash byte
+    '    = quote byte
+    '    = quote byte
+    +s.estanteria+ = literal
+    '    = quote byte
+    \\   = backslash byte
+    \\   = backslash byte
+    '    = quote byte
+    )    = close-paren byte
+  => bytes: ( \ \ ' ' +s... ' \ \ ' )  == \\'' ... '\\' in file  CORRECT
+*/
+
+async function run() {
+  try {
+    log("1. Obteniendo archivo de GitHub...", "info");
+    const res = await fetch(API + "?ref=" + BRANCH, {
+      headers: {
+        "Authorization": "token " + TOKEN,
+        "Accept": "application/vnd.github.v3+json"
+      }
+    });
+    if (!res.ok) throw new Error("GET " + res.status + ": " + await res.text());
+    const data = await res.json();
+    const sha = data.sha;
+    log("   SHA: " + sha);
+
+    const raw = atob(data.content.replace(/\n/g,''));
+    log("   Tamano: " + raw.length + " chars");
+
+    // Locate the line
+    const probe = raw.indexOf("iniciarConteoProgramado");
+    if (probe < 0) throw new Error("'iniciarConteoProgramado' no encontrado");
+
+    // Show what's actually in the file around that spot
+    log("\n2. Contexto actual en GitHub:");
+    const snippet = raw.substring(probe, probe + 100);
+    // Show char codes for critical area (position of opening paren = probe + "iniciarConteoProgramado(".length = probe+23)
+    const parenPos = probe + 23; // position of '(' after function name
+    let charDump = "   Chars [parenPos .. parenPos+8]: ";
+    for (let i = parenPos; i < parenPos+8; i++) {
+      charDump += raw.charCodeAt(i) + "(" + raw[i] + ") ";
+    }
+    log(charDump);
+
+    // Check if already fixed: should have 0x5C 0x5C 0x27 (two backslashes then quote) after '('
+    // Already fixed = char at parenPos+1 is backslash AND char at parenPos+2 is also backslash
+    const c1 = raw.charCodeAt(parenPos + 1); // first char after (
+    const c2 = raw.charCodeAt(parenPos + 2); // second char after (
+    const c3 = raw.charCodeAt(parenPos + 3); // third char after (
+
+    // Old pattern: ( \ ' '  =>  codes 40 92 39 39
+    // New pattern: ( \ \ ' '  =>  codes 40 92 92 39 39
+    const isOld = (c1 === 92 && c2 === 39 && c3 === 39);  // ( \  '  '
+    const isNew = (c1 === 92 && c2 === 92 && c3 === 39);  // ( \  \  '
+
+    log("   Char codes after '(': " + c1 + " " + c2 + " " + c3);
+    log("   isOld (needs fix): " + isOld);
+    log("   isNew (already fixed): " + isNew);
+
+    if (isNew) {
+      log("\n   El archivo ya tiene el fix. Nada que hacer.", "info");
+      return;
+    }
+
+    if (!isOld) {
+      log("   ALERTA: patron inesperado — revisar manualmente", "err");
+      throw new Error("Patron inesperado en el archivo");
+    }
+
+    log("\n3. Aplicando fix...", "info");
+
+    // Build OLD and NEW strings using char codes to avoid any escaping confusion
+    // OLD bytes to find:   iniciarConteoProgramado( \ ' ' +s.estanteria+ ' \ ' )
+    // NEW bytes to insert: iniciarConteoProgramado( \ \ ' ' +s.estanteria+ ' \ \ ' )
+
+    // We use String.fromCharCode to build the exact byte sequences
+    const BSLASH = String.fromCharCode(92); // backslash
+    const QUOTE  = String.fromCharCode(39); // single quote
+
+    const funcBase = "iniciarConteoProgramado(";
+    const restMid  = "'+s.estanteria+'";
+
+    // OLD: ( \ ' ' +s... ' \ ' )
+    const OLD = funcBase + BSLASH + QUOTE + QUOTE + restMid + BSLASH + QUOTE + ")";
+
+    // NEW: ( \ \ ' ' +s... ' \ \ ' )
+    const NEW = funcBase + BSLASH + BSLASH + QUOTE + QUOTE + restMid + BSLASH + BSLASH + QUOTE + ")";
+
+    log("   OLD repr: " + JSON.stringify(OLD));
+    log("   NEW repr: " + JSON.stringify(NEW));
+
+    const oldIdx = raw.indexOf(OLD);
+    if (oldIdx < 0) {
+      // Try to show what we have
+      log("   OLD no encontrado. Mostrando bytes [probe..probe+60]:", "err");
+      for (let i = probe; i < probe+60; i++) {
+        log("   [" + i + "] code=" + raw.charCodeAt(i) + " char=" + JSON.stringify(raw[i]));
+      }
+      throw new Error("OLD pattern no encontrado en archivo");
+    }
+
+    log("   OLD encontrado en posicion " + oldIdx + " OK");
+
+    const fixed = raw.replace(OLD, NEW);
+    if (fixed === raw) throw new Error("Replace no cambio nada");
+
+    // Verify fix
+    const fixedProbe = fixed.indexOf("iniciarConteoProgramado");
+    const fp = fixedProbe + 23;
+    const fc1 = fixed.charCodeAt(fp+1);
+    const fc2 = fixed.charCodeAt(fp+2);
+    const fc3 = fixed.charCodeAt(fp+3);
+    log("   Verificacion post-fix: chars [fp+1,fp+2,fp+3] = " + fc1 + " " + fc2 + " " + fc3);
+    if (fc1 !== 92 || fc2 !== 92 || fc3 !== 39) {
+      throw new Error("Verificacion fallo — fix incorrecto");
+    }
+    log("   Fix verificado: ( \\ \\ ' = OK");
+
+    // Encode to base64
+    log("\n4. Codificando y haciendo push...", "info");
+    const encoded = btoa(unescape(encodeURIComponent(fixed)));
+
+    const pushRes = await fetch(API, {
+      method: "PUT",
+      headers: {
+        "Authorization": "token " + TOKEN,
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        message: "fix: JS SyntaxError en conteo ciclico — backslash-quote escaping en triple-string Python",
+        content: encoded,
+        sha: sha,
+        branch: BRANCH
+      })
+    });
+
+    if (!pushRes.ok) throw new Error("PUT " + pushRes.status + ": " + await pushRes.text());
+    const pushData = await pushRes.json();
+    log("\n LISTO! Commit: " + pushData.commit.sha.substring(0,12));
+    log("Render desplegara en ~60 segundos.");
+    log("Verifica: https://hha-portal.onrender.com/inventarios", "info");
+
+  } catch(e) {
+    log("\n ERROR: " + e.message, "err");
+    console.error(e);
+  }
+}
+
+run();
+</script>
+</body>
+</html>

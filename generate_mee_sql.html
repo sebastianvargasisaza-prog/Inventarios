@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>MEE SQL Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body{font-family:monospace;padding:20px;background:#111;color:#0f0;}
+h2{color:#0ff;}
+#status{color:#ff0;margin:10px 0;}
+#output{width:100%;height:400px;background:#000;color:#0f0;font-size:11px;border:1px solid #333;}
+button{background:#1a1a1a;color:#0f0;border:1px solid #0f0;padding:8px 16px;cursor:pointer;margin:5px;}
+input[type=file]{color:#0f0;}
+#stats{color:#0ff;margin:5px 0;}
+</style>
+</head>
+<body>
+<h2>🧪 MEE SQL Generator — Espagiria</h2>
+<p>Carga el archivo <code>Listado_Materiales_Envase_Empaque.xlsx</code></p>
+<input type="file" id="xlsxFile" accept=".xlsx,.xls">
+<div id="status">Esperando archivo...</div>
+<div id="stats"></div>
+<button onclick="copiarSQL()">📋 Copiar SQL</button>
+<button onclick="descargarSQL()">💾 Descargar SQL</button>
+<br><br>
+<textarea id="output" readonly></textarea>
+
+<script>
+var HOY = '2026-04-19 00:00:00';
+var FECHA_CONTEO = '2026-04-19';
+var sqlOutput = '';
+
+function esc(v){ return String(v||'').replace(/'/g,"''"); }
+function normalizar(col){ return String(col||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function inferirCategoria(desc, cod){
+  var t = (String(desc)+' '+String(cod)).toLowerCase();
+  if(/caja|corrugado|carton|box/.test(t)) return 'Caja';
+  if(/frasco|botella|envase|flask|bottle/.test(t)) return 'Frasco';
+  if(/tapa|cap|tap.n/.test(t)) return 'Tapa';
+  if(/bomba|pump|dispensador/.test(t)) return 'Bomba';
+  if(/etiqueta|label|sticker/.test(t)) return 'Etiqueta';
+  if(/bolsa|bag|sachet|pouch/.test(t)) return 'Bolsa';
+  if(/tubo|tube/.test(t)) return 'Tubo';
+  if(/insert|inserto|prospecto/.test(t)) return 'Inserto';
+  if(/cinta|tape|adhesivo/.test(t)) return 'Cinta';
+  return 'Otro';
+}
+
+function mapearColumnas(headers){
+  var normas = {};
+  headers.forEach(function(h){ normas[normalizar(h)] = h; });
+  var patrones = {
+    codigo:       ['codigomee','codigo','cod','ref','referencia','id','item','codigomaterial','codmee'],
+    descripcion:  ['descripcion','nombre','material','descripcionmaterial','nombrematerial','desc','articulo','producto','detalle'],
+    categoria:    ['categoria','tipo','tipomaterial','tipomee','clase','grupo','family','familia'],
+    proveedor:    ['proveedor','supplier','vendedor','proveedorprincipal','proveedor1'],
+    fabricante:   ['fabricante','marca','manufacturer','brand','origen'],
+    estado:       ['estado','status','activo','vigente'],
+    stock_actual: ['stockactual','cantidadactual','cantactual','stock','existencias','cantidad','conteo','cantidadconteo','stockfisico','cant','existencia','saldo'],
+    stock_minimo: ['stockminimo','stockmin','minimo','min','puntoReorden','reorden','stockminimum','cantminima'],
+    unidad:       ['unidad','und','um','unidadmedida','unidades','udm','unit'],
+  };
+  var mapa = {};
+  Object.keys(patrones).forEach(function(campo){
+    patrones[campo].forEach(function(p){
+      if(!mapa[campo] && normas[p]) mapa[campo] = normas[p];
+    });
+  });
+  return mapa;
+}
+
+function normEstado(v){
+  v = String(v||'').toLowerCase().trim();
+  if(!v || v==='nan'||v==='n/a') return 'Activo';
+  if(/inact|baja|obsoleto|descont/.test(v)) return 'Inactivo';
+  return 'Activo';
+}
+
+function procesarExcel(data){
+  var wb = XLSX.read(data, {type:'array'});
+  var sheetName = wb.SheetNames[0];
+  document.getElementById('status').textContent = 'Hoja: "'+sheetName+'" — procesando...';
+  var ws = wb.Sheets[sheetName];
+  var rawRows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+
+  // Detectar header — fila con más valores
+  var headerIdx = 0;
+  var maxCount = 0;
+  for(var i=0; i<Math.min(10, rawRows.length); i++){
+    var cnt = rawRows[i].filter(function(c){ return c!==''; }).length;
+    if(cnt > maxCount){ maxCount=cnt; headerIdx=i; }
+  }
+  var headers = rawRows[headerIdx].map(String);
+  var mapa = mapearColumnas(headers);
+
+  document.getElementById('stats').textContent =
+    'Header en fila '+headerIdx+' | Columnas: '+headers.join(', ')+
+    '\nMapeo: '+JSON.stringify(mapa);
+
+  // Construir filas de datos
+  var dataRows = rawRows.slice(headerIdx+1);
+  var colIdx = {};
+  headers.forEach(function(h,i){ colIdx[h]=i; });
+
+  function getVal(row, campo, def){
+    var col = mapa[campo];
+    if(col && colIdx[col]!==undefined) return row[colIdx[col]];
+    return def!==undefined ? def : '';
+  }
+
+  var lines = [];
+  lines.push('-- ==========================================================');
+  lines.push('-- stock_inicial_mee.sql');
+  lines.push('-- Generado : '+HOY);
+  lines.push('-- Fuente   : Listado_Materiales_Envase_Empaque.xlsx  (conteo '+FECHA_CONTEO+')');
+  lines.push('-- Ejecutar : python3 /tmp/seed_mee.py  (en Render shell)');
+  lines.push('-- NOTA     : INSERT OR REPLACE sobreescribe placeholders');
+  lines.push('-- ==========================================================');
+  lines.push('');
+  lines.push('BEGIN TRANSACTION;');
+  lines.push('');
+  lines.push('-- ── maestro_mee ──────────────────────────────────────────────');
+
+  var codigos = {};
+  var countInsert = 0, countDup = 0, countSkip = 0;
+
+  dataRows.forEach(function(row){
+    var cod = String(getVal(row,'codigo','')||'').trim();
+    var desc = String(getVal(row,'descripcion','')||'').trim();
+    if(!cod || cod.toUpperCase()==='NAN' || !desc) { countSkip++; return; }
+    if(/total|resumen|leyenda|codigo|c.digo|subtotal/i.test(cod)) { countSkip++; return; }
+
+    if(codigos[cod]){ countDup++; return; }
+    codigos[cod] = true;
+
+    var catRaw = getVal(row,'categoria','');
+    var cat = (catRaw && String(catRaw).trim() && String(catRaw).trim()!=='nan')
+               ? String(catRaw).trim() : inferirCategoria(desc, cod);
+
+    var prov = String(getVal(row,'proveedor','')||'').trim().replace('nan','');
+    var fab  = String(getVal(row,'fabricante','')||'').trim().replace('nan','');
+    var und  = String(getVal(row,'unidad','und')||'und').trim();
+    if(!und || und==='nan') und='und';
+
+    var estadoRaw = getVal(row,'estado','Activo');
+    var estado = normEstado(estadoRaw);
+
+    var stockRaw  = parseFloat(getVal(row,'stock_actual',0))||0;
+    var minimoRaw = parseFloat(getVal(row,'stock_minimo',0))||0;
+
+    lines.push(
+      "INSERT OR REPLACE INTO maestro_mee "+
+      "(codigo,descripcion,categoria,proveedor,fabricante,"+
+      "estado,stock_actual,stock_minimo,unidad,fecha_creacion) VALUES ("+
+      "'"+esc(cod)+"',"+
+      "'"+esc(desc)+"',"+
+      "'"+esc(cat)+"',"+
+      "'"+esc(prov)+"',"+
+      "'"+esc(fab)+"',"+
+      "'"+esc(estado)+"',"+
+      stockRaw.toFixed(4)+","+
+      minimoRaw.toFixed(4)+","+
+      "'"+esc(und)+"',"+
+      "'"+FECHA_CONTEO+"');"
+    );
+    countInsert++;
+  });
+
+  lines.push('-- '+countInsert+' registros MEE (INSERT OR REPLACE)');
+  if(countDup) lines.push('-- '+countDup+' duplicados omitidos');
+  if(countSkip) lines.push('-- '+countSkip+' filas vacías/inválidas omitidas');
+  lines.push('');
+  lines.push('COMMIT;');
+  lines.push('');
+  lines.push('-- Verificación rápida post-import:');
+  lines.push('-- SELECT COUNT(*) FROM maestro_mee;');
+  lines.push('-- SELECT categoria, COUNT(*) c, SUM(stock_actual) stock');
+  lines.push('--   FROM maestro_mee GROUP BY categoria ORDER BY c DESC;');
+  lines.push('-- SELECT * FROM maestro_mee WHERE stock_actual < stock_minimo LIMIT 20;');
+
+  sqlOutput = lines.join('\n');
+  document.getElementById('output').value = sqlOutput;
+  document.getElementById('status').textContent =
+    '✅ SQL generado: '+countInsert+' MEEs | '+countDup+' duplicados | '+countSkip+' vacíos';
+}
+
+document.getElementById('xlsxFile').addEventListener('change', function(e){
+  var file = e.target.files[0];
+  if(!file){ return; }
+  document.getElementById('status').textContent = 'Leyendo: '+file.name+' ('+file.size+' bytes)...';
+  var reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      procesarExcel(new Uint8Array(ev.target.result));
+    }catch(err){
+      document.getElementById('status').textContent = '❌ Error: '+err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function copiarSQL(){
+  document.getElementById('output').select();
+  document.execCommand('copy');
+  document.getElementById('status').textContent = '📋 SQL copiado al portapapeles';
+}
+
+function descargarSQL(){
+  if(!sqlOutput){ alert('Primero carga el Excel'); return; }
+  var blob = new Blob([sqlOutput], {type:'text/plain'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stock_inicial_mee.sql';
+  a.click();
+  document.getElementById('status').textContent = '💾 Descargando stock_inicial_mee.sql...';
+}
+</script>
+</body>
+</html>

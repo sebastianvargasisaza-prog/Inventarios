@@ -1,0 +1,131 @@
+<\!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;font-size:10pt;background:#eee;padding:20px;}
+.ph{background:#1a3a5c;color:white;padding:10px 16px;display:flex;justify-content:space-between;margin-bottom:10px;align-items:center;}
+.pb{background:#2980b9;color:white;border:none;padding:7px 18px;border-radius:4px;cursor:pointer;font-weight:bold;}
+.rot{background:white;border:3px solid #1a3a5c;border-radius:5px;max-width:540px;margin:auto;}
+.rh{background:#1a3a5c;color:white;padding:6px 12px;display:grid;grid-template-columns:1fr auto;gap:4px;font-size:9pt;}
+.rh-title{font-weight:700;font-size:11pt;}
+.rh-meta{text-align:right;font-size:8pt;opacity:0.85;line-height:1.6;}
+table{width:100%;border-collapse:collapse;}
+td{border:1px solid #bbb;padding:5px 8px;font-size:9.5pt;}
+.lbl{background:#ecf0f1;font-weight:700;font-size:8.5pt;color:#333;width:42%;}
+.val{font-weight:600;}
+.tipo{background:#dbe9f5;}
+.calidad td{background:#e8f5e9;}
+.firma td{height:36px;}
+.bc{text-align:center;padding:8px;background:#f8f9fa;border-bottom:1px solid #bbb;}
+.footer{background:#dde8f0;padding:4px 10px;font-size:7.5pt;color:#555;text-align:center;}
+@media print{.ph{display:none;}body{background:white;padding:0;}.rot{border:2px solid #000;}}
+@page{size:A6;margin:5mm;}
+</style>
+</head><body>
+
+<div class="ph">
+  <b>Rótulo Identificación Insumos MEE &mdash; Espagiria</b>
+  <button class="pb" onclick="window.print()">🖨️ Imprimir</button>
+</div>
+
+<div class="rot">
+  <\!-- Header -->
+  <div class="rh">
+    <div>
+      <div class="rh-title">IDENTIFICACIÓN DE INSUMOS</div>
+      <div style="font-size:8pt;opacity:0.8;">Espagiria Laboratorios</div>
+    </div>
+    <div class="rh-meta">
+      Código: <b>COC-PRO-002-F04</b><br>
+      Versión: 2 &nbsp;|&nbsp; Pág: 1 de 1<br>
+      Vigencia: 13-Jun-2025 / 12-Jun-2028
+    </div>
+  </div>
+
+  <\!-- Código de barras -->
+  <div class="bc">
+    <div style="font-size:8pt;color:#666;margin-bottom:3px;">CÓDIGO — BARRAS</div>
+    <svg id="bc" style="max-width:100%;"></svg>
+    <div style="font-family:monospace;font-weight:700;font-size:10pt;letter-spacing:2px;color:#1a3a5c;">MEE-ENV-001</div>
+  </div>
+
+  <\!-- Tabla principal -->
+  <table>
+    <tr>
+      <td class="lbl">NOMBRE COMERCIAL DEL INSUMO</td>
+      <td class="val" colspan="3">Frasco PET 120ml Ámbar</td>
+    </tr>
+    <tr>
+      <td class="lbl">NOMBRE INCI DEL INSUMO</td>
+      <td colspan="3">&mdash;</td>
+    </tr>
+    <tr>
+      <td class="lbl">MARCA O FORMA QUÍMICA</td>
+      <td colspan="3">Envases Colombia S.A.S.</td>
+    </tr>
+    <tr class="tipo">
+      <td class="lbl tipo">TIPO DE INSUMO</td>
+      <td style="text-align:center;width:18%;">&#9744; MP</td>
+      <td style="text-align:center;width:18%;">&#9745; M.ENV</td>
+      <td style="text-align:center;width:18%;">&#9744; M.EMP</td>
+    </tr>
+    <tr>
+      <td class="lbl">CÓDIGO INTERNO</td>
+      <td class="val">MEE-ENV-001</td>
+      <td class="lbl">LOTE</td>
+      <td class="val">LOT-2026-0412</td>
+    </tr>
+    <tr>
+      <td class="lbl">CANTIDAD</td>
+      <td class="val">500 und</td>
+      <td class="lbl">PROVEEDOR</td>
+      <td class="val">Envases Colombia S.A.S.</td>
+    </tr>
+    <tr>
+      <td class="lbl">FECHA DE RECEPCIÓN</td>
+      <td class="val">20-APR-2026</td>
+      <td class="lbl">FECHA DE ANÁLISIS</td>
+      <td style="height:28px;background:#fffde7;"></td>
+    </tr>
+    <tr>
+      <td class="lbl">OBSERVACIONES</td>
+      <td colspan="3" style="height:28px;">Ingreso según OC-2026-0089</td>
+    </tr>
+    <tr>
+      <td class="lbl">FECHA DE VENCIMIENTO</td>
+      <td colspan="3">N/A &mdash; Material de envase/empaque</td>
+    </tr>
+    <tr class="calidad">
+      <td class="lbl calidad" style="color:#1b5e20;">ESTADO</td>
+      <td colspan="3" style="height:30px;">
+        <span style="margin-right:16px;">&#9744; Aprobado</span>
+        <span style="margin-right:16px;">&#9744; En cuarentena</span>
+        <span>&#9744; Rechazado</span>
+      </td>
+    </tr>
+    <tr class="firma">
+      <td class="lbl">FECHA Y FIRMA REALIZADO POR</td>
+      <td colspan="3"></td>
+    </tr>
+    <tr class="firma">
+      <td class="lbl">FECHA Y FIRMA APROBADO POR</td>
+      <td colspan="3"></td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    COC-PRO-002-F04 &nbsp;|&nbsp; Frasco &nbsp;|&nbsp; 20-APR-2026 &nbsp;|&nbsp; N° Rec: REC-MEE-20260420-0001
+  </div>
+</div>
+
+<script>
+window.onload = function() {
+  try {
+    JsBarcode("#bc", "MEE-ENV-001", {
+      format: "CODE128", width: 1.8, height: 50,
+      displayValue: false, margin: 2
+    });
+  } catch(e) {}
+}
+</script>
+</body></html>
