@@ -339,6 +339,14 @@ _MP_NAME_ALIAS = {
     # Ascorbic acid derivatives
     '3 O ACIDO ETIL ASCORBICO': 'ETIL ASCORBICO ACID',
     'ASCORBIL GLUCOSIDE':        'ASCORBIL GLUCOSIDE',
+    # Pantenol variants (without D- prefix)
+    'PANTENOL LIQUIDO':   'D PANTENOL LIQUIDO',
+    'PANTENOL SOLIDO':    'D PANTENOL SOLIDO',
+    'PANTENOL':           'PANTENOL POLVO',
+    # Centella variants
+    'CENTELLA ASIATICA POLVO': 'CENTELLA ASIATICA',
+    'CENTELLA ASIATICA':       'CENTELLA ASIATICA',
+    'CENTELLA':                'CENTELLA ASIATICA',
 }
 
 
@@ -1533,8 +1541,11 @@ def prog_debug_mps():
 
     # Search mp_stock for critical keywords
     keywords = ['AGUA', 'ALOE', 'ARGAN', 'JOJOBA', 'ASCORBICO', 'FERULICO',
-                'PANTENOL', 'PANTENOL', 'CETILICO', 'CETEARIL', 'ROSA MOSQUETA',
-                'ACETIL', 'ACETYL', 'HIALURONICO']
+                'PANTENOL', 'CETILICO', 'CETEARIL', 'ROSA MOSQUETA',
+                'ACETIL', 'ACETYL', 'HIALURONICO',
+                'SILICONA', 'EZ', 'REGALIZ', 'GLYCYRRHIZA', 'LICORICE',
+                'CENTELLA', 'PROPILEN', 'CARBOPOL', 'CAFEINA', 'CERAMIDA',
+                'BETAGLUCAN', 'BACKUCHIOL', 'NIACINAMIDA', 'RETINOL']
     keyword_hits = {}
     for kw in keywords:
         hits = [k for k in mp_stock if kw in k]
