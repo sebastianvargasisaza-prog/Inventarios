@@ -1075,6 +1075,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('MPBIOTSO01', 'BIOTINOIL TRIPEPTIDO-1', 'MP00193', 'biotinoyl tripeptide-1', 1)
         """
     ]),
+        (16, 'mp_formula_bridge — bisabolol, boron nitride, terpenos, tocoferil', [
+        """INSERT OR IGNORE INTO mp_formula_bridge
+           (formula_material_id, formula_material_nombre, bodega_material_id, notas, activo)
+           VALUES
+           ('MPBISALI01', 'BISABOLOL', 'MPBSBL01', 'bisabolol — bodega usa codigo MPBSBL01 (no MP00XXX)', 1),
+           ('MPBORNISO01', 'NITRURO DE BORO', 'MPBNIT01', 'boron nitride — bodega usa codigo MPBNIT01', 1),
+           ('MPTERPESO01', 'TERPENOS SOLUBLE', 'MP00176', 'terpenos solubles = centella asiatica extract', 1),
+           ('MPTERSOL01', 'TERPENOS SOLUBLES', 'MP00176', 'terpenos solubles = centella asiatica extract', 1),
+           ('MPTERSSO01', 'TERPENOS SOLUBLES 80-98%', 'MP00176', 'terpenos solubles = centella asiatica extract', 1),
+           ('MPTOCOFE01', 'SODIUM TOCOFERIL FOSFATO', 'MP00078', 'sodium tocopheryl phosphate = vitamina E', 1)
+        """
+    ]),
 (12, 'produccion_programada table', [
         """CREATE TABLE IF NOT EXISTS produccion_programada (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
