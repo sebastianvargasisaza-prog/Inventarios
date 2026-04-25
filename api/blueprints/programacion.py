@@ -771,7 +771,15 @@ def prog_debug_stock():
     # Calculated stock
     stock_calc = _get_stock_pt(conn)
 
+    # Formula headers product names
+    try:
+        fh = conn.execute('SELECT producto_nombre, lote_size_kg FROM formula_headers ORDER BY producto_nombre').fetchall()
+        fh_list = [{'producto': r[0], 'lote_kg': r[1]} for r in fh]
+    except Exception as e:
+        fh_list = [{'error': str(e)}]
+
     return jsonify({
+        'formula_headers': fh_list,
         'stock_pt_raw': raw_pt_list,
         'sku_producto_map': sku_map_list,
         'acondicionamiento': acon_list,
