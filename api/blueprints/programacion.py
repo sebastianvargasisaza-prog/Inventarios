@@ -22,8 +22,9 @@ from database import get_db
 
 bp = Blueprint('programacion', __name__)
 
-CALENDAR_ID  = os.environ.get('CALENDAR_ID', 'c_d3a06d5f8ace62d5566968a70aeb2f3bd1d0a5b6b2b2f8c6b4ad66ac0d03286c@group.calendar.google.com')
+CALENDAR_ID      = os.environ.get('CALENDAR_ID', 'c_d3a06d5f8ace62d5566968a70aeb2f3bd1d0a5b6b2b2f8c6b4ad66ac0d03286c@group.calendar.google.com')
 GOOGLE_API_KEY   = os.environ.get('GOOGLE_API_KEY', '')
+GCAL_ICAL_URL    = os.environ.get('GCAL_ICAL_URL', '')   # iCal feed URL (no API key needed)
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 
 # ─── Auth helper ────────────────────────────────────────────────────────────
@@ -176,26 +177,70 @@ def _shopify_velocity(conn, days=60):
 
 # ─── Google Calendar ─────────────────────────────────────────────────────────
 
+def _parse_ical(text, days_ahead=90):
+    """Parse iCal text and return list of {titulo, fecha} dicts."""
+    import re as _re
+    today = date.today()
+    cutoff = today + timedelta(days=days_ahead)
+    events = []
+    # Split into VEVENT blocks
+    for block in _re.split(r'BEGIN:VEVENT', text)[1:]:
+        summary = ''
+        dt_str  = ''
+        for line in block.splitlines():
+            line = line.strip()
+            if line.startswith('SUMMARY:'):
+                summary = line[8:].replace('\n', ' ').replace('\,', ',').strip()
+            elif line.startswith('DTSTART'):
+                # DTSTART;VALUE=DATE:20260502 or DTSTART:20260502T... 
+                val = line.split(':', 1)[-1].strip()
+                dt_str = val[:8]  # YYYYMMDD
+        if summary and dt_str and len(dt_str) == 8:
+            try:
+                ev_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
+                if today <= ev_date <= cutoff:
+                    events.append({'titulo': summary, 'fecha': ev_date.isoformat(),
+                                   'descripcion': '', 'id': ''})
+            except ValueError:
+                pass
+    return sorted(events, key=lambda e: e['fecha'])
+
+
 def _fetch_calendar_events(days_ahead=90):
-    """Fetch production calendar events via Google Calendar REST API."""
+    """Fetch production calendar events.
+    Priority: 1) iCal feed (GCAL_ICAL_URL), 2) Google Calendar API (GOOGLE_API_KEY).
+    """
+    # ── Option 1: iCal feed (public or secret URL, no API key required) ──────
+    if GCAL_ICAL_URL:
+        try:
+            req = urllib.request.Request(
+                GCAL_ICAL_URL,
+                headers={'User-Agent': 'EspagiRIA-Inventarios/1.0'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                text = r.read().decode('utf-8', errors='replace')
+            events = _parse_ical(text, days_ahead)
+            return {'events': events, 'error': None, 'source': 'ical'}
+        except Exception as e:
+            return {'events': [], 'error': f'iCal error: {e}', 'source': 'ical'}
+
+    # ── Option 2: Google Calendar API (requires GOOGLE_API_KEY) ──────────────
     if not GOOGLE_API_KEY:
-        return {'events': [], 'error': 'GOOGLE_API_KEY no configurada'}
+        return {'events': [], 'error': 'Configura GCAL_ICAL_URL en Render para leer el calendario', 'source': 'none'}
 
     now = datetime.utcnow()
     time_min = now.strftime('%Y-%m-%dT%H:%M:%SZ')
     time_max = (now + timedelta(days=days_ahead)).strftime('%Y-%m-%dT%H:%M:%SZ')
-
     params = urllib.parse.urlencode({
         'key': GOOGLE_API_KEY,
         'timeMin': time_min,
         'timeMax': time_max,
         'singleEvents': 'true',
         'orderBy': 'startTime',
-        'maxResults': 50,
+        'maxResults': 100,
     })
     cal_id_encoded = urllib.parse.quote(CALENDAR_ID, safe='')
     url = f"https://www.googleapis.com/calendar/v3/calendars/{cal_id_encoded}/events?{params}"
-
     try:
         req = urllib.request.Request(url, headers={'Accept': 'application/json'})
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -210,12 +255,12 @@ def _fetch_calendar_events(days_ahead=90):
                 'descripcion': item.get('description', ''),
                 'id': item.get('id', ''),
             })
-        return {'events': events, 'error': None}
+        return {'events': events, 'error': None, 'source': 'gcal_api'}
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')[:300]
-        return {'events': [], 'error': f'Calendar API HTTP {e.code}: {body}'}
+        return {'events': [], 'error': f'Calendar API HTTP {e.code}: {body}', 'source': 'gcal_api'}
     except Exception as e:
-        return {'events': [], 'error': str(e)}
+        return {'events': [], 'error': str(e), 'source': 'gcal_api'}
 
 def _fetch_local_production_events(conn):
     """Return list of upcoming local production events from produccion_programada."""
@@ -388,26 +433,46 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
     pt_stock = _get_stock_pt(conn)
 
     # Calendar: next production date per product
-    # Priority: local produccion_programada DB first, then Google Calendar events
+    # Priority: 1) local DB, 2) Google Calendar / iCal (smart matching)
     products_with_formula = set(formulas.keys())
     next_prod_by_product = {}
-    # Local events (exact product name match)
+
+    # 1. Local DB events (exact product name)
     local_events = _fetch_local_production_events(conn)
     for ev in local_events:
         prod_ev = ev.get('titulo', '')
         if prod_ev in products_with_formula and prod_ev not in next_prod_by_product:
             next_prod_by_product[prod_ev] = ev.get('fecha', '')
-    # Google Calendar fallback (fuzzy title match)
+
+    # 2. Google Calendar / iCal events (smart title matching)
+    import re as _re_cal
+    _stop_words = {'DE','DEL','LA','EL','LOS','LAS','CON','MAS','PARA',
+                   'PRODUCCION','PRODUCCIÓN','LOTE','ESPAGIRIA','ANIMUS'}
+
+    def _cal_score(titulo_up, prod_up):
+        if prod_up in titulo_up:
+            return 100
+        tw = set(w for w in _re_cal.split(r'[^A-Z0-9]+', titulo_up) if len(w) > 2)
+        pw = set(w for w in _re_cal.split(r'[^A-Z0-9]+', prod_up)  if len(w) > 2)
+        pw -= _stop_words
+        if not pw:
+            return 0
+        return int(100 * len(pw & tw) / len(pw))
+
     for ev in calendar_events:
-        titulo = ev.get('titulo', '').upper()
-        fecha_ev = ev.get('fecha', '')
+        titulo_up = ev.get('titulo', '').upper()
+        fecha_ev  = ev.get('fecha', '')
+        if not fecha_ev:
+            continue
+        best_prod, best_score = None, 49
         for prod in products_with_formula:
             if prod in next_prod_by_product:
                 continue
-            key = prod[:6].upper()
-            if key in titulo:
-                next_prod_by_product[prod] = fecha_ev
-                break
+            sc = _cal_score(titulo_up, prod.upper())
+            if sc > best_score:
+                best_score, best_prod = sc, prod
+        if best_prod:
+            next_prod_by_product[best_prod] = fecha_ev
 
     today = __import__('datetime').date.today()
 
@@ -1030,6 +1095,47 @@ def prog_completar_evento(evento_id):
     )
     conn.commit()
     return jsonify({'ok': True, 'id': evento_id})
+
+
+@bp.route('/api/programacion/debug-calendario')
+def prog_debug_calendario():
+    """Show raw calendar events and how they match to products."""
+    conn = get_db()
+    cal  = _fetch_calendar_events(days_ahead=120)
+    conn2 = get_db()
+    formulas = _get_formulas(conn2)
+    products_with_formula = list(formulas.keys())
+
+    import re as _re_dbg
+    _stop = {'DE','DEL','LA','EL','LOS','LAS','CON','MAS','PARA',
+             'PRODUCCION','PRODUCCIÓN','LOTE','ESPAGIRIA','ANIMUS'}
+
+    def score(t, p):
+        tu, pu = t.upper(), p.upper()
+        if pu in tu: return 100
+        tw = set(w for w in _re_dbg.split(r'[^A-Z0-9]+', tu) if len(w)>2)
+        pw = set(w for w in _re_dbg.split(r'[^A-Z0-9]+', pu) if len(w)>2) - _stop
+        if not pw: return 0
+        return int(100*len(pw&tw)/len(pw))
+
+    matches = []
+    for ev in cal.get('events', []):
+        titulo = ev.get('titulo','')
+        scores = sorted(
+            [{'producto': p, 'score': score(titulo, p)} for p in products_with_formula],
+            key=lambda x: -x['score']
+        )[:5]
+        matches.append({'evento': titulo, 'fecha': ev.get('fecha',''), 'top_matches': scores})
+
+    return jsonify({
+        'source': cal.get('source','?'),
+        'error':  cal.get('error'),
+        'total_events': len(cal.get('events',[])),
+        'gcal_ical_url_set': bool(GCAL_ICAL_URL),
+        'google_api_key_set': bool(GOOGLE_API_KEY),
+        'matches': matches,
+        'raw_events': cal.get('events',[])
+    })
 
 @bp.route('/api/programacion/calendario')
 def prog_calendario():
