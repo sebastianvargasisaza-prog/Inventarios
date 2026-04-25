@@ -1735,7 +1735,7 @@ def prog_debug_mp_check(producto):
 
 # ─── MP Bridge — admin endpoints ─────────────────────────────────────────────
 
-@bp.route('/mp-bridge', methods=['GET'])
+@bp.route('/api/programacion/mp-bridge', methods=['GET'])
 def mp_bridge_list():
     """List all bridge mappings (active and inactive)."""
     with _db() as conn:
@@ -1752,7 +1752,7 @@ def mp_bridge_list():
         return jsonify([dict(zip(keys, r)) for r in rows])
 
 
-@bp.route('/mp-bridge', methods=['POST'])
+@bp.route('/api/programacion/mp-bridge', methods=['POST'])
 def mp_bridge_add():
     """Add or update a bridge mapping.
 
@@ -1790,7 +1790,7 @@ def mp_bridge_add():
     return jsonify({'ok': True, 'formula_material_id': fid, 'bodega_material_id': bid})
 
 
-@bp.route('/mp-bridge/<int:bridge_id>', methods=['DELETE'])
+@bp.route('/api/programacion/mp-bridge/<int:bridge_id>', methods=['DELETE'])
 def mp_bridge_delete(bridge_id):
     """Soft-delete a bridge mapping (sets activo=0)."""
     with _db() as conn:
@@ -1799,7 +1799,7 @@ def mp_bridge_delete(bridge_id):
     return jsonify({'ok': True, 'id': bridge_id, 'activo': 0})
 
 
-@bp.route('/mp-bridge/unmatched', methods=['GET'])
+@bp.route('/api/programacion/mp-bridge/unmatched', methods=['GET'])
 def mp_bridge_unmatched():
     """Return formula_items that cannot be matched to any movimientos entry.
 
