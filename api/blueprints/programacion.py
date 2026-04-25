@@ -183,13 +183,27 @@ def _get_formulas(conn):
 
 def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
     """
-    For each product with a formula and velocity data:
-    1. Calculates MP requirements for one production run (lote_size_kg)
-    2. Checks if all MPs are available
-    3. Projects stock at 30/60 days given velocity
+    For each product with a formula:
+    1. Gets actual finished product stock from acondicionamiento (unidades_producidas)
+    2. Checks MP availability for one production batch
+    3. Projects stock at 60 days given Shopify velocity (in units)
     4. Generates semaphore: verde/amarillo/rojo
     """
-    # Build set of products that have both velocity and formula
+    # Finished product stock from acondicionamiento (last 180 days, in units)
+    acondi_rows = conn.execute("""
+        SELECT producto,
+               COALESCE(SUM(unidades_producidas), 0) as total_uds
+        FROM acondicionamiento
+        WHERE fecha >= date('now', '-180 days')
+        GROUP BY producto
+    """).fetchall()
+    # Normalize names to uppercase for matching
+    pt_stock = {}
+    for r in acondi_rows:
+        prod_name = str(r[0] or '').strip().upper()
+        pt_stock[prod_name] = int(r[1] or 0)
+
+    # Build set of products that have formulas
     products_with_formula = set(formulas.keys())
 
     # Next production per product from calendar events
@@ -198,70 +212,76 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         titulo = ev.get('titulo', '').upper()
         fecha = ev.get('fecha', '')
         for prod in products_with_formula:
-            # Simple match: first 6 chars of product in event title
             key = prod[:6].upper()
             if key in titulo and prod not in next_prod_by_product:
                 next_prod_by_product[prod] = fecha
                 break
 
+    # Build mp_stock key set for matching debug (lowercase + uppercase variants)
+    mp_keys = set(mp_stock.keys())
+
     projection = []
     all_alerts = []
 
-    # All products that have formulas — show all, mark those without velocity as 0
     for prod, formula in sorted(formulas.items()):
         vel_mes = prod_vel.get(prod, 0)
         lote_kg = formula['lote_size_kg']
         items = formula['items']
 
-        # Estimate current finished product stock from acondicionamiento
-        # (units produced minus estimated sold)
-        # Simple estimate: 0 for now (can be wired to PT inventory later)
-        stock_pt_uds = 0
+        # Finished product stock in units (from acondicionamiento)
+        stock_pt_uds = pt_stock.get(prod.upper(), 0)
 
         # MP check: can we produce one batch?
+        # Only flag deficit if needed_g > 0 (formula has quantity data)
         mp_check = []
         can_produce = True
-        for item in items:
-            mid = item['material_id']
-            needed_g = item['cantidad_g_por_lote']
-            available_g = mp_stock.get(mid, 0)
-            deficit_g = max(0, needed_g - available_g)
-            ok = deficit_g == 0
-            if not ok:
-                can_produce = False
-            mp_check.append({
-                'material_id': mid,
-                'nombre': item['material_nombre'],
-                'needed_g': needed_g,
-                'available_g': available_g,
-                'deficit_g': deficit_g,
-                'ok': ok,
-            })
-
-        # Stock projection at 30d and 60d (in kg of product)
-        vel_kg_mes = vel_mes * 0.030  # assuming 30ml per unit → 0.030 kg/unit (rough)
-        stock_30d = lote_kg - vel_kg_mes if lote_kg > 0 else 0
-        stock_60d = lote_kg - (vel_kg_mes * 2) if lote_kg > 0 else 0
+        items_with_qty = [i for i in items if i.get('cantidad_g_por_lote', 0) > 0]
+        if not items_with_qty:
+            # Formula has no quantity data — mark as unknown, not blocking
+            can_produce = None  # None = unknown
+        else:
+            for item in items_with_qty:
+                mid = str(item['material_id']).strip()
+                needed_g = float(item['cantidad_g_por_lote'])
+                available_g = mp_stock.get(mid, 0)
+                deficit_g = max(0, needed_g - available_g)
+                ok = deficit_g < 1  # within 1g tolerance
+                if not ok:
+                    can_produce = False
+                mp_check.append({
+                    'material_id': mid,
+                    'nombre': item['material_nombre'],
+                    'needed_g': needed_g,
+                    'available_g': available_g,
+                    'deficit_g': deficit_g,
+                    'ok': ok,
+                })
 
         prox_prod = next_prod_by_product.get(prod, 'No programado')
 
-        # Semaphore logic
-        if not can_produce and vel_mes > 0:
+        # Stock projection: current units minus 2 months of sales
+        stock_60d_uds = max(stock_pt_uds - int(vel_mes * 2), 0) if vel_mes > 0 else stock_pt_uds
+
+        # MP alert list
+        missing_mp = [m for m in mp_check if not m['ok']]
+
+        # Semaphore: based on units, not kg
+        if can_produce is False and vel_mes > 0:
             semaforo = 'rojo'
-        elif stock_60d < 0 and vel_mes > 0:
+        elif stock_60d_uds <= 0 and vel_mes > 5:
             semaforo = 'rojo'
-        elif stock_30d < (vel_kg_mes * 0.5):
+        elif stock_60d_uds < vel_mes and vel_mes > 0:
             semaforo = 'amarillo'
         else:
             semaforo = 'verde'
 
-        # Missing MPs alert
-        missing_mp = [m for m in mp_check if not m['ok']]
-        if missing_mp:
-            msg = f"Faltan {len(missing_mp)} MPs para producir 1 lote: " + \
-                  ", ".join(f"{m['nombre']} (deficit {m['deficit_g']:.0f}g)" for m in missing_mp[:3])
+        # Alerts
+        if missing_mp and can_produce is False:
+            msg = ("Faltan " + str(len(missing_mp)) + " MPs para producir 1 lote: " +
+                   ", ".join(m['nombre'] + " (deficit " + str(int(m['deficit_g'])) + "g)"
+                             for m in missing_mp[:3]))
             if len(missing_mp) > 3:
-                msg += f" y {len(missing_mp)-3} más"
+                msg += " y " + str(len(missing_mp) - 3) + " mas"
             all_alerts.append({
                 'producto': prod,
                 'nivel': 'critico' if semaforo == 'rojo' else 'alto',
@@ -269,12 +289,13 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                 'mensaje': msg,
             })
 
-        if stock_60d < 0 and vel_mes > 0:
+        if stock_60d_uds <= 0 and vel_mes > 5:
             all_alerts.append({
                 'producto': prod,
                 'nivel': 'alto',
                 'tipo': 'stock_insuficiente_60d',
-                'mensaje': f"Stock proyectado a 60 días: {stock_60d:.1f}kg — velocidad {vel_mes:.0f} uds/mes requiere reposición urgente",
+                'mensaje': ("Stock PT actual: " + str(stock_pt_uds) + " uds"
+                            " — velocidad " + str(int(vel_mes)) + " uds/mes no cubre 60 dias"),
             })
 
         if prox_prod == 'No programado' and vel_mes > 5:
@@ -282,16 +303,16 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                 'producto': prod,
                 'nivel': 'medio',
                 'tipo': 'sin_programar',
-                'mensaje': f"Vende {vel_mes:.0f} uds/mes pero no tiene producción programada en calendario",
+                'mensaje': ("Vende " + str(int(vel_mes)) + " uds/mes"
+                            " pero no tiene produccion programada en calendario"),
             })
 
         projection.append({
             'producto': prod,
             'lote_kg': lote_kg,
             'vel_mes': round(vel_mes, 1),
-            'stock_actual': round(lote_kg, 1),
-            'stock_30d': round(stock_30d, 1),
-            'stock_60d': round(stock_60d, 1),
+            'stock_actual': stock_pt_uds,
+            'stock_60d': int(stock_60d_uds),
             'prox_produccion': prox_prod,
             'mp_lista': can_produce,
             'n_mp_faltantes': len(missing_mp),
@@ -299,7 +320,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             'mp_check': mp_check,
         })
 
-    # Sort: rojo → amarillo → verde
+    # Sort: rojo -> amarillo -> verde
     order = {'rojo': 0, 'amarillo': 1, 'verde': 2}
     projection.sort(key=lambda x: (order.get(x['semaforo'], 3), x['producto']))
     all_alerts.sort(key=lambda x: {'critico': 0, 'alto': 1, 'medio': 2}.get(x['nivel'], 3))
