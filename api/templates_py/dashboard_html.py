@@ -3590,12 +3590,16 @@ function _renderProgramacion(d){
       var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
       var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
       var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
+      var progLabel = p.prox_produccion === 'No programado' ? '📅 Programar' : ('📅 '+p.prox_produccion);
+      var progBtnColor = p.prox_produccion === 'No programado' ? '#6c757d' : '#198754';
       return '<tr style="border-bottom:1px solid #eee">' +
         '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.vel_mes+'</td>' +
         '<td style="padding:9px;text-align:center;font-weight:700;color:'+diasColor+'">'+diasStr+'</td>' +
-        '<td style="padding:9px;text-align:center;font-size:11px">'+p.prox_produccion+'</td>' +
+        '<td style="padding:9px;text-align:center">' +
+          '<button data-prod="' + p.producto + '" onclick="abrirModalProgramar(this.dataset.prod)" style="background:'+progBtnColor+';color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap">'+progLabel+'</button>' +
+        '</td>' +
         '<td style="padding:9px;text-align:center;font-size:16px">'+calIcon+'</td>' +
         '<td style="padding:9px;text-align:center;font-size:16px">'+mpIcon+'</td>' +
         '<td style="padding:9px;text-align:center"><span style="background:'+semColor+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px">'+semEmoji+' '+p.semaforo+'</span></td>' +
