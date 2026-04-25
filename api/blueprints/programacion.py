@@ -1375,12 +1375,12 @@ def prog_debug_mps():
 
     # All material_ids used in formulas
     formula_mids = conn.execute(
-        "SELECT DISTINCT material_id, nombre FROM formula_items ORDER BY material_id"
+        "SELECT DISTINCT material_id, material_nombre FROM formula_items ORDER BY material_id"
     ).fetchall()
 
     matched   = []
     unmatched = []
-    for mid, nombre in formula_mids:
+    for mid, nombre in formula_mids:  # nombre = material_nombre
         stock = mp_stock.get(mid, None)
         if stock is not None:
             matched.append({'material_id': mid, 'nombre': nombre, 'stock_g': round(stock, 1)})
