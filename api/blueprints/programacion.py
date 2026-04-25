@@ -62,7 +62,20 @@ def _shopify_velocity(conn, days=60):
             # Store full SKU — no truncation
             sku_units[raw_sku] = sku_units.get(raw_sku, 0) + qty
 
-    months = days / 30.0
+    # Denominador = días reales de datos en tabla, no la ventana solicitada.
+    # Si el sync solo jaló 4 días, dividir por 60 daría velocidad 10x baja.
+    if rows:
+        all_dates = [r[2] for r in rows if r[2]]
+        if len(all_dates) >= 2:
+            from datetime import date as _dt
+            d_min = _dt.fromisoformat(min(all_dates))
+            d_max = _dt.fromisoformat(max(all_dates))
+            actual_days = max((d_max - d_min).days, 1)
+        else:
+            actual_days = 1
+    else:
+        actual_days = days
+    months = max(actual_days / 30.0, 1/30.0)  # mínimo 1 día
     sku_vel = {sku: round(units / months, 1) for sku, units in sku_units.items()}
 
     # Build lookup map: SKU -> producto_nombre
@@ -84,8 +97,9 @@ def _shopify_velocity(conn, days=60):
         'sku_velocity': sku_vel,
         'prod_velocity': prod_vel,
         'total_orders': len(rows),
-        'days_analyzed': days,
-        'months_analyzed': round(months, 1),
+        'days_requested': days,
+        'actual_days_data': actual_days,
+        'months_analyzed': round(months, 2),
     }
 
 # ─── Google Calendar ─────────────────────────────────────────────────────────

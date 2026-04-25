@@ -762,6 +762,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('RETINAL',   'Suero RETINAL +',                           1),
         ('EMHID',     'GEL HIDRATANTE',                            1)"""
     ]),
+    (8, "sku_producto_map: SKUs adicionales encontrados en ordenes reales Shopify", [
+        """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
+        ('TRIAC',    'SUERO ILUMINADOR AHA+AH.',        1),
+        ('CRB3BHA',  'Suero Exfoliante BHA 2%',         1),
+        ('BBM',      'MASCARILLA HIDRATANTE',            1),
+        ('HKJ',      'LIMPIADOR ILUMINADOR ACIDO KOJICO',1)"""
+    ]),
 ]
 
 
