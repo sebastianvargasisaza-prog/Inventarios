@@ -767,7 +767,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('BBM',      'MASCARILLA HIDRATANTE',            1),
         ('HKJ',      'LIMPIADOR ILUMINADOR ACIDO KOJICO',1),
         ('CRB3BHA',  'EMULSION HIDRATANTE  B3+BHA',    1),
-        ('TRIAC',    'TRIACTIVE_PENDIENTE',              0)"""
+        ('TRIAC',    'SUERO DE RETINALDEHIDO 0.05%',    1)"""
     ]),
 ]
 
