@@ -766,8 +766,8 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
         ('BBM',      'MASCARILLA HIDRATANTE',            1),
         ('HKJ',      'LIMPIADOR ILUMINADOR ACIDO KOJICO',1),
-        ('TRIAC',    'TRIACTIVE',                        0),
-        ('CRB3BHA',  'PENDIENTE_CONFIRMAR',              0)"""
+        ('CRB3BHA',  'EMULSION HIDRATANTE  B3+BHA',    1),
+        ('TRIAC',    'TRIACTIVE_PENDIENTE',              0)"""
     ]),
 ]
 
