@@ -426,33 +426,90 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
 
 # ─── Anthropic narrative ─────────────────────────────────────────────────────
 
-def _generate_narrative(projection, alerts, vel_data):
-    """Calls Anthropic API to generate Spanish narrative summary."""
+# Proveedores China — lead time 60 dias
+PROVEEDORES_CHINA = {'lyphar', 'yitibio'}
+
+def _get_china_mps(conn):
+    """Retorna set de material_id cuyo proveedor es chino (Lyphar, Yitibio)."""
+    china = set()
+    try:
+        for row in conn.execute(
+            "SELECT id, proveedor FROM maestro_mps WHERE proveedor IS NOT NULL"
+        ).fetchall():
+            prov = str(row[1] or '').lower().strip()
+            if any(c in prov for c in PROVEEDORES_CHINA):
+                china.add(str(row[0]).strip())
+    except Exception:
+        pass
+    return china
+
+
+def _generate_narrative(projection, alerts, vel_data, conn=None):
+    """
+    Analisis IA con horizonte 2 meses.
+    Perspectiva: Espagiria recibe demanda de ANIMUS y debe garantizar produccion
+    con 20 dias de anticipacion al agotamiento.
+    MPs de Lyphar/Yitibio = China = 60 dias lead time.
+    """
     if not ANTHROPIC_API_KEY:
         return None
 
-    n_rojo = sum(1 for p in projection if p['semaforo'] == 'rojo')
-    n_amarillo = sum(1 for p in projection if p['semaforo'] == 'amarillo')
-    top_ventas = sorted(projection, key=lambda x: x['vel_mes'], reverse=True)[:3]
-    top_str = ", ".join(f"{p['producto'][:20]} ({p['vel_mes']} uds/mes)" for p in top_ventas)
+    # Productos criticos (menos de 20 dias)
+    criticos = [p for p in projection if p['semaforo'] == 'rojo' and p['vel_dia'] > 0]
+    # Productos en alerta (20-40 dias)
+    en_alerta = [p for p in projection if p['semaforo'] == 'amarillo' and p['vel_dia'] > 0]
+    # MPs faltantes
+    mp_faltantes_criticos = [a for a in alerts if a['tipo'] == 'mp_faltante']
+    # Sin programar
+    sin_programar = [a for a in alerts if a['tipo'] == 'sin_programar']
 
-    prompt = (
-        f"Eres el sistema de planificación de Espagiria Laboratorios. "
-        f"Analiza este estado de producción y da un resumen ejecutivo en español en máximo 4 oraciones, "
-        f"con tono técnico-operativo directo:\n\n"
-        f"- Productos en estado crítico (rojo): {n_rojo}\n"
-        f"- Productos en alerta (amarillo): {n_amarillo}\n"
-        f"- Productos en orden (verde): {len(projection) - n_rojo - n_amarillo}\n"
-        f"- Top ventas: {top_str}\n"
-        f"- Total pedidos Shopify analizados (60d): {vel_data.get('total_orders', 0)}\n"
-        f"- Alertas críticas: {len([a for a in alerts if a['nivel'] == 'critico'])}\n"
-        f"- Alertas altas: {len([a for a in alerts if a['nivel'] == 'alto'])}\n"
-        f"\nResumen:"
-    )
+    # China MPs check
+    china_mps = _get_china_mps(conn) if conn else set()
+    china_alertas = []
+    for p in projection:
+        for mp in p.get('mp_check', []):
+            if str(mp['material_id']) in china_mps and not mp['ok']:
+                china_alertas.append(p['producto'] + ': ' + mp['nombre'] + ' (deficit ' + str(int(mp['deficit_g'])) + 'g de China)')
+
+    # Build data block (no f-strings con chars especiales)
+    lines = []
+    lines.append('CONTEXTO EMPRESARIAL:')
+    lines.append('- ANIMUS Lab: ecommerce que vende por Shopify')
+    lines.append('- Espagiria: laboratorio maquila que produce para ANIMUS')
+    lines.append('- Regla critica: producir 20 dias ANTES del agotamiento')
+    lines.append('- MPs de China (Lyphar, Yitibio): lead time 60 dias — comprar con 2 meses de anticipacion')
+    lines.append('')
+    lines.append('ESTADO ACTUAL (horizonte 60 dias):')
+    lines.append('- Productos criticos (<20 dias stock): ' + str(len(criticos)))
+    for p in criticos[:4]:
+        dc = str(int(p['dias_cobertura'])) if p['dias_cobertura'] else '?'
+        lines.append('  * ' + p['producto'] + ': ' + dc + ' dias, vende ' + str(int(p['vel_mes'])) + ' uds/mes, cal=' + p['prox_produccion'])
+    lines.append('- En alerta (20-40 dias): ' + str(len(en_alerta)))
+    for p in en_alerta[:3]:
+        dc = str(int(p['dias_cobertura'])) if p['dias_cobertura'] else '?'
+        lines.append('  * ' + p['producto'] + ': ' + dc + ' dias')
+    lines.append('- MPs faltantes para producir: ' + str(len(mp_faltantes_criticos)))
+    if mp_faltantes_criticos:
+        for a in mp_faltantes_criticos[:3]:
+            lines.append('  * ' + a['producto'] + ': ' + a['mensaje'][:80])
+    lines.append('- Sin programar en calendario: ' + str(len(sin_programar)))
+    lines.append('- MPs de China con deficit: ' + str(len(china_alertas)))
+    for ca in china_alertas[:3]:
+        lines.append('  * ' + ca)
+    lines.append('- Pedidos Shopify ultimos 60d: ' + str(vel_data.get('total_orders', 0)))
+
+    lines.append('')
+    lines.append('INSTRUCCION: Genera un analisis ejecutivo en espanol para Espagiria con:')
+    lines.append('1. Cuales productos debe producir primero y por que (dias de cobertura)')
+    lines.append('2. Que MPs comprar YA (especialmente China — deben pedirse hoy para tenerlos en 60 dias)')
+    lines.append('3. Una accion concreta para los proximos 7 dias')
+    lines.append('Tono: tecnico-operativo directo. Maximo 5 oraciones.')
+
+    prompt = chr(10).join(lines)
 
     body = json.dumps({
         "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 300,
+        "max_tokens": 400,
         "messages": [{"role": "user", "content": prompt}]
     }).encode('utf-8')
 
@@ -461,7 +518,7 @@ def _generate_narrative(projection, alerts, vel_data):
             "https://api.anthropic.com/v1/messages",
             data=body,
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
+                "x-api-key": ANTHROPIC_API_KEY.strip(),
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
@@ -470,8 +527,11 @@ def _generate_narrative(projection, alerts, vel_data):
         with urllib.request.urlopen(req, timeout=15) as r:
             resp = json.loads(r.read())
         return resp.get('content', [{}])[0].get('text', '')
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode('utf-8', errors='replace')[:200]
+        return '[IA error ' + str(e.code) + ': ' + body_err + ']'
     except Exception as e:
-        return f"[IA no disponible: {e}]"
+        return '[IA no disponible: ' + str(e) + ']' 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
@@ -508,7 +568,7 @@ def prog_resumen():
     # 6. AI narrative (non-blocking)
     narrativa = None
     try:
-        narrativa = _generate_narrative(projection, alerts, vel_data)
+        narrativa = _generate_narrative(projection, alerts, vel_data, conn=conn)
     except Exception:
         pass
 

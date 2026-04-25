@@ -1053,11 +1053,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <thead>
           <tr style="background:#f5f7fa;color:#444">
             <th style="padding:10px;text-align:left;border-bottom:1px solid #eee">Producto / SKU</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock Actual</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Vel. Venta/mes</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock 60d</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Producción</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MP Lista</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock (uds)</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Venta/mes</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Dias Cobertura</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Produccion</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Cal</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MPs</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
           </tr>
         </thead>
@@ -3523,14 +3524,18 @@ function _renderProgramacion(d){
     tbody.innerHTML = d.proyeccion.map(function(p){
       var semColor = p.semaforo === 'verde' ? '#28a745' : p.semaforo === 'amarillo' ? '#fd7e14' : '#dc3545';
       var semEmoji = p.semaforo === 'verde' ? '\u2705' : p.semaforo === 'amarillo' ? '\u26A0\uFE0F' : '🚨';
-      var mpIcon = p.mp_lista ? '\u2705' : '\u274C';
+      var mpIcon = p.mp_lista === null ? '?' : (p.mp_lista ? '\u2705' : '\u274C');
+      var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
+      var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
+      var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
       return '<tr style="border-bottom:1px solid #eee">' +
         '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.vel_mes+'</td>' +
-        '<td style="padding:9px;text-align:center;font-weight:600;color:'+(p.stock_60d < 0 ? '#dc3545':'#1a4a7a')+'">'+p.stock_60d+'</td>' +
-        '<td style="padding:9px;text-align:center;font-size:12px">'+p.prox_produccion+'</td>' +
-        '<td style="padding:9px;text-align:center">'+mpIcon+'</td>' +
+        '<td style="padding:9px;text-align:center;font-weight:700;color:'+diasColor+'">'+diasStr+'</td>' +
+        '<td style="padding:9px;text-align:center;font-size:11px">'+p.prox_produccion+'</td>' +
+        '<td style="padding:9px;text-align:center;font-size:16px">'+calIcon+'</td>' +
+        '<td style="padding:9px;text-align:center;font-size:16px">'+mpIcon+'</td>' +
         '<td style="padding:9px;text-align:center"><span style="background:'+semColor+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px">'+semEmoji+' '+p.semaforo+'</span></td>' +
         '</tr>';
     }).join('');
