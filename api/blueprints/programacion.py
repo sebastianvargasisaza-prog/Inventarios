@@ -1361,3 +1361,51 @@ def prog_n_alertas():
         return jsonify({'n': len(alerts), 'criticos': criticos})
     except Exception as e:
         return jsonify({'n': 0, 'error': str(e)})
+
+
+@bp.route('/api/programacion/debug-mps')
+def prog_debug_mps():
+    """Debug: cross-reference mp_stock entries vs formula_items material_ids."""
+    if not _auth():
+        return jsonify({'error': 'no auth'}), 401
+    conn = get_db()
+
+    # MP stock from movimientos
+    mp_stock = _get_mp_stock(conn)
+
+    # All material_ids used in formulas
+    formula_mids = conn.execute(
+        "SELECT DISTINCT material_id, nombre FROM formula_items ORDER BY material_id"
+    ).fetchall()
+
+    matched   = []
+    unmatched = []
+    for mid, nombre in formula_mids:
+        stock = mp_stock.get(mid, None)
+        if stock is not None:
+            matched.append({'material_id': mid, 'nombre': nombre, 'stock_g': round(stock, 1)})
+        else:
+            unmatched.append({'material_id': mid, 'nombre': nombre})
+
+    # Sample mp_stock keys (first 20)
+    sample_stock_keys = sorted(mp_stock.keys())[:20]
+
+    # Movimientos table row count
+    n_mov = conn.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+
+    # Check if movimientos has any 'entrada' tipo
+    n_entradas = conn.execute(
+        "SELECT COUNT(*) FROM movimientos WHERE tipo IN ('entrada','Entrada','ENTRADA')"
+    ).fetchone()[0]
+
+    return jsonify({
+        'mp_stock_total_entries': len(mp_stock),
+        'mp_stock_sample_keys': sample_stock_keys,
+        'formula_items_distinct_materials': len(formula_mids),
+        'matched_count': len(matched),
+        'unmatched_count': len(unmatched),
+        'unmatched': unmatched[:30],
+        'matched_sample': matched[:10],
+        'movimientos_total_rows': n_mov,
+        'movimientos_entradas': n_entradas,
+    })
