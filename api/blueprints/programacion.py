@@ -183,54 +183,49 @@ def _get_formulas(conn):
 
 def _get_stock_pt(conn):
     """
-    Stock real de producto terminado por producto:
-      producido (acondicionamiento ALL TIME) - vendido (animus_shopify_orders ALL TIME)
+    Stock real de producto terminado desde stock_pt.
+    Cuando Espagiria libera un lote de CC, el sistema crea entradas en stock_pt
+    con unidades_disponible. Los despachos la reducen.
+    Mapea sku -> producto_nombre via sku_producto_map.
     Returns dict {PRODUCTO_UPPER: stock_int}
     """
-    # SKU prefix -> producto_nombre (from sku_producto_map)
+    # SKU -> producto_nombre (from sku_producto_map)
     sku_map = {}
     try:
         for row in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
-            prefix = str(row[0] or '').strip().upper()
-            if prefix:
-                sku_map[prefix] = str(row[1] or '').strip().upper()
+            k = str(row[0] or '').strip().upper()
+            if k:
+                sku_map[k] = str(row[1] or '').strip().upper()
     except Exception:
         pass
 
-    # Producido (acondicionamiento)
-    produced = {}
-    for row in conn.execute(
-        "SELECT producto, COALESCE(SUM(unidades_producidas),0) FROM acondicionamiento GROUP BY producto"
-    ).fetchall():
-        k = str(row[0] or '').strip().upper()
-        if k:
-            produced[k] = int(row[1] or 0)
-
-    # Vendido (animus_shopify_orders via sku_items JSON)
-    import json as _json
-    sold = {}
-    for row in conn.execute(
-        "SELECT sku_items FROM animus_shopify_orders WHERE sku_items IS NOT NULL"
-    ).fetchall():
-        try:
-            items = _json.loads(row[0])
-        except Exception:
-            continue
-        for item in (items if isinstance(items, list) else []):
-            raw_sku = str(item.get('sku', '') or '').strip().upper()
-            qty = int(item.get('qty', 0) or 0)
-            if not raw_sku or qty <= 0:
-                continue
-            prefix = raw_sku.split('-')[0] if '-' in raw_sku else raw_sku[:6]
-            prod = sku_map.get(prefix)
-            if prod:
-                sold[prod] = sold.get(prod, 0) + qty
-
-    # Stock = max(0, produced - sold)
-    all_prods = set(produced.keys()) | set(sold.keys())
+    # Stock disponible por SKU desde stock_pt (fuente real de PT liberado)
     stock = {}
-    for p in all_prods:
-        stock[p] = max(produced.get(p, 0) - sold.get(p, 0), 0)
+    try:
+        rows = conn.execute("""
+            SELECT sku, COALESCE(SUM(unidades_disponible), 0)
+            FROM stock_pt
+            WHERE estado = 'Disponible'
+            GROUP BY sku
+        """).fetchall()
+        for row in rows:
+            raw_sku = str(row[0] or '').strip().upper()
+            uds = max(int(row[1] or 0), 0)
+            if not raw_sku:
+                continue
+            # Try exact SKU match first, then prefix match
+            prod = sku_map.get(raw_sku)
+            if not prod:
+                prefix = raw_sku.split('-')[0]
+                prod = sku_map.get(prefix)
+            if prod:
+                stock[prod] = stock.get(prod, 0) + uds
+            else:
+                # Store by raw SKU as fallback so it's visible in debug
+                stock[raw_sku] = stock.get(raw_sku, 0) + uds
+    except Exception:
+        pass
+
     return stock
 
 
@@ -591,6 +586,50 @@ def prog_resumen():
         'velocidad': vel_data,
         'calendario': cal,
         'narrativa_ia': narrativa,
+    })
+
+
+
+@bp.route('/api/programacion/debug-stock')
+def prog_debug_stock():
+    """Debug: muestra stock_pt raw, sku_map y stock calculado por producto."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+
+    # Raw stock_pt
+    try:
+        raw_pt = conn.execute(
+            "SELECT sku, descripcion, unidades_disponible, estado, lote_produccion FROM stock_pt ORDER BY sku"
+        ).fetchall()
+        raw_pt_list = [{'sku': r[0], 'desc': r[1], 'uds': r[2], 'estado': r[3], 'lote': r[4]} for r in raw_pt]
+    except Exception as e:
+        raw_pt_list = [{'error': str(e)}]
+
+    # SKU map
+    try:
+        sku_map_rows = conn.execute("SELECT sku, producto_nombre, activo FROM sku_producto_map").fetchall()
+        sku_map_list = [{'sku': r[0], 'producto': r[1], 'activo': r[2]} for r in sku_map_rows]
+    except Exception as e:
+        sku_map_list = [{'error': str(e)}]
+
+    # Acondicionamiento summary
+    try:
+        acon = conn.execute(
+            "SELECT producto, estado, SUM(unidades_producidas) FROM acondicionamiento GROUP BY producto, estado"
+        ).fetchall()
+        acon_list = [{'producto': r[0], 'estado': r[1], 'uds': r[2]} for r in acon]
+    except Exception as e:
+        acon_list = [{'error': str(e)}]
+
+    # Calculated stock
+    stock_calc = _get_stock_pt(conn)
+
+    return jsonify({
+        'stock_pt_raw': raw_pt_list,
+        'sku_producto_map': sku_map_list,
+        'acondicionamiento': acon_list,
+        'stock_calculado': stock_calc,
     })
 
 
