@@ -623,112 +623,119 @@ def prog_registrar_stock():
 
 
 
+@bp.route('/api/programacion/test-shopify')
+def prog_test_shopify():
+    """GET publico — diagnostico: verifica credenciales y cuenta productos Shopify."""
+    try:
+        conn = get_db()
+        def _cfg(c):
+            r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (c,)).fetchone()
+            return r[0] if r else None
+        token = _cfg('shopify_token')
+        shop  = _cfg('shopify_shop')
+        if not token or not shop:
+            return jsonify({'ok': False, 'paso': 'credenciales', 'error': 'shopify_token o shopify_shop no configurados en animus_config'})
+        url = 'https://' + shop + '/admin/api/2024-01/products/count.json'
+        req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+        return jsonify({'ok': True, 'shop': shop, 'count': data.get('count', '?'), 'token_prefix': token[:8] + '...'})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace')[:400]
+        return jsonify({'ok': False, 'paso': 'shopify_api', 'http_status': e.code, 'body': body})
+    except Exception as e:
+        return jsonify({'ok': False, 'paso': 'exception', 'error': str(e)})
+
+
 @bp.route('/api/programacion/sync-stock-shopify', methods=['POST'])
 def prog_sync_stock_shopify():
     """
-    Sincroniza inventario de productos desde Shopify a stock_pt.
-    Usa GET /admin/api/2024-01/products.json para obtener inventory_quantity por variante.
-    No requiere auth: usa credenciales server-side de animus_config.
+    Sincroniza inventario desde Shopify products API a stock_pt.
+    No requiere auth — usa credenciales server-side de animus_config.
+    Siempre retorna JSON; nunca lanza 500 HTML.
     """
-    conn = get_db()
+    try:
+        conn = get_db()
 
-    # Get Shopify credentials from animus_config
-    def _cfg(clave):
-        row = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (clave,)).fetchone()
-        return row[0] if row else None
+        def _cfg(c):
+            r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (c,)).fetchone()
+            return r[0] if r else None
 
-    token = _cfg('shopify_token')
-    shop  = _cfg('shopify_shop')
-    if not token or not shop:
-        return jsonify({'error': 'Shopify no configurado. Agrega shopify_token y shopify_shop en Configuracion ANIMUS.'}), 400
+        token = _cfg('shopify_token')
+        shop  = _cfg('shopify_shop')
+        if not token or not shop:
+            return jsonify({'ok': False, 'error': 'Shopify no configurado. Ve a ANIMUS > Configuracion y guarda shopify_token y shopify_shop.'})
 
-    # SKU -> producto_nombre map
-    sku_map = {}
-    for row in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
-        sku_map[str(row[0] or '').strip().upper()] = str(row[1] or '').strip()
+        sku_map = {}
+        for row in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
+            sku_map[str(row[0] or '').strip().upper()] = str(row[1] or '').strip()
 
-    # Fetch all products from Shopify (paginated by link header)
-    all_variants = []
-    url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants'
-    import urllib.request as ur
-    while url:
-        try:
-            req = ur.Request(url, headers={'X-Shopify-Access-Token': token})
-            with ur.urlopen(req, timeout=20) as r:
-                data = json.loads(r.read())
-                link_header = r.headers.get('Link', '')
-        except urllib.error.HTTPError as e:
-            body = e.read().decode('utf-8', errors='replace')[:300]
-            return jsonify({'error': 'Shopify API error ' + str(e.code) + ': ' + body}), 502
-        except Exception as e:
-            return jsonify({'error': 'Error conectando Shopify: ' + str(e)}), 502
+        all_variants = []
+        url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants'
+        while url:
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    data = json.loads(r.read())
+                    link_header = r.headers.get('Link', '')
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')[:300]
+                return jsonify({'ok': False, 'error': 'Shopify HTTP ' + str(e.code) + ' — ' + body + ' | Verifica que el token tenga scope read_products.'})
+            except Exception as e:
+                return jsonify({'ok': False, 'error': 'Error red Shopify: ' + str(e)})
 
-        for product in data.get('products', []):
-            title = str(product.get('title', '') or '').strip()
-            for variant in product.get('variants', []):
-                sku_raw = str(variant.get('sku', '') or '').strip().upper()
-                inv_qty = int(variant.get('inventory_quantity', 0) or 0)
-                all_variants.append({
-                    'sku': sku_raw,
-                    'titulo': title,
-                    'inv_qty': inv_qty,
-                    'variant_id': str(variant.get('id', '')),
-                })
+            for product in data.get('products', []):
+                title = str(product.get('title', '') or '').strip()
+                for variant in product.get('variants', []):
+                    sku_raw = str(variant.get('sku', '') or '').strip().upper()
+                    inv_qty = int(variant.get('inventory_quantity', 0) or 0)
+                    all_variants.append({'sku': sku_raw, 'titulo': title, 'inv_qty': inv_qty})
 
-        # Follow pagination
-        next_url = None
-        for part in link_header.split(','):
-            if 'rel="next"' in part:
-                start = part.find('<') + 1
-                end   = part.find('>')
-                if start > 0 and end > start:
-                    next_url = part[start:end].strip()
-        url = next_url
+            next_url = None
+            for part in link_header.split(','):
+                if 'rel="next"' in part:
+                    s = part.find('<') + 1
+                    e2 = part.find('>')
+                    if s > 0 and e2 > s:
+                        next_url = part[s:e2].strip()
+            url = next_url
 
-    if not all_variants:
-        return jsonify({'error': 'No se encontraron productos en Shopify'}), 404
+        if not all_variants:
+            return jsonify({'ok': False, 'error': 'Shopify no devolvio productos. Tienda sin productos o token sin permiso read_products.'})
 
-    # Upsert stock_pt: invalidate previous shopify-sync entries, insert fresh
-    conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
+        conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
+        synced = 0
+        skipped = 0
+        today = datetime.now().strftime('%Y-%m-%d')
 
-    synced = 0
-    skipped = 0
-    today = datetime.now().strftime('%Y-%m-%d')
+        for v in all_variants:
+            sku = v['sku']
+            qty = v['inv_qty']
+            if qty <= 0:
+                skipped += 1
+                continue
+            producto = sku_map.get(sku)
+            if not producto:
+                prefix = sku.split('-')[0] if '-' in sku else sku[:6]
+                producto = sku_map.get(prefix) or v['titulo']
+            conn.execute(
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible','Sync Shopify')",
+                (sku, producto, 'SHOPIFY-' + today, today, qty, qty)
+            )
+            synced += 1
 
-    for v in all_variants:
-        sku = v['sku']
-        qty = v['inv_qty']
-        if qty <= 0:
-            skipped += 1
-            continue
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'synced': synced,
+            'skipped_zero': skipped,
+            'total_variantes': len(all_variants),
+            'mensaje': str(synced) + ' SKUs sincronizados desde Shopify',
+        })
 
-        # Map SKU to product name
-        producto = sku_map.get(sku)
-        if not producto:
-            # Try prefix
-            prefix = sku.split('-')[0] if '-' in sku else sku[:6]
-            producto = sku_map.get(prefix)
-        if not producto:
-            producto = v['titulo']  # fallback to Shopify title
-
-        lote = 'SHOPIFY-' + today
-        conn.execute("""
-            INSERT INTO stock_pt
-                (sku, descripcion, lote_produccion, fecha_produccion,
-                 unidades_inicial, unidades_disponible, precio_base,
-                 empresa, estado, observaciones)
-            VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible','Sync desde Shopify inventario')
-        """, (sku, producto, lote, today, qty, qty))
-        synced += 1
-
-    conn.commit()
-    return jsonify({
-        'ok': True,
-        'synced': synced,
-        'skipped_zero': skipped,
-        'total_variants': len(all_variants),
-        'mensaje': str(synced) + ' variantes con stock sincronizadas desde Shopify',
-    })
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': 'Error interno: ' + str(e), 'trace': traceback.format_exc()[-500:]})
 
 
 @bp.route('/api/programacion/debug-stock')
