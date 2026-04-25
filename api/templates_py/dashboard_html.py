@@ -1003,7 +1003,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
       <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock — en tiempo real</p>
     </div>
-    <button onclick="cargarProgramacion()" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
+    <button onclick="cargarProgramacion(this)" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
+    <button onclick="generarOCProgramacion(this)" style="background:#dc3545;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128666; Generar OC</button>
   </div>
 
   <!-- Semáforo de estado general -->
@@ -1425,7 +1426,7 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='produccion') cargarHistProd();
   if(tabId==='envasado') cargarEnvasadoSimpleTab();
   if(tabId==='acondicionamiento') cargarAcondSimpleTab();
-  if(tabId==='programacion') cargarProgramacion();
+  if(tabId==='programacion') cargarProgramacion(null);
   if(tabId==='cuarentena') cargarCuarentena();
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
@@ -3462,19 +3463,42 @@ function loadAcondSimple(){
 /* ============================================================
    PROGRAMACION — placeholder (Phase 2)
    ============================================================ */
-async function cargarProgramacion(){
-  var btn = event && event.target;
-  if(btn){ btn.disabled = true; btn.textContent = 'Cargando...'; }
+async function cargarProgramacion(btnEl){
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Cargando...'; }
+  var iaStatus = document.getElementById('prog-ia-status');
+  if(iaStatus) iaStatus.textContent = 'Consultando Shopify + Stock + IA…';
   try{
     var r = await fetch('/api/programacion/resumen');
-    if(!r.ok){ _toast('Backend de Programacion no disponible aun', 0); return; }
     var d = await r.json();
+    if(d.error && !d.proyeccion){
+      _toast(d.error, 0);
+      if(iaStatus) iaStatus.textContent = d.error;
+      return;
+    }
     _renderProgramacion(d);
   }catch(e){
-    _toast('Programacion: endpoint en construccion', 0);
-    document.getElementById('prog-ia-status').textContent = 'Backend en construccion — Fase 2';
+    _toast('Error al cargar programación: ' + e.message, 0);
+    if(iaStatus) iaStatus.textContent = 'Error: ' + e.message;
   }finally{
-    if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '🔄 Actualizar'; }
+  }
+}
+
+async function generarOCProgramacion(btnEl){
+  if(!confirm('Crear solicitud de compra automática para todos los MPs faltantes?')) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Generando...'; }
+  try{
+    var r = await fetch('/api/programacion/generar-oc', {method:'POST', headers:{'Content-Type':'application/json'}});
+    var d = await r.json();
+    if(d.ok){
+      _toast('✅ ' + d.mensaje, 1);
+    } else {
+      _toast('Error: ' + (d.error || 'desconocido'), 0);
+    }
+  }catch(e){
+    _toast('Error de red: ' + e.message, 0);
+  }finally{
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '🛒 Generar OC'; }
   }
 }
 

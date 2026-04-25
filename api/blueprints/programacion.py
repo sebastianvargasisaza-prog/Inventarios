@@ -470,3 +470,118 @@ def prog_productos():
         'formulas': [{'nombre': r[0], 'lote_size_kg': r[1]} for r in rows],
         'count': len(rows),
     })
+
+
+@bp.route('/api/programacion/generar-oc', methods=['POST'])
+def prog_generar_oc():
+    """
+    Analiza faltantes de MP por producto y crea solicitudes de compra automáticas.
+    Sólo crea SOL si no existe ya una pendiente para el mismo MP (dedup 7 días).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+
+    conn = get_db()
+    vel_data = _shopify_velocity(conn, days=60)
+    mp_stock = _get_mp_stock(conn)
+    formulas = _get_formulas(conn)
+    cal = _fetch_calendar_events(days_ahead=90)
+
+    if not formulas:
+        return jsonify({'error': 'Sin fórmulas cargadas'}), 400
+
+    projection, alerts = _project_stock(
+        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', [])
+    )
+
+    # Collect all missing MPs across products
+    mp_deficit = {}  # codigo -> {nombre, deficit_g, productos}
+    for prod in projection:
+        if prod['mp_lista']:
+            continue
+        for mp in prod.get('mp_check', []):
+            if mp['deficit_g'] > 0:
+                cod = mp['material_id']
+                if cod not in mp_deficit:
+                    mp_deficit[cod] = {
+                        'nombre': mp['nombre'],
+                        'deficit_g': 0,
+                        'productos': [],
+                    }
+                mp_deficit[cod]['deficit_g'] += mp['deficit_g']
+                mp_deficit[cod]['productos'].append(prod['producto'])
+
+    if not mp_deficit:
+        return jsonify({'ok': True, 'mensaje': 'No hay déficits de MP — sin OC necesaria', 'creadas': []})
+
+    # Check for existing pending solicitudes (dedup last 7 days)
+    since_7d = (datetime.now() - timedelta(days=7)).isoformat()
+    existing = conn.execute(
+        "SELECT observaciones FROM solicitudes_compra WHERE estado='Pendiente' AND fecha >= ? AND categoria='Materia Prima'",
+        (since_7d,)
+    ).fetchall()
+    existing_obs = ' '.join(r[0] or '' for r in existing).upper()
+
+    # Generate SOL number
+    year = datetime.now().strftime('%Y')
+    last_n = conn.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
+        (f"SOL-{year}-%",)
+    ).fetchone()[0] or 0
+    sol_num = last_n + 1
+
+    sol_numero = f"SOL-{year}-{sol_num:04d}"
+    productos_str = ', '.join(set(p for v in mp_deficit.values() for p in v['productos']))
+    obs = f"Auto-generada Centro Programación — Déficit MP para: {productos_str[:200]}"
+
+    conn.execute("""INSERT INTO solicitudes_compra
+        (numero, fecha, estado, solicitante, urgencia, observaciones, area, empresa, categoria, tipo)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (sol_numero, datetime.now().isoformat(), 'Pendiente',
+         session.get('compras_user', 'Sistema'), 'Alta', obs,
+         'Produccion', 'Espagiria', 'Materia Prima', 'Compra'))
+
+    items_created = []
+    for cod, info in mp_deficit.items():
+        just = f"Déficit para producción de: {', '.join(info['productos'][:3])}"
+        conn.execute("""INSERT INTO solicitudes_compra_items
+            (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion)
+            VALUES (?,?,?,?,?,?)""",
+            (sol_numero, cod, info['nombre'],
+             info['deficit_g'], 'g', just))
+        items_created.append({
+            'codigo': cod,
+            'nombre': info['nombre'],
+            'deficit_g': round(info['deficit_g'], 1),
+        })
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'solicitud': sol_numero,
+        'n_items': len(items_created),
+        'items': items_created,
+        'mensaje': f'Solicitud {sol_numero} creada con {len(items_created)} MPs faltantes',
+    })
+
+
+@bp.route('/api/programacion/n-alertas')
+def prog_n_alertas():
+    """Endpoint rápido — retorna solo el conteo de alertas (para badge en Compras)."""
+    if not _auth():
+        return jsonify({'n': 0})
+    conn = get_db()
+    try:
+        vel_data = _shopify_velocity(conn, days=60)
+        mp_stock = _get_mp_stock(conn)
+        formulas = _get_formulas(conn)
+        if not formulas:
+            return jsonify({'n': 0, 'criticos': 0})
+        _, alerts = _project_stock(
+            conn, vel_data['prod_velocity'], formulas, mp_stock, []
+        )
+        criticos = len([a for a in alerts if a['nivel'] == 'critico'])
+        return jsonify({'n': len(alerts), 'criticos': criticos})
+    except Exception as e:
+        return jsonify({'n': 0, 'error': str(e)})

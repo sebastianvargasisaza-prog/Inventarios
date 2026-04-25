@@ -149,6 +149,18 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     </div>
     <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
   </div>
+  <!-- Banner Programacion — alertas de deficit MP por velocidad Shopify -->
+  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x1F4E1;</span>
+      <div style="flex:1;">
+        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
+        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n — basado en velocidad Shopify + f&#xF3;rmulas + stock MP</div>
+      </div>
+      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
+      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
+    </div>
+  </div>
   <!-- CC solicitudes — hidden unless cat=CC or ALL -->
   <div id="cc-solic-wrap" style="margin-bottom:20px;display:none;">
     <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
@@ -737,6 +749,49 @@ async function loadData(){
   renderDash();
   renderMPAlerts();
   renderOCS();
+  // Load Programacion alerts (non-blocking)
+  cargarAlertasProgramacion();
+}
+
+async function cargarAlertasProgramacion(){
+  try{
+    var r = await fetch('/api/programacion/n-alertas');
+    var d = await r.json();
+    var banner = document.getElementById('prog-alert-banner');
+    var text = document.getElementById('prog-alert-text');
+    if(!banner || !text) return;
+    if(d.n > 0){
+      banner.style.display = 'block';
+      var label = d.criticos > 0
+        ? d.criticos + ' alerta(s) CR\u00EDTICA(S) — ' + d.n + ' total'
+        : d.n + ' alerta(s) de programaci\u00F3n activas';
+      text.textContent = '\u26A0\uFE0F ' + label + ' — MPs faltantes o stock insuficiente a 60 d\u00EDas';
+    } else {
+      banner.style.display = 'none';
+    }
+  }catch(e){ /* silencioso si programacion no est\u00E1 disponible */ }
+}
+
+async function generarOCDesdeCompras(btnEl){
+  if(!confirm('Crear solicitud de compra autom\u00E1tica para todos los MPs con d\u00E9ficit de producci\u00F3n?')) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Generando...'; }
+  try{
+    var r = await fetch('/api/programacion/generar-oc', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}
+    });
+    var d = await r.json();
+    if(d.ok){
+      alert('\u2705 ' + d.mensaje);
+      // Refresh solicitudes list
+      if(typeof renderOCS === 'function') renderOCS();
+    } else {
+      alert('Error: ' + (d.error || 'desconocido'));
+    }
+  }catch(e){
+    alert('Error de red: ' + e.message);
+  }finally{
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '🛒 Generar OC'; }
+  }
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────
