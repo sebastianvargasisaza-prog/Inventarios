@@ -590,6 +590,38 @@ def prog_resumen():
 
 
 
+
+@bp.route('/api/programacion/registrar-stock', methods=['POST'])
+def prog_registrar_stock():
+    """Registra stock inicial de PT directamente en stock_pt."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(force=True) or {}
+    sku      = str(d.get('sku', '') or '').strip().upper()
+    producto = str(d.get('producto', '') or '').strip()
+    unidades = int(d.get('unidades', 0) or 0)
+    lote     = str(d.get('lote', 'INI-' + datetime.now().strftime('%Y%m%d')) or '')
+
+    if not sku or not producto or unidades <= 0:
+        return jsonify({'error': 'sku, producto y unidades requeridos (unidades > 0)'}), 400
+
+    conn = get_db()
+    # Invalidate previous carga-inicial entries for same sku to avoid duplicates
+    conn.execute(
+        "UPDATE stock_pt SET estado='Ajustado' WHERE sku=? AND lote_produccion LIKE 'INI-%'",
+        (sku,)
+    )
+    conn.execute("""
+        INSERT INTO stock_pt
+            (sku, descripcion, lote_produccion, fecha_produccion,
+             unidades_inicial, unidades_disponible, precio_base,
+             empresa, estado, observaciones)
+        VALUES (?,?,?,date('now'),?,?,0,'ANIMUS','Disponible','Carga inicial de stock')
+    """, (sku, producto, lote, unidades, unidades))
+    conn.commit()
+    return jsonify({'ok': True, 'sku': sku, 'producto': producto, 'unidades': unidades})
+
+
 @bp.route('/api/programacion/debug-stock')
 def prog_debug_stock():
     """Debug publico: muestra stock_pt raw, sku_map y stock calculado por producto."""

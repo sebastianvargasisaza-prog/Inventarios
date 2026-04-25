@@ -1060,6 +1060,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Cal</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MPs</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Accion</th>
           </tr>
         </thead>
         <tbody id="prog-tbody">
@@ -3503,6 +3504,24 @@ async function generarOCProgramacion(btnEl){
   }
 }
 
+async function registrarStockPT(producto, sku){
+  var uds = prompt('Unidades fisicas disponibles de ' + producto + ' (en bodega Espagiria, listas para entregar a ANIMUS):');
+  if(!uds || isNaN(parseInt(uds)) || parseInt(uds) <= 0) return;
+  var lote = prompt('Lote de produccion (dejar vacio para auto):', '');
+  var body = {producto: producto, sku: sku || producto, unidades: parseInt(uds)};
+  if(lote) body.lote = lote;
+  try{
+    var r = await fetch('/api/programacion/registrar-stock', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      _toast('Stock registrado: ' + d.unidades + ' uds de ' + d.producto, 1);
+      cargarProgramacion();
+    } else {
+      _toast('Error: ' + (d.error || 'desconocido'), 0);
+    }
+  }catch(e){ _toast('Error de red', 0); }
+}
+
 function _renderProgramacion(d){
   var vel = document.getElementById('prog-vel-val');
   var cal = document.getElementById('prog-cal-val');
@@ -3525,6 +3544,7 @@ function _renderProgramacion(d){
       var semColor = p.semaforo === 'verde' ? '#28a745' : p.semaforo === 'amarillo' ? '#fd7e14' : '#dc3545';
       var semEmoji = p.semaforo === 'verde' ? '\u2705' : p.semaforo === 'amarillo' ? '\u26A0\uFE0F' : '🚨';
       var mpIcon = p.mp_lista === null ? '?' : (p.mp_lista ? '\u2705' : '\u274C');
+      var skuKey = p.sku || p.producto;
       var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
       var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
       var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
@@ -3537,6 +3557,7 @@ function _renderProgramacion(d){
         '<td style="padding:9px;text-align:center;font-size:16px">'+calIcon+'</td>' +
         '<td style="padding:9px;text-align:center;font-size:16px">'+mpIcon+'</td>' +
         '<td style="padding:9px;text-align:center"><span style="background:'+semColor+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px">'+semEmoji+' '+p.semaforo+'</span></td>' +
+        '<td style="padding:9px;text-align:center"><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="registrarStockPT(\''+p.producto+'\',\''+skuKey+'\')">+Stock</button></td>' +
         '</tr>';
     }).join('');
   }
