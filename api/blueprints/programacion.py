@@ -36,8 +36,10 @@ def _auth():
 def _shopify_velocity(conn, days=60):
     """
     Lee animus_shopify_orders de los últimos `days` días.
-    Retorna dict {sku_prefix: {units_per_month, orders}} usando sku_items JSON.
-    También retorna dict {producto_nombre: vel_mes} usando sku_producto_map.
+    Retorna dict {sku_full: vel_mes} y dict {producto_nombre: vel_mes}.
+
+    Lookup de producto: exacto primero, luego parte antes del primer guión
+    (pero NUNCA trunca a 6 chars — eso rompía SVITC33 y RECN-2).
     """
     since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     rows = conn.execute(
@@ -45,8 +47,7 @@ def _shopify_velocity(conn, days=60):
         (since,)
     ).fetchall()
 
-    sku_units = {}  # sku_prefix -> total units in period
-    sku_orders = {} # sku_prefix -> order count
+    sku_units = {}  # full_sku -> total units in period
 
     for row in rows:
         try:
@@ -58,24 +59,26 @@ def _shopify_velocity(conn, days=60):
             qty = int(item.get('qty', 0) or 0)
             if not raw_sku or qty <= 0:
                 continue
-            # Prefix: take chars before first hyphen or first 4-6 chars
-            prefix = raw_sku.split('-')[0] if '-' in raw_sku else raw_sku[:6]
-            sku_units[prefix] = sku_units.get(prefix, 0) + qty
-            sku_orders[prefix] = sku_orders.get(prefix, 0) + 1
+            # Store full SKU — no truncation
+            sku_units[raw_sku] = sku_units.get(raw_sku, 0) + qty
 
     months = days / 30.0
     sku_vel = {sku: round(units / months, 1) for sku, units in sku_units.items()}
 
-    # Map SKU -> producto_nombre
+    # Build lookup map: SKU -> producto_nombre
     sku_map = {}
     for row in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
         sku_map[row[0].upper()] = row[1]
 
     prod_vel = {}  # producto_nombre -> vel_mes
     for sku, vel in sku_vel.items():
-        if sku in sku_map:
-            prod = sku_map[sku]
-            prod_vel[prod] = prod_vel.get(prod, 0) + vel
+        # 1) Exact match (handles RECN-2, SVITC33, SVITC3315, NPHA10, etc.)
+        prod = sku_map.get(sku)
+        # 2) Fallback: try the part before the first hyphen (e.g. LBHA-30 -> LBHA)
+        if not prod and '-' in sku:
+            prod = sku_map.get(sku.split('-')[0])
+        if prod:
+            prod_vel[prod] = round(prod_vel.get(prod, 0) + vel, 1)
 
     return {
         'sku_velocity': sku_vel,
