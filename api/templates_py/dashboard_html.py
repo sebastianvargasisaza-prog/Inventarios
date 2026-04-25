@@ -3472,17 +3472,17 @@ async function sincronizarShopify(btnEl){
     var resp = await fetch('/api/programacion/sync-stock-shopify', {method:'POST', headers:{'Content-Type':'application/json'}});
     var txt = await resp.text();
     var d;
-    try { d = JSON.parse(txt); } catch(pe){ alert('Respuesta no-JSON del servidor:\n' + txt.substring(0,400)); return; }
+    try { d = JSON.parse(txt); } catch(pe){ alert('Error parse JSON: ' + txt.substring(0,300)); return; }
     if(d.ok){
       _toast(d.mensaje || (d.synced + ' SKUs sincronizados'), 1);
       cargarProgramacion(null);
     } else {
-      alert('ERROR SYNC SHOPIFY:\n' + (d.error || JSON.stringify(d)));
+      alert('ERROR SYNC SHOPIFY: ' + (d.error || JSON.stringify(d)));
     }
   } catch(e){
-    alert('Error de red al sincronizar Shopify:\n' + e.message);
+    alert('Error de red: ' + e.message);
   } finally {
-    if(btnEl){ btnEl.disabled=false; btnEl.textContent='↺ Sincronizar Shopify'; }
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='Sincronizar Shopify'; }
   }
 }
 
