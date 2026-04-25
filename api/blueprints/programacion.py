@@ -282,6 +282,29 @@ def _fetch_local_production_events(conn):
 
 # ─── MP stock ────────────────────────────────────────────────────────────────
 
+def _norm_mp_name(name):
+    """Normalise an MP name for fuzzy matching across two legacy ID systems.
+    Removes: accents, parenthetical suffixes, hyphens->space, collapse spaces,
+    and adds space between digits and letters (50KD -> 50 KD).
+    """
+    import unicodedata as _ud
+    import re as _re
+    s = str(name or '').strip()
+    # Strip accents
+    s = ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn')
+    s = s.upper()
+    # Remove parenthetical additions like (LYPHAR), (BASF), (1%)
+    s = _re.sub(r'\([^)]*\)', '', s)
+    # Hyphens and slashes to space
+    s = _re.sub(r'[-/]', ' ', s)
+    # Add space between digit and letter: 50KD -> 50 KD, 300KD -> 300 KD
+    s = _re.sub(r'(\d)([A-Z])', r' ', s)
+    s = _re.sub(r'([A-Z])(\d)', r' ', s)
+    # Collapse multiple spaces
+    s = _re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
 def _get_mp_stock(conn):
     """Returns dict {key: stock_actual_g} keyed by BOTH material_id AND
     normalised material_nombre so we can bridge two legacy ID systems:
@@ -305,9 +328,12 @@ def _get_mp_stock(conn):
         # Also index by normalised name for cross-system lookup
         if material_nombre and str(material_nombre).strip():
             key_nombre = str(material_nombre).strip().upper()
-            # Only set if not already present (first one wins for a name)
             if key_nombre not in stock:
                 stock[key_nombre] = val
+            # Also index by aggressively normalised name (strips accents, hyphens, etc.)
+            key_norm = _norm_mp_name(material_nombre)
+            if key_norm and key_norm not in stock:
+                stock[key_norm] = val
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
@@ -566,13 +592,18 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
                 needed_g = float(item['cantidad_g_por_lote']) * kg_scale
-                # Try lookup by formula material_id (MPACARLI01) first;
-                # fall back to normalised material_nombre to bridge legacy MP00001 system
+                # Try lookup order: formula material_id (MPACARLI01) → exact name →
+                # normalised name (strips accents/hyphens/parentheses) → 0
                 if mid in mp_stock:
                     available_g = mp_stock[mid]
                 else:
-                    nombre_key = str(item.get('material_nombre', '')).strip().upper()
-                    available_g = mp_stock.get(nombre_key, 0)
+                    nombre_raw = str(item.get('material_nombre', '')).strip()
+                    nombre_exact = nombre_raw.upper()
+                    if nombre_exact in mp_stock:
+                        available_g = mp_stock[nombre_exact]
+                    else:
+                        nombre_norm = _norm_mp_name(nombre_raw)
+                        available_g = mp_stock.get(nombre_norm, 0)
                 deficit_g = max(0, needed_g - available_g)
                 ok = deficit_g < 1
                 if not ok:
@@ -1399,14 +1430,19 @@ def prog_debug_mps():
     matched   = []
     unmatched = []
     for mid, nombre in formula_mids:  # nombre = material_nombre
-        # Try by ID first, then by normalised name (bridges MP00001 vs MPACARLI01 systems)
+        # Try: ID → exact name → normalised name
         if mid in mp_stock:
             stock = mp_stock[mid]
             match_via = 'id'
         else:
-            nombre_key = str(nombre or '').strip().upper()
-            stock = mp_stock.get(nombre_key, None)
-            match_via = 'nombre' if stock is not None else None
+            nombre_exact = str(nombre or '').strip().upper()
+            if nombre_exact in mp_stock:
+                stock = mp_stock[nombre_exact]
+                match_via = 'nombre_exact'
+            else:
+                nombre_norm = _norm_mp_name(str(nombre or ''))
+                stock = mp_stock.get(nombre_norm, None)
+                match_via = 'nombre_norm' if stock is not None else None
 
         if stock is not None:
             matched.append({'material_id': mid, 'nombre': nombre,
