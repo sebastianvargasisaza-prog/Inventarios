@@ -872,6 +872,20 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo)
         VALUES ('MAXLASH', 'MAXLASH', 1)"""
     ]),
+    (12, 'produccion_programada table', [
+        """CREATE TABLE IF NOT EXISTS produccion_programada (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto TEXT NOT NULL,
+            fecha_programada TEXT NOT NULL,
+            lotes INTEGER DEFAULT 1,
+            estado TEXT DEFAULT 'pendiente',
+            observaciones TEXT,
+            creado_en TEXT DEFAULT (datetime('now')),
+            gcal_event_id TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pp_producto ON produccion_programada(producto)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_fecha ON produccion_programada(fecha_programada)"
+    ]),
 ]
 
 

@@ -3619,6 +3619,111 @@ function _renderProgramacion(d){
 }
 
 </script>
+
+  <!-- ── Modal: Programar Producción ────────────────────────────────────── -->
+  <div id="modal-programar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <h3 style="margin:0 0 18px;font-size:18px;color:#1a1a2e">📅 Programar Producción</h3>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Producto</label>
+        <input id="mp-producto" type="text" readonly style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Fecha de producción</label>
+        <input id="mp-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Número de lotes</label>
+        <input id="mp-lotes" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Observaciones (opcional)</label>
+        <textarea id="mp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="cerrarModalProgramar()" style="background:#f0f0f0;color:#444;border:none;border-radius:6px;padding:9px 20px;font-size:14px;cursor:pointer">Cancelar</button>
+        <button onclick="guardarProgramacion()" style="background:#0d6efd;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer">💾 Guardar</button>
+      </div>
+      <!-- Upcoming events list for this product -->
+      <div id="mp-eventos-lista" style="margin-top:18px;border-top:1px solid #eee;padding-top:14px;display:none">
+        <div style="font-size:12px;font-weight:600;color:#666;margin-bottom:8px">Producciones programadas</div>
+        <div id="mp-eventos-items"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ── Programar Producción Modal ───────────────────────────────────────────
+  function abrirModalProgramar(producto) {
+    document.getElementById('mp-producto').value = producto;
+    // Default date = today + 3 days
+    var d = new Date(); d.setDate(d.getDate() + 3);
+    document.getElementById('mp-fecha').value = d.toISOString().slice(0,10);
+    document.getElementById('mp-lotes').value = 1;
+    document.getElementById('mp-obs').value = '';
+    cargarEventosProducto(producto);
+    var m = document.getElementById('modal-programar');
+    m.style.display = 'flex';
+  }
+  function cerrarModalProgramar() {
+    document.getElementById('modal-programar').style.display = 'none';
+  }
+  // Close on backdrop click
+  document.getElementById('modal-programar').addEventListener('click', function(e){
+    if(e.target === this) cerrarModalProgramar();
+  });
+
+  function guardarProgramacion() {
+    var producto = document.getElementById('mp-producto').value;
+    var fecha    = document.getElementById('mp-fecha').value;
+    var lotes    = parseInt(document.getElementById('mp-lotes').value) || 1;
+    var obs      = document.getElementById('mp-obs').value;
+    if(!fecha){ alert('Selecciona una fecha'); return; }
+    fetch('/api/programacion/programar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({producto:producto, fecha:fecha, lotes:lotes, observaciones:obs})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){
+        cerrarModalProgramar();
+        // Reload projection
+        actualizarDashboard();
+      } else {
+        alert('Error: ' + (d.error||'desconocido'));
+      }
+    }).catch(function(e){ alert('Error de red: '+e); });
+  }
+
+  function cargarEventosProducto(producto) {
+    fetch('/api/programacion/programar').then(function(r){ return r.json(); }).then(function(eventos){
+      var futuros = eventos.filter(function(e){
+        return e.producto === producto && e.estado !== 'cancelado' && e.estado !== 'completado';
+      });
+      var lista = document.getElementById('mp-eventos-lista');
+      var items = document.getElementById('mp-eventos-items');
+      if(futuros.length === 0){ lista.style.display='none'; return; }
+      lista.style.display = 'block';
+      items.innerHTML = futuros.map(function(ev){
+        var estadoColor = ev.estado === 'pendiente' ? '#0d6efd' : '#fd7e14';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px">' +
+          '<span style="flex:1;font-weight:600">'+ev.fecha+'</span>' +
+          '<span style="color:#555">'+ev.lotes+' lote'+(ev.lotes>1?'s':'')+'</span>' +
+          '<span style="background:'+estadoColor+';color:#fff;padding:2px 7px;border-radius:8px">'+ev.estado+'</span>' +
+          '<button onclick="cancelarEvento('+ev.id+',\''+producto+'\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
+          '</div>';
+      }).join('');
+    });
+  }
+
+  function cancelarEvento(id, producto) {
+    if(!confirm('¿Cancelar esta producción programada?')) return;
+    fetch('/api/programacion/programar/'+id, {method:'DELETE'})
+      .then(function(r){ return r.json(); }).then(function(d){
+        if(d.ok){ cargarEventosProducto(producto); actualizarDashboard(); }
+      });
+  }
+  </script>
+
 </body>
 </html>
 """

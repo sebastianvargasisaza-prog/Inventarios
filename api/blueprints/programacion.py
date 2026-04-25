@@ -217,6 +217,24 @@ def _fetch_calendar_events(days_ahead=90):
     except Exception as e:
         return {'events': [], 'error': str(e)}
 
+def _fetch_local_production_events(conn):
+    """Return list of upcoming local production events from produccion_programada."""
+    try:
+        rows = conn.execute(
+            """SELECT id, producto, fecha_programada, lotes, estado, observaciones
+               FROM produccion_programada
+               WHERE estado NOT IN ('completado','cancelado')
+                 AND fecha_programada >= date('now')
+               ORDER BY fecha_programada"""
+        ).fetchall()
+        return [
+            {'id': r[0], 'titulo': r[1], 'fecha': r[2],
+             'lotes': r[3], 'estado': r[4], 'descripcion': r[5] or ''}
+            for r in rows
+        ]
+    except Exception as e:
+        return []
+
 # ─── MP stock ────────────────────────────────────────────────────────────────
 
 def _get_mp_stock(conn):
@@ -369,15 +387,25 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
     # Stock real de PT
     pt_stock = _get_stock_pt(conn)
 
-    # Calendar: next production date per product (match by product name in event title)
+    # Calendar: next production date per product
+    # Priority: local produccion_programada DB first, then Google Calendar events
     products_with_formula = set(formulas.keys())
     next_prod_by_product = {}
+    # Local events (exact product name match)
+    local_events = _fetch_local_production_events(conn)
+    for ev in local_events:
+        prod_ev = ev.get('titulo', '')
+        if prod_ev in products_with_formula and prod_ev not in next_prod_by_product:
+            next_prod_by_product[prod_ev] = ev.get('fecha', '')
+    # Google Calendar fallback (fuzzy title match)
     for ev in calendar_events:
         titulo = ev.get('titulo', '').upper()
         fecha_ev = ev.get('fecha', '')
         for prod in products_with_formula:
+            if prod in next_prod_by_product:
+                continue
             key = prod[:6].upper()
-            if key in titulo and prod not in next_prod_by_product:
+            if key in titulo:
                 next_prod_by_product[prod] = fecha_ev
                 break
 
@@ -932,6 +960,76 @@ def prog_debug_ventas():
         'meses_analizados': vel['months_analyzed'],
     })
 
+
+
+# ─── Producción programada (local calendar) ────────────────────────────────
+
+@bp.route('/api/programacion/programar', methods=['GET'])
+def prog_listar_eventos():
+    """List all future production events."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, producto, fecha_programada, lotes, estado, observaciones, creado_en
+           FROM produccion_programada
+           ORDER BY fecha_programada"""
+    ).fetchall()
+    return jsonify([{
+        'id': r[0], 'producto': r[1], 'fecha': r[2],
+        'lotes': r[3], 'estado': r[4], 'observaciones': r[5], 'creado_en': r[6]
+    } for r in rows])
+
+
+@bp.route('/api/programacion/programar', methods=['POST'])
+def prog_crear_evento():
+    """Create a production event."""
+    data = request.get_json(force=True, silent=True) or {}
+    producto = (data.get('producto') or '').strip()
+    fecha    = (data.get('fecha') or '').strip()
+    lotes    = int(data.get('lotes') or 1)
+    obs      = (data.get('observaciones') or '').strip()
+
+    if not producto or not fecha:
+        return jsonify({'ok': False, 'error': 'producto y fecha son requeridos'}), 400
+
+    # Validate date format
+    try:
+        import datetime as _dt2
+        _dt2.date.fromisoformat(fecha)
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'fecha inválida (use YYYY-MM-DD)'}), 400
+
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO produccion_programada (producto, fecha_programada, lotes, observaciones)
+           VALUES (?, ?, ?, ?)""",
+        (producto, fecha, max(1, lotes), obs)
+    )
+    conn.commit()
+    return jsonify({'ok': True, 'id': cur.lastrowid, 'producto': producto, 'fecha': fecha})
+
+
+@bp.route('/api/programacion/programar/<int:evento_id>', methods=['DELETE'])
+def prog_cancelar_evento(evento_id):
+    """Cancel a scheduled production event."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE produccion_programada SET estado='cancelado' WHERE id=?",
+        (evento_id,)
+    )
+    conn.commit()
+    return jsonify({'ok': True, 'id': evento_id})
+
+
+@bp.route('/api/programacion/programar/<int:evento_id>/completar', methods=['POST'])
+def prog_completar_evento(evento_id):
+    """Mark a production event as completed."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE produccion_programada SET estado='completado' WHERE id=?",
+        (evento_id,)
+    )
+    conn.commit()
+    return jsonify({'ok': True, 'id': evento_id})
 
 @bp.route('/api/programacion/calendario')
 def prog_calendario():
