@@ -3626,8 +3626,15 @@ function _renderProgramacion(d){
       var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
       var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
       var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
-      var progLabel = p.prox_produccion === 'No programado' ? '📅 Programar' : ('📅 '+p.prox_produccion);
-      var progBtnColor = p.prox_produccion === 'No programado' ? '#6c757d' : '#198754';
+      var isPast = p.prox_prod_pasada === true;
+      var progLabel, progBtnColor;
+      if (p.prox_produccion === 'No programado') {
+        progLabel = '📅 Programar'; progBtnColor = '#6c757d';
+      } else if (isPast) {
+        progLabel = '⚠️ ' + p.prox_produccion + ' — ¿completada?'; progBtnColor = '#e67e00';
+      } else {
+        progLabel = '📅 ' + p.prox_produccion; progBtnColor = '#198754';
+      }
       return '<tr style="border-bottom:1px solid #eee">' +
         '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +

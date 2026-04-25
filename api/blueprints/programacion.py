@@ -263,18 +263,26 @@ def _fetch_calendar_events(days_ahead=90):
         return {'events': [], 'error': str(e), 'source': 'gcal_api'}
 
 def _fetch_local_production_events(conn):
-    """Return list of upcoming local production events from produccion_programada."""
+    """Return upcoming AND recent past (≤14d) production events from produccion_programada.
+
+    Including recent past events lets the dashboard surface productions that were
+    scheduled but not yet marked as 'completado', so they don't silently disappear
+    from the Prox. Produccion column. Past-dated events carry past_date=True.
+    """
     try:
         rows = conn.execute(
             """SELECT id, producto, fecha_programada, lotes, estado, observaciones
                FROM produccion_programada
                WHERE estado NOT IN ('completado','cancelado')
-                 AND fecha_programada >= date('now')
+                 AND fecha_programada >= date('now', '-14 days')
                ORDER BY fecha_programada"""
         ).fetchall()
+        import datetime as _dt
+        today_str = str(_dt.date.today())
         return [
             {'id': r[0], 'titulo': r[1], 'fecha': r[2],
-             'lotes': r[3], 'estado': r[4], 'descripcion': r[5] or ''}
+             'lotes': r[3], 'estado': r[4], 'descripcion': r[5] or '',
+             'past_date': r[2] < today_str}
             for r in rows
         ]
     except Exception as e:
@@ -603,12 +611,20 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
     products_with_formula = set(formulas.keys())
     next_prod_by_product = {}
 
-    # 1. Local DB events (exact product name)
+    # 1. Local DB events — case-insensitive product name matching
     local_events = _fetch_local_production_events(conn)
+    # Build uppercase lookup: UPPER(formula_name) -> original formula_name
+    _upper_to_prod = {p.upper(): p for p in products_with_formula}
     for ev in local_events:
-        prod_ev = ev.get('titulo', '')
-        if prod_ev in products_with_formula and prod_ev not in next_prod_by_product:
-            next_prod_by_product[prod_ev] = ev.get('fecha', '')
+        prod_ev_raw = ev.get('titulo', '')
+        # Try exact match first, then case-insensitive
+        prod_key = prod_ev_raw if prod_ev_raw in products_with_formula             else _upper_to_prod.get(prod_ev_raw.upper())
+        if prod_key and prod_key not in next_prod_by_product:
+            fecha_ev = ev.get('fecha', '')
+            next_prod_by_product[prod_key] = fecha_ev
+            # Flag if the scheduled date is already past
+            if ev.get('past_date'):
+                next_prod_by_product[prod_key + '__past'] = True
 
     # 2. Google Calendar / iCal events — SKU-first matching
     # Event titles use SKU codes: 'GELH – Fabricacion' -> SKU=GELH -> GEL HIDRATANTE
@@ -817,6 +833,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             'stock_actual': stock_uds,
             'dias_cobertura': round(dias_cob, 0) if dias_cob < 999 else None,
             'prox_produccion': prox_prod,
+            'prox_prod_pasada': bool(next_prod_by_product.get(prod + '__past')),
             'cal_ok': cal_ok,
             'mp_lista': can_produce,
             'mp_data_gap': has_data_gap,
