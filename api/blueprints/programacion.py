@@ -1560,3 +1560,83 @@ def prog_debug_mps():
         'movimientos_entradas': n_entradas,
         'keyword_hits_in_stock': keyword_hits,
     })
+
+
+@bp.route('/api/programacion/debug-mp-check/<producto>')
+def prog_debug_mp_check(producto):
+    """Debug: muestra el mp_check completo para un producto específico."""
+    if not _auth():
+        return jsonify({'error': 'no auth'}), 401
+    conn = get_db()
+    mp_stock = _get_mp_stock(conn)
+    formulas = _get_formulas(conn)
+
+    prod_key = None
+    for k in formulas:
+        if k.upper() == producto.upper() or producto.upper() in k.upper():
+            prod_key = k
+            break
+
+    if not prod_key:
+        available = list(formulas.keys())
+        return jsonify({'error': f'Producto no encontrado', 'disponibles': available[:20]}), 404
+
+    data = formulas[prod_key]
+    lote_kg = data.get('lote_size_kg') or 1.0
+    items = data.get('items', [])
+    items_with_qty = [i for i in items if i.get('cantidad_g_por_lote', 0) > 0]
+
+    result = []
+    for item in items_with_qty:
+        mid = str(item['material_id']).strip()
+        nombre_raw = str(item.get('material_nombre', '')).strip()
+        needed_g = float(item['cantidad_g_por_lote'])
+
+        # Mirror exact lookup logic from _project_stock
+        if _is_unlimited_mp(nombre_raw):
+            available_g = float('inf')
+            match_via = 'unlimited'
+        elif mid in mp_stock:
+            available_g = mp_stock[mid]
+            match_via = 'id'
+        else:
+            nombre_exact = nombre_raw.upper()
+            if nombre_exact in mp_stock:
+                available_g = mp_stock[nombre_exact]
+                match_via = 'nombre_exact'
+            else:
+                nombre_norm = _norm_mp_name(nombre_raw)
+                if nombre_norm in mp_stock:
+                    available_g = mp_stock[nombre_norm]
+                    match_via = 'nombre_norm'
+                else:
+                    alias_key = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_exact)
+                    if alias_key and alias_key in mp_stock:
+                        available_g = mp_stock[alias_key]
+                        match_via = f'alias→{alias_key}'
+                    else:
+                        available_g = 0
+                        match_via = 'NOT_FOUND'
+
+        deficit_g = 0 if available_g == float('inf') else max(0, needed_g - available_g)
+        ok = deficit_g < 1
+        result.append({
+            'material_id': mid,
+            'nombre': nombre_raw,
+            'needed_g': round(needed_g, 1),
+            'available_g': '∞' if available_g == float('inf') else round(available_g, 1),
+            'deficit_g': round(deficit_g, 1),
+            'ok': ok,
+            'match_via': match_via,
+        })
+
+    result.sort(key=lambda x: (x['ok'], -x['deficit_g']))  # failing first
+    failing = [r for r in result if not r['ok']]
+    return jsonify({
+        'producto': prod_key,
+        'lote_kg': lote_kg,
+        'total_ingredientes': len(result),
+        'ingredientes_faltantes': len(failing),
+        'can_produce': len(failing) == 0,
+        'failing_first': result,
+    })
