@@ -1946,7 +1946,7 @@ def envasado_list():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
-        produccion_id = int(d.get('produccion_id', 0))
+        produccion_id = int(d.get('produccion_id') or 0)
         lote = d.get('lote', '').strip()
         producto = d.get('producto', '').strip()
         presentacion = d.get('presentacion', '').strip()
@@ -2070,7 +2070,7 @@ def acondicionamiento_list():
             (envasado_id, produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
              presentacion, mee_consumido, fecha, operador, observaciones, sku, precio_base)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (envasado_id, int(d.get('produccion_id', 0)), d.get('lote', ''), d.get('producto', ''),
+            (envasado_id, int(d.get('produccion_id') or 0), d.get('lote', ''), d.get('producto', ''),
              batch_g, uds,
              d.get('presentacion', ''), json.dumps(mee_items),
              d.get('fecha', datetime.now().strftime('%Y-%m-%d')), u,

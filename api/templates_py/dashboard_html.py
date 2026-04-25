@@ -141,9 +141,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
     <button class="tab-button" onclick="switchTab('envasado',this)">&#128230; Envasado</button>
     <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
-    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
-    <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
+    <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
@@ -855,131 +854,232 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div id="envasado" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
-<p style="color:#666;font-size:13px;margin-bottom:16px;">Selecciona el batch de produccion terminado. El sistema descuenta frascos y tapas del inventario MEE automaticamente.</p>
-<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-<div>
-  <label style="font-size:12px;color:#555;font-weight:600">Batch de Produccion</label>
-  <select id="env-prod-sel" onchange="cargarDatosProduccion()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
-    <option value="">-- Selecciona produccion terminada --</option>
-  </select>
-</div>
-<div>
-  <label style="font-size:12px;color:#555">Producto</label>
-  <input id="env-producto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
-</div>
-<div>
-  <label style="font-size:12px;color:#555">Lote</label>
-  <input id="env-lote" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
-</div>
-<div>
-  <label style="font-size:12px;color:#555">Batch disponible (g)</label>
-  <input id="env-batch-total" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box">
-</div>
-</div>
-<div id="env-presentaciones">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <label style="font-size:13px;font-weight:600;color:#333">Presentaciones (max 2)</label>
-    <button onclick="addEnvPres()" id="env-add-pres-btn" style="background:#2B7A78;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px">+ Agregar presentacion</button>
+  <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
+  <p style="color:#666;font-size:13px;margin-bottom:16px">Registra el uso de envases y tapas por lote de produccion terminado.</p>
+
+  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+    <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Producto</label>
+        <select id="env-prod-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Selecciona producto --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Lote</label>
+        <input id="env-lote" placeholder="Ej: ESP260425LBHA" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades envasadas</label>
+        <input id="env-uds" type="number" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Presentacion</label>
+        <input id="env-pres" placeholder="Ej: Frasco 30ml" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Envase usado (MEE)</label>
+        <select id="env-envase-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Tipo de envase --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Tapa usada (MEE)</label>
+        <select id="env-tapa-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Tipo de tapa --</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <textarea id="env-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <button onclick="registrarEnvasadoSimple()" style="background:#1a4a7a;color:#fff;padding:9px 22px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px">&#9989; Registrar Envasado</button>
+    <div id="env-msg" style="margin-top:8px;font-size:13px"></div>
   </div>
-  <div id="env-pres-rows"></div>
-</div>
-<div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="env-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
-<button onclick="registrarEnvasado()" style="margin-top:12px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">&#9989; Registrar Envasado</button>
-<div id="env-msg" style="margin-top:8px;"></div>
-</div>
-<div id="env-historial">
-<h3 style="margin:0 0 10px;color:#2B7A78">&#128202; Historial Envasado</h3>
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:7px">Lote</th><th style="padding:7px">Producto</th><th style="padding:7px">Presentacion</th><th style="padding:7px">Uds</th><th style="padding:7px">Envase</th><th style="padding:7px">Tapa</th><th style="padding:7px">Fecha</th><th style="padding:7px">Operador</th></tr></thead>
-<tbody id="env-tbody"></tbody>
-</table>
-</div>
+
+  <div id="env-historial">
+    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Envasado</h3>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#1a4a7a;color:#fff">
+            <th style="padding:8px">Lote</th>
+            <th style="padding:8px">Producto</th>
+            <th style="padding:8px">Presentacion</th>
+            <th style="padding:8px">Uds</th>
+            <th style="padding:8px">Envase</th>
+            <th style="padding:8px">Tapa</th>
+            <th style="padding:8px">Fecha</th>
+            <th style="padding:8px">Operador</th>
+          </tr>
+        </thead>
+        <tbody id="env-tbody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 </div>
 
 <div id="acondicionamiento" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 14px;color:#1a4a7a">&#128230; Acondicionamiento PT</h2>
-<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Batch de Acondicionamiento</h3>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-<div style="grid-column:span 3">
-  <label style="font-size:12px;color:#555;font-weight:600">Batch Envasado (carga automatico los datos)</label>
-  <select id="ac-envasado-sel" onchange="cargarDesdeEnvasado()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
-    <option value="">-- Selecciona batch envasado listo --</option>
-  </select>
-</div>
-<div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Presentacion</label><input id="ac-pres" placeholder="Auto" readonly style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="Auto" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Unidades</label><input id="ac-uds" type="number" placeholder="Auto" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<input type="hidden" id="ac-envasado-id" value="">
-</div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-<div><label style="font-size:12px;color:#555">SKU PT</label><input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Precio Base (COP)</label><input id="ac-precio" type="number" placeholder="35000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-</div>
-<div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="ac-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
-<div style="margin-top:12px;border:1px solid #ccc;border-radius:6px;padding:12px;background:#fafafa">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <label style="font-size:12px;font-weight:600;color:#333">&#128230; MEE Consumido <span style="color:#888;font-weight:normal">(envases, tapas, etiquetas...)</span></label>
-    <button onclick="addMEERowAcond()" style="background:#6c5ce7;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:12px">+ Agregar</button>
-  </div>
-  <div id="ac-mee-rows" style="display:flex;flex-direction:column;gap:6px;"></div>
-  <div id="ac-mee-msg" style="font-size:11px;color:#888;margin-top:6px;">Sin items MEE agregados</div>
-</div>
-<button onclick="registrarAcond()" style="margin-top:12px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">&#9989; Registrar Batch</button>
-<div id="ac-form-msg" style="margin-top:8px;"></div>
-</div>
-<div id="ac-table-wrap">
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Presentación</th><th style="padding:8px">Batch(g)</th><th style="padding:8px">Uds</th><th style="padding:8px">Fecha</th><th style="padding:8px">Operador</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
-<tbody id="ac-tbody"></tbody>
-</table></div>
-</div></div>
+  <h2 style="margin:0 0 4px;color:#1a4a7a">&#128295; Acondicionamiento PT</h2>
+  <p style="color:#666;font-size:13px;margin-bottom:16px">Registra etiquetas, plegadizas y unidades salientes para entrega al cliente.</p>
 
-<div id="liberacion" class="tab-content">
+  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+    <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Acondicionamiento</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Producto</label>
+        <select id="ac-prod-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Selecciona producto --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Lote PT</label>
+        <input id="ac-lote" placeholder="Ej: ESP260425LBHA" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades acondicionadas</label>
+        <input id="ac-uds" type="number" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Fecha</label>
+        <input id="ac-fecha" type="date" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Etiquetas usadas</label>
+        <input id="ac-etiquetas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Plegadizas usadas</label>
+        <input id="ac-plegadizas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Destino / Cliente</label>
+        <input id="ac-destino" placeholder="ANIMUS Lab / nombre cliente" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">SKU PT</label>
+        <input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <textarea id="ac-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <button onclick="registrarAcondSimple()" style="background:#1a4a7a;color:#fff;padding:9px 22px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px">&#9989; Registrar Batch</button>
+    <div id="ac-form-msg" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <div id="ac-table-wrap">
+    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Acondicionamiento</h3>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#1a4a7a;color:#fff">
+            <th style="padding:8px">Lote</th>
+            <th style="padding:8px">Producto</th>
+            <th style="padding:8px">Uds</th>
+            <th style="padding:8px">Etiquetas</th>
+            <th style="padding:8px">Plegadizas</th>
+            <th style="padding:8px">Destino</th>
+            <th style="padding:8px">Fecha</th>
+            <th style="padding:8px">Operador</th>
+          </tr>
+        </thead>
+        <tbody id="ac-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="programacion" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 14px;color:#1a4a7a">&#9989; Liberación & Entrega</h2>
-<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para Liberación</h3>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-<div style="grid-column:span 3">
-  <label style="font-size:12px;color:#555;font-weight:600">Batch Acondicionado (carga automatico)</label>
-  <select id="lb-acond-sel" onchange="cargarDesdeAcond()" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
-    <option value="">-- Selecciona batch acondicionado --</option>
-  </select>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
+      <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock — en tiempo real</p>
+    </div>
+    <button onclick="cargarProgramacion()" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
+  </div>
+
+  <!-- Semáforo de estado general -->
+  <div id="prog-semaforo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px">
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128225;</div>
+      <div style="font-size:12px;color:#666">Velocidad Shopify</div>
+      <div id="prog-vel-val" style="font-size:1.4em;font-weight:700;color:#1a4a7a">--</div>
+      <div id="prog-vel-sub" style="font-size:11px;color:#888">unidades / mes</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128197;</div>
+      <div style="font-size:12px;color:#666">Próxima Producción</div>
+      <div id="prog-cal-val" style="font-size:1.1em;font-weight:700;color:#1a4a7a">--</div>
+      <div id="prog-cal-sub" style="font-size:11px;color:#888">según calendario</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128202;</div>
+      <div style="font-size:12px;color:#666">Productos con Alerta</div>
+      <div id="prog-alert-val" style="font-size:1.4em;font-weight:700;color:#dc3545">--</div>
+      <div id="prog-alert-sub" style="font-size:11px;color:#888">requieren acción</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#129302;</div>
+      <div style="font-size:12px;color:#666">IA Análisis</div>
+      <div id="prog-ia-status" style="font-size:0.85em;color:#888;font-style:italic">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Narrative IA -->
+  <div id="prog-ia-box" style="background:linear-gradient(135deg,#0f2d1f,#1a4a7a);border-radius:10px;padding:18px;margin-bottom:20px;display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:20px">&#129302;</span>
+      <span style="color:#4ade80;font-weight:700;font-size:14px">Análisis IA — Centro de Programación</span>
+    </div>
+    <div id="prog-ia-text" style="color:#e2e8f0;font-size:13px;line-height:1.6"></div>
+  </div>
+
+  <!-- Tabla de proyección por producto -->
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div style="background:#1a4a7a;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
+      📦 Proyección de Stock — 60 días por producto
+    </div>
+    <div id="prog-tabla-wrap" style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#f5f7fa;color:#444">
+            <th style="padding:10px;text-align:left;border-bottom:1px solid #eee">Producto / SKU</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock Actual</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Vel. Venta/mes</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock 60d</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Producción</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MP Lista</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
+          </tr>
+        </thead>
+        <tbody id="prog-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:30px;color:#aaa;font-style:italic">
+            Haz clic en "Actualizar" para cargar la proyección
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Alertas de abastecimiento -->
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden">
+    <div style="background:#dc3545;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
+      🚨 Alertas de Abastecimiento
+    </div>
+    <div id="prog-alertas" style="padding:16px">
+      <div style="text-align:center;color:#aaa;font-style:italic;padding:20px">Sin alertas — actualiza para verificar</div>
+    </div>
+  </div>
 </div>
-<input type="hidden" id="lb-acond-id" value="">
-<div><label style="font-size:12px;color:#555">Lote PT</label><input id="lb-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Producto</label><input id="lb-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Presentación</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Unidades</label><input id="lb-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Fecha Producción</label><input id="lb-fprod" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Destino</label><select id="lb-dest" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px"><option value="ANIMUS">ANÍMUS Lab</option><option value="MAQUILA">Maquila</option><option value="OTRO">Otro</option></select></div>
 </div>
-<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-<div><label style="font-size:12px;color:#555">Cliente</label><input id="lb-cli" placeholder="Nombre cliente" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Observaciones</label><input id="lb-obs" placeholder="Observaciones CC" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-</div>
-<button onclick="registrarLiberacion()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Enviar a Control de Calidad</button>
-</div>
-<div style="margin-bottom:10px">
-<button onclick="loadLiberaciones('')" style="background:#6c757d;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Todas</button>
-<button onclick="loadLiberaciones('Pendiente CC')" style="background:#fd7e14;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Pendiente CC</button>
-<button onclick="loadLiberaciones('Liberado')" style="background:#28a745;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Liberadas</button>
-<button onclick="loadLiberaciones('Rechazado')" style="background:#dc3545;color:#fff;padding:5px 12px;border:none;border-radius:4px;cursor:pointer">Rechazadas</button>
-</div>
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Uds</th><th style="padding:8px">Destino</th><th style="padding:8px">Cliente</th><th style="padding:8px">F.Prod</th><th style="padding:8px">F.Lib</th><th style="padding:8px">Aprobado por</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
-<tbody id="lb-tbody"></tbody>
-</table>
-</div></div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var formulasPin=false;
@@ -994,9 +1094,7 @@ document.addEventListener('DOMContentLoaded',function(){
   if(OPER_ACTUAL){
     if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
     loadDashboardCompleto();loadFormulas();
-  // Pre-load Envasado selector so options are ready when tab is clicked
-  setTimeout(cargarEnvasadoTab, 1500);
-  setTimeout(cargarAcondPendientesLib, 2000);
+  setTimeout(cargarEnvasadoSimpleTab, 1500);
   } else {
     // Sin operador identificado: mostrar modal antes de cargar
     document.getElementById('modal-operador').style.display='flex';
@@ -1325,9 +1423,9 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='stock'){loadStock();loadMEE();}
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
   if(tabId==='produccion') cargarHistProd();
-  if(tabId==='envasado') cargarEnvasadoTab();
-  if(tabId==='acondicionamiento'){ cargarEnvasadosPendientes(); loadAcond(); }
-  if(tabId==='liberacion') cargarAcondPendientesLib();
+  if(tabId==='envasado') cargarEnvasadoSimpleTab();
+  if(tabId==='acondicionamiento') cargarAcondSimpleTab();
+  if(tabId==='programacion') cargarProgramacion();
   if(tabId==='cuarentena') cargarCuarentena();
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
@@ -3175,6 +3273,257 @@ function rechazarLib(id){
   if(!obs)return;
   fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:"Rechazado",observaciones:obs})})
   .then(function(){loadLiberaciones("");});
+}
+
+/* ============================================================
+   ENVASADO SIMPLE
+   ============================================================ */
+var _envSimpleMEE = [];
+async function cargarEnvasadoSimpleTab(){
+  // Populate product selector from formulas
+  var sel = document.getElementById('env-prod-sel');
+  if(sel && sel.options.length <= 1){
+    try{
+      var r = await fetch('/api/formulas');
+      var d = await r.json();
+      var prods = d.formulas || d.productos || [];
+      if(prods.length){
+        sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
+        prods.forEach(function(p){
+          var op = document.createElement('option');
+          var nombre = p.nombre || p.producto || p.name || JSON.stringify(p);
+          op.value = nombre; op.text = nombre;
+          sel.appendChild(op);
+        });
+      }
+    }catch(e){}
+  }
+  // Populate envase/tapa selectors from MEE stock
+  var selEnv = document.getElementById('env-envase-sel');
+  var selTap = document.getElementById('env-tapa-sel');
+  if(selEnv && selEnv.options.length <= 1){
+    try{
+      var rm = await fetch('/api/mee/stock');
+      var dm = await rm.json();
+      _envSimpleMEE = dm.items || [];
+      var envCats = ['Envase','Frasco','Gotero','Tarro'];
+      var envOpts = '<option value="">-- Sin envase --</option>';
+      var tapOpts = '<option value="">-- Sin tapa --</option>';
+      _envSimpleMEE.forEach(function(m){
+        var opt = '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' (stock: '+m.stock_actual+')</option>';
+        if(envCats.indexOf(m.categoria) >= 0) envOpts += opt;
+        else if(m.categoria === 'Tapa') tapOpts += opt;
+      });
+      if(selEnv) selEnv.innerHTML = envOpts;
+      if(selTap) selTap.innerHTML = tapOpts;
+    }catch(e){}
+  }
+  // Load history
+  await cargarHistEnvasado();
+}
+
+async function registrarEnvasadoSimple(){
+  var prodSel = document.getElementById('env-prod-sel');
+  var lote = (document.getElementById('env-lote')||{value:''}).value.trim();
+  var uds = parseInt((document.getElementById('env-uds')||{value:0}).value||0);
+  var pres = (document.getElementById('env-pres')||{value:''}).value.trim();
+  var envCod = (document.getElementById('env-envase-sel')||{value:''}).value;
+  var tapCod = (document.getElementById('env-tapa-sel')||{value:''}).value;
+  var obs = (document.getElementById('env-obs')||{value:''}).value.trim();
+  var producto = prodSel ? prodSel.value : '';
+  if(!producto){ _toast('Selecciona un producto', 0); return; }
+  if(!lote){ _toast('Ingresa el numero de lote', 0); return; }
+  if(uds <= 0){ _toast('Ingresa unidades envasadas', 0); return; }
+  var msg = document.getElementById('env-msg');
+  if(msg) msg.innerHTML = '<span style="color:#666">Registrando...</span>';
+  try{
+    var r = await fetch('/api/envasado', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        produccion_id: null,
+        lote: lote,
+        producto: producto,
+        presentacion: pres || producto,
+        unidades: uds,
+        envase_codigo: envCod || '',
+        tapa_codigo: tapCod || '',
+        operador: OPER_ACTUAL || 'Operario',
+        observaciones: obs
+      })
+    });
+    var d = await r.json();
+    if(!r.ok){ if(msg) msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
+    _toast('\u2705 Envasado registrado', 1);
+    ['env-lote','env-uds','env-pres','env-obs'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    if(prodSel) prodSel.selectedIndex = 0;
+    if(msg) msg.innerHTML = '';
+    await cargarHistEnvasado();
+    if(typeof loadAlertasMEE === 'function') setTimeout(loadAlertasMEE, 500);
+  }catch(e){
+    if(msg) msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
+  }
+}
+
+/* ============================================================
+   ACONDICIONAMIENTO SIMPLE
+   ============================================================ */
+async function cargarAcondSimpleTab(){
+  // Populate product selector
+  var sel = document.getElementById('ac-prod-sel');
+  if(sel && sel.options.length <= 1){
+    try{
+      var r = await fetch('/api/formulas');
+      var d = await r.json();
+      var prods = d.formulas || d.productos || [];
+      if(prods.length){
+        sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
+        prods.forEach(function(p){
+          var nombre = p.nombre || p.producto || p.name || '';
+          var op = document.createElement('option');
+          op.value = nombre; op.text = nombre;
+          sel.appendChild(op);
+        });
+      }
+    }catch(e){}
+  }
+  // Set today as default date
+  var fechaEl = document.getElementById('ac-fecha');
+  if(fechaEl && !fechaEl.value) fechaEl.value = new Date().toISOString().slice(0,10);
+  // Load history
+  loadAcondSimple();
+}
+
+async function registrarAcondSimple(){
+  var prodSel = document.getElementById('ac-prod-sel');
+  var lote = (document.getElementById('ac-lote')||{value:''}).value.trim();
+  var uds = parseInt((document.getElementById('ac-uds')||{value:0}).value||0);
+  var fecha = (document.getElementById('ac-fecha')||{value:''}).value;
+  var etiquetas = parseInt((document.getElementById('ac-etiquetas')||{value:0}).value||0);
+  var plegadizas = parseInt((document.getElementById('ac-plegadizas')||{value:0}).value||0);
+  var destino = (document.getElementById('ac-destino')||{value:''}).value.trim();
+  var sku = (document.getElementById('ac-sku')||{value:''}).value.trim();
+  var obs = (document.getElementById('ac-obs')||{value:''}).value.trim();
+  var producto = prodSel ? prodSel.value : '';
+  if(!producto){ _toast('Selecciona un producto', 0); return; }
+  if(!lote){ _toast('Ingresa el numero de lote PT', 0); return; }
+  if(uds <= 0){ _toast('Ingresa unidades acondicionadas', 0); return; }
+  var obsCompleto = 'Etiquetas: '+etiquetas+' | Plegadizas: '+plegadizas+(destino?' | Destino: '+destino:'')+(obs?' | '+obs:'');
+  var msgEl = document.getElementById('ac-form-msg');
+  if(msgEl) msgEl.innerHTML = '<span style="color:#666">Registrando...</span>';
+  try{
+    var r = await fetch('/api/acondicionamiento', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        lote: lote,
+        producto: producto,
+        presentacion: sku || producto,
+        cantidad_batch_g: 0,
+        unidades_producidas: uds,
+        fecha: fecha,
+        observaciones: obsCompleto,
+        sku: sku,
+        precio_base: 0,
+        mee_consumido: []
+      })
+    });
+    var d = await r.json();
+    if(!r.ok){ if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
+    _toast('\u2705 Batch registrado', 1);
+    ['ac-lote','ac-uds','ac-etiquetas','ac-plegadizas','ac-destino','ac-sku','ac-obs'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    if(prodSel) prodSel.selectedIndex = 0;
+    if(msgEl) msgEl.innerHTML = '';
+    loadAcondSimple();
+  }catch(e){
+    if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
+  }
+}
+
+function loadAcondSimple(){
+  fetch('/api/acondicionamiento').then(function(r){return r.json();}).then(function(rows){
+    var tb = document.getElementById('ac-tbody'); if(!tb) return;
+    if(!rows.length){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>'; return; }
+    tb.innerHTML = rows.map(function(r){
+      return '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:7px;font-family:monospace;font-size:12px">'+r.lote+'</td>' +
+        '<td style="padding:7px">'+r.producto+'</td>' +
+        '<td style="padding:7px;text-align:center">'+r.unidades_producidas+'</td>' +
+        '<td style="padding:7px;text-align:center;color:#555;font-size:12px">'+(r.observaciones||'--')+'</td>' +
+        '<td style="padding:7px;text-align:center">'+(r.presentacion||'--')+'</td>' +
+        '<td style="padding:7px;text-align:center">'+(r.sku||'--')+'</td>' +
+        '<td style="padding:7px;font-size:12px">'+(r.fecha||'--')+'</td>' +
+        '<td style="padding:7px;font-size:12px">'+(r.operador||'--')+'</td>' +
+        '</tr>';
+    }).join('');
+  }).catch(function(){});
+}
+
+/* ============================================================
+   PROGRAMACION — placeholder (Phase 2)
+   ============================================================ */
+async function cargarProgramacion(){
+  var btn = event && event.target;
+  if(btn){ btn.disabled = true; btn.textContent = 'Cargando...'; }
+  try{
+    var r = await fetch('/api/programacion/resumen');
+    if(!r.ok){ _toast('Backend de Programacion no disponible aun', 0); return; }
+    var d = await r.json();
+    _renderProgramacion(d);
+  }catch(e){
+    _toast('Programacion: endpoint en construccion', 0);
+    document.getElementById('prog-ia-status').textContent = 'Backend en construccion — Fase 2';
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔄 Actualizar'; }
+  }
+}
+
+function _renderProgramacion(d){
+  var vel = document.getElementById('prog-vel-val');
+  var cal = document.getElementById('prog-cal-val');
+  var alerts = document.getElementById('prog-alert-val');
+  var iaStatus = document.getElementById('prog-ia-status');
+  var iaBox = document.getElementById('prog-ia-box');
+  var iaText = document.getElementById('prog-ia-text');
+  if(vel && d.velocidad_total !== undefined) vel.textContent = d.velocidad_total;
+  if(cal && d.proxima_produccion) cal.textContent = d.proxima_produccion;
+  if(alerts && d.n_alertas !== undefined) alerts.textContent = d.n_alertas;
+  if(d.narrativa_ia && iaBox && iaText){
+    iaBox.style.display = 'block';
+    iaText.textContent = d.narrativa_ia;
+    if(iaStatus) iaStatus.textContent = 'Actualizado';
+  }
+  // Render projection table
+  var tbody = document.getElementById('prog-tbody');
+  if(tbody && d.proyeccion && d.proyeccion.length){
+    tbody.innerHTML = d.proyeccion.map(function(p){
+      var semColor = p.semaforo === 'verde' ? '#28a745' : p.semaforo === 'amarillo' ? '#fd7e14' : '#dc3545';
+      var semEmoji = p.semaforo === 'verde' ? '\u2705' : p.semaforo === 'amarillo' ? '\u26A0\uFE0F' : '🚨';
+      var mpIcon = p.mp_lista ? '\u2705' : '\u274C';
+      return '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
+        '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +
+        '<td style="padding:9px;text-align:center">'+p.vel_mes+'</td>' +
+        '<td style="padding:9px;text-align:center;font-weight:600;color:'+(p.stock_60d < 0 ? '#dc3545':'#1a4a7a')+'">'+p.stock_60d+'</td>' +
+        '<td style="padding:9px;text-align:center;font-size:12px">'+p.prox_produccion+'</td>' +
+        '<td style="padding:9px;text-align:center">'+mpIcon+'</td>' +
+        '<td style="padding:9px;text-align:center"><span style="background:'+semColor+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px">'+semEmoji+' '+p.semaforo+'</span></td>' +
+        '</tr>';
+    }).join('');
+  }
+  // Render alerts
+  var alertsDiv = document.getElementById('prog-alertas');
+  if(alertsDiv && d.alertas && d.alertas.length){
+    alertsDiv.innerHTML = d.alertas.map(function(a){
+      var color = a.nivel === 'critico' ? '#dc3545' : a.nivel === 'alto' ? '#fd7e14' : '#ffc107';
+      return '<div style="background:#fff5f5;border-left:4px solid '+color+';border-radius:4px;padding:10px 14px;margin-bottom:8px">' +
+        '<div style="font-weight:600;color:'+color+';font-size:13px">\u26A0 '+a.producto+'</div>' +
+        '<div style="font-size:12px;color:#555;margin-top:3px">'+a.mensaje+'</div>' +
+        '</div>';
+    }).join('');
+  } else if(alertsDiv){
+    alertsDiv.innerHTML = '<div style="text-align:center;color:#28a745;padding:20px;font-size:14px">\u2705 Sin alertas criticas</div>';
+  }
 }
 
 </script>
