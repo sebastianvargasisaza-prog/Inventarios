@@ -1461,14 +1461,32 @@ def prog_debug_mps():
         "SELECT COUNT(*) FROM movimientos WHERE tipo IN ('entrada','Entrada','ENTRADA')"
     ).fetchone()[0]
 
+    # Search mp_stock for critical keywords
+    keywords = ['AGUA', 'ALOE', 'ARGAN', 'JOJOBA', 'ASCORBICO', 'FERULICO',
+                'PANTENOL', 'PANTENOL', 'CETILICO', 'CETEARIL', 'ROSA MOSQUETA',
+                'ACETIL', 'ACETYL', 'HIALURONICO']
+    keyword_hits = {}
+    for kw in keywords:
+        hits = [k for k in mp_stock if kw in k]
+        if hits:
+            keyword_hits[kw] = hits[:5]
+
+    # Show normalized form of unmatched names for debugging
+    unmatched_with_norm = []
+    for item in unmatched:
+        norm_key = _norm_mp_name(item['nombre'])
+        in_stock = norm_key in mp_stock
+        unmatched_with_norm.append({**item, 'norm_key': norm_key, 'norm_in_stock': in_stock})
+
     return jsonify({
         'mp_stock_total_entries': len(mp_stock),
         'mp_stock_sample_keys': sample_stock_keys,
         'formula_items_distinct_materials': len(formula_mids),
         'matched_count': len(matched),
         'unmatched_count': len(unmatched),
-        'unmatched': unmatched[:30],
+        'unmatched': unmatched_with_norm[:30],
         'matched_sample': matched[:10],
         'movimientos_total_rows': n_mov,
         'movimientos_entradas': n_entradas,
+        'keyword_hits_in_stock': keyword_hits,
     })
