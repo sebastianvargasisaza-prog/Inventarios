@@ -769,6 +769,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('CRB3BHA',  'EMULSION HIDRATANTE  B3+BHA',    1),
         ('TRIAC',    'SUERO DE RETINALDEHIDO 0.05%',    1)"""
     ]),
+    (9, "SKUs descontinuados inactivos + TRIACTIVE pendiente formula", [
+        # RETINAL+ y RETINALDEHIDO descontinuados — fuera de velocity y proyeccion
+        """UPDATE sku_producto_map SET activo=0 WHERE producto_nombre IN
+           ('Suero RETINAL +', 'SUERO DE RETINALDEHIDO 0.05%')""",
+        # TRIAC = SUERO TRIACTIVE RETINOID NAD+ — producto activo sin formula en sistema aun
+        """UPDATE sku_producto_map SET activo=0 WHERE sku='TRIAC'"""
+    ]),
 ]
 
 
