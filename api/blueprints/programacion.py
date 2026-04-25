@@ -592,9 +592,7 @@ def prog_resumen():
 
 @bp.route('/api/programacion/debug-stock')
 def prog_debug_stock():
-    """Debug: muestra stock_pt raw, sku_map y stock calculado por producto."""
-    if not _auth():
-        return jsonify({'error': 'No autenticado'}), 401
+    """Debug publico: muestra stock_pt raw, sku_map y stock calculado por producto."""
     conn = get_db()
 
     # Raw stock_pt
