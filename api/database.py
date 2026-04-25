@@ -1066,6 +1066,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('MPACFESO01', 'ACIDO FERULICO', 'MP00160', 'ferulic acid approx → ethyl ascorbic acid family', 1)
         """
     ]),
+        (15, 'mp_formula_bridge supplement — AOS 40 + biotinoyl tripeptide-1', [
+        """INSERT OR IGNORE INTO mp_formula_bridge
+           (formula_material_id, formula_material_nombre, bodega_material_id, notas, activo)
+           VALUES
+           ('MPAOSLI01', 'AOS 40', 'MP00212', 'sodium C14-16 olefin sulfonate = AOS-40', 1),
+           ('MPASCOLI01', 'AOS 40 (alt ID)', 'MP00212', 'sodium C14-16 olefin sulfonate = AOS-40', 1),
+           ('MPBIOTSO01', 'BIOTINOIL TRIPEPTIDO-1', 'MP00193', 'biotinoyl tripeptide-1', 1)
+        """
+    ]),
 (12, 'produccion_programada table', [
         """CREATE TABLE IF NOT EXISTS produccion_programada (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
