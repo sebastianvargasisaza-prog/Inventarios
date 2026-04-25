@@ -308,6 +308,40 @@ def _norm_mp_name(name):
     return s
 
 
+# Static alias map: normalised formula name -> normalised movimientos name
+# Handles brand-name differences, typos, Spanish/English variants, presentation suffixes
+_MP_NAME_ALIAS = {
+    # HIALURONICO missing ACIDO prefix
+    'HIALURONICO 50 KD':   'ACIDO HIALURONICO 50 KD',
+    'HIALURONICO 300 KD':  'ACIDO HIALURONICO 300 KD',
+    'HIALURONICO 1500 KD': 'ACIDO HIALURONICO 1500 KD',
+    # Typos in formula names
+    'ACIDO HILAURONICO 50 KD':  'ACIDO HIALURONICO 50 KD',   # double A
+    'ALCOHOL CETITLICO':        'ALCOHOL CETILICO',            # extra T
+    'ACETYL TETRAPETIDE 5':     'ACETYL TETRAPEPTIDE 5',       # missing P
+    'ACETYL TETRAPETIDE-5':     'ACETYL TETRAPEPTIDE 5',
+    # Spanish -> English ingredient names
+    'ACETIL TETRAPEPTIDO 40':  'ACETYL TETRAPEPTIDE 40',
+    'ACETIL TETRAPEPTIDO-40':  'ACETYL TETRAPEPTIDE 40',
+    'ACETIL TETRAPEPTIDO 3':   'ACETYL TETRAPEPTIDE 3',
+    'ACETIL TETRAPEPTIDO-3':   'ACETYL TETRAPEPTIDE 3',
+    # Brand/commercial name differences
+    'ACEITE DE ARGAN':       'BEAUTY OIL ARGAN',
+    'ACEITE ARGAN':          'BEAUTY OIL ARGAN',
+    'ACEITE DE JOJOBA':      'BEAUTY OIL JOJOBA',
+    'ACEITE JOJOBA':         'BEAUTY OIL JOJOBA',
+    'ACEITE DE ROSA MOSQUETA': 'BEAUTY OIL ROSA MOSQUETA',
+    # Presentation/form differences
+    'ALOE VERA':             'ALOE VERA POLVO',
+    'ACEITE ARBOL DE TE':    'ACEITE ESENCIAL ARBOL DE TE',
+    'D PANTENOL':            'D PANTENOL LIQUIDO',
+    'D-PANTENOL':            'D PANTENOL LIQUIDO',
+    # Ascorbic acid derivatives
+    '3 O ACIDO ETIL ASCORBICO': 'ETIL ASCORBICO ACID',
+    'ASCORBIL GLUCOSIDE':        'ASCORBIL GLUCOSIDE',
+}
+
+
 # MPs that are always available (own production equipment — effectively infinite stock)
 _MP_UNLIMITED = {
     'AGUA DESIONIZADA', 'AGUA PURIFICADA', 'AGUA DESTILADA',
@@ -609,10 +643,9 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
                 needed_g = float(item['cantidad_g_por_lote']) * kg_scale
-                # Try lookup order: unlimited → material_id → exact name → normalised name → 0
+                # Lookup order: unlimited → id → exact name → norm name → alias → 0
                 nombre_raw = str(item.get('material_nombre', '')).strip()
                 if _is_unlimited_mp(nombre_raw):
-                    # Water and other on-site produced MPs: always available
                     available_g = float('inf')
                 elif mid in mp_stock:
                     available_g = mp_stock[mid]
@@ -622,7 +655,12 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                         available_g = mp_stock[nombre_exact]
                     else:
                         nombre_norm = _norm_mp_name(nombre_raw)
-                        available_g = mp_stock.get(nombre_norm, 0)
+                        if nombre_norm in mp_stock:
+                            available_g = mp_stock[nombre_norm]
+                        else:
+                            # Static alias: known brand/typo/language differences
+                            alias_key = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_raw.upper())
+                            available_g = mp_stock.get(alias_key, 0) if alias_key else 0
                 deficit_g = 0 if available_g == float('inf') else max(0, needed_g - available_g)
                 ok = deficit_g < 1
                 if not ok:
@@ -1449,19 +1487,32 @@ def prog_debug_mps():
     matched   = []
     unmatched = []
     for mid, nombre in formula_mids:  # nombre = material_nombre
-        # Try: ID → exact name → normalised name
-        if mid in mp_stock:
+        # Try: unlimited → ID → exact name → norm name → alias
+        nombre_str = str(nombre or '')
+        if _is_unlimited_mp(nombre_str):
+            stock = float('inf')
+            match_via = 'unlimited'
+        elif mid in mp_stock:
             stock = mp_stock[mid]
             match_via = 'id'
         else:
-            nombre_exact = str(nombre or '').strip().upper()
+            nombre_exact = nombre_str.strip().upper()
             if nombre_exact in mp_stock:
                 stock = mp_stock[nombre_exact]
                 match_via = 'nombre_exact'
             else:
-                nombre_norm = _norm_mp_name(str(nombre or ''))
-                stock = mp_stock.get(nombre_norm, None)
-                match_via = 'nombre_norm' if stock is not None else None
+                nombre_norm = _norm_mp_name(nombre_str)
+                if nombre_norm in mp_stock:
+                    stock = mp_stock[nombre_norm]
+                    match_via = 'nombre_norm'
+                else:
+                    alias_key = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_exact)
+                    if alias_key and alias_key in mp_stock:
+                        stock = mp_stock[alias_key]
+                        match_via = 'alias'
+                    else:
+                        stock = None
+                        match_via = None
 
         if stock is not None:
             matched.append({'material_id': mid, 'nombre': nombre,
