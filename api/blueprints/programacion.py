@@ -131,19 +131,19 @@ def _fetch_calendar_events(days_ahead=90):
 # ─── MP stock ────────────────────────────────────────────────────────────────
 
 def _get_mp_stock(conn):
-    """Returns dict {material_id: stock_actual_g}"""
-    rows = conn.execute(
-        "SELECT codigo, stock_actual, unidad FROM maestro_mps WHERE activo=1"
-    ).fetchall()
+    """Returns dict {material_id: stock_actual_g}
+    Stock calculated from movimientos (Entrada - Salida), already in grams.
+    """
+    rows = conn.execute("""
+        SELECT material_id,
+               COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        FROM movimientos
+        GROUP BY material_id
+    """).fetchall()
     stock = {}
-    for r in rows:
-        codigo = str(r[0] or '').strip()
-        val = float(r[1] or 0)
-        unidad = str(r[2] or 'g').lower()
-        # Normalize to grams
-        if unidad in ('kg', 'kilo', 'kilos'):
-            val = val * 1000
-        stock[codigo] = val
+    for material_id, stock_g in rows:
+        if material_id:
+            stock[str(material_id).strip()] = max(float(stock_g or 0), 0)
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
