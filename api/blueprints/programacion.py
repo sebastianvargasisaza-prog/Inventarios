@@ -365,34 +365,71 @@ def _is_unlimited_mp(nombre):
 
 
 def _get_mp_stock(conn):
-    """Returns dict {key: stock_actual_g} keyed by BOTH material_id AND
-    normalised material_nombre so we can bridge two legacy ID systems:
-      - movimientos uses  MP00001 / MP00002 ... (Excel import)
-      - formula_items uses MPACARLI01 / MPACASSO01 ... (formulation system)
-    Lookup order in _project_stock: formula material_id first, then by name.
+    """Returns dict {key: stock_actual_g} keyed by material_id AND all known nombres.
+
+    Two-pass strategy to avoid split-stock bugs when the same material_id appears
+    in movimientos under different material_nombre values (e.g. 'PROPYLENE GLYCOL'
+    and 'PROPILENGLICOL' are both MP00121):
+
+    Pass 1 – aggregate stock correctly by material_id (canonical total).
+    Pass 2 – collect all (material_id, material_nombre) pairs; map every name
+             to the canonical stock for that material_id.
     """
-    rows = conn.execute("""
-        SELECT material_id, material_nombre,
+    # Pass 1: canonical stock per material_id
+    id_stock = {}
+    for mid, sg in conn.execute("""
+        SELECT material_id,
                COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                 THEN cantidad ELSE -cantidad END), 0) AS stock_g
+                                 THEN cantidad ELSE -cantidad END), 0)
         FROM movimientos
-        GROUP BY material_id, material_nombre
-    """).fetchall()
+        WHERE material_id IS NOT NULL AND material_id != ''
+        GROUP BY material_id
+    """).fetchall():
+        id_stock[str(mid).strip()] = max(float(sg or 0), 0)
+
+    # Pass 2: collect all name variants per material_id
+    name_rows = conn.execute(
+        "SELECT DISTINCT material_id, material_nombre FROM movimientos "
+        "WHERE material_nombre IS NOT NULL AND material_nombre != ''"
+    ).fetchall()
+
     stock = {}
-    for material_id, material_nombre, stock_g in rows:
-        val = max(float(stock_g or 0), 0)
-        # Index by original ID (MP00001 format)
-        if material_id and str(material_id).strip():
-            stock[str(material_id).strip()] = val
-        # Also index by normalised name for cross-system lookup
-        if material_nombre and str(material_nombre).strip():
-            key_nombre = str(material_nombre).strip().upper()
-            if key_nombre not in stock:
-                stock[key_nombre] = val
-            # Also index by aggressively normalised name (strips accents, hyphens, etc.)
-            key_norm = _norm_mp_name(material_nombre)
-            if key_norm and key_norm not in stock:
-                stock[key_norm] = val
+    # Index by canonical material_id first
+    for mid, val in id_stock.items():
+        stock[mid] = val
+
+    # Index by every name variant, resolved to the canonical material_id stock
+    for mid, nombre in name_rows:
+        mid_key = str(mid or '').strip()
+        val = id_stock.get(mid_key, 0)  # canonical stock for this material_id
+        nombre_s = str(nombre).strip()
+        # exact uppercase
+        key_exact = nombre_s.upper()
+        if key_exact not in stock:
+            stock[key_exact] = val
+        # normalised (strips accents, hyphens, parentheses, control chars)
+        key_norm = _norm_mp_name(nombre_s)
+        if key_norm and key_norm not in stock:
+            stock[key_norm] = val
+
+    # Also index materials that only appear without a material_id (legacy rows)
+    for nombre, sg in conn.execute("""
+        SELECT material_nombre,
+               COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                 THEN cantidad ELSE -cantidad END), 0)
+        FROM movimientos
+        WHERE (material_id IS NULL OR material_id = '')
+          AND material_nombre IS NOT NULL AND material_nombre != ''
+        GROUP BY material_nombre
+    """).fetchall():
+        val = max(float(sg or 0), 0)
+        key_exact = str(nombre).strip().upper()
+        if key_exact not in stock:
+            stock[key_exact] = val
+        key_norm = _norm_mp_name(str(nombre))
+        if key_norm and key_norm not in stock:
+            stock[key_norm] = val
+
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
