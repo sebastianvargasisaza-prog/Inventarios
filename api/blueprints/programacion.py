@@ -347,6 +347,18 @@ _MP_NAME_ALIAS = {
     'CENTELLA ASIATICA POLVO': 'CENTELLA ASIATICA',
     'CENTELLA ASIATICA':       'CENTELLA ASIATICA',
     'CENTELLA':                'CENTELLA ASIATICA',
+    # Commercial name differences (formula uses generic, bodega uses brand)
+    'EZ 4U':                   'PEMULEN EZ 4U',   # EZ-4U -> Pemulen EZ-4U
+    'EZ-4U':                   'PEMULEN EZ 4U',
+    'GRANSIL V 419':           'GRANSIL VX 419',   # Gransil variants
+    'GRANSIL VX419':           'GRANSIL VX 419',
+    'GRANSIL VX-419':          'PEMULEN EZ 4U',   # placeholder, update when confirmed
+    # Regaliz / licorice
+    'REGALIZ':                 'EXTRACTO DE REGALIZ',
+    'EXTRACTO REGALIZ':        'EXTRACTO DE REGALIZ',
+    # Silicona (update once Bodega MP name confirmed)
+    'SILICONA LIQUIDA':        'DIMETHICONE',
+    'SILICONA':                'DIMETHICONE',
 }
 
 
