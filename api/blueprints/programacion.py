@@ -433,7 +433,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
     pt_stock = _get_stock_pt(conn)
 
     # Calendar: next production date per product
-    # Priority: 1) local DB, 2) Google Calendar / iCal (smart matching)
+    # Priority: 1) local DB, 2) Google Calendar / iCal via SKU lookup
     products_with_formula = set(formulas.keys())
     next_prod_by_product = {}
 
@@ -444,35 +444,48 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         if prod_ev in products_with_formula and prod_ev not in next_prod_by_product:
             next_prod_by_product[prod_ev] = ev.get('fecha', '')
 
-    # 2. Google Calendar / iCal events (smart title matching)
+    # 2. Google Calendar / iCal events — SKU-first matching
+    # Event titles use SKU codes: 'GELH – Fabricacion' -> SKU=GELH -> GEL HIDRATANTE
     import re as _re_cal
-    _stop_words = {'DE','DEL','LA','EL','LOS','LAS','CON','MAS','PARA',
-                   'PRODUCCION','PRODUCCIÓN','LOTE','ESPAGIRIA','ANIMUS'}
 
-    def _cal_score(titulo_up, prod_up):
-        if prod_up in titulo_up:
-            return 100
-        tw = set(w for w in _re_cal.split(r'[^A-Z0-9]+', titulo_up) if len(w) > 2)
-        pw = set(w for w in _re_cal.split(r'[^A-Z0-9]+', prod_up)  if len(w) > 2)
-        pw -= _stop_words
-        if not pw:
-            return 0
-        return int(100 * len(pw & tw) / len(pw))
+    # Load sku -> producto_nombre map from DB
+    _sku_to_prod = {}
+    try:
+        for row in conn.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            _sku_to_prod[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # Non-SKU words that appear in event titles — never treat as product codes
+    _NOT_SKU = {
+        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+        'KG','MES','DIAS','DÍAS','ML','UDS','SIN','CON','BATCH','Fernando',
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
+    }
+
+    def _skus_from_title(titulo):
+        """Extract SKU candidates from a calendar event title."""
+        # All uppercase tokens 2+ chars that are not generic words
+        tokens = _re_cal.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+        return [t for t in tokens if t not in _NOT_SKU]
 
     for ev in calendar_events:
-        titulo_up = ev.get('titulo', '').upper()
-        fecha_ev  = ev.get('fecha', '')
+        titulo  = ev.get('titulo', '')
+        fecha_ev = ev.get('fecha', '')
         if not fecha_ev:
             continue
-        best_prod, best_score = None, 49
-        for prod in products_with_formula:
-            if prod in next_prod_by_product:
-                continue
-            sc = _cal_score(titulo_up, prod.upper())
-            if sc > best_score:
-                best_score, best_prod = sc, prod
-        if best_prod:
-            next_prod_by_product[best_prod] = fecha_ev
+        # Try each SKU extracted from title
+        for sku in _skus_from_title(titulo):
+            prod_name = _sku_to_prod.get(sku)
+            if prod_name and prod_name in products_with_formula:
+                # Assign earliest date per product
+                existing = next_prod_by_product.get(prod_name)
+                if not existing or fecha_ev < existing:
+                    next_prod_by_product[prod_name] = fecha_ev
+                break
 
     today = __import__('datetime').date.today()
 
@@ -1118,14 +1131,40 @@ def prog_debug_calendario():
         if not pw: return 0
         return int(100*len(pw&tw)/len(pw))
 
+    # Load sku map
+    import re as _re_d
+    _NOT_SKU = {'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+                'FABRICACION','FABRICACIÓN','LANZAMIENTO','KG','MES','DIAS','ML'}
+    sku_map = {}
+    try:
+        for r in conn.execute("SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
+            sku_map[r[0]] = r[1]
+    except Exception:
+        pass
+
+    def _skus_d(titulo):
+        tokens = _re_d.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+        return [t for t in tokens if t not in _NOT_SKU]
+
+    sku_matches = {}
     matches = []
     for ev in cal.get('events', []):
         titulo = ev.get('titulo','')
-        scores = sorted(
-            [{'producto': p, 'score': score(titulo, p)} for p in products_with_formula],
-            key=lambda x: -x['score']
-        )[:5]
-        matches.append({'evento': titulo, 'fecha': ev.get('fecha',''), 'top_matches': scores})
+        fecha  = ev.get('fecha','')
+        skus   = _skus_d(titulo)
+        matched_prod = None
+        for sku in skus:
+            pn = sku_map.get(sku)
+            if pn and pn in products_with_formula:
+                matched_prod = pn
+                if pn not in sku_matches or fecha < sku_matches[pn]:
+                    sku_matches[pn] = fecha
+                break
+        matches.append({
+            'evento': titulo, 'fecha': fecha,
+            'skus_extracted': skus,
+            'matched_product': matched_prod
+        })
 
     return jsonify({
         'source': cal.get('source','?'),
@@ -1133,8 +1172,9 @@ def prog_debug_calendario():
         'total_events': len(cal.get('events',[])),
         'gcal_ical_url_set': bool(GCAL_ICAL_URL),
         'google_api_key_set': bool(GOOGLE_API_KEY),
-        'matches': matches,
-        'raw_events': cal.get('events',[])
+        'sku_matches_summary': sku_matches,
+        'unmatched_events': [m for m in matches if not m['matched_product']],
+        'matched_events': [m for m in matches if m['matched_product']]
     })
 
 @bp.route('/api/programacion/calendario')
