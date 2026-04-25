@@ -472,11 +472,28 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         tokens = _re_cal.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
         return [t for t in tokens if t not in _NOT_SKU]
 
+    next_prod_kg_by_product = {}  # product -> planned kg from calendar title
+
+    def _kg_from_title(titulo):
+        """Extract planned kg from calendar event title. Returns float or None."""
+        # Match patterns like '50 kg', '~29 kg', '196 kg', '1,250 u / 50 kg'
+        matches = _re_cal.findall(r'~?(\d+(?:[,.]\d+)*)\s*kg', titulo, _re_cal.IGNORECASE)
+        if not matches:
+            return None
+        # Take the last match (avoids 'u' counts like '1,250 u / 50 kg')
+        val = matches[-1].replace(',', '.')
+        try:
+            return float(val)
+        except ValueError:
+            return None
+
     for ev in calendar_events:
         titulo  = ev.get('titulo', '')
         fecha_ev = ev.get('fecha', '')
         if not fecha_ev:
             continue
+        # Extract planned kg from title
+        kg_ev = _kg_from_title(titulo)
         # Try each SKU extracted from title
         for sku in _skus_from_title(titulo):
             prod_name = _sku_to_prod.get(sku)
@@ -485,6 +502,8 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                 existing = next_prod_by_product.get(prod_name)
                 if not existing or fecha_ev < existing:
                     next_prod_by_product[prod_name] = fecha_ev
+                    if kg_ev:
+                        next_prod_kg_by_product[prod_name] = kg_ev
                 break
 
     today = __import__('datetime').date.today()
@@ -520,16 +539,21 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             except Exception:
                 cal_ok = False
 
-        # MP check: puede producir un lote?
+        # MP check: alcanza la MP para el lote del calendario?
+        # Scale formula quantities by planned kg (from calendar) vs reference lot
+        planned_kg = next_prod_kg_by_product.get(prod, lote_kg or 1.0)
+        ref_kg     = lote_kg if lote_kg and lote_kg > 0 else planned_kg
+        kg_scale   = planned_kg / ref_kg  # e.g. 50kg planned / 35kg ref = 1.43x
+
         mp_check = []
         can_produce = True
         items_with_qty = [i for i in items if i.get('cantidad_g_por_lote', 0) > 0]
         if not items_with_qty:
-            can_produce = None  # desconocido: formula sin cantidades
+            can_produce = None  # formula sin cantidades definidas
         else:
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
-                needed_g = float(item['cantidad_g_por_lote'])
+                needed_g = float(item['cantidad_g_por_lote']) * kg_scale
                 available_g = mp_stock.get(mid, 0)
                 deficit_g = max(0, needed_g - available_g)
                 ok = deficit_g < 1
@@ -538,9 +562,9 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                 mp_check.append({
                     'material_id': mid,
                     'nombre': item['material_nombre'],
-                    'needed_g': needed_g,
+                    'needed_g': round(needed_g, 1),
                     'available_g': available_g,
-                    'deficit_g': deficit_g,
+                    'deficit_g': round(deficit_g, 1),
                     'ok': ok,
                 })
 
