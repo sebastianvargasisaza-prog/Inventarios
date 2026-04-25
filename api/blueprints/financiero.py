@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -26,7 +27,6 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('financiero', __name__)
 
-
 @bp.route('/financiero')
 def financiero_page():
     u = session.get('compras_user','')
@@ -39,18 +39,18 @@ def handle_fin_ingresos():
     u = session.get('compras_user','')
     if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
         if not d.get('concepto') or not d.get('monto'):
-            conn.close(); return jsonify({'error': 'Concepto y monto requeridos'}), 400
+            return jsonify({'error': 'Concepto y monto requeridos'}), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
         c.execute("""INSERT INTO flujo_ingresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
                    d['concepto'], d.get('categoria','Ventas'), float(d['monto']),
                    periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'message': f"Ingreso de ${float(d['monto']):,.0f} registrado"}), 201
     mes = request.args.get('mes')
     q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_ingresos"
@@ -59,7 +59,6 @@ def handle_fin_ingresos():
     q += " ORDER BY fecha DESC LIMIT 200"
     c.execute(q, params)
     cols = ['id','fecha','empresa','concepto','categoria','monto','periodo','referencia']
-    conn.close()
     return jsonify({'ingresos': [dict(zip(cols, r)) for r in c.fetchall()]})
 
 @bp.route('/api/financiero/egresos', methods=['GET','POST'])
@@ -67,18 +66,18 @@ def handle_fin_egresos():
     u = session.get('compras_user','')
     if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
         if not d.get('concepto') or not d.get('monto'):
-            conn.close(); return jsonify({'error': 'Concepto y monto requeridos'}), 400
+            return jsonify({'error': 'Concepto y monto requeridos'}), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
         c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
                    d['concepto'], d.get('categoria','MPs'), float(d['monto']),
                    periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'message': f"Egreso de ${float(d['monto']):,.0f} registrado"}), 201
     mes = request.args.get('mes')
     q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_egresos"
@@ -87,7 +86,6 @@ def handle_fin_egresos():
     q += " ORDER BY fecha DESC LIMIT 200"
     c.execute(q, params)
     cols = ['id','fecha','empresa','concepto','categoria','monto','periodo','referencia']
-    conn.close()
     return jsonify({'egresos': [dict(zip(cols, r)) for r in c.fetchall()]})
 
 @bp.route('/api/financiero/kpis')
@@ -95,7 +93,7 @@ def financiero_kpis():
     u = session.get('compras_user','')
     if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     periodo_actual = datetime.now().strftime('%Y-%m')
     # KPIs mes actual
     c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_ingresos WHERE periodo=?", (periodo_actual,))
@@ -125,47 +123,59 @@ def financiero_kpis():
         c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo=?", (p,))
         egr = c.fetchone()[0]
         historico.append({'periodo': p, 'ingresos': ing, 'egresos': egr})
-    conn.close()
+    # Shopify real-time (DTC directo) — no está en flujo_ingresos manual
+    try:
+        c.execute("SELECT COALESCE(SUM(total),0), COUNT(*) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (periodo_actual+'%',))
+        shp_row = c.fetchone()
+        shopify_mes = round(shp_row[0] or 0, 0)
+        shopify_pedidos = shp_row[1] or 0
+        # YTD Shopify
+        anio_ini = datetime.now().strftime('%Y')
+        c.execute("SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (anio_ini+'%',))
+        shopify_anio = round(c.fetchone()[0] or 0, 0)
+    except Exception:
+        shopify_mes = 0; shopify_pedidos = 0; shopify_anio = 0
     return jsonify({'ing_mes': ing_mes, 'ing_count': ing_count, 'egr_mes': egr_mes, 'egr_count': egr_count,
                     'saldo_caja': saldo_caja, 'desglose_ing': desglose_ing, 'desglose_egr': desglose_egr,
-                    'historico': historico, 'periodo': periodo_actual})
+                    'historico': historico, 'periodo': periodo_actual,
+                    'shopify_mes': shopify_mes, 'shopify_pedidos': shopify_pedidos, 'shopify_anio': shopify_anio})
 
 @bp.route('/api/financiero/flujo-mensual')
 def financiero_flujo_mensual():
     u = session.get('compras_user','')
     if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT periodo, SUM(monto) FROM flujo_ingresos GROUP BY periodo ORDER BY periodo")
     ings = {r[0]: r[1] for r in c.fetchall()}
     c.execute("SELECT periodo, SUM(monto) FROM flujo_egresos GROUP BY periodo ORDER BY periodo")
     egrs = {r[0]: r[1] for r in c.fetchall()}
     periodos = sorted(set(list(ings.keys()) + list(egrs.keys())))
     meses = [{'periodo': p, 'ingresos': ings.get(p, 0), 'egresos': egrs.get(p, 0)} for p in periodos]
-    conn.close()
     return jsonify({'meses': meses})
 
 @bp.route('/api/financiero/config', methods=['GET','POST'])
 def financiero_config():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
         for clave, valor in d.items():
             c.execute("INSERT INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor", (clave, str(valor), ''))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'message': f'{len(d)} parámetros actualizados'})
     c.execute("SELECT clave, valor FROM flujo_config ORDER BY clave")
     config = {r[0]: r[1] for r in c.fetchall()}
-    conn.close()
     return jsonify({'config': config})
 
 @bp.route('/api/financiero/importar-ocs', methods=['POST'])
 def financiero_importar_ocs():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # Traer OCs recibidas que no estén ya importadas
     c.execute("""SELECT oc.numero_oc, oc.fecha, oc.proveedor,
                         COALESCE(SUM(i.cantidad_g * i.precio_unitario), oc.valor_total, 0) as total
@@ -185,17 +195,46 @@ def financiero_importar_ocs():
                        'ESPAGIRIA', f'OC {numero_oc} — {proveedor or ""}',
                        'MPs', float(total), periodo, 'automatico', numero_oc, 'sistema'))
             importadas += 1
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
+@bp.route('/api/financiero/limpiar-flujo', methods=['POST'])
+def financiero_limpiar_flujo():
+    """Elimina todos los registros de flujo_egresos y flujo_ingresos.
+    Solo admin. Util para borrar datos de prueba o importaciones erroneas.
+    """
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or u not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json() or {}
+    # Requiere confirmacion explicita en el body para evitar borrados accidentales
+    if data.get('confirmar') != 'LIMPIAR_TODO':
+        return jsonify({'error': 'Falta confirmacion. Envia {"confirmar":"LIMPIAR_TODO"}'}), 400
+    conn = get_db(); c = conn.cursor()
+    try:
+        egr_count = c.execute('SELECT COUNT(*) FROM flujo_egresos').fetchone()[0]
+        ing_count = c.execute('SELECT COUNT(*) FROM flujo_ingresos').fetchone()[0]
+        c.execute('DELETE FROM flujo_egresos')
+        c.execute('DELETE FROM flujo_ingresos')
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'eliminados': {'egresos': egr_count, 'ingresos': ing_count},
+            'message': f'Limpieza completa: {egr_count} egresos y {ing_count} ingresos eliminados'
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route('/api/financiero/precios-mayorista', methods=['GET'])
 def get_precios_mayorista():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT sku, descripcion, precio_base, precio_mayorista, unidad FROM sku_precios ORDER BY sku")
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
     return jsonify([{'sku':r[0],'descripcion':r[1],'precio_base':r[2],'precio_mayorista':r[3],'unidad':r[4]} for r in rows])
 
 @bp.route('/api/financiero/precios-mayorista/<sku>', methods=['POST'])
@@ -204,9 +243,9 @@ def update_precio_mayorista(sku):
         return jsonify({'error': 'Solo admins pueden editar precios'}), 401
     d = request.get_json()
     precio = float(d.get('precio_mayorista', 0) or 0)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("UPDATE sku_precios SET precio_mayorista=? WHERE sku=?", (precio, sku))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'message': f'Precio actualizado para {sku}'})
 
 @bp.route('/api/financiero/ar-aging')
@@ -215,12 +254,12 @@ def financiero_ar_aging():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     today = date.today()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""SELECT numero_pedido, cliente, fecha, valor_total
                  FROM pedidos
                  WHERE estado NOT IN ('Cancelado','Facturado','Entregado')
                  AND valor_total > 0""")
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
     buckets = {
         'corriente': {'total': 0, 'count': 0},
         'dias_30':   {'total': 0, 'count': 0},
@@ -257,12 +296,12 @@ def financiero_ap_aging():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     today = date.today()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("""SELECT numero_oc, proveedor, fecha, valor_total
                  FROM ordenes_compra
                  WHERE estado IN ('Autorizada','Recibida','Parcial')
                  AND (pagado_por IS NULL OR pagado_por = '')""")
-    rows = c.fetchall(); conn.close()
+    rows = c.fetchall()
     buckets = {
         'corriente': {'total': 0, 'count': 0},
         'dias_30':   {'total': 0, 'count': 0},
@@ -299,7 +338,7 @@ def financiero_working_capital():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     today = date.today()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # AR
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE estado NOT IN ('Cancelado','Facturado','Entregado') AND valor_total > 0")
     ar_total = c.fetchone()[0] or 0
@@ -339,7 +378,6 @@ def financiero_working_capital():
               (cutoff3m,))
     egr3m = c.fetchone()[0] or 0
     burn_rate = max(egr3m / 3.0, 1.0)
-    conn.close()
     dso = (ar_total / (ventas_90 / 90.0)) if ventas_90 > 0 else 0
     dpo = (ap_total / (compras_90 / 90.0)) if compras_90 > 0 else 0
     dio = (inventory_value / (cogs_90 / 90.0)) if cogs_90 > 0 else 0
@@ -363,7 +401,7 @@ def financiero_pnl():
     mes_str = today.strftime('%Y-%m')
     year_str= today.strftime('%Y')
     periodo = today.strftime('%b %Y')
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
 
     def ing_animus(periodo_like):
         c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
@@ -408,7 +446,7 @@ def financiero_pnl():
                       'margen_pct': margen_pct, 'ingresos_ytd': ytd_ing,
                       'egresos_ytd': ytd_egr, 'ebitda': margen},
     }
-    # Histórico 6 meses
+    # Historico 6 meses
     historico = []
     for i in range(5, -1, -1):
         ref   = today.replace(day=1) - timedelta(days=i * 28)
@@ -418,8 +456,35 @@ def financiero_pnl():
         h_egr = egr_total(p)
         historico.append({'periodo': label, 'ingresos': h_ing,
                           'egresos': h_egr, 'margen': h_ing - h_egr})
-    conn.close()
-    return jsonify({'empresas': empresas, 'historico': historico, 'periodo': periodo})
+    # YTD vs anio anterior
+    prev_year = str(int(year_str) - 1)
+    ytd_prev_ing = ing_animus(prev_year) + ing_maquila(prev_year)
+    ytd_prev_egr = egr_total(prev_year)
+    ytd_crecimiento = round((ytd_ing - ytd_prev_ing) / ytd_prev_ing * 100, 1) if ytd_prev_ing > 0 else None
+    # Mes actual vs mismo mes anio anterior
+    mes_prev = today.replace(year=today.year - 1).strftime('%Y-%m')
+    prev_mes_ing = ing_animus(mes_prev) + ing_maquila(mes_prev)
+    prev_mes_egr = egr_total(mes_prev)
+    mes_crecimiento = round((total_ing - prev_mes_ing) / prev_mes_ing * 100, 1) if prev_mes_ing > 0 else None
+    # Nomina este mes (para costo laboral en P&L)
+    try:
+        c.execute("SELECT COALESCE(SUM(salario_neto),0) FROM nomina_registros WHERE periodo=?", (mes_str,))
+        nomina_mes = c.fetchone()[0] or 0
+    except Exception:
+        try:
+            c.execute("SELECT COALESCE(SUM(salario_base),0) FROM empleados WHERE estado='Activo'")
+            nomina_mes = c.fetchone()[0] or 0
+        except Exception:
+            nomina_mes = 0
+    ebitda = total_ing - total_egr - nomina_mes
+    return jsonify({
+        'empresas': empresas, 'historico': historico, 'periodo': periodo,
+        'ytd': {'ingresos': ytd_ing, 'egresos': ytd_egr, 'margen': ytd_ing - ytd_egr,
+                'prev_ingresos': ytd_prev_ing, 'crecimiento_pct': ytd_crecimiento},
+        'mes_vs_prior': {'ingresos': total_ing, 'prev_ingresos': prev_mes_ing, 'crecimiento_pct': mes_crecimiento},
+        'nomina_mes': nomina_mes,
+        'ebitda': ebitda,
+    })
 
 # ===============================================================
 # INVENTARIO v2 - NUEVOS ENDPOINTS

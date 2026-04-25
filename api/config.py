@@ -10,6 +10,7 @@ COMPRAS_USERS = {
     "daniela":    os.environ.get("PASS_DANIELA",    "hha2026"),
     "valentina":  os.environ.get("PASS_VALENTINA",  "espagiria2026"),
     "jefferson":  os.environ.get("PASS_JEFFERSON",  "espagiria2026"),
+    "felipe":     os.environ.get("PASS_FELIPE",     "animus2026"),
     "mayra":      os.environ.get("PASS_MAYRA",      "hha2026"),
     "gloria":     os.environ.get("PASS_GLORIA",     "hha2026"),
     "laura":      os.environ.get("PASS_LAURA",      "espagiria2026"),
@@ -23,11 +24,28 @@ COMPRAS_USERS = {
 }
 ADMIN_USERS     = {"sebastian", "alejandro"}
 CONTADORA_USERS = {"mayra"}
-RRHH_USERS      = {"gloria", "daniela", "luz", "mayra"}
-CALIDAD_USERS   = {"laura", "miguel", "yuliel"}
+RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "alejandro", "sebastian"}
+CALIDAD_USERS   = {"laura", "miguel", "yuliel", "alejandro", "sebastian"}
 PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
-COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "alejandro", "sebastian"}
+COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "daniela", "alejandro", "sebastian"}
 FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
+CLIENTES_ACCESS = {"mayra", "luz", "catalina", "valentina", "daniela", "alejandro", "sebastian"}
+TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
+MARKETING_USERS = {"jefferson", "sebastian", "alejandro", "felipe"}
+
+# PIN para desbloquear vista de cantidades en Formulas (cambiar via env var FORMULA_PIN)
+FORMULA_PIN = os.environ.get("FORMULA_PIN", "7531")
+
+# Emails de usuarios para notificaciones (configurar via env vars en Render)
+USER_EMAILS = {
+    "jefferson":  os.environ.get("EMAIL_JEFFERSON",  "jermun1992@gmail.com"),
+    "hernando":   os.environ.get("EMAIL_HERNANDO",   ""),
+    "catalina":   os.environ.get("EMAIL_CATALINA",   ""),
+    "luz":        os.environ.get("EMAIL_LUZ",        ""),
+    "daniela":    os.environ.get("EMAIL_DANIELA",    ""),
+    "sebastian":  os.environ.get("EMAIL_SEBASTIAN",  "sebastianvargasisaza@gmail.com"),
+    "alejandro":  os.environ.get("EMAIL_ALEJANDRO",  ""),
+}

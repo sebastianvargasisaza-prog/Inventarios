@@ -13,19 +13,35 @@ import os
 import threading
 
 class SistemaNotificaciones:
-    def __init__(self, email_remitente="", contraseña="", smtp_server="smtp.gmail.com", smtp_port=587):
+    def __init__(self, email_remitente="", contraseña="", smtp_server="", smtp_port=0):
         """
-        Inicializa el sistema de notificaciones
-
-        Para Gmail:
-        - email_remitente: tu email @gmail.com
-        - contraseña: contraseña de aplicación (no la contraseña normal)
-          Generar en: https://myaccount.google.com/apppasswords
+        Inicializa el sistema de notificaciones.
+        Lee env vars en orden de prioridad:
+          EMAIL_REMITENTE > SMTP_EMAIL  (remitente)
+          EMAIL_PASSWORD  > SMTP_PASSWORD  (contrasena)
+          SMTP_SERVER  (default smtp.gmail.com)
+          SMTP_PORT    (default 587)
+        Genera 'Contrasena de Aplicacion' en:
+          https://myaccount.google.com/apppasswords
         """
-        self.email_remitente = email_remitente or os.getenv('EMAIL_REMITENTE', '')
-        self.contraseña = contraseña or os.getenv('EMAIL_PASSWORD', '')
-        self.smtp_server = smtp_server
-        self.smtp_port = smtp_port
+        self.email_remitente = (
+            email_remitente
+            or os.getenv('EMAIL_REMITENTE', '')
+            or os.getenv('SMTP_EMAIL', '')
+        )
+        self.contraseña = (
+            contraseña
+            or os.getenv('EMAIL_PASSWORD', '')
+            or os.getenv('SMTP_PASSWORD', '')
+        )
+        self.smtp_server = (
+            smtp_server
+            or os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+        )
+        self.smtp_port = (
+            smtp_port
+            or int(os.getenv('SMTP_PORT', '587'))
+        )
         self.historial = []
 
     def enviar_alerta_stock_bajo(self, material_nombre, codigo, stock_actual_kg, umbral_kg=10):

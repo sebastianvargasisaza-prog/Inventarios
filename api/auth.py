@@ -4,14 +4,13 @@ import sqlite3
 import time
 from datetime import datetime
 
-from flask import request, session, redirect
+from flask import request, session, redirect, jsonify
 
 from config import DB_PATH
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
-_LOGIN_ATTEMPTS = {}
-_MAX_ATTEMPTS   = 5
-_LOCKOUT_SECS   = 900
+# ── Rate limiter persistente (SQLite — multi-worker safe) ────────────────────
+_MAX_ATTEMPTS = 5
+_LOCKOUT_SECS = 900   # 15 minutos
 
 
 def _client_ip():
@@ -20,22 +19,57 @@ def _client_ip():
 
 
 def _is_locked(ip):
-    rec = _LOGIN_ATTEMPTS.get(ip)
-    if not rec: return False
-    if time.time() < rec['locked_until']: return True
-    _LOGIN_ATTEMPTS.pop(ip, None)
-    return False
+    """Verifica si la IP está bloqueada. Lee de SQLite — funciona con N workers."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        row = conn.execute(
+            "SELECT locked_until FROM rate_limit WHERE ip=?", (ip,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return False
+        if time.time() < row[0]:
+            return True
+        # Bloqueo expirado — limpiar
+        _clear_attempts(ip)
+        return False
+    except Exception:
+        return False   # En caso de error de DB, no bloquear
 
 
 def _record_failure(ip):
-    rec = _LOGIN_ATTEMPTS.setdefault(ip, {'count': 0, 'locked_until': 0.0})
-    rec['count'] += 1
-    if rec['count'] >= _MAX_ATTEMPTS:
-        rec['locked_until'] = time.time() + _LOCKOUT_SECS
+    """Registra un intento fallido. Usa INSERT OR REPLACE para atomicidad."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("""
+            INSERT INTO rate_limit(ip, attempts, locked_until, last_attempt)
+            VALUES(?, 1, 0, ?)
+            ON CONFLICT(ip) DO UPDATE SET
+                attempts     = attempts + 1,
+                last_attempt = excluded.last_attempt,
+                locked_until = CASE
+                    WHEN attempts + 1 >= ? THEN ? + excluded.last_attempt
+                    ELSE locked_until
+                END
+        """, (ip, time.time(), _MAX_ATTEMPTS, _LOCKOUT_SECS))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _clear_attempts(ip):
-    _LOGIN_ATTEMPTS.pop(ip, None)
+    """Borra el registro de intentos para la IP (login exitoso)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("DELETE FROM rate_limit WHERE ip=?", (ip,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def _log_sec(event, username=None, ip=None, details=None):
@@ -53,6 +87,24 @@ def _log_sec(event, username=None, ip=None, details=None):
         pass
 
 
+def sin_acceso_html(modulo):
+    """Pagina de acceso denegado consistente para todos los modulos."""
+    return (
+        '<!DOCTYPE html><html><head><meta charset=UTF-8>'
+        '<title>Sin acceso</title>'
+        '<style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;'
+        'align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}'
+        '.card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;'
+        'text-align:center;max-width:400px;}'
+        'h2{color:#f59e0b;margin:0 0 12px;}p{color:#94a3b8;margin:0 0 20px;}'
+        'a{display:inline-block;background:#667eea;color:#fff;text-decoration:none;'
+        'padding:10px 24px;border-radius:8px;font-weight:600;}</style></head>'
+        f'<body><div class="card"><h2>Acceso restringido</h2>'
+        f'<p>El modulo de {modulo} no esta disponible para tu usuario.</p>'
+        '<a href="/hub">Volver al escritorio</a></div></body></html>'
+    )
+
+
 def register_hooks(app):
     """Registra before_request y after_request en la app Flask."""
 
@@ -61,7 +113,23 @@ def register_hooks(app):
         if session.get('compras_user'):
             if time.time() - session.get('login_time', 0) > 8 * 3600:
                 session.clear()
+                if request.path.startswith('/api/'):
+                    return jsonify({'error': 'Sesion expirada'}), 401
                 return redirect('/login')
+
+    @app.before_request
+    def require_auth_for_api():
+        """Bloquea TODAS las rutas /api/ si no hay sesion activa.
+        Excepcion: /api/login (publico).
+        Esto cierra la brecha donde ~45 endpoints aceptaban mutaciones sin auth.
+        """
+        if not request.path.startswith('/api/'):
+            return  # Rutas HTML se manejan individualmente
+        PUBLIC_API = {'/api/login', '/api/logout', '/api/health'}
+        if request.path in PUBLIC_API:
+            return
+        if not session.get('compras_user'):
+            return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
 
     @app.after_request
     def add_security_headers(response):

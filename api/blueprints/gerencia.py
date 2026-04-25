@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -30,25 +31,29 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('gerencia', __name__)
 
-
 @bp.route('/gerencia')
 def gerencia_page():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return redirect(url_for('core.login'))
-    return Response(HUB_HTML, mimetype='text/html')
+    if 'compras_user' not in session:
+        return redirect('/login?next=/gerencia')
+    if session.get('compras_user','') not in ADMIN_USERS:
+        # Autenticado pero sin permiso: ir al hub, no al login (evita loop)
+        return redirect('/hub')
+    return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/gerencia-financiero')
 def gerencia_financiero_page():
     u = session.get('compras_user', '')
-    if not u or u not in FINANZAS_ACCESS:
-        return redirect(url_for('core.login'))
+    if not u:
+        return redirect('/login?next=/gerencia-financiero')
+    if u not in FINANZAS_ACCESS:
+        return redirect('/hub')
     return Response(GERENCIA_HTML, mimetype='text/html')
 
 @bp.route('/api/gerencia/kpis')
 def gerencia_kpis():
     if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
     mps_bajo_minimo = c.fetchone()[0] or 0
     try:
@@ -64,6 +69,10 @@ def gerencia_kpis():
     prod_mes = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Pendiente','Aprobada','Enviada')")
     ocs_pendientes = c.fetchone()[0] or 0
+    try:
+        c.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Pendiente'")
+        sol_pendientes = c.fetchone()[0] or 0
+    except: sol_pendientes = 0
     c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE estado='Disponible'")
     uds_pt = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Confirmado','En preparacion')")
@@ -80,18 +89,57 @@ def gerencia_kpis():
     row = c.fetchone()
     cols_inp = ['periodo','saldo_caja','ingresos_animus','ingresos_maquila','notas','fecha']
     inputs_manuales = dict(zip(cols_inp, row)) if row else {}
-    conn.close()
+    # Nomina real: suma de salarios netos del periodo actual
+    from datetime import date as _date2
+    periodo_nom = _date2.today().strftime('%Y-%m')
+    try:
+        c.execute("SELECT COALESCE(SUM(nr.salario_neto),0), COUNT(*) FROM nomina_registros nr WHERE nr.periodo=?", (periodo_nom,))
+        nom_row = c.fetchone()
+        nomina_total_real = nom_row[0] or 0
+        nomina_empleados = nom_row[1] or 0
+    except Exception:
+        nomina_total_real = 0
+        nomina_empleados = 0
+    if nomina_total_real == 0:
+        try:
+            c.execute("SELECT COALESCE(SUM(salario_base),0), COUNT(*) FROM empleados WHERE estado='Activo'")
+            fb = c.fetchone()
+            nomina_total_real = fb[0] or 0
+            nomina_empleados = fb[1] or 0
+        except Exception:
+            pass
+    # Produccion kg este mes
+    mes_str_prod = _date2.today().strftime('%Y-%m')
+    try:
+        c.execute("SELECT COALESCE(SUM(cantidad_kg),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
+                  (mes_str_prod+'%',))
+        prod_row = c.fetchone()
+        kg_mes = prod_row[0] or 0
+        lotes_mes = prod_row[1] or 0
+    except Exception:
+        try:
+            c.execute("SELECT COALESCE(SUM(cantidad),0), COUNT(*) FROM producciones WHERE fecha LIKE ? AND estado='Completado'",
+                      (mes_str_prod+'%',))
+            prod_row = c.fetchone()
+            kg_mes = (prod_row[0] or 0)
+            lotes_mes = prod_row[1] or 0
+        except Exception:
+            kg_mes = 0
+            lotes_mes = 0
     semaforos = {
         'mps': 'rojo' if mps_bajo_minimo > 5 else ('amarillo' if mps_bajo_minimo > 0 else 'verde'),
         'mee': 'rojo' if mee_bajo_minimo > 3 else ('amarillo' if mee_bajo_minimo > 0 else 'verde'),
         'vencimientos': 'rojo' if lotes_vence_30 > 0 else ('amarillo' if lotes_vence_60 > 0 else 'verde'),
         'pt': 'rojo' if uds_pt < 100 else ('amarillo' if uds_pt < 500 else 'verde'),
         'pedidos': 'amarillo' if pedidos_activos > 0 else 'verde',
+        'solicitudes': 'amarillo' if sol_pendientes > 0 else 'verde',
     }
     return jsonify({'espagiria': {'mps_bajo_minimo': mps_bajo_minimo, 'mee_bajo_minimo': mee_bajo_minimo,
                                    'lotes_vence_30': lotes_vence_30,
-                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes},
+                                   'lotes_vence_60': lotes_vence_60, 'prod_mes': prod_mes, 'ocs_pendientes': ocs_pendientes, 'sol_pendientes': sol_pendientes,
+                                   'kg_mes': kg_mes, 'lotes_mes': lotes_mes},
                     'animus': {'uds_pt': uds_pt, 'pedidos_activos': pedidos_activos, 'skus_stock': skus_stock, 'dias_desde_fm': dias_fm},
+                    'nomina': {'total': nomina_total_real, 'empleados': nomina_empleados, 'periodo': periodo_nom},
                     'inputs_manuales': inputs_manuales, 'semaforos': semaforos})
 
 @bp.route('/api/gerencia/flujo-operacional')
@@ -100,7 +148,7 @@ def gerencia_flujo_operacional():
         return jsonify({'error': 'No autorizado'}), 401
     from datetime import date
     today = date.today()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # OCs en tránsito (Autorizada, sin recepción)
     c.execute("""SELECT oc.numero_oc, oc.proveedor, oc.fecha, oc.valor_total
                  FROM ordenes_compra oc
@@ -136,7 +184,6 @@ def gerencia_flujo_operacional():
                  ORDER BY d.fecha DESC LIMIT 10""")
     dsp_cols = ['numero','cliente','fecha','numero_pedido','estado']
     despachos_recientes = [dict(zip(dsp_cols, r)) for r in c.fetchall()]
-    conn.close()
     return jsonify({
         'ocs_transito': ocs_transito,
         'recepciones_disc': recepciones_disc,
@@ -150,7 +197,7 @@ def admin_security_log():
         return jsonify({'error': 'Solo admins'}), 401
     limit  = min(int(request.args.get('limit', 200)), 500)
     event  = request.args.get('event', '')
-    conn   = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if event:
         c.execute('SELECT * FROM security_events WHERE event=? ORDER BY id DESC LIMIT ?', (event, limit))
     else:
@@ -160,7 +207,6 @@ def admin_security_log():
     # Summary counts
     c.execute('SELECT event, COUNT(*) FROM security_events GROUP BY event')
     summary = {r[0]: r[1] for r in c.fetchall()}
-    conn.close()
     return jsonify({'events': rows, 'summary': summary})
 
 @bp.route('/api/admin/generate-hash', methods=['POST'])
@@ -188,14 +234,25 @@ def gerencia_dashboard_extra():
     mes_str  = today.strftime('%Y-%m')
     year_str = today.strftime('%Y')
     cutoff7  = (today - timedelta(days=7)).isoformat()
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
 
     # Ingresos del mes desde transacciones reales
+    # B2B / aliados — pedidos internos ANIMUS
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos "
               "WHERE fecha LIKE ? AND estado NOT IN ('Cancelado')"
               " AND (empresa='ANIMUS' OR empresa IS NULL OR empresa='')",
               (mes_str+'%',))
-    ing_animus = c.fetchone()[0] or 0
+    ing_aliados = c.fetchone()[0] or 0
+
+    # DTC — Shopify directo
+    try:
+        c.execute("SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en LIKE ?",
+                  (mes_str+'%',))
+        ing_shopify = c.fetchone()[0] or 0
+    except Exception:
+        ing_shopify = 0
+
+    # Maquila
     try:
         c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes "
                   "WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')",
@@ -203,7 +260,17 @@ def gerencia_dashboard_extra():
         ing_maquila = c.fetchone()[0] or 0
     except Exception:
         ing_maquila = 0
-    ingresos_mes = {'animus': ing_animus, 'maquila': ing_maquila, 'total': ing_animus + ing_maquila}
+
+    ing_animus_total = ing_aliados + ing_shopify
+    ingresos_mes = {
+        'aliados':       ing_aliados,        # B2B pedidos internos
+        'shopify':       ing_shopify,         # DTC Shopify directo
+        'animus_total':  ing_animus_total,    # ANIMUS total (aliados + shopify)
+        'maquila':       ing_maquila,
+        'total':         ing_animus_total + ing_maquila,
+        # compat legacy
+        'animus':        ing_aliados,
+    }
 
     # AR — cuentas por cobrar
     c.execute("SELECT COALESCE(SUM(valor_total),0), COUNT(*) FROM pedidos "
@@ -312,11 +379,70 @@ def gerencia_dashboard_extra():
     except Exception:
         security = {'success_7d': 0, 'fail_7d': 0, 'last_event': None}
 
-    conn.close()
+    # Maquila YTD vs targets
+    try:
+        c.execute("SELECT COALESCE(SUM(precio_lote),0) FROM maquila_ordenes WHERE fecha_orden LIKE ? AND estado NOT IN ('Cotizacion','Cancelada')", (year_str+'%',))
+        maquila_ytd = c.fetchone()[0] or 0
+    except Exception:
+        maquila_ytd = 0
+    try:
+        c.execute("SELECT COALESCE(SUM(p.valor_total),0) FROM pedidos p JOIN clientes cl ON p.cliente_id=cl.id WHERE cl.tipo='Maquila' AND p.fecha LIKE ? AND p.estado NOT IN ('Cancelado')", (year_str+'%',))
+        maquila_ytd += (c.fetchone()[0] or 0)
+    except Exception:
+        pass
+    maquila_target = {
+        'ytd': maquila_ytd,
+        'meta_espagiria': 30_000_000,
+        'meta_hha': 76_000_000,
+        'pct_espagiria': round(maquila_ytd / 30_000_000 * 100, 1) if maquila_ytd > 0 else 0,
+        'pct_hha': round(maquila_ytd / 76_000_000 * 100, 1) if maquila_ytd > 0 else 0,
+    }
+    # Influencer spend YTD
+    try:
+        c.execute("SELECT COALESCE(SUM(oc.valor_total),0), COUNT(DISTINCT oc.numero_oc) FROM ordenes_compra oc WHERE oc.fecha LIKE ? AND (oc.area_solicitante IN ('Influencer','Marketing') OR oc.proveedor LIKE '%Influenc%') AND oc.estado NOT IN ('Cancelada','Borrador')", (year_str+'%',))
+        inf_row = c.fetchone()
+        influencer_ytd = inf_row[0] or 0
+        influencer_ocs = inf_row[1] or 0
+    except Exception:
+        influencer_ytd = 0
+        influencer_ocs = 0
+    try:
+        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo LIKE ? AND (categoria LIKE '%Influencer%' OR categoria LIKE '%Marketing%')", (year_str+'%',))
+        influencer_ytd += (c.fetchone()[0] or 0)
+    except Exception:
+        pass
+    influencer_spend = {'ytd': influencer_ytd, 'ocs': influencer_ocs}
+    # Valor inventario MP en COP
+    try:
+        c.execute("SELECT l.codigo_mp, l.cantidad_g, COALESCE((SELECT AVG(oci.precio_unitario) FROM ordenes_compra_items oci WHERE oci.codigo_mp=l.codigo_mp AND oci.precio_unitario>0),0) as precio_u FROM lotes l WHERE l.estado='activo' AND l.cantidad_g>0")
+        lotes_rows = c.fetchall()
+        inventory_cop = sum((r[1] or 0) * (r[2] or 0) / 1000.0 for r in lotes_rows)
+    except Exception:
+        inventory_cop = 0.0
+    # Churn alerts — clientes activos sin pedido >75 dias
+    churn_alerts = []
+    try:
+        c.execute("SELECT cl.nombre, cl.tipo, MAX(p.fecha) as ult FROM clientes cl LEFT JOIN pedidos p ON p.cliente_id=cl.id WHERE cl.activo=1 GROUP BY cl.id HAVING ult IS NOT NULL")
+        from datetime import date as _dc
+        hoy_dc = _dc.today()
+        for r in c.fetchall():
+            try:
+                dias_c = (hoy_dc - _dc.fromisoformat(r[2][:10])).days
+            except Exception:
+                dias_c = 0
+            if dias_c >= 75:
+                churn_alerts.append({'nombre': r[0], 'tipo': r[1], 'ultimo_pedido': r[2][:10], 'dias': dias_c, 'nivel': 'critico' if dias_c >= 120 else 'atencion'})
+        churn_alerts.sort(key=lambda x: x['dias'], reverse=True)
+    except Exception:
+        pass
     return jsonify({
         'ingresos_mes': ingresos_mes,
         'ar': ar, 'ap': ap,
         'maquila_pipeline': maquila_pipeline,
+        'maquila_target': maquila_target,
+        'influencer_spend': influencer_spend,
+        'inventory_cop': inventory_cop,
+        'churn_alerts': churn_alerts,
         'stock_critico': stock_critico,
         'sgsst_proximos': sgsst_proximos,
         'security': security,
@@ -328,7 +454,7 @@ def admin_cleanup_test_data():
     d = request.get_json() or {}
     if not d.get('confirm'):
         return jsonify({'error': 'Enviar confirm:true para confirmar'}), 400
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     deleted = {}
     # Test OCs from audit
     test_oc_nums = ['OC-2026-0002','OC-2026-0003']
@@ -337,16 +463,16 @@ def admin_cleanup_test_data():
         c.execute("DELETE FROM ordenes_compra WHERE numero_oc=? AND proveedor LIKE '%test%' OR numero_oc=?", (num, num))
     deleted['ocs'] = len(test_oc_nums)
     # Test solicitudes
-    c.execute("DELETE FROM solicitudes WHERE numero='SOL-2026-0001' OR proveedor LIKE '%test%' OR proveedor LIKE '%prueba%'")
+    c.execute("DELETE FROM solicitudes_compra WHERE numero='SOL-2026-0001' OR solicitante LIKE '%test%' OR observaciones LIKE '%prueba%'")
     deleted['solicitudes'] = c.rowcount
     # Test pedidos
     c.execute("DELETE FROM pedidos_items WHERE numero_pedido='PED-2026-0001'")
     c.execute("DELETE FROM pedidos WHERE numero='PED-2026-0001'")
     deleted['pedidos'] = c.rowcount
     # Test lotes
-    c.execute("DELETE FROM lotes WHERE codigo_lote LIKE '%AUDIT%' OR codigo_lote LIKE '%TEST%' OR codigo_lote LIKE '%-test-%'")
+    c.execute("DELETE FROM movimientos WHERE lote LIKE '%AUDIT%' OR lote LIKE '%TEST%' OR lote LIKE '%-test-%'")
     deleted['lotes'] = c.rowcount
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok': True, 'deleted': deleted, 'message': 'Test data cleaned up'})
 
 @bp.route('/api/gerencia/input-manual', methods=['POST'])
@@ -355,7 +481,7 @@ def gerencia_input_manual():
         return jsonify({'error': 'No autorizado'}), 401
     d = request.json or {}
     periodo = d.get('periodo', datetime.now().strftime('%Y-%m'))
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     conn.execute("""INSERT INTO gerencia_inputs (periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha)
                     VALUES (?,?,?,?,?,datetime('now'))
                     ON CONFLICT(periodo) DO UPDATE SET saldo_caja=excluded.saldo_caja,
@@ -363,9 +489,8 @@ def gerencia_input_manual():
                     notas=excluded.notas, fecha=excluded.fecha""",
                  (periodo, float(d.get('saldo_caja',0)), float(d.get('ingresos_animus',0)),
                   float(d.get('ingresos_maquila',0)), d.get('notas','')))
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'message': f'Inputs de {periodo} guardados'})
-
 
 # ─── ADMIN — Carga MEE desde xlsx (stdlib, sin dependencias extra) ────────────
 
@@ -441,7 +566,6 @@ def _parse_xlsx_bytes(raw):
         data_rows = [get_row(i) for i in range(h_idx + 1, max_row + 1)]
         return headers, data_rows
 
-
 @bp.route('/api/admin/seed-mee-xlsx', methods=['POST'])
 def seed_mee_xlsx():
     if 'compras_user' not in session or session.get('compras_user', '') not in ADMIN_USERS:
@@ -505,7 +629,7 @@ def seed_mee_xlsx():
     FECHA = '2026-04-19'
     inserted = skipped = dups = 0
     codigos_vistos = set()
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     try:
         cur = conn.cursor()
         for row in data_rows:
@@ -542,7 +666,7 @@ def seed_mee_xlsx():
             inserted += 1
         conn.commit()
     except Exception as e:
-        conn.rollback(); conn.close()
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
 
     c2 = conn.cursor()
@@ -551,15 +675,12 @@ def seed_mee_xlsx():
     bajo = c2.fetchone()[0]
     c2.execute("SELECT categoria, COUNT(*) c, SUM(stock_actual) s FROM maestro_mee GROUP BY categoria ORDER BY c DESC")
     cats = [{'cat': r[0], 'count': r[1], 'stock': r[2]} for r in c2.fetchall()]
-    conn.close()
-
     return jsonify({
         'ok': True, 'inserted': inserted, 'skipped': skipped, 'dups': dups,
         'total_mee': total, 'bajo_minimo': bajo,
         'mapa_columnas': {k: headers[v] for k, v in mapa.items()},
         'por_categoria': cats
     })
-
 
 @bp.route('/api/admin/mee-set-stock', methods=['POST'])
 def mee_set_stock():
@@ -569,15 +690,170 @@ def mee_set_stock():
     data = request.get_json(silent=True) or {}
     stock_actual = float(data.get('stock_actual', 2000))
     stock_minimo = float(data.get('stock_minimo', 1000))
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     c.execute("UPDATE maestro_mee SET stock_actual=?, stock_minimo=?", (stock_actual, stock_minimo))
     updated = c.rowcount
     conn.commit()
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE stock_actual < stock_minimo AND stock_minimo > 0")
     bajo = c.fetchone()[0]
-    conn.close()
     return jsonify({'ok': True, 'updated': updated, 'stock_actual': stock_actual,
                     'stock_minimo': stock_minimo, 'bajo_minimo': bajo})
 
+@bp.route('/api/gerencia/aliados-feed')
+def gerencia_aliados_feed():
+    """Capa 4 — Feed aliados a gerencia:
+    mix de canales (aliados vs Shopify), concentracion de riesgo,
+    valor en riesgo, tendencia de ticket mensual, MoM canal.
+    """
+    conn = get_db(); c = conn.cursor()
+    try:
+        hoy          = datetime.now()
+        mes_ini      = hoy.replace(day=1).strftime("%Y-%m-%d")
+        primer_ant   = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y-%m-%d")
+        hace6m       = (hoy - timedelta(days=180)).strftime("%Y-%m-%d")
+        hace60       = (hoy - timedelta(days=60)).strftime("%Y-%m-%d")
+        anio_ini     = hoy.replace(month=1, day=1).strftime("%Y-%m-%d")
+
+        BASE_A = "cl.empresa='ANIMUS' AND cl.activo=1 AND p.estado NOT IN ('Cancelado','Borrador')"
+
+        # ── Revenue canal aliados ─────────────────────────────────────────────
+        rev_ali_mes = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (mes_ini,)).fetchone()[0] or 0
+
+        rev_ali_ant = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ? AND p.fecha < ?
+        """, (primer_ant, mes_ini)).fetchone()[0] or 0
+
+        rev_ali_anio = c.execute(f"""
+            SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (anio_ini,)).fetchone()[0] or 0
+
+        mom_ali = round((rev_ali_mes - rev_ali_ant) / rev_ali_ant * 100, 1) if rev_ali_ant > 0 else (100.0 if rev_ali_mes > 0 else 0.0)
+
+        # ── Revenue Shopify (directo) ─────────────────────────────────────────
+        rev_shp_mes = c.execute(
+            "SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en >= ?",
+            (mes_ini,)
+        ).fetchone()[0] or 0
+
+        rev_shp_anio = c.execute(
+            "SELECT COALESCE(SUM(total),0) FROM animus_shopify_orders WHERE creado_en >= ?",
+            (anio_ini,)
+        ).fetchone()[0] or 0
+
+        # ── Mix de canales ────────────────────────────────────────────────────
+        total_mes  = (rev_ali_mes  or 0) + (rev_shp_mes  or 0)
+        total_anio = (rev_ali_anio or 0) + (rev_shp_anio or 0)
+        pct_ali_mes  = round(rev_ali_mes  / total_mes  * 100, 1) if total_mes  > 0 else 0
+        pct_shp_mes  = round(rev_shp_mes  / total_mes  * 100, 1) if total_mes  > 0 else 0
+        pct_ali_anio = round(rev_ali_anio / total_anio * 100, 1) if total_anio > 0 else 0
+        pct_shp_anio = round(rev_shp_anio / total_anio * 100, 1) if total_anio > 0 else 0
+
+        # ── Concentracion: top aliados por revenue total ──────────────────────
+        ranking = c.execute(f"""
+            SELECT cl.nombre, COALESCE(SUM(p.valor_total),0) as rev
+            FROM clientes cl JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A}
+            GROUP BY cl.id ORDER BY rev DESC
+        """).fetchall()
+        total_hist = sum(r[1] for r in ranking) or 1
+        top3 = [{'nombre': r[0], 'revenue': round(r[1],0),
+                 'pct': round(r[1]/total_hist*100,1)} for r in ranking[:3]]
+        conc_top1 = top3[0]['pct'] if top3 else 0
+        conc_top3 = round(sum(r['pct'] for r in top3), 1)
+
+        # ── Valor en riesgo (aliados dormidos >60d) ───────────────────────────
+        activos_ids = [r[0] for r in c.execute(f"""
+            SELECT DISTINCT cl.id FROM clientes cl
+            JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+        """, (hace60,)).fetchall()]
+
+        n_total   = c.execute("SELECT COUNT(*) FROM clientes WHERE empresa='ANIMUS' AND activo=1").fetchone()[0] or 0
+        n_activos = len(activos_ids)
+        n_dormidos = max(n_total - n_activos, 0)
+
+        valor_riesgo = 0
+        if n_dormidos > 0:
+            excl = f"AND cl.id NOT IN ({','.join('?'*len(activos_ids))})" if activos_ids else ""
+            valor_riesgo = c.execute(f"""
+                SELECT COALESCE(SUM(p.valor_total),0) FROM clientes cl
+                JOIN pedidos p ON p.cliente_id=cl.id
+                WHERE {BASE_A} AND p.fecha >= ? {excl}
+            """, [anio_ini] + activos_ids).fetchone()[0] or 0
+
+        # ── Tendencia ticket promedio mensual (6 meses) ───────────────────────
+        ticket_rows = c.execute(f"""
+            SELECT strftime('%Y-%m', p.fecha) as mes,
+                   ROUND(AVG(p.valor_total),0) as ticket,
+                   COUNT(p.numero) as pedidos,
+                   ROUND(SUM(p.valor_total),0) as revenue
+            FROM clientes cl JOIN pedidos p ON p.cliente_id=cl.id
+            WHERE {BASE_A} AND p.fecha >= ?
+            GROUP BY mes ORDER BY mes
+        """, (hace6m,)).fetchall()
+
+        ticket_trend = [{'mes': r[0], 'ticket': round(r[1] or 0, 0),
+                         'pedidos': r[2], 'revenue': round(r[3] or 0, 0)}
+                        for r in ticket_rows]
+
+        # ── Alertas: aliados vencidos en prediccion de compra ─────────────────
+        # Contar aliados con proxima compra estimada ya vencida
+        aliados_vencidos = 0
+        all_ali = c.execute(
+            "SELECT id FROM clientes WHERE empresa='ANIMUS' AND activo=1"
+        ).fetchall()
+        for (aid,) in all_ali:
+            fechas_r = c.execute(
+                "SELECT fecha FROM pedidos WHERE cliente_id=? AND estado NOT IN ('Cancelado','Borrador') ORDER BY fecha ASC",
+                (aid,)
+            ).fetchall()
+            fechas = [r[0][:10] for r in fechas_r if r[0]]
+            if len(fechas) >= 2:
+                deltas = []
+                for i in range(1, len(fechas)):
+                    d1 = datetime.strptime(fechas[i-1], "%Y-%m-%d")
+                    d2 = datetime.strptime(fechas[i],   "%Y-%m-%d")
+                    deltas.append((d2-d1).days)
+                frec = sum(deltas)/len(deltas)
+                ultima = datetime.strptime(fechas[-1], "%Y-%m-%d")
+                proxima = ultima + timedelta(days=frec)
+                if proxima < hoy:
+                    aliados_vencidos += 1
+
+        return jsonify({
+            'canal': {
+                'aliados_mes':   round(rev_ali_mes, 0),
+                'shopify_mes':   round(rev_shp_mes, 0),
+                'total_mes':     round(total_mes, 0),
+                'pct_ali_mes':   pct_ali_mes,
+                'pct_shp_mes':   pct_shp_mes,
+                'aliados_anio':  round(rev_ali_anio, 0),
+                'shopify_anio':  round(rev_shp_anio, 0),
+                'total_anio':    round(total_anio, 0),
+                'pct_ali_anio':  pct_ali_anio,
+                'pct_shp_anio':  pct_shp_anio,
+                'mom_aliados':   mom_ali,
+            },
+            'riesgo': {
+                'concentracion_top1': conc_top1,
+                'concentracion_top3': conc_top3,
+                'top3_aliados':       top3,
+                'valor_en_riesgo':    round(valor_riesgo, 0),
+                'aliados_activos':    n_activos,
+                'aliados_dormidos':   n_dormidos,
+                'aliados_vencidos_prediccion': aliados_vencidos,
+            },
+            'ticket_trend': ticket_trend,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ─── MÓDULO FINANCIERO — Rutas ────────────────────────────────

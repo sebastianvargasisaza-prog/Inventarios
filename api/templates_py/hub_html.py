@@ -3,7 +3,7 @@ HUB_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>HHA Group — Centro de Comando</title>
+<title>HHA Group — Panel Central</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
@@ -66,6 +66,14 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 .section-hdr{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px;}
 .loading{color:#64748b;font-size:12px;text-align:center;padding:20px;}
 .spinner-txt{animation:pulse 1.5s infinite;}
+.quick-nav{background:#1e293b;border-bottom:1px solid #334155;padding:8px 20px;display:flex;gap:8px;overflow-x:auto;flex-wrap:nowrap;}
+.quick-nav::-webkit-scrollbar{height:3px;}
+.quick-nav::-webkit-scrollbar-thumb{background:#475569;border-radius:2px;}
+.qn-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;background:#0f172a;border:1px solid #334155;border-radius:20px;color:#cbd5e1;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;transition:.15s;flex-shrink:0;}
+.qn-btn:hover{background:#334155;color:#f1f5f9;border-color:#475569;}
+.qn-btn.primary{background:#2563eb;border-color:#3b82f6;color:#fff;}
+.qn-btn.primary:hover{background:#1d4ed8;}
+.qn-sep{width:1px;background:#334155;margin:0 4px;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -76,8 +84,28 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   </div>
   <div class="header-right">
     <strong id="fecha-hoy"></strong>
-    <span>Centro de Comando</span>
+    <span>Panel Central</span>
   </div>
+</div>
+
+<div class="quick-nav">
+  <a class="qn-btn primary" href="/inventarios">&#x1F4E6; Planta</a>
+  <a class="qn-btn" href="/compras">&#x1F6D2; Compras</a>
+  <a class="qn-btn" href="/recepcion">&#x1F69A; Recepci&#xF3;n</a>
+  <a class="qn-btn" href="/clientes">&#x1F464; Clientes</a>
+  <a class="qn-btn" href="/financiero">&#x1F4CA; Financiero</a>
+  <a class="qn-btn" href="/gerencia">&#x1F3DB; Gerencia</a>
+  <a class="qn-btn" href="/calidad">&#x1F52C; Calidad</a>
+  <a class="qn-btn" href="/tecnica">&#x1F527; T&#xE9;cnica</a>
+  <a class="qn-btn" href="/rrhh">&#x1F465; RRHH</a>
+  <a class="qn-btn" href="/hub-salida">&#x1F9EA; Maquila</a>
+  <a class="qn-btn" href="/compromisos">&#x2705; Compromisos</a>
+  <a class="qn-btn" href="/solicitudes">&#x1F4DD; Solicitudes</a>
+  <a class="qn-btn" href="/contabilidad" style="background:#0f2d1f;border-color:#16a34a;color:#4ade80;font-weight:600;">&#x1F4B0; Contabilidad</a>
+  <div class="qn-sep"></div>
+  <a class="qn-btn" href="/modulos" style="background:#1e3a5f;border-color:#3b82f6;color:#93c5fd;font-weight:700;">&#x1F4F1; Panel de M&#xF3;dulos</a>
+  <div class="qn-sep"></div>
+  <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x23CF; Cerrar sesión</a>
 </div>
 
 <div class="alert-bar" id="alert-bar">
@@ -85,6 +113,25 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 </div>
 
 <div class="main">
+  <div class="card card-full">
+    <div class="card-title" style="font-size:13px;color:#e2e8f0;">&#x1F4F1; Panel de M&#xF3;dulos</div>
+    <div class="module-grid" id="mod-grid">
+      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Planta</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
+      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
+      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
+      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
+      <a class="mod-btn" href="/hub-salida"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/calidad"><span class="mod-icon">&#x1F52C;</span><span class="mod-name">Calidad</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/tecnica"><span class="mod-icon">&#x1F527;</span><span class="mod-name">Técnica</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/rrhh"><span class="mod-icon">&#x1F465;</span><span class="mod-name">RRHH</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/solicitudes"><span class="mod-icon">&#x1F4DD;</span><span class="mod-name">Solicitudes</span><span class="mod-badge mb-ok">activo</span></a>
+      <a class="mod-btn" href="/contabilidad"><span class="mod-icon">&#x1F4B0;</span><span class="mod-name">Contabilidad</span><span class="mod-badge mb-ok">activo</span></a>
+    </div>
+  </div>
+
   <!-- ALERTAS ACTIVAS -->
   <div class="card">
     <div class="card-title">&#x26A0; Requiere tu decision</div>
@@ -106,20 +153,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
     <a href="/compromisos" style="display:block;text-align:center;margin-top:10px;font-size:12px;color:#64748b;text-decoration:none;">Ver todos los compromisos &rarr;</a>
   </div>
 
-  <!-- MODULOS -->
-  <div class="card">
-    <div class="card-title">&#x1F5C4; Modulos del sistema</div>
-    <div class="module-grid" id="mod-grid">
-      <a class="mod-btn" href="/inventarios"><span class="mod-icon">&#x1F4E6;</span><span class="mod-name">Inventario</span><span class="mod-badge mb-neutral" id="mb-inv">-</span></a>
-      <a class="mod-btn" href="/compras"><span class="mod-icon">&#x1F6D2;</span><span class="mod-name">Compras</span><span class="mod-badge mb-neutral" id="mb-comp">-</span></a>
-      <a class="mod-btn" href="/recepcion"><span class="mod-icon">&#x1F69A;</span><span class="mod-name">Recepcion</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/clientes"><span class="mod-icon">&#x1F464;</span><span class="mod-name">Clientes</span><span class="mod-badge mb-neutral" id="mb-cli">-</span></a>
-      <a class="mod-btn" href="/financiero"><span class="mod-icon">&#x1F4CA;</span><span class="mod-name">Financiero</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/gerencia"><span class="mod-icon">&#x1F3DB;</span><span class="mod-name">Gerencia</span><span class="mod-badge mb-ok">activo</span></a>
-      <a class="mod-btn" href="/compromisos"><span class="mod-icon">&#x2705;</span><span class="mod-name">Compromisos</span><span class="mod-badge mb-neutral" id="mb-comp2">-</span></a>
-      <a class="mod-btn" href="/maquila"><span class="mod-icon">&#x1F9EA;</span><span class="mod-name">Maquila</span><span class="mod-badge mb-ok">activo</span></a>
-    </div>
-  </div>
 </div>
 
 <script>

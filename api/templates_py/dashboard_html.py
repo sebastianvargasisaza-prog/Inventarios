@@ -132,17 +132,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
     <p>Espagiria Laboratorios - Control de Materias Primas</p>
     </div>
-    <a href="/" style="color:rgba(255,255,255,0.75);font-size:0.82em;text-decoration:none;white-space:nowrap;">← Portal HHA</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
+    <a href="/modulos" style="background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);color:#fff;font-size:0.82em;font-weight:700;text-decoration:none;white-space:nowrap;padding:6px 14px;border-radius:8px;">&#x1F4F1; M&#xF3;dulos</a><span id="oper-chip" style="font-size:0.78em;background:rgba(255,255,255,0.2);padding:3px 10px;border-radius:12px;color:white;margin-top:4px;display:block;"></span>
   </div>
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
     <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
     <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
+    <button class="tab-button" onclick="switchTab('envasado',this)">&#128230; Envasado</button>
     <button class="tab-button" onclick="switchTab('acondicionamiento',this)">&#128295; Acondicionamiento</button>
-    <button class="tab-button" onclick="switchTab('liberacion',this)">&#128666; Liberación</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
-    <button class="tab-button" onclick="switchTab('trazabilidad',this)">&#128269; Trazabilidad</button>
+    <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
@@ -330,11 +330,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727"></div>
-        <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01"></div>
+        <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01" oninput="calcularValorTotal()"></div>
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
         <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
-        <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
+        <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0" oninput="calcularValorTotal()"></div>
+        <div class="form-group" style="grid-column:span 2;"><label>Valor total estimado (COP)</label><input type="text" id="ing-valor-total" placeholder="Se calcula al ingresar cantidad y precio" readonly style="background:#f0fff4;color:#27ae60;font-weight:600;border:1px solid #a8e6cf;"></div>
       </div>
       <!-- OC Receipt + Costos + Cuarentena -->
       <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px;margin:12px 0;">
@@ -437,29 +438,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </datalist>
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="background:#f0f9f0;border:1px solid #c3e6cb;border-radius:10px;padding:16px;margin-bottom:16px;">
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;color:#1b5e20;margin-bottom:0;">
-        <input type="checkbox" id="prod-pt-check" onchange="togglePTFields()" style="width:18px;height:18px;">
-        &#127981; Registrar unidades en Stock PT (Producto Terminado)
-      </label>
-      <div id="prod-pt-fields" style="display:none;margin-top:14px;display:none;">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-          <div class="form-group" style="margin:0;">
-            <label>SKU Producto</label>
-            <input type="text" id="prod-sku-pt" placeholder="Ej: TRX-15" list="sku-sugerencias">
-            <datalist id="sku-sugerencias">
-              <option value="LBHA-30"><option value="TRX-15"><option value="NIAC-30">
-              <option value="AZHC-30"><option value="SBHA-30"><option value="ECEN-30">
-              <option value="EILU-30"><option value="CUREA-50"><option value="GELH-120">
-            </datalist>
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label>Unidades producidas</label>
-            <input type="number" id="prod-uds-pt" placeholder="Ej: 500" min="1">
-          </div>
-        </div>
-      </div>
-    </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Produccion</button>
@@ -467,16 +445,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
-    <div id="mee-consumo-panel" style="display:none;margin-top:24px;background:#f0f9f0;border:2px solid #27ae60;border-radius:12px;padding:22px;">
-      <h3 style="color:#1b5e20;margin-bottom:6px;">&#128230; Paso 2: Consumo de Materiales E&E</h3>
-      <p style="font-size:0.88em;color:#555;margin-bottom:16px;">Completa el empaque usado en esta produccion. Marca <strong>No aplica</strong> si alguna categoria no corresponde.</p>
-      <div id="mee-rows-container"></div>
-      <div style="display:flex;gap:10px;margin-top:18px;">
-        <button onclick="confirmarProdCompleta()" style="background:#1b5e20;font-size:1em;padding:11px 28px;">&#10003; Confirmar Produccion Completa</button>
-        <button onclick="cancelarMEEConsumoProd()" style="background:#95a5a6;">Cancelar</button>
-      </div>
-      <div id="mee-consumo-msg" style="margin-top:10px;"></div>
-    </div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3><button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button></div>
       <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
@@ -529,9 +497,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:20px;">
       <h3 style="color:#856404;margin-bottom:10px;">&#128308; MPs bajo stock minimo (basado en plan anual)</h3>
       <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:0.85em;color:#664d03;flex:1;">Edita el proveedor de cada MP directamente — se guarda automaticamente en el maestro.</span>
+        <button onclick="solicitarTodasMPs()" style="background:#2B7A78;color:white;padding:8px 18px;border-radius:6px;font-weight:700;font-size:0.88em;">
+          Enviar todas a Compras
+        </button>
+      </div>
       <div id="alertas-reabas-tabla">
         <table class="table">
-          <thead><tr><th>Tipo</th><th>Código</th><th>Material</th><th>Proveedor</th><th style="text-align:right;">Mínimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Déficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Acción</th></tr></thead>
+          <thead><tr><th>Tipo</th><th>Codigo</th><th>Material</th><th>Proveedor (editable)</th><th style="text-align:right;">Minimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Deficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Accion</th></tr></thead>
           <tbody id="reabas-body"><tr><td colspan="9" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
         </table>
       </div>
@@ -712,7 +686,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <button onclick="buscarTrazabilidad()" style="padding:10px 24px;background:#667eea;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Buscar</button>
     </div>
-    <div id="trz-result" style="display:none;">
+    <div id="trz-result-lote" style="display:none;">
       <div style="background:#fff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:16px;">
         <h3 style="color:#2c3e50;margin:0 0 12px;">Ingreso del Lote</h3>
         <div id="trz-ingreso"></div>
@@ -819,7 +793,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
       <div>
         <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
-          <select id="mee-cat-filter" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <select id="mee-cat-filter-bodega" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
           <button onclick="cargarMeeStock()" style="white-space:nowrap;">&#8635; Actualizar</button>
         </div>
         <div style="overflow-x:auto;">
@@ -878,72 +852,284 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 </div>
 
+<div id="envasado" class="tab-content">
+<div style="padding:18px">
+  <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
+  <p style="color:#666;font-size:13px;margin-bottom:16px">Registra el uso de envases y tapas por lote de produccion terminado.</p>
+
+  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+    <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Producto</label>
+        <select id="env-prod-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Selecciona producto --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Lote</label>
+        <input id="env-lote" placeholder="Ej: ESP260425LBHA" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades envasadas</label>
+        <input id="env-uds" type="number" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Presentacion</label>
+        <input id="env-pres" placeholder="Ej: Frasco 30ml" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Envase usado (MEE)</label>
+        <select id="env-envase-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Tipo de envase --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Tapa usada (MEE)</label>
+        <select id="env-tapa-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Tipo de tapa --</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <textarea id="env-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <button onclick="registrarEnvasadoSimple()" style="background:#1a4a7a;color:#fff;padding:9px 22px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px">&#9989; Registrar Envasado</button>
+    <div id="env-msg" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <div id="env-historial">
+    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Envasado</h3>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#1a4a7a;color:#fff">
+            <th style="padding:8px">Lote</th>
+            <th style="padding:8px">Producto</th>
+            <th style="padding:8px">Presentacion</th>
+            <th style="padding:8px">Uds</th>
+            <th style="padding:8px">Envase</th>
+            <th style="padding:8px">Tapa</th>
+            <th style="padding:8px">Fecha</th>
+            <th style="padding:8px">Operador</th>
+          </tr>
+        </thead>
+        <tbody id="env-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
 <div id="acondicionamiento" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 14px;color:#1a4a7a">&#128230; Acondicionamiento PT</h2>
-<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Batch de Acondicionamiento</h3>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-<div><label style="font-size:12px;color:#555">Lote PT</label><input id="ac-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Producto</label><input id="ac-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Presentación</label><input id="ac-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Batch (g)</label><input id="ac-batch" type="number" placeholder="2000" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Unidades Producidas</label><input id="ac-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Fecha</label><input id="ac-fecha" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-</div>
-<div style="margin-top:10px"><label style="font-size:12px;color:#555">Observaciones</label><textarea id="ac-obs" rows="2" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></textarea></div>
-<button onclick="registrarAcond()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Registrar Batch</button>
-</div>
-<div id="ac-table-wrap">
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Presentación</th><th style="padding:8px">Batch(g)</th><th style="padding:8px">Uds</th><th style="padding:8px">Fecha</th><th style="padding:8px">Operador</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
-<tbody id="ac-tbody"></tbody>
-</table></div>
-</div></div>
+  <h2 style="margin:0 0 4px;color:#1a4a7a">&#128295; Acondicionamiento PT</h2>
+  <p style="color:#666;font-size:13px;margin-bottom:16px">Registra etiquetas, plegadizas y unidades salientes para entrega al cliente.</p>
 
-<div id="liberacion" class="tab-content">
+  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+    <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Acondicionamiento</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Producto</label>
+        <select id="ac-prod-sel" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+          <option value="">-- Selecciona producto --</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Lote PT</label>
+        <input id="ac-lote" placeholder="Ej: ESP260425LBHA" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades acondicionadas</label>
+        <input id="ac-uds" type="number" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Fecha</label>
+        <input id="ac-fecha" type="date" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Etiquetas usadas</label>
+        <input id="ac-etiquetas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Plegadizas usadas</label>
+        <input id="ac-plegadizas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Destino / Cliente</label>
+        <input id="ac-destino" placeholder="ANIMUS Lab / nombre cliente" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">SKU PT</label>
+        <input id="ac-sku" placeholder="LBHA-30ML" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <textarea id="ac-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <button onclick="registrarAcondSimple()" style="background:#1a4a7a;color:#fff;padding:9px 22px;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:13px">&#9989; Registrar Batch</button>
+    <div id="ac-form-msg" style="margin-top:8px;font-size:13px"></div>
+  </div>
+
+  <div id="ac-table-wrap">
+    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Acondicionamiento</h3>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#1a4a7a;color:#fff">
+            <th style="padding:8px">Lote</th>
+            <th style="padding:8px">Producto</th>
+            <th style="padding:8px">Uds</th>
+            <th style="padding:8px">Etiquetas</th>
+            <th style="padding:8px">Plegadizas</th>
+            <th style="padding:8px">Destino</th>
+            <th style="padding:8px">Fecha</th>
+            <th style="padding:8px">Operador</th>
+          </tr>
+        </thead>
+        <tbody id="ac-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="programacion" class="tab-content">
 <div style="padding:18px">
-<h2 style="margin:0 0 14px;color:#1a4a7a">&#9989; Liberación & Entrega</h2>
-<div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
-<h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Lote para Liberación</h3>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-<div><label style="font-size:12px;color:#555">Lote PT</label><input id="lb-lote" placeholder="LT-2026-001" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Producto</label><input id="lb-prod" placeholder="LBHA 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Presentación</label><input id="lb-pres" placeholder="Frasco 30ml" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Unidades</label><input id="lb-uds" type="number" placeholder="66" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Fecha Producción</label><input id="lb-fprod" type="date" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Destino</label><select id="lb-dest" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px"><option value="ANIMUS">ANÍMUS Lab</option><option value="MAQUILA">Maquila</option><option value="OTRO">Otro</option></select></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
+      <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock — en tiempo real</p>
+    </div>
+    <button onclick="cargarProgramacion(this)" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
+    <button onclick="generarOCProgramacion(this)" style="background:#dc3545;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128666; Generar OC</button>
+    <button id="btn-sync-shopify" onclick="sincronizarShopify(this)" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128257; Sync Stock</button>
+    <button id="btn-sync-ventas" onclick="sincronizarVentas(this)" style="background:#e65100;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128202; Sync Ventas</button>
+  </div>
+
+  <!-- Semáforo de estado general -->
+  <div id="prog-semaforo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px">
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128225;</div>
+      <div style="font-size:12px;color:#666">Velocidad Shopify</div>
+      <div id="prog-vel-val" style="font-size:1.4em;font-weight:700;color:#1a4a7a">--</div>
+      <div id="prog-vel-sub" style="font-size:11px;color:#888">unidades / mes</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128197;</div>
+      <div style="font-size:12px;color:#666">Próxima Producción</div>
+      <div id="prog-cal-val" style="font-size:1.1em;font-weight:700;color:#1a4a7a">--</div>
+      <div id="prog-cal-sub" style="font-size:11px;color:#888">según calendario</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#128202;</div>
+      <div style="font-size:12px;color:#666">Productos con Alerta</div>
+      <div id="prog-alert-val" style="font-size:1.4em;font-weight:700;color:#dc3545">--</div>
+      <div id="prog-alert-sub" style="font-size:11px;color:#888">requieren acción</div>
+    </div>
+    <div style="background:#f0f4f8;border-radius:8px;padding:14px;text-align:center">
+      <div style="font-size:28px;margin-bottom:4px">&#129302;</div>
+      <div style="font-size:12px;color:#666">IA Análisis</div>
+      <div id="prog-ia-status" style="font-size:0.85em;color:#888;font-style:italic">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Narrative IA -->
+  <div id="prog-ia-box" style="background:linear-gradient(135deg,#0f2d1f,#1a4a7a);border-radius:10px;padding:18px;margin-bottom:20px;display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:20px">&#129302;</span>
+      <span style="color:#4ade80;font-weight:700;font-size:14px">Análisis IA — Centro de Programación</span>
+    </div>
+    <div id="prog-ia-text" style="color:#e2e8f0;font-size:13px;line-height:1.6"></div>
+  </div>
+
+  <!-- Tabla de proyección por producto -->
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:20px">
+    <div style="background:#1a4a7a;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
+      📦 Proyección de Stock — 60 días por producto
+    </div>
+    <div id="prog-tabla-wrap" style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:#f5f7fa;color:#444">
+            <th style="padding:10px;text-align:left;border-bottom:1px solid #eee">Producto / SKU</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock (uds)</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Venta/mes</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Dias Cobertura</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Produccion</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Cal</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MPs</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Accion</th>
+          </tr>
+        </thead>
+        <tbody id="prog-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:30px;color:#aaa;font-style:italic">
+            Haz clic en "Actualizar" para cargar la proyección
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Alertas de abastecimiento -->
+  <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden">
+    <div style="background:#dc3545;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
+      🚨 Alertas de Abastecimiento
+    </div>
+    <div id="prog-alertas" style="padding:16px">
+      <div style="text-align:center;color:#aaa;font-style:italic;padding:20px">Sin alertas — actualiza para verificar</div>
+    </div>
+  </div>
+
+  <!-- MP Bridge — enlaces formula ↔ bodega -->
+  <div id="bridge-panel" style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-top:16px">
+    <div style="background:#5c3317;color:#fff;padding:12px 16px;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:space-between">
+      <span>&#128279; Enlace Fórmula ↔ Bodega MP</span>
+      <button onclick="toggleBridgePanel()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px">&#9660; Ver / Ocultar</button>
+    </div>
+    <div id="bridge-panel-body" style="display:none">
+      <div style="padding:14px;background:#fdf8f3;border-bottom:1px solid #e0e0e0;font-size:12px;color:#666">
+        <b>¿Para qué sirve esto?</b> Cuando un ingrediente de fórmula no aparece en Bodega MP por nombre diferente (ej: "Silicona Líquida" vs "Dimethicone BM 96-350"), aquí puedes vincularlo manualmente. Una vez enlazado, el semáforo de MPs usará el stock real.
+      </div>
+      <!-- Unmatched list -->
+      <div id="bridge-unmatched-wrap" style="padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <b style="font-size:13px">MPs sin enlazar</b>
+          <button onclick="cargarUnmatched(this)" style="background:#5c3317;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Cargar</button>
+          <span id="unmatched-count" style="font-size:12px;color:#888"></span>
+        </div>
+        <div id="unmatched-list"></div>
+      </div>
+      <!-- Existing bridge mappings -->
+      <div style="border-top:1px solid #e0e0e0;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <b style="font-size:13px">Mapeos activos</b>
+          <button onclick="cargarBridgeMappings()" style="background:#2B7A78;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Actualizar</button>
+        </div>
+        <div id="bridge-mappings-list"><div style="color:#aaa;font-style:italic;font-size:12px">— carga para ver —</div></div>
+      </div>
+    </div>
+  </div>
 </div>
-<div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-<div><label style="font-size:12px;color:#555">Cliente</label><input id="lb-cli" placeholder="Nombre cliente" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
-<div><label style="font-size:12px;color:#555">Observaciones</label><input id="lb-obs" placeholder="Observaciones CC" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"></div>
 </div>
-<button onclick="registrarLiberacion()" style="margin-top:10px;background:#1a4a7a;color:#fff;padding:9px 20px;border:none;border-radius:5px;cursor:pointer;font-weight:bold">+ Enviar a Control de Calidad</button>
-</div>
-<div style="margin-bottom:10px">
-<button onclick="loadLiberaciones('')" style="background:#6c757d;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Todas</button>
-<button onclick="loadLiberaciones('Pendiente CC')" style="background:#fd7e14;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Pendiente CC</button>
-<button onclick="loadLiberaciones('Liberado')" style="background:#28a745;color:#fff;padding:5px 12px;border:none;border-radius:4px;margin-right:5px;cursor:pointer">Liberadas</button>
-<button onclick="loadLiberaciones('Rechazado')" style="background:#dc3545;color:#fff;padding:5px 12px;border:none;border-radius:4px;cursor:pointer">Rechazadas</button>
-</div>
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<thead><tr style="background:#1a4a7a;color:#fff"><th style="padding:8px">Lote</th><th style="padding:8px">Producto</th><th style="padding:8px">Uds</th><th style="padding:8px">Destino</th><th style="padding:8px">Cliente</th><th style="padding:8px">F.Prod</th><th style="padding:8px">F.Lib</th><th style="padding:8px">Aprobado por</th><th style="padding:8px">Estado</th><th style="padding:8px">Acción</th></tr></thead>
-<tbody id="lb-tbody"></tbody>
-</table>
-</div></div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
+var formulasPin=false;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
 document.addEventListener('DOMContentLoaded',function(){
   // Restaurar operador desde localStorage si no vino por sesión
-  if(\!OPER_ACTUAL){
+  if(!OPER_ACTUAL){
     try{var saved=localStorage.getItem('espagiria_operador');if(saved)OPER_ACTUAL=saved;}catch(e){}
   }
   var c=document.getElementById('oper-chip');
   if(OPER_ACTUAL){
     if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';
     loadDashboardCompleto();loadFormulas();
+  setTimeout(cargarEnvasadoSimpleTab, 1500);
   } else {
     // Sin operador identificado: mostrar modal antes de cargar
     document.getElementById('modal-operador').style.display='flex';
@@ -1007,12 +1193,83 @@ async function registrarConsumo(){
 async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
   if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
-  var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
-  var d=await r.json();
-  document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
-  if(r.ok) setTimeout(function(){cerrarAjuste();loadStock();},1500);
+  try{
+    var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
+    var d={}; try{d=await r.json();}catch(je){}
+    document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error al archivar')+'</span>';
+    setTimeout(function(){cerrarAjuste();loadStock();},1500);
+  }catch(e){
+    document.getElementById('ajuste-arch-msg').innerHTML='<span style="color:red;">Error: '+e.message+'</span>';
+    setTimeout(function(){cerrarAjuste();},3000);
+  }
 }
 function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
+var _provSaveTimers={};
+function guardarProveedorMP(inp){
+  var cod=inp.dataset.cod;
+  var val=inp.value.trim();
+  if(!cod) return;
+  inp.style.borderColor='#ffc107';
+  inp.title='Guardando...';
+  clearTimeout(_provSaveTimers[cod]);
+  _provSaveTimers[cod]=setTimeout(function(){
+    fetch('/api/maestro-mps/'+encodeURIComponent(cod)+'/proveedor',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({proveedor:val})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){
+        inp.style.borderColor='#28a745';
+        inp.title='Proveedor guardado: '+val;
+        setTimeout(function(){ inp.style.borderColor=''; inp.title=''; },2000);
+        // Actualizar _alertasData para que solicitarTodasMPs use datos frescos
+        var ad=window._alertasData||[];
+        var found=ad.find(function(a){return a.codigo_mp===cod;});
+        if(found) found.proveedor=val;
+        // Actualizar tambien el datalist de compras si esta disponible
+        if(window._proveedoresList && val && !window._proveedoresList.includes(val)){
+          window._proveedoresList.push(val);
+        }
+      } else {
+        inp.style.borderColor='#dc3545';
+        inp.title='Error al guardar: '+(d.error||'desconocido');
+      }
+    }).catch(function(e){
+      inp.style.borderColor='#dc3545';
+      inp.title='Error de conexion';
+    });
+  },700);
+}
+
+async function solicitarTodasMPs(){
+  var alertas=(window._alertasData||[]).filter(function(a){return a.tipo!=='MEE';});
+  if(!alertas.length){alert('No hay MPs bajo minimo para solicitar.');return;}
+  var sinProv=alertas.filter(function(a){return !a.proveedor;});
+  if(sinProv.length){
+    var names=sinProv.slice(0,5).map(function(a){return a.nombre;}).join(', ');
+    if(!confirm('Hay '+sinProv.length+' MP(s) sin proveedor asignado: '+names+'. Se incluiran de todas formas. Continuar?')) return;
+  }
+  var sol=OPER_ACTUAL||'Planta';
+  var items=alertas.map(function(a){
+    return {codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:a.deficit>0?a.deficit:a.stock_minimo,
+            unidad:'g',justificacion:'Bajo stock minimo. Stock actual: '+a.stock_actual+'g / Minimo: '+a.stock_minimo+'g'};
+  });
+  var data={solicitante:sol,empresa:'Espagiria',area:'Produccion',
+            categoria:'Materia Prima',tipo:'Compra',urgencia:'Alta',
+            observaciones:'Solicitud automatica desde alertas de stock — '+items.length+' MPs',
+            items:items};
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var res=await r.json();
+    if(r.ok&&res.numero){
+      alert('Solicitud '+res.numero+' enviada a Compras con '+items.length+' MPs. En Compras > Tab Planta podras asignar precios y generar OCs por proveedor.');
+    } else {
+      alert('Error: '+(res.error||'desconocido'));
+    }
+  }catch(e){alert('Error de red: '+e.message);}
+}
+
 function abrirSolIdx(ri){
   var a=(window._alertasData||[])[ri];if(!a)return;
   abrirSolicitudCompra(a.codigo_mp,a.nombre,a.deficit);
@@ -1034,16 +1291,32 @@ async function enviarSolicitudCompra(){
   var cant=parseFloat(document.getElementById("sol-cantidad").value);
   if(!nom){alert("Escribe tu nombre");return;}
   if(!cant||cant<=0){alert("Ingresa una cantidad valida");return;}
-  var data={solicitante:nom,urgencia:document.getElementById("sol-urgencia").value,observaciones:document.getElementById("sol-obs").value,
-    items:[{codigo_mp:_solMP.cod,nombre_mp:_solMP.nom,cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
+  var btn=document.querySelector("#modal-solicitud-compra button");
+  if(btn){btn.disabled=true;btn.textContent="Enviando..."}
   try{
+    var urgEl=document.getElementById("sol-urgencia");
+    var obsEl=document.getElementById("sol-obs");
+    var data={solicitante:nom,empresa:"Espagiria",
+      urgencia:urgEl?urgEl.value:"Normal",
+      observaciones:obsEl?obsEl.value:"",
+      items:[{codigo_mp:(_solMP&&_solMP.cod)||"S/C",nombre_mp:(_solMP&&_solMP.nom)||"Sin nombre",
+              cantidad_g:cant,unidad:"g",justificacion:"Solicitud desde alertas de stock"}]};
     var r=await fetch("/api/solicitudes-compra",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-    var res=await r.json();
-    if(r.ok){
-      document.getElementById("sol-msg").innerHTML='<div class="alert-success">&#10003; Solicitud '+res.numero+' creada correctamente.</div>';
-      setTimeout(function(){cerrarSolicitudCompra();},3000);
-    } else { document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error al crear solicitud</div>'; }
-  }catch(e){ document.getElementById("sol-msg").innerHTML='<div class="alert-error">Error de conexion</div>'; }
+    var res=null;
+    try{res=await r.json();}catch(_){res=null;}
+    if(r.ok&&res){
+      document.getElementById("sol-msg").innerHTML='<div style="padding:12px;background:#d4edda;border:1px solid #28a745;border-radius:6px;color:#155724;font-weight:600;">&#10003; Solicitud '+res.numero+' creada. El equipo de compras fue notificado.</div>';
+      if(btn){btn.disabled=true;btn.textContent="\u2713 Enviado";btn.style.background="#28a745";}
+      setTimeout(function(){cerrarSolicitudCompra();},3500);
+    } else {
+      var errMsg=(res&&res.error)?res.error:(res&&res.detail)?res.detail.slice(-200):"Error "+r.status+" — recarga la pagina e intenta de nuevo";
+      document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;font-size:0.88em;">&#10060; '+errMsg+'</div>';
+      if(btn){btn.disabled=false;btn.textContent="\u2713 Enviar Solicitud";}
+    }
+  }catch(e){
+    document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;">&#10060; Error: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent="✓ Enviar Solicitud";}
+  }
 }
 function cerrarHistorial(){document.getElementById('modal-historial').style.display='none';}
 async function verHistorialLote(idx){
@@ -1158,8 +1431,8 @@ function switchTab(n,btn){
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
-  if(n==='acondicionamiento') loadAcond();
-  if(n==='liberacion') loadLiberaciones('');
+  if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
+  if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
   if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
@@ -1185,6 +1458,9 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='stock'){loadStock();loadMEE();}
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
   if(tabId==='produccion') cargarHistProd();
+  if(tabId==='envasado') cargarEnvasadoSimpleTab();
+  if(tabId==='acondicionamiento') cargarAcondSimpleTab();
+  if(tabId==='programacion') cargarProgramacion(null);
   if(tabId==='cuarentena') cargarCuarentena();
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
@@ -1315,6 +1591,7 @@ async function initIngreso(){
     try{var r=await fetch('/api/maestro-mps'),d=await r.json();(d.mps||[]).forEach(function(mp){_cat[mp.codigo_mp]=mp;});}catch(e){}
   }
   cargarHistIngreso();
+  cargarOCsPendientes();
 }
 function ocultarDropMP(){var d=document.getElementById('mp-dropdown');if(d)d.style.display='none';}
 function seleccionarMP(mp){
@@ -1328,7 +1605,7 @@ function seleccionarMP(mp){
   var panel=document.getElementById('ing-nueva-mp-inline');if(panel)panel.style.display='none';
   ocultarDropMP();
 }
-async function buscarMPIngreso(val){
+function buscarMPIngreso(val){
   val=(val||'').trim();
   var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp-inline'),dd=document.getElementById('mp-dropdown');
   if(val.length<2){
@@ -1338,29 +1615,28 @@ async function buscarMPIngreso(val){
     if(dd)dd.style.display='none';
     return;
   }
-  try{
-    var r2=await fetch('/api/maestro-mps'),d2=await r2.json(),mps=d2.mps||[];
-    var busq=val.toLowerCase();
-    var matches=mps.filter(function(m){
-      return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
-    }).slice(0,12);
-    window._mpMatches=matches;
-    if(dd){
-      if(!matches.length){dd.style.display='none';}
-      else{
-        dd.style.display='block';
-        dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
-      }
+  // Use cached catalog (_cat loaded by initIngreso) — avoids HTTP request on every keypress
+  var mps=Object.values(_cat);
+  var busq=val.toLowerCase();
+  var matches=mps.filter(function(m){
+    return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
+  }).slice(0,12);
+  window._mpMatches=matches;
+  if(dd){
+    if(!matches.length){dd.style.display='none';}
+    else{
+      dd.style.display='block';
+      dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
     }
-    var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
-    if(found){seleccionarMP(found);}
-    else if(!matches.length){
-      if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
-      if(panel)panel.style.display='block';
-    } else {
-      if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
-    }
-  }catch(e){if(st){st.textContent='Error buscando';st.style.color='#c0392b';}}
+  }
+  var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
+  if(found){seleccionarMP(found);}
+  else if(!matches.length){
+    if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
+    if(panel)panel.style.display='block';
+  } else {
+    if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
+  }
 }
 
 
@@ -1377,7 +1653,7 @@ async function cargarOCsPendientes(){
       (oc.items||[]).forEach(function(item){
         var opt=document.createElement('option');
         opt.value=oc.numero_oc+'|'+item.codigo_mp;
-        var kg=(item.cantidad_pendiente_g/1000).toFixed(2);
+        var kg=((item.cantidad_g||0)/1000).toFixed(2);
         opt.textContent=oc.numero_oc+' — '+item.nombre_mp+' ('+kg+' kg pendientes)';
         opt.dataset.codigo=item.codigo_mp;
         opt.dataset.nombre=item.nombre_mp;
@@ -1442,16 +1718,31 @@ async function registrarIngreso(){
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
     data.stock_minimo=parseFloat(document.getElementById('ing-smin-new')?document.getElementById('ing-smin-new').value:0)||0;
   }
+  // B4: disable button to prevent double-submission
+  var btn=document.querySelector('button[onclick="registrarIngreso()"]');
+  if(btn){btn.disabled=true;btn.textContent='Registrando...';}
   try{
     var r=await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
     if(r.ok){
       _ultimoIng=res;
-      document.getElementById('ing-msg').innerHTML='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+'</div>';
+      var ocWarn=res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
+      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+ocWarn+'</div>';
+      limpiarIngreso();
+      // Show success AFTER limpiarIngreso so it is not wiped immediately
+      document.getElementById('ing-msg').innerHTML=successMsg;
+      // Re-enable button so user can register another MP
+      if(btn){btn.disabled=false;btn.textContent='✓ Registrar Entrada';}
       await cargarHistIngreso();
       await cargarOCsPendientes();
-    } else {document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error')+'</div>';}
-  }catch(e){document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+    } else {
+      document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>';
+      if(btn){btn.disabled=false;btn.textContent='\u2713 Registrar Entrada';}
+    }
+  }catch(e){
+    document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error de red: '+e.message+'</div>';
+    if(btn){btn.disabled=false;btn.textContent='\u2713 Registrar Entrada';}
+  }
 }
 function generarRotuloIngreso(){
   if(!_ultimoIng){alert('Registra un ingreso primero');return;}
@@ -1486,11 +1777,6 @@ async function cargarHistIngreso(){
     tb.innerHTML=h;
   }catch(e){}
 }
-function togglePTFields(){
-  var checked=document.getElementById('prod-pt-check').checked;
-  var fields=document.getElementById('prod-pt-fields');
-  if(fields) fields.style.display=checked?'block':'none';
-}
 function abrirRotulos(){
   var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
   var manual=document.getElementById('prod-manual')?document.getElementById('prod-manual').value.trim():'';
@@ -1520,25 +1806,52 @@ function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun.</p>';return;}
   var html='';
+  if(!formulasPin){
+    html+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
+         +'<span>&#128274; Cantidades ocultas &mdash; activa el PIN para ver la f&oacute;rmula completa</span>'
+         +'<button onclick="pedirPinFormula()" style="background:#667eea;color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-weight:600;font-size:0.85em;">&#128275; Desbloquear</button>'
+         +'</div>';
+  } else {
+    html+='<div style="background:#d4edda;border:1px solid #28a745;border-radius:6px;padding:8px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
+         +'<span style="color:#155724;">&#128275; F&oacute;rmulas desbloqueadas</span>'
+         +'<button onclick="formulasPin=false;renderFormulas(fData)" style="background:#6c757d;color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:0.85em;">&#128274; Bloquear</button>'
+         +'</div>';
+  }
+  var MASK='<span style="filter:blur(5px);user-select:none;pointer-events:none;color:#555;">&#x2588;&#x2588;.&#x2588;&#x2588;</span>';
   fl.forEach(function(f,idx){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
     var ok=Math.abs(total-100)<0.1;
     var rows='';
     f.items.forEach(function(it){
-      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+it.porcentaje+'%</td><td style="font-weight:600;">'+(it.porcentaje*10).toFixed(2)+'g</td></tr>';
+      var pctVal=formulasPin?it.porcentaje+'%':MASK+'%';
+      var gVal=formulasPin?(it.porcentaje*10).toFixed(2)+'g':MASK+'g';
+      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gVal+'</td></tr>';
     });
+    var totalStr=formulasPin?total.toFixed(2)+'%'+(ok?' OK':' revisar'):MASK+'%';
+    var editBtn=formulasPin
+      ?'<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
+      :'<button onclick="pedirPinFormula()" style="background:#aaa;color:white;border:none;padding:5px 10px;font-size:0.82em;border-radius:3px;cursor:pointer;" title="Requiere PIN">&#128274; Editar</button>';
     html+='<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html+='<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>';
-    html+='<div style="display:flex;gap:6px;">';
-    html+='<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>';
+    html+='<div style="display:flex;gap:6px;">'+editBtn;
     html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
     html+='</div></div>';
     html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g/kg</th></tr></thead><tbody>'+rows+'</tbody></table>';
-    html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';">Total: '+total.toFixed(2)+'%'+(ok?' OK':' revisar')+'</small>';
+    html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';"> '+totalStr+'</small>';
     html+='</div>';
   });
   c.innerHTML=html;
+}
+
+async function pedirPinFormula(){
+  var pin=prompt('PIN de acceso a f\u00f3rmulas:');
+  if(!pin) return;
+  try{
+    var r=await fetch('/api/formulas/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
+    if(r.ok){formulasPin=true;renderFormulas(fData);}
+    else{alert('PIN incorrecto');}
+  }catch(e){alert('Error al verificar PIN');}
 }
 
 function addFRow(){
@@ -1582,6 +1895,7 @@ async function guardarFormula(){
 }
 
 function editFormula(idx){
+  if(!formulasPin){pedirPinFormula();return;}
   var f=fData[idx]; if(!f) return;
   document.getElementById('formula-producto').value=f.producto_nombre;
   document.getElementById('formula-base').value=f.unidad_base_g;
@@ -1625,6 +1939,14 @@ async function registrarProd(){
   if(!prod){alert('Ingresa un producto');return;}
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!kg||kg<=0){alert('Ingresa una cantidad valida');return;}
+  // Validacion: advertir si la cantidad parece inusualmente alta
+  if(kg>1000){
+    var msg='\u26a0\ufe0f ADVERTENCIA: Ingresaste '+kg.toLocaleString()+' kg de producci\u00f3n.';
+    msg+=' | Equivale a '+(kg*1000).toLocaleString()+' g.';
+    msg+=' | Las producciones normales son menores a 1,000 kg. Confirmar?';
+    msg+=' | Si querias gramos, divide entre 1000 (ej: 20 kg = ingresa 20).';
+    if(!confirm(msg)) return;
+  }
   try{
     var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:OPER_ACTUAL})});
     var res=await r.json();
@@ -1757,7 +2079,15 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:center;">'+tipoBadge+'</td>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+a.codigo_mp+'</td>';
       h+='<td style="font-weight:600;">'+a.nombre+'</td>';
-      h+='<td style="font-size:0.85em;color:#666;">'+a.proveedor+'</td>';
+      var provId='prov-inp-'+a.codigo_mp.replace(/[^a-zA-Z0-9]/g,'');
+      h+='<td style="min-width:140px;">';
+      h+='<input type="text" id="'+provId+'" value="'+(a.proveedor||'')+'"';
+      h+=' data-cod="'+a.codigo_mp+'"';
+      h+=' placeholder="Sin proveedor"';
+      h+=' style="width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:0.82em;"';
+      h+=' onchange="guardarProveedorMP(this)" oninput="guardarProveedorMP(this)"';
+      h+=' title="Edita y presiona Enter o Tab para guardar">';
+      h+='</td>';
       h+='<td style="text-align:right;font-weight:600;">'+a.stock_minimo.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+' '+unidad+'</td>';
@@ -2012,73 +2342,31 @@ async function iniciarRegistroProd(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
   if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
-  // Registrar producción MP
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
-  var sku_pt=document.getElementById('prod-sku-pt')?document.getElementById('prod-sku-pt').value.trim():'';
-  var uds_pt=document.getElementById('prod-uds-pt')?parseInt(document.getElementById('prod-uds-pt').value)||0:0;
-  var precio_pt=document.getElementById('prod-precio-pt')?parseFloat(document.getElementById('prod-precio-pt').value)||0:0;
-  var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,sku_pt:sku_pt,unidades_pt:uds_pt,precio_pt:precio_pt})});
-  var d=await r.json();
-  if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;">&#10003; Produccion registrada: '+d.lote+'</span>';
-  _prodPendiente={lote:d.lote};
-  // Cargar MEE catalogos y mostrar panel
-  var rm=await fetch('/api/mee/stock'); var dm=await rm.json();
-  _meeData=dm.items||[];
-  renderMEEConsumoRows();
-  document.getElementById('mee-consumo-panel').style.display='block';
-  document.getElementById('mee-consumo-panel').scrollIntoView({behavior:'smooth'});
-}
-function renderMEEConsumoRows(){
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var html=cats.map(function(cat){
-    var opts=_meeData.filter(function(x){return x.categoria===cat||cat==='Otro';});
-    if(cat!=='Otro') opts=_meeData.filter(function(x){return x.categoria===cat;});
-    var optsHtml='<option value="__NA__">No aplica</option>'+opts.map(function(x){return '<option value="'+x.codigo+'">'+x.codigo+' — '+x.descripcion+'</option>';}).join('');
-    return '<div style="display:grid;grid-template-columns:110px 1fr 140px;gap:10px;align-items:center;margin-bottom:10px;padding:10px;background:white;border-radius:8px;border:1px solid #e0e0e0;">'
-      +'<span style="font-size:0.85em;font-weight:700;color:#4A6741;">'+cat+'</span>'
-      +'<select id="mee-cons-'+cat+'" onchange="toggleMEECant(&quot;'+cat+'&quot;)" style="width:100%;font-size:0.85em;">'+optsHtml+'</select>'
-      +'<input type="number" id="mee-cant-'+cat+'" placeholder="Cantidad (und)" min="0" style="font-size:0.85em;display:none;">'
-      +'</div>';
-  }).join('');
-  document.getElementById('mee-rows-container').innerHTML=html;
-}
-function toggleMEECant(cat){
-  var sel=document.getElementById('mee-cons-'+cat).value;
-  document.getElementById('mee-cant-'+cat).style.display=sel==='__NA__'?'none':'block';
-  if(sel!=='__NA__') document.getElementById('mee-cant-'+cat).focus();
-}
-async function confirmarProdCompleta(){
-  if(!_prodPendiente){alert('No hay produccion pendiente');return;}
-  var cats=['Envase','Tapa','Etiqueta','Plegable','Serigrafia','Gotero','Otro'];
-  var consumos=[];
-  for(var i=0;i<cats.length;i++){
-    var cat=cats[i];
-    var sel=document.getElementById('mee-cons-'+cat);
-    if(!sel)continue;
-    var cod=sel.value;
-    if(cod==='__NA__')continue;
-    var cant=parseFloat(document.getElementById('mee-cant-'+cat).value)||0;
-    if(cod&&cant>0)consumos.push({codigo_mee:cod,cantidad:cant,referencia:_prodPendiente.lote});
-  }
-  if(consumos.length>0){
-    var r=await fetch('/api/movimientos-mee/lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({movimientos:consumos,operador:OPER_ACTUAL,referencia:_prodPendiente.lote})});
+  try{
+    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
     var d=await r.json();
-    if(!r.ok){document.getElementById('mee-consumo-msg').innerHTML='<span style="color:red;">Error al registrar MEE: '+(d.error||'')+'</span>';return;}
-  }
-  document.getElementById('mee-consumo-panel').style.display='none';
-  document.getElementById('mee-consumo-msg').innerHTML='';
-  _prodPendiente=null;
-  var nm=consumos.length;
-  document.getElementById('prod-msg').innerHTML='<span style="color:green;font-size:1em;">&#10003; Produccion completa: '+nm+' tipo(s) de MEE descontados.</span>';
-  cargarHistProd(); loadMEE();
+    if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+    var html='<div class="alert-success">'+(d.message||'Produccion registrada')+' &mdash; Lote: <strong>'+d.lote+'</strong></div>';
+    if(d.descuentos&&d.descuentos.length){
+      html+='<div style="margin-top:8px;font-size:0.88em;color:#555;"><strong>MPs descontadas:</strong><ul style="margin-top:4px;padding-left:18px;">';
+      d.descuentos.forEach(function(mp){html+='<li>'+mp.material+': '+mp.cantidad_g.toLocaleString()+'g</li>';});
+      html+='</ul></div>';
+    }
+    html+='<div style="margin-top:8px;padding:8px 14px;background:#e8f4fd;border-radius:6px;font-size:0.85em;color:#1a4a7a;">';
+    html+='&#8594; Ve a <strong>Acondicionamiento</strong> para registrar cada presentacion, descontar MEE y crear Stock PT.</div>';
+    document.getElementById('prod-msg').innerHTML=html;
+    document.getElementById('prod-preview').style.display='none';
+    document.getElementById('prod-sel').value='';
+    document.getElementById('prod-manual').value='';
+    document.getElementById('prod-kg').value='';
+    document.getElementById('prod-obs').value='';
+    cargarHistProd();
+    setTimeout(function(){document.getElementById('prod-msg').innerHTML='';},10000);
+  }catch(e){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
 }
-function cancelarMEEConsumoProd(){
-  document.getElementById('mee-consumo-panel').style.display='none';
-  _prodPendiente=null;
-}
-
 
 window.onload=function(){/* Data loads after operator confirms name */};
 function mostrarFormNuevaMP(){
@@ -2240,11 +2528,11 @@ async function buscarTrazabilidad(){
     var data=await r.json();
     if(!data.ingreso){
       document.getElementById('trz-msg').innerHTML='<div class="alert-error">Lote no encontrado: '+lote+'</div>';
-      document.getElementById('trz-result').style.display='none';
+      document.getElementById('trz-result-lote').style.display='none';
       return;
     }
     document.getElementById('trz-msg').innerHTML='';
-    document.getElementById('trz-result').style.display='block';
+    document.getElementById('trz-result-lote').style.display='block';
     var ing=data.ingreso;
     document.getElementById('trz-ingreso').innerHTML=
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
@@ -2608,7 +2896,7 @@ async function cargarMeeAlertas(){
 }
 async function cargarMeeStock(){
   var cat = '';
-  var sel = document.getElementById('mee-cat-filter');
+  var sel = document.getElementById('mee-cat-filter-bodega') || document.getElementById('mee-cat-filter');
   if(sel) cat = sel.value || '';
   try{
     var r = await fetch('/api/mee/stock?categoria='+encodeURIComponent(cat));
@@ -2668,7 +2956,7 @@ async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
   if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
   try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs})}); var res=await r.json();
-    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial();
+    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
     } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
   }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
 }
@@ -2676,9 +2964,16 @@ async function cargarMeeHistorial(){ try{ var r=await fetch('/api/mee/movimiento
   if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos registrados</td></tr>';return;}
   var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'}; var h='';
   d.movimientos.forEach(function(m){var c=tC[m.tipo]||'#555'; var ref=m.batch_ref||m.lote_ref||'';
-    h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td><button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
+    var btnRotulo=m.tipo==='Entrada'?'<button data-codigo="'+encodeURIComponent(m.mee_codigo)+'" data-cantidad="'+m.cantidad+'" data-lote="'+encodeURIComponent(ref||'')+'" onclick="abrirRotuloMEE(this)" style="background:#2B7A78;color:white;border:none;padding:4px 8px;font-size:0.75em;margin-right:4px;border-radius:3px;cursor:pointer;">&#128203; R&#243;tulo</button>':'';
+    h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td>'+btnRotulo+'<button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
   }); tb.innerHTML=h;
   }catch(e){}}
+function abrirRotuloMEE(btn){
+  var c=btn.getAttribute('data-codigo')||'';
+  var q=btn.getAttribute('data-cantidad')||'1';
+  var l=btn.getAttribute('data-lote')||'';
+  window.open('/rotulo-recepcion-mee/'+c+'/'+q+'?lote='+l,'_blank');
+}
 async function meeAnular(id){ var m=prompt('Motivo de anulacion (obligatorio):'); if(!m||!m.trim()){alert('Debes ingresar un motivo.');return;}
   try{var r=await fetch('/api/mee/anular/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:m.trim()})}); var res=await r.json();
     if(res.ok){alert(res.message);cargarMeeHistorial();cargarMeeStock();cargarMeeAlertas();}else alert(res.error||'Error');
@@ -2703,14 +2998,194 @@ async function buscarTrazabilidadMee(){ var cod=(document.getElementById('mee-tr
 
 
 function _toast(msg,ok){var t=document.createElement("div");t.style="position:fixed;bottom:24px;right:24px;background:"+(ok?"#27ae60":"#c0392b")+";color:#fff;padding:14px 24px;border-radius:8px;z-index:9999;font-size:15px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,0.2);max-width:360px;transition:opacity 0.3s;";t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity="0";setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t);},300);},4000);}
+var _meeAcondItems=[];
+function cargarMeeParaAcond(){
+  fetch("/api/mee/stock").then(function(r){return r.json();}).then(function(d){
+    _meeAcondItems=(d.items||[]).filter(function(m){return m.stock_actual>0;});
+  }).catch(function(){});
+}
+function addMEERowAcond(){
+  var cont=document.getElementById("ac-mee-rows");
+  var msg=document.getElementById("ac-mee-msg"); if(msg) msg.style.display="none";
+  var row=document.createElement("div");
+  row.style.cssText="display:flex;gap:8px;align-items:center;";
+  var selHtml='<select style="flex:2;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:12px;">'+
+    '<option value="">-- Seleccionar MEE --</option>';
+  _meeAcondItems.forEach(function(m){
+    selHtml+='<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' (stock:'+m.stock_actual+')</option>';
+  });
+  selHtml+='</select>';
+  row.innerHTML=selHtml+
+    '<input type="number" min="1" placeholder="Cant" style="flex:1;padding:5px;border:1px solid #ccc;border-radius:4px;font-size:12px;">'+
+    '<button onclick="this.parentElement.remove();_checkMEEMsg();" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:12px;">&times;</button>';
+  cont.appendChild(row);
+}
+function _checkMEEMsg(){
+  var cont=document.getElementById("ac-mee-rows");
+  var msg=document.getElementById("ac-mee-msg");
+  if(msg) msg.style.display=(cont&&cont.children.length===0)?"block":"none";
+}
+var _envPresCount=0,_envMEE=[];
+async function cargarEnvasadoTab(){
+  var sel=document.getElementById('env-prod-sel');if(!sel) return;
+  // Only reload if selector is empty or has just the placeholder
+  var needsLoad=(sel.options.length<=1);
+  if(needsLoad) sel.innerHTML='<option value="">Cargando producciones...</option>';
+  try{
+    var rp=await fetch('/api/produccion');var dp=await rp.json();
+    var rm=await fetch('/api/mee');var dm=await rm.json();
+    var prods=(dp.producciones||[]).filter(function(p){return p.estado==='Completado';});
+    _envMEE=dm.items||[];
+    // Only rebuild if we got real data
+    if(prods.length>0){
+      sel.innerHTML='<option value="">-- Selecciona produccion terminada --</option>';
+      prods.forEach(function(p){
+        var op=document.createElement('option');
+        op.value=p.id;
+        op.dataset.producto=p.producto||'';
+        op.dataset.lote=p.lote||('PROD-'+String(p.id).padStart(5,'0'));
+        op.dataset.batch=p.cantidad||0;
+        op.text=(p.lote||'PROD-'+String(p.id).padStart(5,'0'))+' - '+(p.producto||'?')+' ('+p.cantidad+'kg) '+(p.fecha||'').slice(0,10);
+        sel.appendChild(op);
+      });
+    }
+  }catch(e){if(needsLoad) sel.innerHTML='<option value="">Error - recarga la pagina</option>';}
+  await cargarHistEnvasado();
+  if(!document.getElementById('env-pres-rows').children.length){
+    _envPresCount=0;addEnvPres();
+  }
+}
+function cargarDatosProduccion(){
+  var sel=document.getElementById('env-prod-sel');if(!sel) return;
+  var opt=sel.options[sel.selectedIndex];if(!opt||!opt.value) return;
+  var p=document.getElementById('env-producto');var l=document.getElementById('env-lote');var b=document.getElementById('env-batch-total');
+  if(p) p.value=opt.dataset.producto||'';
+  if(l) l.value=opt.dataset.lote||'';
+  if(b) b.value=(parseFloat(opt.dataset.batch||0)*1000).toFixed(0)+' g';
+}
+function addEnvPres(){
+  if(_envPresCount>=2){alert('Maximo 2 presentaciones');return;}
+  _envPresCount++;var n=_envPresCount;
+  var cats=['Envase','Frasco','Gotero'];
+  var optEnv=_envMEE.filter(function(m){return cats.indexOf(m.categoria)>=0;}).map(function(m){return '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';}).join('');
+  var optTap=_envMEE.filter(function(m){return m.categoria==='Tapa';}).map(function(m){return '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';}).join('');
+  var div=document.createElement('div');div.id='env-pres-'+n;div.style.cssText='background:#fff;border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:8px;';
+  div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><strong style="font-size:13px;color:#1a4a7a">Presentacion '+n+'</strong>'+(n>1?'<button onclick="rmEnvPres('+n+')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">Quitar</button>':'')+'</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"><div><label style="font-size:11px">Presentacion</label><input id="ep'+n+'-pres" placeholder="Ej: 30ml" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;"></div><div><label style="font-size:11px">Envase</label><select id="ep'+n+'-env" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:11px;"><option value="">--</option>'+optEnv+'</select></div><div><label style="font-size:11px">Tapa</label><select id="ep'+n+'-tap" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:11px;"><option value="">--</option>'+optTap+'</select></div><div><label style="font-size:11px">Unidades</label><input id="ep'+n+'-uds" type="number" min="1" placeholder="0" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;"></div></div>';
+  document.getElementById('env-pres-rows').appendChild(div);
+  if(_envPresCount>=2){var btn=document.getElementById('env-add-pres-btn');if(btn)btn.style.display='none';}
+}
+function rmEnvPres(n){var el=document.getElementById('env-pres-'+n);if(el)el.remove();_envPresCount--;var btn=document.getElementById('env-add-pres-btn');if(btn)btn.style.display='';}
+async function registrarEnvasado(){
+  var prodSel=document.getElementById('env-prod-sel');
+  if(!prodSel||!prodSel.value){alert('Selecciona un batch de produccion');return;}
+  var prodId=parseInt(prodSel.value);
+  var lote=(document.getElementById('env-lote')||{value:''}).value.trim();
+  var producto=(document.getElementById('env-producto')||{value:''}).value.trim();
+  var obs=(document.getElementById('env-obs')||{value:''}).value.trim();
+  var presentaciones=[];
+  for(var i=1;i<=2;i++){
+    var presEl=document.getElementById('ep'+i+'-pres');if(!presEl) continue;
+    var pres=presEl.value.trim();
+    var envCod=(document.getElementById('ep'+i+'-env')||{value:''}).value;
+    var tapCod=(document.getElementById('ep'+i+'-tap')||{value:''}).value;
+    var uds=parseInt((document.getElementById('ep'+i+'-uds')||{value:0}).value||0);
+    if(!pres||uds<=0) continue;
+    presentaciones.push({presentacion:pres,envase_codigo:envCod,tapa_codigo:tapCod,unidades:uds});
+  }
+  if(!presentaciones.length){alert('Agrega al menos una presentacion con unidades');return;}
+  var msg=document.getElementById('env-msg');
+  if(msg) msg.innerHTML='<span style="color:#666;">Registrando...</span>';
+  var allAlertas=[];
+  for(var j=0;j<presentaciones.length;j++){
+    var p=presentaciones[j];
+    try{
+      var r=await fetch('/api/envasado',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({produccion_id:prodId,lote:lote,producto:producto,presentacion:p.presentacion,unidades:p.unidades,envase_codigo:p.envase_codigo,tapa_codigo:p.tapa_codigo,operador:OPER_ACTUAL||'Operario',observaciones:obs})});
+      var d=await r.json();
+      if(!r.ok){if(msg)msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>';return;}
+      if(d.alertas_mee) allAlertas=allAlertas.concat(d.alertas_mee);
+    }catch(e){if(msg)msg.innerHTML='<div style="color:#dc3545;">Error: '+e.message+'</div>';return;}
+  }
+  var alertTxt=allAlertas.length?' | MEE bajo minimo: '+allAlertas.map(function(a){return a.nombre+' deficit '+a.deficit;}).join(', ')+'. Solicitud enviada a Compras.':'';
+  if(msg) msg.innerHTML='<div style="color:#28a745;padding:8px;background:#d4edda;border-radius:4px;">Envasado registrado. MEE descontado.'+alertTxt+'</div>';
+  await cargarHistEnvasado();
+  if(typeof loadAlertasMEE==='function') setTimeout(loadAlertasMEE,500);
+}
+async function cargarHistEnvasado(){
+  var tb=document.getElementById('env-tbody');if(!tb) return;
+  try{
+    var r=await fetch('/api/envasado');var d=await r.json();var rows=d.envasados||[];
+    if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>';return;}
+    tb.innerHTML=rows.map(function(e){return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;font-family:monospace;font-size:12px;">'+e.lote+'</td><td style="padding:6px;">'+e.producto+'</td><td style="padding:6px;">'+e.presentacion+'</td><td style="padding:6px;text-align:center;">'+e.unidades+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.envase_codigo+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.tapa_codigo+'</td><td style="padding:6px;font-size:12px;">'+e.fecha+'</td><td style="padding:6px;font-size:12px;">'+e.operador+'</td></tr>';}).join('');
+  }catch(e){if(tb)tb.innerHTML='<tr><td colspan="8">Error</td></tr>';}
+}
+async function cargarEnvasadosPendientes(){
+  var sel=document.getElementById('ac-envasado-sel');if(!sel) return;
+  try{
+    var r=await fetch('/api/envasado/pendientes-acond');var d=await r.json();var pend=d.pendientes||[];
+    sel.innerHTML='<option value="">-- Selecciona batch envasado listo --</option>';
+    pend.forEach(function(e){var op=document.createElement('option');op.value=e.id;op.dataset.lote=e.lote||'';op.dataset.producto=e.producto||'';op.dataset.pres=e.presentacion||'';op.dataset.uds=e.unidades||0;op.dataset.batch=e.batch_g||0;op.text=e.lote+' - '+e.producto+' '+e.presentacion+' ('+e.unidades+' uds) '+e.fecha;sel.appendChild(op);});
+  }catch(e){}
+}
+function cargarDesdeEnvasado(){
+  var sel=document.getElementById('ac-envasado-sel');if(!sel||!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var f=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  f('ac-envasado-id',opt.value);f('ac-lote',opt.dataset.lote||'');f('ac-prod',opt.dataset.producto||'');
+  f('ac-pres',opt.dataset.pres||'');f('ac-uds',opt.dataset.uds||'');f('ac-batch',opt.dataset.batch||'');
+}
+
 function registrarAcond(){
-  var d={lote:document.getElementById("ac-lote").value,producto:document.getElementById("ac-prod").value,presentacion:document.getElementById("ac-pres").value,cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,fecha:document.getElementById("ac-fecha").value,observaciones:document.getElementById("ac-obs").value};
-  if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
+  var lote=document.getElementById("ac-lote").value;
+  var prod=document.getElementById("ac-prod").value;
+  if(!lote||!prod){_toast("Lote y producto son obligatorios",0);return;}
+  var meeRows=document.getElementById("ac-mee-rows").querySelectorAll("div");
+  var mee_consumido=[];
+  var meeOk=true;
+  meeRows.forEach(function(row){
+    var sel=row.querySelector("select");
+    var qty=row.querySelector("input[type=number]");
+    if(sel&&qty&&sel.value){
+      var c=parseInt(qty.value)||0;
+      if(c<=0){meeOk=false;return;}
+      mee_consumido.push({codigo:sel.value,cantidad:c});
+    }
+  });
+  if(!meeOk){_toast("Verifica cantidades MEE (deben ser > 0)",0);return;}
+  var d={
+    lote:lote,
+    producto:prod,
+    presentacion:document.getElementById("ac-pres").value,
+    cantidad_batch_g:parseFloat(document.getElementById("ac-batch").value)||0,
+    unidades_producidas:parseInt(document.getElementById("ac-uds").value)||0,
+    fecha:document.getElementById("ac-fecha").value,
+    observaciones:document.getElementById("ac-obs").value,
+    sku:document.getElementById("ac-sku").value.trim(),
+    precio_base:parseFloat(document.getElementById("ac-precio").value)||0,
+    mee_consumido:mee_consumido
+  };
+  var msgEl=document.getElementById("ac-form-msg");
   fetch("/api/acondicionamiento",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(d)})
-  .then(function(r){return r.json();}).then(function(j){
-    if(j.ok){_toast("\u2705 Batch registrado correctamente #"+j.id,1);["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs"].forEach(function(i){document.getElementById(i).value="";});loadAcond();}
-    else _toast("Error: "+(j.error||"desconocido"),0);
-  }).catch(function(e){_toast("Error de red: "+e,0);});
+  .then(function(r){return r.json();})
+  .then(function(j){
+    if(j.ok||j.id){
+      var info="\u2705 Batch registrado #"+j.id;
+      if(mee_consumido.length) info+=" | MEE descontado: "+mee_consumido.length+" item(s)";
+      _toast(info,1);
+      ["ac-lote","ac-prod","ac-pres","ac-batch","ac-uds","ac-obs","ac-sku","ac-precio"].forEach(function(id){document.getElementById(id).value="";});
+      document.getElementById("ac-mee-rows").innerHTML="";
+      _checkMEEMsg();
+      if(msgEl) msgEl.innerHTML="";
+      loadAcond();
+    } else {
+      var err="Error: "+(j.error||"desconocido");
+      _toast(err,0);
+      if(msgEl) msgEl.innerHTML='<span style="color:red;">'+err+'</span>';
+    }
+  }).catch(function(e){
+    _toast("Error de red: "+e,0);
+    if(msgEl) msgEl.innerHTML='<span style="color:red;">Error de red: '+e+'</span>';
+  });
 }
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
@@ -2728,6 +3203,33 @@ function updateAcond(id,estado){
   fetch("/api/acondicionamiento/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:estado})})
   .then(function(){loadAcond();});
 }
+async function cargarAcondPendientesLib(){
+  var sel=document.getElementById('lb-acond-sel');if(!sel) return;
+  if(sel.options.length>1) return;
+  try{
+    var r=await fetch('/api/acondicionamiento/pendientes-lib');
+    var d=await r.json();var pend=d.pendientes||[];
+    sel.innerHTML='<option value="">-- Selecciona batch acondicionado --</option>';
+    pend.forEach(function(a){
+      var op=document.createElement('option');
+      op.value=a.id;op.dataset.lote=a.lote||'';op.dataset.producto=a.producto||'';
+      op.dataset.pres=a.presentacion||'';op.dataset.uds=a.unidades||0;op.dataset.fecha=a.fecha||'';
+      op.text=(a.lote||'?')+' - '+(a.producto||'?')+' '+a.presentacion+' ('+a.unidades+' uds)';
+      sel.appendChild(op);
+    });
+  }catch(e){}
+}
+function cargarDesdeAcond(){
+  var sel=document.getElementById('lb-acond-sel');if(!sel||!sel.value) return;
+  var opt=sel.options[sel.selectedIndex];
+  var f=function(id,v){var el=document.getElementById(id);if(el)el.value=v;};
+  f('lb-acond-id',opt.value);f('lb-lote',opt.dataset.lote||'');
+  f('lb-prod',opt.dataset.producto||'');f('lb-pres',opt.dataset.pres||'');
+  f('lb-uds',opt.dataset.uds||'');
+  var fechaEl=document.getElementById('lb-fprod');
+  if(fechaEl&&opt.dataset.fecha) fechaEl.value=(opt.dataset.fecha||'').slice(0,10);
+}
+
 function registrarLiberacion(){
   var d={lote:document.getElementById("lb-lote").value,producto:document.getElementById("lb-prod").value,presentacion:document.getElementById("lb-pres").value,unidades:parseInt(document.getElementById("lb-uds").value)||0,fecha_produccion:document.getElementById("lb-fprod").value,destino:document.getElementById("lb-dest").value,cliente:document.getElementById("lb-cli").value,observaciones:document.getElementById("lb-obs").value};
   if(!d.lote||!d.producto){_toast("Lote y producto son obligatorios",0);return;}
@@ -2753,10 +3255,53 @@ function loadLiberaciones(estado){
     });
   }).catch(function(){});
 }
+var _clientesLib=[];
+async function cargarClientesLib(){
+  try{var r=await fetch('/api/clientes');var d=await r.json();_clientesLib=(d.clientes||[]).filter(function(c){return c.activo;});}
+  catch(e){_clientesLib=[];}
+}
 function aprobarLib(id){
-  var cli=prompt("Cliente final (opcional):");
-  fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({estado:"Liberado",cliente:cli||""})})
-  .then(function(){loadLiberaciones("");});
+  var opts=_clientesLib.map(function(c){
+    var o=document.createElement("option");
+    o.value=c.nombre; o.textContent=c.nombre; return o.outerHTML;
+  }).join("");
+  var modal=document.createElement("div");
+  modal.id="lib-modal-overlay";
+  modal.style.cssText="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;";
+  modal.innerHTML=
+    '<div style="background:#fff;border-radius:10px;padding:28px 32px;'
+    +'min-width:340px;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,0.18);">'
+    +'<h3 style="margin:0 0 18px;color:#1a2332;font-size:1.1em;">'
+    +'&#128666; Confirmar Liberación</h3>'
+    +'<label style="font-size:0.85em;color:#555;display:block;margin-bottom:5px;">'
+    +'Cliente destino</label>'
+    +'<select id="lib-cli-sel" style="width:100%;padding:8px;border:1px solid #ccc;'
+    +'border-radius:6px;font-size:0.93em;margin-bottom:14px;">'
+    +'<option value="">-- Seleccionar cliente --</option>'+opts+'</select>'
+    +'<label style="font-size:0.85em;color:#555;display:block;margin-bottom:5px;">'
+    +'Observaciones (opcional)</label>'
+    +'<input id="lib-obs-inp" type="text" '
+    +'style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;'
+    +'font-size:0.93em;margin-bottom:20px;box-sizing:border-box;" '
+    +'placeholder="Ej: Conforme CC, OK BPM...">'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;">'
+    +'<button id="lib-cancel-btn" style="padding:8px 18px;border:1px solid #ccc;'
+    +'border-radius:6px;cursor:pointer;background:#f5f5f5;font-size:0.9em;">Cancelar</button>'
+    +'<button id="lib-confirm-btn" style="padding:8px 18px;background:#28a745;'
+    +'color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;'
+    +'font-size:0.9em;">&#10003; Liberar</button>'
+    +'</div></div>';
+  document.body.appendChild(modal);
+  document.getElementById("lib-cancel-btn").onclick=function(){modal.remove();};
+  document.getElementById("lib-confirm-btn").onclick=function(){
+    var cli=document.getElementById("lib-cli-sel").value;
+    var obs=document.getElementById("lib-obs-inp").value;
+    modal.remove();
+    fetch("/api/liberacion/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({estado:"Liberado",cliente:cli,observaciones:obs})})
+    .then(function(r){return r.json();})
+    .then(function(){_toast('✅ Liberado'+(cli?' → '+cli:''),1);loadLiberaciones('');});
+  };
 }
 function rechazarLib(id){
   var obs=prompt("Motivo de rechazo:");
@@ -2765,7 +3310,613 @@ function rechazarLib(id){
   .then(function(){loadLiberaciones("");});
 }
 
+/* ============================================================
+   ENVASADO SIMPLE
+   ============================================================ */
+var _envSimpleMEE = [];
+async function cargarEnvasadoSimpleTab(){
+  // Populate product selector from formulas
+  var sel = document.getElementById('env-prod-sel');
+  if(sel && sel.options.length <= 1){
+    try{
+      var r = await fetch('/api/programacion/productos');
+      var d = await r.json();
+      var prods = d.formulas || [];
+      if(prods.length){
+        sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
+        prods.forEach(function(p){
+          var op = document.createElement('option');
+          var nombre = p.nombre || p.producto_nombre || '';
+          op.value = nombre; op.text = nombre;
+          sel.appendChild(op);
+        });
+      }
+    }catch(e){}
+  }
+  // Populate envase/tapa selectors from MEE stock
+  var selEnv = document.getElementById('env-envase-sel');
+  var selTap = document.getElementById('env-tapa-sel');
+  if(selEnv && selEnv.options.length <= 1){
+    try{
+      var rm = await fetch('/api/mee/stock');
+      var dm = await rm.json();
+      _envSimpleMEE = dm.items || [];
+      var envCats = ['Envase','Frasco','Gotero','Tarro'];
+      var envOpts = '<option value="">-- Sin envase --</option>';
+      var tapOpts = '<option value="">-- Sin tapa --</option>';
+      _envSimpleMEE.forEach(function(m){
+        var opt = '<option value="'+m.codigo+'">'+m.codigo+' - '+m.descripcion+' (stock: '+m.stock_actual+')</option>';
+        if(envCats.indexOf(m.categoria) >= 0) envOpts += opt;
+        else if(m.categoria === 'Tapa') tapOpts += opt;
+      });
+      if(selEnv) selEnv.innerHTML = envOpts;
+      if(selTap) selTap.innerHTML = tapOpts;
+    }catch(e){}
+  }
+  // Load history
+  await cargarHistEnvasado();
+}
+
+async function registrarEnvasadoSimple(){
+  var prodSel = document.getElementById('env-prod-sel');
+  var lote = (document.getElementById('env-lote')||{value:''}).value.trim();
+  var uds = parseInt((document.getElementById('env-uds')||{value:0}).value||0);
+  var pres = (document.getElementById('env-pres')||{value:''}).value.trim();
+  var envCod = (document.getElementById('env-envase-sel')||{value:''}).value;
+  var tapCod = (document.getElementById('env-tapa-sel')||{value:''}).value;
+  var obs = (document.getElementById('env-obs')||{value:''}).value.trim();
+  var producto = prodSel ? prodSel.value : '';
+  if(!producto){ _toast('Selecciona un producto', 0); return; }
+  if(!lote){ _toast('Ingresa el numero de lote', 0); return; }
+  if(uds <= 0){ _toast('Ingresa unidades envasadas', 0); return; }
+  var msg = document.getElementById('env-msg');
+  if(msg) msg.innerHTML = '<span style="color:#666">Registrando...</span>';
+  try{
+    var r = await fetch('/api/envasado', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        produccion_id: null,
+        lote: lote,
+        producto: producto,
+        presentacion: pres || producto,
+        unidades: uds,
+        envase_codigo: envCod || '',
+        tapa_codigo: tapCod || '',
+        operador: OPER_ACTUAL || 'Operario',
+        observaciones: obs
+      })
+    });
+    var d = await r.json();
+    if(!r.ok){ if(msg) msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
+    _toast('\u2705 Envasado registrado', 1);
+    ['env-lote','env-uds','env-pres','env-obs'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    if(prodSel) prodSel.selectedIndex = 0;
+    if(msg) msg.innerHTML = '';
+    await cargarHistEnvasado();
+    if(typeof loadAlertasMEE === 'function') setTimeout(loadAlertasMEE, 500);
+  }catch(e){
+    if(msg) msg.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
+  }
+}
+
+/* ============================================================
+   ACONDICIONAMIENTO SIMPLE
+   ============================================================ */
+async function cargarAcondSimpleTab(){
+  // Populate product selector
+  var sel = document.getElementById('ac-prod-sel');
+  if(sel && sel.options.length <= 1){
+    try{
+      var r = await fetch('/api/programacion/productos');
+      var d = await r.json();
+      var prods = d.formulas || [];
+      if(prods.length){
+        sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
+        prods.forEach(function(p){
+          var nombre = p.nombre || p.producto_nombre || '';
+          var op = document.createElement('option');
+          op.value = nombre; op.text = nombre;
+          sel.appendChild(op);
+        });
+      }
+    }catch(e){}
+  }
+  // Set today as default date
+  var fechaEl = document.getElementById('ac-fecha');
+  if(fechaEl && !fechaEl.value) fechaEl.value = new Date().toISOString().slice(0,10);
+  // Load history
+  loadAcondSimple();
+}
+
+async function registrarAcondSimple(){
+  var prodSel = document.getElementById('ac-prod-sel');
+  var lote = (document.getElementById('ac-lote')||{value:''}).value.trim();
+  var uds = parseInt((document.getElementById('ac-uds')||{value:0}).value||0);
+  var fecha = (document.getElementById('ac-fecha')||{value:''}).value;
+  var etiquetas = parseInt((document.getElementById('ac-etiquetas')||{value:0}).value||0);
+  var plegadizas = parseInt((document.getElementById('ac-plegadizas')||{value:0}).value||0);
+  var destino = (document.getElementById('ac-destino')||{value:''}).value.trim();
+  var sku = (document.getElementById('ac-sku')||{value:''}).value.trim();
+  var obs = (document.getElementById('ac-obs')||{value:''}).value.trim();
+  var producto = prodSel ? prodSel.value : '';
+  if(!producto){ _toast('Selecciona un producto', 0); return; }
+  if(!lote){ _toast('Ingresa el numero de lote PT', 0); return; }
+  if(uds <= 0){ _toast('Ingresa unidades acondicionadas', 0); return; }
+  var obsCompleto = 'Etiquetas: '+etiquetas+' | Plegadizas: '+plegadizas+(destino?' | Destino: '+destino:'')+(obs?' | '+obs:'');
+  var msgEl = document.getElementById('ac-form-msg');
+  if(msgEl) msgEl.innerHTML = '<span style="color:#666">Registrando...</span>';
+  try{
+    var r = await fetch('/api/acondicionamiento', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        lote: lote,
+        producto: producto,
+        presentacion: sku || producto,
+        cantidad_batch_g: 0,
+        unidades_producidas: uds,
+        fecha: fecha,
+        observaciones: obsCompleto,
+        sku: sku,
+        precio_base: 0,
+        mee_consumido: []
+      })
+    });
+    var d = await r.json();
+    if(!r.ok){ if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
+    _toast('\u2705 Batch registrado', 1);
+    ['ac-lote','ac-uds','ac-etiquetas','ac-plegadizas','ac-destino','ac-sku','ac-obs'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+    if(prodSel) prodSel.selectedIndex = 0;
+    if(msgEl) msgEl.innerHTML = '';
+    loadAcondSimple();
+  }catch(e){
+    if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
+  }
+}
+
+function loadAcondSimple(){
+  fetch('/api/acondicionamiento').then(function(r){return r.json();}).then(function(rows){
+    var tb = document.getElementById('ac-tbody'); if(!tb) return;
+    if(!rows.length){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>'; return; }
+    tb.innerHTML = rows.map(function(r){
+      return '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:7px;font-family:monospace;font-size:12px">'+r.lote+'</td>' +
+        '<td style="padding:7px">'+r.producto+'</td>' +
+        '<td style="padding:7px;text-align:center">'+r.unidades_producidas+'</td>' +
+        '<td style="padding:7px;text-align:center;color:#555;font-size:12px">'+(r.observaciones||'--')+'</td>' +
+        '<td style="padding:7px;text-align:center">'+(r.presentacion||'--')+'</td>' +
+        '<td style="padding:7px;text-align:center">'+(r.sku||'--')+'</td>' +
+        '<td style="padding:7px;font-size:12px">'+(r.fecha||'--')+'</td>' +
+        '<td style="padding:7px;font-size:12px">'+(r.operador||'--')+'</td>' +
+        '</tr>';
+    }).join('');
+  }).catch(function(){});
+}
+
+/* ============================================================
+   PROGRAMACION — placeholder (Phase 2)
+   ============================================================ */
+async function sincronizarShopify(btnEl){
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Sincronizando...'; }
+  try {
+    var resp = await fetch('/api/programacion/sync-stock-shopify', {method:'POST', headers:{'Content-Type':'application/json'}});
+    var txt = await resp.text();
+    var d;
+    try { d = JSON.parse(txt); } catch(pe){ alert('Error parse JSON: ' + txt.substring(0,300)); return; }
+    if(d.ok){
+      _toast(d.mensaje || (d.synced + ' SKUs sincronizados'), 1);
+      cargarProgramacion(null);
+    } else {
+      alert('ERROR SYNC SHOPIFY: ' + (d.error || JSON.stringify(d)));
+    }
+  } catch(e){
+    alert('Error de red: ' + e.message);
+  } finally {
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='Sincronizar Shopify'; }
+  }
+}
+
+async function sincronizarVentas(btnEl){
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Sincronizando...'; }
+  try {
+    var resp = await fetch('/api/programacion/sync-ventas', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({days:60})});
+    var txt = await resp.text();
+    var d;
+    try { d = JSON.parse(txt); } catch(pe){ alert('Error parse: ' + txt.substring(0,300)); return; }
+    if(d.ok){
+      _toast(d.mensaje || (d.synced + ' ordenes sync'), 1);
+      cargarProgramacion(null);
+    } else {
+      alert('ERROR SYNC VENTAS: ' + (d.error || JSON.stringify(d)));
+    }
+  } catch(e){
+    alert('Error de red: ' + e.message);
+  } finally {
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='Sync Ventas'; }
+  }
+}
+
+async function cargarProgramacion(btnEl){
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Cargando...'; }
+  var iaStatus = document.getElementById('prog-ia-status');
+  if(iaStatus) iaStatus.textContent = 'Consultando Shopify + Stock + IA…';
+  try{
+    var r = await fetch('/api/programacion/resumen');
+    var d = await r.json();
+    if(d.error && !d.proyeccion){
+      _toast(d.error, 0);
+      if(iaStatus) iaStatus.textContent = d.error;
+      return;
+    }
+    _renderProgramacion(d);
+  }catch(e){
+    _toast('Error al cargar programación: ' + e.message, 0);
+    if(iaStatus) iaStatus.textContent = 'Error: ' + e.message;
+  }finally{
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '🔄 Actualizar'; }
+  }
+}
+
+async function generarOCProgramacion(btnEl){
+  if(!confirm('Crear solicitud de compra automática para todos los MPs faltantes?')) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Generando...'; }
+  try{
+    var r = await fetch('/api/programacion/generar-oc', {method:'POST', headers:{'Content-Type':'application/json'}});
+    var d = await r.json();
+    if(d.ok){
+      _toast('✅ ' + d.mensaje, 1);
+    } else {
+      _toast('Error: ' + (d.error || 'desconocido'), 0);
+    }
+  }catch(e){
+    _toast('Error de red: ' + e.message, 0);
+  }finally{
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '🛒 Generar OC'; }
+  }
+}
+
+document.addEventListener('click', async function(e){
+  var btn = e.target.closest('.btn-stock-init');
+  if(!btn) return;
+  var producto = btn.getAttribute('data-prod');
+  var sku = btn.getAttribute('data-sku') || producto;
+  var uds = prompt('Unidades fisicas de ' + producto + ' en bodega Espagiria (listas para ANIMUS):');
+  if(!uds || isNaN(parseInt(uds)) || parseInt(uds) <= 0) return;
+  var lote = prompt('Lote (Enter para auto-generar):', '');
+  var body = {producto: producto, sku: sku, unidades: parseInt(uds)};
+  if(lote && lote.trim()) body.lote = lote.trim();
+  try{
+    var r = await fetch('/api/programacion/registrar-stock', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){ _toast('Stock registrado: ' + d.unidades + ' uds de ' + d.producto, 1); cargarProgramacion(null); }
+    else { _toast('Error: ' + (d.error||'desconocido'), 0); }
+  }catch(e){ _toast('Error de red', 0); }
+});
+
+function _renderProgramacion(d){
+  var vel = document.getElementById('prog-vel-val');
+  var cal = document.getElementById('prog-cal-val');
+  var alerts = document.getElementById('prog-alert-val');
+  var iaStatus = document.getElementById('prog-ia-status');
+  var iaBox = document.getElementById('prog-ia-box');
+  var iaText = document.getElementById('prog-ia-text');
+  if(vel && d.velocidad_total !== undefined) vel.textContent = d.velocidad_total;
+  if(cal && d.proxima_produccion) cal.textContent = d.proxima_produccion;
+  if(alerts && d.n_alertas !== undefined) alerts.textContent = d.n_alertas;
+  if(d.narrativa_ia && iaBox && iaText){
+    iaBox.style.display = 'block';
+    iaText.textContent = d.narrativa_ia;
+    if(iaStatus) iaStatus.textContent = 'Actualizado';
+  }
+  // Render projection table
+  var tbody = document.getElementById('prog-tbody');
+  if(tbody && d.proyeccion && d.proyeccion.length){
+    tbody.innerHTML = d.proyeccion.map(function(p){
+      var semColor = p.semaforo === 'verde' ? '#28a745' : p.semaforo === 'amarillo' ? '#fd7e14' : '#dc3545';
+      var semEmoji = p.semaforo === 'verde' ? '\u2705' : p.semaforo === 'amarillo' ? '\u26A0\uFE0F' : '🚨';
+      // MPs: ✅ all OK | ⚠️ data gap (not in movimientos) | ❌ confirmed deficit
+      var mpIcon = p.mp_lista === null ? '?' :
+                   (p.mp_lista === true ? '\u2705' :
+                   (p.mp_lista === false ? '\u274C' :
+                   (p.mp_data_gap ? '\u26A0\uFE0F' : '?')));
+      // If no confirmed deficit but has data gaps, show warning instead of X
+      if (p.mp_lista !== false && p.mp_data_gap) mpIcon = '\u26A0\uFE0F';
+      var skuKey = p.sku || p.producto;
+      var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
+      var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
+      var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
+      var isPast = p.prox_prod_pasada === true;
+      var progLabel, progBtnColor;
+      if (p.prox_produccion === 'No programado') {
+        progLabel = '📅 Programar'; progBtnColor = '#6c757d';
+      } else if (isPast) {
+        progLabel = '⚠️ ' + p.prox_produccion + ' — ¿completada?'; progBtnColor = '#e67e00';
+      } else {
+        progLabel = '📅 ' + p.prox_produccion; progBtnColor = '#198754';
+      }
+      return '<tr style="border-bottom:1px solid #eee">' +
+        '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
+        '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +
+        '<td style="padding:9px;text-align:center">'+p.vel_mes+'</td>' +
+        '<td style="padding:9px;text-align:center;font-weight:700;color:'+diasColor+'">'+diasStr+'</td>' +
+        '<td style="padding:9px;text-align:center">' +
+          '<button data-prod="' + p.producto + '" onclick="abrirModalProgramar(this.dataset.prod)" style="background:'+progBtnColor+';color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap">'+progLabel+'</button>' +
+        '</td>' +
+        '<td style="padding:9px;text-align:center;font-size:16px">'+calIcon+'</td>' +
+        '<td style="padding:9px;text-align:center;font-size:16px">'+mpIcon+'</td>' +
+        '<td style="padding:9px;text-align:center"><span style="background:'+semColor+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px">'+semEmoji+' '+p.semaforo+'</span></td>' +
+        '<td style="padding:9px;text-align:center"><button class="btn-stock-init btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" data-prod="'+p.producto+'" data-sku="'+skuKey+'">+Stock</button></td>' +
+        '</tr>';
+    }).join('');
+  }
+  // Render alerts
+  var alertsDiv = document.getElementById('prog-alertas');
+  if(alertsDiv && d.alertas && d.alertas.length){
+    alertsDiv.innerHTML = d.alertas.map(function(a){
+      var color = a.nivel === 'critico' ? '#dc3545' : a.nivel === 'alto' ? '#fd7e14' : '#ffc107';
+      return '<div style="background:#fff5f5;border-left:4px solid '+color+';border-radius:4px;padding:10px 14px;margin-bottom:8px">' +
+        '<div style="font-weight:600;color:'+color+';font-size:13px">\u26A0 '+a.producto+'</div>' +
+        '<div style="font-size:12px;color:#555;margin-top:3px">'+a.mensaje+'</div>' +
+        '</div>';
+    }).join('');
+  } else if(alertsDiv){
+    alertsDiv.innerHTML = '<div style="text-align:center;color:#28a745;padding:20px;font-size:14px">\u2705 Sin alertas criticas</div>';
+  }
+}
+
 </script>
+
+  <!-- ── Modal: Programar Producción ────────────────────────────────────── -->
+  <div id="modal-programar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <h3 style="margin:0 0 18px;font-size:18px;color:#1a1a2e">📅 Programar Producción</h3>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Producto</label>
+        <input id="mp-producto" type="text" readonly style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;background:#f8f8f8;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Fecha de producción</label>
+        <input id="mp-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Número de lotes</label>
+        <input id="mp-lotes" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Observaciones (opcional)</label>
+        <textarea id="mp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button onclick="cerrarModalProgramar()" style="background:#f0f0f0;color:#444;border:none;border-radius:6px;padding:9px 20px;font-size:14px;cursor:pointer">Cancelar</button>
+        <button onclick="guardarProgramacion()" style="background:#0d6efd;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer">💾 Guardar</button>
+      </div>
+      <!-- Upcoming events list for this product -->
+      <div id="mp-eventos-lista" style="margin-top:18px;border-top:1px solid #eee;padding-top:14px;display:none">
+        <div style="font-size:12px;font-weight:600;color:#666;margin-bottom:8px">Producciones programadas</div>
+        <div id="mp-eventos-items"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ── Programar Producción Modal ───────────────────────────────────────────
+  function abrirModalProgramar(producto) {
+    document.getElementById('mp-producto').value = producto;
+    // Default date = today + 3 days
+    var d = new Date(); d.setDate(d.getDate() + 3);
+    document.getElementById('mp-fecha').value = d.toISOString().slice(0,10);
+    document.getElementById('mp-lotes').value = 1;
+    document.getElementById('mp-obs').value = '';
+    cargarEventosProducto(producto);
+    var m = document.getElementById('modal-programar');
+    m.style.display = 'flex';
+  }
+  function cerrarModalProgramar() {
+    document.getElementById('modal-programar').style.display = 'none';
+  }
+  // Close on backdrop click
+  document.getElementById('modal-programar').addEventListener('click', function(e){
+    if(e.target === this) cerrarModalProgramar();
+  });
+
+  function guardarProgramacion() {
+    var producto = document.getElementById('mp-producto').value;
+    var fecha    = document.getElementById('mp-fecha').value;
+    var lotes    = parseInt(document.getElementById('mp-lotes').value) || 1;
+    var obs      = document.getElementById('mp-obs').value;
+    if(!fecha){ alert('Selecciona una fecha'); return; }
+    fetch('/api/programacion/programar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({producto:producto, fecha:fecha, lotes:lotes, observaciones:obs})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d.ok){
+        cerrarModalProgramar();
+        // Reload projection
+        actualizarDashboard();
+      } else {
+        alert('Error: ' + (d.error||'desconocido'));
+      }
+    }).catch(function(e){ alert('Error de red: '+e); });
+  }
+
+  function cargarEventosProducto(producto) {
+    fetch('/api/programacion/programar').then(function(r){ return r.json(); }).then(function(eventos){
+      var futuros = eventos.filter(function(e){
+        return e.producto === producto && e.estado !== 'cancelado' && e.estado !== 'completado';
+      });
+      var lista = document.getElementById('mp-eventos-lista');
+      var items = document.getElementById('mp-eventos-items');
+      if(futuros.length === 0){ lista.style.display='none'; return; }
+      lista.style.display = 'block';
+      items.innerHTML = futuros.map(function(ev){
+        var estadoColor = ev.estado === 'pendiente' ? '#0d6efd' : '#fd7e14';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px">' +
+          '<span style="flex:1;font-weight:600">'+ev.fecha+'</span>' +
+          '<span style="color:#555">'+ev.lotes+' lote'+(ev.lotes>1?'s':'')+'</span>' +
+          '<span style="background:'+estadoColor+';color:#fff;padding:2px 7px;border-radius:8px">'+ev.estado+'</span>' +
+          '<button onclick="cancelarEvento('+ev.id+',\''+producto+'\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
+          '</div>';
+      }).join('');
+    });
+  }
+
+  function cancelarEvento(id, producto) {
+    if(!confirm('¿Cancelar esta producción programada?')) return;
+    fetch('/api/programacion/programar/'+id, {method:'DELETE'})
+      .then(function(r){ return r.json(); }).then(function(d){
+        if(d.ok){ cargarEventosProducto(producto); actualizarDashboard(); }
+      });
+  }
+
+  // ── MP Bridge UI ─────────────────────────────────────────────────────────
+  function toggleBridgePanel(){
+    var body = document.getElementById('bridge-panel-body');
+    if(!body) return;
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function cargarUnmatched(btn){
+    var list = document.getElementById('unmatched-list');
+    var cnt  = document.getElementById('unmatched-count');
+    if(btn){ btn.disabled=true; btn.textContent='Cargando...'; }
+    try {
+      var r = await fetch('/api/programacion/mp-bridge/unmatched');
+      var d = await r.json();
+      if(cnt) cnt.textContent = '(' + d.total_unmatched + ' sin enlazar)';
+      if(!d.unmatched || d.unmatched.length === 0){
+        list.innerHTML = '<div style="color:#2B7A78;font-size:12px;padding:8px">✅ Todos los MPs de fórmulas tienen enlace o ya coinciden automáticamente.</div>';
+      } else {
+        list.innerHTML = d.unmatched.map(function(u){
+          var cands = (u.candidates||[]).slice(0,5);
+          var candHtml = cands.length === 0
+            ? '<span style="color:#aaa;font-size:11px">Sin candidatos automáticos</span>'
+            : cands.map(function(c){
+                var safeF = encodeURIComponent(JSON.stringify({
+                  formula_material_id: u.formula_material_id,
+                  formula_material_nombre: u.formula_material_nombre,
+                  bodega_material_id: c.material_id,
+                  bodega_material_nombre: c.material_nombre
+                }));
+                return '<button onclick="linkBridge(this,\'' + safeF + '\')" ' +
+                  'style="background:#f0f4ff;border:1px solid #c5cef9;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin:2px">' +
+                  c.material_id + ' — ' + (c.material_nombre||'').substring(0,30) +
+                  ' (' + c.shared_keywords.join(',') + ')' +
+                  '</button>';
+              }).join('');
+          return '<div style="border:1px solid #e8d5c0;border-radius:6px;padding:10px;margin-bottom:8px;background:#fffaf5">' +
+            '<div style="font-size:12px;font-weight:600;color:#5c3317;margin-bottom:6px">' +
+              u.formula_material_id + ' — ' + u.formula_material_nombre +
+            '</div>' +
+            '<div style="font-size:11px;color:#666;margin-bottom:6px">Candidatos: ' + candHtml + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+              '<input id="fid-' + u.formula_material_id + '" placeholder="ID Bodega (ej: MP00293)" ' +
+                'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:160px">' +
+              '<input id="fn-' + u.formula_material_id + '" placeholder="Nombre bodega (opcional)" ' +
+                'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:200px">' +
+              '<button onclick="linkBridgeManual(this,\'' + u.formula_material_id + '\',\'' + u.formula_material_nombre.replace(/'/g,"") + '\')" ' +
+                'style="background:#5c3317;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Enlazar</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+    } catch(e) {
+      if(list) list.innerHTML = '<div style="color:#c00;font-size:12px">Error: ' + e.message + '</div>';
+    }
+    if(btn){ btn.disabled=false; btn.textContent='\u21BA Cargar'; }
+  }
+
+  async function linkBridge(btn, safePayload){
+    var payload;
+    try { payload = JSON.parse(decodeURIComponent(safePayload)); } catch(e){ alert('Error decodificando payload'); return; }
+    btn.disabled=true; btn.style.background='#c5cef9';
+    var r = await fetch('/api/programacion/mp-bridge', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if(d.ok){
+      _toast('Enlazado: ' + payload.formula_material_id + ' \u2192 ' + payload.bodega_material_id, 1);
+      cargarUnmatched(null);
+      cargarBridgeMappings();
+    } else {
+      _toast('Error: ' + (d.error||'desconocido'), 0);
+      btn.disabled=false;
+    }
+  }
+
+  async function linkBridgeManual(btn, fid, fname){
+    var bidEl = document.getElementById('fid-' + fid);
+    var bnameEl = document.getElementById('fn-' + fid);
+    var bid = bidEl ? bidEl.value.trim() : '';
+    var bname = bnameEl ? bnameEl.value.trim() : '';
+    if(!bid){ alert('Ingresa el ID de Bodega (ej: MP00293)'); return; }
+    btn.disabled=true;
+    var r = await fetch('/api/programacion/mp-bridge', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        formula_material_id: fid,
+        formula_material_nombre: fname,
+        bodega_material_id: bid,
+        bodega_material_nombre: bname
+      })
+    });
+    var d = await r.json();
+    if(d.ok){
+      _toast('Enlazado: ' + fid + ' \u2192 ' + bid, 1);
+      cargarUnmatched(null);
+      cargarBridgeMappings();
+    } else {
+      _toast('Error: ' + (d.error||'desconocido'), 0);
+    }
+    btn.disabled=false;
+  }
+
+  async function cargarBridgeMappings(){
+    var el = document.getElementById('bridge-mappings-list');
+    if(!el) return;
+    var r = await fetch('/api/programacion/mp-bridge');
+    var rows = await r.json();
+    var active = rows.filter(function(x){ return x.activo; });
+    if(active.length === 0){
+      el.innerHTML = '<div style="color:#aaa;font-style:italic;font-size:12px">— sin mapeos activos —</div>';
+      return;
+    }
+    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="background:#f5f5f5">' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Formula ID</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Formula Nombre</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Bodega ID</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Bodega Nombre</th>' +
+        '<th style="padding:5px 8px;border-bottom:1px solid #ddd"></th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+      active.map(function(m){
+        return '<tr style="border-bottom:1px solid #f0f0f0">' +
+          '<td style="padding:5px 8px;font-family:monospace;color:#5c3317">' + m.formula_material_id + '</td>' +
+          '<td style="padding:5px 8px">' + (m.formula_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px;font-family:monospace;color:#2B7A78">' + m.bodega_material_id + '</td>' +
+          '<td style="padding:5px 8px">' + (m.bodega_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px">' +
+            '<button onclick="eliminarBridge(' + m.id + ')" ' +
+              'style="background:#dc3545;color:#fff;border:none;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer">✕</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
+
+  async function eliminarBridge(id){
+    if(!confirm('¿Eliminar este enlace?')) return;
+    var r = await fetch('/api/programacion/mp-bridge/' + id, {method:'DELETE'});
+    var d = await r.json();
+    if(d.ok){ _toast('Enlace eliminado', 1); cargarBridgeMappings(); cargarUnmatched(null); }
+  }
+  </script>
+
 </body>
 </html>
 """

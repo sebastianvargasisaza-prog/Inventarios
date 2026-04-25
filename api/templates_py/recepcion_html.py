@@ -84,7 +84,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 </head>
 <body>
 <div class="topbar">
-  <a href="/" class="hub-link">&#8592; Inicio</a>
+  <a href="/modulos" class="hub-link">&#x1F4F1; M&#xF3;dulos</a>
   <h1>&#128230; Recepcion de Mercancia</h1>
 </div>
 <div class="container">
@@ -104,6 +104,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 
     <div id="oc-section" style="display:none">
       <div class="oc-info" id="oc-header"></div>
+      <div id="oc-estado-warn" style="display:none;margin:10px 0;padding:12px 16px;border-radius:6px;font-weight:600;"></div>
       <div style="overflow-x:auto;">
         <table>
           <thead>
@@ -226,7 +227,9 @@ async function buscarOC() {
     var r = await fetch('/api/recepcion/detalle/' + encodeURIComponent(num));
     var d = await r.json();
     if (!r.ok || d.error) {
-      showMsg('oc-msg', d.error || 'OC no encontrada', 'err');
+      var msg = d.error || 'OC no encontrada';
+      if (r.status === 422) msg = '⛔ ' + msg;
+      showMsg('oc-msg', msg, 'err');
       document.getElementById('oc-section').style.display = 'none';
       return;
     }
@@ -253,12 +256,23 @@ function renderOC(d) {
     '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(d.valor_total||0).toLocaleString() + '</div></div>' +
     '<div><div class="lbl">Categoria</div><div class="val">' + (d.categoria||'MP') + '</div></div>';
 
+  // Advertencia si OC ya fue procesada (static div in HTML, no DOM insertion needed)
+  var warnEl = document.getElementById('oc-estado-warn');
+  if (d.estado === 'Recibida' || d.estado === 'Pagada') {
+    warnEl.style.background = '#fef9c3'; warnEl.style.color = '#854d0e'; warnEl.style.border = '1px solid #fde047'; warnEl.style.display = 'block';
+    warnEl.textContent = '\u26a0 Esta OC ya fue recibida (' + d.estado + '). Puedes consultar pero el registro de recepcion esta completo.';
+  } else if (d.estado === 'Rechazada') {
+    warnEl.style.background = '#fee2e2'; warnEl.style.color = '#991b1b'; warnEl.style.border = '1px solid #fca5a5'; warnEl.style.display = 'block';
+    warnEl.textContent = '\u274c Esta OC fue rechazada y no puede recibirse.';
+  } else {
+    warnEl.style.display = 'none'; warnEl.textContent = '';
+  }
   var tbody = document.getElementById('items-body');
   tbody.innerHTML = '';
   var items = d.items || [];
   for (var idx = 0; idx < items.length; idx++) {
     (function(i, it) {
-      var unidad = (d.categoria === 'MEE') ? 'uds' : 'g';
+      var unidad = it.unidad || ((d.categoria === 'MEE') ? 'uds' : 'g');
       var prevRec = (it.cantidad_recibida_g > 0) ? it.cantidad_recibida_g : it.cantidad_g;
       var pct = it.cantidad_g > 0 ? Math.round(prevRec / it.cantidad_g * 100) : 100;
       var tr = document.createElement('tr');
@@ -338,6 +352,8 @@ async function registrarRecepcion() {
     receptor_nombre: receptor
   };
   showMsg('submit-msg', 'Registrando...', '');
+  var _submitBtn = document.querySelector('.btn-success');
+  if (_submitBtn) { _submitBtn.disabled = true; _submitBtn.textContent = 'Registrando...'; }
   try {
     var r = await fetch('/api/ordenes-compra/' + encodeURIComponent(currentOC.numero_oc) + '/recibir', {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
@@ -358,14 +374,17 @@ async function registrarRecepcion() {
       document.getElementById('oc-section').style.display = 'none';
       currentOC = null;
       document.getElementById('oc-input').value = '';
+      document.getElementById('receptor-input').value = '';
       document.getElementById('obs-input').value = '';
+      if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
       loadMonitoreo();
       loadQueue();
       loadCuarentena();
     } else {
       showMsg('submit-msg', d.error || 'Error al registrar', 'err');
+      if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
     }
-  } catch(e) { showMsg('submit-msg', 'Error de red: ' + e.message, 'err'); }
+  } catch(e) { showMsg('submit-msg', 'Error de red: ' + e.message, 'err'); if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; } }
 }
 
 function imprimirActaRecepcion(oc, payload, result) {
@@ -435,7 +454,7 @@ function buildTable(rows) {
   if (!rows.length) return '<div class="empty">Sin registros</div>';
   var h = '<div style="overflow-x:auto"><table><thead><tr>'
     + '<th>OC</th><th>Proveedor</th><th>Cat.</th><th>Valor</th>'
-    + '<th>Fecha OC</th><th>F. Aut.</th><th>F. Pago</th><th>F. Recepcion</th><th>Observaciones</th>'
+    + '<th>Fecha OC</th><th>F. Aut.</th><th>F. Pago</th><th>F. Recepcion</th><th>Recibido Por</th><th>Observaciones</th>'
     + '</tr></thead><tbody>';
   rows.forEach(function(row) {
     var disc = row.tiene_discrepancias ? '<span class="disc"> &#9888; DISC</span>' : '';
@@ -446,6 +465,7 @@ function buildTable(rows) {
       + '<td>' + fmtDate(row.fecha_autorizacion) + '</td>'
       + '<td>' + fmtDate(row.fecha_pago) + '</td>'
       + '<td>' + (row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:#d97706">Pendiente</span>') + '</td>'
+      + '<td style="color:#57534e">' + (row.recibido_por||'—') + '</td>'
       + '<td style="max-width:200px;color:#57534e">' + (row.observaciones||'—') + '</td>'
       + '</tr>';
   });

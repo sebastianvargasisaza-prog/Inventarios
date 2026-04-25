@@ -60,12 +60,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 .refresh-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
 .refresh-btn:hover{background:rgba(255,255,255,0.15);color:white;}
 .ultima-act{font-size:0.72em;color:rgba(255,255,255,0.25);margin-left:10px;}
+.prog-bar-wrap{background:rgba(255,255,255,0.08);border-radius:20px;height:10px;overflow:hidden;margin:6px 0 3px;}
+.prog-bar{height:100%;border-radius:20px;transition:width 0.8s ease;background:linear-gradient(90deg,#2B7A78,#7ACFCC);}
+.prog-bar.danger{background:linear-gradient(90deg,#ef4444,#f87171);}
+.prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#fcd34d);}
+.churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.churn-item:last-child{border-bottom:none;}
+.badge-crit{background:rgba(239,68,68,0.2);color:#fca5a5;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-atenc{background:rgba(245,158,11,0.2);color:#fcd34d;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
 </style>
 </head>
 <body>
 <div class="topbar">
   <div class="topbar-left">
-    <a href="/" style="color:#a8a29e;text-decoration:none;font-size:12px;margin-right:4px;">&#8592; Inicio</a>
+    <a href="/hub" style="color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:600;margin-right:4px;">&#8962; Hub</a>
     <span class="logo">HHA GROUP</span>
     <span class="badge-ceo">PANEL GERENCIAL</span>
     <span class="periodo-badge" id="periodo-label">Cargando...</span>
@@ -73,7 +81,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div style="display:flex;align-items:center;gap:12px;">
     <button class="refresh-btn" onclick="loadKPIs()">⟳ Actualizar</button>
     <span class="ultima-act" id="ultima-actualizacion"></span>
-    <a href="/" style="font-size:12px;color:#a8a29e;text-decoration:none;">&#8592; Inicio</a>
+    <a href="/hub" style="font-size:12px;font-weight:700;color:#e2e8f0;text-decoration:none;border:1px solid rgba(255,255,255,0.25);padding:5px 12px;border-radius:6px;">&#8962; Panel</a>
   </div>
 </div>
 
@@ -87,10 +95,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
   <!-- FINANCIERO (inputs manuales) -->
   <div class="section-title">💰 Financiero del mes</div>
-  <div class="finanzas-grid">
+  <div class="finanzas-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
     <div class="fin-card"><div class="fin-val" id="fin-caja">—</div><div class="fin-lbl">Saldo de caja</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-animus">—</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-maquila">—</div><div class="fin-lbl">Ingresos Maquila</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#fcd34d;">—</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:rgba(255,255,255,0.3);margin-top:3px;" id="fin-nomina-emp"></div></div>
   </div>
 
   <!-- ESPAGIRIA -->
@@ -115,6 +124,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
       <div class="kpi-val" id="val-ocs">—</div>
       <div class="kpi-lbl">OCs pendientes aprobación</div>
       <div class="kpi-sub" id="sub-ocs-val">—</div>
+    </div>
+    <div class="kpi" id="kpi-sol-pend" style="cursor:pointer;" onclick="location.href='/compras'">
+      <div class="kpi-val" id="val-sol-pend">—</div>
+      <div class="kpi-lbl">Solicitudes a Compras</div>
+      <div class="kpi-sub" style="font-size:0.78em;opacity:0.6;">Pendientes de aprobar → /compras</div>
     </div>
     <div class="kpi" id="kpi-mee-bajos">
       <div class="kpi-val" id="val-mee-bajos">—</div>
@@ -146,7 +160,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <!-- DETALLE DOS COLUMNAS -->
   <div class="two-cols">
     <div class="panel">
-      <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Inventario Espagiria</div>
+      <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Planta Espagiria</div>
       <div id="detalle-inventario"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
@@ -196,11 +210,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
+    <a href="/hub" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.35);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
     <a href="/recepcion" style="background:rgba(43,122,120,0.2);border:1px solid rgba(43,122,120,0.4);color:#7ACFCC;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
     <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
     <a href="/compras" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
     <a href="/clientes" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
     <a href="/financiero" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">💰 Financiero</a>
+    <a href="/calidad" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔬 Calidad</a>
+    <a href="/rrhh" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👥 RRHH</a>
+    <a href="/tecnica" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔧 Técnica</a>
   </div>
 
 
@@ -224,6 +242,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
       <div id="gx-maquila"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
     </div>
+    <div class="panel">
+      <div class="panel-title">📊 Meta Maquila 2026</div>
+      <div id="gx-maquila-target"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:12px;">
+    <div class="panel">
+      <div class="panel-title">💄 Inversion Influencers YTD</div>
+      <div id="gx-influencer"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📦 Valor Inventario MP (COP)</div>
+      <div id="gx-inv-cop"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">&#128276; Alertas recompra clientes</div>
+      <div id="gx-churn"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:28px;">
     <div class="panel">
@@ -237,6 +273,44 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="panel">
       <div class="panel-title">🔒 Accesos recientes</div>
       <div id="gx-sec"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+    </div>
+  </div>
+
+
+  <!-- Capa 4: Feed Aliados → Gerencia -->
+  <div class="section-title" style="margin-top:32px;">🤝 Canal Aliados — Vista Gerencia</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+
+    <!-- Mix de canales -->
+    <div class="panel">
+      <div class="panel-title">📊 Mix canales · este mes</div>
+      <div id="g4-mix">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- Concentración de riesgo -->
+    <div class="panel">
+      <div class="panel-title">⚠️ Concentración de riesgo</div>
+      <div id="g4-riesgo">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- Estado del canal -->
+    <div class="panel">
+      <div class="panel-title">🔋 Estado del canal</div>
+      <div id="g4-estado">
+        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tendencia ticket por mes -->
+  <div class="panel" style="margin-bottom:28px;">
+    <div class="panel-title">📈 Tendencia ticket promedio — canal aliados (6 meses)</div>
+    <div id="g4-trend" style="display:flex;gap:8px;align-items:flex-end;padding:8px 0;min-height:80px;">
+      <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
     </div>
   </div>
 
@@ -267,6 +341,9 @@ async function loadKPIs(){
     document.getElementById('fin-caja').textContent=fmt(f.saldo_caja);
     document.getElementById('fin-animus').textContent=fmt(f.ingresos_animus);
     document.getElementById('fin-maquila').textContent=fmt(f.ingresos_maquila);
+    var nom=d.nomina||{};
+    document.getElementById('fin-nomina').textContent=nom.total&&nom.total>0?fmt(nom.total):'—';
+    document.getElementById('fin-nomina-emp').textContent=nom.empleados?nom.empleados+' activos':'';
 
     // Espagiria KPIs
     var mpsBajos=e.mps_bajo_minimo||0;
@@ -278,28 +355,31 @@ async function loadKPIs(){
     document.getElementById('val-mee-bajos').textContent=meeBajos;
     setKPIColor('kpi-mee-bajos','val-mee-bajos',meeBajos>3?'rojo':(meeBajos>0?'amarillo':'verde'));
 
-    var v30=e.lotes_vencen_30d||0;
+    var v30=e.lotes_vence_30||0;
     document.getElementById('val-vencen30').textContent=v30;
-    document.getElementById('sub-vencen60').textContent='En 60 días: '+(e.lotes_vencen_60d||0)+' lotes';
+    document.getElementById('sub-vencen60').textContent='En 60 dias: '+(e.lotes_vence_60||0)+' lotes';
     setKPIColor('kpi-vencen30','val-vencen30',v30>0?'rojo':'verde');
 
-    document.getElementById('val-lotes-mes').textContent=e.lotes_produccion_mes||0;
-    document.getElementById('sub-kg-mes').textContent=(e.kg_producidos_mes||0)+' kg producidos';
+    document.getElementById('val-lotes-mes').textContent=e.prod_mes||0;
+    document.getElementById('sub-kg-mes').textContent=parseFloat(e.kg_mes||0).toFixed(1)+' kg producidos';
 
-    var ocs=e.ocs_pendientes_aprobacion||0;
+    var ocs=e.ocs_pendientes||0;
     document.getElementById('val-ocs').textContent=ocs;
-    document.getElementById('sub-ocs-val').textContent='Valor: '+fmt(e.valor_ocs_pendientes||0);
+    document.getElementById('sub-ocs-val').textContent='';
     setKPIColor('kpi-ocs','val-ocs',ocs>3?'amarillo':'verde');
+    var solPend=e.sol_pendientes||0;
+    document.getElementById('val-sol-pend').textContent=solPend;
+    setKPIColor('kpi-sol-pend','val-sol-pend',solPend>0?'amarillo':'verde');
 
     // ÁNIMUS KPIs
-    document.getElementById('val-uds-pt').textContent=fmtN(a.unidades_pt_disponibles||0);
-    document.getElementById('sub-skus-pt').textContent=(a.skus_con_stock_pt||0)+' SKUs con stock';
+    document.getElementById('val-uds-pt').textContent=fmtN(a.uds_pt||0);
+    document.getElementById('sub-skus-pt').textContent=(a.skus_stock||0)+' SKUs con stock';
 
     var pedAct=a.pedidos_activos||0;
     document.getElementById('val-pedidos-act').textContent=pedAct;
     document.getElementById('sub-pedidos-val').textContent='Valor: '+fmt(a.valor_pedidos_activos||0);
 
-    var diasFM=a.dias_desde_ultimo_pedido_fm;
+    var diasFM=a.dias_desde_fm;
     var diasFMEl=document.getElementById('val-fm-dias');
     diasFMEl.textContent=diasFM!=null?diasFM+' días':'Sin pedidos';
     setKPIColor('kpi-fm','val-fm-dias',diasFM>62?'amarillo':'verde');
@@ -314,15 +394,16 @@ async function loadKPIs(){
     di+='<div class="data-row"><span class="data-lbl">MEE bajo mínimo</span><span class="data-val '+(meeBajos>0?'amarillo':'verde')+'">'+meeBajos+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Déficit total</span><span class="data-val '+(e.deficit_total_kg>0?'amarillo':'verde')+'">'+((e.deficit_total_kg||0).toFixed(1))+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 30d</span><span class="data-val '+(v30>0?'rojo':'verde')+'">'+v30+'</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vencen_60d>0?'amarillo':'verde')+'">'+(e.lotes_vencen_60d||0)+'</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+(e.lotes_produccion_mes||0)+' lotes / '+(e.kg_producidos_mes||0)+' kg</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vence_60>0?'amarillo':'verde')+'">'+(e.lotes_vence_60||0)+'</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+( e.prod_mes||0)+' lotes / '+parseFloat(e.kg_mes||0).toFixed(1)+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:rgba(255,255,255,0.5);font-size:0.82em;">→ ver</a></span></div>';
     document.getElementById('detalle-inventario').innerHTML=di;
 
     // Detalle ÁNIMUS
     var da='';
-    da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.unidades_pt_disponibles||0)+'</span></div>';
-    da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_con_stock_pt||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Unidades PT disponibles</span><span class="data-val verde">'+fmtN(a.uds_pt||0)+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_stock||0)+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+' ('+fmt(a.valor_pedidos_activos||0)+')</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Último pedido FM</span><span class="data-val">'+(a.ultimo_pedido_fm||'Sin datos')+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'—')+'</span></div>';
@@ -334,8 +415,9 @@ async function loadKPIs(){
     if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> — Revisar stock MEE en módulo Compras.'});
     if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> — Revisar y usar en próximas producciones (FEFO).'});
     if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
+    if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> — Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
     if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
-    if(f.saldo_caja>0&&f.nomina_total>0&&f.saldo_caja<f.nomina_total*2) alertas.push({icon:'🔴',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nóminas.'});
+    var nomVal=(nom&&nom.total)||0; if(f.saldo_caja>0&&nomVal>0&&f.saldo_caja<nomVal*2) alertas.push({icon:'&#128308;',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nominas (nomina: '+fmt(nomVal)+')'});
 
     var panel=document.getElementById('alertas-panel');
     if(alertas.length>0){
@@ -351,7 +433,7 @@ async function loadKPIs(){
     if(f.saldo_caja) document.getElementById('inp-caja').value=f.saldo_caja;
     if(f.ingresos_animus) document.getElementById('inp-animus').value=f.ingresos_animus;
     if(f.ingresos_maquila) document.getElementById('inp-maquila').value=f.ingresos_maquila;
-    if(f.nomina_total) document.getElementById('inp-nomina').value=f.nomina_total;
+    if(nom.total) document.getElementById('inp-nomina').value=nom.total;
     if(f.notas) document.getElementById('inp-notas').value=f.notas;
 
   }catch(e){console.error(e);}
@@ -449,10 +531,15 @@ async function loadGerenciaExtra() {
     // Ingresos del mes
     var ig = d.ingresos_mes||{};
     var elI = document.getElementById('gx-ingresos');
-    if(elI) elI.innerHTML =
-      '<div class="data-row"><span class="data-lbl">ANIMUS</span><span class="data-val verde">'+fmtV(ig.animus)+'</span></div>'
-      +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
-      +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+    if(elI){
+      var shpMom = ig.shopify>0 ? ' <span style="font-size:10px;color:#34d399;">Shopify ✓</span>' : '';
+      elI.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Aliados B2B</span><span class="data-val verde">'+fmtV(ig.aliados||ig.animus)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Shopify DTC'+shpMom+'</span><span class="data-val verde">'+fmtV(ig.shopify)+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.08);margin-top:3px;padding-top:3px;"><span class="data-lbl">ÁNIMUS total</span><span class="data-val verde">'+fmtV(ig.animus_total)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Grand Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+    }
 
     // AR
     var ar = d.ar||{};
@@ -525,11 +612,139 @@ async function loadGerenciaExtra() {
       elSec.innerHTML = secH;
     }
 
+
+    // Maquila target
+    var mt=d.maquila_target||{}; var elMT=document.getElementById('gx-maquila-target');
+    if(elMT){
+      var pctE=Math.min(mt.pct_espagiria||0,100); var pctH=Math.min(mt.pct_hha||0,100);
+      elMT.innerHTML='<div class="data-row"><span class="data-lbl">Meta Espagiria $30M</span><span class="data-val '+(pctE>=80?'verde':(pctE>=40?'amarillo':'rojo'))+'">'+pctE+'%</span></div>'
+        +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctE<40?'danger':(pctE<80?'warn':''))+'" style="width:'+pctE+'%"></div></div>'
+        +'<div class="data-row" style="margin-top:8px;"><span class="data-lbl">Meta HHA $76M</span><span class="data-val '+(pctH>=80?'verde':(pctH>=40?'amarillo':'rojo'))+'">'+pctH+'%</span></div>'
+        +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctH<40?'danger':(pctH<80?'warn':''))+'" style="width:'+pctH+'%"></div></div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);margin-top:6px;">YTD: '+fmtV(mt.ytd||0)+'</div>';
+    }
+    // Influencer spend
+    var inf=d.influencer_spend||{}; var elInf=document.getElementById('gx-influencer');
+    if(elInf){
+      var infV=inf.ytd||0;
+      elInf.innerHTML='<div class="data-row"><span class="data-lbl">Total YTD</span><span class="data-val '+(infV>5000000?'amarillo':'verde')+'">'+fmtV(infV)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">OCs generadas</span><span class="data-val">'+(inf.ocs||0)+'</span></div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.3);margin-top:6px;">Categorias: Influencer + Marketing</div>';
+    }
+    // Inventory COP
+    var invC=d.inventory_cop||0; var elIC=document.getElementById('gx-inv-cop');
+    if(elIC){
+      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:#7ACFCC;padding:8px 0 4px;">'+fmtV(invC)+'</div>'
+        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);">Precio promedio OC x lotes activos</div>';
+    }
+    // Churn alerts
+    var churns=d.churn_alerts||[]; var elCh=document.getElementById('gx-churn');
+    if(elCh){
+      if(!churns.length){ elCh.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
+      else{
+        elCh.innerHTML=churns.slice(0,5).map(function(ch){
+          return '<div class="churn-item"><div><div style="font-size:0.85em;color:rgba(255,255,255,0.8);">'+(ch.nombre||'')+'</div>'
+            +'<div style="font-size:0.72em;color:rgba(255,255,255,0.35);">Ultimo: '+(ch.ultimo_pedido||'—')+'</div></div>'
+            +'<span class="'+(ch.nivel==='critico'?'badge-crit':'badge-atenc')+'">'+(ch.dias||0)+'d</span></div>';
+        }).join('');
+        if(churns.length>5) elCh.innerHTML+='<div style="font-size:0.75em;color:rgba(255,255,255,0.3);padding:4px 0;">+'+(churns.length-5)+' mas</div>';
+      }
+    }
   } catch(e){ console.error('loadGerenciaExtra:', e); }
 }
 
 loadGerenciaExtra();
 setInterval(loadGerenciaExtra, 300000);
+loadAliados4();
+setInterval(loadAliados4, 300000);
+
+async function loadAliados4() {
+  try {
+    var d = await fetch('/api/gerencia/aliados-feed').then(function(r){ return r.json(); });
+    if(d.error){ console.error('aliados-feed:', d.error); return; }
+    var fv = function(n){ if(n==null) return '—'; var v=Math.abs(n); return '$'+(v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO')); };
+
+    // Mix canales
+    var canal = d.canal || {};
+    var g4mix = document.getElementById('g4-mix');
+    if(g4mix){
+      var momTxt = canal.mom_aliados>0 ? '▲'+canal.mom_aliados+'%' : canal.mom_aliados<0 ? '▼'+Math.abs(canal.mom_aliados)+'%' : '=0%';
+      var momClr = canal.mom_aliados>0 ? 'verde' : canal.mom_aliados<0 ? 'rojo' : '';
+      // Mini bar aliados vs shopify
+      var pctA = canal.pct_ali_mes || 0;
+      var pctS = canal.pct_shp_mes || 0;
+      g4mix.innerHTML =
+        '<div style="margin-bottom:8px;">'
+        +'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:6px;">'
+        +'<div style="width:'+pctA+'%;background:#a78bfa;" title="Aliados '+pctA+'%"></div>'
+        +'<div style="width:'+pctS+'%;background:#34d399;" title="Shopify '+pctS+'%"></div>'
+        +'</div>'
+        +'<div style="display:flex;justify-content:space-between;font-size:10px;">'
+        +'<span style="color:#a78bfa;">■ Aliados '+pctA+'%</span>'
+        +'<span style="color:#34d399;">■ Shopify '+pctS+'%</span>'
+        +'</div>'
+        +'</div>'
+        +'<div class="data-row"><span class="data-lbl">Aliados</span><span class="data-val verde">'+fv(canal.aliados_mes)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Shopify</span><span class="data-val verde">'+fv(canal.shopify_mes)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">MoM canal</span><span class="data-val '+momClr+'">'+momTxt+'</span></div>'
+        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl">Total mes</span><span class="data-val verde"><strong>'+fv(canal.total_mes)+'</strong></span></div>';
+    }
+
+    // Concentración de riesgo
+    var riesgo = d.riesgo || {};
+    var g4riesgo = document.getElementById('g4-riesgo');
+    if(g4riesgo){
+      var c1 = riesgo.concentracion_top1 || 0;
+      var c3 = riesgo.concentracion_top3 || 0;
+      var riesgoClr = c1 >= 50 ? 'rojo' : c1 >= 30 ? 'amarillo' : 'verde';
+      var top3html = (riesgo.top3_aliados || []).map(function(a,i){
+        return '<div class="data-row"><span class="data-lbl">'+(i+1)+'. '+a.nombre+'</span><span class="data-val">'+a.pct+'%</span></div>';
+      }).join('');
+      g4riesgo.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Top 1 aliado</span><span class="data-val '+riesgoClr+'">'+c1+'%</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Top 3 aliados</span><span class="data-val '+(c3>=70?'amarillo':'verde')+'">'+c3+'%</span></div>'
+        +'<div style="margin:8px 0 4px;font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;">Top 3 detalle</div>'
+        + top3html;
+    }
+
+    // Estado del canal
+    var g4estado = document.getElementById('g4-estado');
+    if(g4estado){
+      var vrClr = (riesgo.valor_en_riesgo||0) > 1000000 ? 'rojo' : (riesgo.valor_en_riesgo||0) > 0 ? 'amarillo' : 'verde';
+      var vcClr = (riesgo.aliados_vencidos_prediccion||0) > 0 ? 'amarillo' : 'verde';
+      g4estado.innerHTML =
+        '<div class="data-row"><span class="data-lbl">Activos (&lt;60d)</span><span class="data-val verde">'+(riesgo.aliados_activos||0)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Dormidos (&gt;60d)</span><span class="data-val '+(riesgo.aliados_dormidos>0?'rojo':'verde')+'">'+(riesgo.aliados_dormidos||0)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Valor en riesgo</span><span class="data-val '+vrClr+'">'+fv(riesgo.valor_en_riesgo)+'</span></div>'
+        +'<div class="data-row"><span class="data-lbl">Compra vencida</span><span class="data-val '+vcClr+'">'+(riesgo.aliados_vencidos_prediccion||0)+' aliados</span></div>';
+    }
+
+    // Tendencia ticket SVG
+    var g4trend = document.getElementById('g4-trend');
+    var trend = d.ticket_trend || [];
+    if(g4trend && trend.length){
+      var maxT = Math.max.apply(null, trend.map(function(t){ return t.ticket; })) || 1;
+      var barH = 70;
+      g4trend.innerHTML = trend.map(function(t){
+        var h = Math.round((t.ticket / maxT) * barH);
+        var mes = t.mes ? t.mes.slice(5) : ''; // MM
+        var meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        var mesN = parseInt(mes,10);
+        var mesNm = meses[mesN] || mes;
+        return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">'
+          +'<div style="font-size:9px;color:rgba(255,255,255,0.5);">'+fv(t.ticket)+'</div>'
+          +'<div style="width:100%;max-width:40px;height:'+h+'px;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 0 0;align-self:flex-end;"></div>'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.6);">'+mesNm+'</div>'
+          +'<div style="font-size:9px;color:rgba(255,255,255,0.3);">'+t.pedidos+'p</div>'
+          +'</div>';
+      }).join('');
+    } else if(g4trend){
+      g4trend.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin historial suficiente</div>';
+    }
+
+  } catch(e){ console.error('loadAliados4:', e); }
+}
+
 </script>
 </body>
 </html>"""

@@ -69,7 +69,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <div class="topbar">
   <h1>&#x1F4CB; Compromisos — HHA Group</h1>
   <div class="tb-right">
-    <a href="/">&#x2190; Hub</a>
+    <a href="/modulos" style="font-weight:700;">&#x1F4F1; M&#xF3;dulos</a>
     <a href="/gerencia">Gerencia</a>
   </div>
 </div>
@@ -183,8 +183,8 @@ function render(){
         '</div>'+
         (c.notas?'<div style="font-size:11px;color:#78716c;font-style:italic;margin-top:4px;">'+esc(c.notas)+'</div>':'')+
         '<div class="comp-actions">'+
-          (!isDone?'<button class="btn btn-succ" onclick="marcar('+c.id+','Completado')">Completado</button>':'') +
-          (c.estado==='Pendiente'?'<button class="btn btn-warn" onclick="marcar('+c.id+','En Proceso')">En Proceso</button>':'')+
+          (!isDone?'<button class="btn btn-succ" onclick="marcar('+c.id+',\\'Completado\\')">Completado</button>':'') +
+          (c.estado==='Pendiente'?'<button class="btn btn-warn" onclick="marcar('+c.id+',\\'En Proceso\\')">En Proceso</button>':'')+
           '<button class="btn btn-outl" onclick="promptNota('+c.id+')">Nota</button>'+
         '</div>'+
       '</div></div>';

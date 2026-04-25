@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -26,10 +27,9 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('hub', __name__)
 
-
 @bp.route('/api/hub/resumen')
 def hub_resumen():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     # OCs
     c.execute("SELECT estado, COUNT(*), COALESCE(SUM(valor_total),0) FROM ordenes_compra GROUP BY estado")
     oc_data = {r[0]:{'count':r[1],'valor':r[2]} for r in c.fetchall()}
@@ -64,7 +64,6 @@ def hub_resumen():
     # Clientes activos
     c.execute("SELECT COUNT(*) FROM clientes WHERE activo=1")
     clientes_activos = c.fetchone()[0] or 0
-    conn.close()
     return jsonify({
         'ocs': {'por_autorizar': cnt_por_autorizar, 'por_pagar': cnt_por_pagar,
                 'valor_autorizar': val_por_autorizar, 'valor_pagar': val_por_pagar},
@@ -76,7 +75,7 @@ def hub_resumen():
 
 @bp.route('/api/hub/alertas')
 def hub_alertas():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     hoy = datetime.now().strftime('%Y-%m-%d')
     alertas = []
     # OCs Revisadas sin autorizar (> 2 dias)
@@ -150,21 +149,20 @@ def hub_alertas():
     resumen = {'critico': sum(1 for a in alertas if a['nivel']=='critico'),
                'atencion': sum(1 for a in alertas if a['nivel']=='atencion'),
                'info': sum(1 for a in alertas if a['nivel']=='info')}
-    conn.close()
     return jsonify({'alertas': alertas[:15], 'resumen': resumen})
 
 @bp.route('/api/compromisos', methods=['GET','POST'])
 def handle_compromisos():
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
-        if not d.get('descripcion'): conn.close(); return jsonify({'error':'Descripcion requerida'}),400
+        if not d.get('descripcion'): return jsonify({'error':'Descripcion requerida'}),400
         c.execute("""INSERT INTO compromisos (descripcion,responsable,area,fecha_limite,estado,prioridad,origen,empresa,fecha_creacion)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d['descripcion'],d.get('responsable',''),d.get('area',''),d.get('fecha_limite',''),
                    d.get('estado','Pendiente'),d.get('prioridad','Normal'),d.get('origen',''),
                    d.get('empresa','Espagiria'),datetime.now().strftime('%Y-%m-%d')))
-        conn.commit(); conn.close()
+        conn.commit()
         return jsonify({'ok':True,'id':c.lastrowid}), 201
     estado_f = request.args.get('estado','')
     empresa_f = request.args.get('empresa','')
@@ -177,26 +175,27 @@ def handle_compromisos():
     c.execute(sql, params)
     cols = ['id','descripcion','responsable','area','fecha_limite','estado','prioridad','origen','empresa','fecha_creacion','notas']
     rows = [dict(zip(cols,r)) for r in c.fetchall()]
-    conn.close()
     return jsonify({'compromisos': rows})
 
 @bp.route('/api/compromisos/<int:cid>', methods=['PATCH'])
 def update_compromiso(cid):
     d = request.json or {}
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     sets=[]; params=[]
     for field in ['estado','notas','fecha_limite','responsable','prioridad']:
         if field in d: sets.append(f"{field}=?"); params.append(d[field])
     if d.get('estado') == 'Completado':
         sets.append("fecha_cierre=?"); params.append(datetime.now().strftime('%Y-%m-%d'))
-    if not sets: conn.close(); return jsonify({'error':'Nada que actualizar'}),400
+    if not sets: return jsonify({'error':'Nada que actualizar'}),400
     params.append(cid)
     c.execute(f"UPDATE compromisos SET {', '.join(sets)} WHERE id=?", params)
-    conn.commit(); conn.close()
+    conn.commit()
     return jsonify({'ok':True})
 
 @bp.route('/compromisos')
 def compromisos_page():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/compromisos')
     return Response(COMPROMISOS_HTML, mimetype='text/html')
 
 @bp.route('/api/health')

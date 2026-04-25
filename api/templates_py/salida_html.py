@@ -63,7 +63,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 </head>
 <body>
 <div class="topbar">
-  <a href="/" class="rec-link">&#8592; Inicio</a>
+  <a href="/modulos" class="rec-link">&#x1F4F1; M&#xF3;dulos</a>
   <h1>&#128666; Hub de Salida — Despachos</h1>
 </div>
 <div class="container">
@@ -139,7 +139,7 @@ async function loadPedQueue() {
     var html = '<div class="ped-queue">';
     peds.forEach(function(p) {
       var estCls = (p.estado||'').toLowerCase().includes('prep') ? 'prep' : '';
-      html += '<div class="ped-card" onclick="cargarPedido(\\'\'  + p.numero + '\\\')" id="pc-' + p.numero + '">'
+      html += '<div class="ped-card" onclick="cargarPedido(\''  + p.numero + '\')" id="pc-' + p.numero + '">'
         + '<div class="pn">' + p.numero + '</div>'
         + '<div class="pc">' + (p.cliente||'Sin cliente') + '</div>'
         + '<div class="pv">$' + Number(p.valor_total||0).toLocaleString() + '</div>'
@@ -364,7 +364,7 @@ async function loadHistorial() {
     if (!pend.length) { el2.innerHTML = '<div class="empty">Sin pedidos pendientes</div>'; return; }
     var h2 = '<div style="overflow-x:auto"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Valor</th><th>Estado</th><th>Fecha</th><th>Accion</th></tr></thead><tbody>';
     pend.forEach(function(p) {
-      h2 += '<tr><td><strong>' + p.numero + '</strong></td><td>' + (p.cliente||'—') + '</td><td>$' + Number(p.valor_total||0).toLocaleString() + '</td><td>' + p.estado + '</td><td>' + (p.fecha||'').slice(0,10) + '</td><td><button class="btn btn-primary btn-sm" onclick="cargarPedido(\\'\'  + p.numero + '\\\')" >Despachar</button></td></tr>';
+      h2 += '<tr><td><strong>' + p.numero + '</strong></td><td>' + (p.cliente||'—') + '</td><td>$' + Number(p.valor_total||0).toLocaleString() + '</td><td>' + p.estado + '</td><td>' + (p.fecha||'').slice(0,10) + '</td><td><button class="btn btn-primary btn-sm" onclick="cargarPedido(\''  + p.numero + '\')" >Despachar</button></td></tr>';
     });
     h2 += '</tbody></table></div>';
     el2.innerHTML = h2;
