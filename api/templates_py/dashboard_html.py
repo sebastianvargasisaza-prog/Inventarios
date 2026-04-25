@@ -3284,14 +3284,14 @@ async function cargarEnvasadoSimpleTab(){
   var sel = document.getElementById('env-prod-sel');
   if(sel && sel.options.length <= 1){
     try{
-      var r = await fetch('/api/formulas');
+      var r = await fetch('/api/programacion/productos');
       var d = await r.json();
-      var prods = d.formulas || d.productos || [];
+      var prods = d.formulas || [];
       if(prods.length){
         sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
         prods.forEach(function(p){
           var op = document.createElement('option');
-          var nombre = p.nombre || p.producto || p.name || JSON.stringify(p);
+          var nombre = p.nombre || p.producto_nombre || '';
           op.value = nombre; op.text = nombre;
           sel.appendChild(op);
         });
@@ -3373,13 +3373,13 @@ async function cargarAcondSimpleTab(){
   var sel = document.getElementById('ac-prod-sel');
   if(sel && sel.options.length <= 1){
     try{
-      var r = await fetch('/api/formulas');
+      var r = await fetch('/api/programacion/productos');
       var d = await r.json();
-      var prods = d.formulas || d.productos || [];
+      var prods = d.formulas || [];
       if(prods.length){
         sel.innerHTML = '<option value="">-- Selecciona producto --</option>';
         prods.forEach(function(p){
-          var nombre = p.nombre || p.producto || p.name || '';
+          var nombre = p.nombre || p.producto_nombre || '';
           var op = document.createElement('option');
           op.value = nombre; op.text = nombre;
           sel.appendChild(op);

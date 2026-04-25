@@ -137,6 +137,7 @@ from blueprints.tecnica import bp as tecnica_bp
 from blueprints.marketing import bp as marketing_bp
 from blueprints.animus import bp as animus_bp
 from blueprints.contabilidad import bp as contabilidad_bp
+from blueprints.programacion import bp as programacion_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -153,6 +154,7 @@ app.register_blueprint(tecnica_bp)
 app.register_blueprint(marketing_bp)
 app.register_blueprint(animus_bp)
 app.register_blueprint(contabilidad_bp)
+app.register_blueprint(programacion_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
