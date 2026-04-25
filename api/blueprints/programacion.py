@@ -283,19 +283,31 @@ def _fetch_local_production_events(conn):
 # ─── MP stock ────────────────────────────────────────────────────────────────
 
 def _get_mp_stock(conn):
-    """Returns dict {material_id: stock_actual_g}
-    Stock calculated from movimientos (Entrada - Salida), already in grams.
+    """Returns dict {key: stock_actual_g} keyed by BOTH material_id AND
+    normalised material_nombre so we can bridge two legacy ID systems:
+      - movimientos uses  MP00001 / MP00002 ... (Excel import)
+      - formula_items uses MPACARLI01 / MPACASSO01 ... (formulation system)
+    Lookup order in _project_stock: formula material_id first, then by name.
     """
     rows = conn.execute("""
-        SELECT material_id,
-               COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        SELECT material_id, material_nombre,
+               COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                 THEN cantidad ELSE -cantidad END), 0) AS stock_g
         FROM movimientos
-        GROUP BY material_id
+        GROUP BY material_id, material_nombre
     """).fetchall()
     stock = {}
-    for material_id, stock_g in rows:
-        if material_id:
-            stock[str(material_id).strip()] = max(float(stock_g or 0), 0)
+    for material_id, material_nombre, stock_g in rows:
+        val = max(float(stock_g or 0), 0)
+        # Index by original ID (MP00001 format)
+        if material_id and str(material_id).strip():
+            stock[str(material_id).strip()] = val
+        # Also index by normalised name for cross-system lookup
+        if material_nombre and str(material_nombre).strip():
+            key_nombre = str(material_nombre).strip().upper()
+            # Only set if not already present (first one wins for a name)
+            if key_nombre not in stock:
+                stock[key_nombre] = val
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
@@ -554,7 +566,13 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
                 needed_g = float(item['cantidad_g_por_lote']) * kg_scale
-                available_g = mp_stock.get(mid, 0)
+                # Try lookup by formula material_id (MPACARLI01) first;
+                # fall back to normalised material_nombre to bridge legacy MP00001 system
+                if mid in mp_stock:
+                    available_g = mp_stock[mid]
+                else:
+                    nombre_key = str(item.get('material_nombre', '')).strip().upper()
+                    available_g = mp_stock.get(nombre_key, 0)
                 deficit_g = max(0, needed_g - available_g)
                 ok = deficit_g < 1
                 if not ok:
@@ -1381,9 +1399,18 @@ def prog_debug_mps():
     matched   = []
     unmatched = []
     for mid, nombre in formula_mids:  # nombre = material_nombre
-        stock = mp_stock.get(mid, None)
+        # Try by ID first, then by normalised name (bridges MP00001 vs MPACARLI01 systems)
+        if mid in mp_stock:
+            stock = mp_stock[mid]
+            match_via = 'id'
+        else:
+            nombre_key = str(nombre or '').strip().upper()
+            stock = mp_stock.get(nombre_key, None)
+            match_via = 'nombre' if stock is not None else None
+
         if stock is not None:
-            matched.append({'material_id': mid, 'nombre': nombre, 'stock_g': round(stock, 1)})
+            matched.append({'material_id': mid, 'nombre': nombre,
+                            'stock_g': round(stock, 1), 'match_via': match_via})
         else:
             unmatched.append({'material_id': mid, 'nombre': nombre})
 
