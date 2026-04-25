@@ -799,6 +799,35 @@ def prog_velocidad():
     return jsonify(_shopify_velocity(conn, days=days))
 
 
+@bp.route('/api/programacion/debug-ventas')
+def prog_debug_ventas():
+    # Diagnostico completo: datos crudos de animus_shopify_orders
+    conn = get_db()
+    meta = conn.execute(
+        "SELECT COUNT(*), MIN(creado_en), MAX(creado_en) FROM animus_shopify_orders"
+    ).fetchone()
+    since = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
+    rows_60 = conn.execute(
+        "SELECT COUNT(*) FROM animus_shopify_orders WHERE creado_en >= ?", (since,)
+    ).fetchone()[0]
+    samples = conn.execute(
+        "SELECT shopify_id, creado_en, sku_items, unidades_total FROM animus_shopify_orders WHERE creado_en >= ? AND sku_items IS NOT NULL ORDER BY creado_en DESC LIMIT 5",
+        (since,)
+    ).fetchall()
+    sample_list = [{'id': r[0], 'fecha': r[1], 'sku_items': r[2], 'uds': r[3]} for r in samples]
+    vel = _shopify_velocity(conn, days=60)
+    return jsonify({
+        'ordenes_total_tabla': meta[0],
+        'fecha_min': meta[1],
+        'fecha_max': meta[2],
+        'ordenes_ultimos_60d': rows_60,
+        'muestra_reciente': sample_list,
+        'sku_velocity': vel['sku_velocity'],
+        'prod_velocity': vel['prod_velocity'],
+        'meses_analizados': vel['months_analyzed'],
+    })
+
+
 @bp.route('/api/programacion/calendario')
 def prog_calendario():
     if not _auth():
