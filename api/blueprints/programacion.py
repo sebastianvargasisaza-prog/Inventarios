@@ -442,6 +442,26 @@ def _get_mp_stock(conn):
         if key_norm and key_norm not in stock:
             stock[key_norm] = val
 
+    # Bridge tier (tier 5): formula_material_id → bodega_material_id → canonical stock.
+    # This resolves cases where formula_items uses one ID system and movimientos uses another.
+    # The mp_formula_bridge table maps them explicitly (populated via admin UI).
+    try:
+        bridge_rows = conn.execute(
+            "SELECT formula_material_id, bodega_material_id FROM mp_formula_bridge WHERE activo=1"
+        ).fetchall()
+        for fid, bid in bridge_rows:
+            fid_key = str(fid or '').strip()
+            bid_key = str(bid or '').strip()
+            if not fid_key or not bid_key:
+                continue
+            bodega_stock = id_stock.get(bid_key, 0)
+            # Index by formula_material_id (primary bridge key)
+            if fid_key not in stock:
+                stock[fid_key] = bodega_stock
+            # Also index by normalised formula name if available (from bridge table)
+    except Exception:
+        pass  # bridge table may not exist in older DB snapshots
+
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
@@ -1711,3 +1731,155 @@ def prog_debug_mp_check(producto):
         'can_produce': len(failing) == 0,
         'failing_first': result,
     })
+
+
+# ─── MP Bridge — admin endpoints ─────────────────────────────────────────────
+
+@bp.route('/mp-bridge', methods=['GET'])
+def mp_bridge_list():
+    """List all bridge mappings (active and inactive)."""
+    with _db() as conn:
+        rows = conn.execute("""
+            SELECT id, formula_material_id, formula_material_nombre,
+                   bodega_material_id, bodega_material_nombre, bodega_inci,
+                   notas, activo, creado_en
+            FROM mp_formula_bridge
+            ORDER BY formula_material_nombre NULLS LAST
+        """).fetchall()
+        keys = ['id', 'formula_material_id', 'formula_material_nombre',
+                'bodega_material_id', 'bodega_material_nombre', 'bodega_inci',
+                'notas', 'activo', 'creado_en']
+        return jsonify([dict(zip(keys, r)) for r in rows])
+
+
+@bp.route('/mp-bridge', methods=['POST'])
+def mp_bridge_add():
+    """Add or update a bridge mapping.
+
+    Body JSON: {
+        formula_material_id, formula_material_nombre,
+        bodega_material_id, bodega_material_nombre, bodega_inci, notas
+    }
+    """
+    data = request.get_json(force=True) or {}
+    fid   = str(data.get('formula_material_id', '') or '').strip()
+    fname = str(data.get('formula_material_nombre', '') or '').strip()
+    bid   = str(data.get('bodega_material_id', '') or '').strip()
+    bname = str(data.get('bodega_material_nombre', '') or '').strip()
+    binci = str(data.get('bodega_inci', '') or '').strip()
+    notas = str(data.get('notas', '') or '').strip()
+
+    if not fid or not bid:
+        return jsonify({'error': 'formula_material_id y bodega_material_id son obligatorios'}), 400
+
+    with _db() as conn:
+        conn.execute("""
+            INSERT INTO mp_formula_bridge
+                (formula_material_id, formula_material_nombre,
+                 bodega_material_id, bodega_material_nombre, bodega_inci, notas, activo)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(formula_material_id, bodega_material_id)
+            DO UPDATE SET
+                formula_material_nombre = excluded.formula_material_nombre,
+                bodega_material_nombre  = excluded.bodega_material_nombre,
+                bodega_inci             = excluded.bodega_inci,
+                notas                   = excluded.notas,
+                activo                  = 1
+        """, (fid, fname or None, bid, bname or None, binci or None, notas or None))
+        conn.commit()
+    return jsonify({'ok': True, 'formula_material_id': fid, 'bodega_material_id': bid})
+
+
+@bp.route('/mp-bridge/<int:bridge_id>', methods=['DELETE'])
+def mp_bridge_delete(bridge_id):
+    """Soft-delete a bridge mapping (sets activo=0)."""
+    with _db() as conn:
+        conn.execute("UPDATE mp_formula_bridge SET activo=0 WHERE id=?", (bridge_id,))
+        conn.commit()
+    return jsonify({'ok': True, 'id': bridge_id, 'activo': 0})
+
+
+@bp.route('/mp-bridge/unmatched', methods=['GET'])
+def mp_bridge_unmatched():
+    """Return formula_items that cannot be matched to any movimientos entry.
+
+    Useful for populating the bridge table: shows what still needs linking,
+    along with candidate bodega materials (fuzzy name match by keywords).
+    """
+    with _db() as conn:
+        mp_stock = _get_mp_stock(conn)
+
+        # All bridge mappings already in place (formula_material_id → bodega_material_id)
+        bridged_fids = set(r[0] for r in conn.execute(
+            "SELECT formula_material_id FROM mp_formula_bridge WHERE activo=1"
+        ).fetchall())
+
+        # Fetch distinct formula items (one entry per material_id)
+        items = conn.execute("""
+            SELECT DISTINCT material_id, material_nombre
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND material_id != ''
+            ORDER BY material_nombre
+        """).fetchall()
+
+        # Fetch all bodega materials for candidate suggestions
+        bodega_mats = conn.execute("""
+            SELECT DISTINCT material_id, material_nombre
+            FROM movimientos
+            WHERE material_id IS NOT NULL AND material_id != ''
+              AND material_nombre IS NOT NULL AND material_nombre != ''
+            ORDER BY material_nombre
+        """).fetchall()
+
+        unmatched = []
+        for mid, nombre in items:
+            mid = str(mid or '').strip()
+            nombre_raw = str(nombre or '').strip()
+
+            # Skip already bridged
+            if mid in bridged_fids:
+                continue
+            # Skip unlimited MPs
+            if _is_unlimited_mp(nombre_raw):
+                continue
+            # Check if already matched via stock dict
+            nombre_exact = nombre_raw.upper()
+            nombre_norm  = _norm_mp_name(nombre_raw)
+            alias_key    = _MP_NAME_ALIAS.get(nombre_norm) or _MP_NAME_ALIAS.get(nombre_exact)
+
+            already_matched = (
+                mid in mp_stock
+                or nombre_exact in mp_stock
+                or nombre_norm in mp_stock
+                or (alias_key and alias_key in mp_stock)
+            )
+            if already_matched:
+                continue
+
+            # Build candidate suggestions: bodega materials whose normalized name
+            # shares at least one 4-char keyword with the formula material name
+            formula_keywords = set(w for w in nombre_norm.split() if len(w) >= 4)
+            candidates = []
+            for bid, bname in bodega_mats:
+                bname_norm = _norm_mp_name(str(bname or ''))
+                bname_words = set(w for w in bname_norm.split() if len(w) >= 4)
+                shared = formula_keywords & bname_words
+                if shared:
+                    candidates.append({
+                        'material_id': bid,
+                        'material_nombre': bname,
+                        'shared_keywords': sorted(shared),
+                        'score': len(shared)
+                    })
+            candidates.sort(key=lambda x: -x['score'])
+
+            unmatched.append({
+                'formula_material_id':     mid,
+                'formula_material_nombre': nombre_raw,
+                'candidates':              candidates[:5]  # top 5 suggestions
+            })
+
+        return jsonify({
+            'total_unmatched': len(unmatched),
+            'unmatched': unmatched
+        })

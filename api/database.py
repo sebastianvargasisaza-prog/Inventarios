@@ -872,7 +872,23 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo)
         VALUES ('MAXLASH', 'MAXLASH', 1)"""
     ]),
-    (12, 'produccion_programada table', [
+        (13, 'mp_formula_bridge — formula_id to bodega_id mapping', [
+        """CREATE TABLE IF NOT EXISTS mp_formula_bridge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            formula_material_id TEXT NOT NULL,
+            formula_material_nombre TEXT,
+            bodega_material_id TEXT NOT NULL,
+            bodega_material_nombre TEXT,
+            bodega_inci TEXT,
+            notas TEXT,
+            activo INTEGER DEFAULT 1,
+            creado_en TEXT DEFAULT (datetime('now')),
+            UNIQUE(formula_material_id, bodega_material_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_bridge_fid ON mp_formula_bridge(formula_material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bridge_bid ON mp_formula_bridge(bodega_material_id)"
+    ]),
+(12, 'produccion_programada table', [
         """CREATE TABLE IF NOT EXISTS produccion_programada (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             producto TEXT NOT NULL,

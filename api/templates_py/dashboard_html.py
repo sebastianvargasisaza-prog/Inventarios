@@ -1083,6 +1083,36 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div style="text-align:center;color:#aaa;font-style:italic;padding:20px">Sin alertas — actualiza para verificar</div>
     </div>
   </div>
+
+  <!-- MP Bridge — enlaces formula ↔ bodega -->
+  <div id="bridge-panel" style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-top:16px">
+    <div style="background:#5c3317;color:#fff;padding:12px 16px;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:space-between">
+      <span>&#128279; Enlace Fórmula ↔ Bodega MP</span>
+      <button onclick="toggleBridgePanel()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;font-size:12px">&#9660; Ver / Ocultar</button>
+    </div>
+    <div id="bridge-panel-body" style="display:none">
+      <div style="padding:14px;background:#fdf8f3;border-bottom:1px solid #e0e0e0;font-size:12px;color:#666">
+        <b>¿Para qué sirve esto?</b> Cuando un ingrediente de fórmula no aparece en Bodega MP por nombre diferente (ej: "Silicona Líquida" vs "Dimethicone BM 96-350"), aquí puedes vincularlo manualmente. Una vez enlazado, el semáforo de MPs usará el stock real.
+      </div>
+      <!-- Unmatched list -->
+      <div id="bridge-unmatched-wrap" style="padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <b style="font-size:13px">MPs sin enlazar</b>
+          <button onclick="cargarUnmatched(this)" style="background:#5c3317;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Cargar</button>
+          <span id="unmatched-count" style="font-size:12px;color:#888"></span>
+        </div>
+        <div id="unmatched-list"></div>
+      </div>
+      <!-- Existing bridge mappings -->
+      <div style="border-top:1px solid #e0e0e0;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <b style="font-size:13px">Mapeos activos</b>
+          <button onclick="cargarBridgeMappings()" style="background:#2B7A78;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Actualizar</button>
+        </div>
+        <div id="bridge-mappings-list"><div style="color:#aaa;font-style:italic;font-size:12px">— carga para ver —</div></div>
+      </div>
+    </div>
+  </div>
 </div>
 </div>
 <script>
@@ -3731,6 +3761,152 @@ function _renderProgramacion(d){
       .then(function(r){ return r.json(); }).then(function(d){
         if(d.ok){ cargarEventosProducto(producto); actualizarDashboard(); }
       });
+  }
+
+  // ── MP Bridge UI ─────────────────────────────────────────────────────────
+  function toggleBridgePanel(){
+    var body = document.getElementById('bridge-panel-body');
+    if(!body) return;
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function cargarUnmatched(btn){
+    var list = document.getElementById('unmatched-list');
+    var cnt  = document.getElementById('unmatched-count');
+    if(btn){ btn.disabled=true; btn.textContent='Cargando...'; }
+    try {
+      var r = await fetch('/api/programacion/mp-bridge/unmatched');
+      var d = await r.json();
+      if(cnt) cnt.textContent = '(' + d.total_unmatched + ' sin enlazar)';
+      if(!d.unmatched || d.unmatched.length === 0){
+        list.innerHTML = '<div style="color:#2B7A78;font-size:12px;padding:8px">✅ Todos los MPs de fórmulas tienen enlace o ya coinciden automáticamente.</div>';
+      } else {
+        list.innerHTML = d.unmatched.map(function(u){
+          var cands = (u.candidates||[]).slice(0,5);
+          var candHtml = cands.length === 0
+            ? '<span style="color:#aaa;font-size:11px">Sin candidatos automáticos</span>'
+            : cands.map(function(c){
+                var safeF = encodeURIComponent(JSON.stringify({
+                  formula_material_id: u.formula_material_id,
+                  formula_material_nombre: u.formula_material_nombre,
+                  bodega_material_id: c.material_id,
+                  bodega_material_nombre: c.material_nombre
+                }));
+                return '<button onclick="linkBridge(this,\'' + safeF + '\')" ' +
+                  'style="background:#f0f4ff;border:1px solid #c5cef9;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin:2px">' +
+                  c.material_id + ' — ' + (c.material_nombre||'').substring(0,30) +
+                  ' (' + c.shared_keywords.join(',') + ')' +
+                  '</button>';
+              }).join('');
+          return '<div style="border:1px solid #e8d5c0;border-radius:6px;padding:10px;margin-bottom:8px;background:#fffaf5">' +
+            '<div style="font-size:12px;font-weight:600;color:#5c3317;margin-bottom:6px">' +
+              u.formula_material_id + ' — ' + u.formula_material_nombre +
+            '</div>' +
+            '<div style="font-size:11px;color:#666;margin-bottom:6px">Candidatos: ' + candHtml + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+              '<input id="fid-' + u.formula_material_id + '" placeholder="ID Bodega (ej: MP00293)" ' +
+                'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:160px">' +
+              '<input id="fn-' + u.formula_material_id + '" placeholder="Nombre bodega (opcional)" ' +
+                'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:200px">' +
+              '<button onclick="linkBridgeManual(this,\'' + u.formula_material_id + '\',\'' + u.formula_material_nombre.replace(/'/g,"") + '\')" ' +
+                'style="background:#5c3317;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Enlazar</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      }
+    } catch(e) {
+      if(list) list.innerHTML = '<div style="color:#c00;font-size:12px">Error: ' + e.message + '</div>';
+    }
+    if(btn){ btn.disabled=false; btn.textContent='\u21BA Cargar'; }
+  }
+
+  async function linkBridge(btn, safePayload){
+    var payload;
+    try { payload = JSON.parse(decodeURIComponent(safePayload)); } catch(e){ alert('Error decodificando payload'); return; }
+    btn.disabled=true; btn.style.background='#c5cef9';
+    var r = await fetch('/api/programacion/mp-bridge', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    var d = await r.json();
+    if(d.ok){
+      _toast('Enlazado: ' + payload.formula_material_id + ' \u2192 ' + payload.bodega_material_id, 1);
+      cargarUnmatched(null);
+      cargarBridgeMappings();
+    } else {
+      _toast('Error: ' + (d.error||'desconocido'), 0);
+      btn.disabled=false;
+    }
+  }
+
+  async function linkBridgeManual(btn, fid, fname){
+    var bidEl = document.getElementById('fid-' + fid);
+    var bnameEl = document.getElementById('fn-' + fid);
+    var bid = bidEl ? bidEl.value.trim() : '';
+    var bname = bnameEl ? bnameEl.value.trim() : '';
+    if(!bid){ alert('Ingresa el ID de Bodega (ej: MP00293)'); return; }
+    btn.disabled=true;
+    var r = await fetch('/api/programacion/mp-bridge', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        formula_material_id: fid,
+        formula_material_nombre: fname,
+        bodega_material_id: bid,
+        bodega_material_nombre: bname
+      })
+    });
+    var d = await r.json();
+    if(d.ok){
+      _toast('Enlazado: ' + fid + ' \u2192 ' + bid, 1);
+      cargarUnmatched(null);
+      cargarBridgeMappings();
+    } else {
+      _toast('Error: ' + (d.error||'desconocido'), 0);
+    }
+    btn.disabled=false;
+  }
+
+  async function cargarBridgeMappings(){
+    var el = document.getElementById('bridge-mappings-list');
+    if(!el) return;
+    var r = await fetch('/api/programacion/mp-bridge');
+    var rows = await r.json();
+    var active = rows.filter(function(x){ return x.activo; });
+    if(active.length === 0){
+      el.innerHTML = '<div style="color:#aaa;font-style:italic;font-size:12px">— sin mapeos activos —</div>';
+      return;
+    }
+    el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="background:#f5f5f5">' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Formula ID</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Formula Nombre</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Bodega ID</th>' +
+        '<th style="text-align:left;padding:5px 8px;border-bottom:1px solid #ddd">Bodega Nombre</th>' +
+        '<th style="padding:5px 8px;border-bottom:1px solid #ddd"></th>' +
+      '</tr></thead>' +
+      '<tbody>' +
+      active.map(function(m){
+        return '<tr style="border-bottom:1px solid #f0f0f0">' +
+          '<td style="padding:5px 8px;font-family:monospace;color:#5c3317">' + m.formula_material_id + '</td>' +
+          '<td style="padding:5px 8px">' + (m.formula_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px;font-family:monospace;color:#2B7A78">' + m.bodega_material_id + '</td>' +
+          '<td style="padding:5px 8px">' + (m.bodega_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px">' +
+            '<button onclick="eliminarBridge(' + m.id + ')" ' +
+              'style="background:#dc3545;color:#fff;border:none;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer">✕</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
+
+  async function eliminarBridge(id){
+    if(!confirm('¿Eliminar este enlace?')) return;
+    var r = await fetch('/api/programacion/mp-bridge/' + id, {method:'DELETE'});
+    var d = await r.json();
+    if(d.ok){ _toast('Enlace eliminado', 1); cargarBridgeMappings(); cargarUnmatched(null); }
   }
   </script>
 
