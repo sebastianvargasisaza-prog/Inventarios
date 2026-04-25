@@ -1005,7 +1005,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <button onclick="cargarProgramacion(this)" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
     <button onclick="generarOCProgramacion(this)" style="background:#dc3545;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128666; Generar OC</button>
-    <button id="btn-sync-shopify" onclick="sincronizarShopify(this)" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128257; Sincronizar Shopify</button>
+    <button id="btn-sync-shopify" onclick="sincronizarShopify(this)" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128257; Sync Stock</button>
+    <button id="btn-sync-ventas" onclick="sincronizarVentas(this)" style="background:#e65100;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128202; Sync Ventas</button>
   </div>
 
   <!-- Semáforo de estado general -->
@@ -3483,6 +3484,26 @@ async function sincronizarShopify(btnEl){
     alert('Error de red: ' + e.message);
   } finally {
     if(btnEl){ btnEl.disabled=false; btnEl.textContent='Sincronizar Shopify'; }
+  }
+}
+
+async function sincronizarVentas(btnEl){
+  if(btnEl){ btnEl.disabled=true; btnEl.textContent='Sincronizando...'; }
+  try {
+    var resp = await fetch('/api/programacion/sync-ventas', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({days:60})});
+    var txt = await resp.text();
+    var d;
+    try { d = JSON.parse(txt); } catch(pe){ alert('Error parse: ' + txt.substring(0,300)); return; }
+    if(d.ok){
+      _toast(d.mensaje || (d.synced + ' ordenes sync'), 1);
+      cargarProgramacion(null);
+    } else {
+      alert('ERROR SYNC VENTAS: ' + (d.error || JSON.stringify(d)));
+    }
+  } catch(e){
+    alert('Error de red: ' + e.message);
+  } finally {
+    if(btnEl){ btnEl.disabled=false; btnEl.textContent='Sync Ventas'; }
   }
 }
 
