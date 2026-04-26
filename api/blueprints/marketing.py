@@ -2072,6 +2072,14 @@ def mkt_influencers_panel():
                 "con_pendiente":  con_pendiente,
             }
         })
+    except Exception as _panel_exc:
+        import traceback as _tb
+        return jsonify({
+            "influencers": [],
+            "kpis": {},
+            "_error": str(_panel_exc),
+            "_trace": _tb.format_exc()[-800:]
+        }), 200
     finally:
         pass
 
