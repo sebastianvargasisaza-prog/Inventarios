@@ -373,6 +373,160 @@ def admin_config_status():
     })
 
 
+# ─── Sync Banco Influencers desde Excel ───────────────────────────────────────
+
+@bp.route("/api/admin/sync-influencers-excel", methods=["POST"])
+def admin_sync_influencers_excel():
+    """Sube un Excel de banco de influencers y hace UPSERT preservando datos.
+
+    Body: multipart/form-data con campo 'file' = .xlsx
+    Query: ?dry_run=1  para previsualizar sin escribir
+
+    Hoja esperada: 'cuentas de creadores' con columnas:
+       A: nombre, B: banco, C: cuenta, D: tipo cta, E: cédula,
+       F: ciudad, G: usuario red, H: tipo creador
+
+    Mapeo a marketing_influencers:
+       nombre, banco, cuenta_bancaria, tipo_cuenta, cedula_nit,
+       ciudad, instagram (si existe col), tipo (si existe col)
+
+    UPSERT por LOWER(TRIM(nombre)). Solo actualiza columnas vacías en DB.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+
+    dry_run = request.args.get('dry_run', '0') in ('1', 'true', 'True')
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return jsonify({'error': 'openpyxl no instalado en el servidor'}), 500
+
+    def _norm(s):
+        return (s or "").strip().lower() if isinstance(s, str) else ""
+
+    def _str(v):
+        if v is None:
+            return ""
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v).strip()
+
+    try:
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({'error': f'Excel inválido: {e}'}), 400
+
+    if "cuentas de creadores" not in wb.sheetnames:
+        return jsonify({
+            'error': "Hoja 'cuentas de creadores' no existe",
+            'hojas_disponibles': wb.sheetnames
+        }), 400
+
+    ws = wb["cuentas de creadores"]
+    creadores = []
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if i == 0:
+            continue
+        if not row or not row[0]:
+            continue
+        creadores.append({
+            "nombre":      _str(row[0]),
+            "banco":       _str(row[1]) if len(row) > 1 else "",
+            "cuenta":      _str(row[2]) if len(row) > 2 else "",
+            "tipo_cta":    _str(row[3]) if len(row) > 3 else "",
+            "cedula":      _str(row[4]) if len(row) > 4 else "",
+            "ciudad":      _str(row[5]) if len(row) > 5 else "",
+            "user":        _str(row[6]) if len(row) > 6 else "",
+            "tipo_creador": _str(row[7]) if len(row) > 7 else "",
+        })
+
+    EXCEL_TO_DB = {
+        "banco":         "banco",
+        "cuenta":        "cuenta_bancaria",
+        "tipo_cta":      "tipo_cuenta",
+        "cedula":        "cedula_nit",
+        "ciudad":        "ciudad",
+        "user":          "instagram",
+        "tipo_creador":  "tipo",
+    }
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("PRAGMA table_info(marketing_influencers)")
+    cols_db = {r["name"] for r in c.fetchall()}
+
+    nuevos, actualizados, sin_cambios = [], [], []
+    for ex in creadores:
+        nombre = ex["nombre"]
+        c.execute(
+            "SELECT * FROM marketing_influencers WHERE LOWER(TRIM(nombre)) = ? LIMIT 1",
+            (nombre.lower(),)
+        )
+        existing = c.fetchone()
+        if not existing:
+            cols_to_insert = ["nombre"]
+            vals = [nombre]
+            for k_ex, k_db in EXCEL_TO_DB.items():
+                if k_db in cols_db and ex.get(k_ex):
+                    cols_to_insert.append(k_db)
+                    vals.append(ex[k_ex])
+            placeholders = ",".join("?" * len(cols_to_insert))
+            sql = f"INSERT INTO marketing_influencers ({','.join(cols_to_insert)}) VALUES ({placeholders})"
+            if not dry_run:
+                c.execute(sql, vals)
+            nuevos.append(nombre)
+            continue
+
+        sets, vals, cambios_locales = [], [], []
+        for k_ex, k_db in EXCEL_TO_DB.items():
+            if k_db not in cols_db:
+                continue
+            new_val = ex.get(k_ex, "")
+            old_val = existing[k_db] if k_db in existing.keys() else ""
+            old_val = (old_val or "").strip() if isinstance(old_val, str) else ""
+            if new_val and not old_val:
+                sets.append(f"{k_db}=?")
+                vals.append(new_val)
+                cambios_locales.append(f"{k_db}: <vacío> → {new_val[:40]}")
+        if sets:
+            vals.append(existing["id"])
+            if not dry_run:
+                c.execute(
+                    f"UPDATE marketing_influencers SET {','.join(sets)} WHERE id=?",
+                    vals
+                )
+            actualizados.append({'nombre': nombre, 'cambios': cambios_locales})
+        else:
+            sin_cambios.append(nombre)
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    _log_sec(u, _client_ip(),
+             "admin_sync_influencers_excel",
+             f"dry_run={dry_run} nuevos={len(nuevos)} act={len(actualizados)}")
+
+    return jsonify({
+        'ok': True,
+        'dry_run': dry_run,
+        'total_excel': len(creadores),
+        'nuevos':       {'count': len(nuevos), 'lista': nuevos},
+        'actualizados': {'count': len(actualizados), 'lista': actualizados},
+        'sin_cambios':  {'count': len(sin_cambios), 'lista': sin_cambios[:50]},
+        'cols_db_disponibles': sorted(cols_db),
+    })
+
+
 # ─── Panel HTML ───────────────────────────────────────────────────────────────
 
 _ADMIN_HTML = r"""<!DOCTYPE html>
@@ -440,6 +594,7 @@ tr:hover td{background:#263348;}
   <button class="tab" data-tab="users" onclick="switchTab('users')">&#x1F465; Usuarios</button>
   <button class="tab" data-tab="security" onclick="switchTab('security')">&#x1F6E1; Eventos de Seguridad</button>
   <button class="tab" data-tab="config" onclick="switchTab('config')">&#x2699; Config Status</button>
+  <button class="tab" data-tab="banco" onclick="switchTab('banco')">&#x1F4B3; Banco Influencers</button>
 </div>
 
 <div class="main">
@@ -560,6 +715,26 @@ tr:hover td{background:#263348;}
   </div>
 </div>
 
+<!-- ─── TAB BANCO INFLUENCERS ─── -->
+<div id="tab-banco" class="tab-panel">
+  <div class="card">
+    <h2>&#x1F4B3; Sincronizar banco de influencers desde Excel</h2>
+    <div class="section-sub">
+      Sube el Excel de creadores (hoja <code>cuentas de creadores</code>). El sync
+      hace UPSERT por nombre <strong>preservando datos existentes</strong> — solo
+      llena columnas vacías de la base con datos del Excel. Nunca borra ni
+      sobrescribe banco/cuenta/cédula que ya estén cargados.
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input type="file" id="excel-file" accept=".xlsx,.xlsm"
+             style="padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;">
+      <button class="btn btn-outline" onclick="syncExcel(true)">&#x1F441; Vista previa (dry-run)</button>
+      <button class="btn" onclick="syncExcel(false)">&#x26A1; Aplicar a la base</button>
+    </div>
+    <div id="banco-result" style="margin-top:18px;"></div>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -583,7 +758,7 @@ tr:hover td{background:#263348;}
 
 <script>
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const _loaded = {backups:false, users:false, security:false, config:false};
+const _loaded = {backups:false, users:false, security:false, config:false, banco:false};
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -799,6 +974,49 @@ async function loadConfigStatus() {
   document.getElementById('tbody-config-critical').innerHTML = (data.critical || []).map(renderRow).join('');
   document.getElementById('tbody-config-users').innerHTML = (data.user_passwords || []).map(renderRow).join('');
   document.getElementById('tbody-config-optional').innerHTML = (data.optional || []).map(renderRow).join('');
+}
+
+// ── BANCO INFLUENCERS (sync Excel) ────────────────────────────────────────────
+async function syncExcel(dryRun) {
+  const fi = document.getElementById('excel-file');
+  const out = document.getElementById('banco-result');
+  if (!fi.files.length) {
+    toast('Selecciona un archivo .xlsx', 'warn');
+    return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Procesando...</div>';
+  const fd = new FormData();
+  fd.append('file', fi.files[0]);
+  const url = '/api/admin/sync-influencers-excel' + (dryRun ? '?dry_run=1' : '');
+  const r = await fetch(url, {method:'POST', body: fd});
+  let data;
+  try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
+  if (!r.ok) {
+    out.innerHTML = '<div style="color:#f87171;padding:14px;background:#1e293b;border-radius:8px;">'
+      + 'Error ' + r.status + ': ' + (data.error || '') + '</div>';
+    return;
+  }
+  const banner = dryRun
+    ? '<div style="color:#fbbf24;padding:10px 14px;background:#0f172a;border:1px solid #fbbf24;border-radius:8px;margin-bottom:14px;">'
+      + '&#x1F441; <strong>VISTA PREVIA</strong> — nada se escribió en la base. Pulsa "Aplicar" para confirmar.</div>'
+    : '<div style="color:#34d399;padding:10px 14px;background:#0f172a;border:1px solid #34d399;border-radius:8px;margin-bottom:14px;">'
+      + '&#x2705; <strong>APLICADO</strong> — la base fue actualizada.</div>';
+  const lstNuevos = (data.nuevos.lista || []).slice(0, 30).map(n =>
+    '<li style="padding:3px 0;">' + n + '</li>').join('');
+  const lstAct = (data.actualizados.lista || []).slice(0, 30).map(a =>
+    '<li style="padding:3px 0;"><strong>' + a.nombre + '</strong>'
+    + (a.cambios && a.cambios.length ? ' <span style="color:#94a3b8;font-size:11px;">— '
+       + a.cambios.join('; ') + '</span>' : '') + '</li>').join('');
+  out.innerHTML = banner + ''
+    + '<div class="kpi-row">'
+      + '<div class="kpi"><div class="kpi-l">Excel</div><div class="kpi-v">' + data.total_excel + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Nuevos</div><div class="kpi-v" style="color:#34d399;">' + data.nuevos.count + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Actualizados</div><div class="kpi-v" style="color:#fbbf24;">' + data.actualizados.count + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Sin cambios</div><div class="kpi-v" style="color:#64748b;">' + data.sin_cambios.count + '</div></div>'
+    + '</div>'
+    + (lstNuevos ? '<div class="card"><h2>&#x2795; Nuevos (' + data.nuevos.count + ')</h2><ul style="font-size:13px;color:#cbd5e1;list-style:none;padding-left:0;">' + lstNuevos + '</ul></div>' : '')
+    + (lstAct ? '<div class="card"><h2>&#x270F; Actualizados (' + data.actualizados.count + ')</h2><ul style="font-size:13px;color:#cbd5e1;list-style:none;padding-left:0;">' + lstAct + '</ul></div>' : '');
+  if (!dryRun) toast('Sync aplicado: ' + data.nuevos.count + ' nuevos, ' + data.actualizados.count + ' actualizados', 'ok');
 }
 
 // Init

@@ -196,7 +196,7 @@ tr:hover td{background:#202020}
         <div>
           <div style="font-size:12px;color:#888;margin-bottom:8px;text-transform:uppercase">Egresos</div>
           <div class="tbl-wrap"><table>
-            <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Comprobante</th></tr></thead>
             <tbody id="tbody-egresos"></tbody>
           </table></div>
         </div>
@@ -512,9 +512,22 @@ async function loadTesoreria(){
   document.getElementById('t-neto').textContent=COP(data.flujo_neto);
   document.getElementById('t-neto').className='big '+(data.flujo_neto>=0?'ok':'danger');
   document.getElementById('t-n').textContent=(data.ingresos.length+data.egresos.length);
-  const mkRow = (r,tipo) => `<tr><td>${fmt(r.fecha)}</td><td>${r.concepto||r.descripcion||tipo}</td><td>${COP(r.monto)}</td></tr>`;
-  document.getElementById('tbody-ingresos').innerHTML = data.ingresos.map(r=>mkRow(r,'Ingreso')).join('')||'<tr><td colspan="3" style="color:#555;text-align:center">Sin datos</td></tr>';
-  document.getElementById('tbody-egresos').innerHTML = data.egresos.map(r=>mkRow(r,'Egreso')).join('')||'<tr><td colspan="3" style="color:#555;text-align:center">Sin datos</td></tr>';
+  const mkRowIng = (r,tipo) => `<tr><td>${fmt(r.fecha)}</td><td>${r.concepto||r.descripcion||tipo}</td><td>${COP(r.monto)}</td></tr>`;
+  const mkRowEgr = (r) => {
+    const ce = r.comprobante_numero_ce
+      ? `<a href="/api/comprobantes-pago/${r.comprobante_id}/pdf" target="_blank"
+            style="color:#1F5F5B;font-weight:600;text-decoration:none;font-size:12px;"
+            title="Descargar PDF">📄 ${r.comprobante_numero_ce}</a>`
+      : `<span style="color:#bbb;font-size:11px;">—</span>`;
+    return `<tr>
+      <td>${fmt(r.fecha)}</td>
+      <td>${r.concepto||r.descripcion||'Egreso'}</td>
+      <td>${COP(r.monto)}</td>
+      <td>${ce}</td>
+    </tr>`;
+  };
+  document.getElementById('tbody-ingresos').innerHTML = data.ingresos.map(r=>mkRowIng(r,'Ingreso')).join('')||'<tr><td colspan="3" style="color:#555;text-align:center">Sin datos</td></tr>';
+  document.getElementById('tbody-egresos').innerHTML = data.egresos.map(mkRowEgr).join('')||'<tr><td colspan="4" style="color:#555;text-align:center">Sin datos</td></tr>';
 }
 
 async function loadNominaPeriodos(){

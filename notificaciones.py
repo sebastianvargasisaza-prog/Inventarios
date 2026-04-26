@@ -8,9 +8,13 @@ Para alertas de stock bajo, producciones completadas, etc.
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from datetime import datetime
+import logging
 import os
 import threading
+
+logger = logging.getLogger('notificaciones')
 
 class SistemaNotificaciones:
     def __init__(self, email_remitente="", contraseña="", smtp_server="", smtp_port=0):
@@ -195,33 +199,152 @@ class SistemaNotificaciones:
 
         self._enviar_email(asunto, body)
 
-    def _enviar_email(self, asunto, body, destinatarios=None):
-        """Envía un email (método interno)"""
+    def _enviar_email(self, asunto, body, destinatarios=None, attachments=None,
+                      reply_to=None):
+        """Envía un email (método interno).
+
+        attachments: lista de tuplas (filename, bytes, mimetype). Si mimetype
+                     no se especifica, se asume 'application/pdf'.
+        reply_to:    email donde el destinatario verá responder (útil para
+                     comprobantes que salen de la cuenta de facturación).
+        """
         if not self.email_remitente or not self.contraseña:
-            print("⚠️ Email no configurado. Configura EMAIL_REMITENTE y EMAIL_PASSWORD")
+            logger.warning("Email no configurado: EMAIL_REMITENTE/EMAIL_PASSWORD ausentes")
             return False
 
         destinatarios = destinatarios or [self.email_remitente]
-
+        # Si solo viene texto plano, lo metemos en alternative; si hay
+        # adjuntos, usamos 'mixed' como contenedor raíz.
         try:
-            msg = MIMEMultipart('alternative')
+            if attachments:
+                msg = MIMEMultipart('mixed')
+                cuerpo = MIMEMultipart('alternative')
+                cuerpo.attach(MIMEText(body, 'html'))
+                msg.attach(cuerpo)
+                for att in attachments:
+                    if not att or len(att) < 2:
+                        continue
+                    fname = att[0]
+                    data = att[1]
+                    mime = att[2] if len(att) > 2 and att[2] else 'application/pdf'
+                    maintype, subtype = mime.split('/', 1) if '/' in mime else ('application', 'octet-stream')
+                    if maintype == 'application' and subtype == 'pdf':
+                        part = MIMEApplication(data, _subtype='pdf')
+                    else:
+                        part = MIMEApplication(data, _subtype=subtype)
+                    part.add_header('Content-Disposition', 'attachment', filename=fname)
+                    msg.attach(part)
+            else:
+                msg = MIMEMultipart('alternative')
+                msg.attach(MIMEText(body, 'html'))
+
             msg['Subject'] = asunto
             msg['From'] = self.email_remitente
             msg['To'] = ', '.join(destinatarios)
+            if reply_to:
+                msg['Reply-To'] = reply_to
 
-            msg.attach(MIMEText(body, 'html'))
-
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30) as server:
                 server.starttls()
                 server.login(self.email_remitente, self.contraseña)
                 server.send_message(msg)
 
-            print(f"✅ Email enviado: {asunto}")
+            logger.info("Email enviado: %s → %s", asunto, destinatarios)
             return True
 
         except Exception as e:
-            print(f"❌ Error enviando email: {e}")
+            logger.error("Error enviando email '%s' → %s: %s", asunto, destinatarios, e)
             return False
+
+    # ── COMPROBANTES DE EGRESO (HHA) ─────────────────────────────────────────
+    def enviar_comprobante_egreso(self, destinatario, numero_ce, beneficiario,
+                                  total_pagado, pdf_bytes, fecha_emision='',
+                                  numero_oc='', empresa='Espagiria'):
+        """Envía el comprobante de egreso PDF al beneficiario.
+
+        Args:
+            destinatario: email destino (string).
+            numero_ce: 'CE-2026-0042'
+            beneficiario: nombre del influencer/proveedor
+            total_pagado: float (COP)
+            pdf_bytes: bytes del PDF (no base64)
+            fecha_emision: 'YYYY-MM-DD' (opcional, defaults today)
+            numero_oc: opcional, OC asociada
+            empresa: 'Espagiria' o 'Animus'
+
+        Returns:
+            True si se envió, False si falló o no hay config SMTP.
+        """
+        if not destinatario or '@' not in destinatario:
+            logger.warning("enviar_comprobante_egreso: destinatario inválido (%r)", destinatario)
+            return False
+        fecha_str = fecha_emision or datetime.now().strftime('%Y-%m-%d')
+        try:
+            total_fmt = f"${total_pagado:,.0f}".replace(',', '.')
+        except Exception:
+            total_fmt = str(total_pagado)
+        asunto = f"Comprobante de pago {numero_ce} — {empresa}"
+        body = f"""
+        <html>
+        <body style="font-family: Arial, Helvetica, sans-serif; color: #1a1a1a;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 24px;
+                      border-top: 4px solid #1F5F5B;">
+            <h2 style="color:#1F5F5B; margin: 0 0 8px 0;">Comprobante de pago emitido</h2>
+            <p style="color:#666; margin: 0 0 24px 0; font-size: 13px;">
+              {empresa.upper()} — Documento soporte de egreso
+            </p>
+            <p>Hola <strong>{beneficiario}</strong>,</p>
+            <p>Hemos generado y registrado el comprobante de pago por los servicios
+               prestados. Adjunto encontrarás el PDF formal con el desglose completo
+               (subtotal, retenciones aplicadas e IVA si corresponde).</p>
+            <table style="width:100%; border-collapse: collapse; margin: 16px 0;
+                          background:#f7f7f5; border-radius: 6px; overflow:hidden;">
+              <tr>
+                <td style="padding:10px 14px; color:#666; font-size: 12px;
+                           text-transform: uppercase; letter-spacing: .5px;">Comprobante</td>
+                <td style="padding:10px 14px; font-weight: 700;">{numero_ce}</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 14px; color:#666; font-size: 12px;
+                           text-transform: uppercase; letter-spacing: .5px;
+                           border-top: 1px solid #e6e6e0;">Fecha</td>
+                <td style="padding:10px 14px; border-top: 1px solid #e6e6e0;">{fecha_str}</td>
+              </tr>
+              {f'<tr><td style="padding:10px 14px; color:#666; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; border-top: 1px solid #e6e6e0;">OC asociada</td><td style="padding:10px 14px; border-top: 1px solid #e6e6e0;">{numero_oc}</td></tr>' if numero_oc else ''}
+              <tr>
+                <td style="padding:10px 14px; color:#666; font-size: 12px;
+                           text-transform: uppercase; letter-spacing: .5px;
+                           border-top: 1px solid #e6e6e0;">Total pagado</td>
+                <td style="padding:10px 14px; font-weight: 700; color:#1F5F5B;
+                           border-top: 1px solid #e6e6e0;">{total_fmt}</td>
+              </tr>
+            </table>
+            <p style="font-size: 13px; color:#444;">
+              Si tienes alguna pregunta sobre este pago o necesitas un certificado
+              adicional, por favor responde a este correo.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e6e6e0; margin: 24px 0;">
+            <p style="font-size: 11px; color:#888; line-height: 1.6;">
+              Este mensaje fue generado automáticamente por el sistema de gestión
+              HHA Group. El comprobante adjunto es un Documento Soporte de Pago
+              conforme al Estatuto Tributario (art. 1.6.1.4.12).<br>
+              Por favor verifica que tus datos bancarios sean los correctos.
+            </p>
+          </div>
+        </body>
+        </html>
+        """
+        attachments = [(f"{numero_ce}.pdf", pdf_bytes, 'application/pdf')]
+        ok = self._enviar_email(asunto, body, destinatarios=[destinatario],
+                                attachments=attachments)
+        self.historial.append({
+            'tipo': 'comprobante_egreso',
+            'numero_ce': numero_ce,
+            'destinatario': destinatario,
+            'enviado': ok,
+            'timestamp': datetime.now().isoformat(),
+        })
+        return ok
 
     def enviar_en_background(self, funcion, *args, **kwargs):
         """Ejecuta el envío en un thread separado (no bloquea la app)"""

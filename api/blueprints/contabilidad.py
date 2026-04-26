@@ -567,10 +567,27 @@ def cont_tesoreria():
     desde = request.args.get('desde', (date.today() - timedelta(days=30)).isoformat())
     hasta = request.args.get('hasta', date.today().isoformat())
 
-    egresos = [dict(r) for r in conn.execute(
-        "SELECT * FROM flujo_egresos WHERE fecha>=? AND fecha<=? ORDER BY fecha DESC",
-        (desde, hasta)
-    ).fetchall()]
+    # Egresos + JOIN al último comprobante de egreso (CE) por OC.
+    # Si la tabla comprobantes_pago no existe aún (migración no corrida),
+    # cae al SELECT simple.
+    try:
+        egresos = [dict(r) for r in conn.execute("""
+            SELECT fe.*,
+                   cp.id        AS comprobante_id,
+                   cp.numero_ce AS comprobante_numero_ce
+            FROM flujo_egresos fe
+            LEFT JOIN comprobantes_pago cp
+              ON cp.numero_oc = fe.referencia
+             AND cp.id = (SELECT MAX(id) FROM comprobantes_pago
+                          WHERE numero_oc = fe.referencia)
+            WHERE fe.fecha>=? AND fe.fecha<=?
+            ORDER BY fe.fecha DESC
+        """, (desde, hasta)).fetchall()]
+    except sqlite3.OperationalError:
+        egresos = [dict(r) for r in conn.execute(
+            "SELECT * FROM flujo_egresos WHERE fecha>=? AND fecha<=? ORDER BY fecha DESC",
+            (desde, hasta)
+        ).fetchall()]
     ingresos = [dict(r) for r in conn.execute(
         "SELECT * FROM flujo_ingresos WHERE fecha>=? AND fecha<=? ORDER BY fecha DESC",
         (desde, hasta)

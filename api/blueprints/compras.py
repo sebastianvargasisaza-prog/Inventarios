@@ -1049,14 +1049,14 @@ def pagar_oc(numero_oc):
         # Datos del beneficiario: si es influencer, jalar de marketing_influencers
         beneficiario = {
             'nombre': proveedor, 'cedula': '', 'banco': '',
-            'cuenta': '', 'tipo_cuenta': '', 'ciudad': ''
+            'cuenta': '', 'tipo_cuenta': '', 'ciudad': '', 'email': ''
         }
         cat_lower = (categoria or '').lower()
         if 'influencer' in cat_lower or 'marketing' in cat_lower:
             try:
                 inf_row = cur.execute("""
                     SELECT mi.nombre, mi.cedula_nit, mi.banco, mi.cuenta_bancaria,
-                           mi.tipo_cuenta, mi.ciudad
+                           mi.tipo_cuenta, mi.ciudad, mi.email
                     FROM solicitudes_compra sc
                     LEFT JOIN marketing_influencers mi ON sc.influencer_id = mi.id
                     WHERE sc.numero_oc=? AND mi.id IS NOT NULL LIMIT 1
@@ -1069,6 +1069,7 @@ def pagar_oc(numero_oc):
                         'cuenta': inf_row[3] or '',
                         'tipo_cuenta': inf_row[4] or '',
                         'ciudad': inf_row[5] or '',
+                        'email': inf_row[6] or '',
                     }
             except sqlite3.OperationalError:
                 pass
@@ -1076,13 +1077,14 @@ def pagar_oc(numero_oc):
             # Proveedor regular: jalar datos de la tabla proveedores
             try:
                 pv = cur.execute(
-                    "SELECT contacto, nit, banco, num_cuenta, tipo_cuenta FROM proveedores WHERE nombre=? LIMIT 1",
+                    "SELECT contacto, nit, banco, num_cuenta, tipo_cuenta, email FROM proveedores WHERE nombre=? LIMIT 1",
                     (proveedor,)
                 ).fetchone()
                 if pv:
                     beneficiario.update({
                         'cedula': pv[1] or '', 'banco': pv[2] or '',
                         'cuenta': pv[3] or '', 'tipo_cuenta': pv[4] or '',
+                        'email': pv[5] or '',
                     })
             except sqlite3.OperationalError:
                 pass
@@ -1143,6 +1145,40 @@ def pagar_oc(numero_oc):
             'retica': comp['retica'],
             'total_pagado': comp['total_pagado'],
         }
+
+        # Envío automático del comprobante por email al beneficiario.
+        # Solo si: (a) hay email del beneficiario, (b) hay SMTP configurado.
+        # Se ejecuta en background — no bloquea la respuesta de pago.
+        email_dest = (beneficiario.get('email') or '').strip()
+        if email_dest and '@' in email_dest:
+            try:
+                from notificaciones import SistemaNotificaciones
+                sn = SistemaNotificaciones()
+                if sn.email_remitente and sn.contraseña:
+                    sn.enviar_en_background(
+                        sn.enviar_comprobante_egreso,
+                        destinatario=email_dest,
+                        numero_ce=comp['numero_ce'],
+                        beneficiario=beneficiario.get('nombre', ''),
+                        total_pagado=comp['total_pagado'],
+                        pdf_bytes=comp['pdf_bytes'],
+                        fecha_emision=fecha_pago[:10],
+                        numero_oc=numero_oc,
+                        empresa='Espagiria',
+                    )
+                    comprobante_info['email_enviado_a'] = email_dest
+                else:
+                    comprobante_info['email_pendiente'] = (
+                        'SMTP no configurado en Render (EMAIL_REMITENTE/EMAIL_PASSWORD)'
+                    )
+            except Exception as _e_mail:
+                __import__('logging').getLogger('compras').error(
+                    "Email comprobante falló: %s", _e_mail
+                )
+        else:
+            comprobante_info['email_pendiente'] = (
+                'Beneficiario sin email — agrégalo en Marketing › Influencers'
+            )
     except Exception as _e:
         __import__('logging').getLogger('compras').error(
             "No se pudo generar comprobante de egreso: %s", _e, exc_info=True
@@ -1219,6 +1255,89 @@ def descargar_comprobante_pdf(comp_id):
         pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{numero_ce}.pdf"'}
     )
+
+
+@bp.route('/api/comprobantes-pago/<int:comp_id>/email', methods=['POST'])
+def reenviar_comprobante_email(comp_id):
+    """Reenvía el comprobante PDF por email.
+
+    Body opcional: {"destinatario": "otro@correo.com"}
+    Si no se especifica destinatario, busca el email del beneficiario en
+    marketing_influencers o proveedores.
+    """
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    import base64
+    body = request.get_json(silent=True) or {}
+    destinatario_override = (body.get('destinatario') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    c.execute("""SELECT numero_ce, pdf_archivo, beneficiario_nombre,
+                        total_pagado, fecha_emision, numero_oc, empresa
+                 FROM comprobantes_pago WHERE id=?""", (comp_id,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'Comprobante no encontrado'}), 404
+    numero_ce, pdf_b64, benef_nombre, total, fecha_em, num_oc, empresa = row
+    if not pdf_b64:
+        return jsonify({'error': 'PDF no disponible para este comprobante'}), 404
+
+    # Resolver destinatario: override > marketing_influencers > proveedores
+    destinatario = destinatario_override
+    if not destinatario and benef_nombre:
+        try:
+            r2 = c.execute(
+                "SELECT email FROM marketing_influencers WHERE LOWER(TRIM(nombre))=? LIMIT 1",
+                (benef_nombre.strip().lower(),)
+            ).fetchone()
+            if r2 and r2[0]:
+                destinatario = r2[0].strip()
+        except sqlite3.OperationalError:
+            pass
+    if not destinatario and benef_nombre:
+        try:
+            r3 = c.execute(
+                "SELECT email FROM proveedores WHERE LOWER(TRIM(nombre))=? LIMIT 1",
+                (benef_nombre.strip().lower(),)
+            ).fetchone()
+            if r3 and r3[0]:
+                destinatario = r3[0].strip()
+        except sqlite3.OperationalError:
+            pass
+
+    if not destinatario or '@' not in destinatario:
+        return jsonify({
+            'error': 'Sin destinatario',
+            'detalle': 'No se encontró email para el beneficiario. Pasa "destinatario" en el body o agrega el email al influencer/proveedor.'
+        }), 400
+
+    try:
+        pdf_bytes = base64.b64decode(pdf_b64)
+    except Exception:
+        return jsonify({'error': 'PDF corrupto'}), 500
+
+    try:
+        from notificaciones import SistemaNotificaciones
+        sn = SistemaNotificaciones()
+        if not sn.email_remitente or not sn.contraseña:
+            return jsonify({
+                'error': 'SMTP no configurado',
+                'detalle': 'Define EMAIL_REMITENTE y EMAIL_PASSWORD en Render → Environment.',
+                'doc': 'https://myaccount.google.com/apppasswords (App Password de Gmail)'
+            }), 503
+        ok = sn.enviar_comprobante_egreso(
+            destinatario=destinatario, numero_ce=numero_ce,
+            beneficiario=benef_nombre or '', total_pagado=total or 0,
+            pdf_bytes=pdf_bytes,
+            fecha_emision=(fecha_em or '')[:10], numero_oc=num_oc or '',
+            empresa=empresa or 'Espagiria',
+        )
+        if not ok:
+            return jsonify({'error': 'Falló envío SMTP', 'detalle': 'Revisa logs y credenciales SMTP'}), 502
+        return jsonify({'ok': True, 'destinatario': destinatario, 'numero_ce': numero_ce})
+    except Exception as e:
+        return jsonify({'error': 'Error interno', 'detalle': str(e)}), 500
 
 
 @bp.route('/api/comprobantes-pago/oc/<numero_oc>', methods=['GET'])
