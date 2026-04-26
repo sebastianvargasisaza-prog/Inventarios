@@ -373,6 +373,62 @@ def admin_config_status():
     })
 
 
+# ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
+
+@bp.route("/api/admin/tipos-mp-stats", methods=["GET"])
+def admin_tipos_mp_stats():
+    """Cuenta items en maestro_mps agrupados por tipo_material.
+
+    Útil para diagnosticar por qué la programación cíclica de E&E aparece
+    vacía: si no hay items con tipo='Envase Secundario' (exacto), la rotación
+    no tiene de dónde sacar los 3 ítems de la semana.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Conteo por tipo (incluye nulos/vacíos)
+    rows = c.execute("""
+        SELECT COALESCE(NULLIF(TRIM(tipo_material), ''), '(sin tipo)') AS tipo,
+               COUNT(*) AS total,
+               SUM(CASE WHEN activo=1 THEN 1 ELSE 0 END) AS activos,
+               SUM(CASE WHEN COALESCE(stock_minimo,0) > 0 THEN 1 ELSE 0 END) AS con_min
+        FROM maestro_mps
+        GROUP BY tipo
+        ORDER BY total DESC
+    """).fetchall()
+
+    # Primeros 5 ejemplos por tipo (para verificar nombres exactos)
+    ejemplos = {}
+    for r in rows:
+        c.execute("""SELECT codigo_mp, nombre_comercial
+                     FROM maestro_mps
+                     WHERE COALESCE(NULLIF(TRIM(tipo_material),''),'(sin tipo)')=?
+                       AND activo=1
+                     ORDER BY codigo_mp LIMIT 5""", (r["tipo"],))
+        ejemplos[r["tipo"]] = [
+            {"codigo": e["codigo_mp"], "nombre": e["nombre_comercial"]}
+            for e in c.fetchall()
+        ]
+
+    conn.close()
+
+    return jsonify({
+        "tipos": [dict(r) for r in rows],
+        "ejemplos": ejemplos,
+        "esperados_e_e": ["Envase Primario", "Envase Secundario", "Empaque"],
+        "nota": (
+            "Si un tipo esperado no aparece, no hay items clasificados con "
+            "ese valor exacto. Editá los items en el catálogo y asignales "
+            "tipo_material correcto."
+        ),
+    })
+
+
 # ─── Sync Banco Influencers desde Excel ───────────────────────────────────────
 
 @bp.route("/api/admin/sync-influencers-excel", methods=["POST"])
