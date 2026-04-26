@@ -1160,8 +1160,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Venta/mes</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Dias Cobertura</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Produccion</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Cal</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">MPs</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Calendario</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Materias Primas</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Accion</th>
           </tr>
