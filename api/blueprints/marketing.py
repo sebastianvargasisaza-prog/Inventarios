@@ -1953,7 +1953,7 @@ def mkt_ejecutar_agente(agente):
                 generados.append({"sku": sku, "uds_30d": s["total"], "precio": precio,
                     "caption_instagram": caption,
                     "asunto_email": f"{sku} — Tu piel lo estaba esperando",
-                    "texto_whatsapp": f"Hola\! Te cuento sobre {sku} de ÁNIMUS Lab. ¿Te interesa? 🧴✨"})
+                    "texto_whatsapp": f"¡Hola! Te cuento sobre {sku} de ÁNIMUS Lab. ¿Te interesa? 🧴✨"})
             resultado = {"titulo": "Contenido Auto-Generado para Top SKUs", "piezas": generados}
 
         # ── Agente 10: Alerta Stock ────────────────────────────────────────────

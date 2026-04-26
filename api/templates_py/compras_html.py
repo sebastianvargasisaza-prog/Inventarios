@@ -2231,11 +2231,11 @@ function renderInfluencers(){
     var out={nombre:'',banco:'',cuenta:'',cedNit:'',valor:''};
     if(!obs) return out;
     var m;
-    m=obs.match(/BENEFICIARIO:\s*([^|]+)/i); if(m) out.nombre=m[1].trim();
-    m=obs.match(/BANCO:\s*([^|]+)/i);        if(m) out.banco=m[1].trim();
-    m=obs.match(/CUENTA\/CEL:\s*([^|]+)/i);  if(m) out.cuenta=m[1].trim();
-    m=obs.match(/CED\/NIT:\s*([^|]+)/i);     if(m) out.cedNit=m[1].trim();
-    m=obs.match(/VALOR:\s*([^|]+)/i);        if(m) out.valor=m[1].trim();
+    m=obs.match(/BENEFICIARIO:\\s*([^|]+)/i); if(m) out.nombre=m[1].trim();
+    m=obs.match(/BANCO:\\s*([^|]+)/i);        if(m) out.banco=m[1].trim();
+    m=obs.match(/CUENTA\\/CEL:\\s*([^|]+)/i);  if(m) out.cuenta=m[1].trim();
+    m=obs.match(/CED\\/NIT:\\s*([^|]+)/i);     if(m) out.cedNit=m[1].trim();
+    m=obs.match(/VALOR:\\s*([^|]+)/i);        if(m) out.valor=m[1].trim();
     return out;
   }
 
@@ -3120,7 +3120,7 @@ function recalcIVA(rate,sub){
   if(iv) iv.textContent = fmt(iva);
   if(tv) tv.textContent = fmt(tot);
 }
-<\/script>
+<\\/script>
 </body>
 </html>`;
 

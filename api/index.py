@@ -166,28 +166,80 @@ _log.getLogger(__name__).info(
 
 
 
+@app.before_request
+def _attach_request_context():
+    """Adjunta request_id (12 hex) y timestamp de inicio.
+
+    El request_id se reusa si llega en el header X-Request-Id (ej. desde un
+    load balancer que ya lo asigno) — caso contrario se genera uno nuevo.
+    Ambos: timing y correlacion para debugging multi-worker.
+    """
+    import uuid as _uuid
+    request._start_time = _time_module.time()
+    incoming = request.headers.get("X-Request-Id", "").strip()
+    request.id = incoming if (incoming and len(incoming) <= 64) else _uuid.uuid4().hex[:12]
+
+
 @app.after_request
-def log_request(response):
-    """Log estructurado de cada request — parseable por Render/Datadog/Grafana."""
+def _log_request(response):
+    """Log estructurado de cada request — parseable por Render/Datadog/Grafana.
+
+    Incluye request_id para correlacionar logs entre middleware, blueprints y
+    error handlers. El header X-Request-Id se devuelve al cliente para que
+    pueda referenciarlo al reportar bugs.
+    """
     try:
         import json as _json
-        duration_ms = round((_time_module.time() - getattr(request, '_start_time', _time_module.time())) * 1000, 1)
+        rid = getattr(request, "id", "-")
+        response.headers["X-Request-Id"] = rid
+        duration_ms = round((_time_module.time() - getattr(request, "_start_time", _time_module.time())) * 1000, 1)
         _logger.info(_json.dumps({
-            "ts":       __import__('datetime').datetime.utcnow().isoformat() + "Z",
-            "method":   request.method,
-            "path":     request.path,
-            "status":   response.status_code,
-            "ms":       duration_ms,
-            "user":     session.get("compras_user", "-"),
-            "ip":       request.headers.get("X-Forwarded-For", request.remote_addr or "-").split(",")[0].strip(),
+            "ts":         __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "request_id": rid,
+            "method":     request.method,
+            "path":       request.path,
+            "status":     response.status_code,
+            "ms":         duration_ms,
+            "user":       session.get("compras_user", "-"),
+            "ip":         request.headers.get("X-Forwarded-For", request.remote_addr or "-").split(",")[0].strip(),
         }, ensure_ascii=False))
     except Exception:
         pass
     return response
 
-@app.before_request
-def mark_start_time():
-    request._start_time = _time_module.time()
+
+@app.errorhandler(Exception)
+def _unhandled_exception(e):
+    """Captura cualquier excepcion no manejada, loguea stack trace estructurado
+    y devuelve un JSON consistente al cliente con el request_id para soporte.
+
+    Excepciones HTTP de Werkzeug (404, 401, etc.) se delegan a sus handlers
+    nativos — solo aplica a errores 5xx y bugs no anticipados.
+    """
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    import traceback as _tb
+    import json as _json
+    rid = getattr(request, "id", "-")
+    try:
+        _logger.error(_json.dumps({
+            "ts":         __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "level":      "ERROR",
+            "request_id": rid,
+            "method":     request.method,
+            "path":       request.path,
+            "user":       session.get("compras_user", "-"),
+            "exception":  type(e).__name__,
+            "message":    str(e)[:500],
+            "trace":      _tb.format_exc()[-2000:],
+        }, ensure_ascii=False))
+    except Exception:
+        pass
+    return jsonify({
+        "error": "Error interno del servidor",
+        "request_id": rid,
+    }), 500
 
 
 @app.route('/api/health')

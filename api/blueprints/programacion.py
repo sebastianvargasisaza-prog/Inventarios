@@ -190,7 +190,7 @@ def _parse_ical(text, days_ahead=90):
         for line in block.splitlines():
             line = line.strip()
             if line.startswith('SUMMARY:'):
-                summary = line[8:].replace('\n', ' ').replace('\,', ',').strip()
+                summary = line[8:].replace('\n', ' ').replace(r'\,', ',').strip()
             elif line.startswith('DTSTART'):
                 # DTSTART;VALUE=DATE:20260502 or DTSTART:20260502T... 
                 val = line.split(':', 1)[-1].strip()
