@@ -2817,8 +2817,9 @@ function setConteoTipo(tipo){
       lbl.style.display = 'none';
     }
   }
-  // Recargar estanterías filtradas por tipo
+  // Recargar estanterías + programación cíclica con filtro aplicado
   cargarEstanterias();
+  cargarProgramacionCiclica();
 }
 
 async function cargarEstanterias(){
@@ -2853,14 +2854,23 @@ async function cargarEstanterias(){
 
 async function cargarProgramacionCiclica(){
   try{
-    var r = await fetch('/api/conteo/programacion');
+    // El endpoint cambia de comportamiento según tipo_material:
+    //   sin filtro o 'MP'  → rotación por estantería (modo legacy)
+    //   E&E (Envase/Empaque) → rotación de 3 ítems determinista por semana
+    var url = '/api/conteo/programacion';
+    if(_conteoTipoFiltro && _conteoTipoFiltro !== 'MP'){
+      url += '?tipo_material=' + encodeURIComponent(_conteoTipoFiltro);
+    }
+    var r = await fetch(url);
     var d = await r.json();
     var tbody = document.getElementById('cnt-prog-rows');
     if(!tbody) return;
     if(!d.semanas || d.semanas.length === 0){
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">Sin datos de estanterias</td></tr>';
+      var msg = d.mensaje || 'Sin datos de estanter&iacute;as';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">'+msg+'</td></tr>';
       return;
     }
+    var modoItems = (d.modo === 'items');
     var html = '';
     d.semanas.forEach(function(s){
       var bg = s.es_actual ? 'background:linear-gradient(135deg,#d4f7f2,#e8faf7);font-weight:700;' : '';
@@ -2871,21 +2881,40 @@ async function cargarProgramacionCiclica(){
       var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
       var accion = '';
       if(s.es_actual && s.conteo_estado !== 'Cerrado'){
-        accion = `<button onclick="iniciarConteoProgramado('${s.estanteria}')" style="padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">${s.conteo_estado==='Abierto'?'Retomar':'Iniciar'}</button>`;
+        accion = '<button onclick="iniciarConteoProgramado(\\''+s.estanteria+'\\')" style="padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">'+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
+      }
+      // En modo items, mostrar los códigos+nombres de los 3 ítems en lugar
+      // del label sintético "E&E-Empaque-S05"
+      var asignacionTxt;
+      if(modoItems && s.items_programados){
+        asignacionTxt = '<div style="font-size:0.78em;color:#555;font-weight:600;margin-bottom:3px;">3 items a contar:</div>';
+        s.items_programados.forEach(function(it){
+          asignacionTxt += '<div style="font-size:0.8em;font-family:monospace;color:#1e293b;">• '+it.codigo_mp+' — '+it.nombre+'</div>';
+        });
+      } else {
+        asignacionTxt = s.estanteria;
       }
       html += '<tr style="border-bottom:1px solid #e0ece9;'+bg+'">'
-            + '<td style="padding:7px 12px;">'+semLabel+'</td>'
-            + '<td style="padding:7px 12px;">'+s.lunes+'</td>'
-            + '<td style="padding:7px 12px;font-weight:600;">'+s.estanteria+'</td>'
-            + '<td style="padding:7px 12px;text-align:center;">'+badge+'</td>'
-            + '<td style="padding:7px 12px;text-align:center;">'+accion+'</td>'
+            + '<td style="padding:7px 12px;vertical-align:top;">'+semLabel+'</td>'
+            + '<td style="padding:7px 12px;vertical-align:top;">'+s.lunes+'</td>'
+            + '<td style="padding:7px 12px;font-weight:600;">'+asignacionTxt+'</td>'
+            + '<td style="padding:7px 12px;text-align:center;vertical-align:top;">'+badge+'</td>'
+            + '<td style="padding:7px 12px;text-align:center;vertical-align:top;">'+accion+'</td>'
             + '</tr>';
     });
-    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">Total estanterias en rotacion: '+d.total_estanterias+' — ciclo completo cada '+d.total_estanterias+' semanas</td></tr>';
+    var resumen;
+    if(modoItems){
+      resumen = 'Tipo: <strong>'+d.tipo_material+'</strong> · Total &iacute;tems: '+d.total_items+
+                ' · 3 items por semana · Ciclo completo en ~'+Math.ceil(d.total_items/3)+' semanas';
+    } else {
+      resumen = 'Total estanter&iacute;as en rotaci&oacute;n: '+d.total_estanterias+
+                ' &mdash; ciclo completo cada '+d.total_estanterias+' semanas';
+    }
+    html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">'+resumen+'</td></tr>';
     tbody.innerHTML = html;
   }catch(e){
     var tbody = document.getElementById('cnt-prog-rows');
-    if(tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:#c00;padding:10px;">Error cargando programacion</td></tr>';
+    if(tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:#c00;padding:10px;">Error cargando programaci&oacute;n: '+(e.message||e)+'</td></tr>';
   }
 }
 

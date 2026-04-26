@@ -2107,17 +2107,17 @@ async function confirmarPago(){
       body:JSON.stringify(payload)});
     var d=await r.json();
     if(r.status===409 && d.codigo==='FACTURA_DUPLICADA'){
-      alert('⚠ Factura duplicada\n\n'+d.error+'\n\n'+d.detail);
+      alert('⚠ Factura duplicada\\n\\n'+d.error+'\\n\\n'+d.detail);
       return;
     }
     if(r.status===403 && d.codigo==='EXCEDE_LIMITE_APROBACION'){
-      alert('⚠ Excede tu límite\n\n'+d.error+'\n\n'+d.detail);
+      alert('⚠ Excede tu límite\\n\\n'+d.error+'\\n\\n'+d.detail);
       return;
     }
     if(d.error){ alert('Error: '+d.error); return; }
     // Mensaje claro de pago parcial vs total
     if(d.estado==='Parcial' && typeof d.pendiente==='number'){
-      alert('Pago registrado.\nEstado: PARCIAL\nPagado total: $'+(d.total_pagado_acumulado||0).toLocaleString('es-CO')+'\nPendiente: $'+d.pendiente.toLocaleString('es-CO'));
+      alert('Pago registrado.\\nEstado: PARCIAL\\nPagado total: $'+(d.total_pagado_acumulado||0).toLocaleString('es-CO')+'\\nPendiente: $'+d.pendiente.toLocaleString('es-CO'));
     } else if(d.estado==='Pagada'){
       // OK, no necesita modal extra
     }

@@ -972,7 +972,21 @@ def conteo_iniciar():
 
 @bp.route('/api/conteo/programacion', methods=['GET'])
 def conteo_programacion():
-    """Retorna la programación cíclica automática: estantería asignada por semana ISO."""
+    """Retorna la programación cíclica automática.
+
+    Modo MP (default, sin filtro): rotación por estantería.
+    Modo E&E (?tipo_material=Empaque|Envase Primario|Envase Secundario):
+        rotación de 3 ITEMS específicos por semana ISO. Como E&E no tiene
+        ubicación física, en lugar de elegir estantería se eligen 3 ítems
+        determinísticos para la semana — el equipo busca los 3 y los cuenta.
+
+    Determinístico: la misma semana siempre devuelve los mismos 3 ítems.
+    Rota por TODOS los ítems del tipo a lo largo del año.
+    """
+    tipo = (request.args.get('tipo_material') or '').strip()
+    if tipo in ('Envase Primario', 'Envase Secundario', 'Empaque'):
+        return _conteo_programacion_items(tipo)
+    # Modo MP por estantería (legacy)
     from datetime import date, timedelta
     import math
     conn = get_db(); c = conn.cursor()
@@ -1014,6 +1028,96 @@ def conteo_programacion():
             'conteo_estado': conteo[2] if conteo else 'Pendiente',
         })
     return jsonify({'semanas': semanas, 'total_estanterias': n, 'estanterias': estanterias})
+
+
+def _conteo_programacion_items(tipo_material):
+    """Programación cíclica para E&E: 3 ítems por semana, deterministas.
+
+    Algoritmo:
+      1. Lista ordenada de todos los ítems del tipo con stock_minimo > 0 o
+         con stock vivo (los que vale la pena auditar).
+      2. Para una semana ISO N: índices [(3*N) % L, (3*N+1) % L, (3*N+2) % L]
+         donde L = total ítems. Esto garantiza:
+           - Mismos 3 ítems para la misma semana (determinístico).
+           - Rotación completa: tras ⌈L/3⌉ semanas se han contado todos.
+           - Sin solapamiento: 3 ítems distintos cada semana.
+      3. Devuelve esquema compatible con UI: 'estanteria' lleva descripción
+         del item, 'items_programados' contiene los códigos y nombres.
+    """
+    from datetime import date, timedelta
+
+    conn = get_db(); c = conn.cursor()
+    # Universo: items activos del tipo con stock_minimo > 0 (operacionales).
+    # Si no hay ninguno con stock_minimo, fallback a todos los activos del tipo.
+    c.execute("""SELECT codigo_mp, nombre_comercial
+                 FROM maestro_mps
+                 WHERE activo=1 AND COALESCE(tipo_material,'MP')=?
+                       AND COALESCE(stock_minimo, 0) > 0
+                 ORDER BY codigo_mp""", (tipo_material,))
+    items = c.fetchall()
+    if not items:
+        c.execute("""SELECT codigo_mp, nombre_comercial
+                     FROM maestro_mps
+                     WHERE activo=1 AND COALESCE(tipo_material,'MP')=?
+                     ORDER BY codigo_mp""", (tipo_material,))
+        items = c.fetchall()
+
+    if not items:
+        return jsonify({
+            'semanas': [], 'total_items': 0, 'tipo_material': tipo_material,
+            'mensaje': f"No hay items de tipo '{tipo_material}' en el catálogo."
+        })
+
+    L = len(items)
+    hoy = date.today()
+    lunes_actual = hoy - timedelta(days=hoy.weekday())
+    semanas = []
+
+    for delta in range(-1, 5):  # semana pasada + actual + próximas 4
+        lunes = lunes_actual + timedelta(weeks=delta)
+        semana_iso = lunes.isocalendar()[1]
+        anio = lunes.isocalendar()[0]
+        # Combinamos año + semana para que la rotación no se repita igual cada año
+        seed = anio * 100 + semana_iso
+        # 3 índices distintos, deterministas
+        indices = [(3 * seed + offset) % L for offset in range(3)]
+        # Si L < 3, evitar duplicados
+        if L < 3:
+            indices = list(range(L))
+        items_semana = [
+            {'codigo_mp': items[i][0], 'nombre': items[i][1]}
+            for i in indices
+        ]
+
+        # Buscar conteo asociado de la semana (estanteria=etiqueta sintética)
+        etiqueta = f"E&E-{tipo_material}-S{semana_iso:02d}"
+        fecha_fin = lunes + timedelta(days=6)
+        c.execute("""SELECT id, numero, estado FROM conteos_fisicos
+                     WHERE estanteria=? AND fecha_inicio BETWEEN ? AND ?
+                     ORDER BY id DESC LIMIT 1""",
+                  (etiqueta, lunes.isoformat(), fecha_fin.isoformat() + ' 23:59:59'))
+        conteo = c.fetchone()
+
+        semanas.append({
+            'semana': semana_iso,
+            'anio': anio,
+            'lunes': lunes.isoformat(),
+            'estanteria': etiqueta,  # campo legacy compatible con UI
+            'tipo_material': tipo_material,
+            'items_programados': items_semana,
+            'es_actual': delta == 0,
+            'conteo_id': conteo[0] if conteo else None,
+            'conteo_numero': conteo[1] if conteo else None,
+            'conteo_estado': conteo[2] if conteo else 'Pendiente',
+        })
+
+    return jsonify({
+        'semanas': semanas,
+        'total_items': L,
+        'tipo_material': tipo_material,
+        'modo': 'items',  # vs 'estanteria' del modo MP
+    })
+
 
 @bp.route('/api/conteo/<int:conteo_id>/guardar', methods=['POST'])
 def conteo_guardar(conteo_id):

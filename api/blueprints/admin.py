@@ -692,7 +692,7 @@ async function loadUsers() {
 }
 
 async function resetPassword(username) {
-  if (!confirm('¿Resetear la password de "' + username + '"?\n\nSe generará una password aleatoria que verás UNA SOLA VEZ. Tienes que comunicársela al usuario.')) return;
+  if (!confirm('¿Resetear la password de "' + username + '"?\\n\\nSe generará una password aleatoria que verás UNA SOLA VEZ. Tienes que comunicársela al usuario.')) return;
   try {
     const r = await fetch('/api/admin/reset-password', {
       method:'POST', headers:{'Content-Type':'application/json'},
