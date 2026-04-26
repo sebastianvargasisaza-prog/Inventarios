@@ -123,6 +123,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
   <button class="tn"     data-tab="ocs">&#x1F4CB; &#xD3;rdenes de Compra</button>
   <button class="tn"     data-tab="pagos">&#x1F4B8; Pagos</button>
+  <button class="tn"     data-tab="por-pagar">&#x1F4B0; Por Pagar</button>
+  <button class="tn"     data-tab="alertas">&#x1F6A8; Alertas</button>
   <button class="tn" data-tab="planta" id="tn-planta">&#x1F331; Planta</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
   <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
@@ -337,6 +339,105 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando consolidado...</div>
   </div>
 </div>
+
+<!-- ════════════ TAB: POR PAGAR ════════════ -->
+<div id="pane-por-pagar" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4B0; Pendiente de pago</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        Mercanc&iacute;a recibida + servicios sin recepci&oacute;n (Influencers, Cuentas de Cobro)
+      </div>
+    </div>
+    <button class="btn bp" onclick="loadPorPagar()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+  </div>
+
+  <div id="por-pagar-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px;">
+    <div style="background:#1e1b4b;border:1px solid #4c1d95;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:0.05em;">Total pendiente</div>
+      <div style="font-size:22px;font-weight:800;color:#fff;" id="por-pagar-total">-</div>
+    </div>
+    <div style="background:#0c1a4d;border:1px solid #1e3a8a;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.05em;">Mercanc&iacute;a recibida</div>
+      <div style="font-size:18px;font-weight:800;color:#fff;" id="por-pagar-merc">-</div>
+    </div>
+    <div style="background:#3a2a00;border:1px solid #92400e;border-radius:10px;padding:14px;">
+      <div style="font-size:10px;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;">Pago directo (servicios)</div>
+      <div style="font-size:18px;font-weight:800;color:#fff;" id="por-pagar-svc">-</div>
+    </div>
+  </div>
+
+  <!-- Sección destacada: pagos directos (Influencers) -->
+  <div id="por-pagar-directos-wrap" style="display:none;margin-bottom:20px;">
+    <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:10px;">
+      <div style="font-weight:700;color:#92400e;font-size:14px;">&#x1F4B8; Pagos directos (Influencers, Cuentas de Cobro)</div>
+      <div style="font-size:11px;color:#78350f;margin-top:4px;">Estas OCs no requieren recepci&oacute;n f&iacute;sica — son servicios listos para pagar.</div>
+    </div>
+    <div id="por-pagar-directos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>
+  </div>
+
+  <!-- Mercancía recibida -->
+  <div style="margin-bottom:14px;">
+    <div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:10px;">&#x1F4E6; Mercanc&iacute;a recibida pendiente de pago</div>
+    <div id="por-pagar-merc-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
+      <div style="color:#94a3b8;text-align:center;padding:20px;">Cargando...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: ALERTAS ════════════ -->
+<div id="pane-alertas" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F6A8; Alertas vivas de Compras</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        Lo que requiere atenci&oacute;n hoy. Revisa cada secci&oacute;n y ataca las cr&iacute;ticas primero.
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="alertas-sev-pill" style="padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:#e2e8f0;color:#64748b;">cargando...</span>
+      <button class="btn bp" onclick="loadAlertasCompras()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+    <!-- Card 1: OCs sin recibir -->
+    <div style="background:#fff;border:1px solid #fcd34d;border-radius:12px;padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:13px;color:#92400e;">&#x23F3; OCs sin recibir &gt; 15 d&iacute;as</div>
+        <span id="alertas-sin-recibir-count" style="background:#f59e0b;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+      </div>
+      <div id="alertas-sin-recibir" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+    </div>
+
+    <!-- Card 2: Pagos por vencer -->
+    <div style="background:#fff;border:1px solid #fca5a5;border-radius:12px;padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:13px;color:#7f1d1d;">&#x1F4B5; Pagos por vencer</div>
+        <span id="alertas-pagos-vencer-count" style="background:#dc2626;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+      </div>
+      <div id="alertas-pagos-vencer" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+    </div>
+
+    <!-- Card 3: Solicitudes Pendientes -->
+    <div style="background:#fff;border:1px solid #93c5fd;border-radius:12px;padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:13px;color:#1e3a8a;">&#x1F4DD; Solicitudes pendientes &gt; 3 d&iacute;as</div>
+        <span id="alertas-solic-count" style="background:#3b82f6;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+      </div>
+      <div id="alertas-solic" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+    </div>
+
+    <!-- Card 4: Borradores estancados -->
+    <div style="background:#fff;border:1px solid #d4d4d8;border-radius:12px;padding:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:13px;color:#52525b;">&#x1F4D1; OCs Borrador &gt; 7 d&iacute;as</div>
+        <span id="alertas-borrador-count" style="background:#71717a;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;">0</span>
+      </div>
+      <div id="alertas-borrador" style="font-size:12px;color:#1e293b;max-height:280px;overflow-y:auto;">Cargando...</div>
+    </div>
+  </div>
+</div>
 <!-- MODAL: Proveedor 360 -->
 <div id="m-ficha360" class="ov">
 <div class="mdl mdl-lg" style="max-width:780px;max-height:88vh;overflow-y:auto;">
@@ -467,10 +568,20 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
         <select id="pago-medio"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>PSE</option><option>Nequi</option></select>
       </div>
     </div>
+    <div class="fg">
+      <label>&#x1F4C4; N&uacute;mero factura proveedor (3-way matching)</label>
+      <input type="text" id="pago-factura" placeholder="Ej: FAC-12345" style="text-transform:uppercase;">
+      <div style="font-size:11px;color:#64748b;margin-top:3px;">Si esta factura ya fue usada en otro pago, el sistema te avisa antes de continuar.</div>
+    </div>
     <div class="fg"><label>Comprobante / Referencia</label><textarea id="pago-obs" rows="2" placeholder="No. transaccion, referencia..."></textarea></div>
     <div class="fg"><label>&#x1F5BC; Captura de transferencia (opcional)</label>
       <input type="file" id="pago-img-file" accept="image/*" onchange="previewPagoImg()" style="display:block;margin-bottom:6px;font-size:12px;">
       <img id="pago-img-preview" src="" alt="" style="display:none;max-width:100%;max-height:160px;border-radius:6px;border:1px solid #e7e5e4;">
+    </div>
+    <!-- Historial de pagos previos (pagos parciales) -->
+    <div id="pago-historial" style="display:none;margin-top:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;">
+      <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4DC; Pagos previos de esta OC</div>
+      <div id="pago-historial-list" style="font-size:11px;color:#64748b;"></div>
     </div>
     <input type="hidden" id="pago-num">
   </div>
@@ -700,8 +811,10 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='consol') loadConsolidado();
     else if(tab==='ocs'){ renderOCS(); }
     else if(tab==='pagos'){ loadPagos(); }
+    else if(tab==='por-pagar'){ loadPorPagar(); }
+    else if(tab==='alertas'){ loadAlertasCompras(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='planta'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='planta'||tab==='por-pagar'||tab==='alertas'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab==='ocs'?(_ocsCatFilter==='ALL'?'':_ocsCatFilter.toUpperCase()):tab.toUpperCase();
       openNuevaOC(cat);
@@ -1977,6 +2090,7 @@ async function confirmarPago(){
   var monto=document.getElementById('pago-monto').value;
   var medio=document.getElementById('pago-medio').value;
   var obs=document.getElementById('pago-obs').value;
+  var factura=(document.getElementById('pago-factura').value||'').trim().toUpperCase();
   if(!monto||parseFloat(monto)<=0){ alert('Ingresa el monto'); return; }
   var imgData=null;
   var imgFile=document.getElementById('pago-img-file').files[0];
@@ -1987,11 +2101,26 @@ async function confirmarPago(){
   }
   try{
     var payload={monto:parseFloat(monto),medio:medio,observaciones:obs};
+    if(factura) payload.numero_factura_proveedor=factura;
     if(imgData) payload.comprobante_imagen=imgData;
     var r=await fetch('/api/ordenes-compra/'+num+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)});
     var d=await r.json();
+    if(r.status===409 && d.codigo==='FACTURA_DUPLICADA'){
+      alert('⚠ Factura duplicada\n\n'+d.error+'\n\n'+d.detail);
+      return;
+    }
+    if(r.status===403 && d.codigo==='EXCEDE_LIMITE_APROBACION'){
+      alert('⚠ Excede tu límite\n\n'+d.error+'\n\n'+d.detail);
+      return;
+    }
     if(d.error){ alert('Error: '+d.error); return; }
+    // Mensaje claro de pago parcial vs total
+    if(d.estado==='Parcial' && typeof d.pendiente==='number'){
+      alert('Pago registrado.\nEstado: PARCIAL\nPagado total: $'+(d.total_pagado_acumulado||0).toLocaleString('es-CO')+'\nPendiente: $'+d.pendiente.toLocaleString('es-CO'));
+    } else if(d.estado==='Pagada'){
+      // OK, no necesita modal extra
+    }
     closeModal('m-pago');
     // Reset image
     document.getElementById('pago-img-file').value='';
@@ -3391,6 +3520,188 @@ async function eliminarSolicitud(num){
       alert('No se pudo eliminar: '+(d.error||'error desconocido'));
     }
   }catch(e){alert('Error: '+e.message);}
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Tab "Por Pagar" — vista unificada de pendientes de pago
+// ════════════════════════════════════════════════════════════════════════
+
+function _esc(s){return String(s||'').replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];});}
+function _money(n){return '$'+Number(n||0).toLocaleString('es-CO');}
+
+// Abre el modal de pago con info de la OC + historial de pagos previos.
+async function payOC(numero_oc){
+  // Reset modal
+  document.getElementById('pago-num').value = numero_oc;
+  document.getElementById('pago-monto').value = '';
+  document.getElementById('pago-medio').value = 'Transferencia';
+  document.getElementById('pago-obs').value = '';
+  document.getElementById('pago-factura').value = '';
+  document.getElementById('pago-img-file').value = '';
+  document.getElementById('pago-img-preview').style.display = 'none';
+
+  // Cargar info de la OC + historial de pagos
+  try{
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numero_oc)+'/pagos');
+    if(r.ok){
+      var d = await r.json();
+      var info = document.getElementById('pago-info');
+      if(info){
+        info.innerHTML = '<div><strong>'+_esc(numero_oc)+'</strong> · valor total '+_money(d.valor_total_oc)+
+          ' · pagado '+_money(d.total_pagado)+' · pendiente <strong style="color:#dc2626;">'+_money(d.pendiente)+'</strong></div>';
+      }
+      // Pre-llenar con el monto pendiente
+      if(d.pendiente > 0) document.getElementById('pago-monto').value = d.pendiente;
+
+      // Historial de pagos previos (pagos parciales)
+      var hist = document.getElementById('pago-historial');
+      var histList = document.getElementById('pago-historial-list');
+      if((d.pagos||[]).length){
+        hist.style.display = 'block';
+        histList.innerHTML = d.pagos.map(function(p){
+          return '<div style="padding:4px 0;border-bottom:1px solid #e5e7eb;">'+
+            (p.fecha_pago||'').replace('T',' ').slice(0,16)+' · '+_money(p.monto)+' · '+_esc(p.medio)+
+            (p.numero_factura_proveedor ? ' · fac '+_esc(p.numero_factura_proveedor) : '')+
+            ' · <em>'+_esc(p.registrado_por||'?')+'</em></div>';
+        }).join('');
+      } else {
+        hist.style.display = 'none';
+      }
+    }
+  }catch(e){}
+
+  openModal('m-pago');
+}
+
+async function loadPorPagar(){
+  try{
+    var r = await fetch('/api/compras/por-pagar');
+    if(!r.ok){ document.getElementById('por-pagar-merc-list').innerHTML='<div style="color:#dc2626;padding:20px;">Error '+r.status+'</div>'; return; }
+    var d = await r.json();
+    var desg = d.desglose || {};
+    document.getElementById('por-pagar-total').textContent = _money(d.total_valor);
+    document.getElementById('por-pagar-merc').textContent = _money((desg.mercancia_recibida||{}).valor) + ' · ' + ((desg.mercancia_recibida||{}).count||0)+' OCs';
+    document.getElementById('por-pagar-svc').textContent = _money((desg.pagos_directos_servicios||{}).valor) + ' · ' + ((desg.pagos_directos_servicios||{}).count||0)+' OCs';
+
+    var directos = (d.items||[]).filter(function(x){return x.pago_directo===true;});
+    var fisicas = (d.items||[]).filter(function(x){return !x.pago_directo;});
+
+    // Sección destacada de pagos directos
+    var dirWrap = document.getElementById('por-pagar-directos-wrap');
+    var dirEl = document.getElementById('por-pagar-directos');
+    if(directos.length){
+      dirWrap.style.display = 'block';
+      dirEl.innerHTML = directos.map(function(o){
+        return '<div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;padding:12px;">'+
+          '<div style="font-weight:700;font-family:monospace;color:#92400e;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
+          '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
+          '<div style="font-size:11px;color:#78350f;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          '<div style="font-size:18px;font-weight:800;color:#059669;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
+          '<button class="btn bs" style="margin-top:8px;padding:6px 14px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar ahora</button>'+
+        '</div>';
+      }).join('');
+    } else {
+      dirWrap.style.display = 'none';
+    }
+
+    // Mercancía física
+    var mercEl = document.getElementById('por-pagar-merc-list');
+    if(!fisicas.length){
+      mercEl.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center;">Sin mercanc&iacute;a recibida pendiente de pago.</div>';
+    } else {
+      mercEl.innerHTML = fisicas.map(function(o){
+        var estCol = o.estado==='Parcial' ? '#d97706' : '#16a34a';
+        return '<div style="background:#fff;border:1px solid #d1d5db;border-radius:10px;padding:12px;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+            '<div style="font-weight:700;font-family:monospace;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
+            '<span style="background:'+estCol+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+_esc(o.estado)+'</span>'+
+          '</div>'+
+          '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
+          '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          '<div style="font-size:18px;font-weight:800;color:#1e293b;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
+          '<button class="btn bs" style="margin-top:8px;padding:6px 14px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+        '</div>';
+      }).join('');
+    }
+  }catch(e){
+    document.getElementById('por-pagar-merc-list').innerHTML = '<div style="color:#dc2626;padding:20px;">Error: '+_esc(e.message)+'</div>';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Tab "Alertas" — 4 categorías de alertas vivas
+// ════════════════════════════════════════════════════════════════════════
+
+async function loadAlertasCompras(){
+  try{
+    var r = await fetch('/api/compras/alertas-vivas');
+    if(!r.ok){ return; }
+    var d = await r.json();
+
+    // Severidad pill
+    var sevPill = document.getElementById('alertas-sev-pill');
+    var sev = d.severidad_max || 'ok';
+    var sevColors = {critico:'#dc2626',alto:'#f59e0b',medio:'#3b82f6',bajo:'#71717a',ok:'#16a34a'};
+    sevPill.style.background = sevColors[sev] || '#71717a';
+    sevPill.style.color = '#fff';
+    sevPill.textContent = sev==='ok' ? 'Sin alertas' : 'Severidad max: '+sev;
+
+    // 1. OCs sin recibir
+    var sr = d.ocs_sin_recibir || [];
+    document.getElementById('alertas-sin-recibir-count').textContent = sr.length;
+    document.getElementById('alertas-sin-recibir').innerHTML = sr.length === 0
+      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      : sr.map(function(o){
+          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+            '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
+            '<span style="font-size:10px;color:#92400e;font-weight:700;">'+(o.dias_sin_recibir||'?')+' d</span></div>'+
+            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
+          '</div>';
+        }).join('');
+
+    // 2. Pagos por vencer
+    var pv = d.pagos_por_vencer || [];
+    document.getElementById('alertas-pagos-vencer-count').textContent = pv.length;
+    document.getElementById('alertas-pagos-vencer').innerHTML = pv.length === 0
+      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      : pv.map(function(o){
+          var dias = o.dias_restantes;
+          var diasTxt = dias === null ? '?' : (dias < 0 ? Math.abs(dias)+' d en mora' : dias+' d restantes');
+          var col = dias < 0 ? '#dc2626' : (dias <= 3 ? '#f59e0b' : '#3b82f6');
+          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+            '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
+            '<span style="font-size:10px;color:'+col+';font-weight:700;">'+diasTxt+'</span></div>'+
+            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · pendiente '+_money(o.pendiente)+'</div>'+
+          '</div>';
+        }).join('');
+
+    // 3. Solicitudes pendientes
+    var sp = d.solicitudes_pendientes || [];
+    document.getElementById('alertas-solic-count').textContent = sp.length;
+    document.getElementById('alertas-solic').innerHTML = sp.length === 0
+      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      : sp.map(function(s){
+          var col = s.urgencia === 'Urgente' ? '#dc2626' : '#3b82f6';
+          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+            '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(s.numero)+'</strong>'+
+            '<span style="font-size:10px;color:'+col+';font-weight:700;">'+_esc(s.urgencia||'Normal')+'</span></div>'+
+            '<div style="font-size:11px;color:#64748b;">'+_esc(s.solicitante||'')+' · '+(s.dias_pendiente||'?')+' d · '+_esc(s.area||'')+'</div>'+
+          '</div>';
+        }).join('');
+
+    // 4. Borradores estancados
+    var bb = d.ocs_borrador_estancadas || [];
+    document.getElementById('alertas-borrador-count').textContent = bb.length;
+    document.getElementById('alertas-borrador').innerHTML = bb.length === 0
+      ? '<div style="color:#94a3b8;text-align:center;padding:14px;">Sin alertas</div>'
+      : bb.map(function(o){
+          return '<div style="border-bottom:1px solid #f1f5f9;padding:8px 0;">'+
+            '<div style="display:flex;justify-content:space-between;"><strong style="font-family:monospace;font-size:11px;">'+_esc(o.numero_oc)+'</strong>'+
+            '<span style="font-size:10px;color:#71717a;font-weight:700;">'+_esc(o.creado_por||'?')+'</span></div>'+
+            '<div style="font-size:11px;color:#64748b;">'+_esc(o.proveedor)+' · '+_money(o.valor_total)+'</div>'+
+          '</div>';
+        }).join('');
+  }catch(e){ console.error(e); }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────
