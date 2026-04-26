@@ -789,7 +789,7 @@ function showToast(msg, type) {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Número cuenta / Cel</label><input id="inf-cuenta" placeholder="3114902203 / 0123456789"></div>
+        <div class="form-group"><label>N&#xFA;mero de cuenta bancaria</label><input id="inf-cuenta" placeholder="Ej: 12345678901 (Bancolombia) o 3114902203 (Nequi)"><div style="font-size:10px;color:#64748b;margin-top:2px;">Para Nequi/Daviplata: ingresa el n&#xFA;mero celular</div></div>
         <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
       </div>
     </div>
@@ -1532,7 +1532,7 @@ function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
     prev.innerHTML = '<b>Beneficiario:</b> '+nombre+'<br>'
       +'<b>Banco:</b> '+banco+'<br>'
       +'<b>Tipo:</b> '+(tipoCta||'Ahorros')+'<br>'
-      +'<b>Cuenta/Cel:</b> '+(cuenta||'\u2014')+'<br>'
+      +'<b>Cuenta bancaria:</b> '+(cuenta||'<span style="color:#f59e0b;">&#x26A0; No registrada</span>')+'<br>'
       +'<b>C\u00e9dula/NIT:</b> '+(cedula||'\u2014');
   } else {
     prev.innerHTML = '<span style="color:#f59e0b;">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';

@@ -2243,10 +2243,12 @@ def mkt_solicitar_pago_influencer(iid):
         numero = f"{prefix}{seq:04d}"
 
         # Build observaciones in standard beneficiary format
+        telefono_inf = str(inf.get("telefono", "") or "").strip()
         obs_parts = [f"BENEFICIARIO: {inf['nombre']}"]
-        if banco:   obs_parts.append(f"BANCO: {banco} {tipo_cta}")
-        if cuenta:  obs_parts.append(f"CUENTA/CEL: {cuenta}")
-        if cedula:  obs_parts.append(f"CED/NIT: {cedula}")
+        if banco:        obs_parts.append(f"BANCO: {banco} {tipo_cta}")
+        if cuenta:       obs_parts.append(f"CUENTA/CEL: {cuenta}")
+        if cedula:       obs_parts.append(f"CED/NIT: {cedula}")
+        if telefono_inf: obs_parts.append(f"TEL: {telefono_inf}")
         obs_parts.append(f"CONCEPTO: {concepto}")
         obs_parts.append(f"VALOR: ${monto:,.0f}")
         observaciones = " | ".join(obs_parts)

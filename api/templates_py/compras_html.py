@@ -2294,12 +2294,18 @@ function renderInfluencers(){
 
     // Bank info row — only show if parsed
     var bankRow='';
-    if(b.nombre||b.banco||b.cuenta){
+    // Cuenta bancaria: prefer inf_cuenta (direct from DB) over OBS-parsed b.cuenta
+    var cuentaDisplay = (s.inf_cuenta && s.inf_cuenta.trim()) ? s.inf_cuenta.trim() : b.cuenta;
+    var telDisplay    = (s.inf_telefono && s.inf_telefono.trim()) ? s.inf_telefono.trim() : '';
+    var emailDisplay  = (s.inf_email && s.inf_email.trim()) ? s.inf_email.trim() : '';
+    if(b.nombre||b.banco||cuentaDisplay){
       bankRow='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">'
         +(b.nombre?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Beneficiario</span><div style="color:#1e293b;font-weight:600;margin-top:1px;">'+esc(b.nombre)+'</div></div>':'')
         +(b.banco?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Banco</span><div style="color:#1e293b;margin-top:1px;">'+esc(b.banco)+'</div></div>':'')
-        +(b.cuenta?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cuenta / Cel</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cuenta)+'</div></div>':'')
-        +(b.cedNit?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cédula / NIT</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cedNit)+'</div></div>':'')
+        +(cuentaDisplay?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">&#x1F4B3; Cuenta bancaria</span><div style="color:#1e293b;font-family:monospace;font-size:13px;font-weight:700;margin-top:1px;">'+esc(cuentaDisplay)+'</div></div>':'<div><span style="color:#f59e0b;font-weight:600;font-size:10px;">&#x26A0; Sin n&#xFA;mero de cuenta</span></div>')
+        +(b.cedNit?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">C&#xE9;dula / NIT</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cedNit)+'</div></div>':'')
+        +(telDisplay?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">&#x1F4F1; Tel&#xE9;fono contacto</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(telDisplay)+'</div></div>':'')
+        +(emailDisplay?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">&#x2709; Email</span><div style="color:#1e293b;margin-top:1px;font-size:11px;">'+esc(emailDisplay)+'</div></div>':'')
         +'</div>';
     }
 

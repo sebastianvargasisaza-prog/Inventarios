@@ -483,7 +483,7 @@ def handle_solicitudes_compra():
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
-    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida FROM solicitudes_compra WHERE 1=1"
+    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida,influencer_id FROM solicitudes_compra WHERE 1=1"
     params = []
     if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
@@ -495,16 +495,34 @@ def handle_solicitudes_compra():
         sql += " AND categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     sql += " ORDER BY fecha DESC LIMIT 200"
     c.execute(sql, params)
-    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida']
+    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','influencer_id']
     rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
     # Enrich with numero_oc and total valor
     for row in rows_sol:
         c2 = conn.cursor()
-        c2.execute("SELECT numero_oc, aprobado_por FROM solicitudes_compra WHERE numero=?", (row['numero'],))
+        c2.execute("SELECT numero_oc, aprobado_por, valor FROM solicitudes_compra WHERE numero=?", (row['numero'],))
         extra = c2.fetchone()
         row['numero_oc'] = extra[0] if extra else None
-        c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
-        row['valor'] = c2.fetchone()[0] or 0
+        row['valor'] = extra[2] if extra and extra[2] else 0
+        if not row['valor']:
+            c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
+            row['valor'] = c2.fetchone()[0] or 0
+        # Enrich with influencer banking/contact data if linked
+        row['inf_telefono'] = ''
+        row['inf_email'] = ''
+        row['inf_cuenta'] = ''
+        if row.get('influencer_id'):
+            try:
+                inf_row = c2.execute(
+                    "SELECT telefono, email, cuenta_bancaria FROM marketing_influencers WHERE id=?",
+                    (row['influencer_id'],)
+                ).fetchone()
+                if inf_row:
+                    row['inf_telefono'] = inf_row[0] or ''
+                    row['inf_email']    = inf_row[1] or ''
+                    row['inf_cuenta']   = inf_row[2] or ''
+            except Exception:
+                pass
     return jsonify({'solicitudes': rows_sol})
 
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
