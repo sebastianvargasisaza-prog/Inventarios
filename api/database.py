@@ -1101,7 +1101,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('MPTOCOFE01', 'SODIUM TOCOFERIL FOSFATO', 'MP00078', 'sodium tocopheryl phosphate = vitamina E', 1)
         """
     ]),
-    (15, "sku_producto_map: codigos cortos de calendario de produccion", [
+    (17, "sku_producto_map: codigos cortos de calendario de produccion", [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
         ('NPHA',   'SUERO EXFOLIANTE NOVA PHA',          1),
         ('RECN',   'SUERO ANTIOXIDANTE RENOVA C10',       1),
