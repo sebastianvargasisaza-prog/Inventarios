@@ -1,31 +1,38 @@
 # config.py -- constantes y credenciales del sistema
 import os
 
-# Contraseñas por usuario.
-# Producción DEBE setear cada PASS_<USER> como hash PBKDF2 (ver
-# scripts/gen_password_hashes.py). Si la env var falta, queda el
-# fallback plaintext temporal — validate_config() lo detecta al startup
-# y emite un warning estructurado en logs.
+# Contraseñas por usuario. Cada PASS_<USER> en Render debe ser un hash
+# PBKDF2 (ver scripts/gen_password_hashes.py).
+#
+# Si una env var falta, el usuario queda con string vacío — el flujo de
+# login en core.py rechaza correctamente (no matchea ninguna contraseña),
+# por lo que ese usuario simplemente no puede entrar hasta que se
+# configure su PASS_<USER>. validate_config() reporta cuáles faltan en
+# logs estructurados al startup.
+def _pwd(env_var):
+    """Lee password (hash) desde env var, retorna '' si falta."""
+    return os.environ.get(env_var, "").strip()
+
 COMPRAS_USERS = {
-    "sebastian":  os.environ.get("PASS_SEBASTIAN",  "hha2026"),
-    "alejandro":  os.environ.get("PASS_ALEJANDRO",  "hha2026"),
-    "hernando":   os.environ.get("PASS_HERNANDO",   "espagiria2026"),
-    "catalina":   os.environ.get("PASS_CATALINA",   "hha2026"),
-    "luz":        os.environ.get("PASS_LUZ",        "hha2026"),
-    "daniela":    os.environ.get("PASS_DANIELA",    "hha2026"),
-    "valentina":  os.environ.get("PASS_VALENTINA",  "espagiria2026"),
-    "jefferson":  os.environ.get("PASS_JEFFERSON",  "espagiria2026"),
-    "felipe":     os.environ.get("PASS_FELIPE",     "animus2026"),
-    "mayra":      os.environ.get("PASS_MAYRA",      "hha2026"),
-    "gloria":     os.environ.get("PASS_GLORIA",     "hha2026"),
-    "laura":      os.environ.get("PASS_LAURA",      "espagiria2026"),
-    "miguel":     os.environ.get("PASS_MIGUEL",     "espagiria2026"),
-    "yuliel":     os.environ.get("PASS_YULIEL",     "espagiria2026"),
-    "luis":       os.environ.get("PASS_LUIS",       "espagiria2026"),
-    "smurillo":   os.environ.get("PASS_SMURILLO",   "espagiria2026"),
-    "sergio":     os.environ.get("PASS_SERGIO",     "espagiria2026"),
-    "mayerlin":   os.environ.get("PASS_MAYERLIN",   "espagiria2026"),
-    "camilo":     os.environ.get("PASS_CAMILO",     "espagiria2026"),
+    "sebastian":  _pwd("PASS_SEBASTIAN"),
+    "alejandro":  _pwd("PASS_ALEJANDRO"),
+    "hernando":   _pwd("PASS_HERNANDO"),
+    "catalina":   _pwd("PASS_CATALINA"),
+    "luz":        _pwd("PASS_LUZ"),
+    "daniela":    _pwd("PASS_DANIELA"),
+    "valentina":  _pwd("PASS_VALENTINA"),
+    "jefferson":  _pwd("PASS_JEFFERSON"),
+    "felipe":     _pwd("PASS_FELIPE"),
+    "mayra":      _pwd("PASS_MAYRA"),
+    "gloria":     _pwd("PASS_GLORIA"),
+    "laura":      _pwd("PASS_LAURA"),
+    "miguel":     _pwd("PASS_MIGUEL"),
+    "yuliel":     _pwd("PASS_YULIEL"),
+    "luis":       _pwd("PASS_LUIS"),
+    "smurillo":   _pwd("PASS_SMURILLO"),
+    "sergio":     _pwd("PASS_SERGIO"),
+    "mayerlin":   _pwd("PASS_MAYERLIN"),
+    "camilo":     _pwd("PASS_CAMILO"),
 }
 ADMIN_USERS     = {"sebastian", "alejandro"}
 # Mayra (contadora) + Catalina (asistente compras): mismo perfil financiero/contable
@@ -109,25 +116,38 @@ def validate_config():
                    "(>= 32 chars). Ej: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
         })
 
-    # Passwords plaintext
+    # Passwords: detectar plaintext, faltantes (env var no configurada),
+    # y usar hash legacy. Sin hash → usuario no puede entrar.
+    missing_users = []
     plaintext_users = []
     for user, pwd in COMPRAS_USERS.items():
-        if pwd in _INSECURE_PLAINTEXT_DEFAULTS:
+        if not pwd:
+            missing_users.append(user)
+        elif pwd in _INSECURE_PLAINTEXT_DEFAULTS:
             plaintext_users.append(user)
-        elif not pwd.startswith("pbkdf2:") and not pwd.startswith("scrypt:"):
-            # Password custom pero plaintext (no hash)
+        elif not (pwd.startswith("pbkdf2:") or pwd.startswith("scrypt:")):
+            # Password custom pero plaintext (no hash) — alguien pegó el
+            # password en lugar del hash en la env var. Inseguro.
             plaintext_users.append(user)
+
+    if missing_users:
+        issues.append({
+            "severity": "HIGH",
+            "code": "MISSING_USER_PASSWORD",
+            "msg": f"{len(missing_users)} usuario(s) sin password configurada "
+                   f"(env var PASS_<USER> ausente). Estos usuarios NO pueden "
+                   f"entrar hasta que se configure su variable en Render. "
+                   f"Usuarios afectados: {', '.join(missing_users)}"
+        })
+
     if plaintext_users:
         issues.append({
-            "severity": "CRITICAL" if any(
-                COMPRAS_USERS[u] in _INSECURE_PLAINTEXT_DEFAULTS
-                for u in plaintext_users
-            ) else "HIGH",
+            "severity": "CRITICAL",
             "code": "PLAINTEXT_PASSWORDS",
-            "msg": f"{len(plaintext_users)} usuario(s) con password plaintext "
-                   f"(o usando fallback inseguro). "
-                   f"Corre 'python scripts/gen_password_hashes.py' y pega los "
-                   f"PASS_<USER> resultantes en Render → Environment. "
+            "msg": f"{len(plaintext_users)} usuario(s) con password en plaintext "
+                   f"en env vars. Las PASS_<USER> deben ser hashes pbkdf2: o "
+                   f"scrypt:. Corre 'python scripts/gen_password_hashes.py' y "
+                   f"pega los hashes (no las passwords) en Render → Environment. "
                    f"Usuarios afectados: {', '.join(plaintext_users)}"
         })
 

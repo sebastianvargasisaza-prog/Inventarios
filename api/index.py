@@ -34,15 +34,17 @@ from auth import (
 from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db, run_migrations, MIGRATIONS
 
 app = Flask(__name__)
-_secret = os.environ.get('SECRET_KEY')
+_secret = os.environ.get('SECRET_KEY', '').strip()
 if not _secret:
-    import warnings
-    warnings.warn(
-        "SECRET_KEY no configurado como variable de entorno. "
-        "Las sesiones son predecibles. Configura SECRET_KEY en Render → Environment.",
-        stacklevel=2
-    )
-    _secret = 'hha-group-2026-secretkey-x9kq'  # fallback solo para desarrollo local
+    # Sin fallback hardcoded: si falta SECRET_KEY, generamos una clave
+    # ALEATORIA EFÍMERA (válida solo para este proceso). Consecuencia:
+    # todas las sesiones se invalidan al redeploy y los users deben
+    # re-login. Mejor que tener una clave pública conocida que permita
+    # falsificar sesiones. validate_config() reporta CRITICAL para que
+    # el admin pueda configurarla en Render.
+    import secrets as _secrets_module
+    _secret = _secrets_module.token_urlsafe(48)
+    del _secrets_module
 app.secret_key = _secret
 del _secret
 app.config.update(
