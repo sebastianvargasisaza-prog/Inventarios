@@ -1123,6 +1123,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('LBHA',   'LIMPIADOR FACIAL BHA 2%',             1),
         ('CUREA',  'CREMA DE UREA',                       1)"""
     ]),
+    (19, "sku_producto_map fallback - SBHA y SKUs calendario garantizados en prod", [
+        """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
+        ('SBHA',   'Suero Exfoliante BHA 2%',             1),
+        ('NPHA',   'SUERO EXFOLIANTE NOVA PHA',            1),
+        ('RECN',   'SUERO ANTIOXIDANTE RENOVA C10',         1),
+        ('AZHC',   'AZ HIBRID CLEAR',                       1),
+        ('B3BHA',  'EMULSION HIDRATANTE  B3+BHA',           1),
+        ('SVITC',  'SUERO DE VITAMINA C+ FORMULA NUEVA',    1),
+        ('LBHA',   'LIMPIADOR FACIAL BHA 2%',               1),
+        ('CUREA',  'CREMA DE UREA',                         1)"""
+    ]),
 ]
 
 
