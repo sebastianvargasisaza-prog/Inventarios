@@ -4165,13 +4165,23 @@ function _renderProgramacion(d){
 
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   function switchProgTab(tab){
-    document.getElementById('ptab-centro').style.display = tab==='centro' ? 'block' : 'none';
-    document.getElementById('ptab-plan').style.display   = tab==='plan'   ? 'block' : 'none';
-    var bc = document.getElementById('prog-tab-centro');
-    var bp = document.getElementById('prog-tab-plan');
-    if(bc){ bc.style.background = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color = tab==='centro' ? '#fff' : '#1a4a7a'; }
-    if(bp){ bp.style.background = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color = tab==='plan'   ? '#fff' : '#1a4a7a'; }
-    if(tab==='plan' && !_planLoaded) cargarPlanificacion(2);
+    try {
+      var el_c = document.getElementById('ptab-centro');
+      var el_p = document.getElementById('ptab-plan');
+      if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
+      el_c.style.display = tab==='centro' ? 'block' : 'none';
+      el_p.style.display = tab==='plan'   ? 'block' : 'none';
+      var bc = document.getElementById('prog-tab-centro');
+      var bp = document.getElementById('prog-tab-plan');
+      if(bc){ bc.style.background = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color = tab==='centro' ? '#fff' : '#1a4a7a'; }
+      if(bp){ bp.style.background = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color = tab==='plan'   ? '#fff' : '#1a4a7a'; }
+      if(tab==='plan'){
+        el_p.scrollIntoView({behavior:'smooth', block:'start'});
+        if(!_planLoaded) cargarPlanificacion(2);
+      }
+    } catch(err) {
+      _toast('Error en switchProgTab: ' + err.message, 0);
+    }
   }
   var _planLoaded = false;
   var _planData   = null;
@@ -4208,8 +4218,14 @@ function _renderProgramacion(d){
       _renderPlanificacion(d);
     }catch(e){
       document.getElementById('plan-loading').style.display='none';
-      document.getElementById('plan-error').style.display='block';
-      document.getElementById('plan-error').innerHTML='Error al cargar planificacion: '+e.message;
+      var errDiv = document.getElementById('plan-error');
+      errDiv.style.display='block';
+      errDiv.style.background='#f8d7da';
+      errDiv.style.border='2px solid #dc3545';
+      errDiv.style.padding='16px';
+      errDiv.style.fontSize='14px';
+      errDiv.innerHTML='<strong>⚠ Error al cargar planificacion:</strong><br>' + e.message + '<br><small>' + (e.stack||'') + '</small>';
+      _toast('Error planificacion: ' + e.message, 0);
     }
   }
 
