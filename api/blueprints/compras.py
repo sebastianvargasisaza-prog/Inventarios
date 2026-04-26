@@ -268,7 +268,7 @@ def handle_oc_detalle(numero_oc):
     oc_row = c.fetchone()
     oc_cols = [d[0] for d in c.description] if c.description else []
     c.execute("SELECT * FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-    items = c.fetchall()
+    items = [dict(row) for row in c.fetchall()]
     if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
     oc_dict = dict(zip(oc_cols, oc_row))
     prov_data = None
@@ -551,7 +551,7 @@ def actualizar_estado_solicitud(numero):
     conn.commit()
     oc_creada = ''
     if d.get('crear_oc'):
-        cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g, unidad, categoria FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+        cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g, unidad FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
         items_sol = cur.fetchall()
         # Obtener categoria de la solicitud para la OC
         cur.execute("SELECT categoria FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
