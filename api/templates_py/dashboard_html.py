@@ -988,7 +988,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div style="font-size:13px;color:#444;margin-top:4px">
           Producto: <strong id="ac-act-prod" style="color:#0d47a1"></strong> &nbsp;&middot;&nbsp;
           Lote: <strong id="ac-act-lote"></strong> &nbsp;&middot;&nbsp;
-          Presentacion: <strong id="ac-act-pres"></strong> &nbsp;&middot;&nbsp;
           <span id="ac-act-uds-info" style="color:#555"></span>
         </div>
         <input type="hidden" id="ac-act-env-id">
@@ -997,32 +996,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <button onclick="cerrarAcondActivo()" style="background:#6c757d;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">&#10005; Cancelar</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div>
-        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades acondicionadas</label>
-        <input id="ac-act-uds" type="number" min="1" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
-      </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
       <div>
         <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Fecha</label>
         <input id="ac-act-fecha" type="date" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
       <div>
-        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Etiquetas usadas</label>
-        <input id="ac-act-etiquetas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
-      </div>
-      <div>
-        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Plegadizas usadas</label>
-        <input id="ac-act-plegadizas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
-      </div>
-      <div>
         <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Destino / Cliente</label>
         <input id="ac-act-destino" placeholder="ANIMUS Lab / nombre cliente" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
       </div>
-      <div>
-        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">SKU PT</label>
-        <input id="ac-act-sku" placeholder="LBHA-30ML" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
-      </div>
     </div>
+    <div id="ac-pres-rows" style="margin-bottom:10px"></div>
+    <button onclick="addAcPresRow()" style="background:transparent;border:2px dashed #0d47a1;color:#0d47a1;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;margin-bottom:14px;width:100%">+ Agregar presentacion</button>
     <div style="margin-bottom:12px">
       <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
       <textarea id="ac-act-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
@@ -3453,70 +3438,110 @@ function loadColaAcond(){
 }
 function prefillAcond(id){ abrirAcond(id); }
 var _acActObj = null;
+var _acPrIdx = 0;
+function _acPresRowHtml(idx, pres, uds){
+  pres = pres||''; uds = uds||'';
+  return '<div class="ac-pres-row" id="acpr-'+idx+'" style="background:#f0f4f8;border-radius:8px;padding:12px;margin-bottom:10px;position:relative">'
+    +'<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;align-items:end">'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Presentacion / SKU *</label>'
+    +'<input type="text" class="acpr-pres" placeholder="Ej: LBHA-30ML" value="'+pres+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Unidades *</label>'
+    +'<input type="number" class="acpr-uds" min="1" placeholder="66" value="'+uds+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Etiquetas</label>'
+    +'<input type="number" class="acpr-et" min="0" placeholder="66" value="'+uds+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Plegadizas</label>'
+    +'<input type="number" class="acpr-pl" min="0" placeholder="66" value="'+uds+'" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'</div>'
+    +(idx>0?'<button onclick="removeAcPresRow('+idx+')" style="position:absolute;top:8px;right:8px;background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer">&#10005;</button>':'')
+    +'</div>';
+}
 function abrirAcond(id){
   var env=_pendAcondMap[id]||{};
   _acActObj = env;
+  _acPrIdx = 0;
   document.getElementById('ac-act-prod').textContent = env.producto||'';
   document.getElementById('ac-act-prod-raw').value = env.producto||'';
   document.getElementById('ac-act-lote').textContent = env.lote||'S/L';
   document.getElementById('ac-act-lote-raw').value = env.lote||'';
-  document.getElementById('ac-act-pres').textContent = env.presentacion||'';
-  document.getElementById('ac-act-uds-info').textContent = (env.unidades||0)+' uds';
+  document.getElementById('ac-act-uds-info').textContent = (env.unidades||0)+' uds disponibles';
   document.getElementById('ac-act-env-id').value = env.id||'';
-  var udsEl=document.getElementById('ac-act-uds'); if(udsEl) udsEl.value=env.unidades||'';
-  var skuEl=document.getElementById('ac-act-sku'); if(skuEl) skuEl.value=env.presentacion||'';
-  var etEl=document.getElementById('ac-act-etiquetas'); if(etEl) etEl.value=env.unidades||'';
-  var plEl=document.getElementById('ac-act-plegadizas'); if(plEl) plEl.value=env.unidades||'';
   var fEl=document.getElementById('ac-act-fecha'); if(fEl) fEl.value=new Date().toISOString().slice(0,10);
-  var obsEl=document.getElementById('ac-act-obs'); if(obsEl) obsEl.value='';
   var dEl=document.getElementById('ac-act-destino'); if(dEl) dEl.value='';
+  var obsEl=document.getElementById('ac-act-obs'); if(obsEl) obsEl.value='';
   var msgEl=document.getElementById('ac-act-msg'); if(msgEl) msgEl.innerHTML='';
+  var rows=document.getElementById('ac-pres-rows');
+  if(rows) rows.innerHTML=_acPresRowHtml(0, env.presentacion||'', env.unidades||'');
+  var fm=document.getElementById('ac-form-manual'); if(fm) fm.style.display='none';
   document.getElementById('ac-panel-activo').style.display='block';
   document.getElementById('ac-panel-activo').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function addAcPresRow(){
+  _acPrIdx++;
+  document.getElementById('ac-pres-rows').insertAdjacentHTML('beforeend',_acPresRowHtml(_acPrIdx,'',''));
+}
+function removeAcPresRow(idx){
+  var el=document.getElementById('acpr-'+idx); if(el) el.remove();
 }
 function cerrarAcondActivo(){
   _acActObj=null;
   document.getElementById('ac-panel-activo').style.display='none';
+  var rows=document.getElementById('ac-pres-rows'); if(rows) rows.innerHTML='';
+  var fm=document.getElementById('ac-form-manual'); if(fm) fm.style.display='block';
 }
 async function registrarAcondDesdePanel(){
   if(!_acActObj){ _toast('No hay lote activo',0); return; }
   var lote=(document.getElementById('ac-act-lote-raw')||{value:''}).value.trim();
   var producto=(document.getElementById('ac-act-prod-raw')||{value:''}).value.trim();
-  var uds=parseInt((document.getElementById('ac-act-uds')||{value:0}).value||0);
   var fecha=(document.getElementById('ac-act-fecha')||{value:''}).value;
-  var etiquetas=parseInt((document.getElementById('ac-act-etiquetas')||{value:0}).value||0);
-  var plegadizas=parseInt((document.getElementById('ac-act-plegadizas')||{value:0}).value||0);
   var destino=(document.getElementById('ac-act-destino')||{value:''}).value.trim();
-  var sku=(document.getElementById('ac-act-sku')||{value:''}).value.trim();
   var obs=(document.getElementById('ac-act-obs')||{value:''}).value.trim();
   if(!lote||!producto){ _toast('Datos de lote incompletos',0); return; }
-  if(uds<=0){ _toast('Ingresa las unidades acondicionadas',0); return; }
-  var obsCompleto='Etiquetas: '+etiquetas+' | Plegadizas: '+plegadizas+(destino?' | Destino: '+destino:'')+(obs?' | '+obs:'');
+  var presRows=document.querySelectorAll('#ac-pres-rows .ac-pres-row');
+  if(!presRows.length){ _toast('Agrega al menos una presentacion',0); return; }
+  var payload=[];
+  var ok=true;
+  presRows.forEach(function(row){
+    var pres=(row.querySelector('.acpr-pres')||{value:''}).value.trim();
+    var uds=parseInt((row.querySelector('.acpr-uds')||{value:0}).value||0);
+    var et=parseInt((row.querySelector('.acpr-et')||{value:0}).value||0);
+    var pl=parseInt((row.querySelector('.acpr-pl')||{value:0}).value||0);
+    if(!pres||uds<=0){ok=false;return;}
+    payload.push({pres:pres,uds:uds,et:et,pl:pl});
+  });
+  if(!ok){ _toast('Completa presentacion y unidades en todas las filas',0); return; }
   var msgEl=document.getElementById('ac-act-msg');
   if(msgEl) msgEl.innerHTML='<span style="color:#666">Registrando...</span>';
-  try{
-    var r=await fetch('/api/acondicionamiento',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        lote:lote, producto:producto,
-        presentacion:sku||producto,
-        cantidad_batch_g:0,
-        unidades_producidas:uds,
-        fecha:fecha,
-        observaciones:obsCompleto,
-        sku:sku, precio_base:0, mee_consumido:[]
-      })
-    });
-    var d=await r.json();
-    if(!r.ok){ if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
-    _toast('\u2705 Acondicionamiento registrado',1);
+  var errores=[];
+  for(var i=0;i<payload.length;i++){
+    var p=payload[i];
+    var obsCompleto='Etiquetas: '+p.et+' | Plegadizas: '+p.pl+(destino?' | Destino: '+destino:'')+(obs?' | '+obs:'');
+    try{
+      var r=await fetch('/api/acondicionamiento',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          lote:lote, producto:producto,
+          presentacion:p.pres,
+          cantidad_batch_g:0,
+          unidades_producidas:p.uds,
+          fecha:fecha,
+          observaciones:obsCompleto,
+          sku:p.pres, precio_base:0, mee_consumido:[]
+        })
+      });
+      var d=await r.json();
+      if(!r.ok&&!d.id){ errores.push(p.pres+': '+(d.error||r.status)); }
+    }catch(e){ errores.push(p.pres+': error de red'); }
+  }
+  if(errores.length){
+    if(msgEl) msgEl.innerHTML='<span style="color:red">'+errores.join(' | ')+'</span>';
+  }else{
+    _toast('\u2705 Acondicionamiento registrado ('+payload.length+' presentacion'+(payload.length>1?'es':'')+')',1);
     cerrarAcondActivo();
     loadColaAcond();
     loadAcondSimple();
-  }catch(e){
-    if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
   }
 }
+
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
     var tb=document.getElementById("ac-tbody"); if(!tb)return;
