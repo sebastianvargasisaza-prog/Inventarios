@@ -483,33 +483,34 @@ def handle_solicitudes_compra():
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
-    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida,numero_oc,COALESCE(valor,0) as valor FROM solicitudes_compra WHERE 1=1"
+    sql = """
+        SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
+               sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
+               sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
+               COALESCE(oc.valor_total, 0) as valor_oc
+        FROM solicitudes_compra sc
+        LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
+        WHERE 1=1"""
     params = []
-    if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
-    if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
+    if filtro_estado: sql += " AND sc.estado=?"; params.append(filtro_estado)
+    if filtro_empresa: sql += " AND sc.empresa=?"; params.append(filtro_empresa)
     filtro_categoria = request.args.get('categoria', '')
     if filtro_categoria:
-        sql += " AND categoria=?"; params.append(filtro_categoria)
+        sql += " AND sc.categoria=?"; params.append(filtro_categoria)
     else:
-        # Sin filtro explicito = vista de Catalina: excluir categorias de pago/gerencia
-        sql += " AND categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
-    sql += " ORDER BY fecha DESC LIMIT 200"
+        sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+    sql += " ORDER BY sc.fecha DESC LIMIT 200"
     c.execute(sql, params)
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor']
-    rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
-    # Enrich: if valor still 0, fall back to OC valor_total or items sum
-    for row in rows_sol:
+    rows_sol = []
+    for r in c.fetchall():
+        row = dict(zip(cols_sol, r))
+        # valor comes from OC join; fallback to items sum if still 0
         if not row.get('valor'):
             c2 = conn.cursor()
-            # Try linked OC
-            if row.get('numero_oc'):
-                c2.execute("SELECT COALESCE(valor_total,0) FROM ordenes_compra WHERE numero_oc=?", (row['numero_oc'],))
-                oc_row = c2.fetchone()
-                row['valor'] = oc_row[0] if oc_row else 0
-            # Final fallback: items sum
-            if not row.get('valor'):
-                c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
-                row['valor'] = c2.fetchone()[0] or 0
+            c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
+            row['valor'] = c2.fetchone()[0] or 0
+        rows_sol.append(row)
     return jsonify({'solicitudes': rows_sol})
 
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
