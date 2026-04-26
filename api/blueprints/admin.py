@@ -373,6 +373,160 @@ def admin_config_status():
     })
 
 
+# ─── Test SMTP: envía un correo de prueba con PDF demo ────────────────────────
+
+@bp.route("/api/admin/test-email", methods=["POST"])
+def admin_test_email():
+    """Envía un correo de prueba al destinatario indicado.
+
+    Body JSON: {"destinatario": "email@dominio.com"}
+       Si no se especifica, usa EMAIL_REMITENTE (te lo manda a ti mismo).
+
+    Genera un PDF demo (CE-TEST-0000) y lo adjunta para validar:
+      1. SMTP configurado y credenciales correctas
+      2. PDF generator funcionando
+      3. Email llega con HTML + adjunto
+
+    Devuelve:
+      200 OK    si se envió (revisar bandeja del destinatario)
+      503       si EMAIL_REMITENTE/EMAIL_PASSWORD no están seteados
+      502       si SMTP rechaza credenciales o no puede entregar
+      500       error inesperado (PDF generator, etc.)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    body = request.get_json(silent=True) or {}
+    destinatario = (body.get('destinatario') or '').strip()
+
+    # Probar primero la config SMTP
+    try:
+        import sys
+        from pathlib import Path
+        # notificaciones.py está en la raíz del repo, no en api/
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from notificaciones import SistemaNotificaciones
+    except Exception as e:
+        return jsonify({'error': 'No se pudo cargar SistemaNotificaciones', 'detalle': str(e)}), 500
+
+    sn = SistemaNotificaciones()
+    if not sn.email_remitente or not sn.contraseña:
+        return jsonify({
+            'error': 'SMTP no configurado',
+            'detalle': 'Faltan EMAIL_REMITENTE y/o EMAIL_PASSWORD en variables de entorno.',
+            'pasos': [
+                '1) Genera App Password en https://myaccount.google.com/apppasswords',
+                '2) Render dashboard → tu servicio → Environment → Add Environment Variable',
+                '3) EMAIL_REMITENTE = facturasespagirialaboratorio@gmail.com',
+                '4) EMAIL_PASSWORD = (la app password de 16 chars sin espacios)',
+                '5) Save Changes → Render redeploya solo',
+                '6) Vuelve a probar /api/admin/test-email',
+            ],
+            'env_status': {
+                'EMAIL_REMITENTE': 'set' if sn.email_remitente else 'MISSING',
+                'EMAIL_PASSWORD':  'set' if sn.contraseña else 'MISSING',
+                'SMTP_SERVER':     sn.smtp_server,
+                'SMTP_PORT':       sn.smtp_port,
+            }
+        }), 503
+
+    # Si no especificó destinatario, mandárselo a sí mismo (al remitente)
+    if not destinatario:
+        destinatario = sn.email_remitente
+    if '@' not in destinatario:
+        return jsonify({'error': 'Destinatario inválido'}), 400
+
+    # Generar PDF demo
+    try:
+        import sys
+        from pathlib import Path
+        api_dir = Path(__file__).resolve().parents[1]  # api/
+        if str(api_dir) not in sys.path:
+            sys.path.insert(0, str(api_dir))
+        from comprobante_pago import generar_comprobante_egreso_pdf
+        from datetime import datetime as _dt
+        pdf_bytes = generar_comprobante_egreso_pdf(
+            numero_ce='CE-TEST-0000',
+            fecha_pago=_dt.now(),
+            beneficiario={
+                'nombre': 'PRUEBA SMTP — Test Influencer',
+                'cedula': '00000000',
+                'banco': 'Bancolombia',
+                'cuenta': '0000000000',
+                'tipo_cuenta': 'Ahorros',
+                'ciudad': 'Cali',
+            },
+            items=[{
+                'descripcion': 'Correo de prueba — validación de configuración SMTP',
+                'fecha': _dt.now().strftime('%Y-%m-%d'),
+                'cantidad': 1,
+                'valor_unit': 100000,
+            }],
+            aplicar_retefuente=False,
+            aplicar_retica=False,
+            aplicar_iva=False,
+            medio_pago='N/A — prueba',
+            observaciones=f'Test enviado por {u} desde /admin',
+            pagado_por=u,
+            empresa_clave='espagiria',
+        )
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': 'Falló generación de PDF demo',
+            'detalle': str(e),
+            'traceback': traceback.format_exc()[-800:]
+        }), 500
+
+    # Enviar el correo (sincrónico para que la respuesta indique éxito/fallo real)
+    try:
+        ok = sn.enviar_comprobante_egreso(
+            destinatario=destinatario,
+            numero_ce='CE-TEST-0000',
+            beneficiario='PRUEBA SMTP',
+            total_pagado=100000,
+            pdf_bytes=pdf_bytes,
+            fecha_emision=_dt.now().strftime('%Y-%m-%d'),
+            numero_oc='OC-TEST-0000',
+            empresa='Espagiria',
+        )
+    except Exception as e:
+        return jsonify({'error': 'Excepción al enviar', 'detalle': str(e)}), 500
+
+    if not ok:
+        return jsonify({
+            'error': 'SMTP rechazó el envío',
+            'detalle': (
+                'Las credenciales se cargaron pero Gmail/SMTP rechazó el envío. '
+                'Causas comunes: App Password incorrecta, 2FA deshabilitado, '
+                'la cuenta tiene "Less secure apps" off, o el remitente no '
+                'coincide con la cuenta autenticada. Revisa los logs de Render.'
+            ),
+            'remitente': sn.email_remitente,
+            'destinatario': destinatario,
+            'smtp_server': f'{sn.smtp_server}:{sn.smtp_port}',
+        }), 502
+
+    _log_sec(u, _client_ip(), 'admin_test_email', f'destinatario={destinatario}')
+
+    return jsonify({
+        'ok': True,
+        'mensaje': 'Correo de prueba enviado',
+        'remitente': sn.email_remitente,
+        'destinatario': destinatario,
+        'asunto': 'Comprobante de pago CE-TEST-0000 — Espagiria',
+        'verificacion': [
+            f'1. Revisa la bandeja de {destinatario} (también la carpeta Spam)',
+            '2. El correo trae un PDF adjunto (CE-TEST-0000.pdf)',
+            '3. El PDF debe abrir y mostrar el logo HHA + datos demo',
+            '4. Si todo OK, el sistema está listo para enviar comprobantes reales',
+        ],
+    })
+
+
 # ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
 
 @bp.route("/api/admin/tipos-mp-stats", methods=["GET"])
@@ -769,6 +923,21 @@ tr:hover td{background:#263348;}
     <h3 style="color:#a78bfa;font-size:13px;margin-top:16px;margin-bottom:8px;">Opcionales (integraciones)</h3>
     <table><tbody id="tbody-config-optional"><tr><td>Cargando...</td></tr></tbody></table>
   </div>
+  <div class="card">
+    <h2>&#x1F4E7; Test de SMTP (envío de correo)</h2>
+    <div class="section-sub">
+      Manda un correo de prueba con un PDF demo (CE-TEST-0000) al destinatario que indiques.
+      Si dejas el campo vacío, se envía al remitente (a ti mismo). Sirve para validar
+      que <code>EMAIL_REMITENTE</code> y <code>EMAIL_PASSWORD</code> están bien seteados
+      antes de pagarle a un influencer real.
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input type="email" id="test-email-dest" placeholder="destinatario@gmail.com (opcional)"
+             style="padding:9px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;min-width:280px;font-size:13px;">
+      <button class="btn" onclick="enviarTestEmail()">&#x26A1; Enviar correo de prueba</button>
+    </div>
+    <div id="test-email-result" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 <!-- ─── TAB BANCO INFLUENCERS ─── -->
@@ -1030,6 +1199,48 @@ async function loadConfigStatus() {
   document.getElementById('tbody-config-critical').innerHTML = (data.critical || []).map(renderRow).join('');
   document.getElementById('tbody-config-users').innerHTML = (data.user_passwords || []).map(renderRow).join('');
   document.getElementById('tbody-config-optional').innerHTML = (data.optional || []).map(renderRow).join('');
+}
+
+// ── TEST EMAIL (SMTP) ─────────────────────────────────────────────────────────
+async function enviarTestEmail() {
+  const dest = (document.getElementById('test-email-dest').value || '').trim();
+  const out = document.getElementById('test-email-result');
+  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Generando PDF y enviando...</div>';
+  try {
+    const r = await fetch('/api/admin/test-email', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({destinatario: dest})
+    });
+    let data;
+    try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
+    if (r.ok && data.ok) {
+      const checks = (data.verificacion || []).map(v => '<li>' + v + '</li>').join('');
+      out.innerHTML = '<div style="color:#34d399;padding:14px;background:#0f172a;border:1px solid #34d399;border-radius:8px;">'
+        + '&#x2705; <strong>' + data.mensaje + '</strong><br>'
+        + '<div style="margin-top:8px;font-size:12px;color:#cbd5e1;">'
+        + '<div>De: <code>' + data.remitente + '</code></div>'
+        + '<div>Para: <code>' + data.destinatario + '</code></div>'
+        + '<div>Asunto: <em>' + data.asunto + '</em></div>'
+        + '</div>'
+        + '<ul style="margin-top:10px;font-size:12px;color:#cbd5e1;padding-left:18px;">' + checks + '</ul>'
+        + '</div>';
+      toast('Correo de prueba enviado', 'ok');
+    } else {
+      const pasos = (data.pasos || []).map(p => '<li>' + p + '</li>').join('');
+      const env = data.env_status ? Object.entries(data.env_status)
+        .map(([k,v]) => '<div style="font-family:monospace;font-size:11px;color:#94a3b8;">' + k + ': <strong style="color:' + (String(v)==='MISSING'?'#f87171':'#34d399') + '">' + v + '</strong></div>').join('') : '';
+      out.innerHTML = '<div style="color:#f87171;padding:14px;background:#0f172a;border:1px solid #f87171;border-radius:8px;">'
+        + '&#x274C; <strong>Error ' + r.status + ': ' + (data.error || 'Falló envío') + '</strong>'
+        + (data.detalle ? '<div style="margin-top:8px;font-size:12px;color:#fbbf24;">' + data.detalle + '</div>' : '')
+        + (env ? '<div style="margin-top:10px;padding:8px 12px;background:#1e293b;border-radius:6px;">' + env + '</div>' : '')
+        + (pasos ? '<div style="margin-top:10px;font-size:12px;color:#cbd5e1;"><strong>Pasos para configurar:</strong><ul style="margin-top:6px;padding-left:20px;">' + pasos + '</ul></div>' : '')
+        + '</div>';
+      toast('SMTP no configurado o credenciales inválidas', 'warn');
+    }
+  } catch(e) {
+    out.innerHTML = '<div style="color:#f87171;padding:14px;">Error de red: ' + (e.message || e) + '</div>';
+  }
 }
 
 // ── BANCO INFLUENCERS (sync Excel) ────────────────────────────────────────────
