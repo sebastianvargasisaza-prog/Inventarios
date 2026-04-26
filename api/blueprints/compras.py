@@ -579,17 +579,25 @@ def handle_solicitudes_compra():
     else:
         sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     if filtro_categoria == 'Influencer/Marketing Digital':
-        # Ordenar por fecha de publicación (la fecha real del trabajo del
-        # influencer, no la fecha en que se creó la solicitud). Si no hay
-        # fecha_publicacion en pagos_influencers, fallback a sc.fecha.
-        # Las MÁS ANTIGUAS arriba (lo que está vencido o pronto a publicar
-        # debe pagarse primero).
+        # Cadena de prioridad para ordenar:
+        #  1. pi.fecha_publicacion (fecha del contenido cuando se agendó en marketing)
+        #  2. sc.fecha_requerida   (fecha tope cuando el pago debe hacerse)
+        #  3. sc.fecha             (fecha en que se creó la solicitud)
+        # Estado: Aprobadas (por pagar) primero, luego el resto.
+        # Más antiguas arriba (urgentes primero).
         sql = sql.replace(
             "FROM solicitudes_compra sc",
             "FROM solicitudes_compra sc LEFT JOIN pagos_influencers pi ON pi.numero_oc = sc.numero_oc"
         )
-        sql += (" ORDER BY COALESCE(NULLIF(pi.fecha_publicacion,''), sc.fecha) ASC, "
-                "sc.numero ASC LIMIT 300")
+        sql += (
+            " ORDER BY "
+            " CASE sc.estado WHEN 'Aprobada' THEN 0 WHEN 'Pendiente' THEN 1 "
+            "                WHEN 'Pagada' THEN 2 ELSE 3 END, "
+            " COALESCE(NULLIF(pi.fecha_publicacion,''), "
+            "          NULLIF(sc.fecha_requerida,''), "
+            "          sc.fecha) ASC, "
+            " sc.numero ASC LIMIT 300"
+        )
     else:
         sql += " ORDER BY sc.fecha DESC LIMIT 200"
     c.execute(sql, params)

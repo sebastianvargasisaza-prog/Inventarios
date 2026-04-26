@@ -2392,6 +2392,29 @@ async function loadInfluencers(){
     var d=await r.json();
     INFLUENCERS=d.solicitudes||[];
   }catch(e){ INFLUENCERS=[]; }
+  // Sort explícito en frontend para garantizar el orden visual incluso si el
+  // backend trae algo distinto. Prioridad de fecha:
+  //   1. fecha_requerida (cuando el pago es debido)
+  //   2. fecha (cuando se creó la solicitud)
+  // Más antiguas arriba (urgentes primero). Aprobadas primero, luego el resto.
+  function _fechaOrden(s){
+    return (s.fecha_requerida && String(s.fecha_requerida).trim())
+        || (s.fecha && String(s.fecha).trim())
+        || '9999-12-31';
+  }
+  function _estadoRank(e){
+    if(e==='Aprobada')  return 0;
+    if(e==='Pendiente') return 1;
+    if(e==='Pagada')    return 2;
+    return 3;
+  }
+  INFLUENCERS.sort(function(a,b){
+    var ra=_estadoRank(a.estado), rb=_estadoRank(b.estado);
+    if(ra!==rb) return ra-rb;
+    var fa=_fechaOrden(a), fb=_fechaOrden(b);
+    if(fa!==fb) return fa<fb?-1:1;
+    return (a.numero||'').localeCompare(b.numero||'');
+  });
   renderInfluencers();
 }
 function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
@@ -2501,9 +2524,11 @@ function renderInfluencers(){
       +'</div>'
       // Body
       +'<div style="padding:12px 16px;">'
-        +'<div style="display:flex;gap:16px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;">'
+        +'<div style="display:flex;gap:16px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;align-items:center;">'
           +'<span>👤 '+esc(s.solicitante||'-')+'</span>'
-          +'<span>📅 '+fdate(s.fecha)+'</span>'
+          +(s.fecha_requerida && String(s.fecha_requerida).trim()
+              ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-weight:600;">📅 Pago debido: '+fdate(s.fecha_requerida)+'</span>'
+              : '<span>📅 Solicitud: '+fdate(s.fecha)+'</span>')
           +'<span>🏢 '+esc(s.area||'Marketing/ANIMUS')+'</span>'
         +'</div>'
         +bankRow
@@ -2520,7 +2545,20 @@ function renderInfluencers(){
   if(!list.length){
     gel.innerHTML='<div class="empty">No hay resultados para el filtro seleccionado</div>';
   } else {
-    gel.innerHTML=list.map(buildCard).join('');
+    // Badge "#N en la cola" solo para Aprobadas (los Por pagar)
+    var rank=0;
+    var cards=list.map(function(s){
+      var c=buildCard(s);
+      if(s.estado==='Aprobada'){
+        rank++;
+        var badge='<div style="display:inline-block;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:6px;margin-bottom:6px;">#'+rank+' en cola</div>';
+        // Insertar el badge dentro del header de la card
+        c=c.replace('<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">',
+                    badge+'<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">');
+      }
+      return c;
+    });
+    gel.innerHTML=cards.join('');
   }
 
   // ── Paid section (always shown when filter is not "Pagada") ───────────────
