@@ -1094,10 +1094,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
       <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock — en tiempo real</p>
     </div>
-    <button onclick="cargarProgramacion(this)" style="background:#2B7A78;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px">&#128260; Actualizar</button>
-    <button onclick="generarOCProgramacion(this)" style="background:#dc3545;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128666; Generar OC</button>
-    <button id="btn-sync-shopify" onclick="sincronizarShopify(this)" style="background:#5c6bc0;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128257; Sync Stock</button>
-    <button id="btn-sync-ventas" onclick="sincronizarVentas(this)" style="background:#e65100;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:13px;margin-left:8px">&#128202; Sync Ventas</button>
+
   </div>
 
   <!-- Semáforo de estado general -->
