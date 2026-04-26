@@ -2,7 +2,7 @@ MARKETING_HTML = r"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Marketing — ÁNIMUS Lab</title>
+<title>Marketing — HHA Group</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;font-size:14px;}
@@ -171,7 +171,7 @@ function showToast(msg, type) {
 <div class="hdr">
   <div class="hdr-brand">
     <h1>&#x1F4E3; Marketing</h1>
-    <span>ÁNIMUS Lab</span>
+    <span style="font-size:11px;color:#64748b;letter-spacing:1px;text-transform:uppercase;">HHA Group</span>
   </div>
   <div style="display:flex;align-items:center;gap:20px;">
     <a class="back-link" href="/modulos">&#x2190; Módulos</a>
@@ -194,7 +194,7 @@ function showToast(msg, type) {
 <div id="tab-dashboard" class="tab-panel active">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
-      <div class="page-title" style="margin-bottom:2px;">&#x2726; ÁNIMUS Lab — Dashboard</div>
+      <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing — Dashboard</div>
       <div class="page-sub" id="dash-fecha">Cargando...</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -388,7 +388,7 @@ function showToast(msg, type) {
 <!-- TAB: AGENTES IA -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-agentes" class="tab-panel">
-  <div class="page-title">&#x1F916; Agentes IA — ÁNIMUS Lab</div>
+  <div class="page-title">&#x1F916; Agentes IA — Marketing</div>
   <div class="page-sub">10 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
 
   <div class="agents-grid">
