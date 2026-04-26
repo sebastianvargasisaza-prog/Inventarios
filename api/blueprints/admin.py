@@ -87,7 +87,12 @@ def admin_backup_now():
 
     _log_sec("backup_manual_triggered", u, _client_ip())
     result = do_backup(triggered_by=f"manual:{u}")
-    return jsonify(result), (200 if result.get("ok") else 500)
+    # ok=True → backup creado, status 200
+    # skipped=True → otro worker está haciendo backup, status 200 (no es error)
+    # else → error real, status 500
+    if result.get("ok") or result.get("skipped"):
+        return jsonify(result), 200
+    return jsonify(result), 500
 
 
 @bp.route("/api/admin/backup/<path:filename>", methods=["GET"])

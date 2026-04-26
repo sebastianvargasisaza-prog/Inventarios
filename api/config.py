@@ -64,6 +64,18 @@ ANIMUS_ACCESS   = {"daniela", "alejandro", "sebastian"}
 # Acceso al módulo Espagiria (pendiente de crear blueprint): asist. gerencia + admins.
 ESPAGIRIA_ACCESS = {"luz", "alejandro", "sebastian"}
 
+# ── Límites de aprobación de OC por usuario (en COP) ──────────────────────────
+# Operación que excede el límite del usuario requiere aprobación de admin.
+# Sebastian/Alejandro (admins): sin límite (None = ilimitado).
+# Mayra/Catalina: pueden autorizar OCs hasta 5M COP solas; mayor → admin.
+# Otros: no autorizan OCs, solo crean solicitudes.
+LIMITES_APROBACION_OC = {
+    "sebastian": None,           # Admin: sin límite
+    "alejandro": None,           # Admin: sin límite
+    "mayra":     5_000_000,
+    "catalina":  5_000_000,
+}
+
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
 # aleatorio efímero (cambia en cada redeploy) — equivalente a deshabilitar

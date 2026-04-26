@@ -7,7 +7,10 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, USER_EMAILS
+from config import (
+    DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, COMPRAS_ACCESS,
+    USER_EMAILS, LIMITES_APROBACION_OC,
+)
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
@@ -26,6 +29,75 @@ from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('compras', __name__)
+
+
+# ── Helpers de permisos granulares ────────────────────────────────────────────
+# Los grupos:
+#   COMPRAS_ACCESS    = {catalina, mayra, alejandro, sebastian}
+#                       Pueden CREAR solicitudes/OCs, recibir mercancía, gestionar
+#                       proveedores, generar OCs desde Planta.
+#   ADMIN_USERS       = {sebastian, alejandro}
+#                       Pueden ejecutar TODAS las operaciones, incluso autorizar
+#                       y pagar (CONTADORA está excluida explícitamente de
+#                       autorización/pago para mantener segregación de duties).
+#   CONTADORA_USERS   = {mayra, catalina}
+#                       Pueden ver/gestionar pero NO autorizar/pagar OCs
+#                       directamente — la autorización es responsabilidad de
+#                       admin. (Mayra ve todo lo financiero; pagar implica
+#                       movimiento de dinero que necesita firma de admin.)
+
+
+def _require_compras_session():
+    """Cualquier user autenticado puede hacer LECTURAS en compras."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    return u, None, None
+
+
+def _require_compras_write():
+    """Para CREAR/EDITAR solicitudes y OCs: COMPRAS_ACCESS o ADMIN."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    allowed = COMPRAS_ACCESS | ADMIN_USERS
+    if u not in allowed:
+        return None, jsonify({
+            'error': 'Sin acceso a operaciones de Compras',
+            'detail': f"User '{u}' no está en COMPRAS_ACCESS"
+        }), 403
+    return u, None, None
+
+
+def _require_authorize_oc():
+    """Para AUTORIZAR/PAGAR OCs: COMPRAS_ACCESS o ADMIN."""
+    return _require_compras_write()
+
+
+def _check_monto_limit(usuario, monto):
+    """Valida que el usuario pueda autorizar el monto.
+
+    Retorna (None, None) si OK, o (response, status_code) si excede el límite.
+    Admins (límite None) siempre pueden. Otros tienen LIMITES_APROBACION_OC.
+    """
+    if usuario in ADMIN_USERS:
+        return None, None
+    limite = LIMITES_APROBACION_OC.get(usuario)
+    if limite is None:
+        # Usuario sin límite explícito: usar 0 (no puede autorizar nada)
+        return jsonify({
+            'error': f"Usuario '{usuario}' no tiene límite de aprobación configurado",
+            'detail': 'Solo usuarios con LIMITES_APROBACION_OC en config pueden autorizar.'
+        }), 403
+    if monto > limite:
+        return jsonify({
+            'error': f'Monto ${monto:,.0f} excede tu límite de aprobación (${limite:,.0f})',
+            'detail': 'Esta OC requiere aprobación de un administrador.',
+            'codigo': 'EXCEDE_LIMITE_APROBACION',
+            'limite_usuario': limite,
+            'monto_solicitado': monto,
+        }), 403
+    return None, None
 
 def _notificar_solicitante_email(dest_email, asunto, body_html):
     """Envia email al solicitante de forma no-bloqueante.
@@ -257,13 +329,15 @@ def handle_oc_detalle(numero_oc):
         return jsonify({'ok': True, 'message': f'OC {numero_oc} eliminada'})
 
     if request.method == 'PUT':
+        u, err, code = _require_compras_write()
+        if err:
+            return err, code
         d = request.json
-        nuevo_estado = d.get('estado','')
-        usuario_actual = session.get('compras_user','')
-        if usuario_actual in CONTADORA_USERS and nuevo_estado in ('Aprobada','Pagada'):
-            return jsonify({'error':'Sin permiso para esta accion'}), 403
-        if d.get('estado'): c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?", (d['estado'], numero_oc))
-        conn.commit(); return jsonify({'message': f'OC {numero_oc} actualizada'})
+        if d.get('estado'):
+            c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?",
+                      (d['estado'], numero_oc))
+        conn.commit()
+        return jsonify({'message': f'OC {numero_oc} actualizada'})
     c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc_row = c.fetchone()
     oc_cols = [d[0] for d in c.description] if c.description else []
@@ -476,8 +550,12 @@ def handle_solicitudes_compra():
             return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
         except Exception as e:
             if conn:
-                try: conn.rollback()
-                except: pass
+                try:
+                    conn.rollback()
+                except sqlite3.Error:
+                    # Rollback puede fallar si no había transacción abierta —
+                    # no es crítico, ya estamos en error path.
+                    pass
             import traceback as _tb
             return jsonify({'error': str(e), 'detail': _tb.format_exc()[-500:]}), 500
     conn = get_db(); c = conn.cursor()
@@ -521,7 +599,10 @@ def handle_solicitudes_compra():
                 try:
                     v_str = obs_str.split('VALOR:')[1].split('|')[0].strip().replace('$','').replace(',','').replace('.','')
                     row['valor'] = float(v_str)
-                except: pass
+                except (ValueError, IndexError):
+                    # Observaciones malformadas — fallback silencioso aceptable
+                    # (es solo enriquecimiento de display, no flujo crítico).
+                    pass
         rows_sol.append(row)
     return jsonify({'solicitudes': rows_sol})
 
@@ -534,12 +615,22 @@ def get_solicitud_estado(numero):
         return jsonify({'error': 'No encontrada'}), 404
     cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','numero_oc']
     sol = dict(zip(cols, row))
-    for col in ['area','empresa','categoria','tipo','aprobado_por','fecha_aprobacion']:
+    # Cargar columnas opcionales (pueden no existir en versiones antiguas
+    # de la DB). Whitelist hardcoded — nunca de input — así el f-string es
+    # seguro contra SQL injection.
+    for col in ['area', 'empresa', 'categoria', 'tipo', 'aprobado_por', 'fecha_aprobacion']:
         try:
             c.execute(f"SELECT {col} FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
             r2 = c.fetchone()
-            if r2: sol[col] = r2[0]
-        except: pass
+            if r2:
+                sol[col] = r2[0]
+        except sqlite3.OperationalError as _e:
+            # "no such column" es benigno (versión vieja de schema).
+            # Otros errores SÍ los logueamos.
+            if 'no such column' not in str(_e).lower():
+                __import__('logging').getLogger('compras').error(
+                    "SELECT %s en solicitudes_compra falló: %s", col, _e
+                )
     c.execute("SELECT codigo_mp,nombre_mp,cantidad_g,unidad,valor_estimado FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
     items = [dict(zip(['codigo_mp','nombre_mp','cantidad_g','unidad','valor_estimado'], r)) for r in c.fetchall()]
     return jsonify({'solicitud': sol, 'items': items})
@@ -749,16 +840,19 @@ def revisar_oc(numero_oc):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/autorizar', methods=['PATCH'])
 def autorizar_oc(numero_oc):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    usuario_actual = session.get('compras_user', '')
-    if usuario_actual in CONTADORA_USERS:
-        return jsonify({'error': 'Sin permiso para autorizar OCs'}), 403
+    usuario_actual, err, code = _require_authorize_oc()
+    if err:
+        return err, code
     conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT estado, valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
+    valor = float(row[1] or 0)
+    # Sprint 4: límite de aprobación por usuario
+    err_lim, code_lim = _check_monto_limit(usuario_actual, valor)
+    if err_lim:
+        return err_lim, code_lim
     fecha_hoy = datetime.now().strftime('%Y%m%d')
     cur.execute("SELECT remision_code FROM ordenes_compra WHERE remision_code LIKE ? ORDER BY remision_code DESC LIMIT 1",
                 (f'REM-ESP-{fecha_hoy}-%',))
@@ -773,15 +867,26 @@ def autorizar_oc(numero_oc):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/pagar', methods=['PATCH'])
 def pagar_oc(numero_oc):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    usuario_actual = session.get('compras_user', '')
-    if usuario_actual in CONTADORA_USERS:
-        return jsonify({'error': 'Sin permiso para registrar pagos'}), 403
+    """Registra un pago de una OC.
+
+    Mejoras Sprint 2:
+      - Soporta pagos PARCIALES: registra cada pago en tabla `pagos_oc`
+        (auditoría completa). Estado de la OC se calcula:
+          - 'Pagada' si suma pagos >= valor_total
+          - 'Parcial' si 0 < suma pagos < valor_total
+      - 3-way matching: campo `numero_factura_proveedor` con UNIQUE soft.
+        Si la factura ya fue usada en otro pago → 409 Conflict (anti doble pago).
+      - Alimenta `precios_mp_historico` por cada item de la OC con el precio
+        efectivamente pagado (incluyendo prorrateo si fue parcial).
+    """
+    usuario_actual, err, code = _require_authorize_oc()
+    if err:
+        return err, code
     d = request.get_json() or {}
     monto = float(d.get('monto', 0) or 0)
     medio = d.get('medio', 'Transferencia')
     obs = d.get('observaciones', '')
+    numero_factura = (d.get('numero_factura_proveedor') or '').strip()
     comprobante_imagen = d.get('comprobante_imagen', '') or ''
     # Limit image size to ~4MB base64 to avoid DB bloat
     if len(comprobante_imagen) > 4_000_000:
@@ -793,12 +898,57 @@ def pagar_oc(numero_oc):
         return jsonify({'error': 'OC no encontrada'}), 404
     categoria = row[1] or 'MP'
     proveedor = row[2] or ''
-    if not monto: monto = float(row[3] or 0)
+    valor_total_oc = float(row[3] or 0)
+    if not monto:
+        monto = valor_total_oc
     cat_map = {'MPs':'MPs','MP':'MPs','Envase':'MEE','Insumos':'MEE','MEE':'MEE','SVC':'Servicios','Servicios':'Servicios','Analisis':'Servicios','Ánalisis':'Servicios','Acondicionamiento':'Servicios','Admin':'Administrativo','Nomina':'Administrativo','ADM':'Administrativo','Infraestructura':'Infraestructura','INF':'Infraestructura','CC':'Cuentas de Cobro'}
     cat_egreso = cat_map.get(categoria, 'Compras')
     fecha_pago = datetime.now().isoformat()
-    cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=? WHERE numero_oc=?",
-                (usuario_actual, fecha_pago, medio, comprobante_imagen, numero_oc))
+
+    # 3-way matching: validar que la factura no haya sido usada en otro pago
+    if numero_factura:
+        cur.execute(
+            "SELECT numero_oc FROM pagos_oc WHERE numero_factura_proveedor=? LIMIT 1",
+            (numero_factura,)
+        )
+        prev = cur.fetchone()
+        if prev and prev[0] != numero_oc:
+            return jsonify({
+                'error': f"Factura '{numero_factura}' ya fue registrada en pago de OC {prev[0]}",
+                'detail': 'Anti doble pago — verifica antes de continuar.',
+                'codigo': 'FACTURA_DUPLICADA'
+            }), 409
+
+    # Registrar el pago en pagos_oc (auditoría completa)
+    try:
+        cur.execute("""
+            INSERT INTO pagos_oc (numero_oc, monto, medio, fecha_pago,
+                                  registrado_por, numero_factura_proveedor,
+                                  comprobante_imagen, observaciones)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (numero_oc, monto, medio, fecha_pago, usuario_actual,
+              numero_factura, comprobante_imagen, obs))
+    except sqlite3.IntegrityError as _e:
+        # UNIQUE de factura disparó (race con check anterior — defense in depth)
+        return jsonify({
+            'error': 'Factura duplicada en otro pago concurrente',
+            'detail': str(_e)[:200],
+            'codigo': 'FACTURA_DUPLICADA'
+        }), 409
+
+    # Calcular estado actualizado de la OC según la suma de pagos
+    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+    total_pagado = float(cur.fetchone()[0] or 0)
+    if total_pagado >= valor_total_oc - 0.01:  # tolerance redondeo
+        nuevo_estado = 'Pagada'
+    else:
+        nuevo_estado = 'Parcial'
+
+    cur.execute("""UPDATE ordenes_compra SET estado=?, pagado_por=?, fecha_pago=?,
+                       medio_pago=?, comprobante_imagen=?
+                   WHERE numero_oc=?""",
+                (nuevo_estado, usuario_actual, fecha_pago, medio,
+                 comprobante_imagen, numero_oc))
     # Sync solicitudes_compra estado → Pagada so it leaves the pending list
     cur.execute("UPDATE solicitudes_compra SET estado='Pagada' WHERE numero_oc=? AND estado='Aprobada'", (numero_oc,))
     # Sync marketing payment status (insert si no existe, luego marcar pagada)
@@ -843,10 +993,78 @@ def pagar_oc(numero_oc):
                    (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
                     cat_egreso, monto, datetime.now().strftime('%Y-%m'),
                     'compras', numero_oc, usuario_actual, f'{medio}. {obs}'))
-    except Exception:
-        pass
+    except sqlite3.OperationalError as _e:
+        if 'no such table' not in str(_e).lower():
+            __import__('logging').getLogger('compras').error(
+                "INSERT flujo_egresos falló: %s", _e
+            )
+
+    # Alimentar historial de precios (Sprint 2): por cada item de la OC,
+    # registrar el precio efectivo en precios_mp_historico. Útil para detectar
+    # variaciones de precio en Sprint 4 (reporte ejecutivo).
+    try:
+        cur.execute("""SELECT codigo_mp, precio_unitario
+                       FROM ordenes_compra_items
+                       WHERE numero_oc=? AND codigo_mp IS NOT NULL AND codigo_mp != ''""",
+                    (numero_oc,))
+        items_oc = cur.fetchall()
+        for codigo_mp, precio in items_oc:
+            if precio and precio > 0:
+                cur.execute("""INSERT OR IGNORE INTO precios_mp_historico
+                               (codigo_mp, precio_kg, numero_factura, proveedor, fecha)
+                               VALUES (?, ?, ?, ?, datetime('now'))""",
+                            (codigo_mp, precio, numero_factura, proveedor))
+    except sqlite3.OperationalError as _e:
+        if 'no such table' not in str(_e).lower():
+            __import__('logging').getLogger('compras').error(
+                "Alimentar precios_mp_historico falló: %s", _e
+            )
+
     conn.commit()
-    return jsonify({'ok': True, 'estado': 'Pagada', 'monto': monto})
+    return jsonify({
+        'ok': True,
+        'estado': nuevo_estado,
+        'monto_este_pago': monto,
+        'total_pagado_acumulado': round(total_pagado, 2),
+        'valor_total_oc': round(valor_total_oc, 2),
+        'pendiente': round(max(0, valor_total_oc - total_pagado), 2),
+    })
+
+@bp.route('/api/ordenes-compra/<numero_oc>/pagos', methods=['GET'])
+def get_pagos_oc(numero_oc):
+    """Histórico de pagos de UNA OC específica (Sprint 2).
+
+    Útil para auditar pagos parciales o ver el detalle de quién pagó qué cuándo.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT id, monto, medio, fecha_pago, registrado_por,
+               numero_factura_proveedor, observaciones,
+               CASE WHEN comprobante_imagen != '' AND comprobante_imagen IS NOT NULL
+                    THEN 1 ELSE 0 END as tiene_comprobante
+        FROM pagos_oc WHERE numero_oc=?
+        ORDER BY fecha_pago ASC
+    """, (numero_oc,))
+    cols = [d[0] for d in cur.description]
+    pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    # Total + comparación con valor_total OC
+    cur.execute("SELECT valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    row = cur.fetchone()
+    valor_oc = float(row[0]) if row else 0
+    total_pagado = sum(p.get('monto', 0) or 0 for p in pagos)
+
+    return jsonify({
+        'numero_oc': numero_oc,
+        'pagos': pagos,
+        'count': len(pagos),
+        'total_pagado': round(total_pagado, 2),
+        'valor_total_oc': round(valor_oc, 2),
+        'pendiente': round(max(0, valor_oc - total_pagado), 2),
+    })
+
 
 @bp.route('/api/compras/pagos', methods=['GET'])
 def get_pagos():
@@ -866,6 +1084,95 @@ def get_pagos():
     cols = [d[0] for d in cur.description]
     pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
     return jsonify({'pagos': pagos})
+
+
+# ── Categorías que NO requieren recepción física: van directo a "por pagar" ──
+# El contador ve estos como pagos directos (servicios, no mercancía).
+CATEGORIAS_PAGO_DIRECTO = (
+    'Influencer/Marketing Digital',
+    'Cuenta de Cobro',
+    'Servicio',
+    'SVC',
+)
+
+
+@bp.route('/api/compras/por-pagar', methods=['GET'])
+def get_por_pagar():
+    """Vista unificada del contador: TODO lo que está pendiente de pago.
+
+    Incluye:
+      - OCs con estado 'Recibida' o 'Parcial' (mercancía física recibida)
+      - OCs con estado 'Aprobada'/'Autorizada' Y categoría de servicio
+        (Influencer, Cuenta de Cobro, etc.) — NO requieren recepción
+
+    Cada item lleva flag `pago_directo: true` si es servicio sin mercancía.
+    El frontend puede mostrarlos en una sección destacada.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    conn = get_db(); cur = conn.cursor()
+
+    # Mercancía física: estado Recibida o Parcial → ya se puede pagar lo recibido.
+    # condiciones_pago vive en proveedores, no en ordenes_compra — JOIN.
+    cur.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
+               oc.estado, oc.observaciones, oc.fecha_recepcion,
+               COALESCE(p.condiciones_pago, '') as condiciones_pago
+        FROM ordenes_compra oc
+        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
+        WHERE oc.estado IN ('Recibida', 'Parcial') AND
+              oc.estado != 'Pagada'
+        ORDER BY oc.fecha_recepcion DESC, oc.numero_oc DESC
+    """)
+    cols = [d[0] for d in cur.description]
+    fisicas = [
+        {**dict(zip(cols, row)), 'pago_directo': False, 'tipo': 'Mercancía recibida'}
+        for row in cur.fetchall()
+    ]
+
+    # Servicios sin mercancía: Aprobada/Autorizada + categoría de pago directo
+    placeholders = ','.join('?' for _ in CATEGORIAS_PAGO_DIRECTO)
+    cur.execute(f"""
+        SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
+               oc.estado, oc.observaciones,
+               COALESCE(oc.fecha_recepcion, oc.fecha) as fecha_recepcion,
+               COALESCE(p.condiciones_pago, '') as condiciones_pago
+        FROM ordenes_compra oc
+        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
+        WHERE oc.estado IN ('Aprobada', 'Autorizada') AND
+              oc.categoria IN ({placeholders})
+        ORDER BY oc.fecha DESC
+    """, CATEGORIAS_PAGO_DIRECTO)
+    cols = [d[0] for d in cur.description]
+    servicios = [
+        {**dict(zip(cols, row)), 'pago_directo': True,
+         'tipo': 'Pago directo (servicio)'}
+        for row in cur.fetchall()
+    ]
+
+    todos = fisicas + servicios
+    todos.sort(key=lambda x: x.get('fecha_recepcion') or x.get('fecha') or '', reverse=True)
+
+    total_valor = sum(item.get('valor_total', 0) or 0 for item in todos)
+    total_servicios = sum(item['valor_total'] or 0 for item in servicios)
+    total_fisicas = sum(item['valor_total'] or 0 for item in fisicas)
+
+    return jsonify({
+        'items': todos,
+        'count': len(todos),
+        'total_valor': round(total_valor, 2),
+        'desglose': {
+            'pagos_directos_servicios': {
+                'count': len(servicios),
+                'valor': round(total_servicios, 2),
+            },
+            'mercancia_recibida': {
+                'count': len(fisicas),
+                'valor': round(total_fisicas, 2),
+            },
+        }
+    })
 
 @bp.route('/api/ordenes-compra/<numero_oc>/comprobante', methods=['GET'])
 def get_comprobante(numero_oc):
@@ -983,13 +1290,22 @@ def planta_generar_oc():
                 if it.get('codigo_mp') and prov:
                     c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=? AND (proveedor IS NULL OR proveedor='')",
                               (prov, it['codigo_mp']))
-            ocs_creadas.append({'numero_oc': numero_oc, 'proveedor': prov, 'items': len(prov_items), 'valor': round(valor_total,2)})
+            # FIX bug: vincular cada solicitud de ESTE proveedor a SU OC,
+            # NO a la primera OC del loop. Antes: todas las solicitudes
+            # apuntaban a ocs_creadas[0]['numero_oc'] aunque sus items
+            # estuvieran en otra OC distinta.
+            for sn in sn_prov:
+                if sn:
+                    c.execute(
+                        "UPDATE solicitudes_compra SET numero_oc=? "
+                        "WHERE numero=? AND (numero_oc IS NULL OR numero_oc='')",
+                        (numero_oc, sn)
+                    )
+            ocs_creadas.append({'numero_oc': numero_oc, 'proveedor': prov,
+                                'items': len(prov_items),
+                                'valor': round(valor_total, 2),
+                                'solicitudes_vinculadas': sn_prov})
 
-        if ocs_creadas and all_solic_numeros:
-            first_oc = ocs_creadas[0]['numero_oc']
-            for sn in all_solic_numeros:
-                c.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=? AND (numero_oc IS NULL OR numero_oc='')",
-                          (first_oc, sn))
         conn.commit()
         return jsonify({'ocs_creadas': ocs_creadas, 'total': len(ocs_creadas)}), 201
     except Exception as e:
@@ -1347,13 +1663,474 @@ def update_sol_observaciones(numero):
     if solicitante is not None:
         updates.append("solicitante=?"); params.append(solicitante)
     if valor is not None:
-        # Use try/except — column may not exist in older DB (migration adds it on restart)
+        # Cast a float puede fallar si llega string mal formateado.
+        # ValueError/TypeError → silencio aceptable (campo opcional).
         try:
-            updates.append("valor=?"); params.append(float(valor))
-        except: pass
+            updates.append("valor=?")
+            params.append(float(valor))
+        except (ValueError, TypeError):
+            # Quitar el SET que apenas agregamos para no dejar params desbalanceados.
+            if updates and updates[-1] == "valor=?":
+                updates.pop()
     if fecha_requerida is not None:
         updates.append("fecha_requerida=?"); params.append(str(fecha_requerida))
     params.append(numero.upper())
     c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
     conn.commit()
     return jsonify({'ok': True, 'numero': numero.upper()})
+
+
+# ─── ALERTAS VIVAS DE COMPRAS (Sprint 3) ─────────────────────────────────────
+# Espejo del endpoint de Planta — consume del Centro de Mando para mostrar todo
+# lo que requiere atención en compras HOY.
+
+@bp.route('/api/compras/alertas-vivas', methods=['GET'])
+def alertas_vivas_compras():
+    """Consolida 4 categorías de alertas operacionales de Compras.
+
+    Retorna { ocs_sin_recibir, pagos_por_vencer, solicitudes_pendientes,
+              ocs_borrador_estancadas, total, severidad_max }
+    """
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+
+    from datetime import date, timedelta
+    hoy = date.today()
+    hace_7 = (hoy - timedelta(days=7)).isoformat()
+    hace_15 = (hoy - timedelta(days=15)).isoformat()
+    hace_3 = (hoy - timedelta(days=3)).isoformat()
+
+    conn = get_db(); c = conn.cursor()
+
+    # ── 1. OCs Autorizadas hace > 15 días sin recepción ─────────────────
+    c.execute("""
+        SELECT numero_oc, proveedor, valor_total, fecha,
+               COALESCE(fecha_entrega_est, '') as fecha_entrega
+        FROM ordenes_compra
+        WHERE estado = 'Autorizada' AND fecha < ?
+        ORDER BY fecha ASC LIMIT 50
+    """, (hace_15,))
+    ocs_sin_recibir = []
+    for r in c.fetchall():
+        try:
+            f_oc = date.fromisoformat(r[3][:10])
+            dias = (hoy - f_oc).days
+        except (ValueError, TypeError, IndexError):
+            dias = None
+        ocs_sin_recibir.append({
+            'numero_oc': r[0], 'proveedor': r[1],
+            'valor_total': r[2], 'fecha_oc': r[3],
+            'fecha_entrega_est': r[4],
+            'dias_sin_recibir': dias,
+            'severidad': 'alto' if dias and dias > 30 else 'medio',
+        })
+
+    # ── 2. Pagos por vencer: OCs Recibidas con pendiente de pago ────────
+    # Heurística: si OC recibida hace > N días según condiciones_pago de
+    # proveedor (ej. "30 días"), está en riesgo de mora.
+    c.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.valor_total,
+               COALESCE(oc.fecha_recepcion, oc.fecha) as fecha_ref,
+               COALESCE(p.condiciones_pago, '') as cond,
+               COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0) as pagado
+        FROM ordenes_compra oc
+        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
+        WHERE oc.estado IN ('Recibida', 'Parcial')
+        ORDER BY fecha_ref ASC LIMIT 100
+    """)
+    pagos_por_vencer = []
+    for r in c.fetchall():
+        # Extraer días de "30 días" / "30 dias" / "30"
+        cond_str = (r[4] or '').lower()
+        dias_pago = 30  # default conservador
+        for word in cond_str.split():
+            if word.isdigit():
+                dias_pago = int(word)
+                break
+        try:
+            f_ref = date.fromisoformat(r[3][:10])
+            dias_transcurridos = (hoy - f_ref).days
+            dias_restantes = dias_pago - dias_transcurridos
+        except (ValueError, TypeError, IndexError):
+            dias_restantes = None
+        pendiente = float(r[2] or 0) - float(r[5] or 0)
+        if pendiente > 0.01 and dias_restantes is not None and dias_restantes <= 14:
+            pagos_por_vencer.append({
+                'numero_oc': r[0], 'proveedor': r[1],
+                'valor_total': r[2], 'pendiente': round(pendiente, 2),
+                'fecha_ref': r[3], 'condiciones_pago': r[4],
+                'dias_restantes': dias_restantes,
+                'severidad': ('critico' if dias_restantes < 0 else
+                              'alto' if dias_restantes <= 3 else 'medio'),
+            })
+
+    # ── 3. Solicitudes Pendientes hace > 3 días ─────────────────────────
+    c.execute("""
+        SELECT numero, fecha, solicitante, urgencia, area, empresa, categoria
+        FROM solicitudes_compra
+        WHERE estado = 'Pendiente' AND fecha < ?
+        ORDER BY
+            CASE urgencia WHEN 'Urgente' THEN 0 WHEN 'Alta' THEN 1 ELSE 2 END,
+            fecha ASC
+        LIMIT 50
+    """, (hace_3,))
+    solicitudes_pendientes = []
+    for r in c.fetchall():
+        try:
+            f_sol = date.fromisoformat(r[1][:10])
+            dias = (hoy - f_sol).days
+        except (ValueError, TypeError, IndexError):
+            dias = None
+        sev = 'alto' if r[3] == 'Urgente' else ('medio' if dias and dias > 7 else 'bajo')
+        solicitudes_pendientes.append({
+            'numero': r[0], 'fecha': r[1], 'solicitante': r[2],
+            'urgencia': r[3], 'area': r[4], 'empresa': r[5],
+            'categoria': r[6], 'dias_pendiente': dias, 'severidad': sev,
+        })
+
+    # ── 4. OCs en Borrador hace > 7 días sin avanzar ────────────────────
+    c.execute("""
+        SELECT numero_oc, proveedor, valor_total, fecha, creado_por
+        FROM ordenes_compra
+        WHERE estado = 'Borrador' AND fecha < ?
+        ORDER BY fecha ASC LIMIT 50
+    """, (hace_7,))
+    ocs_borrador = [
+        {'numero_oc': r[0], 'proveedor': r[1], 'valor_total': r[2],
+         'fecha': r[3], 'creado_por': r[4], 'severidad': 'medio'}
+        for r in c.fetchall()
+    ]
+
+    total = (len(ocs_sin_recibir) + len(pagos_por_vencer) +
+             len(solicitudes_pendientes) + len(ocs_borrador))
+    sevs = (
+        [v['severidad'] for v in ocs_sin_recibir] +
+        [v['severidad'] for v in pagos_por_vencer] +
+        [v['severidad'] for v in solicitudes_pendientes] +
+        [v['severidad'] for v in ocs_borrador]
+    )
+    sev_orden = {'critico': 4, 'alto': 3, 'medio': 2, 'bajo': 1}
+    severidad_max = max(sevs, key=lambda s: sev_orden.get(s, 0)) if sevs else 'ok'
+
+    return jsonify({
+        'ocs_sin_recibir': ocs_sin_recibir,
+        'pagos_por_vencer': pagos_por_vencer,
+        'solicitudes_pendientes': solicitudes_pendientes,
+        'ocs_borrador_estancadas': ocs_borrador,
+        'total': total,
+        'severidad_max': severidad_max,
+        'evaluado_en': hoy.isoformat(),
+    })
+
+
+# ─── REPORTE EJECUTIVO COMPRAS (Sprint 4) ────────────────────────────────────
+
+@bp.route('/api/compras/reporte-ejecutivo', methods=['GET'])
+def reporte_ejecutivo_compras():
+    """Reporte gerencial mensual: top proveedores, gasto por categoría,
+    pasivo corriente, variaciones de precio.
+
+    Query: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (default últimos 12 meses)
+    """
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+
+    from datetime import date, timedelta
+    desde = (request.args.get('desde') or
+             (date.today() - timedelta(days=365)).isoformat())
+    hasta = request.args.get('hasta') or date.today().isoformat()
+
+    conn = get_db(); c = conn.cursor()
+
+    # ── Top 10 proveedores por gasto ───────────────────────────────────
+    c.execute("""
+        SELECT proveedor,
+               COUNT(*) as ocs_count,
+               COALESCE(SUM(valor_total), 0) as gasto_total,
+               COALESCE(SUM(CASE WHEN estado IN ('Recibida','Pagada') THEN 1 ELSE 0 END), 0) as cumplidas,
+               MAX(fecha) as ultima_oc
+        FROM ordenes_compra
+        WHERE fecha >= ? AND fecha <= ?
+              AND estado != 'Rechazada' AND estado != 'Borrador'
+        GROUP BY proveedor
+        ORDER BY gasto_total DESC LIMIT 10
+    """, (desde, hasta + 'T23:59:59'))
+    top_proveedores = []
+    for r in c.fetchall():
+        cumplimiento = round(100.0 * (r[3] or 0) / r[1], 1) if r[1] > 0 else 0
+        top_proveedores.append({
+            'proveedor': r[0], 'ocs_count': r[1],
+            'gasto_total': round(r[2] or 0, 2),
+            'cumplidas': r[3], 'cumplimiento_pct': cumplimiento,
+            'ultima_oc': r[4],
+        })
+
+    # ── Gasto por categoría / mes ──────────────────────────────────────
+    c.execute("""
+        SELECT substr(fecha, 1, 7) as mes,
+               COALESCE(categoria, 'Sin categoría') as cat,
+               SUM(valor_total) as total
+        FROM ordenes_compra
+        WHERE fecha >= ? AND fecha <= ? AND estado != 'Rechazada'
+        GROUP BY mes, cat
+        ORDER BY mes DESC, total DESC
+    """, (desde, hasta + 'T23:59:59'))
+    gasto_categoria_mes = [
+        {'mes': r[0], 'categoria': r[1], 'total': round(r[2] or 0, 2)}
+        for r in c.fetchall()
+    ]
+
+    # ── Pasivo corriente: OCs Recibidas/Parciales pendientes de pago ──
+    c.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.valor_total, oc.fecha_recepcion,
+               COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0) as pagado
+        FROM ordenes_compra oc
+        WHERE oc.estado IN ('Recibida', 'Parcial')
+        ORDER BY oc.fecha_recepcion ASC
+    """)
+    pasivo_items = []
+    pasivo_total = 0
+    for r in c.fetchall():
+        pendiente = float(r[2] or 0) - float(r[4] or 0)
+        if pendiente > 0.01:
+            pasivo_items.append({
+                'numero_oc': r[0], 'proveedor': r[1],
+                'valor_total': r[2], 'pagado': r[4],
+                'pendiente': round(pendiente, 2),
+                'fecha_recepcion': r[3],
+            })
+            pasivo_total += pendiente
+
+    # ── Variaciones de precio MP > 15% en últimos 6 meses ──────────────
+    c.execute("""
+        SELECT codigo_mp,
+               MIN(precio_kg) as min_precio,
+               MAX(precio_kg) as max_precio,
+               COUNT(*) as n_compras,
+               (SELECT precio_kg FROM precios_mp_historico p2
+                WHERE p2.codigo_mp = p1.codigo_mp ORDER BY fecha DESC LIMIT 1) as ultimo
+        FROM precios_mp_historico p1
+        WHERE fecha >= date('now', '-6 months')
+        GROUP BY codigo_mp
+        HAVING n_compras >= 2
+    """)
+    variaciones = []
+    for r in c.fetchall():
+        cod, mn, mx, n, ult = r
+        if mn and mn > 0 and mx > mn:
+            var_pct = ((mx - mn) / mn) * 100
+            if var_pct > 15:
+                variaciones.append({
+                    'codigo_mp': cod, 'precio_min': mn, 'precio_max': mx,
+                    'precio_actual': ult, 'compras_periodo': n,
+                    'variacion_pct': round(var_pct, 1),
+                    'severidad': 'critico' if var_pct > 50 else
+                                 ('alto' if var_pct > 30 else 'medio'),
+                })
+    variaciones.sort(key=lambda x: x['variacion_pct'], reverse=True)
+
+    # ── Totales mes actual ─────────────────────────────────────────────
+    c.execute("""
+        SELECT COUNT(*), COALESCE(SUM(valor_total), 0)
+        FROM ordenes_compra
+        WHERE fecha >= date('now', 'start of month') AND estado != 'Rechazada'
+    """)
+    mes_actual = c.fetchone()
+
+    return jsonify({
+        'rango': {'desde': desde, 'hasta': hasta},
+        'top_proveedores': top_proveedores,
+        'gasto_categoria_mes': gasto_categoria_mes,
+        'pasivo_corriente': {
+            'items': pasivo_items[:50],  # limitar payload
+            'total_items': len(pasivo_items),
+            'total_pendiente': round(pasivo_total, 2),
+        },
+        'variaciones_precio': variaciones[:20],
+        'mes_actual': {
+            'ocs_count': mes_actual[0] if mes_actual else 0,
+            'gasto_total': round(mes_actual[1] if mes_actual else 0, 2),
+        },
+    })
+
+
+# ─── COTIZACIONES (Sprint 5) ─────────────────────────────────────────────────
+# Workflow opcional pre-OC: para items grandes, comparar 3 cotizaciones antes
+# de generar la OC. Cada ronda tiene un ronda_id que agrupa N cotizaciones de
+# distintos proveedores.
+
+@bp.route('/api/compras/cotizaciones/rondas', methods=['POST'])
+def crear_ronda_cotizaciones():
+    """Crea una nueva ronda de cotizaciones (3 proveedores).
+
+    Body: {descripcion, proveedores: [{nombre, condiciones, tiempo_entrega_dias?}]}
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json() or {}
+    descripcion = (d.get('descripcion') or '').strip()
+    proveedores = d.get('proveedores', [])
+    if not descripcion or not proveedores:
+        return jsonify({'error': 'descripcion y proveedores requeridos'}), 400
+    if len(proveedores) < 2:
+        return jsonify({'error': 'Mínimo 2 proveedores para comparar'}), 400
+
+    from datetime import datetime as _dt
+    ronda_id = f"COT-{_dt.now().strftime('%Y%m%d%H%M%S')}"
+
+    conn = get_db(); c = conn.cursor()
+    creadas = []
+    for prov in proveedores:
+        nombre = (prov.get('nombre') or '').strip()
+        if not nombre:
+            continue
+        c.execute("""INSERT INTO cotizaciones
+                     (ronda_id, proveedor, descripcion, condiciones,
+                      tiempo_entrega_dias, creado_por, estado)
+                     VALUES (?, ?, ?, ?, ?, ?, 'Pendiente')""",
+                  (ronda_id, nombre, descripcion,
+                   prov.get('condiciones', ''),
+                   int(prov.get('tiempo_entrega_dias') or 0),
+                   u))
+        creadas.append({'id': c.lastrowid, 'proveedor': nombre})
+    conn.commit()
+    return jsonify({
+        'ok': True, 'ronda_id': ronda_id,
+        'cotizaciones': creadas, 'count': len(creadas),
+    }), 201
+
+
+@bp.route('/api/compras/cotizaciones/<int:cot_id>', methods=['PATCH'])
+def actualizar_cotizacion(cot_id):
+    """Actualiza una cotización con la respuesta del proveedor.
+
+    Body: {valor_total, condiciones?, tiempo_entrega_dias?, archivo?}
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json() or {}
+    valor = float(d.get('valor_total') or 0)
+    if valor <= 0:
+        return jsonify({'error': 'valor_total > 0 requerido'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    c.execute("""UPDATE cotizaciones SET
+                    valor_total=?, fecha_recibida=datetime('now', 'utc'),
+                    condiciones=COALESCE(?, condiciones),
+                    tiempo_entrega_dias=COALESCE(?, tiempo_entrega_dias),
+                    archivo=COALESCE(?, archivo),
+                    estado='Recibida'
+                 WHERE id=?""",
+              (valor, d.get('condiciones'), d.get('tiempo_entrega_dias'),
+               d.get('archivo'), cot_id))
+    if c.rowcount == 0:
+        return jsonify({'error': 'Cotización no encontrada'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'id': cot_id, 'estado': 'Recibida'})
+
+
+@bp.route('/api/compras/cotizaciones/rondas/<ronda_id>', methods=['GET'])
+def get_ronda(ronda_id):
+    """Lista las cotizaciones de una ronda con comparación lado a lado."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("""SELECT id, proveedor, fecha_solicitud, fecha_recibida,
+                        valor_total, condiciones, descripcion,
+                        tiempo_entrega_dias, ganadora, numero_oc, estado
+                 FROM cotizaciones WHERE ronda_id=? ORDER BY valor_total ASC""",
+              (ronda_id,))
+    cols = ['id', 'proveedor', 'fecha_solicitud', 'fecha_recibida',
+            'valor_total', 'condiciones', 'descripcion',
+            'tiempo_entrega_dias', 'ganadora', 'numero_oc', 'estado']
+    cotizaciones = [dict(zip(cols, r)) for r in c.fetchall()]
+    return jsonify({
+        'ronda_id': ronda_id,
+        'cotizaciones': cotizaciones,
+        'count': len(cotizaciones),
+        'completadas': sum(1 for x in cotizaciones if x['estado'] == 'Recibida'),
+    })
+
+
+@bp.route('/api/compras/cotizaciones/<int:cot_id>/elegir-ganadora', methods=['POST'])
+def elegir_ganadora(cot_id):
+    """Marca una cotización como ganadora; las demás de la misma ronda quedan
+    como 'No seleccionada'. Opcionalmente vincula con número_oc al generar OC.
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json() or {}
+    numero_oc = (d.get('numero_oc') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT ronda_id FROM cotizaciones WHERE id=?", (cot_id,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'Cotización no encontrada'}), 404
+    ronda_id = row[0]
+
+    # Marcar ganadora + las demás como no seleccionadas
+    c.execute("""UPDATE cotizaciones SET ganadora=1,
+                    numero_oc=COALESCE(?, numero_oc), estado='Ganadora'
+                 WHERE id=?""", (numero_oc, cot_id))
+    c.execute("""UPDATE cotizaciones SET ganadora=0, estado='No seleccionada'
+                 WHERE ronda_id=? AND id!=? AND estado != 'No seleccionada'""",
+              (ronda_id, cot_id))
+    conn.commit()
+    return jsonify({'ok': True, 'cot_id': cot_id, 'ronda_id': ronda_id,
+                    'numero_oc': numero_oc})
+
+
+@bp.route('/api/compras/cotizaciones/rondas', methods=['GET'])
+def listar_rondas():
+    """Lista las últimas 50 rondas con resumen de cada una."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        SELECT ronda_id, MAX(fecha_solicitud), MAX(descripcion),
+               COUNT(*), SUM(CASE WHEN estado='Recibida' THEN 1 ELSE 0 END),
+               MAX(CASE WHEN ganadora=1 THEN proveedor ELSE NULL END),
+               MIN(CASE WHEN ganadora=1 THEN valor_total ELSE NULL END)
+        FROM cotizaciones GROUP BY ronda_id
+        ORDER BY MAX(fecha_solicitud) DESC LIMIT 50
+    """)
+    rondas = [
+        {
+            'ronda_id': r[0], 'fecha': r[1], 'descripcion': r[2],
+            'total_cotizaciones': r[3], 'recibidas': r[4],
+            'ganadora_proveedor': r[5], 'valor_ganador': r[6],
+        }
+        for r in c.fetchall()
+    ]
+    return jsonify({'rondas': rondas, 'count': len(rondas)})
+
+
+# ─── CENTRO DE COSTOS (Sprint 5) ─────────────────────────────────────────────
+
+@bp.route('/api/compras/centros-costos', methods=['GET'])
+def listar_centros_costos():
+    """Devuelve los centros de costos en uso + KPIs por centro."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        SELECT COALESCE(centro_costos, 'general') as cc,
+               COUNT(*) as ocs, SUM(valor_total) as total
+        FROM ordenes_compra
+        WHERE estado != 'Rechazada' AND estado != 'Borrador'
+        GROUP BY cc ORDER BY total DESC
+    """)
+    centros = [
+        {'centro_costos': r[0], 'ocs': r[1], 'total': round(r[2] or 0, 2)}
+        for r in c.fetchall()
+    ]
+    return jsonify({'centros': centros, 'count': len(centros)})

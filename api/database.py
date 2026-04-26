@@ -1485,6 +1485,54 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para búsquedas filtradas por tipo
         "CREATE INDEX IF NOT EXISTS idx_maestro_mps_tipo_material ON maestro_mps(tipo_material)",
     ]),
+    (28, "compras: pagos_oc (auditoria pagos parciales) + centro_costos en OC", [
+        # Tabla de pagos: 1 OC puede tener N pagos (parciales). Permite auditar
+        # cada movimiento de dinero por separado en lugar de sobrescribir el
+        # estado de la OC.
+        """CREATE TABLE IF NOT EXISTS pagos_oc (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_oc            TEXT NOT NULL,
+            monto                REAL NOT NULL,
+            medio                TEXT DEFAULT 'Transferencia',
+            fecha_pago           TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            registrado_por       TEXT NOT NULL DEFAULT '',
+            numero_factura_proveedor TEXT DEFAULT '',
+            comprobante_imagen   TEXT DEFAULT '',
+            observaciones        TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pagos_oc_numero ON pagos_oc(numero_oc)",
+        # Constraint suave para detectar facturas duplicadas (3-way matching).
+        # WHERE clause: SQLite respeta NULL como distinto, pero queremos también
+        # tratar '' como "no factura aún" — entonces el índice unique solo aplica
+        # cuando hay factura real registrada.
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_pagos_oc_factura_unique ON pagos_oc(numero_factura_proveedor) WHERE numero_factura_proveedor != ''",
+        # Centro de costos para reportes por proyecto/empresa.
+        "ALTER TABLE ordenes_compra ADD COLUMN centro_costos TEXT DEFAULT 'general'",
+    ]),
+    (29, "compras: cotizaciones (3 proveedores) — workflow opcional pre-OC", [
+        # Workflow opcional para items de alto valor que ameriten comparar 3
+        # cotizaciones antes de generar OC. La OC final referencia la
+        # cotización ganadora vía numero_oc.
+        """CREATE TABLE IF NOT EXISTS cotizaciones (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            ronda_id        TEXT NOT NULL,
+            proveedor       TEXT NOT NULL,
+            fecha_solicitud TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            fecha_recibida  TEXT,
+            valor_total     REAL DEFAULT 0,
+            condiciones     TEXT DEFAULT '',
+            descripcion     TEXT DEFAULT '',
+            tiempo_entrega_dias INTEGER DEFAULT 0,
+            ganadora        INTEGER DEFAULT 0,
+            numero_oc       TEXT DEFAULT '',
+            archivo         TEXT DEFAULT '',
+            creado_por      TEXT NOT NULL DEFAULT '',
+            estado          TEXT NOT NULL DEFAULT 'Pendiente'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_ronda ON cotizaciones(ronda_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_proveedor ON cotizaciones(proveedor)",
+        "CREATE INDEX IF NOT EXISTS idx_cotizaciones_oc ON cotizaciones(numero_oc)",
+    ]),
 ]
 
 
