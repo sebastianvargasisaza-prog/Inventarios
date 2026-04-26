@@ -4023,6 +4023,76 @@ function _renderProgramacion(d){
 
 </script>
 
+  </div><!-- /ptab-centro -->
+
+  <!-- PLANIFICACION ESTRATEGICA -->
+  <div id="ptab-plan" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#128301; Planificación Estratégica de Compras</h2>
+        <p style="color:#666;font-size:13px;margin:0">Calendario + Fórmulas + Stock — qué comprar, cuándo y en qué volumen</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:#666;font-weight:600">Horizonte:</span>
+        <button id="plan-btn-2m" onclick="cargarPlanificacion(2)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff">2 meses</button>
+        <button id="plan-btn-6m" onclick="cargarPlanificacion(6)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">6 meses</button>
+        <button id="plan-btn-12m" onclick="cargarPlanificacion(12)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">12 meses</button>
+      </div>
+    </div>
+
+    <div id="plan-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px"></div>
+
+    <div id="plan-prods-box" style="display:none;background:#f0f4f8;border-radius:8px;padding:14px;margin-bottom:16px">
+      <h4 style="margin:0 0 10px;color:#1a4a7a;font-size:13px">&#128197; Producciones en el horizonte</h4>
+      <div id="plan-prods-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>
+
+    <div id="plan-deficit-box" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h4 style="margin:0;color:#dc3545;font-size:14px">&#128997; MPs en déficit para el período</h4>
+        <button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; Exportar CSV</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:#1a4a7a;color:#fff">
+              <th style="padding:9px 8px;text-align:left">Material</th>
+              <th style="padding:9px 8px;text-align:left">Proveedor</th>
+              <th style="padding:9px 8px;text-align:right">Necesario</th>
+              <th style="padding:9px 8px;text-align:right">Stock actual</th>
+              <th style="padding:9px 8px;text-align:right;color:#ffc107">Déficit</th>
+              <th style="padding:9px 8px;text-align:center">Cobertura</th>
+              <th style="padding:9px 8px;text-align:center">Meses</th>
+              <th style="padding:9px 8px;text-align:left">Para productos</th>
+            </tr>
+          </thead>
+          <tbody id="plan-deficit-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="plan-ok-box" style="display:none;background:#d4edda;border-radius:8px;padding:14px;margin-bottom:16px">
+      <h4 style="margin:0 0 8px;color:#155724;font-size:13px">&#10003; MPs con stock suficiente para el período</h4>
+      <div id="plan-ok-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div id="plan-bulk-box" style="display:none;margin-bottom:20px">
+      <h4 style="margin:0 0 12px;color:#0d47a1;font-size:14px">&#128200; Oportunidades de compra estratégica</h4>
+      <div id="plan-bulk-list"></div>
+    </div>
+
+    <div id="plan-empty" style="text-align:center;padding:60px 20px;color:#888">
+      <div style="font-size:48px;margin-bottom:12px">&#128301;</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">Análisis estratégico de materias primas</div>
+      <div style="font-size:13px">Selecciona un horizonte para cruzar el calendario de producción con el stock actual</div>
+    </div>
+    <div id="plan-loading" style="display:none;text-align:center;padding:60px 20px;color:#1a4a7a">
+      <div style="font-size:15px;font-weight:600">&#9203; Analizando calendario y fórmulas...</div>
+      <div style="font-size:12px;color:#888;margin-top:6px">Puede tomar unos segundos</div>
+    </div>
+    <div id="plan-error" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:#856404"></div>
+  </div><!-- /ptab-plan -->
+
   <!-- ── Modal: Programar Producción ────────────────────────────────────── -->
   <div id="modal-programar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:12px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
@@ -4078,6 +4148,169 @@ function _renderProgramacion(d){
 
   function actualizarDashboard() {
     cargarProgramacion(null);
+  }
+
+  // ── Sub-tabs internos de Programacion ────────────────────────────────────
+  function switchProgTab(tab){
+    document.getElementById('ptab-centro').style.display = tab==='centro' ? 'block' : 'none';
+    document.getElementById('ptab-plan').style.display   = tab==='plan'   ? 'block' : 'none';
+    var bc=document.getElementById('ptab-btn-centro');
+    var bp=document.getElementById('ptab-btn-plan');
+    if(bc){ bc.style.background=tab==='centro'?'#1a4a7a':'#f0f4f8'; bc.style.color=tab==='centro'?'#fff':'#1a4a7a'; bc.style.borderBottom=tab==='centro'?'2px solid #1a4a7a':'2px solid transparent'; }
+    if(bp){ bp.style.background=tab==='plan'?'#1a4a7a':'#f0f4f8'; bp.style.color=tab==='plan'?'#fff':'#1a4a7a'; bp.style.borderBottom=tab==='plan'?'2px solid #1a4a7a':'2px solid transparent'; }
+    if(tab==='plan' && !_planLoaded) cargarPlanificacion(2);
+  }
+  var _planLoaded = false;
+  var _planData   = null;
+  var _planMeses  = 2;
+
+  function _setPlanHorizonBtn(m){
+    [2,6,12].forEach(function(n){
+      var b=document.getElementById('plan-btn-'+n+'m');
+      if(b){ b.style.background=m===n?'#1a4a7a':'#fff'; b.style.color=m===n?'#fff':'#1a4a7a'; }
+    });
+  }
+
+  async function cargarPlanificacion(meses){
+    _planMeses=meses;
+    _setPlanHorizonBtn(meses);
+    document.getElementById('plan-empty').style.display='none';
+    document.getElementById('plan-loading').style.display='block';
+    document.getElementById('plan-error').style.display='none';
+    document.getElementById('plan-cards').innerHTML='';
+    document.getElementById('plan-deficit-box').style.display='none';
+    document.getElementById('plan-ok-box').style.display='none';
+    document.getElementById('plan-bulk-box').style.display='none';
+    document.getElementById('plan-prods-box').style.display='none';
+    try{
+      var r=await fetch('/api/programacion/planificacion?meses='+meses);
+      var d=await r.json();
+      document.getElementById('plan-loading').style.display='none';
+      if(d.cal_error){
+        document.getElementById('plan-error').style.display='block';
+        document.getElementById('plan-error').innerHTML='&#9888; Calendario: '+d.cal_error;
+      }
+      _planData=d;
+      _planLoaded=true;
+      _renderPlanificacion(d);
+    }catch(e){
+      document.getElementById('plan-loading').style.display='none';
+      document.getElementById('plan-error').style.display='block';
+      document.getElementById('plan-error').innerHTML='Error al cargar planificacion: '+e.message;
+    }
+  }
+
+  function _fmtG(g){
+    if(g>=1000) return (g/1000).toFixed(1)+' kg';
+    return Math.round(g)+' g';
+  }
+
+  function _renderPlanificacion(d){
+    var meses=d.meses||_planMeses;
+
+    // Cards resumen
+    var cards=[
+      {val:d.total_prods,    label:'Producciones<br>en calendario', icon:'&#128197;', color:'#1a4a7a'},
+      {val:d.mps_deficit?d.mps_deficit.length:0, label:'MPs en<br>déficit', icon:'&#128997;', color:d.mps_deficit&&d.mps_deficit.length?'#dc3545':'#28a745'},
+      {val:d.mps_ok_count||0, label:'MPs con stock<br>suficiente', icon:'&#10003;', color:'#28a745'},
+      {val:d.bulk_opps?d.bulk_opps.length:0, label:'Oportunidades<br>de bulk', icon:'&#128200;', color:'#0d47a1'},
+    ];
+    document.getElementById('plan-cards').innerHTML=cards.map(function(c){
+      return '<div style="background:#fff;border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.08);border-top:3px solid '+c.color+'">'
+        +'<div style="font-size:22px;margin-bottom:4px">'+c.icon+'</div>'
+        +'<div style="font-size:26px;font-weight:800;color:'+c.color+'">'+c.val+'</div>'
+        +'<div style="font-size:11px;color:#666;margin-top:4px;line-height:1.4">'+c.label+'</div>'
+        +'</div>';
+    }).join('');
+
+    // Producciones en horizonte
+    if(d.producciones&&d.producciones.length){
+      document.getElementById('plan-prods-box').style.display='block';
+      var byMes={};
+      d.producciones.forEach(function(p){ byMes[p.mes]=byMes[p.mes]||[]; byMes[p.mes].push(p); });
+      var html='';
+      Object.keys(byMes).sort().forEach(function(mes){
+        html+='<div style="margin-bottom:8px;width:100%"><span style="font-size:11px;font-weight:700;color:#1a4a7a;text-transform:uppercase;letter-spacing:1px">'+mes+'</span><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px">';
+        byMes[mes].forEach(function(p){
+          html+='<span style="background:#e8f0fe;color:#1a4a7a;border-radius:5px;padding:3px 10px;font-size:12px;font-weight:600">'+p.producto+' ('+p.kg+' kg)</span>';
+        });
+        html+='</div></div>';
+      });
+      document.getElementById('plan-prods-list').innerHTML=html||'Sin producciones identificadas en el calendario';
+    }
+
+    // Tabla de déficit
+    if(d.mps_deficit&&d.mps_deficit.length){
+      document.getElementById('plan-deficit-box').style.display='block';
+      var rows=d.mps_deficit.map(function(mp){
+        var pct=mp.cobertura_pct;
+        var pctColor=pct<30?'#dc3545':pct<70?'#fd7e14':'#28a745';
+        var origenIcon=mp.origen==='china'?'&#127464;&#127475;':mp.origen==='colombia'?'&#127464;&#127476;':'&#127758;';
+        return '<tr style="border-bottom:1px solid #eee">'
+          +'<td style="padding:8px"><div style="font-weight:600;font-size:12px">'+mp.nombre+'</div>'
+          +'<div style="font-size:10px;color:#888;font-family:monospace">'+mp.material_id+'</div></td>'
+          +'<td style="padding:8px;font-size:12px">'+origenIcon+' '+(mp.proveedor||'<span style="color:#bbb;font-style:italic">Sin asignar</span>')+'</td>'
+          +'<td style="padding:8px;text-align:right;font-size:12px">'+_fmtG(mp.total_g)+'</td>'
+          +'<td style="padding:8px;text-align:right;font-size:12px;color:'+(mp.stock_g<mp.total_g?'#dc3545':'#28a745')+'">'+_fmtG(mp.stock_g)+'</td>'
+          +'<td style="padding:8px;text-align:right;font-weight:700;color:#dc3545;font-size:12px">'+_fmtG(mp.deficit_g)+'</td>'
+          +'<td style="padding:8px;text-align:center"><div style="display:inline-block;background:#f0f0f0;border-radius:10px;overflow:hidden;width:80px;height:12px;margin-bottom:2px"><div style="background:'+pctColor+';width:'+pct+'%;height:100%"></div></div><div style="font-size:11px;color:'+pctColor+';font-weight:700">'+pct+'%</div></td>'
+          +'<td style="padding:8px;text-align:center"><span style="background:#e8f0fe;color:#1a4a7a;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700">'+mp.n_meses+'m</span></td>'
+          +'<td style="padding:8px;font-size:11px;color:#555;max-width:160px">'+mp.productos.join(', ')+'</td>'
+          +'</tr>';
+      }).join('');
+      document.getElementById('plan-deficit-tbody').innerHTML=rows;
+    }
+
+    // MPs OK
+    if(d.mps_ok_count>0){
+      document.getElementById('plan-ok-box').style.display='block';
+      // Construir lista desde mps del backend que no están en deficit
+      // (solo mostramos count ya que la lista puede ser grande)
+      document.getElementById('plan-ok-list').innerHTML='<span style="font-size:13px;color:#155724">'+d.mps_ok_count+' materias primas tienen stock suficiente para cubrir todas las producciones del período.</span>';
+    }
+
+    // Bulk opportunities
+    if(d.bulk_opps&&d.bulk_opps.length){
+      document.getElementById('plan-bulk-box').style.display='block';
+      var bulkHtml=d.bulk_opps.map(function(mp){
+        var origenBadge=mp.origen==='china'
+          ?'<span style="background:#fff3e0;color:#e65100;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">&#127464;&#127475; Importación</span>'
+          :'<span style="background:#e8f5e9;color:#1b5e20;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">&#127464;&#127476; Local</span>';
+        return '<div style="background:#fff;border:1px solid #c5d8fa;border-radius:8px;padding:14px;margin-bottom:10px;border-left:4px solid #0d47a1">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">'
+          +'<div><div style="font-weight:700;font-size:13px;color:#0d47a1">'+mp.nombre+'</div>'
+          +'<div style="font-size:11px;color:#888;margin-top:2px">Proveedor: '+(mp.proveedor||'Sin asignar')+' &nbsp;|&nbsp; Usada en: '+mp.productos.join(', ')+'</div></div>'
+          +origenBadge+'</div>'
+          +'<div style="margin-top:8px;font-size:12px;color:#1a4a7a;background:#e8f0fe;border-radius:5px;padding:8px">&#128161; '+mp.bulk_msg+'</div>'
+          +'<div style="margin-top:6px;display:flex;gap:12px;font-size:11px;color:#555">'
+          +'<span>Total necesario: <strong>'+_fmtG(mp.total_g)+'</strong></span>'
+          +'<span>Stock actual: <strong>'+_fmtG(mp.stock_g)+'</strong></span>'
+          +'<span>Déficit: <strong style="color:#dc3545">'+_fmtG(mp.deficit_g)+'</strong></span>'
+          +'<span>Meses de uso: <strong>'+mp.n_meses+'</strong></span>'
+          +'</div></div>';
+      }).join('');
+      document.getElementById('plan-bulk-list').innerHTML=bulkHtml;
+    }
+
+    if(!d.total_prods){
+      document.getElementById('plan-empty').style.display='block';
+      document.getElementById('plan-empty').innerHTML='<div style="font-size:40px;margin-bottom:12px">&#128197;</div>'
+        +'<div style="font-size:14px;font-weight:600;margin-bottom:6px">Sin producciones en el calendario para este período</div>'
+        +'<div style="font-size:13px;color:#aaa">Verifica que los eventos de Google Calendar tengan el código SKU en el título (ej: NPHA – Fabricacion 14 kg)</div>';
+    }
+  }
+
+  function exportarPlanificacion(){
+    if(!_planData||!_planData.mps_deficit) return;
+    var rows=[['Material','Codigo','Proveedor','Necesario_g','Stock_g','Deficit_g','Cobertura_pct','Meses_uso','Productos']];
+    _planData.mps_deficit.forEach(function(mp){
+      rows.push([mp.nombre,mp.material_id,mp.proveedor,mp.total_g,mp.stock_g,mp.deficit_g,mp.cobertura_pct,mp.n_meses,mp.productos.join('|')]);
+    });
+    var csv=rows.map(function(r){return r.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+    var blob=new Blob([csv],{type:'text/csv'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download='planificacion_mps_'+_planMeses+'m_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
   }
 
   function guardarProgramacion() {

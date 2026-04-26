@@ -1908,3 +1908,215 @@ def mp_bridge_unmatched():
             'total_unmatched': len(unmatched),
             'unmatched': unmatched
         })
+
+
+# ─── Planificación Estratégica ────────────────────────────────────────────────
+
+@bp.route('/api/programacion/planificacion')
+def planificacion_estrategica():
+    """
+    Proyección de MPs para 2, 6 o 12 meses basada en calendario de producción.
+    Detecta déficits, oportunidades de compra en volumen e inteligencia de origen.
+    """
+    import datetime as _dt
+    import re as _re
+
+    meses = min(int(request.args.get('meses', 2)), 12)
+    days_ahead = meses * 31  # margen extra para cubrir mes completo
+
+    conn = get_db()
+
+    # ── 1. Cargar datos base ──────────────────────────────────────────────────
+    cal     = _fetch_calendar_events(days_ahead=days_ahead)
+    events  = cal.get('events', [])
+    formulas = _get_formulas(conn)
+    mp_stock = _get_mp_stock(conn)
+
+    # SKU → producto map
+    _sku_to_prod = {}
+    try:
+        for row in conn.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            _sku_to_prod[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # Proveedor map: material_id → proveedor
+    _prov_map = {}
+    try:
+        for row in conn.execute(
+            "SELECT codigo_mp, proveedor FROM maestro_mps WHERE proveedor IS NOT NULL AND proveedor != ''"
+        ).fetchall():
+            _prov_map[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # ── 2. Parsear eventos del calendario ────────────────────────────────────
+    today = _dt.date.today()
+    cutoff = today + _dt.timedelta(days=days_ahead)
+
+    _NOT_SKU = {
+        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+        'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
+    }
+
+    def _skus(titulo):
+        tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+        return [t for t in tokens if t not in _NOT_SKU]
+
+    def _kg_ev(titulo):
+        m = _re.findall(r'~?(\d+(?:[,.]\d+)*)\s*kg', titulo, _re.IGNORECASE)
+        if not m: return None
+        try: return float(m[-1].replace(',', '.'))
+        except: return None
+
+    # Producciones planificadas: lista de {fecha, producto, kg, mes_label}
+    producciones = []
+    seen_events = set()
+
+    for ev in events:
+        titulo   = ev.get('titulo', '')
+        fecha_s  = ev.get('fecha', '')
+        if not fecha_s: continue
+        try:
+            fecha = _dt.date.fromisoformat(fecha_s)
+        except ValueError:
+            continue
+        if fecha < today or fecha > cutoff:
+            continue
+
+        key = (titulo.strip(), fecha_s)
+        if key in seen_events:
+            continue
+        seen_events.add(key)
+
+        kg = _kg_ev(titulo)
+        for sku in _skus(titulo):
+            prod = _sku_to_prod.get(sku)
+            if prod and prod in formulas:
+                mes_label = fecha.strftime('%Y-%m')
+                producciones.append({
+                    'fecha': fecha_s,
+                    'mes':   mes_label,
+                    'producto': prod,
+                    'kg': kg or formulas[prod]['lote_size_kg'],
+                    'sku': sku,
+                    'titulo': titulo,
+                })
+                break
+
+    # ── 3. Calcular MPs necesarias por producción ────────────────────────────
+    # mp_needed: {material_id: {nombre, total_g, meses: set(), prods: list}}
+    mp_needed = {}
+
+    for prod_ev in producciones:
+        prod   = prod_ev['producto']
+        kg_ev  = prod_ev['kg']
+        mes    = prod_ev['mes']
+        formula = formulas.get(prod, {})
+        lote_kg = formula.get('lote_size_kg', 1)
+        factor  = kg_ev / lote_kg if lote_kg > 0 else 1.0
+
+        for item in formula.get('items', []):
+            mid    = item['material_id']
+            nombre = item['material_nombre']
+            g_lote = item.get('cantidad_g_por_lote', 0)
+            g_need = round(g_lote * factor, 1)
+
+            if mid not in mp_needed:
+                mp_needed[mid] = {
+                    'material_id': mid,
+                    'nombre': nombre,
+                    'total_g': 0,
+                    'por_mes': {},   # mes_label → g
+                    'productos': [],
+                }
+            mp_needed[mid]['total_g'] += g_need
+            mp_needed[mid]['por_mes'][mes] = mp_needed[mid]['por_mes'].get(mes, 0) + g_need
+            if prod not in mp_needed[mid]['productos']:
+                mp_needed[mid]['productos'].append(prod)
+
+    # ── 4. Cruzar con stock actual → déficit ────────────────────────────────
+    def _lookup_stock(mid, nombre):
+        """Busca stock por material_id primero, luego por nombre."""
+        s = mp_stock.get(mid)
+        if s is not None: return s
+        s = mp_stock.get(mid.upper())
+        if s is not None: return s
+        s = mp_stock.get(nombre.upper())
+        if s is not None: return s
+        s = mp_stock.get(_norm_mp_name(nombre))
+        if s is not None: return s
+        return 0
+
+    resultado = []
+    for mid, data in mp_needed.items():
+        stock_g  = _lookup_stock(mid, data['nombre'])
+        deficit  = max(0, data['total_g'] - stock_g)
+        cobertura = round(min(stock_g / data['total_g'] * 100, 100), 1) if data['total_g'] > 0 else 100
+        meses_uso = sorted(data['por_mes'].keys())
+        n_meses   = len(meses_uso)
+        proveedor = _prov_map.get(mid, '')
+
+        # ── Inteligencia de origen ──────────────────────────────────────────
+        # Palabras clave que sugieren origen China / importación directa
+        _CHINA_KEYWORDS = {'lyphar','tianki','bloomage','sinomax','croda','basf','evonik',
+                           'givaudan','dsm','lubrizol','ashland','clariant','solvay'}
+        _COL_KEYWORDS   = {'inchemical','quiminet','prodycon','corquiven','quimicos','colombia',
+                           'agenquimicos','ytbio','bolite'}
+        prov_lower = proveedor.lower()
+        is_china   = any(k in prov_lower for k in _CHINA_KEYWORDS) or mid.startswith('MP001') or mid.startswith('MP002')
+        is_col     = any(k in prov_lower for k in _COL_KEYWORDS)
+
+        # Oportunidad de bulk: si se usa en 3+ meses consecutivos
+        bulk_opp = False
+        bulk_msg = ''
+        if n_meses >= 2:
+            bulk_opp = True
+            if is_china:
+                bulk_msg = f'Importar {round(data["total_g"]/1000,1)} kg en un solo pedido desde proveedor internacional — ahorro estimado 15-25% en flete'
+            else:
+                bulk_msg = f'Pedir {round(data["total_g"]/1000,1)} kg para {n_meses} meses a proveedor local — negociar descuento por volumen'
+
+        resultado.append({
+            'material_id':  mid,
+            'nombre':       data['nombre'],
+            'proveedor':    proveedor,
+            'total_g':      round(data['total_g'], 1),
+            'stock_g':      round(stock_g, 1),
+            'deficit_g':    round(deficit, 1),
+            'cobertura_pct': cobertura,
+            'meses_uso':    meses_uso,
+            'n_meses':      n_meses,
+            'productos':    data['productos'],
+            'bulk_opp':     bulk_opp,
+            'bulk_msg':     bulk_msg,
+            'origen':       'china' if is_china else ('colombia' if is_col else 'desconocido'),
+        })
+
+    # Ordenar: déficit primero, luego por total requerido
+    resultado.sort(key=lambda x: (-x['deficit_g'], -x['total_g']))
+
+    # ── 5. Resumen ejecutivo ─────────────────────────────────────────────────
+    total_prods   = len(producciones)
+    total_mps     = len(resultado)
+    mps_deficit   = [r for r in resultado if r['deficit_g'] > 0]
+    mps_ok        = [r for r in resultado if r['deficit_g'] == 0]
+    bulk_opps     = [r for r in resultado if r['bulk_opp'] and r['deficit_g'] > 0]
+    meses_unicos  = sorted(set(p['mes'] for p in producciones))
+
+    return jsonify({
+        'meses':           meses,
+        'producciones':    producciones,
+        'meses_unicos':    meses_unicos,
+        'total_prods':     total_prods,
+        'total_mps':       total_mps,
+        'mps_deficit':     mps_deficit,
+        'mps_ok_count':    len(mps_ok),
+        'bulk_opps':       bulk_opps,
+        'cal_error':       cal.get('error'),
+        'generado_en':     _dt.datetime.now().isoformat(),
+    })
