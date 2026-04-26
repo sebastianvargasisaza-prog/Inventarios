@@ -1134,6 +1134,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('LBHA',   'LIMPIADOR FACIAL BHA 2%',               1),
         ('CUREA',  'CREMA DE UREA',                         1)"""
     ]),
+    (20, "solicitudes_compra: influencer_id FK + marketing_influencers: banco/cuenta/cedula", [
+        """ALTER TABLE solicitudes_compra ADD COLUMN influencer_id INTEGER REFERENCES marketing_influencers(id)""",
+        """ALTER TABLE marketing_influencers ADD COLUMN banco TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN cuenta_bancaria TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN cedula_nit TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN tipo_cuenta TEXT DEFAULT 'Ahorros'""",
+    ]),
 ]
 
 

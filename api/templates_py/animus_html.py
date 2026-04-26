@@ -183,6 +183,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
     <button class="tn-btn" onclick="showSection('agentes')">🤖 Agentes IA</button>
     <button class="tn-btn" onclick="showSection('studio')">✍️ Estudio</button>
     <button class="tn-btn" onclick="showSection('config')">⚙️ Config</button>
+    <button class="tn-btn" onclick="showSection('influencers')">💸 Influencers</button>
   </div>
   <div class="topbar-right">
     <span class="platform-pill pill-shopify" id="pill-shopify">Shopify ●</span>
@@ -538,6 +539,110 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   </div>
 </div>
 
+<div class="section" id="s-influencers">
+  <div class="sec-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="sec-icon">💸</div>
+      <div>
+        <div class="sec-title">Influencers &amp; Colaboraciones</div>
+        <div class="sec-sub">Trazabilidad de pagos, perfiles y métricas por colaborador</div>
+      </div>
+    </div>
+    <button onclick="abrirModalNuevoInf()" style="background:linear-gradient(135deg,var(--pink),#a0106a);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;">+ Nuevo influencer</button>
+  </div>
+  <div id="inf-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:20px;"></div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <input id="inf-q" type="text" placeholder="Buscar influencer, nicho..." oninput="renderInfGrid()"
+      style="flex:1;min-width:180px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;">
+    <select id="inf-fil" onchange="renderInfGrid()"
+      style="padding:8px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;">
+      <option value="">Todos</option>
+      <option value="Activo">Activos</option>
+      <option value="Inactivo">Inactivos</option>
+      <option value="Potencial">Potenciales</option>
+    </select>
+  </div>
+  <div id="inf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"></div>
+</div>
+
+<!-- Modal nuevo/editar influencer -->
+<div id="m-inf-edit" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;overflow-y:auto;">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;max-width:560px;margin:40px auto;padding:0;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#1a0a2e,#2d0a4e);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:16px;font-weight:700;color:var(--text);" id="m-inf-edit-title">✨ Nuevo Influencer</div>
+      <button onclick="cerrarModalInf()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Nombre completo *</label>
+        <input id="if-nombre" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Valentina Sierra Bernal"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Red social</label>
+        <select id="if-red" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
+          <option>Instagram</option><option>TikTok</option><option>YouTube</option><option>Ambas</option>
+        </select></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">@usuario</label>
+        <input id="if-usuario" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="@handle"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Nicho</label>
+        <input id="if-nicho" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Skincare, Lifestyle..."></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Seguidores</label>
+        <input id="if-seg" type="number" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="15000"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Engagement rate (%)</label>
+        <input id="if-er" type="number" step="0.1" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="3.5"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Tarifa base (COP)</label>
+        <input id="if-tarifa" type="number" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="500000"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Estado</label>
+        <select id="if-estado" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
+          <option>Activo</option><option>Inactivo</option><option>Potencial</option>
+        </select></div>
+      <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:4px 0;padding-top:12px;">
+        <div style="font-size:12px;font-weight:700;color:var(--pink);margin-bottom:10px;">🏦 Datos bancarios</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Banco</label>
+            <input id="if-banco" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Bancolombia, Nequi, Daviplata..."></div>
+          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Tipo de cuenta</label>
+            <select id="if-tipo-cta" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
+              <option>Ahorros</option><option>Corriente</option><option>Nequi</option><option>Daviplata</option>
+            </select></div>
+          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Número cuenta / Cel</label>
+            <input id="if-cuenta" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="3114902203"></div>
+          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Cédula / NIT</label>
+            <input id="if-cedula" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="1234567890"></div>
+        </div>
+      </div>
+      <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Notas</label>
+        <textarea id="if-notas" rows="2" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;resize:vertical;" placeholder="Referencias, notas de colaboración..."></textarea></div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">
+      <button onclick="cerrarModalInf()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;">Cancelar</button>
+      <button onclick="guardarInfluencer()" style="background:linear-gradient(135deg,var(--pink),#a0106a);color:#fff;border:none;padding:8px 22px;border-radius:7px;font-weight:600;cursor:pointer;font-size:13px;">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal solicitar pago -->
+<div id="m-inf-pago" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;overflow-y:auto;">
+  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;max-width:460px;margin:60px auto;padding:0;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#0a1f2e,#0a2e1f);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--text);">💸 Solicitar Pago</div>
+        <div id="m-pago-inf-nombre" style="font-size:12px;color:var(--text2);margin-top:2px;"></div>
+      </div>
+      <button onclick="cerrarModalPago()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Monto (COP) *</label>
+        <input id="pago-monto" type="number" style="width:100%;margin-top:4px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:15px;font-weight:600;"></div>
+      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Concepto</label>
+        <input id="pago-concepto" type="text" style="width:100%;margin-top:4px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" value="Pago de contenido / colaboración"></div>
+      <div id="pago-banco-preview" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:1.8;color:var(--text2);"></div>
+      <div style="font-size:11px;color:var(--text3);">💡 Los datos bancarios vienen del perfil. Edita el influencer si están desactualizados.</div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">
+      <button onclick="cerrarModalPago()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;">Cancelar</button>
+      <button onclick="confirmarPagoInf()" style="background:linear-gradient(135deg,#059669,#065f46);color:#fff;border:none;padding:8px 22px;border-radius:7px;font-weight:600;cursor:pointer;font-size:13px;">✅ Generar solicitud</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- /main -->
 
 <div id="toast"></div>
@@ -557,6 +662,7 @@ function showSection(name) {
   if(name === 'productos') loadProductos();
   if(name === 'clientes') loadClientes();
   if(name === 'instagram') loadInstagram();
+  if(name === 'influencers') loadInfluencersPanel();
   if(name === 'config') loadConfig();
   if(name === 'studio') loadHistorial();
 }
@@ -971,6 +1077,243 @@ async function loadConfig() {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 loadComando();
+
+// ═══════════════════════════════════════════════════════════════
+// INFLUENCERS PANEL
+// ═══════════════════════════════════════════════════════════════
+let INF_DATA = [];
+let INF_EDIT_ID = null;
+let INF_PAGO_ID  = null;
+
+function fmCOP(v){ return '$' + Number(v||0).toLocaleString('es-CO'); }
+function fmK(n){ n=Number(n||0); return n>=1000000 ? (n/1000000).toFixed(1)+'M' : n>=1000 ? (n/1000).toFixed(1)+'K' : String(n); }
+function infInitials(nombre){ return (nombre||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+function infAvatarColor(nombre){
+  const colors=['#e91e8c','#8b5cf6','#3b82f6','#059669','#f59e0b','#ef4444','#06b6d4'];
+  let h=0; for(let c of (nombre||'')) h=(h*31+c.charCodeAt(0))%colors.length;
+  return colors[h];
+}
+
+async function loadInfluencersPanel(){
+  document.getElementById('inf-grid').innerHTML = '<div style="color:var(--text2);padding:30px;text-align:center;"><div class="spinner"></div> Cargando...</div>';
+  try{
+    const r = await fetch('/api/marketing/influencers-panel');
+    const d = await r.json();
+    INF_DATA = d.influencers || [];
+    renderInfKpis(d.kpis || {});
+    renderInfGrid();
+  } catch(e){
+    document.getElementById('inf-grid').innerHTML = '<div style="color:var(--red);padding:20px;">Error cargando panel: ' + e.message + '</div>';
+  }
+}
+
+function renderInfKpis(k){
+  const el = document.getElementById('inf-kpis');
+  if(!el) return;
+  el.innerHTML =
+    '<div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Activos</div><div class="kpi-value">' + (k.activos||0) + '</div><div class="kpi-sub">de ' + (k.total||0) + ' en catálogo</div><div class="kpi-icon">💸</div></div>'
+   +'<div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Pagado este mes</div><div class="kpi-value">' + fmCOP(k.pagado_mes) + '</div><div class="kpi-sub">transferencias</div><div class="kpi-icon">✅</div></div>'
+   +'<div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">Por pagar</div><div class="kpi-value">' + fmCOP(k.pendiente_total) + '</div><div class="kpi-sub">solicitudes activas</div><div class="kpi-icon">⏳</div></div>';
+}
+
+function renderInfGrid(){
+  const q   = (document.getElementById('inf-q')||{value:''}).value.toLowerCase();
+  const fil = (document.getElementById('inf-fil')||{value:''}).value;
+  const gel = document.getElementById('inf-grid');
+  if(!gel) return;
+
+  let list = INF_DATA.filter(i=>{
+    if(fil && i.estado !== fil) return false;
+    if(q && !((i.nombre||'')+(i.usuario_red||'')+(i.nicho||'')).toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if(!list.length){
+    gel.innerHTML = '<div style="color:var(--text2);padding:40px;text-align:center;grid-column:1/-1;">Sin resultados. <a href="#" onclick="abrirModalNuevoInf();return false;" style="color:var(--pink);">Agrega el primero →</a></div>';
+    return;
+  }
+
+  const estadoBadge = {
+    'Activo':   {bg:'rgba(34,197,94,.15)',  fg:'#22c55e', txt:'● Activo'},
+    'Inactivo': {bg:'rgba(239,68,68,.12)',  fg:'#ef4444', txt:'● Inactivo'},
+    'Potencial':{bg:'rgba(245,158,11,.12)', fg:'#f59e0b', txt:'◌ Potencial'}
+  };
+
+  gel.innerHTML = list.map(inf => {
+    const col   = infAvatarColor(inf.nombre);
+    const ini   = infInitials(inf.nombre);
+    const badge = estadoBadge[inf.estado] || {bg:'var(--bg3)',fg:'var(--text2)',txt:inf.estado};
+    const hasPend = inf.tiene_pendiente;
+    const niche   = inf.nicho || '—';
+    const seg     = fmK(inf.seguidores);
+    const er      = inf.engagement_rate ? inf.engagement_rate.toFixed(1)+'%' : '—';
+    const totalPag= fmCOP(inf.total_pagado);
+    const nPagos  = inf.pagos_count || 0;
+    const pendMonto= inf.total_pendiente > 0 ? fmCOP(inf.total_pendiente) : null;
+
+    const bankOk = inf.banco || inf.cuenta_bancaria;
+
+    return \`<div style="background:var(--bg2);border:1px solid \${hasPend?'rgba(245,158,11,.4)':col+'33'};border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:.2s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,\${col}22,\${col}08);padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);">
+        <div style="width:44px;height:44px;border-radius:50%;background:\${col};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">\${ini}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${inf.nombre}</div>
+          <div style="font-size:12px;color:var(--text2);">\${inf.usuario_red ? '@'+inf.usuario_red : ''} <span style="color:var(--text3);">\${inf.red_social||'IG'}</span></div>
+        </div>
+        <span style="background:\${badge.bg};color:\${badge.fg};padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap;">\${badge.txt}</span>
+      </div>
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid var(--border);">
+        <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nicho</div>
+          <div style="font-size:12px;font-weight:600;color:var(--pink);">\${niche}</div>
+        </div>
+        <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Seguidores</div>
+          <div style="font-size:13px;font-weight:700;">\${seg}</div>
+        </div>
+        <div style="padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ER</div>
+          <div style="font-size:13px;font-weight:700;color:var(--green);">\${er}</div>
+        </div>
+      </div>
+      <!-- Pagos -->
+      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;">Total pagado</div>
+          <div style="font-size:15px;font-weight:700;color:var(--green);">\${totalPag}</div>
+          <div style="font-size:11px;color:var(--text3);">\${nPagos} \${nPagos===1?'pago':'pagos'} realizados</div>
+        </div>
+        \${pendMonto ? \`<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 12px;text-align:center;">
+          <div style="font-size:10px;color:#f59e0b;font-weight:600;text-transform:uppercase;">Pendiente</div>
+          <div style="font-size:13px;font-weight:700;color:#f59e0b;">\${pendMonto}</div>
+        </div>\` : ''}
+      </div>
+      <!-- Actions -->
+      <div style="padding:12px 16px;display:flex;gap:8px;">
+        <button onclick="abrirModalPago(\${inf.id})" \${bankOk?'':'title="Agrega datos bancarios primero"'} style="flex:1;background:\${bankOk?'linear-gradient(135deg,#059669,#065f46)':'var(--bg3)'};color:\${bankOk?'#fff':'var(--text3)'};border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">
+          💸 Solicitar pago
+        </button>
+        <button onclick="abrirModalEditInf(\${inf.id})" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">✏️ Editar</button>
+      </div>
+      \${!bankOk ? '<div style="padding:4px 16px 10px;font-size:10px;color:#f59e0b;">⚠️ Sin datos bancarios — edita el perfil para habilitar pagos</div>' : ''}
+    </div>\`;
+  }).join('');
+}
+
+// ── Modales ───────────────────────────────────────────────────────────────────
+function abrirModalNuevoInf(){
+  INF_EDIT_ID = null;
+  document.getElementById('m-inf-edit-title').textContent = '✨ Nuevo Influencer';
+  ['nombre','red','usuario','nicho','er','notas','banco','cuenta','cedula'].forEach(id=>{
+    const el = document.getElementById('if-'+id);
+    if(el) el.value = '';
+  });
+  document.getElementById('if-seg').value = '';
+  document.getElementById('if-tarifa').value = '';
+  document.getElementById('if-estado').value = 'Activo';
+  document.getElementById('if-tipo-cta').value = 'Ahorros';
+  document.getElementById('m-inf-edit').style.display = 'flex';
+}
+
+function abrirModalEditInf(iid){
+  const inf = INF_DATA.find(i=>i.id===iid);
+  if(!inf) return;
+  INF_EDIT_ID = iid;
+  document.getElementById('m-inf-edit-title').textContent = '✏️ Editar — ' + inf.nombre;
+  document.getElementById('if-nombre').value  = inf.nombre || '';
+  document.getElementById('if-red').value     = inf.red_social || 'Instagram';
+  document.getElementById('if-usuario').value = inf.usuario_red || '';
+  document.getElementById('if-nicho').value   = inf.nicho || '';
+  document.getElementById('if-seg').value     = inf.seguidores || '';
+  document.getElementById('if-er').value      = inf.engagement_rate || '';
+  document.getElementById('if-tarifa').value  = inf.tarifa || '';
+  document.getElementById('if-estado').value  = inf.estado || 'Activo';
+  document.getElementById('if-notas').value   = inf.notas || '';
+  document.getElementById('if-banco').value   = inf.banco || '';
+  document.getElementById('if-tipo-cta').value= inf.tipo_cuenta || 'Ahorros';
+  document.getElementById('if-cuenta').value  = inf.cuenta_bancaria || '';
+  document.getElementById('if-cedula').value  = inf.cedula_nit || '';
+  document.getElementById('m-inf-edit').style.display = 'flex';
+}
+
+function cerrarModalInf(){ document.getElementById('m-inf-edit').style.display = 'none'; }
+function cerrarModalPago(){ document.getElementById('m-inf-pago').style.display = 'none'; INF_PAGO_ID = null; }
+
+async function guardarInfluencer(){
+  const nombre = document.getElementById('if-nombre').value.trim();
+  if(!nombre){ alert('El nombre es requerido'); return; }
+  const payload = {
+    nombre,
+    red_social:      document.getElementById('if-red').value,
+    usuario_red:     document.getElementById('if-usuario').value.replace(/^@/,'').trim(),
+    nicho:           document.getElementById('if-nicho').value.trim(),
+    seguidores:      parseInt(document.getElementById('if-seg').value)||0,
+    engagement_rate: parseFloat(document.getElementById('if-er').value)||0,
+    tarifa:          parseFloat(document.getElementById('if-tarifa').value)||0,
+    estado:          document.getElementById('if-estado').value,
+    notas:           document.getElementById('if-notas').value.trim(),
+    banco:           document.getElementById('if-banco').value.trim(),
+    tipo_cuenta:     document.getElementById('if-tipo-cta').value,
+    cuenta_bancaria: document.getElementById('if-cuenta').value.trim(),
+    cedula_nit:      document.getElementById('if-cedula').value.trim(),
+  };
+  try{
+    let url, method;
+    if(INF_EDIT_ID){
+      url = '/api/marketing/influencers/' + INF_EDIT_ID + '/banco';
+      method = 'PUT';
+    } else {
+      url = '/api/marketing/influencers';
+      method = 'POST';
+    }
+    const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const d = await r.json();
+    if(d.ok || d.id){
+      cerrarModalInf();
+      loadInfluencersPanel();
+    } else { alert('Error: ' + (d.error||'desconocido')); }
+  } catch(e){ alert('Error de red: ' + e.message); }
+}
+
+function abrirModalPago(iid){
+  const inf = INF_DATA.find(i=>i.id===iid);
+  if(!inf) return;
+  INF_PAGO_ID = iid;
+  document.getElementById('m-pago-inf-nombre').textContent = inf.nombre;
+  document.getElementById('pago-monto').value = inf.tarifa || '';
+  document.getElementById('pago-concepto').value = 'Pago de contenido / colaboración';
+  // Preview bank info
+  let prev = '';
+  if(inf.nombre)           prev += '<b>Beneficiario:</b> ' + inf.nombre + '<br>';
+  if(inf.banco)            prev += '<b>Banco:</b> ' + inf.banco + ' (' + (inf.tipo_cuenta||'Ahorros') + ')<br>';
+  if(inf.cuenta_bancaria)  prev += '<b>Cuenta/Cel:</b> ' + inf.cuenta_bancaria + '<br>';
+  if(inf.cedula_nit)       prev += '<b>Cédula/NIT:</b> ' + inf.cedula_nit + '<br>';
+  if(!prev) prev = '<span style="color:var(--yellow);">⚠️ Sin datos bancarios — edita el perfil primero.</span>';
+  document.getElementById('pago-banco-preview').innerHTML = prev;
+  document.getElementById('m-inf-pago').style.display = 'flex';
+}
+
+async function confirmarPagoInf(){
+  if(!INF_PAGO_ID) return;
+  const monto = parseFloat(document.getElementById('pago-monto').value);
+  if(!monto || monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
+  const concepto = document.getElementById('pago-concepto').value.trim();
+  try{
+    const r = await fetch('/api/marketing/influencers/' + INF_PAGO_ID + '/solicitar-pago', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({monto, concepto})
+    });
+    const d = await r.json();
+    if(d.ok){
+      cerrarModalPago();
+      alert('✅ Solicitud ' + d.numero + ' generada.\nOC: ' + d.oc + '\nMonto: $' + Number(d.monto).toLocaleString('es-CO') + '\n\nLa solicitud ya está visible en Compras → Influencers.');
+      loadInfluencersPanel();
+    } else { alert('Error: ' + (d.error||'desconocido')); }
+  } catch(e){ alert('Error de red: ' + e.message); }
+}
 </script>
 </body>
 </html>"""

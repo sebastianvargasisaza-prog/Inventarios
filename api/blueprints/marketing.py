@@ -1887,3 +1887,218 @@ def mkt_agente_log_detalle(log_id):
         return jsonify(r)
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PANEL INFLUENCERS — vista unificada perfil + historial de pagos
+# ──────────────────────────────────────────────────────────────────────────────
+
+@bp.route("/api/marketing/influencers-panel", methods=["GET"])
+def mkt_influencers_panel():
+    """Vista unificada: perfiles marketing_influencers + sus solicitudes de pago vinculadas."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    try:
+        q = request.args.get("q", "").strip()
+        estado_fil = request.args.get("estado", "")
+
+        # 1. Todos los influencers del catálogo
+        base_sql = "SELECT * FROM marketing_influencers"
+        conds, params = [], []
+        if q:
+            conds.append("(nombre LIKE ? OR usuario_red LIKE ? OR nicho LIKE ?)")
+            params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        if estado_fil:
+            conds.append("estado=?")
+            params.append(estado_fil)
+        sql = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
+        influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
+
+        # 2. Todas las solicitudes de pago Influencer (vinculadas por influencer_id O por nombre)
+        solic_rows = c.execute("""
+            SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
+                   s.numero_oc, s.solicitante, s.influencer_id
+            FROM solicitudes_compra s
+            WHERE s.categoria = 'Influencer/Marketing Digital'
+            ORDER BY s.fecha DESC
+        """).fetchall()
+        solic_list = [dict(r) for r in solic_rows]
+
+        # Index solicitudes by influencer_id (primary) or by name match (fallback)
+        solic_by_id   = {}   # influencer_id -> list of solicitudes
+        solic_by_name = {}   # nombre_lower  -> list of solicitudes
+
+        for s in solic_list:
+            if s["influencer_id"]:
+                solic_by_id.setdefault(s["influencer_id"], []).append(s)
+            else:
+                # fallback: match by solicitante name
+                key = (s["solicitante"] or "").strip().lower()
+                if key:
+                    solic_by_name.setdefault(key, []).append(s)
+
+        # 3. Merge
+        now_month = datetime.now().strftime("%Y-%m")
+        result = []
+        for inf in influencers:
+            iid  = inf["id"]
+            inombre_low = inf["nombre"].strip().lower()
+
+            pagos = solic_by_id.get(iid, []) + solic_by_name.get(inombre_low, [])
+            # dedup by numero
+            seen = set()
+            pagos_uniq = []
+            for p in pagos:
+                if p["numero"] not in seen:
+                    seen.add(p["numero"])
+                    pagos_uniq.append(p)
+
+            pagadas   = [p for p in pagos_uniq if p["estado"] == "Pagada"]
+            pendiente = [p for p in pagos_uniq if p["estado"] in ("Aprobada", "Pendiente")]
+            mes_pagos = [p for p in pagadas if (p["fecha"] or "").startswith(now_month)]
+
+            inf["pagos"] = pagos_uniq
+            inf["total_pagado"]      = sum(p["valor"] or 0 for p in pagadas)
+            inf["total_pendiente"]   = sum(p["valor"] or 0 for p in pendiente)
+            inf["pagos_count"]       = len(pagadas)
+            inf["pendiente_count"]   = len(pendiente)
+            inf["pagado_mes_actual"] = sum(p["valor"] or 0 for p in mes_pagos)
+            inf["ultimo_pago"]       = pagadas[0]["fecha"] if pagadas else None
+            inf["tiene_pendiente"]   = len(pendiente) > 0
+
+            result.append(inf)
+
+        # Panel KPIs
+        total_pagado_mes  = sum(inf["pagado_mes_actual"] for inf in result)
+        total_pendiente   = sum(inf["total_pendiente"]   for inf in result)
+        activos           = len([i for i in result if i["estado"] == "Activo"])
+
+        return jsonify({
+            "influencers": result,
+            "kpis": {
+                "activos":          activos,
+                "total":            len(result),
+                "pagado_mes":       total_pagado_mes,
+                "pendiente_total":  total_pendiente,
+            }
+        })
+    finally:
+        pass
+
+
+@bp.route("/api/marketing/influencers/<int:iid>/solicitar-pago", methods=["POST"])
+def mkt_solicitar_pago_influencer(iid):
+    """Crea una solicitud de pago (cuenta de cobro) vinculada a un influencer."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    try:
+        inf = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+        if not inf:
+            return jsonify({"error": "Influencer no encontrado"}), 404
+        inf = dict(inf)
+
+        d = request.get_json() or {}
+        monto    = float(d.get("monto") or inf.get("tarifa") or 0)
+        concepto = str(d.get("concepto") or "Pago de contenido/colaboración").strip()
+        banco    = str(d.get("banco")    or inf.get("banco", "")).strip()
+        cuenta   = str(d.get("cuenta")   or inf.get("cuenta_bancaria", "")).strip()
+        cedula   = str(d.get("cedula")   or inf.get("cedula_nit", "")).strip()
+        tipo_cta = str(d.get("tipo_cuenta") or inf.get("tipo_cuenta", "Ahorros")).strip()
+
+        if monto <= 0:
+            return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+
+        # Generate SOL number
+        from datetime import datetime as dt
+        today = dt.now()
+        prefix = f"SOL-{today.year}-"
+        last = c.execute(
+            "SELECT numero FROM solicitudes_compra WHERE numero LIKE ? ORDER BY numero DESC LIMIT 1",
+            (f"{prefix}%",)
+        ).fetchone()
+        if last:
+            try:
+                seq = int(last[0].split("-")[-1]) + 1
+            except Exception:
+                seq = 1
+        else:
+            seq = 1
+        numero = f"{prefix}{seq:04d}"
+
+        # Build observaciones in standard beneficiary format
+        obs_parts = [f"BENEFICIARIO: {inf['nombre']}"]
+        if banco:   obs_parts.append(f"BANCO: {banco} {tipo_cta}")
+        if cuenta:  obs_parts.append(f"CUENTA/CEL: {cuenta}")
+        if cedula:  obs_parts.append(f"CED/NIT: {cedula}")
+        obs_parts.append(f"CONCEPTO: {concepto}")
+        obs_parts.append(f"VALOR: ${monto:,.0f}")
+        observaciones = " | ".join(obs_parts)
+
+        c.execute("""
+            INSERT INTO solicitudes_compra
+            (numero, fecha, estado, solicitante, urgencia, observaciones,
+             area, empresa, categoria, tipo, valor, influencer_id)
+            VALUES (?,date('now'),'Aprobada',?,?,?,?,?,?,?,?,?)
+        """, (
+            numero,
+            inf["nombre"],
+            "Normal",
+            observaciones,
+            "Marketing",
+            "ANIMUS",
+            "Influencer/Marketing Digital",
+            "Servicio",
+            monto,
+            iid,
+        ))
+
+        # Auto-generate OC
+        oc_num = numero.replace("SOL", "OC")
+        c.execute("""
+            INSERT INTO ordenes_compra
+            (numero_oc, fecha, estado, proveedor, observaciones, creado_por, categoria, valor_total)
+            VALUES (?,date('now'),'Aprobada',?,?,?,?,?)
+        """, (
+            oc_num,
+            inf["nombre"],
+            observaciones,
+            u,
+            "Influencer/Marketing Digital",
+            monto,
+        ))
+        c.execute(
+            "UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?",
+            (oc_num, numero)
+        )
+        conn.commit()
+
+        return jsonify({"ok": True, "numero": numero, "oc": oc_num, "monto": monto})
+    finally:
+        pass
+
+
+@bp.route("/api/marketing/influencers/<int:iid>/banco", methods=["PUT"])
+def mkt_influencer_banco(iid):
+    """Actualiza datos bancarios de un influencer."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    d = request.get_json() or {}
+    campos = ["banco", "cuenta_bancaria", "cedula_nit", "tipo_cuenta",
+              "nombre", "red_social", "usuario_red", "seguidores",
+              "engagement_rate", "nicho", "tarifa", "estado", "email", "telefono", "notas"]
+    updates = {k: d[k] for k in campos if k in d}
+    if not updates:
+        return jsonify({"error": "Nada que actualizar"}), 400
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    conn.execute(f"UPDATE marketing_influencers SET {set_clause} WHERE id=?",
+                 list(updates.values()) + [iid])
+    conn.commit()
+    return jsonify({"ok": True})
