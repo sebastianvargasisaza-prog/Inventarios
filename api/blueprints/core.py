@@ -108,11 +108,13 @@ def login():
         next_url = '/modulos'
     if request.method == 'POST':
         ip = _client_ip()
-        if _is_locked(ip):
-            error = '<div class="err">Demasiados intentos. Espera 15 min.</div>'
-            return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '').strip()
+        # Lock por IP O por (IP, username) — bloquea brute-force que rota
+        # usernames y brute-force dirigido a un solo usuario.
+        if _is_locked(ip, username):
+            error = '<div class="err">Demasiados intentos. Espera 15 min.</div>'
+            return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')
         expected = COMPRAS_USERS.get(username, '')
         # Soporte PBKDF2 (env var con hash) y plaintext legacy
         if expected and expected.startswith('pbkdf2:'):
@@ -120,7 +122,7 @@ def login():
         else:
             match = bool(expected) and hmac.compare_digest(expected, password)
         if match:
-            _clear_attempts(ip)
+            _clear_attempts(ip, username)
             _log_sec("login_success", username, ip)
             session.clear()
             session.permanent = True
@@ -136,7 +138,7 @@ def login():
             if any(nxt == p or nxt.startswith(p + '/') for p in ADMIN_ONLY) and username not in _AU:
                 nxt = '/modulos'
             return redirect(nxt)
-        _record_failure(ip)
+        _record_failure(ip, username)
         _log_sec("login_failure", username, ip)
         error = '<div class="err">Usuario o contraseña incorrectos.</div>'
     return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')

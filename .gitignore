@@ -1,21 +1,55 @@
 # Secrets y datos locales — NUNCA a Git
 .env.local
 .env
+.env.*.local
 .git_token
+*.pem
+*.key
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+_test.db
+
+# Backups — la fuente de verdad es Git, no archivos .bak
+*.bak
+*.bak_*
+*.backup
+*.old
+api/index.py.bak*
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / IDE
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Builds
 *.egg-info/
 dist/
 build/
+.cache/
+
+# Virtual envs
 .venv/
 venv/
+env/
+
+# Frontend assets que no son fuente
 node_modules/
 
-# AutoPush — logs locales
+# Logs
 autopush.log
+*.log
+logs/

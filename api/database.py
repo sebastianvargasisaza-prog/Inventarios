@@ -30,7 +30,7 @@ def _configure_conn(conn):
 
 def get_db():
     """Conexion SQLite per-request usando Flask g (patron recomendado Flask).
-    
+
     Cerrada automaticamente por teardown_appcontext al final del request
     incluyendo error paths. Con WAL mode y busy_timeout, segura para uso
     con multiples workers Gunicorn simultaneos.
@@ -43,6 +43,49 @@ def get_db():
     except RuntimeError:
         # Sin app context: scripts de init, tests, herramientas CLI
         return _configure_conn(sqlite3.connect(DB_PATH))
+
+
+# ── Helper para migraciones idempotentes ──────────────────────────────────────
+# Errores benignos que indicam "el cambio ya está aplicado" — NO se loguean.
+# Cualquier otro OperationalError SE LOGUEA y SE RELANZA (típico de typo SQL,
+# columna referencia inválida, etc.).
+_BENIGN_DDL_ERRORS = (
+    "duplicate column",
+    "already exists",
+    "no such table",   # legítimo en DROP IF NOT EXISTS-style code
+)
+
+
+def safe_alter(conn, sql):
+    """Ejecuta un ALTER/CREATE idempotente.
+
+    Reemplaza el patrón legacy `try: conn.execute(sql); except: pass` que
+    silencia TODOS los errores incluyendo typos. Solo ignora "duplicate column",
+    "already exists" y similares — cualquier otro error se loguea con contexto
+    y se relanza para que la migración falle visiblemente.
+
+    Args:
+        conn: conexion SQLite
+        sql:  sentencia DDL (ALTER TABLE, CREATE INDEX, etc.)
+
+    Returns:
+        True si se ejecutó nuevo cambio, False si ya estaba aplicado.
+
+    Raises:
+        sqlite3.OperationalError si el error NO es benigno.
+    """
+    import logging as _logging
+    try:
+        conn.execute(sql)
+        return True
+    except sqlite3.OperationalError as e:
+        msg = str(e).lower()
+        if any(b in msg for b in _BENIGN_DDL_ERRORS):
+            return False
+        _logging.getLogger("inventario.db").error(
+            "safe_alter failed: %s -- %s", sql[:100], e
+        )
+        raise
 
 
 # ─── Sistema de migración de esquema ─────────────────────────────────────────

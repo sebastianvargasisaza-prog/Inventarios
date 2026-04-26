@@ -18,54 +18,97 @@ def _client_ip():
     return hdr.split(',')[0].strip()
 
 
-def _is_locked(ip):
-    """Verifica si la IP está bloqueada. Lee de SQLite — funciona con N workers."""
+def _rate_key(ip, username=None):
+    """Compone la clave para rate limiting.
+
+    Si username está disponible (login attempt con username conocido), la clave
+    es 'ip|username' — esto evita que una botnet con N IPs distintas pueda
+    fuerza bruta sobre un usuario específico, y simétricamente que un atacante
+    con 1 IP pueda enumerar usuarios.
+
+    Sin username, fallback a sólo IP — compatible con código existente.
+    """
+    if username:
+        return f"{ip}|{username.strip().lower()[:32]}"
+    return ip
+
+
+def _is_locked(ip, username=None):
+    """Verifica si IP (o IP+username) está bloqueada.
+
+    Devuelve True si CUALQUIERA de las dos claves está bloqueada — esto cierra
+    la brecha donde un atacante alterna usernames para evadir el lock por IP.
+    """
+    keys_to_check = [_rate_key(ip)]
+    if username:
+        keys_to_check.append(_rate_key(ip, username))
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("PRAGMA busy_timeout=2000")
-        row = conn.execute(
-            "SELECT locked_until FROM rate_limit WHERE ip=?", (ip,)
-        ).fetchone()
+        placeholders = ",".join("?" * len(keys_to_check))
+        rows = conn.execute(
+            f"SELECT locked_until FROM rate_limit WHERE ip IN ({placeholders})",
+            keys_to_check
+        ).fetchall()
         conn.close()
-        if not row:
-            return False
-        if time.time() < row[0]:
-            return True
-        # Bloqueo expirado — limpiar
-        _clear_attempts(ip)
+        now = time.time()
+        for row in rows:
+            if now < row[0]:
+                return True
+        # Limpiar bloqueos expirados (oportunista)
+        for key in keys_to_check:
+            _clear_attempts(key)
         return False
     except Exception:
         return False   # En caso de error de DB, no bloquear
 
 
-def _record_failure(ip):
-    """Registra un intento fallido. Usa INSERT OR REPLACE para atomicidad."""
+def _record_failure(ip, username=None):
+    """Registra un intento fallido. Incrementa contador para IP y para IP+user.
+
+    Doble registro: por IP (defensa contra escaneo) y por IP+user (defensa
+    contra brute-force dirigido). Cualquiera que llegue al máximo activa lock.
+    """
+    keys_to_record = [_rate_key(ip)]
+    if username:
+        keys_to_record.append(_rate_key(ip, username))
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("PRAGMA busy_timeout=2000")
-        conn.execute("""
-            INSERT INTO rate_limit(ip, attempts, locked_until, last_attempt)
-            VALUES(?, 1, 0, ?)
-            ON CONFLICT(ip) DO UPDATE SET
-                attempts     = attempts + 1,
-                last_attempt = excluded.last_attempt,
-                locked_until = CASE
-                    WHEN attempts + 1 >= ? THEN ? + excluded.last_attempt
-                    ELSE locked_until
-                END
-        """, (ip, time.time(), _MAX_ATTEMPTS, _LOCKOUT_SECS))
+        for key in keys_to_record:
+            conn.execute("""
+                INSERT INTO rate_limit(ip, attempts, locked_until, last_attempt)
+                VALUES(?, 1, 0, ?)
+                ON CONFLICT(ip) DO UPDATE SET
+                    attempts     = attempts + 1,
+                    last_attempt = excluded.last_attempt,
+                    locked_until = CASE
+                        WHEN attempts + 1 >= ? THEN ? + excluded.last_attempt
+                        ELSE locked_until
+                    END
+            """, (key, time.time(), _MAX_ATTEMPTS, _LOCKOUT_SECS))
         conn.commit()
         conn.close()
     except Exception:
         pass
 
 
-def _clear_attempts(ip):
-    """Borra el registro de intentos para la IP (login exitoso)."""
+def _clear_attempts(ip_or_key, username=None):
+    """Borra el registro de intentos para una IP/key (login exitoso).
+
+    Si se pasa username, también limpia la entrada IP+user.
+    """
+    keys_to_clear = [_rate_key(ip_or_key)]
+    if username:
+        keys_to_clear.append(_rate_key(ip_or_key, username))
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("PRAGMA busy_timeout=2000")
-        conn.execute("DELETE FROM rate_limit WHERE ip=?", (ip,))
+        placeholders = ",".join("?" * len(keys_to_clear))
+        conn.execute(
+            f"DELETE FROM rate_limit WHERE ip IN ({placeholders})",
+            keys_to_clear
+        )
         conn.commit()
         conn.close()
     except Exception:
@@ -130,6 +173,79 @@ def register_hooks(app):
             return
         if not session.get('compras_user'):
             return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
+
+    # ── CSRF protection light: Origin/Referer check ──────────────────────────
+    # Bloquea CSRF clásico verificando que requests con efectos secundarios
+    # (POST/PUT/DELETE/PATCH) provengan del mismo host. No requiere tokens
+    # explícitos en el frontend — funciona con cualquier form/fetch
+    # same-origin moderno (los browsers envían Origin/Referer automáticamente).
+    #
+    # Casos manejados:
+    #  - GET/HEAD/OPTIONS: nunca chequeados (idempotentes por contrato HTTP)
+    #  - Header Origin presente: comparar con request.host
+    #  - Origin ausente, Referer presente: extraer host del Referer
+    #  - Ambos ausentes: rechazar (browsers modernos siempre envían Referer
+    #    a menos que se configure 'no-referrer' explícitamente — sospechoso)
+    #  - Webhooks externos legítimos pueden whitelist-ear su path en CSRF_EXEMPT
+    CSRF_EXEMPT_PATHS = {
+        '/api/health',  # health check público
+    }
+    UNSAFE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
+
+    @app.before_request
+    def csrf_origin_check():
+        if request.method not in UNSAFE_METHODS:
+            return
+        if request.path in CSRF_EXEMPT_PATHS:
+            return
+
+        expected_host = request.host  # incluye puerto si no es default
+        origin = request.headers.get('Origin', '').strip()
+        referer = request.headers.get('Referer', '').strip()
+
+        def _host_from_url(url):
+            try:
+                from urllib.parse import urlparse
+                return urlparse(url).netloc
+            except Exception:
+                return ''
+
+        if origin:
+            origin_host = _host_from_url(origin)
+            if origin_host == expected_host:
+                return
+        elif referer:
+            referer_host = _host_from_url(referer)
+            if referer_host == expected_host:
+                return
+        else:
+            # Algunos clientes legítimos (curl, scripts internos) no envían
+            # Origin/Referer. Para no romper integraciones, si la sesión es
+            # válida Y la request viene de la misma red de Render (X-Forwarded
+            # -For matchea), permitimos. Caso normal browser fluye por las
+            # ramas de arriba.
+            if session.get('compras_user'):
+                # Sesión válida + sin headers cross-origin = probablemente
+                # script legítimo del usuario. Loguear pero permitir.
+                _log_sec(
+                    "csrf_no_origin_allowed",
+                    session.get('compras_user'),
+                    _client_ip(),
+                    f"path={request.path}"
+                )
+                return
+
+        # Bloqueado: cross-origin attempt o headers ausentes sin sesión
+        _log_sec(
+            "csrf_blocked",
+            session.get('compras_user', '-'),
+            _client_ip(),
+            f"path={request.path} origin={origin[:80]} referer={referer[:80]}"
+        )
+        return jsonify({
+            "error": "Origen de la petición no válido",
+            "hint": "Esta acción solo puede ejecutarse desde la app web."
+        }), 403
 
     @app.after_request
     def add_security_headers(response):

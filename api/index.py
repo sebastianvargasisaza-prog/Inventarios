@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, validate_config
 
 # Garantizar directorio de DB antes de importar blueprints (evita crash en Render)
 import pathlib as _pl
@@ -61,6 +61,11 @@ logging.basicConfig(
 )
 _logger = logging.getLogger("inventario")
 _APP_START = _time_module.time()
+
+# Validación de configuración al startup. Emite warnings estructurados (JSON
+# por línea) en logs de Render/Datadog si faltan secretos críticos. No
+# crashea la app — el admin ve los warnings y puede priorizar el fix.
+_CONFIG_ISSUES = validate_config()
 
 
 @app.teardown_appcontext
