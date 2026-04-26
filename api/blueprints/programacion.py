@@ -1977,6 +1977,7 @@ def planificacion_estrategica():
     producciones = []
     seen_events = set()
 
+    # ── 2a. Fuente primaria: Google Calendar / iCal ───────────────────────
     for ev in events:
         titulo   = ev.get('titulo', '')
         fecha_s  = ev.get('fecha', '')
@@ -2005,8 +2006,50 @@ def planificacion_estrategica():
                     'kg': kg or formulas[prod]['lote_size_kg'],
                     'sku': sku,
                     'titulo': titulo,
+                    'fuente': 'calendario',
                 })
                 break
+
+    # ── 2b. Fuente secundaria: produccion_programada (DB local) ──────────
+    # Complementa cuando el calendario no tiene eventos o no hay SKUs en títulos
+    _upper_to_prod = {p.upper(): p for p in formulas.keys()}
+    try:
+        local_rows = conn.execute(
+            """SELECT producto, fecha_programada, lotes FROM produccion_programada
+               WHERE estado NOT IN ('completado','cancelado')
+                 AND fecha_programada >= date('now', '-7 days')
+                 AND fecha_programada <= ?
+               ORDER BY fecha_programada""",
+            (cutoff.isoformat(),)
+        ).fetchall()
+        for row in local_rows:
+            prod_raw = (row[0] or '').strip()
+            fecha_s  = (row[1] or '').strip()
+            lotes    = int(row[2] or 1)
+            prod = prod_raw if prod_raw in formulas else _upper_to_prod.get(prod_raw.upper())
+            if not prod or not fecha_s:
+                continue
+            key = (prod, fecha_s)
+            if key in seen_events:
+                continue
+            seen_events.add(key)
+            try:
+                fecha = _dt.date.fromisoformat(fecha_s)
+            except ValueError:
+                continue
+            lote_kg = formulas[prod]['lote_size_kg']
+            mes_label = fecha.strftime('%Y-%m')
+            producciones.append({
+                'fecha': fecha_s,
+                'mes': mes_label,
+                'producto': prod,
+                'kg': lote_kg * lotes,
+                'sku': '',
+                'titulo': f'{prod} — {lotes} lote(s)',
+                'fuente': 'local',
+            })
+    except Exception:
+        pass
 
     # ── 3. Calcular MPs necesarias por producción ────────────────────────────
     # mp_needed: {material_id: {nombre, total_g, meses: set(), prods: list}}
