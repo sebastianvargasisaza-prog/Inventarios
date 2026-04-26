@@ -1435,6 +1435,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE pagos_influencers ADD COLUMN fecha_publicacion TEXT DEFAULT ''""",
         """ALTER TABLE pagos_influencers ADD COLUMN entregable TEXT DEFAULT ''""",
     ]),
+    (25, "users_passwords: tabla para self-service password change (lazy fallback a env)", [
+        """CREATE TABLE IF NOT EXISTS users_passwords (
+            username      TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            changed_at    TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            changed_by    TEXT NOT NULL DEFAULT ''
+        )""",
+    ]),
 ]
 
 

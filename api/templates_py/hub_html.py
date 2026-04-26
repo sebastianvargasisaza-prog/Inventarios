@@ -105,8 +105,118 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
   <div class="qn-sep"></div>
   <a class="qn-btn" href="/modulos" style="background:#1e3a5f;border-color:#3b82f6;color:#93c5fd;font-weight:700;">&#x1F4F1; Panel de M&#xF3;dulos</a>
   <div class="qn-sep"></div>
+  <a class="qn-btn" href="#" onclick="event.preventDefault();openPwdModal();return false;" style="color:#a78bfa;border-color:#4c1d95;">&#x1F510; Cambiar contraseña</a>
   <a class="qn-btn" href="/logout" style="color:#f87171;border-color:#7f1d1d;">&#x23CF; Cerrar sesión</a>
 </div>
+
+<!-- ─── Modal cambio de contraseña ─── -->
+<div id="pwd-modal-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:28px;max-width:420px;width:92%;color:#e2e8f0;font-family:'Segoe UI',sans-serif;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin:0;">&#x1F510; Cambiar contraseña</h2>
+      <button onclick="closePwdModal()" style="background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:18px;">Tu nueva contraseña debe tener mínimo 8 caracteres, al menos una letra y un número.</div>
+    <form id="pwd-form" onsubmit="return submitPwdChange(event)" style="display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <label style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">Contraseña actual</label>
+        <input type="password" id="pwd-actual" required autocomplete="current-password" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">Nueva contraseña</label>
+        <input type="password" id="pwd-nueva" required minlength="8" maxlength="128" autocomplete="new-password" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">Confirmar nueva contraseña</label>
+        <input type="password" id="pwd-confirmar" required minlength="8" maxlength="128" autocomplete="new-password" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;" />
+      </div>
+      <div id="pwd-msg" style="font-size:12px;min-height:18px;padding:6px 0;"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+        <button type="button" onclick="closePwdModal()" style="background:transparent;border:1px solid #334155;color:#94a3b8;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">Cancelar</button>
+        <button type="submit" id="pwd-submit-btn" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);border:none;color:#fff;padding:9px 22px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openPwdModal() {
+  document.getElementById('pwd-modal-bg').style.display = 'flex';
+  document.getElementById('pwd-actual').value = '';
+  document.getElementById('pwd-nueva').value = '';
+  document.getElementById('pwd-confirmar').value = '';
+  document.getElementById('pwd-msg').textContent = '';
+  document.getElementById('pwd-msg').style.color = '';
+  setTimeout(() => document.getElementById('pwd-actual').focus(), 50);
+}
+function closePwdModal() {
+  document.getElementById('pwd-modal-bg').style.display = 'none';
+}
+async function submitPwdChange(ev) {
+  ev.preventDefault();
+  const actual = document.getElementById('pwd-actual').value;
+  const nueva = document.getElementById('pwd-nueva').value;
+  const confirmar = document.getElementById('pwd-confirmar').value;
+  const msg = document.getElementById('pwd-msg');
+  const btn = document.getElementById('pwd-submit-btn');
+
+  msg.style.color = '#fbbf24';
+  msg.textContent = 'Validando...';
+
+  if (nueva !== confirmar) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'La confirmación no coincide.';
+    return false;
+  }
+  if (nueva.length < 8) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Mínimo 8 caracteres.';
+    return false;
+  }
+  if (!/[a-zA-Z]/.test(nueva) || !/\\d/.test(nueva)) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Debe incluir al menos una letra y un número.';
+    return false;
+  }
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  try {
+    const r = await fetch('/api/cambiar-password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        password_actual: actual,
+        password_nueva: nueva,
+        password_confirmar: confirmar
+      })
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      msg.style.color = '#34d399';
+      msg.textContent = '✓ Contraseña actualizada correctamente.';
+      setTimeout(closePwdModal, 1500);
+    } else {
+      msg.style.color = '#f87171';
+      msg.textContent = data.error || 'Error desconocido';
+    }
+  } catch (e) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Error de red: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+  }
+  return false;
+}
+// Cerrar modal con Escape o click fuera
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePwdModal();
+});
+document.getElementById('pwd-modal-bg').addEventListener('click', e => {
+  if (e.target.id === 'pwd-modal-bg') closePwdModal();
+});
+</script>
 
 <div class="alert-bar" id="alert-bar">
   <span class="spinner-txt" style="font-size:12px;color:#64748b;">Calculando alertas...</span>

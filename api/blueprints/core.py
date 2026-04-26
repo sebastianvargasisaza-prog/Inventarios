@@ -26,6 +26,36 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('core', __name__)
 
+
+def _resolve_password_hash(username):
+    """Devuelve el hash de password para un usuario, con fallback lazy.
+
+    Prioridad:
+      1. Tabla users_passwords en DB (si el usuario cambió su password
+         vía /api/cambiar-password, su hash vive aquí).
+      2. config.COMPRAS_USERS (env var PASS_<USER> en Render).
+
+    Retorna '' si no hay ninguno (usuario no existe o env var ausente).
+    Diseñado para ser robusto: si la DB falla, fallback automático a env.
+    """
+    if not username:
+        return ''
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        row = conn.execute(
+            "SELECT password_hash FROM users_passwords WHERE username=?",
+            (username,)
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+    except Exception:
+        # Tabla no existe (pre-migración) o DB no responde —
+        # cae al fallback de env vars.
+        pass
+    return COMPRAS_USERS.get(username, '')
+
 @bp.route('/api/health')
 def health():
     """Diagnostico publico — version, DB, tablas clave."""
@@ -115,9 +145,12 @@ def login():
         if _is_locked(ip, username):
             error = '<div class="err">Demasiados intentos. Espera 15 min.</div>'
             return Response(LOGIN_HTML.replace('{error}', error).replace('{next_url}', next_url), mimetype='text/html')
-        expected = COMPRAS_USERS.get(username, '')
+        # Fallback lazy: hash de DB tiene prioridad (si el user lo cambió);
+        # si no hay entry en DB, usar env var (PASS_<USER>). Esto permite
+        # self-service de password sin migrar todos los users de una vez.
+        expected = _resolve_password_hash(username)
         # Soporte PBKDF2 (env var con hash) y plaintext legacy
-        if expected and expected.startswith('pbkdf2:'):
+        if expected and (expected.startswith('pbkdf2:') or expected.startswith('scrypt:')):
             match = check_password_hash(expected, password)
         else:
             match = bool(expected) and hmac.compare_digest(expected, password)
@@ -189,4 +222,110 @@ def marketing():
     from templates_py.marketing_html import MARKETING_HTML
     usuario = session.get('compras_user', '').capitalize()
     return Response(MARKETING_HTML.replace('{usuario}', usuario), mimetype='text/html; charset=utf-8')
+
+
+# ── Self-service de contraseña ────────────────────────────────────────────────
+# Cualquier usuario autenticado puede cambiar su propia contraseña sin
+# intervención del admin. El hash nuevo se guarda en users_passwords (DB);
+# las env vars PASS_<USER> quedan como fallback si la entry de DB no existe.
+
+# Política mínima de contraseña (server-side; no confiar solo en JS).
+_PWD_MIN_LEN = 8
+_PWD_MAX_LEN = 128
+
+
+def _validate_new_password(pwd, current_pwd):
+    """Valida una password nueva. Retorna lista de errores (vacía si OK)."""
+    errors = []
+    if not pwd or len(pwd) < _PWD_MIN_LEN:
+        errors.append(f"Mínimo {_PWD_MIN_LEN} caracteres.")
+    if len(pwd) > _PWD_MAX_LEN:
+        errors.append(f"Máximo {_PWD_MAX_LEN} caracteres.")
+    if pwd == current_pwd:
+        errors.append("La nueva contraseña debe ser distinta a la actual.")
+    # Al menos 1 letra y 1 número (anti-passwords débiles tipo "12345678")
+    if not any(c.isalpha() for c in pwd):
+        errors.append("Debe incluir al menos una letra.")
+    if not any(c.isdigit() for c in pwd):
+        errors.append("Debe incluir al menos un número.")
+    return errors
+
+
+@bp.route('/api/cambiar-password', methods=['POST'])
+def cambiar_password():
+    """Cambia la password del usuario autenticado.
+
+    Body JSON: {password_actual, password_nueva, password_confirmar}
+    Validaciones:
+      - Sesión activa
+      - password_actual matchea con el hash actual (DB o env var)
+      - password_nueva cumple política mínima
+      - password_nueva == password_confirmar
+      - Rate limit aplicado: 5 intentos fallidos en 15min bloquean al user
+    """
+    username = session.get('compras_user', '')
+    if not username:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    body = request.get_json(silent=True) or {}
+    actual = (body.get('password_actual') or '').strip()
+    nueva = (body.get('password_nueva') or '').strip()
+    confirmar = (body.get('password_confirmar') or '').strip()
+
+    if not actual or not nueva or not confirmar:
+        return jsonify({'error': 'Faltan campos: password_actual, password_nueva, password_confirmar'}), 400
+
+    if nueva != confirmar:
+        return jsonify({'error': 'La confirmación no coincide con la nueva contraseña'}), 400
+
+    # Rate limit: aplicar mismo lock que login. Si han fallado muchas veces
+    # cambiando password, también se bloquea (defensa contra atacante con
+    # sesión robada que intenta adivinar la actual).
+    ip = _client_ip()
+    if _is_locked(ip, username):
+        return jsonify({'error': 'Demasiados intentos fallidos. Espera 15 minutos.'}), 429
+
+    # Validar password_actual contra el hash vigente (DB o env var)
+    expected = _resolve_password_hash(username)
+    if not expected:
+        # Caso raro: usuario en sesión pero sin hash configurado.
+        return jsonify({'error': 'Cuenta sin contraseña configurada. Contacta al admin.'}), 503
+
+    if expected.startswith('pbkdf2:') or expected.startswith('scrypt:'):
+        ok = check_password_hash(expected, actual)
+    else:
+        ok = bool(expected) and hmac.compare_digest(expected, actual)
+
+    if not ok:
+        _record_failure(ip, username)
+        _log_sec("password_change_failed", username, ip, "actual incorrecta")
+        return jsonify({'error': 'Contraseña actual incorrecta'}), 403
+
+    # Validar password nueva
+    errors = _validate_new_password(nueva, actual)
+    if errors:
+        return jsonify({'error': ' '.join(errors)}), 400
+
+    # Hashear y guardar
+    new_hash = generate_password_hash(nueva, method='pbkdf2:sha256:600000')
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("""
+            INSERT INTO users_passwords (username, password_hash, changed_at, changed_by)
+            VALUES (?, ?, datetime('now', 'utc'), ?)
+            ON CONFLICT(username) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                changed_at    = excluded.changed_at,
+                changed_by    = excluded.changed_by
+        """, (username, new_hash, username))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        _log_sec("password_change_db_error", username, ip, str(e)[:200])
+        return jsonify({'error': 'Error guardando contraseña. Intenta de nuevo.'}), 500
+
+    _clear_attempts(ip, username)
+    _log_sec("password_changed", username, ip)
+    return jsonify({'ok': True, 'message': 'Contraseña actualizada correctamente.'})
 
