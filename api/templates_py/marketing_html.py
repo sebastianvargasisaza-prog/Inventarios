@@ -841,6 +841,7 @@ function showToast(msg, type) {
     <div id="modal-agent-content" style="font-size:13px;color:#e2e8f0;white-space:pre-wrap;max-height:500px;overflow-y:auto;background:#0f172a;border-radius:8px;padding:16px;font-family:'Segoe UI',sans-serif;"></div>
   </div>
 </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: AGENCIA                                                   -->
