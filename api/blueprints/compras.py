@@ -1316,9 +1316,8 @@ def consolidado_por_proveedor():
 @bp.route('/api/solicitudes-compra/<numero>/observaciones', methods=['PUT'])
 def update_sol_observaciones(numero):
     """Admin: actualiza observaciones (y opcionalmente solicitante) de una solicitud."""
-    u, err, code = _auth()
-    if err:
-        return err, code
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
     conn = get_db(); c = conn.cursor()
     d = request.json or {}
     obs = d.get('observaciones')
