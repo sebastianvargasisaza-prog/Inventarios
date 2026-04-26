@@ -781,6 +781,8 @@ def pagar_oc(numero_oc):
     fecha_pago = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=? WHERE numero_oc=?",
                 (usuario_actual, fecha_pago, medio, comprobante_imagen, numero_oc))
+    # Sync solicitudes_compra estado → Pagada so it leaves the pending list
+    cur.execute("UPDATE solicitudes_compra SET estado='Pagada' WHERE numero_oc=? AND estado='Aprobada'", (numero_oc,))
     # Sync marketing payment status (insert si no existe, luego marcar pagada)
     try:
         if 'influencer' in (categoria or '').lower() or 'marketing' in (categoria or '').lower():
