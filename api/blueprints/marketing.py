@@ -1952,17 +1952,21 @@ def mkt_influencers_panel():
         # Query without influencer_id column (resilient if migration 20/22 not yet applied)
         try:
             solic_rows = c.execute("""
-                SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
-                       s.numero_oc, s.solicitante, s.influencer_id
+                SELECT s.numero, s.fecha, s.estado,
+                       COALESCE(o.valor_total, 0) as valor,
+                       s.observaciones, s.numero_oc, s.solicitante, s.influencer_id
                 FROM solicitudes_compra s
+                LEFT JOIN ordenes_compra o ON s.numero_oc = o.numero_oc
                 WHERE s.categoria = 'Influencer/Marketing Digital'
                 ORDER BY s.fecha DESC
             """).fetchall()
         except Exception:
             solic_rows = c.execute("""
-                SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
-                       s.numero_oc, s.solicitante, NULL as influencer_id
+                SELECT s.numero, s.fecha, s.estado,
+                       COALESCE(o.valor_total, 0) as valor,
+                       s.observaciones, s.numero_oc, s.solicitante, NULL as influencer_id
                 FROM solicitudes_compra s
+                LEFT JOIN ordenes_compra o ON s.numero_oc = o.numero_oc
                 WHERE s.categoria = 'Influencer/Marketing Digital'
                 ORDER BY s.fecha DESC
             """).fetchall()
