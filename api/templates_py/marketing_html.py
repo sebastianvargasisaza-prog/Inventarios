@@ -1221,23 +1221,29 @@ async function loadInfluencers() {
   const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');
   let data;
   try { data = await fetch(url).then(r=>r.json()); } catch(e) { data = {influencers:[], kpis:{}}; }
+  // Show debug error if backend returned one
+  if(data._error) { console.warn('[panel error]', data._error, data._trace); }
   const infs = data.influencers || [];
   const kpis = data.kpis || {};
   const kpiBar = document.getElementById('inf-kpi-bar');
   if(kpiBar) {
     kpiBar.style.display = 'grid';
     kpiBar.innerHTML = [
-      {label:'Activos', val: kpis.total_activos||0, color:'#34d399'},
+      {label:'Influencers activos', val: kpis.total_activos||0, color:'#34d399'},
+      {label:'Pagado 2025', val: fmtM(kpis.pagado_anio||0), color:'#818cf8'},
+      {label:'Pagado este mes', val: fmtM(kpis.pagado_mes||0), color:'#60a5fa'},
       {label:'Pendiente pago', val: fmtM(kpis.total_pendiente||0), color:'#f59e0b'},
-      {label:'Pagado este mes', val: fmtM(kpis.pagado_mes||0), color:'#818cf8'},
-      {label:'Con pago pendiente', val: kpis.con_pendiente||0, color:'#f87171'},
     ].map(k=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;">`
       +`<div style="font-size:20px;font-weight:800;color:${k.color};">${k.val}</div>`
       +`<div style="font-size:11px;color:#64748b;margin-top:2px;">${k.label}</div>`
       +'</div>').join('');
   }
   const body = document.getElementById('inf-body');
-  if(!infs.length) { body.innerHTML='<tr class="empty-row"><td colspan="12">Sin influencers registrados.</td></tr>'; return; }
+  if(!infs.length) {
+    const errMsg = data._error ? ` (error: ${data._error.substring(0,80)})` : '';
+    body.innerHTML=`<tr class="empty-row"><td colspan="12">Sin influencers registrados${errMsg}.</td></tr>`;
+    return;
+  }
   body.innerHTML = infs.map(r=>{
     const seg = r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores;
     const banco = r.banco
