@@ -342,11 +342,12 @@ function showToast(msg, type) {
       <button class="btn btn-primary" onclick="openInfluencerModal()">+ Nuevo Influencer</button>
     </div>
   </div>
+  <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
   <div id="inf-alert" style="display:none;"></div>
   <div class="card">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Campañas</th><th>Conversiones</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Email</th><th>Banco / Cuenta</th><th>Estado Pago</th><th>Acciones</th></tr></thead>
         <tbody id="inf-body"><tr class="empty-row"><td colspan="12"><span class="spin"></span></td></tr></tbody>
       </table>
     </div>
@@ -666,9 +667,52 @@ function showToast(msg, type) {
     <div class="form-row full">
       <div class="form-group"><label>Notas</label><textarea id="inf-notas" placeholder="Observaciones..."></textarea></div>
     </div>
+    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
+      <div class="form-row">
+        <div class="form-group"><label>Banco</label><input id="inf-banco" placeholder="Bancolombia, Nequi, Daviplata..."></div>
+        <div class="form-group"><label>Tipo de cuenta</label>
+          <select id="inf-tipo-cta">
+            <option>Ahorros</option><option>Corriente</option><option>Nequi</option><option>Daviplata</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Número cuenta / Cel</label><input id="inf-cuenta" placeholder="3114902203 / 0123456789"></div>
+        <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
+      </div>
+    </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
       <button class="btn btn-outline" onclick="closeModal('modal-influencer')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveInfluencer()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Solicitar Pago Influencer -->
+<div class="modal-bg" id="modal-inf-pago">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-hdr">
+      <div class="modal-title">&#x1F4B8; Solicitar Pago</div>
+      <button class="modal-close" onclick="closeModal('modal-inf-pago')">&times;</button>
+    </div>
+    <input type="hidden" id="pago-inf-id">
+    <div style="margin-bottom:14px;">
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">Influencer</div>
+      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:#e2e8f0;"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
+      <div class="form-group"><label>Concepto</label><input id="pago-concepto" placeholder="Post + Story / Reel..."></div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:#94a3b8;">
+      <div style="font-weight:700;color:#a78bfa;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
+      <div id="pago-banco-preview" style="line-height:1.8;"></div>
+    </div>
+    <div id="pago-inf-alert" style="display:none;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-inf-pago')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarPagoInf()">Crear Solicitud</button>
     </div>
   </div>
 </div>
@@ -1174,37 +1218,73 @@ async function deleteCampana(id, nombre) {
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadInfluencers() {
   const q = document.getElementById('inf-search').value;
-  const url = '/api/marketing/influencers'+(q?'?q='+encodeURIComponent(q):'');
-  const rows = await fetch(url).then(r=>r.json());
+  const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');
+  let data;
+  try { data = await fetch(url).then(r=>r.json()); } catch(e) { data = {influencers:[], kpis:{}}; }
+  const infs = data.influencers || [];
+  const kpis = data.kpis || {};
+  const kpiBar = document.getElementById('inf-kpi-bar');
+  if(kpiBar) {
+    kpiBar.style.display = 'grid';
+    kpiBar.innerHTML = [
+      {label:'Activos', val: kpis.total_activos||0, color:'#34d399'},
+      {label:'Pendiente pago', val: fmtM(kpis.total_pendiente||0), color:'#f59e0b'},
+      {label:'Pagado este mes', val: fmtM(kpis.pagado_mes||0), color:'#818cf8'},
+      {label:'Con pago pendiente', val: kpis.con_pendiente||0, color:'#f87171'},
+    ].map(k=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;">`
+      +`<div style="font-size:20px;font-weight:800;color:${k.color};">${k.val}</div>`
+      +`<div style="font-size:11px;color:#64748b;margin-top:2px;">${k.label}</div>`
+      +'</div>').join('');
+  }
   const body = document.getElementById('inf-body');
-  if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="12">Sin influencers registrados.</td></tr>'; return; }
-  body.innerHTML = rows.map(r=>`
-    <tr>
-      <td style="color:#64748b;">${r.id}</td>
-      <td style="font-weight:700;">${r.nombre}</td>
-      <td><span class="badge badge-gray">${r.red_social}</span></td>
-      <td style="color:#818cf8;">${r.usuario_red||'—'}</td>
-      <td>${r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores}</td>
-      <td>${r.engagement_rate?r.engagement_rate+'%':'—'}</td>
-      <td>${r.nicho||'—'}</td>
-      <td>${r.tarifa?fmtM(r.tarifa):'—'}</td>
-      <td>${r.stats?.campanas||0}</td>
-      <td>${r.stats?.conversiones||0}</td>
-      <td>${badgeEstadoInf(r.estado)}</td>
-      <td>
-        <button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteInfluencer(${r.id},'${r.nombre.replace(/'/g,"\\'")}')">🗑</button>
-      </td>
-    </tr>`).join('');
+  if(!infs.length) { body.innerHTML='<tr class="empty-row"><td colspan="12">Sin influencers registrados.</td></tr>'; return; }
+  body.innerHTML = infs.map(r=>{
+    const seg = r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores;
+    const banco = r.banco
+      ? `<span style="color:#94a3b8;">${r.banco}</span><br><span style="font-size:11px;color:#64748b;">${r.cuenta_bancaria||'\u2014'}</span>`
+      : '<span style="color:#475569;">Sin datos</span>';
+    let estadoBadge;
+    if(r.tiene_pendiente) {
+      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u23f3 Pendiente</span>';
+    } else if(r.pagos_count>0) {
+      estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u2713 Al d\u00eda</span>';
+    } else {
+      estadoBadge = '<span style="background:#1e293b;color:#64748b;padding:2px 8px;border-radius:12px;font-size:11px;">Sin pagos</span>';
+    }
+    const ne = (r.nombre||'').replace(/'/g,"\\'");
+    const be = (r.banco||'').replace(/'/g,"\\'");
+    const ce = (r.cuenta_bancaria||'').replace(/'/g,"\\'");
+    const de = (r.cedula_nit||'').replace(/'/g,"\\'");
+    const te = (r.tipo_cuenta||'Ahorros').replace(/'/g,"\\'");
+    return `<tr>`
+      +`<td style="color:#64748b;">${r.id}</td>`
+      +`<td style="font-weight:700;">${r.nombre}</td>`
+      +`<td><span class="badge badge-gray">${r.red_social}</span></td>`
+      +`<td style="color:#818cf8;">${r.usuario_red||'\u2014'}</td>`
+      +`<td>${seg}</td>`
+      +`<td>${r.engagement_rate?r.engagement_rate+'%':'\u2014'}</td>`
+      +`<td>${r.nicho||'\u2014'}</td>`
+      +`<td>${r.tarifa?fmtM(r.tarifa):'\u2014'}</td>`
+      +`<td style="font-size:12px;color:#94a3b8;">${r.email||'\u2014'}</td>`
+      +`<td style="font-size:12px;">${banco}</td>`
+      +`<td>${estadoBadge}</td>`
+      +`<td style="white-space:nowrap;">`
+        +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar">&#x270F;&#xFE0F;</button> `
+        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Solicitar pago">&#x1F4B8;</button> `
+        +`<button class="btn btn-danger btn-sm" onclick="deleteInfluencer(${r.id},'${ne}')" title="Eliminar">&#x1F5D1;&#xFE0F;</button>`
+      +'</td>'
+      +'</tr>';
+  }).join('');
 }
 
 function openInfluencerModal() {
   document.getElementById('inf-edit-id').value='';
   document.getElementById('modal-inf-title').textContent='Nuevo Influencer';
-  ['nombre','usuario','nicho','email','tel','notas'].forEach(f=>document.getElementById('inf-'+f).value='');
+  ['nombre','usuario','nicho','email','tel','notas','banco','cuenta','cedula'].forEach(f=>document.getElementById('inf-'+f).value='');
   ['seguidores','er','tarifa'].forEach(f=>document.getElementById('inf-'+f).value=0);
   document.getElementById('inf-red').value='Instagram';
   document.getElementById('inf-estado').value='Activo';
+  document.getElementById('inf-tipo-cta').value='Ahorros';
   document.getElementById('modal-influencer').classList.add('open');
 }
 
@@ -1223,6 +1303,10 @@ async function editInfluencer(id) {
   document.getElementById('inf-tarifa').value=r.tarifa||0;
   document.getElementById('inf-red').value=r.red_social||'Instagram';
   document.getElementById('inf-estado').value=r.estado||'Activo';
+  document.getElementById('inf-banco').value=r.banco||'';
+  document.getElementById('inf-tipo-cta').value=r.tipo_cuenta||'Ahorros';
+  document.getElementById('inf-cuenta').value=r.cuenta_bancaria||'';
+  document.getElementById('inf-cedula').value=r.cedula_nit||'';
   document.getElementById('modal-influencer').classList.add('open');
 }
 
@@ -1239,7 +1323,11 @@ async function saveInfluencer() {
     estado: document.getElementById('inf-estado').value,
     email: document.getElementById('inf-email').value.trim(),
     telefono: document.getElementById('inf-tel').value.trim(),
-    notas: document.getElementById('inf-notas').value.trim()
+    notas: document.getElementById('inf-notas').value.trim(),
+    banco: document.getElementById('inf-banco').value.trim(),
+    tipo_cuenta: document.getElementById('inf-tipo-cta').value,
+    cuenta_bancaria: document.getElementById('inf-cuenta').value.trim(),
+    cedula_nit: document.getElementById('inf-cedula').value.trim()
   };
   if(!body.nombre) { showAlert('inf-alert','El nombre es obligatorio','error'); return; }
   const url = id ? `/api/marketing/influencers/${id}` : '/api/marketing/influencers';
@@ -1257,6 +1345,46 @@ async function deleteInfluencer(id, nombre) {
   if(data.ok) { showAlert('inf-alert','Influencer eliminado'); loadInfluencers(); }
   else showAlert('inf-alert',data.error||'Error','error');
 }
+
+function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
+  document.getElementById('pago-inf-id').value = id;
+  document.getElementById('pago-inf-nombre').textContent = nombre;
+  document.getElementById('pago-valor').value = tarifa||'';
+  document.getElementById('pago-concepto').value = '';
+  const prev = document.getElementById('pago-banco-preview');
+  if(banco) {
+    prev.innerHTML = '<b>Beneficiario:</b> '+nombre+'<br>'
+      +'<b>Banco:</b> '+banco+'<br>'
+      +'<b>Tipo:</b> '+(tipoCta||'Ahorros')+'<br>'
+      +'<b>Cuenta/Cel:</b> '+(cuenta||'\u2014')+'<br>'
+      +'<b>C\u00e9dula/NIT:</b> '+(cedula||'\u2014');
+  } else {
+    prev.innerHTML = '<span style="color:#f59e0b;">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';
+  }
+  document.getElementById('pago-inf-alert').style.display='none';
+  document.getElementById('modal-inf-pago').classList.add('open');
+}
+
+async function confirmarPagoInf() {
+  const id = document.getElementById('pago-inf-id').value;
+  const valor = parseFloat(document.getElementById('pago-valor').value)||0;
+  const concepto = document.getElementById('pago-concepto').value.trim()||'Cuenta de cobro influencer';
+  if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
+  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({valor, concepto})
+  });
+  const data = await resp.json();
+  if(data.ok) {
+    closeModal('modal-inf-pago');
+    showAlert('inf-alert','Solicitud de pago creada correctamente');
+    loadInfluencers();
+  } else {
+    showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
+  }
+}
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CONTENIDO
