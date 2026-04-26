@@ -2381,7 +2381,7 @@ def mkt_fix_pago_link():
 # MÓDULO AGENCIA — Auditoría y Scoring (metodología claude-ads adaptada)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@marketing_bp.route('/api/marketing/agencia/audit', methods=['GET'])
+@bp.route('/api/marketing/agencia/audit', methods=['GET'])
 def mkt_agencia_audit():
     """Auditoría completa: scores de influencers + audit de campañas + salud del portafolio."""
     db = get_db()
