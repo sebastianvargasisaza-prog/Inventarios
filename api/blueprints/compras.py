@@ -458,12 +458,13 @@ def handle_solicitudes_compra():
             area = d.get('area','Produccion')
             email_sol = d.get('email_solicitante', '').strip().lower()
             fecha_req = d.get('fecha_requerida', '').strip()
+            val_sol = float(d.get('valor') or 0)
             c.execute("""INSERT INTO solicitudes_compra
-                         (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida,valor)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (numero, datetime.now().isoformat(), 'Pendiente',
                        d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
-                       area, emp, cat, tip, email_sol, fecha_req))
+                       area, emp, cat, tip, email_sol, fecha_req, val_sol))
             for it in (d.get('items') or []):
                 c.execute("""INSERT INTO solicitudes_compra_items
                              (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
@@ -499,7 +500,10 @@ def handle_solicitudes_compra():
         sql += " AND sc.categoria=?"; params.append(filtro_categoria)
     else:
         sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
-    sql += " ORDER BY sc.fecha DESC LIMIT 200"
+    if filtro_categoria == 'Influencer/Marketing Digital':
+        sql += " ORDER BY CASE WHEN sc.fecha_requerida IS NULL OR sc.fecha_requerida='' THEN '9999' ELSE sc.fecha_requerida END ASC, sc.numero ASC LIMIT 200"
+    else:
+        sql += " ORDER BY sc.fecha DESC LIMIT 200"
     c.execute(sql, params)
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor']
     rows_sol = []
@@ -1322,7 +1326,9 @@ def update_sol_observaciones(numero):
     d = request.json or {}
     obs = d.get('observaciones')
     solicitante = d.get('solicitante')
-    if not obs and not solicitante:
+    valor = d.get('valor')
+    fecha_requerida = d.get('fecha_requerida')
+    if not obs and not solicitante and valor is None and not fecha_requerida:
         return jsonify({'error': 'Nada que actualizar'}), 400
     row = c.execute("SELECT numero FROM solicitudes_compra WHERE numero=?", (numero.upper(),)).fetchone()
     if not row:
@@ -1332,6 +1338,10 @@ def update_sol_observaciones(numero):
         updates.append("observaciones=?"); params.append(obs)
     if solicitante is not None:
         updates.append("solicitante=?"); params.append(solicitante)
+    if valor is not None:
+        updates.append("valor=?"); params.append(float(valor))
+    if fecha_requerida is not None:
+        updates.append("fecha_requerida=?"); params.append(str(fecha_requerida))
     params.append(numero.upper())
     c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
     conn.commit()
