@@ -872,7 +872,30 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
-  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+  <!-- Panel activo de envasado — aparece al hacer clic en Envasar desde la cola -->
+  <div id="env-panel-activo" style="display:none;background:#fff;border:2px solid #1a4a7a;border-radius:10px;padding:18px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h3 style="margin:0;color:#1a4a7a;font-size:15px">&#128230; Envasando lote de produccion</h3>
+        <div style="font-size:13px;color:#444;margin-top:4px">
+          Producto: <strong id="env-act-prod" style="color:#1a4a7a"></strong> &nbsp;·&nbsp;
+          Lote: <strong id="env-act-lote"></strong> &nbsp;·&nbsp;
+          Batch: <strong id="env-act-batch"></strong>
+        </div>
+        <input type="hidden" id="env-act-prod-id">
+        <input type="hidden" id="env-act-prod-raw">
+      </div>
+      <button onclick="cerrarEnvActivo()" style="background:#6c757d;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">&#10005; Cancelar</button>
+    </div>
+    <div id="env-pres-rows"></div>
+    <button onclick="addPresRow()" style="background:transparent;border:2px dashed #1a4a7a;color:#1a4a7a;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;margin-bottom:14px;width:100%">+ Agregar presentacion</button>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <button onclick="registrarEnvasadoMulti()" style="background:#1a4a7a;color:#fff;border:none;border-radius:6px;padding:10px 26px;font-size:14px;font-weight:700;cursor:pointer">&#9989; Registrar Envasado</button>
+      <div id="env-act-msg" style="font-size:13px"></div>
+    </div>
+  </div>
+
+  <div id="env-form-old" style="display:none;background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
     <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Envasado</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div>
@@ -3226,6 +3249,8 @@ function loadColaSinEnvasar(){
     .then(function(d){
       var rows=d.cola||[];
       if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#27ae60;padding:10px">&#10003; Sin lotes pendientes de envasar</td></tr>';return;}
+      _sinEnvasarMap={};
+      rows.forEach(function(r){_sinEnvasarMap[r.id]=r;});
       tb.innerHTML=rows.map(function(r){
         return '<tr style="border-bottom:1px solid #c8e6c9">'+
           '<td style="padding:7px;font-weight:600">'+(r.lote||'S/L')+'</td>'+
@@ -3233,20 +3258,119 @@ function loadColaSinEnvasar(){
           '<td style="padding:7px;text-align:center">'+(r.cantidad_kg||0)+' kg</td>'+
           '<td style="padding:7px">'+(r.fecha||'')+'</td>'+
           '<td style="padding:7px">'+(r.operador||'')+'</td>'+
-          '<td style="padding:7px"><button onclick="prefillEnvasado('+JSON.stringify(r)+')" '+
+          '<td style="padding:7px"><button onclick="abrirEnvasado('+r.id+')" '+
           'style="background:#1b5e20;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">'+
-          '&#128393; Envasar</button></td>'+
+          '&#128230; Envasar</button></td>'+
           '</tr>';
       }).join('');
     })
     .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center">Error cargando cola</td></tr>';});
 }
-function prefillEnvasado(lote_obj){
-  var sel=document.getElementById('env-prod-sel');
-  if(sel){for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===lote_obj.producto||sel.options[i].text.includes(lote_obj.producto)){sel.value=sel.options[i].value;break;}}}
-  var fl=document.getElementById('env-lote');if(fl)fl.value=lote_obj.lote||'';
-  var fp=document.getElementById('env-pres');if(fp)fp.value=lote_obj.presentacion||'';
-  var el=document.getElementById('env-lote');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+var _envActObj = null;
+var _sinEnvasarMap = {};
+var _pendAcondMap  = {};
+function _buildMeeOpts(selectedVal){
+  var envCats=['Envase','Frasco','Gotero','Tarro'];
+  var eOpts='<option value="">-- Sin envase --</option>';
+  var tOpts='<option value="">-- Sin tapa --</option>';
+  (_envSimpleMEE||[]).forEach(function(m){
+    var opt='<option value="'+m.codigo+'"'+(m.codigo===selectedVal?' selected':'')+'>'
+      +m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';
+    if(envCats.indexOf(m.categoria)>=0) eOpts+=opt;
+    else if(m.categoria==='Tapa') tOpts+=opt;
+  });
+  return {env:eOpts, tap:tOpts};
+}
+function _presRowHtml(idx){
+  var opts=_buildMeeOpts('');
+  return '<div class="pres-row" id="pr-'+idx+'" style="background:#f0f4f8;border-radius:8px;padding:12px;margin-bottom:10px;position:relative">'
+    +'<div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr;gap:10px;align-items:end">'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Presentacion *</label>'
+    +'<input type="text" class="pr-pres" placeholder="Ej: Frasco 30ml" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Envase (MEE)</label>'
+    +'<select class="pr-env" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px">'+opts.env+'</select></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Tapa (MEE)</label>'
+    +'<select class="pr-tap" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px">'+opts.tap+'</select></div>'
+    +'<div><label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:3px">Unidades *</label>'
+    +'<input type="number" class="pr-uds" min="1" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px"></div>'
+    +'</div>'
+    +(idx>0?'<button onclick="removePresRow('+idx+')" style="position:absolute;top:8px;right:8px;background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer">&#10005;</button>':'')
+    +'</div>';
+}
+var _prIdx=0;
+function abrirEnvasado(id){
+  var lote_obj=_sinEnvasarMap[id]||{};
+  _envActObj=lote_obj;
+  _prIdx=0;
+  document.getElementById('env-act-prod').textContent=lote_obj.producto||'';
+  document.getElementById('env-act-prod-raw').value=lote_obj.producto||'';
+  document.getElementById('env-act-lote').textContent=lote_obj.lote||'S/L';
+  document.getElementById('env-act-batch').textContent=(lote_obj.cantidad_kg||0)+' kg';
+  document.getElementById('env-act-prod-id').value=lote_obj.id||'';
+  var rows=document.getElementById('env-pres-rows');
+  rows.innerHTML=_presRowHtml(_prIdx);
+  document.getElementById('env-act-msg').innerHTML='';
+  document.getElementById('env-panel-activo').style.display='block';
+  document.getElementById('env-panel-activo').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function addPresRow(){
+  _prIdx++;
+  document.getElementById('env-pres-rows').insertAdjacentHTML('beforeend',_presRowHtml(_prIdx));
+}
+function removePresRow(idx){
+  var el=document.getElementById('pr-'+idx);if(el)el.remove();
+}
+function cerrarEnvActivo(){
+  _envActObj=null;
+  document.getElementById('env-panel-activo').style.display='none';
+  document.getElementById('env-pres-rows').innerHTML='';
+}
+async function registrarEnvasadoMulti(){
+  if(!_envActObj){return;}
+  var rows=document.querySelectorAll('#env-pres-rows .pres-row');
+  if(!rows.length){_toast('Agrega al menos una presentacion',0);return;}
+  var payload=[];
+  var ok=true;
+  rows.forEach(function(row){
+    var pres=(row.querySelector('.pr-pres')||{value:''}).value.trim();
+    var uds=parseInt((row.querySelector('.pr-uds')||{value:0}).value||0);
+    var env=(row.querySelector('.pr-env')||{value:''}).value;
+    var tap=(row.querySelector('.pr-tap')||{value:''}).value;
+    if(!pres||uds<=0){ok=false;return;}
+    payload.push({pres:pres,uds:uds,env:env,tap:tap});
+  });
+  if(!ok){_toast('Completa presentacion y unidades en todas las filas',0);return;}
+  var msg=document.getElementById('env-act-msg');
+  msg.innerHTML='<span style="color:#666">Registrando...</span>';
+  var errores=[];
+  for(var i=0;i<payload.length;i++){
+    var p=payload[i];
+    try{
+      var r=await fetch('/api/envasado',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          produccion_id:_envActObj.id||null,
+          lote:_envActObj.lote||'',
+          producto:_envActObj.producto||'',
+          presentacion:p.pres,
+          unidades:p.uds,
+          envase_codigo:p.env||'',
+          tapa_codigo:p.tap||'',
+          operador:OPER_ACTUAL||'Operario',
+          batch_g:(_envActObj.cantidad_kg||0)*1000
+        })
+      });
+      var d=await r.json();
+      if(!r.ok&&!d.id){errores.push(p.pres+': '+(d.error||'error'));}
+    }catch(e){errores.push(p.pres+': error de red');}
+  }
+  if(errores.length){
+    msg.innerHTML='<span style="color:red">'+errores.join(' | ')+'</span>';
+  }else{
+    _toast('&#9989; Envasado registrado ('+payload.length+' presentacion'+(payload.length>1?'es':'')+')',1);
+    cerrarEnvActivo();
+    loadColaSinEnvasar();
+    if(typeof cargarHistEnvasado==='function') cargarHistEnvasado();
+  }
 }
 function loadColaAcond(){
   var tb=document.getElementById('cola-acond-tbody');
@@ -3257,6 +3381,8 @@ function loadColaAcond(){
     .then(function(d){
       var rows=d.pendientes||[];
       if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#27ae60;padding:10px">&#10003; Sin lotes pendientes de acondicionar</td></tr>';return;}
+      _pendAcondMap={};
+      rows.forEach(function(r){_pendAcondMap[r.id]=r;});
       tb.innerHTML=rows.map(function(r){
         return '<tr style="border-bottom:1px solid #bbdefb">'+
           '<td style="padding:7px;font-weight:600">'+(r.lote||'S/L')+'</td>'+
@@ -3264,7 +3390,7 @@ function loadColaAcond(){
           '<td style="padding:7px;text-align:center">'+(r.unidades||0)+'</td>'+
           '<td style="padding:7px">'+(r.presentacion||'')+'</td>'+
           '<td style="padding:7px">'+(r.fecha||'')+'</td>'+
-          '<td style="padding:7px"><button onclick="prefillAcond('+JSON.stringify(r)+')" '+
+          '<td style="padding:7px"><button onclick="prefillAcond('+r.id+')" '+
           'style="background:#0d47a1;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">'+
           '&#128393; Acondicionar</button></td>'+
           '</tr>';
@@ -3272,7 +3398,8 @@ function loadColaAcond(){
     })
     .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center">Error cargando cola</td></tr>';});
 }
-function prefillAcond(env){
+function prefillAcond(id){
+  var env=_pendAcondMap[id]||{};
   var fl=document.getElementById('ac-lote');if(fl)fl.value=env.lote||'';
   var fp=document.getElementById('ac-prod');if(fp)fp.value=env.producto||'';
   var fps=document.getElementById('ac-pres');if(fps)fps.value=env.presentacion||'';

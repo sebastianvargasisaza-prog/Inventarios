@@ -1,0 +1,600 @@
+[2026-04-25 19:10:56] ==================================================
+[2026-04-25 19:10:56] AutoPush Inventarios iniciado
+[2026-04-25 19:10:56] Chequeando cada 15s — Ctrl+C para detener
+[2026-04-25 19:10:56] ==================================================
+[2026-04-25 19:10:56] Cambios detectados — haciendo push...
+[2026-04-25 19:10:58] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:11:14] Cambios detectados — haciendo push...
+[2026-04-25 19:11:17] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:11:32] Cambios detectados — haciendo push...
+[2026-04-25 19:11:34] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:11:50] Cambios detectados — haciendo push...
+[2026-04-25 19:11:52] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:12:07] Cambios detectados — haciendo push...
+[2026-04-25 19:12:10] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:12:25] Cambios detectados — haciendo push...
+[2026-04-25 19:12:28] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:12:43] Cambios detectados — haciendo push...
+[2026-04-25 19:12:46] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:13:01] Cambios detectados — haciendo push...
+[2026-04-25 19:13:03] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:13:19] Cambios detectados — haciendo push...
+[2026-04-25 19:13:22] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:13:37] Cambios detectados — haciendo push...
+[2026-04-25 19:13:39] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:13:54] Cambios detectados — haciendo push...
+[2026-04-25 19:13:57] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:14:12] Cambios detectados — haciendo push...
+[2026-04-25 19:14:16] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:14:31] Cambios detectados — haciendo push...
+[2026-04-25 19:14:34] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:14:49] Cambios detectados — haciendo push...
+[2026-04-25 19:14:51] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:15:06] Cambios detectados — haciendo push...
+[2026-04-25 19:15:09] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:15:24] Cambios detectados — haciendo push...
+[2026-04-25 19:15:28] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:15:43] Cambios detectados — haciendo push...
+[2026-04-25 19:15:47] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:16:02] Cambios detectados — haciendo push...
+[2026-04-25 19:16:06] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:16:21] Cambios detectados — haciendo push...
+[2026-04-25 19:16:25] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:16:40] Cambios detectados — haciendo push...
+[2026-04-25 19:16:43] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:16:58] Cambios detectados — haciendo push...
+[2026-04-25 19:17:03] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:17:18] Cambios detectados — haciendo push...
+[2026-04-25 19:17:21] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:17:37] Cambios detectados — haciendo push...
+[2026-04-25 19:17:40] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:17:56] Cambios detectados — haciendo push...
+[2026-04-25 19:17:59] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:18:14] Cambios detectados — haciendo push...
+[2026-04-25 19:18:18] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:18:33] Cambios detectados — haciendo push...
+[2026-04-25 19:18:37] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:18:52] Cambios detectados — haciendo push...
+[2026-04-25 19:18:56] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:19:11] Cambios detectados — haciendo push...
+[2026-04-25 19:19:15] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:19:31] Cambios detectados — haciendo push...
+[2026-04-25 19:19:34] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:19:49] Cambios detectados — haciendo push...
+[2026-04-25 19:19:53] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:20:08] Cambios detectados — haciendo push...
+[2026-04-25 19:20:11] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:20:27] Cambios detectados — haciendo push...
+[2026-04-25 19:20:31] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:20:46] Cambios detectados — haciendo push...
+[2026-04-25 19:20:50] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:21:05] Cambios detectados — haciendo push...
+[2026-04-25 19:21:10] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:21:25] Cambios detectados — haciendo push...
+[2026-04-25 19:21:29] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:21:44] Cambios detectados — haciendo push...
+[2026-04-25 19:21:48] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:22:03] Cambios detectados — haciendo push...
+[2026-04-25 19:22:06] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:22:22] Cambios detectados — haciendo push...
+[2026-04-25 19:22:25] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:22:40] Cambios detectados — haciendo push...
+[2026-04-25 19:22:44] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:22:59] Cambios detectados — haciendo push...
+[2026-04-25 19:23:03] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:23:18] Cambios detectados — haciendo push...
+[2026-04-25 19:23:22] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:23:37] Cambios detectados — haciendo push...
+[2026-04-25 19:23:41] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:23:56] Cambios detectados — haciendo push...
+[2026-04-25 19:24:00] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:24:15] Cambios detectados — haciendo push...
+[2026-04-25 19:24:19] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:24:34] Cambios detectados — haciendo push...
+[2026-04-25 19:24:38] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:24:54] Cambios detectados — haciendo push...
+[2026-04-25 19:24:58] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:25:13] Cambios detectados — haciendo push...
+[2026-04-25 19:25:17] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:25:32] Cambios detectados — haciendo push...
+[2026-04-25 19:25:36] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:25:51] Cambios detectados — haciendo push...
+[2026-04-25 19:25:54] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:26:09] Cambios detectados — haciendo push...
+[2026-04-25 19:26:13] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:26:28] Cambios detectados — haciendo push...
+[2026-04-25 19:26:32] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:26:47] Cambios detectados — haciendo push...
+[2026-04-25 19:26:51] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:27:06] Cambios detectados — haciendo push...
+[2026-04-25 19:27:10] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:27:25] Cambios detectados — haciendo push...
+[2026-04-25 19:27:29] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:27:44] Cambios detectados — haciendo push...
+[2026-04-25 19:27:48] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:28:03] Cambios detectados — haciendo push...
+[2026-04-25 19:28:07] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:28:22] Cambios detectados — haciendo push...
+[2026-04-25 19:28:25] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:28:41] Cambios detectados — haciendo push...
+[2026-04-25 19:28:44] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:29:00] Cambios detectados — haciendo push...
+[2026-04-25 19:29:04] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:29:19] Cambios detectados — haciendo push...
+[2026-04-25 19:29:23] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:29:38] Cambios detectados — haciendo push...
+[2026-04-25 19:29:42] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:29:57] Cambios detectados — haciendo push...
+[2026-04-25 19:30:00] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:30:15] Cambios detectados — haciendo push...
+[2026-04-25 19:30:19] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:30:35] Cambios detectados — haciendo push...
+[2026-04-25 19:30:38] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:30:53] Cambios detectados — haciendo push...
+[2026-04-25 19:30:56] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:31:11] Cambios detectados — haciendo push...
+[2026-04-25 19:31:14] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:31:29] Cambios detectados — haciendo push...
+[2026-04-25 19:31:33] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:31:48] Cambios detectados — haciendo push...
+[2026-04-25 19:31:51] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:32:06] Cambios detectados — haciendo push...
+[2026-04-25 19:32:08] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:32:24] Cambios detectados — haciendo push...
+[2026-04-25 19:32:26] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:32:42] Cambios detectados — haciendo push...
+[2026-04-25 19:32:44] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:32:59] Cambios detectados — haciendo push...
+[2026-04-25 19:33:02] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:33:17] Cambios detectados — haciendo push...
+[2026-04-25 19:33:20] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:33:35] Cambios detectados — haciendo push...
+[2026-04-25 19:33:39] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:33:54] Cambios detectados — haciendo push...
+[2026-04-25 19:33:57] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:34:13] Cambios detectados — haciendo push...
+[2026-04-25 19:34:15] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:34:31] Cambios detectados — haciendo push...
+[2026-04-25 19:34:36] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:34:51] Cambios detectados — haciendo push...
+[2026-04-25 19:34:54] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:35:09] Cambios detectados — haciendo push...
+[2026-04-25 19:35:13] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:35:28] Cambios detectados — haciendo push...
+[2026-04-25 19:35:31] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:35:46] Cambios detectados — haciendo push...
+[2026-04-25 19:35:51] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:36:06] Cambios detectados — haciendo push...
+[2026-04-25 19:36:09] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:36:25] Cambios detectados — haciendo push...
+[2026-04-25 19:36:27] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:36:43] Cambios detectados — haciendo push...
+[2026-04-25 19:36:46] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:37:01] Cambios detectados — haciendo push...
+[2026-04-25 19:37:04] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:37:19] Cambios detectados — haciendo push...
+[2026-04-25 19:37:23] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:37:38] Cambios detectados — haciendo push...
+[2026-04-25 19:37:42] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:37:57] Cambios detectados — haciendo push...
+[2026-04-25 19:38:00] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:38:15] Cambios detectados — haciendo push...
+[2026-04-25 19:38:18] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:38:33] Cambios detectados — haciendo push...
+[2026-04-25 19:38:36] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:38:51] Cambios detectados — haciendo push...
+[2026-04-25 19:38:54] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:39:10] Cambios detectados — haciendo push...
+[2026-04-25 19:39:13] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:39:28] Cambios detectados — haciendo push...
+[2026-04-25 19:39:31] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:39:46] Cambios detectados — haciendo push...
+[2026-04-25 19:39:49] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:40:04] Cambios detectados — haciendo push...
+[2026-04-25 19:40:09] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:40:24] Cambios detectados — haciendo push...
+[2026-04-25 19:40:27] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:40:42] Cambios detectados — haciendo push...
+[2026-04-25 19:40:46] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:41:01] Cambios detectados — haciendo push...
+[2026-04-25 19:41:04] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:41:20] Cambios detectados — haciendo push...
+[2026-04-25 19:41:22] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:41:38] Cambios detectados — haciendo push...
+[2026-04-25 19:41:40] Push fallo: error: remote: error: GH013: Repository rule violations found for refs/heads/main.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€
+[2026-04-25 19:42:28] ==================================================
+[2026-04-25 19:42:28] AutoPush Inventarios iniciado
+[2026-04-25 19:42:28] Token: OK
+[2026-04-25 19:42:28] Chequeando cada 15s — Ctrl+C para detener
+[2026-04-25 19:42:28] ==================================================
+[2026-04-25 19:42:28] Cambios detectados — haciendo push...
+[2026-04-25 19:42:30] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:42:45] Cambios detectados — haciendo push...
+[2026-04-25 19:42:47] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:43:02] Cambios detectados — haciendo push...
+[2026-04-25 19:43:04] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:43:20] Cambios detectados — haciendo push...
+[2026-04-25 19:43:21] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:43:37] Cambios detectados — haciendo push...
+[2026-04-25 19:43:38] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:43:54] Cambios detectados — haciendo push...
+[2026-04-25 19:43:56] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:44:11] Cambios detectados — haciendo push...
+[2026-04-25 19:44:13] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:44:28] Cambios detectados — haciendo push...
+[2026-04-25 19:44:30] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:44:45] Cambios detectados — haciendo push...
+[2026-04-25 19:44:47] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:45:02] Cambios detectados — haciendo push...
+[2026-04-25 19:45:04] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:45:19] Cambios detectados — haciendo push...
+[2026-04-25 19:45:21] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:45:36] Cambios detectados — haciendo push...
+[2026-04-25 19:45:39] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:45:54] Cambios detectados — haciendo push...
+[2026-04-25 19:45:57] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:46:12] Cambios detectados — haciendo push...
+[2026-04-25 19:46:14] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:46:30] Cambios detectados — haciendo push...
+[2026-04-25 19:46:32] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:46:47] Cambios detectados — haciendo push...

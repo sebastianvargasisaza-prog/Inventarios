@@ -1,6 +1,7 @@
 # Secrets y datos locales — NUNCA a Git
 .env.local
 .env
+.git_token
 *.db
 *.db-wal
 *.db-shm
@@ -15,3 +16,6 @@ build/
 .venv/
 venv/
 node_modules/
+
+# AutoPush — logs locales
+autopush.log
