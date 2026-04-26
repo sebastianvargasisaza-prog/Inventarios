@@ -1,0 +1,5 @@
+# Dev dependencies — solo para CI y desarrollo local. NO instalar en prod.
+-r requirements.txt
+
+pytest==8.3.4
+pytest-cov==6.0.0

@@ -47,16 +47,25 @@ def _is_locked(ip, username=None):
         conn.execute("PRAGMA busy_timeout=2000")
         placeholders = ",".join("?" * len(keys_to_check))
         rows = conn.execute(
-            f"SELECT locked_until FROM rate_limit WHERE ip IN ({placeholders})",
+            f"SELECT ip, locked_until FROM rate_limit WHERE ip IN ({placeholders})",
             keys_to_check
         ).fetchall()
         conn.close()
         now = time.time()
-        for row in rows:
-            if now < row[0]:
+        # ¿Alguna key está bloqueada activamente?
+        for _, locked_until in rows:
+            if now < locked_until:
                 return True
-        # Limpiar bloqueos expirados (oportunista)
-        for key in keys_to_check:
+        # Limpieza oportunista: SOLO entries con locked_until ya expirado
+        # (mayor a 0 significa que sí estuvo bloqueada en el pasado).
+        # NO borrar entries con locked_until=0 porque esas son contadores
+        # de fallos NO bloqueantes — borrarlas reseteaba el contador en
+        # cada login fallido y rompía el rate limit.
+        expired_keys = [
+            ip for ip, locked_until in rows
+            if 0 < locked_until <= now
+        ]
+        for key in expired_keys:
             _clear_attempts(key)
         return False
     except Exception:
