@@ -980,7 +980,60 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
-  <div style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
+  <!-- Panel activo de acondicionamiento — aparece al clic en Acondicionar desde la cola -->
+  <div id="ac-panel-activo" style="display:none;background:#fff;border:2px solid #0d47a1;border-radius:10px;padding:18px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h3 style="margin:0;color:#0d47a1;font-size:15px">&#128295; Acondicionando lote</h3>
+        <div style="font-size:13px;color:#444;margin-top:4px">
+          Producto: <strong id="ac-act-prod" style="color:#0d47a1"></strong> &nbsp;&middot;&nbsp;
+          Lote: <strong id="ac-act-lote"></strong> &nbsp;&middot;&nbsp;
+          Presentacion: <strong id="ac-act-pres"></strong> &nbsp;&middot;&nbsp;
+          <span id="ac-act-uds-info" style="color:#555"></span>
+        </div>
+        <input type="hidden" id="ac-act-env-id">
+        <input type="hidden" id="ac-act-lote-raw">
+        <input type="hidden" id="ac-act-prod-raw">
+      </div>
+      <button onclick="cerrarAcondActivo()" style="background:#6c757d;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">&#10005; Cancelar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Unidades acondicionadas</label>
+        <input id="ac-act-uds" type="number" min="1" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Fecha</label>
+        <input id="ac-act-fecha" type="date" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Etiquetas usadas</label>
+        <input id="ac-act-etiquetas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Plegadizas usadas</label>
+        <input id="ac-act-plegadizas" type="number" min="0" placeholder="66" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Destino / Cliente</label>
+        <input id="ac-act-destino" placeholder="ANIMUS Lab / nombre cliente" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">SKU PT</label>
+        <input id="ac-act-sku" placeholder="LBHA-30ML" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px">
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#555;font-weight:600;display:block;margin-bottom:3px">Observaciones</label>
+      <textarea id="ac-act-obs" rows="2" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <button onclick="registrarAcondDesdePanel()" style="background:#0d47a1;color:#fff;border:none;border-radius:6px;padding:10px 26px;font-size:14px;font-weight:700;cursor:pointer">&#9989; Registrar Acondicionamiento</button>
+      <div id="ac-act-msg" style="font-size:13px"></div>
+    </div>
+  </div>
+
+  <div id="ac-form-manual" style="background:#f0f4f8;border-radius:8px;padding:16px;margin-bottom:18px">
     <h3 style="margin:0 0 12px;font-size:14px;color:#333">Registrar Acondicionamiento</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div>
@@ -3398,14 +3451,71 @@ function loadColaAcond(){
     })
     .catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center">Error cargando cola</td></tr>';});
 }
-function prefillAcond(id){
+function prefillAcond(id){ abrirAcond(id); }
+var _acActObj = null;
+function abrirAcond(id){
   var env=_pendAcondMap[id]||{};
-  var fl=document.getElementById('ac-lote');if(fl)fl.value=env.lote||'';
-  var fp=document.getElementById('ac-prod');if(fp)fp.value=env.producto||'';
-  var fps=document.getElementById('ac-pres');if(fps)fps.value=env.presentacion||'';
-  var fb=document.getElementById('ac-batch');if(fb)fb.value=env.batch_g||'';
-  var fu=document.getElementById('ac-uds');if(fu)fu.value=env.unidades||'';
-  var el=document.getElementById('ac-lote');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+  _acActObj = env;
+  document.getElementById('ac-act-prod').textContent = env.producto||'';
+  document.getElementById('ac-act-prod-raw').value = env.producto||'';
+  document.getElementById('ac-act-lote').textContent = env.lote||'S/L';
+  document.getElementById('ac-act-lote-raw').value = env.lote||'';
+  document.getElementById('ac-act-pres').textContent = env.presentacion||'';
+  document.getElementById('ac-act-uds-info').textContent = (env.unidades||0)+' uds';
+  document.getElementById('ac-act-env-id').value = env.id||'';
+  var udsEl=document.getElementById('ac-act-uds'); if(udsEl) udsEl.value=env.unidades||'';
+  var skuEl=document.getElementById('ac-act-sku'); if(skuEl) skuEl.value=env.presentacion||'';
+  var etEl=document.getElementById('ac-act-etiquetas'); if(etEl) etEl.value=env.unidades||'';
+  var plEl=document.getElementById('ac-act-plegadizas'); if(plEl) plEl.value=env.unidades||'';
+  var fEl=document.getElementById('ac-act-fecha'); if(fEl) fEl.value=new Date().toISOString().slice(0,10);
+  var obsEl=document.getElementById('ac-act-obs'); if(obsEl) obsEl.value='';
+  var dEl=document.getElementById('ac-act-destino'); if(dEl) dEl.value='';
+  var msgEl=document.getElementById('ac-act-msg'); if(msgEl) msgEl.innerHTML='';
+  document.getElementById('ac-panel-activo').style.display='block';
+  document.getElementById('ac-panel-activo').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cerrarAcondActivo(){
+  _acActObj=null;
+  document.getElementById('ac-panel-activo').style.display='none';
+}
+async function registrarAcondDesdePanel(){
+  if(!_acActObj){ _toast('No hay lote activo',0); return; }
+  var lote=(document.getElementById('ac-act-lote-raw')||{value:''}).value.trim();
+  var producto=(document.getElementById('ac-act-prod-raw')||{value:''}).value.trim();
+  var uds=parseInt((document.getElementById('ac-act-uds')||{value:0}).value||0);
+  var fecha=(document.getElementById('ac-act-fecha')||{value:''}).value;
+  var etiquetas=parseInt((document.getElementById('ac-act-etiquetas')||{value:0}).value||0);
+  var plegadizas=parseInt((document.getElementById('ac-act-plegadizas')||{value:0}).value||0);
+  var destino=(document.getElementById('ac-act-destino')||{value:''}).value.trim();
+  var sku=(document.getElementById('ac-act-sku')||{value:''}).value.trim();
+  var obs=(document.getElementById('ac-act-obs')||{value:''}).value.trim();
+  if(!lote||!producto){ _toast('Datos de lote incompletos',0); return; }
+  if(uds<=0){ _toast('Ingresa las unidades acondicionadas',0); return; }
+  var obsCompleto='Etiquetas: '+etiquetas+' | Plegadizas: '+plegadizas+(destino?' | Destino: '+destino:'')+(obs?' | '+obs:'');
+  var msgEl=document.getElementById('ac-act-msg');
+  if(msgEl) msgEl.innerHTML='<span style="color:#666">Registrando...</span>';
+  try{
+    var r=await fetch('/api/acondicionamiento',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        lote:lote, producto:producto,
+        presentacion:sku||producto,
+        cantidad_batch_g:0,
+        unidades_producidas:uds,
+        fecha:fecha,
+        observaciones:obsCompleto,
+        sku:sku, precio_base:0, mee_consumido:[]
+      })
+    });
+    var d=await r.json();
+    if(!r.ok){ if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error: '+(d.error||r.status)+'</div>'; return; }
+    _toast('\u2705 Acondicionamiento registrado',1);
+    cerrarAcondActivo();
+    loadColaAcond();
+    loadAcondSimple();
+  }catch(e){
+    if(msgEl) msgEl.innerHTML='<div style="color:#dc3545;padding:8px;">Error de red: '+e.message+'</div>';
+  }
 }
 function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
