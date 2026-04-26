@@ -784,6 +784,21 @@ def pagar_oc(numero_oc):
     # Sync marketing payment status (insert si no existe, luego marcar pagada)
     try:
         if 'influencer' in (categoria or '').lower() or 'marketing' in (categoria or '').lower():
+            # Try to get influencer info from the linked solicitud
+            sol_row = cur.execute(
+                "SELECT influencer_id, solicitante FROM solicitudes_compra WHERE numero_oc=? LIMIT 1",
+                (numero_oc,)
+            ).fetchone()
+            inf_id   = sol_row[0] if sol_row and sol_row[0] else None
+            inf_name = proveedor  # fallback
+            if inf_id:
+                inf_row = cur.execute(
+                    "SELECT nombre FROM marketing_influencers WHERE id=?", (inf_id,)
+                ).fetchone()
+                if inf_row:
+                    inf_name = inf_row[0]
+            elif sol_row and sol_row[1]:
+                inf_name = sol_row[1]  # solicitante name as fallback
             cur.execute(
                 "SELECT id FROM pagos_influencers WHERE numero_oc=? LIMIT 1",
                 (numero_oc,)
@@ -792,13 +807,14 @@ def pagar_oc(numero_oc):
                 # OC creada antes del cambio — crear registro ahora
                 cur.execute("""
                     INSERT INTO pagos_influencers
-                    (influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                    VALUES (?,?,date('now'),'Pagada',?,?)
-                """, (proveedor, monto, f'Pago OC {numero_oc}', numero_oc))
+                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                    VALUES (?,?,?,date('now'),'Pagada',?,?)
+                """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
             else:
+                # Update existing: fix nombre/id if still orphaned, and mark Pagada
                 cur.execute(
-                    "UPDATE pagos_influencers SET estado='Pagada' WHERE numero_oc=? AND estado='Pendiente'",
-                    (numero_oc,)
+                    "UPDATE pagos_influencers SET estado='Pagada', influencer_id=COALESCE(influencer_id,?), influencer_nombre=CASE WHEN influencer_nombre IN ('','Pago') THEN ? ELSE influencer_nombre END WHERE numero_oc=?",
+                    (inf_id, inf_name, numero_oc)
                 )
     except Exception:
         pass

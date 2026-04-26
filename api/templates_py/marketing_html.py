@@ -1282,7 +1282,7 @@ async function loadInfluencers() {
     body.innerHTML=`<tr class="empty-row"><td colspan="12">Sin influencers registrados${errMsg}.</td></tr>`;
     return;
   }
-  body.innerHTML = infs.map(r=>{
+  body.innerHTML = infs.map((r, idx)=>{
     const seg = r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores;
     const banco = r.banco
       ? `<span style="color:#94a3b8;">${r.banco}</span><br><span style="font-size:11px;color:#64748b;">${r.cuenta_bancaria||'\u2014'}</span>`

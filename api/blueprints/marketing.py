@@ -2305,3 +2305,52 @@ def mkt_influencer_banco(iid):
                  list(updates.values()) + [iid])
     conn.commit()
     return jsonify({"ok": True})
+
+
+@bp.route("/api/marketing/fix-pago-link", methods=["POST"])
+def mkt_fix_pago_link():
+    """One-time fix: link a pagos_influencers record to the correct influencer by OC number."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    d = request.get_json() or {}
+    numero_oc     = d.get("numero_oc", "").strip()
+    influencer_id = d.get("influencer_id")
+    nombre        = d.get("influencer_nombre", "").strip()
+    estado        = d.get("estado", "Pagada").strip()
+    valor         = d.get("valor")
+    if not numero_oc:
+        return jsonify({"error": "numero_oc requerido"}), 400
+    conn = _db()
+    c = conn.cursor()
+    # Check if record exists
+    row = c.execute(
+        "SELECT id, influencer_id, influencer_nombre, estado FROM pagos_influencers WHERE numero_oc=?",
+        (numero_oc,)
+    ).fetchone()
+    if row:
+        # Update existing record
+        sets, params = [], []
+        if influencer_id is not None:
+            sets.append("influencer_id=?"); params.append(influencer_id)
+        if nombre:
+            sets.append("influencer_nombre=?"); params.append(nombre)
+        sets.append("estado=?"); params.append(estado)
+        if valor is not None:
+            sets.append("valor=?"); params.append(int(valor))
+        if sets:
+            params.append(numero_oc)
+            c.execute(f"UPDATE pagos_influencers SET {', '.join(sets)} WHERE numero_oc=?", params)
+            conn.commit()
+        return jsonify({"ok": True, "action": "updated", "id": row[0]})
+    else:
+        # Insert new record
+        if not nombre or valor is None:
+            return jsonify({"error": "Registro no existe; proporciona influencer_nombre y valor para crearlo"}), 404
+        c.execute("""
+            INSERT INTO pagos_influencers
+            (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+            VALUES (?,?,?,date('now'),?,?,?)
+        """, (influencer_id, nombre, int(valor), estado, f"Pago OC {numero_oc}", numero_oc))
+        conn.commit()
+        return jsonify({"ok": True, "action": "inserted"})
