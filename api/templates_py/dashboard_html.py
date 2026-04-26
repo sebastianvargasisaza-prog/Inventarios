@@ -4256,7 +4256,7 @@ function _renderProgramacion(d){
         return '<tr style="border-bottom:1px solid #eee">'
           +'<td style="padding:8px"><div style="font-weight:600;font-size:12px">'+mp.nombre+'</div>'
           +'<div style="font-size:10px;color:#888;font-family:monospace">'+mp.material_id+'</div></td>'
-          +'<td style="padding:8px;font-size:12px">'+origenIcon+' '+(mp.proveedor||'<span style="color:#bbb;font-style:italic">Sin asignar</span>')+'</td>'
+          +'<td style="padding:8px;font-size:12px;cursor:pointer;border-radius:4px" data-mid="'+mp.material_id+'" onclick="_editProv(this)" title="Clic para editar proveedor">'+origenIcon+' '+(mp.proveedor||'<em style="color:#bbb;font-size:11px">Sin asignar</em>')+'<span style="color:#ccc;font-size:10px;margin-left:3px">&#9998;</span></td>'
           +'<td style="padding:8px;text-align:right;font-size:12px">'+_fmtG(mp.total_g)+'</td>'
           +'<td style="padding:8px;text-align:right;font-size:12px;color:'+(mp.stock_g<mp.total_g?'#dc3545':'#28a745')+'">'+_fmtG(mp.stock_g)+'</td>'
           +'<td style="padding:8px;text-align:right;font-weight:700;color:#dc3545;font-size:12px">'+_fmtG(mp.deficit_g)+'</td>'
@@ -4390,6 +4390,52 @@ function _renderProgramacion(d){
     if(errores.length){
       _toast('Errores: '+errores.join(' | '), 0);
     }
+  }
+
+  function _editProv(td){
+    var mid  = td.dataset.mid;
+    var cur  = td.innerText.replace('✎','').trim();
+    if(cur === 'Sin asignar') cur = '';
+    var input = document.createElement('input');
+    input.value = cur;
+    input.style.cssText = 'width:120px;padding:3px 6px;border:2px solid #1a4a7a;border-radius:4px;font-size:12px;outline:none';
+    input.onclick = function(e){ e.stopPropagation(); };
+    td.innerHTML = '';
+    td.appendChild(input);
+    input.focus();
+    function save(){
+      var prov = input.value.trim();
+      if(!prov){ td.innerHTML = '&#127758; <em style="color:#bbb;font-size:11px">Sin asignar</em><span style="color:#ccc;font-size:10px;margin-left:3px">&#9998;</span>'; return; }
+      td.innerHTML = '<span style="color:#999;font-size:11px">Guardando...</span>';
+      fetch('/api/maestro-mps/'+mid+'/proveedor',{
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({proveedor:prov})
+      }).then(function(r){return r.json();}).then(function(d){
+        if(d.ok||d.message){
+          td.innerHTML = '&#127758; '+prov+'<span style="color:#28a745;font-size:10px;margin-left:4px">&#10003;</span><span style="color:#ccc;font-size:10px;margin-left:3px">&#9998;</span>';
+          td.dataset.mid = mid;
+          td.onclick = function(){ _editProv(td); };
+          // Update bulk opps panel too
+          if(_planData&&_planData.bulk_opps){
+            _planData.bulk_opps.forEach(function(mp){ if(mp.material_id===mid) mp.proveedor=prov; });
+          }
+          _toast('Proveedor actualizado: '+prov, 1);
+        } else {
+          td.innerHTML = '&#127758; '+prov+'<span style="color:#dc3545;font-size:10px;margin-left:4px">&#10007;</span><span style="color:#ccc;font-size:10px;margin-left:3px">&#9998;</span>';
+          _toast('Error al guardar: '+(d.error||''), 0);
+        }
+        td.dataset.mid = mid;
+        td.onclick = function(){ _editProv(td); };
+      }).catch(function(e){
+        td.innerHTML = '&#127758; '+prov+'<span style="color:#dc3545;font-size:10px;margin-left:4px">&#10007;</span>';
+        _toast('Error: '+e.message, 0);
+      });
+    }
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', function(e){
+      if(e.key==='Enter'){ e.preventDefault(); input.blur(); }
+      if(e.key==='Escape'){ td.innerHTML = '&#127758; '+(cur||'<em style="color:#bbb;font-size:11px">Sin asignar</em>')+'<span style="color:#ccc;font-size:10px;margin-left:3px">&#9998;</span>'; td.dataset.mid=mid; td.onclick=function(){_editProv(td);}; }
+    });
   }
 
   function guardarProgramacion() {
