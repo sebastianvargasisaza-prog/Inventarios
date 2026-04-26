@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
@@ -26,6 +26,66 @@ from templates_py.solicitudes_html import SOLICITUDES_HTML
 from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('inventario', __name__)
+
+
+# ── Helpers de permisos granulares ────────────────────────────────────────────
+# Cualquier user autenticado puede LEER inventario (necesario para que el
+# equipo vea stock/lotes desde su módulo). Pero las ESCRITURAS y operaciones
+# críticas se restringen al rol correspondiente.
+#
+# Patrón de uso al inicio del endpoint:
+#     u, err, code = _require_planta_write()
+#     if err: return err, code
+
+PLANTA_WRITE_USERS = PLANTA_USERS | ADMIN_USERS | CALIDAD_USERS
+QC_USERS           = CALIDAD_USERS | ADMIN_USERS
+
+
+def _require_session():
+    """Solo autenticación (cualquier user logueado). Usado en lecturas."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    return u, None, None
+
+
+def _require_planta_write():
+    """Para operaciones que ESCRIBEN inventario: PLANTA + CALIDAD + ADMIN.
+
+    Excluye marketing, ventas, clientes y operarios sin rol técnico.
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    if u not in PLANTA_WRITE_USERS:
+        return None, jsonify({
+            'error': 'Sin acceso a operaciones de Planta',
+            'detail': f"User '{u}' no está en PLANTA/CALIDAD/ADMIN"
+        }), 403
+    return u, None, None
+
+
+def _require_qc():
+    """Para operaciones de QC: CALIDAD + ADMIN únicamente."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    if u not in QC_USERS:
+        return None, jsonify({
+            'error': 'Solo equipo de Calidad o admins',
+            'detail': f"User '{u}' no está en CALIDAD/ADMIN"
+        }), 403
+    return u, None, None
+
+
+def _require_admin():
+    """Para operaciones destructivas: solo ADMIN."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    if u not in ADMIN_USERS:
+        return None, jsonify({'error': 'Solo administradores'}), 403
+    return u, None, None
 
 @bp.route('/api/inventario')
 def get_inventario():
@@ -81,6 +141,9 @@ def handle_movimientos():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
+        u, err, code = _require_planta_write()
+        if err:
+            return err, code
         data = request.json
         c.execute("""INSERT INTO movimientos
                      (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
@@ -119,6 +182,9 @@ def handle_produccion():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
+        u, err, code = _require_planta_write()
+        if err:
+            return err, code
         data = request.json
         producto = data.get('producto', data.get('producto',''))
         presentacion = data.get('presentacion','')
@@ -129,9 +195,15 @@ def handle_produccion():
                   (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', ''), data.get('operador', ''), presentacion))
         prod_id = c.lastrowid
         lote_ref = f'PROD-{prod_id:05d}'
-        # Guardar lote_ref en producciones para trazabilidad
-        try: c.execute("UPDATE producciones SET lote=? WHERE id=?", (lote_ref, prod_id))
-        except: pass
+        # Guardar lote_ref en producciones para trazabilidad.
+        # La columna 'lote' puede no existir en versiones antiguas — solo
+        # ignorar si es ese caso específico (OperationalError).
+        try:
+            c.execute("UPDATE producciones SET lote=? WHERE id=?", (lote_ref, prod_id))
+        except sqlite3.OperationalError as _e:
+            if 'no such column' not in str(_e).lower():
+                _logger = __import__('logging').getLogger('inventario')
+                _logger.error("UPDATE producciones lote falló: %s", _e)
         c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (producto,))
         formula_items = c.fetchall()
         descuentos = []
@@ -512,7 +584,10 @@ def get_lotes():
                 from datetime import datetime as dt2
                 dias=(dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date()-dt2.strptime(hoy,'%Y-%m-%d').date()).days
                 alerta='vencido' if dias<0 else ('critico' if dias<=30 else ('proximo' if dias<=90 else 'ok'))
-            except: pass
+            except (ValueError, TypeError):
+                # Fecha mal formateada — dejar como 'ok' silencio aceptable
+                # (no es crítico para el flujo de stock).
+                pass
         result.append({'material_id':mid or '','nombre_inci':inci,'material_nombre':mnm or '',
                        'tipo':tipo,'proveedor':prov or '','stock_min_g':round(smin,1),
                        'lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
@@ -650,6 +725,9 @@ def archivar_mp(codigo):
 
 @bp.route('/api/recepcion', methods=['POST'])
 def registrar_recepcion():
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
     d = request.json; codigo = (d.get('codigo_mp') or '').upper().strip()
     if not codigo: return jsonify({'error': 'Codigo MP requerido'}), 400
     cantidad_recibida = float(d.get('cantidad') or 0)
@@ -670,11 +748,16 @@ def registrar_recepcion():
         c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
                   (codigo, d.get('nombre_inci',''), nombre, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
         conn.commit()
-    # Actualizar precio_referencia en maestro_mps si viene precio
+    # Actualizar precio_referencia en maestro_mps si viene precio.
+    # Solo ignoramos si la columna 'ultima_act_precio' no existe (versión vieja).
     if precio_kg > 0:
         try:
             c.execute("UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now') WHERE codigo_mp=?", (precio_kg, codigo))
-        except: pass
+        except sqlite3.OperationalError as _e:
+            if 'no such column' not in str(_e).lower():
+                __import__('logging').getLogger('inventario').error(
+                    "UPDATE precio_referencia falló para %s: %s", codigo, _e
+                )
     lote = (d.get('lote') or '').strip()
     if not lote or lote.upper()=='AUTO':
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
@@ -688,12 +771,16 @@ def registrar_recepcion():
                d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
                d.get('operador',''),precio_kg,numero_factura,numero_oc))
     mov_id = c.lastrowid
-    # Log precio historico
+    # Log precio historico — solo ignorar si tabla no existe (legacy).
     if precio_kg > 0:
         try:
             c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now'))",
                       (codigo, precio_kg, numero_factura, proveedor))
-        except: pass
+        except sqlite3.OperationalError as _e:
+            if 'no such table' not in str(_e).lower():
+                __import__('logging').getLogger('inventario').error(
+                    "INSERT precios_mp_historico falló: %s", _e
+                )
     # Cerrar OC si se referencia una
     oc_warning = None
     if numero_oc:
@@ -733,8 +820,11 @@ def lotes_cuarentena():
 
 @bp.route('/api/lotes/liberar', methods=['POST'])
 def liberar_lote():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return jsonify({'error': 'Solo administradores pueden liberar lotes'}), 401
+    # Equipo de Calidad (CALIDAD_USERS) y admins pueden liberar lotes —
+    # antes solo era admins, lo que bloqueaba el flujo legítimo de QC.
+    u, err, code = _require_qc()
+    if err:
+        return err, code
     d = request.json or {}
     mov_id = d.get('id')
     accion = (d.get('accion') or 'APROBAR').upper()
@@ -752,28 +842,9 @@ def liberar_lote():
     conn.commit()
     return jsonify({'message': f'Lote {accion.lower()}ado correctamente', 'estado': nuevo_estado})
 
-@bp.route('/api/trazabilidad/<lote>', methods=['GET'])
-def trazabilidad_lote(lote):
-    conn = get_db(); c = conn.cursor()
-    # Ingreso del lote
-    c.execute("""SELECT m.material_id, m.material_nombre, m.cantidad, m.fecha,
-                      m.proveedor, m.numero_factura, m.numero_oc, m.precio_kg
-               FROM movimientos m WHERE m.lote=? AND m.tipo='Entrada' LIMIT 1""", (lote,))
-    ingreso = c.fetchone()
-    # Consumos en produccion
-    # consumos: buscar en producciones que mencionen el lote en observaciones
-    c.execute("""SELECT producto, fecha, operador, cantidad
-               FROM producciones WHERE observaciones LIKE ? ORDER BY fecha""", (f'%{lote}%',))
-    producciones = c.fetchall()
-    return jsonify({
-        'lote': lote,
-        'ingreso': {'codigo_mp': ingreso[0], 'nombre': ingreso[1], 'cantidad_g': ingreso[2],
-                    'fecha': ingreso[3], 'proveedor': ingreso[4], 'factura': ingreso[5],
-                    'orden_compra': ingreso[6], 'precio_kg': ingreso[7]} if ingreso else None,
-        'producciones': [{'producto': p[0], 'fecha': p[1], 'operador': p[2],
-                          'cantidad_g': p[3]} for p in producciones],
-        'total_producciones': len(producciones)
-    })
+# /api/trazabilidad/<lote> eliminado — duplicado de /api/trazabilidad/lote/<path:lote>
+# que es más completo (también busca despachos). Mantener el de path por
+# consistencia con lotes que contienen '/' o caracteres especiales.
 
 # ── CONTEO CICLICO BDG-PRO-002 ──────────────────────────────────
 @bp.route('/api/conteo/estanterias', methods=['GET'])
@@ -994,10 +1065,11 @@ def conteo_get_items(conteo_id):
 
 @bp.route('/api/lotes/cc-review', methods=['POST'])
 def cc_review():
-    user = session.get('compras_user', '')
-    allowed = set(ADMIN_USERS) | {'hernando'}
-    if user not in allowed:
-        return jsonify({'error': 'Solo CC o administradores'}), 401
+    # Antes era hardcoded {hernando} + ADMIN_USERS. Ahora usa CALIDAD_USERS
+    # (laura, miguel, yuliel) + ADMIN — consistente con la matriz de permisos.
+    user, err, code = _require_qc()
+    if err:
+        return err, code
     d = request.json or {}
     mov_id = d.get('mov_id')
     if not mov_id:
@@ -1040,7 +1112,11 @@ def cc_review():
                 "VALUES (?,?,0,'kg',?,'PENDIENTE','Espagiria','Calidad',?,datetime('now'))",
                 (d.get('codigo_mp',''), d.get('lote',''),
                  'LOTE RECHAZADO QC - Devolucion proveedor. Lote: '+d.get('lote',''), user))
-        except: pass
+        except sqlite3.OperationalError as _e:
+            # Si la tabla solicitudes_compra cambió de schema, no romper el rechazo QC.
+            __import__('logging').getLogger('inventario').error(
+                "Auto-creación de solicitud devolución falló: %s", _e
+            )
     conn.commit()
     msgs = {'APROBADO': 'Lote APROBADO. Disponible para produccion.',
             'RECHAZADO': 'Lote RECHAZADO. Notificacion creada en Compras.',
@@ -1093,19 +1169,73 @@ def anular_movimiento(mov_id):
 
 @bp.route('/api/reset-movimientos', methods=['POST'])
 def reset_mov():
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return jsonify({'error': 'No autorizado. Solo administradores.'}), 401
+    """OPERACIÓN PELIGROSA: borra TODOS los movimientos de inventario.
+
+    Solo admins. Triple confirmación:
+      1. Sesión debe ser ADMIN_USERS
+      2. JSON.confirmacion == 'BORRAR_TODO_INVENTARIO_AHORA' (no solo 'BORRAR')
+      3. JSON.fecha_actual == fecha de hoy (YYYY-MM-DD) — anti copy-paste accidental
+    Antes de ejecutar: snapshot a backup_log + log de seguridad.
+    """
+    user = session.get('compras_user', '')
+    if not user or user not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado. Solo administradores.'}), 403
+
     d = request.json or {}
-    if d.get('confirmacion','').upper() != 'BORRAR':
-        return jsonify({'error': 'Debes enviar confirmacion="BORRAR"'}), 400
+    if d.get('confirmacion', '') != 'BORRAR_TODO_INVENTARIO_AHORA':
+        return jsonify({
+            'error': 'confirmacion debe ser exactamente "BORRAR_TODO_INVENTARIO_AHORA"',
+            'hint': 'Anti copy-paste accidental. Esta operación borra TODOS los movimientos.'
+        }), 400
+
+    from datetime import date as _date
+    hoy = _date.today().isoformat()
+    if d.get('fecha_actual', '') != hoy:
+        return jsonify({
+            'error': f'fecha_actual debe ser "{hoy}" (formato YYYY-MM-DD)',
+            'hint': 'Doble confirmación: la fecha de HOY debe coincidir.'
+        }), 400
+
+    # Forzar backup antes de borrar — recuperabilidad obligatoria
+    try:
+        from backup import do_backup
+        bk_result = do_backup(triggered_by=f"pre-reset:{user}")
+        if not bk_result.get('ok') and not bk_result.get('skipped'):
+            return jsonify({
+                'error': 'No se pudo crear backup pre-reset. Operación abortada.',
+                'detail': bk_result.get('error', '')[:200]
+            }), 500
+        backup_filename = bk_result.get('filename', '(skipped — otro en curso)')
+    except Exception as e:
+        return jsonify({
+            'error': 'Backup pre-reset falló. Operación abortada.',
+            'detail': str(e)[:200]
+        }), 500
+
+    # Log de seguridad ANTES (en caso de crash queda traza del intento)
+    from auth import _log_sec, _client_ip
+    _log_sec("inventario_reset_INICIADO", user, _client_ip(),
+             f"backup={backup_filename}")
+
     conn = get_db(); c = conn.cursor()
+    rows_deleted = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
     c.execute("DELETE FROM movimientos")
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now'))""",
-              (session.get('compras_user','?'), 'RESET_MOVIMIENTOS', 'movimientos',
-               'ALL', 'Borrado total de movimientos autorizado', request.remote_addr))
+              (user, 'RESET_MOVIMIENTOS', 'movimientos', 'ALL',
+               f'Borrados {rows_deleted} movimientos. Backup pre-reset: {backup_filename}',
+               _client_ip()))
     conn.commit()
-    return jsonify({'message': 'Movimientos borrados. Accion registrada en audit_log.'})
+
+    _log_sec("inventario_reset_COMPLETADO", user, _client_ip(),
+             f"deleted={rows_deleted} backup={backup_filename}")
+
+    return jsonify({
+        'ok': True,
+        'message': f'{rows_deleted} movimientos borrados.',
+        'backup_pre_reset': backup_filename,
+        'restore_hint': 'Si fue un error: descarga el backup desde /admin → Backups y restaura.'
+    })
 
 @bp.route('/rotulos/<producto_nombre>/<cantidad_str>')
 def generar_rotulos(producto_nombre, cantidad_str):
@@ -1553,8 +1683,11 @@ def conteo_detalle(cid):
 
 @bp.route('/api/lotes/cuarentena/<int:mov_id>/liberar', methods=['POST'])
 def liberar_cuarentena(mov_id):
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return jsonify({'error':'Solo admins pueden liberar cuarentena'}), 401
+    # Liberación de cuarentena = decisión de Calidad. Antes solo admins,
+    # ahora QC + admins (consistente con cc-review y liberar_lote).
+    u, err, code = _require_qc()
+    if err:
+        return err, code
     d = request.json or {}; decision = d.get('decision','Aprobado')
     conn = get_db(); c = conn.cursor()
     nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
@@ -1940,15 +2073,17 @@ def _init_acondicionamiento():
         estado                  TEXT DEFAULT 'Pendiente CC',
         creado_en               DATETIME DEFAULT (datetime('now'))
     )""")
-    # Nuevas columnas — múltiples presentaciones y flujo liberación→stock_pt
+    # Nuevas columnas — múltiples presentaciones y flujo liberación→stock_pt.
+    # Usamos safe_alter (database.py) que distingue "columna ya existe"
+    # (benigno) de errores reales (loguea + relanza).
+    from database import safe_alter
     for _sql in [
         "ALTER TABLE acondicionamiento ADD COLUMN sku TEXT DEFAULT ''",
         "ALTER TABLE acondicionamiento ADD COLUMN precio_base REAL DEFAULT 0",
         "ALTER TABLE liberaciones ADD COLUMN sku TEXT DEFAULT ''",
         "ALTER TABLE liberaciones ADD COLUMN precio_base REAL DEFAULT 0",
     ]:
-        try: c.execute(_sql)
-        except: pass
+        safe_alter(conn, _sql)
     conn.commit()
 
 _init_acondicionamiento()
