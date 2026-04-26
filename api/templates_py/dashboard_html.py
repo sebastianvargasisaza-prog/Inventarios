@@ -1089,6 +1089,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div id="programacion" class="tab-content">
 <div style="padding:18px">
+  <!-- sub-tab bar -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:10px;align-items:center;flex-wrap:wrap">
+    <button id="prog-tab-centro" onclick="switchProgTab('centro')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff">
+      &#128225; Centro
+    </button>
+    <button id="prog-tab-plan" onclick="switchProgTab('plan')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#128301; Planificación Estratégica
+    </button>
+  </div>
+
+  <div id="ptab-centro">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
     <div>
       <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
@@ -4154,10 +4167,10 @@ function _renderProgramacion(d){
   function switchProgTab(tab){
     document.getElementById('ptab-centro').style.display = tab==='centro' ? 'block' : 'none';
     document.getElementById('ptab-plan').style.display   = tab==='plan'   ? 'block' : 'none';
-    var bc=document.getElementById('ptab-btn-centro');
-    var bp=document.getElementById('ptab-btn-plan');
-    if(bc){ bc.style.background=tab==='centro'?'#1a4a7a':'#f0f4f8'; bc.style.color=tab==='centro'?'#fff':'#1a4a7a'; bc.style.borderBottom=tab==='centro'?'2px solid #1a4a7a':'2px solid transparent'; }
-    if(bp){ bp.style.background=tab==='plan'?'#1a4a7a':'#f0f4f8'; bp.style.color=tab==='plan'?'#fff':'#1a4a7a'; bp.style.borderBottom=tab==='plan'?'2px solid #1a4a7a':'2px solid transparent'; }
+    var bc = document.getElementById('prog-tab-centro');
+    var bp = document.getElementById('prog-tab-plan');
+    if(bc){ bc.style.background = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color = tab==='centro' ? '#fff' : '#1a4a7a'; }
+    if(bp){ bp.style.background = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color = tab==='plan'   ? '#fff' : '#1a4a7a'; }
     if(tab==='plan' && !_planLoaded) cargarPlanificacion(2);
   }
   var _planLoaded = false;
