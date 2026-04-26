@@ -1968,6 +1968,34 @@ def mkt_influencers_panel():
             if key:
                 pagos_by_name.setdefault(key, []).append(p)
 
+        # 2b. Auto-crear influencers desde pagos_influencers (nombres sin perfil)
+        known_lower = {inf["nombre"].strip().lower() for inf in influencers}
+        nuevos = []
+        for p in pago_list:
+            nm = (p["influencer_nombre"] or "").strip()
+            if nm and nm.lower() not in known_lower:
+                known_lower.add(nm.lower())
+                nuevos.append(nm)
+        if nuevos:
+            for nm in nuevos:
+                c.execute(
+                    "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)",
+                    (nm, "Instagram", "Activo")
+                )
+            conn.commit()
+            # Recargar lista completa
+            sql2 = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
+            influencers = [dict(r) for r in c.execute(sql2, params).fetchall()]
+            # Re-indexar pagos por id
+            pagos_by_id.clear()
+            pagos_by_name.clear()
+            for p in pago_list:
+                if p["influencer_id"]:
+                    pagos_by_id.setdefault(p["influencer_id"], []).append(p)
+                key = (p["influencer_nombre"] or "").strip().lower()
+                if key:
+                    pagos_by_name.setdefault(key, []).append(p)
+
         # 3. Merge
         now_month = datetime.now().strftime("%Y-%m")
         result = []

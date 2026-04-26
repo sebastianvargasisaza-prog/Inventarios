@@ -781,12 +781,25 @@ def pagar_oc(numero_oc):
     fecha_pago = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=? WHERE numero_oc=?",
                 (usuario_actual, fecha_pago, medio, comprobante_imagen, numero_oc))
-    # Sync marketing payment status
+    # Sync marketing payment status (insert si no existe, luego marcar pagada)
     try:
-        cur.execute(
-            "UPDATE pagos_influencers SET estado='Pagada' WHERE numero_oc=? AND estado='Pendiente'",
-            (numero_oc,)
-        )
+        if 'influencer' in (categoria or '').lower() or 'marketing' in (categoria or '').lower():
+            cur.execute(
+                "SELECT id FROM pagos_influencers WHERE numero_oc=? LIMIT 1",
+                (numero_oc,)
+            )
+            if not cur.fetchone():
+                # OC creada antes del cambio — crear registro ahora
+                cur.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                    VALUES (?,?,date('now'),'Pagada',?,?)
+                """, (proveedor, monto, f'Pago OC {numero_oc}', numero_oc))
+            else:
+                cur.execute(
+                    "UPDATE pagos_influencers SET estado='Pagada' WHERE numero_oc=? AND estado='Pendiente'",
+                    (numero_oc,)
+                )
     except Exception:
         pass
     try:
