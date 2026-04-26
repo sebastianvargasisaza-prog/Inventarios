@@ -669,10 +669,15 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         except ValueError:
             return None
 
+    _today_str = str(__import__('datetime').date.today())
+
     for ev in calendar_events:
         titulo  = ev.get('titulo', '')
         fecha_ev = ev.get('fecha', '')
         if not fecha_ev:
+            continue
+        # Skip past calendar events — always show next FUTURE production date
+        if fecha_ev < _today_str:
             continue
         # Extract planned kg from title
         kg_ev = _kg_from_title(titulo)
@@ -680,7 +685,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         for sku in _skus_from_title(titulo):
             prod_name = _sku_to_prod.get(sku)
             if prod_name and prod_name in products_with_formula:
-                # Assign earliest date per product
+                # Assign earliest FUTURE date per product
                 existing = next_prod_by_product.get(prod_name)
                 if not existing or fecha_ev < existing:
                     next_prod_by_product[prod_name] = fecha_ev
