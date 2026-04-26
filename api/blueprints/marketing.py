@@ -1971,18 +1971,64 @@ def mkt_influencers_panel():
 
             result.append(inf)
 
+        # Auto-populate marketing_influencers from solicitudes_compra
+        # (catches cases where migration 21 found no BENEFICIARIO: format)
+        known_names = {inf["nombre"].strip().lower() for inf in influencers}
+        new_names = []
+        for s in solic_list:
+            name = (s["solicitante"] or "").strip()
+            if name and name.lower() not in known_names:
+                known_names.add(name.lower())
+                new_names.append(name)
+        if new_names:
+            for nm in new_names:
+                c.execute(
+                    "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)"
+                    , (nm, "Instagram", "Activo")
+                )
+            conn.commit()
+            # Reload influencers now that new ones are inserted
+            sql2 = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
+            influencers = [dict(r) for r in c.execute(sql2, params).fetchall()]
+            # Re-merge with solic data
+            result = []
+            for inf in influencers:
+                iid  = inf["id"]
+                inombre_low = inf["nombre"].strip().lower()
+                pagos = solic_by_id.get(iid, []) + solic_by_name.get(inombre_low, [])
+                seen = set()
+                pagos_uniq = []
+                for p in pagos:
+                    if p["numero"] not in seen:
+                        seen.add(p["numero"])
+                        pagos_uniq.append(p)
+                pagadas   = [p for p in pagos_uniq if p["estado"] == "Pagada"]
+                pendiente = [p for p in pagos_uniq if p["estado"] in ("Aprobada", "Pendiente")]
+                mes_pagos = [p for p in pagadas if (p["fecha"] or "").startswith(now_month)]
+                inf["pagos"] = pagos_uniq
+                inf["total_pagado"]      = sum(p["valor"] or 0 for p in pagadas)
+                inf["total_pendiente"]   = sum(p["valor"] or 0 for p in pendiente)
+                inf["pagos_count"]       = len(pagadas)
+                inf["pendiente_count"]   = len(pendiente)
+                inf["pagado_mes_actual"] = sum(p["valor"] or 0 for p in mes_pagos)
+                inf["ultimo_pago"]       = pagadas[0]["fecha"] if pagadas else None
+                inf["tiene_pendiente"]   = len(pendiente) > 0
+                result.append(inf)
+
         # Panel KPIs
         total_pagado_mes  = sum(inf["pagado_mes_actual"] for inf in result)
-        total_pendiente   = sum(inf["total_pendiente"]   for inf in result)
-        activos           = len([i for i in result if i["estado"] == "Activo"])
+        total_pendiente_v = sum(inf["total_pendiente"]   for inf in result)
+        total_activos     = len([i for i in result if i.get("estado") == "Activo"])
+        con_pendiente     = len([i for i in result if i["tiene_pendiente"]])
 
         return jsonify({
             "influencers": result,
             "kpis": {
-                "activos":          activos,
-                "total":            len(result),
-                "pagado_mes":       total_pagado_mes,
-                "pendiente_total":  total_pendiente,
+                "total_activos":  total_activos,
+                "total":          len(result),
+                "pagado_mes":     total_pagado_mes,
+                "total_pendiente": total_pendiente_v,
+                "con_pendiente":  con_pendiente,
             }
         })
     finally:
@@ -2004,7 +2050,7 @@ def mkt_solicitar_pago_influencer(iid):
         inf = dict(inf)
 
         d = request.get_json() or {}
-        monto    = float(d.get("monto") or inf.get("tarifa") or 0)
+        monto    = float(d.get("valor") or d.get("monto") or inf.get("tarifa") or 0)
         concepto = str(d.get("concepto") or "Pago de contenido/colaboración").strip()
         banco    = str(d.get("banco")    or inf.get("banco", "")).strip()
         cuenta   = str(d.get("cuenta")   or inf.get("cuenta_bancaria", "")).strip()
