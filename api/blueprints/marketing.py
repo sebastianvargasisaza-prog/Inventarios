@@ -2373,3 +2373,255 @@ def mkt_fix_pago_link():
         """, (influencer_id, nombre, int(valor), estado, f"Pago OC {numero_oc}", numero_oc))
         conn.commit()
         return jsonify({"ok": True, "action": "inserted"})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO AGENCIA — Auditoría y Scoring (metodología claude-ads adaptada)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@marketing_bp.route('/api/marketing/agencia/audit', methods=['GET'])
+def mkt_agencia_audit():
+    """Auditoría completa: scores de influencers + audit de campañas + salud del portafolio."""
+    db = get_db()
+    c = db.cursor()
+    today = datetime.now().date()
+
+    # Severity weights — metodología adaptada de claude-ads
+    # S_total = Σ(C_pass × W_sev) / Σ(C_total × W_sev) × 100
+    W = {'critical': 5, 'high': 3, 'medium': 1.5, 'low': 0.5}
+
+    # ── INFLUENCER SCORES ──────────────────────────────────────────────────────
+    try:
+        infs_rows = c.execute("SELECT * FROM marketing_influencers ORDER BY nombre").fetchall()
+        inf_cols  = [d[0] for d in c.description]
+    except Exception:
+        infs_rows, inf_cols = [], []
+
+    scored_infs = []
+    for row in infs_rows:
+        inf = dict(zip(inf_cols, row))
+
+        # Payment stats
+        pay_stats = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(valor),0), MAX(fecha) FROM pagos_influencers "
+            "WHERE (influencer_id=? OR LOWER(TRIM(influencer_nombre))=LOWER(TRIM(?))) AND estado='Pagada'",
+            (inf['id'], inf['nombre'])
+        ).fetchone()
+
+        er      = float(inf.get('engagement_rate') or 0)
+        segs    = int(inf.get('seguidores') or 0)
+        n_colabs     = int(pay_stats[0] or 0)
+        total_pagado = float(pay_stats[1] or 0)
+        last_fecha   = pay_stats[2]
+
+        # Days since last paid collab
+        days_since = None
+        if last_fecha:
+            try:
+                from datetime import datetime as _dt
+                lf = _dt.strptime(str(last_fecha)[:10], '%Y-%m-%d').date()
+                days_since = (today - lf).days
+            except Exception:
+                pass
+
+        # ── Define checks: (key, severity, passes, description) ──
+        checks = []
+
+        # CRITICAL: ER threshold adapts to follower tier
+        if segs >= 100_000:   er_min = 1.5
+        elif segs >= 10_000:  er_min = 2.5
+        elif segs > 0:        er_min = 4.0
+        else:                 er_min = 0.0
+        passes_er = (er >= er_min) if segs > 0 else True
+        checks.append(('er_saludable', 'critical', passes_er,
+            f'ER {er:.1f}% {"≥" if passes_er else "<"} {er_min:.1f}% mínimo para su tier'))
+
+        passes_estado = inf.get('estado', '') != 'Bloqueado'
+        checks.append(('no_bloqueado', 'critical', passes_estado,
+            f'Estado: {inf.get("estado","Activo")}'))
+
+        # HIGH: actividad en últimos 90 días (solo si ya tiene colabs)
+        if n_colabs > 0 and days_since is not None:
+            passes_activo = days_since < 90
+            desc_activo = f'Última colab hace {days_since}d ({last_fecha[:10]})' if last_fecha else 'Sin colaboraciones'
+        else:
+            passes_activo = True  # Nuevo influencer — no penalizar
+            desc_activo = 'Influencer nuevo — sin historial' if n_colabs == 0 else 'Sin fecha registrada'
+        checks.append(('activo_reciente', 'high', passes_activo, desc_activo))
+
+        passes_tarifa = float(inf.get('tarifa_por_post') or 0) > 0
+        checks.append(('tiene_tarifa', 'high', passes_tarifa,
+            f'Tarifa: ${int(float(inf.get("tarifa_por_post",0))):,}' if passes_tarifa else 'Tarifa no definida'))
+
+        # MEDIUM
+        passes_segs = segs > 0
+        checks.append(('tiene_seguidores', 'medium', passes_segs,
+            f'{segs:,} seguidores' if passes_segs else 'Sin seguidores registrados'))
+
+        passes_red = bool((inf.get('red_social') or '').strip())
+        checks.append(('tiene_red_social', 'medium', passes_red,
+            f'Red: {inf.get("red_social","—")}'))
+
+        passes_user = bool((inf.get('usuario') or '').strip())
+        checks.append(('tiene_usuario', 'medium', passes_user,
+            f'@{inf.get("usuario","—")}'))
+
+        # LOW
+        passes_nicho = bool((inf.get('nicho') or '').strip())
+        checks.append(('tiene_nicho', 'low', passes_nicho,
+            f'Nicho: {inf.get("nicho","—")}'))
+
+        passes_contacto = (
+            bool((inf.get('email') or '').strip()) or
+            bool((inf.get('telefono') or '').strip())
+        )
+        checks.append(('tiene_contacto', 'low', passes_contacto,
+            'Email/teléfono disponible' if passes_contacto else 'Sin datos de contacto'))
+
+        # ── Score (claude-ads algorithm) ──
+        total_w = sum(W[ch[1]] for ch in checks)
+        pass_w  = sum(W[ch[1]] for ch in checks if ch[2])
+        score   = round(pass_w / total_w * 100) if total_w > 0 else 0
+
+        # Issues = failed checks, ordered Critical→High→Medium→Low
+        sev_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+        issues = sorted(
+            [(ch[1], ch[3]) for ch in checks if not ch[2]],
+            key=lambda x: sev_order[x[0]]
+        )
+
+        scored_infs.append({
+            'id':           inf['id'],
+            'nombre':       inf['nombre'],
+            'usuario':      inf.get('usuario', ''),
+            'red_social':   inf.get('red_social', ''),
+            'seguidores':   segs,
+            'er':           er,
+            'estado':       inf.get('estado', ''),
+            'n_colabs':     n_colabs,
+            'total_pagado': total_pagado,
+            'ultimo_pago':  str(last_fecha)[:10] if last_fecha else None,
+            'dias_ultimo':  days_since,
+            'score':        score,
+            'issues':       issues,
+            'n_checks':     len(checks),
+            'n_pass':       sum(1 for ch in checks if ch[2]),
+        })
+
+    # Sort by score descending
+    scored_infs.sort(key=lambda x: x['score'], reverse=True)
+
+    # ── CAMPAIGN AUDIT ─────────────────────────────────────────────────────────
+    try:
+        camp_rows = c.execute("SELECT * FROM campanas ORDER BY fecha_inicio DESC").fetchall()
+        camp_cols = [d[0] for d in c.description]
+    except Exception:
+        camp_rows, camp_cols = [], []
+
+    audited_camps = []
+    for row in camp_rows:
+        camp = dict(zip(camp_cols, row))
+
+        estado       = camp.get('estado', '')
+        fecha_fin    = camp.get('fecha_fin', '') or ''
+        presupuesto  = float(camp.get('presupuesto') or 0)
+        res_ventas   = float(camp.get('resultado_ventas') or 0)
+        is_active    = estado in ('Activa', 'Planificada')
+
+        issues = []
+
+        # CRITICAL
+        if estado == 'Activa':
+            if not fecha_fin:
+                issues.append(('critical', 'Sin fecha de fin — duración indeterminada'))
+            elif fecha_fin < str(today):
+                issues.append(('critical', f'Fecha de fin vencida ({fecha_fin}) — sigue marcada Activa'))
+            if presupuesto <= 0:
+                issues.append(('critical', 'Sin presupuesto asignado — imposible medir ROI'))
+
+        # HIGH
+        if is_active and presupuesto > 0 and res_ventas == 0:
+            issues.append(('high', 'Sin ventas registradas — puede faltar tracking de atribución'))
+        if presupuesto > 0 and res_ventas > 0:
+            roas = res_ventas / presupuesto
+            if roas < 1.0:
+                issues.append(('high', f'ROAS {roas:.2f}x — inversión no recuperada (Break-even = 1.0x)'))
+        else:
+            roas = None
+
+        # MEDIUM
+        if not (camp.get('canal') or '').strip():
+            issues.append(('medium', 'Sin canal definido (Instagram / TikTok / Email...)'))
+        if not (camp.get('sku_objetivo') or '').strip():
+            issues.append(('medium', 'Sin SKU objetivo — atribución de ventas imposible'))
+
+        # LOW
+        if not (camp.get('notas') or '').strip():
+            issues.append(('low', 'Sin brief / notas de campaña'))
+
+        # Score (simple: % checks sin problemas de 7 checks totales)
+        N_CHECKS = 7
+        camp_score = max(0, round((1 - len(issues) / N_CHECKS) * 100))
+
+        audited_camps.append({
+            'id':             camp.get('id'),
+            'nombre':         camp.get('nombre', '—'),
+            'estado':         estado,
+            'canal':          camp.get('canal', ''),
+            'presupuesto':    presupuesto,
+            'resultado_ventas': res_ventas,
+            'roas':           round(roas, 2) if roas else None,
+            'fecha_inicio':   camp.get('fecha_inicio', ''),
+            'fecha_fin':      fecha_fin,
+            'issues':         issues,
+            'score':          camp_score,
+        })
+
+    # Sort by worst severity first
+    sev_order2 = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, None: 99}
+    def camp_key(cp):
+        if not cp['issues']: return 99
+        return sev_order2[cp['issues'][0][0]]
+    audited_camps.sort(key=camp_key)
+
+    # ── PORTFOLIO HEALTH ────────────────────────────────────────────────────────
+    n_infs = len(scored_infs)
+    if n_infs > 0:
+        avg_score      = round(sum(i['score'] for i in scored_infs) / n_infs)
+        n_activos      = sum(1 for i in scored_infs if i['estado'] == 'Activo')
+        n_criticos     = sum(1 for i in scored_infs if any(iss[0] == 'critical' for iss in i['issues']))
+        tasa_actividad = round(n_activos / n_infs * 100)
+    else:
+        avg_score = n_activos = n_criticos = tasa_actividad = 0
+
+    if avg_score >= 70 and tasa_actividad >= 60:
+        semaforo = 'verde'
+    elif avg_score >= 50 and tasa_actividad >= 40:
+        semaforo = 'amarillo'
+    else:
+        semaforo = 'rojo'
+
+    total_alerts    = sum(len(i['issues']) for i in scored_infs) + sum(len(c2['issues']) for c2 in audited_camps)
+    critical_alerts = (
+        sum(sum(1 for iss in i['issues'] if iss[0] == 'critical') for i in scored_infs) +
+        sum(sum(1 for iss in c2['issues'] if iss[0] == 'critical') for c2 in audited_camps)
+    )
+
+    return jsonify({
+        'ok': True,
+        'portfolio': {
+            'semaforo':        semaforo,
+            'avg_score':       avg_score,
+            'n_influencers':   n_infs,
+            'n_activos':       n_activos,
+            'tasa_actividad':  tasa_actividad,
+            'n_criticos':      n_criticos,
+            'total_alerts':    total_alerts,
+            'critical_alerts': critical_alerts,
+            'n_campanas':      len(audited_camps),
+        },
+        'influencers': scored_infs,
+        'campanas':    audited_camps,
+    })
+
+

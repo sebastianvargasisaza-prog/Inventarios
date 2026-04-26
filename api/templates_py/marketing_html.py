@@ -186,6 +186,7 @@ function showToast(msg, type) {
   <button class="tab-btn" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
   <button class="tab-btn" onclick="switchTab('agentes')">&#x1F916; Agentes IA</button>
   <button class="tab-btn" onclick="switchTab('analytics')">&#x1F4CA; Analytics</button>
+  <button class="tab-btn" onclick="switchTab('agencia')">&#x1F3E2; Agencia</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -592,6 +593,96 @@ function showToast(msg, type) {
 <!-- MODALS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 
+<div id="tab-agencia" class="tab-panel">
+  <div class="page-title">&#x1F3E2; Agencia — Auditor&#xED;a de Portafolio</div>
+  <div class="page-sub">Score de salud (0&#x2013;100) por influencer y auditor&#xED;a de campa&#xF1;as. Metodolog&#xED;a adaptada de claude-ads.</div>
+
+  <!-- Sem&#xE1;foro del portafolio -->
+  <div id="agencia-semaforo-wrap" style="margin-bottom:24px;">
+    <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-radius:12px;border:2px solid #334155;background:#0f172a;" id="agencia-semaforo-card">
+      <div id="agencia-semaforo-dot" style="width:48px;height:48px;border-radius:50%;background:#334155;flex-shrink:0;"></div>
+      <div style="flex:1;">
+        <div style="font-size:18px;font-weight:800;color:#e2e8f0;" id="agencia-semaforo-label">Cargando...</div>
+        <div style="font-size:13px;color:#64748b;margin-top:2px;" id="agencia-semaforo-sub">Calculando salud del portafolio</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+        <div><div style="font-size:22px;font-weight:900;color:#818cf8;" id="ag-avg-score">&#x2014;</div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Score prom.</div></div>
+        <div><div style="font-size:22px;font-weight:900;color:#f87171;" id="ag-criticos">&#x2014;</div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Cr&#xED;ticos</div></div>
+        <div><div style="font-size:22px;font-weight:900;color:#f59e0b;" id="ag-alerts">&#x2014;</div><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;">Alertas tot.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid: scores influencers + calculadora ROI -->
+  <div class="grid2" style="margin-bottom:20px;">
+
+    <!-- Scores tabla -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-hdr">
+        <span class="card-title">&#x1F3C5; Score de Salud por Influencer</span>
+        <span style="font-size:11px;color:#64748b;">Critical 5x &bull; High 3x &bull; Medium 1.5x &bull; Low 0.5x</span>
+      </div>
+      <div class="card-body">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Influencer</th><th>Red</th><th>Seguidores</th><th>ER%</th>
+              <th>Colabs</th><th>&#xDA;lt. colab</th>
+              <th style="min-width:140px;">Score</th>
+              <th>Alertas</th>
+            </tr>
+          </thead>
+          <tbody id="ag-scores-body">
+            <tr class="empty-row"><td colspan="9">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calculadora ROI -->
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-hdr"><span class="card-title">&#x1F9EE; Calculadora ROAS / CPA</span></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;align-items:end;">
+        <div class="form-group"><label>Inversi&#xF3;n (COP)</label><input type="number" id="roi-inversion" placeholder="0" oninput="calcROI()"></div>
+        <div class="form-group"><label>Ventas generadas (COP)</label><input type="number" id="roi-ventas" placeholder="0" oninput="calcROI()"></div>
+        <div class="form-group"><label>Clientes nuevos</label><input type="number" id="roi-clientes" placeholder="0" oninput="calcROI()"></div>
+        <div class="form-group"><label>Margen producto %</label><input type="number" id="roi-margen" placeholder="40" value="40" oninput="calcROI()"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:16px;" id="roi-results">
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#818cf8;" id="roi-roas">&#x2014;</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">ROAS</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#34d399;" id="roi-ganancia">&#x2014;</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">Ganancia neta</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#f59e0b;" id="roi-cpa">&#x2014;</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">CPA</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:20px;font-weight:800;color:#f87171;" id="roi-breakeven">&#x2014;</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">Break-even ventas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign Audit -->
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">&#x1F4CB; Auditor&#xED;a de Campa&#xF1;as</span>
+      <span style="font-size:11px;color:#64748b;">Ordenado por severidad de alerta</span>
+    </div>
+    <div class="card-body" id="ag-campanas-body">
+      <div class="empty-row">Cargando...</div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Historial Influencer -->
 <div class="modal-bg" id="modal-historial">
   <div class="modal" style="max-width:680px;max-height:85vh;overflow-y:auto;">
@@ -884,7 +975,7 @@ function showAlert(containerId, msg, type='success') {
 const _loaded = {};
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
-    const n = ['dashboard','campanas','influencers','contenido','agentes','analytics'][i];
+    const n = ['dashboard','campanas','influencers','contenido','agentes','analytics','agencia'][i];
     b.classList.toggle('active', n===name);
   });
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -898,6 +989,7 @@ function loadTab(name) {
   else if(name==='contenido') loadContenido();
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
   else if(name==='analytics') loadAnalytics();
+  else if(name==='agencia') loadAgencia();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2073,6 +2165,162 @@ document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>
 // ──────────────────────────────────────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// AGENCIA — Score & Audit
+// ──────────────────────────────────────────────────────────────────────────────
+async function loadAgencia() {
+  const fmt  = v => v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':String(Math.round(v||0));
+  const fmtM = v => '$'+fmt(v||0);
+
+  const data = await fetch('/api/marketing/agencia/audit').then(r=>r.json()).catch(()=>({ok:false}));
+  if(!data.ok) {
+    document.getElementById('ag-scores-body').innerHTML = '<tr class="empty-row"><td colspan="9">Error cargando datos</td></tr>';
+    return;
+  }
+
+  // ── Semáforo ──
+  const p = data.portfolio||{};
+  const dot   = document.getElementById('agencia-semaforo-dot');
+  const label = document.getElementById('agencia-semaforo-label');
+  const sub   = document.getElementById('agencia-semaforo-sub');
+  const card  = document.getElementById('agencia-semaforo-card');
+  const colors = {verde:'#34d399', amarillo:'#f59e0b', rojo:'#f87171'};
+  const labels = {
+    verde:'🟢 Portafolio Saludable',
+    amarillo:'🟡 Portafolio con Observaciones',
+    rojo:'🔴 Portafolio Requiere Atención'
+  };
+  const subs = {
+    verde:`Score promedio ${p.avg_score}/100 — ${p.tasa_actividad}% de influencers activos`,
+    amarillo:`Score promedio ${p.avg_score}/100 — Hay áreas por mejorar`,
+    rojo:`Score promedio ${p.avg_score}/100 — Revisar influencers con alertas críticas`
+  };
+  const sem = p.semaforo||'rojo';
+  dot.style.background   = colors[sem];
+  label.textContent      = labels[sem];
+  sub.textContent        = subs[sem];
+  card.style.borderColor = colors[sem];
+  document.getElementById('ag-avg-score').textContent = (p.avg_score||0)+'/100';
+  document.getElementById('ag-criticos').textContent  = p.n_criticos||0;
+  document.getElementById('ag-alerts').textContent    = p.total_alerts||0;
+
+  // ── Scores tabla ──
+  const sevColors = {critical:'#f87171', high:'#f59e0b', medium:'#60a5fa', low:'#94a3b8'};
+  const sevLabels = {critical:'C', high:'H', medium:'M', low:'L'};
+
+  const infs = data.influencers||[];
+  const sb = document.getElementById('ag-scores-body');
+  sb.innerHTML = infs.length ? infs.map((inf,i)=>{
+    // Score bar
+    const sc = inf.score||0;
+    const barColor = sc>=75?'#34d399':sc>=50?'#f59e0b':'#f87171';
+    const scoreBar = `<div style="display:flex;align-items:center;gap:6px;">
+      <div style="flex:1;background:#1e293b;border-radius:99px;height:8px;overflow:hidden;">
+        <div style="width:${sc}%;height:100%;background:${barColor};border-radius:99px;transition:.4s;"></div>
+      </div>
+      <span style="font-size:13px;font-weight:800;color:${barColor};min-width:32px;">${sc}</span>
+    </div>`;
+
+    // Issues badges
+    const issuesBadges = (inf.issues||[]).slice(0,3).map(iss=>`
+      <span title="${iss[1]}" style="display:inline-block;background:${sevColors[iss[0]]}22;color:${sevColors[iss[0]]};
+        border:1px solid ${sevColors[iss[0]]}44;border-radius:4px;padding:1px 5px;font-size:10px;
+        font-weight:700;margin:1px;">${sevLabels[iss[0]]}</span>`).join('');
+    const moreIssues = inf.issues.length>3?`<span style="font-size:10px;color:#64748b;"> +${inf.issues.length-3}</span>`:'';
+
+    // Last collab display
+    const lastCol = inf.dias_ultimo!=null
+      ? (inf.dias_ultimo<30?`<span style="color:#34d399;">${inf.dias_ultimo}d</span>`
+         :inf.dias_ultimo<90?`<span style="color:#f59e0b;">${inf.dias_ultimo}d</span>`
+         :`<span style="color:#f87171;">${inf.dias_ultimo}d</span>`)
+      : '<span style="color:#475569;">—</span>';
+
+    return `<tr>
+      <td style="color:#64748b;font-weight:700;">${i+1}</td>
+      <td style="font-weight:700;">${inf.nombre||'—'}</td>
+      <td style="color:#94a3b8;font-size:12px;">${inf.red_social||'—'}</td>
+      <td style="color:#94a3b8;">${inf.seguidores>0?Number(inf.seguidores).toLocaleString('es-CO'):'—'}</td>
+      <td style="color:#818cf8;">${inf.er>0?inf.er.toFixed(1)+'%':'—'}</td>
+      <td style="color:#94a3b8;">${inf.n_colabs}</td>
+      <td>${lastCol}</td>
+      <td>${scoreBar}</td>
+      <td style="white-space:nowrap;">${issuesBadges}${moreIssues}</td>
+    </tr>`;
+  }).join('') : '<tr class="empty-row"><td colspan="9">Sin influencers registrados.</td></tr>';
+
+  // ── Campaign Audit ──
+  const camps = data.campanas||[];
+  const sevIcon = {critical:'🔴', high:'🟡', medium:'🔵', low:'⚪'};
+  const cb = document.getElementById('ag-campanas-body');
+  if(!camps.length) {
+    cb.innerHTML = '<div class="empty-row">Sin campañas registradas.</div>';
+  } else {
+    cb.innerHTML = camps.map(camp=>{
+      const roas = camp.roas;
+      const roasBadge = roas!=null
+        ? `<span style="color:${roas>=2?'#34d399':roas>=1?'#f59e0b':'#f87171'};font-weight:700;">${roas.toFixed(2)}x</span>`
+        : '<span style="color:#475569;">—</span>';
+
+      const issuesList = (camp.issues||[]).map(iss=>`
+        <div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid #1e293b;">
+          <span>${sevIcon[iss[0]]}</span>
+          <span style="font-size:12px;color:${sevColors[iss[0]]};">${iss[1]}</span>
+        </div>`).join('');
+
+      const noIssues = camp.issues.length===0
+        ? '<div style="color:#34d399;font-size:12px;padding:4px 0;">✅ Sin observaciones</div>' : '';
+
+      const scoreColor = camp.score>=80?'#34d399':camp.score>=50?'#f59e0b':'#f87171';
+      const estadoBadge = `<span style="background:${camp.estado==='Activa'?'#34d39922':camp.estado==='Finalizada'?'#47556922':'#f59e0b22'};
+        color:${camp.estado==='Activa'?'#34d399':camp.estado==='Finalizada'?'#64748b':'#f59e0b'};
+        padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">${camp.estado}</span>`;
+
+      return `<div style="border:1px solid #334155;border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#0f172a;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:15px;">${camp.nombre||'—'} ${estadoBadge}</div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:11px;color:#64748b;">${camp.canal||'—'} &bull; ${fmtM(camp.presupuesto)} presup.</span>
+            <span style="font-size:11px;color:#64748b;">ROAS: ${roasBadge}</span>
+            <span style="font-size:20px;font-weight:900;color:${scoreColor};">${camp.score}</span>
+          </div>
+        </div>
+        <div>${issuesList}${noIssues}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── ROI Calculator ──
+function calcROI() {
+  const inv    = parseFloat(document.getElementById('roi-inversion').value)||0;
+  const ventas = parseFloat(document.getElementById('roi-ventas').value)||0;
+  const clts   = parseFloat(document.getElementById('roi-clientes').value)||0;
+  const margen = parseFloat(document.getElementById('roi-margen').value)||40;
+  const fmtM   = v => v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Math.round(v).toLocaleString('es-CO');
+
+  if(inv<=0) {
+    ['roi-roas','roi-ganancia','roi-cpa','roi-breakeven'].forEach(id=>document.getElementById(id).textContent='—');
+    return;
+  }
+
+  const roas     = ventas>0 ? (ventas/inv) : 0;
+  const ganancia = (ventas*(margen/100)) - inv;
+  const cpa      = clts>0 ? inv/clts : 0;
+  const breakeven= inv / (margen/100);
+
+  const roasEl = document.getElementById('roi-roas');
+  roasEl.textContent = roas>0?roas.toFixed(2)+'x':'—';
+  roasEl.style.color = roas>=2?'#34d399':roas>=1?'#f59e0b':'#f87171';
+
+  const ganEl = document.getElementById('roi-ganancia');
+  ganEl.textContent = ventas>0?fmtM(ganancia):'—';
+  ganEl.style.color = ganancia>=0?'#34d399':'#f87171';
+
+  document.getElementById('roi-cpa').textContent      = cpa>0?fmtM(cpa):'—';
+  document.getElementById('roi-breakeven').textContent = fmtM(breakeven);
+}
+
+
 loadDashboard();
 </script>
 </body>
