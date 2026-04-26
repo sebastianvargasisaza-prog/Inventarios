@@ -1192,6 +1192,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            WHERE categoria = 'Influencer/Marketing Digital'
              AND influencer_id IS NULL""",
     ]),
+    (22, "add bank columns idempotent - retry mig20 sin FK inline", [
+        # Se omite REFERENCES para evitar error de SQLite en algunos contextos
+        # duplicate column name es ignorado por el runner (idempotente)
+        """ALTER TABLE solicitudes_compra ADD COLUMN influencer_id INTEGER""",
+        """ALTER TABLE marketing_influencers ADD COLUMN banco TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN cuenta_bancaria TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN cedula_nit TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN tipo_cuenta TEXT DEFAULT 'Ahorros'""",
+    ]),
 ]
 
 

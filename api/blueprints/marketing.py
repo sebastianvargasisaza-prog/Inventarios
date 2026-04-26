@@ -1900,7 +1900,10 @@ def mkt_debug_influencers():
     cur = conn.cursor()
     # Count marketing_influencers
     mi_count = cur.execute("SELECT COUNT(*) FROM marketing_influencers").fetchone()[0]
-    mi_rows = [dict(r) for r in cur.execute("SELECT id,nombre,estado,banco FROM marketing_influencers LIMIT 20").fetchall()]
+    try:
+        mi_rows = [dict(r) for r in cur.execute("SELECT id,nombre,estado,banco,cuenta_bancaria FROM marketing_influencers LIMIT 20").fetchall()]
+    except Exception:
+        mi_rows = [dict(r) for r in cur.execute("SELECT id,nombre,estado FROM marketing_influencers LIMIT 20").fetchall()]
     # Count solicitudes influencer
     sol_count = cur.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE categoria='Influencer/Marketing Digital'").fetchone()[0]
     sol_rows = [dict(r) for r in cur.execute(
@@ -1946,13 +1949,23 @@ def mkt_influencers_panel():
         influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
 
         # 2. Todas las solicitudes de pago Influencer (vinculadas por influencer_id O por nombre)
-        solic_rows = c.execute("""
-            SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
-                   s.numero_oc, s.solicitante, s.influencer_id
-            FROM solicitudes_compra s
-            WHERE s.categoria = 'Influencer/Marketing Digital'
-            ORDER BY s.fecha DESC
-        """).fetchall()
+        # Query without influencer_id column (resilient if migration 20/22 not yet applied)
+        try:
+            solic_rows = c.execute("""
+                SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
+                       s.numero_oc, s.solicitante, s.influencer_id
+                FROM solicitudes_compra s
+                WHERE s.categoria = 'Influencer/Marketing Digital'
+                ORDER BY s.fecha DESC
+            """).fetchall()
+        except Exception:
+            solic_rows = c.execute("""
+                SELECT s.numero, s.fecha, s.estado, s.valor, s.observaciones,
+                       s.numero_oc, s.solicitante, NULL as influencer_id
+                FROM solicitudes_compra s
+                WHERE s.categoria = 'Influencer/Marketing Digital'
+                ORDER BY s.fecha DESC
+            """).fetchall()
         solic_list = [dict(r) for r in solic_rows]
 
         # Index solicitudes by influencer_id (primary) or by name match (fallback)
