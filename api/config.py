@@ -169,6 +169,7 @@ def validate_config():
         "INSTAGRAM_TOKEN":   "Instagram sync deshabilitado",
         "META_APP_ID":       "Meta refresh token deshabilitado",
         "EMAIL_PASSWORD":    "Notificaciones por email deshabilitadas",
+        "SENTRY_DSN":        "Alertas proactivas de errores deshabilitadas",
     }
     missing_optional = [
         f"{k} ({desc})"

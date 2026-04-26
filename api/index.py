@@ -3,6 +3,34 @@ import sys
 import logging
 import time as _time_module
 
+# ─── Sentry (alertas proactivas de errores 5xx) ────────────────────────────
+# Solo se inicializa si la env var SENTRY_DSN está configurada en Render.
+# Sin DSN, la app funciona normal pero los errores no llegan a Sentry —
+# útil para dev local y tests donde no queremos generar ruido.
+_sentry_dsn = os.environ.get("SENTRY_DSN", "").strip()
+if _sentry_dsn and not os.environ.get("PYTEST_CURRENT_TEST"):
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            integrations=[FlaskIntegration()],
+            # Sample rate de transacciones para performance monitoring.
+            # 0.1 = 10% — balance entre visibilidad y costo. Sentry tiene
+            # plan gratis con 5k errores + 10k transactions/mes.
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            # Environment para distinguir prod vs staging si se agrega después.
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+            # No enviar PII automáticamente (passwords, headers de auth).
+            send_default_pii=False,
+            # Filtrar antes de enviar — útil para excluir endpoints ruidosos.
+            release=os.environ.get("RENDER_GIT_COMMIT", "unknown"),
+        )
+    except ImportError:
+        # sentry-sdk no instalado — fallback silencioso (dev local sin deps)
+        pass
+del _sentry_dsn
+
 # Garantizar que api/ esté en sys.path sin importar cómo Gunicorn arranca el app.
 # Con 'gunicorn api.index:app' desde la raíz, Python importa api.index como
 # namespace package y NO agrega api/ a sys.path automáticamente.

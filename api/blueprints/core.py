@@ -8,7 +8,10 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS, CLIENTES_ACCESS
-from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
+from auth import (
+    _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec,
+    sin_acceso_html, _ensure_csrf_token,
+)
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -55,6 +58,18 @@ def _resolve_password_hash(username):
         # cae al fallback de env vars.
         pass
     return COMPRAS_USERS.get(username, '')
+
+@bp.route('/api/csrf-token', methods=['GET'])
+def csrf_token():
+    """Devuelve el CSRF token actual de la sesión, generándolo si no existe.
+
+    El frontend lo lee al cargar la app y lo envía como header X-CSRF-Token
+    en cada POST/PUT/DELETE/PATCH. Defense in depth sobre el Origin check.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    return jsonify({'csrf_token': _ensure_csrf_token()})
+
 
 @bp.route('/api/health')
 def health():
@@ -161,6 +176,8 @@ def login():
             session.permanent = True
             session['compras_user'] = username
             session['login_time']   = time.time()
+            # Generar CSRF token nuevo en cada login (rotación = mejor seguridad)
+            _ensure_csrf_token()
             nxt = request.args.get('next', '')
             # Todos los usuarios van al hub; si había un ?next= válido se respeta
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):

@@ -18,6 +18,31 @@ def _client_ip():
     return hdr.split(',')[0].strip()
 
 
+def _constant_time_eq(a, b):
+    """Comparación de strings en tiempo constante (anti timing-attack)."""
+    import hmac as _hmac
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    try:
+        return _hmac.compare_digest(a, b)
+    except Exception:
+        return False
+
+
+def _ensure_csrf_token():
+    """Genera y guarda un CSRF token en la sesión si no existe.
+
+    Retorna el token actual. Idempotente — múltiples llamadas devuelven el mismo
+    token mientras la sesión exista. Token nuevo solo se genera tras logout.
+    """
+    import secrets as _secrets
+    token = session.get('csrf_token')
+    if not token:
+        token = _secrets.token_urlsafe(32)
+        session['csrf_token'] = token
+    return token
+
+
 def _rate_key(ip, username=None):
     """Compone la clave para rate limiting.
 
@@ -183,21 +208,16 @@ def register_hooks(app):
         if not session.get('compras_user'):
             return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
 
-    # ── CSRF protection light: Origin/Referer check ──────────────────────────
-    # Bloquea CSRF clásico verificando que requests con efectos secundarios
-    # (POST/PUT/DELETE/PATCH) provengan del mismo host. No requiere tokens
-    # explícitos en el frontend — funciona con cualquier form/fetch
-    # same-origin moderno (los browsers envían Origin/Referer automáticamente).
+    # ── CSRF protection light: Origin/Referer check + token ──────────────────
+    # Defense in depth con 2 capas independientes:
+    #  1. Origin/Referer check (universal, sin requerir frontend cooperante)
+    #  2. CSRF token explícito (si el frontend lo envía, también se valida)
     #
-    # Casos manejados:
-    #  - GET/HEAD/OPTIONS: nunca chequeados (idempotentes por contrato HTTP)
-    #  - Header Origin presente: comparar con request.host
-    #  - Origin ausente, Referer presente: extraer host del Referer
-    #  - Ambos ausentes: rechazar (browsers modernos siempre envían Referer
-    #    a menos que se configure 'no-referrer' explícitamente — sospechoso)
-    #  - Webhooks externos legítimos pueden whitelist-ear su path en CSRF_EXEMPT
+    # Cualquiera de las 2 capas que falle = 403. Funciona aún si el frontend
+    # solo implementa una; mejor seguridad si implementa ambas.
     CSRF_EXEMPT_PATHS = {
-        '/api/health',  # health check público
+        '/api/health',         # health check público
+        '/api/csrf-token',     # endpoint que entrega el token
     }
     UNSAFE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 
@@ -219,42 +239,58 @@ def register_hooks(app):
             except Exception:
                 return ''
 
+        # ── Capa 1: Origin/Referer check ─────────────────────────────────
+        origin_ok = False
         if origin:
             origin_host = _host_from_url(origin)
             if origin_host == expected_host:
-                return
+                origin_ok = True
         elif referer:
             referer_host = _host_from_url(referer)
             if referer_host == expected_host:
-                return
+                origin_ok = True
         else:
             # Algunos clientes legítimos (curl, scripts internos) no envían
-            # Origin/Referer. Para no romper integraciones, si la sesión es
-            # válida Y la request viene de la misma red de Render (X-Forwarded
-            # -For matchea), permitimos. Caso normal browser fluye por las
-            # ramas de arriba.
+            # Origin/Referer. Si la sesión es válida, permitimos pero logueamos.
             if session.get('compras_user'):
-                # Sesión válida + sin headers cross-origin = probablemente
-                # script legítimo del usuario. Loguear pero permitir.
                 _log_sec(
                     "csrf_no_origin_allowed",
                     session.get('compras_user'),
                     _client_ip(),
                     f"path={request.path}"
                 )
-                return
+                origin_ok = True
 
-        # Bloqueado: cross-origin attempt o headers ausentes sin sesión
-        _log_sec(
-            "csrf_blocked",
-            session.get('compras_user', '-'),
-            _client_ip(),
-            f"path={request.path} origin={origin[:80]} referer={referer[:80]}"
-        )
-        return jsonify({
-            "error": "Origen de la petición no válido",
-            "hint": "Esta acción solo puede ejecutarse desde la app web."
-        }), 403
+        if not origin_ok:
+            _log_sec(
+                "csrf_blocked",
+                session.get('compras_user', '-'),
+                _client_ip(),
+                f"path={request.path} origin={origin[:80]} referer={referer[:80]}"
+            )
+            return jsonify({
+                "error": "Origen de la petición no válido",
+                "hint": "Esta acción solo puede ejecutarse desde la app web."
+            }), 403
+
+        # ── Capa 2: CSRF token explícito (defense in depth) ──────────────
+        # Si el cliente envía X-CSRF-Token, DEBE matchear con session['csrf_token'].
+        # Si NO lo envía, se permite (los frontends viejos siguen funcionando).
+        # El frontend nuevo puede activar este check enviando el header.
+        provided_token = request.headers.get('X-CSRF-Token', '').strip()
+        if provided_token:
+            session_token = session.get('csrf_token', '')
+            if not session_token or not _constant_time_eq(provided_token, session_token):
+                _log_sec(
+                    "csrf_token_mismatch",
+                    session.get('compras_user', '-'),
+                    _client_ip(),
+                    f"path={request.path}"
+                )
+                return jsonify({
+                    "error": "CSRF token inválido o expirado",
+                    "hint": "Recarga la página para obtener un token nuevo."
+                }), 403
 
     @app.after_request
     def add_security_headers(response):
@@ -263,10 +299,29 @@ def register_hooks(app):
         response.headers['Referrer-Policy']           = 'strict-origin-when-cross-origin'
         response.headers['X-XSS-Protection']          = '1; mode=block'
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-        csp = ("default-src 'self'; "
-               "script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; "
-               "style-src 'self' 'unsafe-inline' fonts.googleapis.com cdnjs.cloudflare.com; "
-               "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
-               "img-src 'self' data:; connect-src 'self';")
+        # CSP defense-in-depth. 'unsafe-inline' sigue presente porque los
+        # templates_py tienen JS/CSS embebido — migrarlos a Jinja2 +
+        # nonces es trabajo de ~1 semana documentado en SECURITY.md.
+        # Mientras tanto, se cierran 3 vectores que NO requieren refactor:
+        #   - frame-ancestors 'none': bloquea clickjacking aunque
+        #     X-Frame-Options se ignore en navegadores nuevos.
+        #   - form-action 'self': forms solo pueden submitear al mismo host
+        #     (anti exfiltración via <form action="https://evil.com">).
+        #   - base-uri 'self': anti rebase URL injection.
+        #   - object-src 'none': no plugins/applets.
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' fonts.googleapis.com cdnjs.cloudflare.com; "
+            "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "form-action 'self'; "
+            "base-uri 'self'; "
+            "object-src 'none';"
+        )
         response.headers['Content-Security-Policy'] = csp
+        # Cross-Origin policies para defense in depth contra Spectre y leaks
+        response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
         return response

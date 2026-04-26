@@ -87,27 +87,80 @@ Si quieres usar las integraciones, configura en Render:
 
 ---
 
-## Items de seguridad no resueltos (refactor multi-sesión)
+## Decisiones aplazadas (documentadas para futuro)
 
-### CSP sin `'unsafe-inline'`
+Tres ítems del roadmap NO se implementan en el estado actual. Esta sección documenta qué son, por qué se aplazan, y cuándo ejecutarlos.
 
-Hoy: `auth.py:142` permite `'unsafe-inline'` en `script-src` y `style-src`. Necesario porque todos los templates en `api/templates_py/` tienen JS y CSS inline.
+### B. CSP sin `'unsafe-inline'` — APLAZADO
 
-**Para arreglarlo**: migrar inline scripts/styles a archivos servidos por Flask con headers `nonce` o `hash`. ~6-10 horas de refactor.
+**Estado actual**: el CSP permite `'unsafe-inline'` en `script-src` y `style-src` porque los templates en `api/templates_py/` tienen JS+CSS embebido. Lo que SÍ está activo (defense in depth):
+- `frame-ancestors 'none'` (anti clickjacking moderno)
+- `form-action 'self'` (forms solo van a este host)
+- `base-uri 'self'` (anti rebase URL injection)
+- `object-src 'none'` (no plugins/applets)
+- `Cross-Origin-Opener-Policy: same-origin`
 
-### CSRF tokens explícitos (defense in depth)
+**Cuándo implementar el resto**:
+- Cuando la app deje de ser solo interna (clientes externos pueden inyectar contenido)
+- Cuando se incorpore renderizado de input de usuarios (markdown, comentarios) que pueda contener HTML
+- Cuando se descubra cualquier XSS real (lección reactiva)
 
-El Origin/Referer check actual bloquea CSRF estándar. Para defense-in-depth, agregar `Flask-WTF` con tokens en cada form/AJAX. ~4-6 horas.
+**Cómo implementar** (~6-10 horas):
+1. Migrar `api/templates_py/*.py` a Jinja2 templates en `api/templates/` (ítem E5).
+2. Generar `request.csp_nonce = secrets.token_urlsafe(16)` en `before_request`.
+3. Inyectar `nonce="{{ csp_nonce }}"` en cada `<script>` y `<style>`.
+4. Cambiar CSP a `script-src 'self' 'nonce-XXX'` y eliminar `'unsafe-inline'`.
 
-### Migración SQLite → Postgres
+### C. CSRF tokens explícitos — IMPLEMENTADO
 
-Hoy: SQLite con WAL aguanta tu carga actual. Si crece a >50 users concurrentes con writes frecuentes, vas a tener locks.
+`X-CSRF-Token` header validado contra `session['csrf_token']`. Capa adicional sobre el Origin/Referer check existente. Endpoint `/api/csrf-token` para que el frontend lo lea. **Backwards compatible**: si el frontend NO lo envía, sigue funcionando con sólo el Origin check.
 
-**Para escalar**: usar Render Postgres (managed). ~1 día (schema + migración de datos + cambio de drivers en `database.py`).
+### D. Migración SQLite → Postgres — APLAZADO
 
-### Eliminar inline templates
+**Estado actual**: SQLite con WAL mode + busy_timeout 5s + 3 workers Gunicorn. Soporta múltiples lectores + 1 escritor concurrente sin locks observables hasta ~30-50 users haciendo writes simultáneos.
 
-Los archivos `api/templates_py/*_html.py` son strings Python gigantes con HTML+CSS+JS inline. Migrar a Jinja2 templates en `api/templates/` separa concerns y habilita CSP nonce-based.
+**Por qué NO migrar ahora**:
+1. **Cero beneficio HOY**: la app tiene 19 users máximo. SQLite es perfectamente adecuado.
+2. **Riesgo alto**: hay 600+ archivos SQL con queries que pueden ser SQLite-specific (`INSERT OR IGNORE`, `INSERT OR REPLACE`, `datetime('now', 'utc')`, `PRAGMA`). Migrar a Postgres requiere validar cada uno.
+3. **Costo**: $7/mes (Render Postgres Starter) + 1-2 días de trabajo + ventana de migración con downtime.
+4. **SQLite tiene ventajas operacionales**: 1 archivo, fácil backup (ya tenemos), sin red entre app y DB.
+
+**Cuándo migrar** (señales claras):
+- Logs muestran "database is locked" recurrente
+- Latencia de writes > 500ms percentil 95 sostenido
+- Usuarios concurrentes activos > 30 simultáneamente
+- Necesidad de réplicas read-only o multi-región
+
+**Plan de migración** (cuando llegue el momento, ~1-2 días):
+1. Crear Render Postgres database
+2. Setear env var `DATABASE_URL=postgresql://...`
+3. Refactorizar `database.py:get_db()` para usar `psycopg2.connect(DATABASE_URL)` si la env var está, fallback SQLite
+4. Identificar y portar queries SQLite-specific (búsqueda: `INSERT OR`, `PRAGMA`, `datetime\(`)
+5. Migrar datos: `sqlite3 inventario.db .dump | psql $DATABASE_URL` con ajustes manuales
+6. Validar con tests existentes apuntando a Postgres
+7. Switch en producción durante ventana de mantenimiento
+
+### E5. Migrar templates inline a Jinja2 — APLAZADO
+
+**Estado actual**: 19 archivos en `api/templates_py/` son strings Python gigantes con HTML+CSS+JS embebido (algunos > 2000 líneas).
+
+**Por qué NO migrar ahora**:
+1. **Funciona perfectamente** — no hay bug que arreglar
+2. **Riesgo de UX**: cualquier escape mal hecho rompe alguna pantalla en producción
+3. **Beneficio bajo en aislado**: el principal valor es habilitar CSP nonce (B), que también está aplazado
+
+**Cuándo migrar**:
+- Cuando se decida implementar B (CSP nonce)
+- Cuando se contrate más devs y la lectura/edición de templates monolíticos sea cuello de botella
+- Cuando se necesite reutilizar componentes entre módulos
+
+**Plan de migración** (~1 día por cada 5 templates):
+1. `pip install Jinja2` (ya viene con Flask)
+2. Crear `api/templates/` con archivos `.html` separados
+3. Renderizar con `flask.render_template('foo.html', usuario=...)` en lugar de `Response(FOO_HTML.replace('{usuario}', ...))`
+4. Migrar de a uno: dashboard → marketing → admin → resto
+5. Mantener `templates_py/*.py` paralelo durante migración (feature flag)
+6. Eliminar `templates_py/` cuando todos migrados
 
 ---
 

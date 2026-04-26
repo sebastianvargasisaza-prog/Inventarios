@@ -353,6 +353,7 @@ def admin_config_status():
         "INSTAGRAM_TOKEN", "INSTAGRAM_USER_ID",
         "META_APP_ID", "META_APP_SECRET",
         "EMAIL_REMITENTE", "EMAIL_PASSWORD",
+        "SENTRY_DSN",
     ]
 
     def status(name):
