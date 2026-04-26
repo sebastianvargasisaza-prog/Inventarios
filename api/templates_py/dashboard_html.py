@@ -303,7 +303,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Codigo MP * (ej: MP00350)</label><input type="text" id="nmp-cod" placeholder="MP00350" style="text-transform:uppercase;"></div>
         <div class="form-group"><label>Nombre INCI *</label><input type="text" id="nmp-inci" placeholder="Ej: NIACINAMIDE"></div>
         <div class="form-group"><label>Nombre Comercial *</label><input type="text" id="nmp-nombre" placeholder="Ej: Niacinamida"></div>
-        <div class="form-group"><label>Tipo</label><input type="text" id="nmp-tipo" placeholder="Ej: Activo, Emoliente, Conservante..."></div>
+        <div class="form-group">
+          <label>Tipo de Material *</label>
+          <select id="nmp-tipo-mat" style="width:100%;padding:8px;border:1px solid #dde;border-radius:6px;">
+            <option value="MP">&#129516; Materia Prima</option>
+            <option value="Envase Primario">&#127881; Envase Primario (frasco, tubo)</option>
+            <option value="Envase Secundario">&#128230; Envase Secundario (caja, display)</option>
+            <option value="Empaque">&#127991; Empaque (etiqueta, inserto, sello)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Subtipo / categor&#237;a</label><input type="text" id="nmp-tipo" placeholder="Ej: Activo, Emoliente, Conservante..."></div>
         <div class="form-group"><label>Proveedor</label><input type="text" id="nmp-prov" placeholder="Nombre del proveedor"></div>
         <div class="form-group"><label>Stock Minimo (g)</label><input type="number" id="nmp-smin" placeholder="0" value="500"></div>
       </div>
@@ -698,10 +707,45 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
 
+    <!-- Filtro por tipo de material — inventario cíclico de E&E -->
+    <div style="background:#fff7e6;border:1px solid #ffd58a;border-radius:10px;padding:14px 18px;margin-bottom:14px;">
+      <div style="font-weight:700;color:#7a4a00;font-size:0.92em;margin-bottom:10px;">
+        &#128230; Filtrar conteo por tipo de material
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;" id="cnt-tipo-tabs">
+        <button onclick="setConteoTipo('')" data-tipo="" class="cnt-tipo-tab active"
+                style="padding:8px 16px;border:2px solid #2B7A78;background:#2B7A78;color:#fff;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+          &#128203; Todos
+        </button>
+        <button onclick="setConteoTipo('MP')" data-tipo="MP" class="cnt-tipo-tab"
+                style="padding:8px 16px;border:2px solid #dde;background:#fff;color:#555;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+          &#129516; Materias Primas
+        </button>
+        <button onclick="setConteoTipo('Envase Primario')" data-tipo="Envase Primario" class="cnt-tipo-tab"
+                style="padding:8px 16px;border:2px solid #dde;background:#fff;color:#555;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+          &#127881; Envase Primario
+        </button>
+        <button onclick="setConteoTipo('Envase Secundario')" data-tipo="Envase Secundario" class="cnt-tipo-tab"
+                style="padding:8px 16px;border:2px solid #dde;background:#fff;color:#555;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+          &#128230; Envase Secundario
+        </button>
+        <button onclick="setConteoTipo('Empaque')" data-tipo="Empaque" class="cnt-tipo-tab"
+                style="padding:8px 16px;border:2px solid #dde;background:#fff;color:#555;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+          &#127991; Empaque
+        </button>
+      </div>
+      <div style="font-size:0.78em;color:#7a4a00;margin-top:8px;">
+        Selecciona el tipo y luego elige una estanter&#237;a — el conteo se enfoca solo en ese tipo.
+      </div>
+    </div>
+
     <!-- Selector de estanteria manual -->
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:20px;display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:end;">
       <div>
-        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Estanteria / Seccion a contar</label>
+        <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">
+          Estanteria / Seccion a contar
+          <span id="cnt-tipo-label" style="display:none;color:#2B7A78;font-weight:700;margin-left:6px;"></span>
+        </label>
         <select id="cnt-est-sel" style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;">
           <option value="">-- Selecciona estanteria --</option>
         </select>
@@ -2469,8 +2513,11 @@ async function crearNuevaMP(){
   var inci=(document.getElementById('nmp-inci').value||'').trim();
   var nombre=(document.getElementById('nmp-nombre').value||'').trim();
   if(!cod||!nombre){alert('Codigo y Nombre Comercial son obligatorios');return;}
+  var tipoMatEl=document.getElementById('nmp-tipo-mat');
+  var tipoMaterial=tipoMatEl ? (tipoMatEl.value || 'MP') : 'MP';
   var data={codigo_mp:cod,nombre_inci:inci,nombre_comercial:nombre,
     tipo:(document.getElementById('nmp-tipo').value||'').trim(),
+    tipo_material:tipoMaterial,
     proveedor:(document.getElementById('nmp-prov').value||'').trim(),
     stock_minimo:parseFloat(document.getElementById('nmp-smin').value)||500};
   try{
@@ -2739,18 +2786,66 @@ async function buscarTrazabilidadMP(){
 
 var _conteoActivo = null;
 var _conteoItems = [];
+// Filtro actual de tipo_material: '' = todos, 'MP' / 'Envase Primario' /
+// 'Envase Secundario' / 'Empaque'
+var _conteoTipoFiltro = '';
+
+function setConteoTipo(tipo){
+  _conteoTipoFiltro = tipo || '';
+  // Marcar tab activo
+  document.querySelectorAll('#cnt-tipo-tabs .cnt-tipo-tab').forEach(function(b){
+    var isActive = (b.getAttribute('data-tipo') || '') === _conteoTipoFiltro;
+    if(isActive){
+      b.style.background = '#2B7A78';
+      b.style.color = '#fff';
+      b.style.borderColor = '#2B7A78';
+      b.classList.add('active');
+    } else {
+      b.style.background = '#fff';
+      b.style.color = '#555';
+      b.style.borderColor = '#dde';
+      b.classList.remove('active');
+    }
+  });
+  // Mostrar etiqueta del tipo seleccionado
+  var lbl = document.getElementById('cnt-tipo-label');
+  if(lbl){
+    if(_conteoTipoFiltro){
+      lbl.textContent = '· tipo: ' + _conteoTipoFiltro;
+      lbl.style.display = 'inline';
+    } else {
+      lbl.style.display = 'none';
+    }
+  }
+  // Recargar estanterías filtradas por tipo
+  cargarEstanterias();
+}
 
 async function cargarEstanterias(){
   try{
-    var r = await fetch('/api/conteo/estanterias');
+    var url = '/api/conteo/estanterias';
+    if(_conteoTipoFiltro){
+      url += '?tipo_material=' + encodeURIComponent(_conteoTipoFiltro);
+    }
+    var r = await fetch(url);
     var data = await r.json();
     var sel = document.getElementById('cnt-est-sel');
     if(!sel) return;
     while(sel.options.length > 1) sel.remove(1);
+    if(!data || data.length === 0){
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = _conteoTipoFiltro
+        ? '(sin estanterías para tipo "' + _conteoTipoFiltro + '")'
+        : '(sin estanterías con stock)';
+      opt.disabled = true;
+      sel.appendChild(opt);
+      return;
+    }
     data.forEach(function(e){
       var opt = document.createElement('option');
       opt.value = e.estanteria;
-      opt.textContent = e.estanteria + ' (' + e.total_mps + ' MPs, ' + (e.stock_total/1000).toFixed(1) + ' kg)';
+      opt.textContent = e.estanteria + ' (' + e.total_mps + ' items, ' + (e.stock_total/1000).toFixed(1) + ' kg)';
       sel.appendChild(opt);
     });
   }catch(e){}
@@ -2826,16 +2921,24 @@ async function iniciarConteo(){
 
 async function cargarItemsConteo(est){
   try{
-    var r = await fetch('/api/conteo/materiales?estanteria='+encodeURIComponent(est));
+    var url = '/api/conteo/materiales?estanteria='+encodeURIComponent(est);
+    if(_conteoTipoFiltro){
+      url += '&tipo_material=' + encodeURIComponent(_conteoTipoFiltro);
+    }
+    var r = await fetch(url);
     _conteoItems = await r.json();
     var causas = ['Error de conteo','Consumo no descargado','Ingreso no registrado','Error unidad de medida','Merma justificada','Traslado no registrado','Material no identificado','Otro'];
     var causaOpts = causas.map(function(c){return '<option>'+c+'</option>';}).join('');
+    // Color por tipo_material para diferenciar visualmente
+    var tipoColor = {'MP':'#666','Envase Primario':'#0a66c2','Envase Secundario':'#2980b9','Empaque':'#7c3aed'};
     var h = '';
     _conteoItems.forEach(function(mp, i){
+      var tipo = mp.tipo_material || 'MP';
+      var col = tipoColor[tipo] || '#666';
       h += '<tr id="cnt-row-'+i+'">';
       h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'</td>';
       h += '<td style="font-size:0.78em;color:#555;">'+(mp.inci||'')+'</td>';
-      h += '<td style="font-size:0.88em;">'+mp.nombre+'</td>';
+      h += '<td style="font-size:0.88em;">'+mp.nombre+'<br><span style="font-size:0.7em;font-weight:700;color:'+col+';text-transform:uppercase;letter-spacing:0.5px;">'+tipo+'</span></td>';
       h += '<td style="text-align:right;font-weight:600;font-family:monospace;">'+Number(mp.stock_sistema).toLocaleString()+'</td>';
       h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid #dde;border-radius:6px;text-align:right;font-family:monospace;"></td>';
       h += '<td id="cnt-diff-'+i+'" style="text-align:right;font-family:monospace;font-weight:700;">--</td>';
@@ -2845,7 +2948,7 @@ async function cargarItemsConteo(est){
       h += '<td id="cnt-adj-'+i+'"></td>';
       h += '</tr>';
     });
-    document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria</td></tr>';
+    document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria con el filtro seleccionado</td></tr>';
   }catch(e){console.error(e);}
 }
 
