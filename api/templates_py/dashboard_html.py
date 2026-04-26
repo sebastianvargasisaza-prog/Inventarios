@@ -4040,7 +4040,7 @@ function _renderProgramacion(d){
     <div id="plan-deficit-box" style="display:none;margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <h4 style="margin:0;color:#dc3545;font-size:14px">&#128997; MPs en déficit para el período</h4>
-        <button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; Exportar CSV</button>
+        <div style="display:flex;gap:8px;align-items:center"><button onclick="solicitarNecesidades()" id="btn-solicitar" style="background:#c0392b;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">&#128722; Solicitar necesidades</button><button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; CSV</button></div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -4318,6 +4318,78 @@ function _renderProgramacion(d){
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='planificacion_mps_'+_planMeses+'m_'+new Date().toISOString().slice(0,10)+'.csv';
     a.click();
+  }
+
+  async function solicitarNecesidades(){
+    if(!_planData||!_planData.mps_deficit||!_planData.mps_deficit.length){
+      _toast('No hay MPs en déficit para el período actual',0); return;
+    }
+    var deficit = _planData.mps_deficit;
+    // Agrupar por proveedor
+    var grupos = {};
+    deficit.forEach(function(mp){
+      var prov = (mp.proveedor||'').trim() || 'Sin asignar';
+      if(!grupos[prov]) grupos[prov] = [];
+      grupos[prov].push(mp);
+    });
+    var proveedores = Object.keys(grupos);
+    var btn = document.getElementById('btn-solicitar');
+    if(btn){ btn.disabled=true; btn.textContent='Creando...'; }
+    var creadas = [];
+    var errores = [];
+    var hoy = new Date(); hoy.setDate(hoy.getDate()+7);
+    var fechaReq = hoy.toISOString().slice(0,10);
+    for(var i=0;i<proveedores.length;i++){
+      var prov = proveedores[i];
+      var mps  = grupos[prov];
+      var items = mps.map(function(mp){
+        var deficit_g = Math.ceil(mp.deficit_g);
+        return {
+          codigo_mp: mp.material_id||'',
+          nombre_mp: mp.nombre||'',
+          cantidad_g: deficit_g,
+          unidad: 'g',
+          justificacion: 'Planificación '+_planMeses+'m — '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +más':''),
+          valor_estimado: 0
+        };
+      });
+      var payload = {
+        solicitante: 'sebastian',
+        urgencia: 'Normal',
+        observaciones: 'Generado automáticamente desde Planificación Estratégica ('+_planMeses+' meses). Proveedor: '+prov+'. '+mps.length+' MPs en déficit.',
+        area: 'Produccion',
+        empresa: 'Espagiria',
+        categoria: 'Materia Prima',
+        tipo: 'Compra',
+        fecha_requerida: fechaReq,
+        items: items
+      };
+      try{
+        var resp = await fetch('/api/solicitudes-compra',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        if(resp.ok && data.numero){
+          creadas.push(data.numero);
+        } else {
+          errores.push(prov+': '+(data.error||'error desconocido'));
+        }
+      } catch(e){
+        errores.push(prov+': '+e.message);
+      }
+    }
+    if(btn){ btn.disabled=false; btn.innerHTML='&#128722; Solicitar necesidades'; }
+    if(creadas.length){
+      var msg = creadas.length===1
+        ? 'Solicitud '+creadas[0]+' creada en Compras ('+deficit.length+' MPs)'
+        : creadas.length+' solicitudes creadas: '+creadas.join(', ');
+      _toast(msg, 1);
+    }
+    if(errores.length){
+      _toast('Errores: '+errores.join(' | '), 0);
+    }
   }
 
   function guardarProgramacion() {
