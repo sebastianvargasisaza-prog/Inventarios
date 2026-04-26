@@ -579,7 +579,17 @@ def handle_solicitudes_compra():
     else:
         sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     if filtro_categoria == 'Influencer/Marketing Digital':
-        sql += " ORDER BY CASE WHEN sc.fecha_requerida IS NULL OR sc.fecha_requerida='' THEN '9999' ELSE sc.fecha_requerida END ASC, sc.numero ASC LIMIT 200"
+        # Ordenar por fecha de publicación (la fecha real del trabajo del
+        # influencer, no la fecha en que se creó la solicitud). Si no hay
+        # fecha_publicacion en pagos_influencers, fallback a sc.fecha.
+        # Las MÁS ANTIGUAS arriba (lo que está vencido o pronto a publicar
+        # debe pagarse primero).
+        sql = sql.replace(
+            "FROM solicitudes_compra sc",
+            "FROM solicitudes_compra sc LEFT JOIN pagos_influencers pi ON pi.numero_oc = sc.numero_oc"
+        )
+        sql += (" ORDER BY COALESCE(NULLIF(pi.fecha_publicacion,''), sc.fecha) ASC, "
+                "sc.numero ASC LIMIT 300")
     else:
         sql += " ORDER BY sc.fecha DESC LIMIT 200"
     c.execute(sql, params)
@@ -888,6 +898,10 @@ def pagar_oc(numero_oc):
     obs = d.get('observaciones', '')
     numero_factura = (d.get('numero_factura_proveedor') or '').strip()
     comprobante_imagen = d.get('comprobante_imagen', '') or ''
+    # Toggles fiscales (default OFF, ver Opcion A en SECURITY notes)
+    aplicar_retefuente = bool(d.get('aplicar_retefuente', False))
+    aplicar_retica = bool(d.get('aplicar_retica', False))
+    aplicar_iva = bool(d.get('aplicar_iva', False))
     # Limit image size to ~4MB base64 to avoid DB bloat
     if len(comprobante_imagen) > 4_000_000:
         comprobante_imagen = comprobante_imagen[:4_000_000]
@@ -1020,6 +1034,120 @@ def pagar_oc(numero_oc):
                 "Alimentar precios_mp_historico falló: %s", _e
             )
 
+    # ── Generar Comprobante de Egreso (CE) — formato fiscal-compatible ─────
+    # Para todo pago: genera PDF + guarda en comprobantes_pago. La contadora
+    # accede a estos PDFs desde /contabilidad para sus cuentas.
+    comprobante_info = None
+    try:
+        from comprobante_pago import crear_comprobante_y_pdf
+
+        # Recoger último pago_oc_id (el que acabamos de insertar)
+        cur.execute("SELECT MAX(id) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+        pago_oc_id_row = cur.fetchone()
+        pago_oc_id = pago_oc_id_row[0] if pago_oc_id_row else None
+
+        # Datos del beneficiario: si es influencer, jalar de marketing_influencers
+        beneficiario = {
+            'nombre': proveedor, 'cedula': '', 'banco': '',
+            'cuenta': '', 'tipo_cuenta': '', 'ciudad': ''
+        }
+        cat_lower = (categoria or '').lower()
+        if 'influencer' in cat_lower or 'marketing' in cat_lower:
+            try:
+                inf_row = cur.execute("""
+                    SELECT mi.nombre, mi.cedula_nit, mi.banco, mi.cuenta_bancaria,
+                           mi.tipo_cuenta, mi.ciudad
+                    FROM solicitudes_compra sc
+                    LEFT JOIN marketing_influencers mi ON sc.influencer_id = mi.id
+                    WHERE sc.numero_oc=? AND mi.id IS NOT NULL LIMIT 1
+                """, (numero_oc,)).fetchone()
+                if inf_row:
+                    beneficiario = {
+                        'nombre': inf_row[0] or proveedor,
+                        'cedula': inf_row[1] or '',
+                        'banco': inf_row[2] or '',
+                        'cuenta': inf_row[3] or '',
+                        'tipo_cuenta': inf_row[4] or '',
+                        'ciudad': inf_row[5] or '',
+                    }
+            except sqlite3.OperationalError:
+                pass
+        else:
+            # Proveedor regular: jalar datos de la tabla proveedores
+            try:
+                pv = cur.execute(
+                    "SELECT contacto, nit, banco, num_cuenta, tipo_cuenta FROM proveedores WHERE nombre=? LIMIT 1",
+                    (proveedor,)
+                ).fetchone()
+                if pv:
+                    beneficiario.update({
+                        'cedula': pv[1] or '', 'banco': pv[2] or '',
+                        'cuenta': pv[3] or '', 'tipo_cuenta': pv[4] or '',
+                    })
+            except sqlite3.OperationalError:
+                pass
+
+        # Items: descripción consolidada de la OC (1 sola línea para servicios,
+        # múltiples para mercancía con codigo_mp).
+        try:
+            items_db = cur.execute("""
+                SELECT nombre_mp, cantidad_g, precio_unitario, subtotal
+                FROM ordenes_compra_items WHERE numero_oc=?
+            """, (numero_oc,)).fetchall()
+        except sqlite3.OperationalError:
+            items_db = []
+
+        if items_db:
+            items_pdf = [
+                {'descripcion': r[0] or '', 'fecha': '',
+                 'cantidad': float(r[1] or 0) / 1000.0 or 1,
+                 'valor_unit': float(r[3] or 0) / max(float(r[1] or 1) / 1000.0, 1)}
+                for r in items_db
+            ]
+        else:
+            # Servicio sin items detallados: 1 fila genérica
+            items_pdf = [{
+                'descripcion': f"Pago OC {numero_oc} - {categoria}",
+                'fecha': fecha_pago[:10],
+                'cantidad': 1,
+                'valor_unit': monto,
+            }]
+
+        # Subtotal del comprobante: si aplican retenciones/IVA, el "monto"
+        # registrado es el total a pagar; el subtotal_pre se calcula al revés.
+        # Para simplicidad: subtotal = monto (el toggle aplica retenciones AL
+        # GENERAR el comprobante, no al guardar el pago).
+        subtotal_ce = monto
+        if aplicar_iva:
+            # Si IVA está prendido, asumimos que el "monto" del pago es el
+            # subtotal y el IVA se suma — el contador recibe el comprobante
+            # con el desglose correcto.
+            pass
+
+        comp = crear_comprobante_y_pdf(
+            conn, beneficiario=beneficiario, items=items_pdf,
+            monto_subtotal=subtotal_ce,
+            aplicar_retefuente=aplicar_retefuente,
+            aplicar_retica=aplicar_retica,
+            aplicar_iva=aplicar_iva,
+            medio_pago=medio, observaciones=obs,
+            pagado_por=usuario_actual, numero_oc=numero_oc,
+            pago_oc_id=pago_oc_id, empresa='Espagiria',
+        )
+        comprobante_info = {
+            'numero_ce': comp['numero_ce'],
+            'comprobante_id': comp['comprobante_id'],
+            'subtotal': comp['subtotal'],
+            'iva': comp['iva'],
+            'retefuente': comp['retefuente'],
+            'retica': comp['retica'],
+            'total_pagado': comp['total_pagado'],
+        }
+    except Exception as _e:
+        __import__('logging').getLogger('compras').error(
+            "No se pudo generar comprobante de egreso: %s", _e, exc_info=True
+        )
+
     conn.commit()
     return jsonify({
         'ok': True,
@@ -1028,7 +1156,85 @@ def pagar_oc(numero_oc):
         'total_pagado_acumulado': round(total_pagado, 2),
         'valor_total_oc': round(valor_total_oc, 2),
         'pendiente': round(max(0, valor_total_oc - total_pagado), 2),
+        'comprobante': comprobante_info,
     })
+
+
+# ─── Endpoints comprobantes de egreso ────────────────────────────────────────
+
+
+@bp.route('/api/comprobantes-pago', methods=['GET'])
+def listar_comprobantes_pago():
+    """Lista los comprobantes de egreso generados.
+
+    Query: ?desde=&hasta=&beneficiario=  (filtros opcionales)
+    """
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    desde = request.args.get('desde', '')
+    hasta = request.args.get('hasta', '')
+    benef = (request.args.get('beneficiario') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    sql = """
+        SELECT id, numero_ce, fecha_emision, numero_oc, beneficiario_nombre,
+               beneficiario_cedula, subtotal, iva, retefuente, retica,
+               total_pagado, medio_pago, pagado_por, empresa
+        FROM comprobantes_pago
+        WHERE 1=1
+    """
+    params = []
+    if desde:
+        sql += " AND fecha_emision >= ?"; params.append(desde)
+    if hasta:
+        sql += " AND fecha_emision <= ?"; params.append(hasta + ' 23:59:59')
+    if benef:
+        sql += " AND beneficiario_nombre LIKE ?"; params.append(f"%{benef}%")
+    sql += " ORDER BY fecha_emision DESC LIMIT 500"
+    c.execute(sql, params)
+    cols = [d[0] for d in c.description]
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    return jsonify({'comprobantes': rows, 'count': len(rows)})
+
+
+@bp.route('/api/comprobantes-pago/<int:comp_id>/pdf', methods=['GET'])
+def descargar_comprobante_pdf(comp_id):
+    """Descarga el PDF del comprobante."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    import base64
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT numero_ce, pdf_archivo FROM comprobantes_pago WHERE id=?", (comp_id,))
+    row = c.fetchone()
+    if not row or not row[1]:
+        return jsonify({'error': 'Comprobante no encontrado'}), 404
+    numero_ce, pdf_b64 = row[0], row[1]
+    try:
+        pdf_bytes = base64.b64decode(pdf_b64)
+    except Exception:
+        return jsonify({'error': 'PDF corrupto'}), 500
+    return Response(
+        pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{numero_ce}.pdf"'}
+    )
+
+
+@bp.route('/api/comprobantes-pago/oc/<numero_oc>', methods=['GET'])
+def comprobantes_de_oc(numero_oc):
+    """Lista comprobantes asociados a una OC específica."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("""SELECT id, numero_ce, fecha_emision, total_pagado, medio_pago,
+                        pagado_por, beneficiario_nombre
+                 FROM comprobantes_pago WHERE numero_oc=?
+                 ORDER BY fecha_emision DESC""", (numero_oc,))
+    cols = [d[0] for d in c.description]
+    return jsonify({'comprobantes': [dict(zip(cols, r)) for r in c.fetchall()]})
+
 
 @bp.route('/api/ordenes-compra/<numero_oc>/pagos', methods=['GET'])
 def get_pagos_oc(numero_oc):

@@ -573,6 +573,24 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <input type="text" id="pago-factura" placeholder="Ej: FAC-12345" style="text-transform:uppercase;">
       <div style="font-size:11px;color:#64748b;margin-top:3px;">Si esta factura ya fue usada en otro pago, el sistema te avisa antes de continuar.</div>
     </div>
+    <!-- Toggles fiscales (retefuente/retica/IVA) — para legalidad -->
+    <div class="fg" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+      <label style="display:block;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4CA; Retenciones e IVA (opcional)</label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="pago-aplicar-retefuente"> Aplicar ReteFuente 10%
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="pago-aplicar-retica"> Aplicar ReteICA 0.66 x mil (Cali)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="pago-aplicar-iva"> Aplicar IVA 19%
+        </label>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:6px;">
+        Por defecto NO se aplican (pago bruto al proveedor). Activa solo cuando corresponda fiscalmente.
+      </div>
+    </div>
     <div class="fg"><label>Comprobante / Referencia</label><textarea id="pago-obs" rows="2" placeholder="No. transaccion, referencia..."></textarea></div>
     <div class="fg"><label>&#x1F5BC; Captura de transferencia (opcional)</label>
       <input type="file" id="pago-img-file" accept="image/*" onchange="previewPagoImg()" style="display:block;margin-bottom:6px;font-size:12px;">
@@ -2103,6 +2121,13 @@ async function confirmarPago(){
     var payload={monto:parseFloat(monto),medio:medio,observaciones:obs};
     if(factura) payload.numero_factura_proveedor=factura;
     if(imgData) payload.comprobante_imagen=imgData;
+    // Toggles fiscales — si están activos, el comprobante PDF se genera con retenciones/IVA
+    var rf=document.getElementById('pago-aplicar-retefuente');
+    var ri=document.getElementById('pago-aplicar-retica');
+    var iv=document.getElementById('pago-aplicar-iva');
+    if(rf && rf.checked) payload.aplicar_retefuente=true;
+    if(ri && ri.checked) payload.aplicar_retica=true;
+    if(iv && iv.checked) payload.aplicar_iva=true;
     var r=await fetch('/api/ordenes-compra/'+num+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)});
     var d=await r.json();
@@ -2115,16 +2140,35 @@ async function confirmarPago(){
       return;
     }
     if(d.error){ alert('Error: '+d.error); return; }
-    // Mensaje claro de pago parcial vs total
+    // Mensaje claro de pago parcial vs total + comprobante de egreso
+    var msg = '';
     if(d.estado==='Parcial' && typeof d.pendiente==='number'){
-      alert('Pago registrado.\\nEstado: PARCIAL\\nPagado total: $'+(d.total_pagado_acumulado||0).toLocaleString('es-CO')+'\\nPendiente: $'+d.pendiente.toLocaleString('es-CO'));
+      msg = 'Pago registrado. Estado: PARCIAL\\nPagado total: $'+(d.total_pagado_acumulado||0).toLocaleString('es-CO')+'\\nPendiente: $'+d.pendiente.toLocaleString('es-CO');
     } else if(d.estado==='Pagada'){
-      // OK, no necesita modal extra
+      msg = '✓ Pago completo registrado.';
+    }
+    // Si se generó comprobante, ofrecer descarga
+    if(d.comprobante && d.comprobante.numero_ce){
+      var ce = d.comprobante;
+      msg += '\\n\\nComprobante: '+ce.numero_ce;
+      msg += '\\nSubtotal: $'+(ce.subtotal||0).toLocaleString('es-CO');
+      if(ce.iva > 0) msg += '\\nIVA: $'+ce.iva.toLocaleString('es-CO');
+      if(ce.retefuente > 0) msg += '\\nReteFuente: -$'+ce.retefuente.toLocaleString('es-CO');
+      if(ce.retica > 0) msg += '\\nReteICA: -$'+ce.retica.toLocaleString('es-CO');
+      msg += '\\nTotal pagado: $'+(ce.total_pagado||0).toLocaleString('es-CO');
+      if(confirm(msg + '\\n\\n¿Descargar el PDF del comprobante de egreso?')){
+        window.open('/api/comprobantes-pago/'+ce.comprobante_id+'/pdf', '_blank');
+      }
+    } else if(msg){
+      alert(msg);
     }
     closeModal('m-pago');
-    // Reset image
+    // Reset image + toggles
     document.getElementById('pago-img-file').value='';
     document.getElementById('pago-img-preview').style.display='none';
+    var rf=document.getElementById('pago-aplicar-retefuente'); if(rf) rf.checked=false;
+    var ri=document.getElementById('pago-aplicar-retica'); if(ri) ri.checked=false;
+    var iv=document.getElementById('pago-aplicar-iva'); if(iv) iv.checked=false;
     await loadData();
     renderDash();
     if(PAGOS.length) loadPagos();

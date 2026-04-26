@@ -1533,6 +1533,44 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_cotizaciones_proveedor ON cotizaciones(proveedor)",
         "CREATE INDEX IF NOT EXISTS idx_cotizaciones_oc ON cotizaciones(numero_oc)",
     ]),
+    (30, "compras: comprobantes_pago (CE) con numeracion secuencial + retenciones", [
+        # Cada pago a proveedor/influencer genera 1 comprobante con numeración
+        # CE-YYYY-NNNN secuencial por año. Vinculado a pagos_oc.
+        """CREATE TABLE IF NOT EXISTS comprobantes_pago (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_ce       TEXT UNIQUE NOT NULL,
+            anio            INTEGER NOT NULL,
+            fecha_emision   TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            pago_oc_id      INTEGER,
+            numero_oc       TEXT,
+            beneficiario_nombre  TEXT NOT NULL,
+            beneficiario_cedula  TEXT,
+            beneficiario_banco   TEXT,
+            beneficiario_cuenta  TEXT,
+            beneficiario_tipo_cta TEXT,
+            beneficiario_ciudad  TEXT,
+            subtotal        REAL NOT NULL DEFAULT 0,
+            iva             REAL DEFAULT 0,
+            iva_pct         REAL DEFAULT 0,
+            retefuente      REAL DEFAULT 0,
+            retefuente_pct  REAL DEFAULT 0,
+            retica          REAL DEFAULT 0,
+            retica_pct      REAL DEFAULT 0,
+            total_pagado    REAL NOT NULL,
+            medio_pago      TEXT,
+            observaciones   TEXT,
+            pagado_por      TEXT,
+            empresa         TEXT DEFAULT 'Espagiria',
+            pdf_archivo     TEXT,
+            FOREIGN KEY (pago_oc_id) REFERENCES pagos_oc(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_comprobantes_pago_oc ON comprobantes_pago(numero_oc)",
+        "CREATE INDEX IF NOT EXISTS idx_comprobantes_pago_fecha ON comprobantes_pago(fecha_emision DESC)",
+        """CREATE TABLE IF NOT EXISTS comprobantes_seq (
+            anio    INTEGER PRIMARY KEY,
+            ultimo  INTEGER NOT NULL DEFAULT 0
+        )""",
+    ]),
 ]
 
 
