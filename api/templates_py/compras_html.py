@@ -212,18 +212,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 
 <div id="pane-influencer" class="pane">
-  <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;"></div>
+  <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
   <div class="bar">
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
     <select id="s-influencer" onchange="renderInfluencers()">
-      <option value="">Todos los estados</option>
       <option value="Aprobada">Por pagar</option>
+      <option value="">Todos los estados</option>
       <option value="Pagada">Pagadas</option>
       <option value="Rechazada">Rechazadas</option>
     </select>
   </div>
   <div id="pills-influencer" class="pills"></div>
-  <div id="grid-influencer" class="grid"></div>
+  <div id="grid-influencer"></div>
+  <div id="grid-influencer-pagadas"></div>
 </div>
 <!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
@@ -269,20 +270,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div id="planta-body"><div class="empty">Cargando solicitudes de Producci&#xF3;n...</div></div>
 </div>
 
-<div id="pane-influencer" class="pane">
-  <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;"></div>
-  <div class="bar">
-    <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
-    <select id="s-influencer" onchange="renderInfluencers()">
-      <option value="">Todos los estados</option>
-      <option value="Aprobada">Por pagar</option>
-      <option value="Pagada">Pagadas</option>
-      <option value="Rechazada">Rechazadas</option>
-    </select>
-  </div>
-  <div id="pills-influencer" class="pills"></div>
-  <div id="grid-influencer" class="grid"></div>
-</div>
 <!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
   <div class="mdl" style="max-width:440px;">
@@ -2237,81 +2224,166 @@ async function loadInfluencers(){
 function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
 function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
-  var st=(document.getElementById('s-influencer')||{value:''}).value;
-  var list=INFLUENCERS.filter(function(s){
-    if(st&&s.estado!==st) return false;
-    if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
-    return true;
-  });
-  // KPI cards
+  var st=(document.getElementById('s-influencer')||{value:'Aprobada'}).value;
+
+  // ── Parse beneficiary block from observaciones text ──────────────────────
+  function parseBenef(obs){
+    var out={nombre:'',banco:'',cuenta:'',cedNit:'',valor:''};
+    if(!obs) return out;
+    var m;
+    m=obs.match(/BENEFICIARIO:\s*([^|]+)/i); if(m) out.nombre=m[1].trim();
+    m=obs.match(/BANCO:\s*([^|]+)/i);        if(m) out.banco=m[1].trim();
+    m=obs.match(/CUENTA\/CEL:\s*([^|]+)/i);  if(m) out.cuenta=m[1].trim();
+    m=obs.match(/CED\/NIT:\s*([^|]+)/i);     if(m) out.cedNit=m[1].trim();
+    m=obs.match(/VALOR:\s*([^|]+)/i);        if(m) out.valor=m[1].trim();
+    return out;
+  }
+
   var pendAll=INFLUENCERS.filter(function(s){ return s.estado==='Aprobada'; });
+  var pagaAll=INFLUENCERS.filter(function(s){ return s.estado==='Pagada'; });
   var totalPend=pendAll.reduce(function(a,s){ return a+(s.valor||0); },0);
+  var totalPaga=pagaAll.reduce(function(a,s){ return a+(s.valor||0); },0);
+
+  // ── KPI cards ────────────────────────────────────────────────────────────
   var kpiEl=document.getElementById('kpi-influencer');
   if(kpiEl){
     kpiEl.innerHTML=
-      '<div style="background:#7c3aed;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Por pagar</div>'
-      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+pendAll.length+' OCs</div>'
+      '<div style="background:#7c3aed;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(124,58,237,.2)">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Por pagar</div>'
+      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+pendAll.length+' OCs</div>'
       +'<div style="font-size:13px;opacity:.9;margin-top:2px;">'+fmoney(totalPend)+'</div>'
       +'</div>'
-      +'<div style="background:#059669;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Pagadas</div>'
-      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+INFLUENCERS.filter(function(s){return s.estado==="Pagada";}).length+'</div>'
+      +'<div style="background:#059669;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(5,150,105,.2)">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Pagadas este ciclo</div>'
+      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+pagaAll.length+'</div>'
+      +'<div style="font-size:13px;opacity:.9;margin-top:2px;">'+fmoney(totalPaga)+'</div>'
       +'</div>'
-      +'<div style="background:#6b7280;color:#fff;padding:12px 20px;border-radius:8px;min-width:160px;">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px;">Total influencers</div>'
-      +'<div style="font-size:22px;font-weight:700;margin-top:2px;">'+INFLUENCERS.length+'</div>'
+      +'<div style="background:#374151;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(55,65,81,.15)">'
+      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Total influencers</div>'
+      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+INFLUENCERS.length+'</div>'
       +'</div>';
   }
-  // Pills
-  var pills='<span class="pill">'+list.length+' mostradas</span>';
+
+  // ── Filter list ──────────────────────────────────────────────────────────
+  var list=INFLUENCERS.filter(function(s){
+    if(st && s.estado!==st) return false;
+    if(q){
+      var hay=(s.numero||'')+(s.solicitante||'')+(s.observaciones||'')+(s.numero_oc||'');
+      if(hay.toLowerCase().indexOf(q)<0) return false;
+    }
+    return true;
+  });
+
   var el=document.getElementById('pills-influencer');
-  var gel=document.getElementById('grid-influencer');
-  if(el) el.innerHTML=pills;
-  if(!gel) return;
-  if(!list.length){ gel.innerHTML='<div class="empty">No hay cuentas de cobro</div>'; return; }
-  var stCfg={
-    'Aprobada':  {bg:'#ede9fe',fg:'#5b21b6',label:'Lista para pagar'},
-    'Pagada':    {bg:'#d1fae5',fg:'#065f46',label:'Pagada'},
-    'Rechazada': {bg:'#fee2e2',fg:'#991b1b',label:'Rechazada'},
-    'Pendiente': {bg:'#fef3c7',fg:'#92400e',label:'Pendiente'}
-  };
-  gel.innerHTML=list.map(function(s){
-    var cfg=stCfg[s.estado]||{bg:'#f3f4f6',fg:'#374151',label:s.estado};
-    var obsCorta=(s.observaciones||'').substring(0,120);
+  if(el) el.innerHTML='<span class="pill">'+list.length+' mostradas</span>';
+
+  // ── Card builder ─────────────────────────────────────────────────────────
+  function buildCard(s){
+    var b=parseBenef(s.observaciones||'');
+    var isPagada=s.estado==='Pagada';
+    var isRech=s.estado==='Rechazada';
+    var borderColor=isPagada?'#059669':isRech?'#dc2626':'#7c3aed';
+    var headerBg=isPagada?'#f0fdf4':isRech?'#fef2f2':'#faf5ff';
+
+    // Badge
+    var badgeMap={'Aprobada':{bg:'#ede9fe',fg:'#5b21b6',txt:'💸 Lista para pagar'},
+                  'Pagada':{bg:'#d1fae5',fg:'#065f46',txt:'✅ Pagada'},
+                  'Rechazada':{bg:'#fee2e2',fg:'#991b1b',txt:'❌ Rechazada'},
+                  'Pendiente':{bg:'#fef3c7',fg:'#92400e',txt:'⏳ Pendiente'}};
+    var cfg=badgeMap[s.estado]||{bg:'#f3f4f6',fg:'#374151',txt:s.estado};
+
+    // Bank info row — only show if parsed
+    var bankRow='';
+    if(b.nombre||b.banco||b.cuenta){
+      bankRow='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">'
+        +(b.nombre?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Beneficiario</span><div style="color:#1e293b;font-weight:600;margin-top:1px;">'+esc(b.nombre)+'</div></div>':'')
+        +(b.banco?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Banco</span><div style="color:#1e293b;margin-top:1px;">'+esc(b.banco)+'</div></div>':'')
+        +(b.cuenta?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cuenta / Cel</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cuenta)+'</div></div>':'')
+        +(b.cedNit?'<div><span style="color:#64748b;font-weight:600;text-transform:uppercase;font-size:10px;">Cédula / NIT</span><div style="color:#1e293b;font-family:monospace;margin-top:1px;">'+esc(b.cedNit)+'</div></div>':'')
+        +'</div>';
+    }
+
+    // Action buttons
     var btns='';
     if(s.estado==='Aprobada'){
-      btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;font-size:13px;">&#x1F4B8; Pagar</button>'
-          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#dc2626;color:#fff;font-size:13px;">&#x2715; Rechazar</button>';
+      btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;">💸 Pagar ahora</button>'
+          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>';
     } else if(s.estado==='Pendiente'){
-      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">&#x1F5D1; Eliminar</button>';
+      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
-      btns='<span style="color:#991b1b;font-weight:600;font-size:13px;">&#x2715; Rechazada</span>&nbsp;<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">&#x1F5D1;</button>';
-    } else if(s.estado==='Pagada'){
-      btns='<span style="color:#065f46;font-weight:600;font-size:13px;">&#x2713; Pagado</span>';
-    } else if(s.estado==='Rechazada'){
-      btns='<span style="color:#991b1b;font-weight:600;font-size:13px;">&#x2715; Rechazada</span>';
+      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
     }
-    return '<div class="card">'
-      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
-      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
-      +'<span class="badge" style="background:'+cfg.bg+';color:'+cfg.fg+';">'+cfg.label+'</span></div>'
-      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span>'
-      +(s.numero_oc?'<span style="font-family:monospace;font-size:11px;color:#6b7280;">'+esc(s.numero_oc)+'</span>':'')
-      +'<span style="color:#7c3aed;font-weight:600;">'+fmoney(s.valor)+'</span></div>'
-      +(obsCorta?'<div class="cobs">'+esc(obsCorta)+'</div>':'')
-      +(btns?'<div class="acts">'+btns+'</div>':'')
-      +'</div>';
-  }).join('');
-  // Event delegation for pagar/rechazar buttons
-  gel.onclick=function(e){
-    var bp=e.target.closest('.inf-pagar');
-    var br=e.target.closest('.inf-rechazar');
-    var bd=e.target.closest('[data-act="del-sol"]');
-    if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
-    if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
-    if(bd) eliminarSolicitud(bd.dataset.sol);
-  };
+
+    return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+borderColor+';border-radius:10px;padding:0;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;">'
+      // Header
+      +'<div style="background:'+headerBg+';padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">'
+        +'<div style="display:flex;align-items:center;gap:10px;">'
+          +'<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">'+esc(s.numero)+'</div>'
+          +(s.numero_oc?'<div style="font-family:monospace;font-size:11px;color:#7c3aed;background:#ede9fe;padding:2px 8px;border-radius:4px;">'+esc(s.numero_oc)+'</div>':'')
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:10px;">'
+          +'<div style="font-size:18px;font-weight:700;color:'+borderColor+';">'+fmoney(s.valor)+'</div>'
+          +'<span style="background:'+cfg.bg+';color:'+cfg.fg+';padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">'+cfg.txt+'</span>'
+        +'</div>'
+      +'</div>'
+      // Body
+      +'<div style="padding:12px 16px;">'
+        +'<div style="display:flex;gap:16px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;">'
+          +'<span>👤 '+esc(s.solicitante||'-')+'</span>'
+          +'<span>📅 '+fdate(s.fecha)+'</span>'
+          +'<span>🏢 '+esc(s.area||'Marketing/ANIMUS')+'</span>'
+        +'</div>'
+        +bankRow
+        +(btns?'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'+btns+'</div>':'')
+      +'</div>'
+    +'</div>';
+  }
+
+  // ── Render pending grid ───────────────────────────────────────────────────
+  var gel=document.getElementById('grid-influencer');
+  var gpag=document.getElementById('grid-influencer-pagadas');
+  if(!gel) return;
+
+  if(!list.length){
+    gel.innerHTML='<div class="empty">No hay resultados para el filtro seleccionado</div>';
+  } else {
+    gel.innerHTML=list.map(buildCard).join('');
+  }
+
+  // ── Paid section (always shown when filter is not "Pagada") ───────────────
+  if(gpag){
+    if(st==='' || st==='Aprobada'){
+      // Show a collapsible paid section below
+      if(pagaAll.length>0){
+        gpag.innerHTML='<details style="margin-top:20px;">'
+          +'<summary style="cursor:pointer;font-size:13px;font-weight:600;color:#059669;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;list-style:none;display:flex;align-items:center;gap:8px;">'
+          +'✅ '+pagaAll.length+' pago'+(pagaAll.length>1?'s':'')+' realizados — '+fmoney(totalPaga)
+          +' <span style="font-size:11px;color:#64748b;font-weight:400;margin-left:4px;">(click para ver)</span>'
+          +'</summary>'
+          +'<div style="margin-top:10px;">'+pagaAll.map(buildCard).join('')+'</div>'
+          +'</details>';
+      } else {
+        gpag.innerHTML='';
+      }
+    } else {
+      gpag.innerHTML='';
+    }
+  }
+
+  // ── Event delegation ──────────────────────────────────────────────────────
+  function attachEvents(container){
+    if(!container) return;
+    container.onclick=function(e){
+      var bp=e.target.closest('.inf-pagar');
+      var br=e.target.closest('.inf-rechazar');
+      var bd=e.target.closest('[data-act="del-sol"]');
+      if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
+      if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
+      if(bd) eliminarSolicitud(bd.dataset.sol);
+    };
+  }
+  attachEvents(gel);
+  attachEvents(gpag);
 }
 // ─── Pagar influencer ───────────────────────────────────────────────
 function pagarInfluencer(oc_num, sol_num, valor){
