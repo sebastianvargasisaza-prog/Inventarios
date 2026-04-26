@@ -1994,6 +1994,16 @@ def planificacion_estrategica():
             continue
         seen_events.add(key)
 
+        # ── Phase filter: skip non-Fabricación events ──────────────────────
+        # Envasado / Acondicionamiento / QC no consumen MPs crudas.
+        # Contarlos duplica/triplica los requerimientos (infla 2-3×).
+        _NON_FAB_KW = {
+            'envasado', 'acondicionamiento', 'micro qc',
+            'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+        }
+        if any(kw in titulo.lower() for kw in _NON_FAB_KW):
+            continue
+
         kg = _kg_ev(titulo)
         for sku in _skus(titulo):
             prod = _sku_to_prod.get(sku)
@@ -2084,7 +2094,10 @@ def planificacion_estrategica():
 
     # ── 4. Cruzar con stock actual → déficit ────────────────────────────────
     def _lookup_stock(mid, nombre):
-        """Busca stock por material_id primero, luego por nombre."""
+        """Busca stock por material_id primero, luego por nombre.
+        Retorna -1 si el MP es ilimitado (producido en sitio: agua, etc.)."""
+        if _is_unlimited_mp(nombre):
+            return -1  # sentinel: always available, no purchase needed
         s = mp_stock.get(mid)
         if s is not None: return s
         s = mp_stock.get(mid.upper())
@@ -2097,8 +2110,12 @@ def planificacion_estrategica():
 
     resultado = []
     for mid, data in mp_needed.items():
-        stock_g  = _lookup_stock(mid, data['nombre'])
-        deficit  = max(0, data['total_g'] - stock_g)
+        stock_g_raw = _lookup_stock(mid, data['nombre'])
+        if stock_g_raw == -1:
+            # Producido en sitio (agua desionizada, etc.) — sin déficit, sin compra
+            continue
+        stock_g   = stock_g_raw
+        deficit   = max(0, data['total_g'] - stock_g)
         cobertura = round(min(stock_g / data['total_g'] * 100, 100), 1) if data['total_g'] > 0 else 100
         meses_uso = sorted(data['por_mes'].keys())
         n_meses   = len(meses_uso)
@@ -2121,10 +2138,12 @@ def planificacion_estrategica():
         bulk_msg = ''
         if n_meses >= 2:
             bulk_opp = True
+            _qty = (f'{round(data["total_g"]/1000, 2)} kg'
+                    if data['total_g'] >= 100 else f'{round(data["total_g"], 1)} g')
             if is_china:
-                bulk_msg = f'Importar {round(data["total_g"]/1000,1)} kg en un solo pedido desde proveedor internacional — ahorro estimado 15-25% en flete'
+                bulk_msg = f'Importar {_qty} en un solo pedido desde proveedor internacional — ahorro estimado 15-25% en flete'
             else:
-                bulk_msg = f'Pedir {round(data["total_g"]/1000,1)} kg para {n_meses} meses a proveedor local — negociar descuento por volumen'
+                bulk_msg = f'Pedir {_qty} para {n_meses} meses a proveedor local — negociar descuento por volumen'
 
         resultado.append({
             'material_id':  mid,
