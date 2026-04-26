@@ -1456,6 +1456,35 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_backup_log_started ON backup_log(started_at DESC)",
     ]),
+    (27, "maestro_mps: tipo_material para distinguir MP / Envase Primario / Envase Secundario / Empaque", [
+        # Categoría unificada para inventario cíclico de E&E (envase + empaque).
+        # Valores válidos:
+        #   'MP'                — Materia prima (default)
+        #   'Envase Primario'   — Envase que toca el producto (frasco, tubo)
+        #   'Envase Secundario' — Cajas, displays
+        #   'Empaque'           — Etiquetas, insertos, sellos, blisters
+        # Backfill: si tipo legacy contiene "envase" o "empaque", se infiere.
+        # Para todo lo demás queda 'MP'.
+        "ALTER TABLE maestro_mps ADD COLUMN tipo_material TEXT DEFAULT 'MP'",
+        # Backfill heurístico — palabra-clave en el campo 'tipo' o 'nombre_inci'
+        """UPDATE maestro_mps SET tipo_material='Envase Primario'
+           WHERE LOWER(COALESCE(tipo,'')) LIKE '%envase%primario%'
+              OR LOWER(COALESCE(tipo,'')) LIKE '%frasco%'
+              OR LOWER(COALESCE(nombre_comercial,'')) LIKE '%frasco%'
+              OR LOWER(COALESCE(nombre_comercial,'')) LIKE '%tubo%'""",
+        """UPDATE maestro_mps SET tipo_material='Envase Secundario'
+           WHERE LOWER(COALESCE(tipo,'')) LIKE '%envase%secundario%'
+              OR LOWER(COALESCE(tipo,'')) LIKE '%caja%'
+              OR LOWER(COALESCE(nombre_comercial,'')) LIKE '%caja%'""",
+        """UPDATE maestro_mps SET tipo_material='Empaque'
+           WHERE LOWER(COALESCE(tipo,'')) LIKE '%empaque%'
+              OR LOWER(COALESCE(tipo,'')) LIKE '%etiqueta%'
+              OR LOWER(COALESCE(tipo,'')) LIKE '%inserto%'
+              OR LOWER(COALESCE(nombre_comercial,'')) LIKE '%etiqueta%'
+              OR LOWER(COALESCE(nombre_comercial,'')) LIKE '%inserto%'""",
+        # Índice para búsquedas filtradas por tipo
+        "CREATE INDEX IF NOT EXISTS idx_maestro_mps_tipo_material ON maestro_mps(tipo_material)",
+    ]),
 ]
 
 

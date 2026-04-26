@@ -600,14 +600,41 @@ def get_lotes():
 def handle_maestro():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
+        u, err, code = _require_planta_write()
+        if err:
+            return err, code
         d = request.json
-        c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo) VALUES (?,?,?,?,?,?)",
-                  (d['codigo_mp'],d.get('nombre_inci',''),d.get('nombre_comercial',''),d.get('tipo',''),d.get('proveedor',''),d.get('stock_minimo',0)))
+        # tipo_material: validar contra lista permitida
+        tipo_material = d.get('tipo_material', 'MP')
+        if tipo_material not in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
+            tipo_material = 'MP'
+        c.execute("""INSERT OR REPLACE INTO maestro_mps
+                     (codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,tipo_material)
+                     VALUES (?,?,?,?,?,?,?)""",
+                  (d['codigo_mp'], d.get('nombre_inci',''), d.get('nombre_comercial',''),
+                   d.get('tipo',''), d.get('proveedor',''), d.get('stock_minimo',0),
+                   tipo_material))
         conn.commit()
-        return jsonify({'message': 'MP guardada'}), 201
-    c.execute("SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,COALESCE(precio_referencia,0) FROM maestro_mps WHERE activo=1 ORDER BY nombre_comercial")
+        return jsonify({'message': 'MP guardada', 'tipo_material': tipo_material}), 201
+    # GET: filtro opcional por tipo_material via query param
+    tipo_filter = (request.args.get('tipo_material') or '').strip()
+    if tipo_filter and tipo_filter in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
+        c.execute("""SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,
+                            COALESCE(precio_referencia,0), COALESCE(tipo_material,'MP')
+                     FROM maestro_mps WHERE activo=1 AND tipo_material=?
+                     ORDER BY nombre_comercial""", (tipo_filter,))
+    else:
+        c.execute("""SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,
+                            COALESCE(precio_referencia,0), COALESCE(tipo_material,'MP')
+                     FROM maestro_mps WHERE activo=1
+                     ORDER BY nombre_comercial""")
     rows = c.fetchall()
-    return jsonify({'mps': [{'codigo_mp':r[0],'nombre_inci':r[1],'nombre_comercial':r[2],'tipo':r[3],'proveedor':r[4],'stock_minimo':r[5],'precio_referencia':r[6]} for r in rows]})
+    return jsonify({'mps': [
+        {'codigo_mp':r[0], 'nombre_inci':r[1], 'nombre_comercial':r[2],
+         'tipo':r[3], 'proveedor':r[4], 'stock_minimo':r[5],
+         'precio_referencia':r[6], 'tipo_material':r[7]}
+        for r in rows
+    ]})
 
 @bp.route('/api/maestro-mps/<codigo>')
 def get_mp(codigo):
@@ -847,48 +874,76 @@ def liberar_lote():
 # consistencia con lotes que contienen '/' o caracteres especiales.
 
 # ── CONTEO CICLICO BDG-PRO-002 ──────────────────────────────────
+# Soporta filtro por tipo_material (MP / Envase Primario / Envase Secundario /
+# Empaque) — clave para inventario cíclico de E&E (envase y empaque).
+# Sin filtro = todo. Filtro = solo materiales del tipo indicado.
 @bp.route('/api/conteo/estanterias', methods=['GET'])
 def conteo_estanterias():
+    tipo = (request.args.get('tipo_material') or '').strip()
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est,
-                        COUNT(DISTINCT material_id) as total_mps,
-                        SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_total
-                 FROM movimientos GROUP BY est ORDER BY est""")
+    if tipo in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
+        c.execute("""SELECT COALESCE(NULLIF(m.estanteria,''),'Sin estanteria') as est,
+                            COUNT(DISTINCT m.material_id) as total_mps,
+                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_total
+                     FROM movimientos m
+                     LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
+                     WHERE COALESCE(mp.tipo_material,'MP') = ?
+                     GROUP BY est ORDER BY est""", (tipo,))
+    else:
+        c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est,
+                            COUNT(DISTINCT material_id) as total_mps,
+                            SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_total
+                     FROM movimientos GROUP BY est ORDER BY est""")
     rows = c.fetchall()
-    return jsonify([{'estanteria': r[0], 'total_mps': r[1], 'stock_total': round(r[2] or 0, 1)} for r in rows])
+    return jsonify([
+        {'estanteria': r[0], 'total_mps': r[1], 'stock_total': round(r[2] or 0, 1)}
+        for r in rows
+    ])
 
 @bp.route('/api/conteo/materiales', methods=['GET'])
 def conteo_materiales_estanteria():
     est = request.args.get('estanteria', '')
+    tipo = (request.args.get('tipo_material') or '').strip()
     conn = get_db(); c = conn.cursor()
+    type_filter = (
+        " AND COALESCE(mp.tipo_material,'MP') = ?"
+        if tipo in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque')
+        else ""
+    )
+    type_args = (tipo,) if type_filter else ()
     if est and est != 'Sin estanteria':
-        c.execute("""SELECT m.material_id, m.material_nombre,
+        c.execute(f"""SELECT m.material_id, m.material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
-                            MAX(m.estanteria) as estanteria
+                            MAX(m.estanteria) as estanteria,
+                            COALESCE(mp.tipo_material,'MP') as tipo_material
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                     WHERE m.estanteria=?
+                     WHERE m.estanteria=?{type_filter}
                      GROUP BY m.material_id HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre""", (est,))
+                     ORDER BY m.material_nombre""", (est,) + type_args)
     else:
-        c.execute("""SELECT m.material_id, m.material_nombre,
+        c.execute(f"""SELECT m.material_id, m.material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
-                            '' as estanteria
+                            '' as estanteria,
+                            COALESCE(mp.tipo_material,'MP') as tipo_material
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                     WHERE (m.estanteria IS NULL OR m.estanteria='')
+                     WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}
                      GROUP BY m.material_id HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre""")
+                     ORDER BY m.material_nombre""", type_args)
     rows = c.fetchall()
-    cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema','estanteria']
+    cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema','estanteria','tipo_material']
     return jsonify([dict(zip(cols, r)) for r in rows])
 
 @bp.route('/api/conteo/iniciar', methods=['POST'])
 def conteo_iniciar():
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
     d = request.json or {}
     est = d.get('estanteria', '')
     responsable = d.get('responsable', session.get('compras_user',''))
@@ -2346,6 +2401,382 @@ def liberacion_update(lid):
         c.execute("UPDATE liberaciones SET observaciones=? WHERE id=?", (d.get('observaciones', ''), lid))
     conn.commit()
     return jsonify({'ok': True})
+
+
+# ─── ALERTAS VIVAS DE PLANTA ─────────────────────────────────────────────────
+# Endpoint unificado que el panel admin / centro de mando consume para mostrar
+# todo lo que requiere atención HOY. Cubre items #3, #4, #6 del audit:
+#   - Vencimientos próximos (<30 días) y vencidos
+#   - Stock por debajo de mínimo
+#   - Conteos cíclicos cerrados con discrepancias > tolerancia, sin ajuste
+#   - Lotes en cuarentena que llevan > 5 días esperando QC
+
+@bp.route('/api/planta/alertas-vivas', methods=['GET'])
+def alertas_vivas_planta():
+    """Consolida todas las alertas operacionales de Planta en un solo endpoint.
+
+    Retorna { vencimientos, stock_bajo, discrepancias, cuarentena_extendida,
+              total, severidad_max }
+    severidad_max: 'critico' | 'alto' | 'medio' | 'ok'
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+
+    conn = get_db(); c = conn.cursor()
+    from datetime import date, timedelta
+    hoy = date.today()
+    in_30 = (hoy + timedelta(days=30)).isoformat()
+    hace_5 = (hoy - timedelta(days=5)).isoformat()
+
+    # ── 1. Vencimientos ───────────────────────────────────────────────────────
+    # MPs con stock vivo cuyo lote vence en <30 días (o ya vencido)
+    c.execute("""
+        SELECT m.material_id, m.material_nombre, m.lote, m.fecha_vencimiento,
+               COALESCE(mp.tipo_material,'MP') as tipo,
+               SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock
+        FROM movimientos m
+        LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
+        WHERE m.fecha_vencimiento != ''
+          AND m.fecha_vencimiento <= ?
+          AND m.estado_lote IN ('VIGENTE','CUARENTENA')
+        GROUP BY m.material_id, m.lote
+        HAVING stock > 0
+        ORDER BY m.fecha_vencimiento ASC
+        LIMIT 100
+    """, (in_30,))
+    venc_rows = c.fetchall()
+    vencimientos = []
+    for r in venc_rows:
+        try:
+            fv = date.fromisoformat(r[3][:10])
+            dias = (fv - hoy).days
+        except (ValueError, TypeError, IndexError):
+            dias = None
+        vencimientos.append({
+            'material_id': r[0], 'material_nombre': r[1], 'lote': r[2],
+            'fecha_vencimiento': r[3], 'dias_restantes': dias,
+            'tipo_material': r[4], 'stock_g': round(r[5] or 0, 1),
+            'severidad': 'critico' if dias is not None and dias < 0 else
+                         ('alto' if dias is not None and dias <= 7 else 'medio')
+        })
+
+    # ── 2. Stock bajo mínimo ──────────────────────────────────────────────────
+    c.execute("""
+        SELECT mp.codigo_mp, mp.nombre_comercial, mp.stock_minimo,
+               COALESCE(mp.tipo_material,'MP') as tipo,
+               COALESCE((
+                   SELECT SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END)
+                   FROM movimientos m
+                   WHERE m.material_id = mp.codigo_mp AND m.estado_lote='VIGENTE'
+               ), 0) as stock_actual
+        FROM maestro_mps mp
+        WHERE mp.activo = 1 AND COALESCE(mp.stock_minimo, 0) > 0
+    """)
+    stock_bajo = []
+    for r in c.fetchall():
+        codigo, nombre, st_min, tipo, st_act = r
+        if st_act < st_min:
+            ratio = st_act / st_min if st_min else 0
+            stock_bajo.append({
+                'codigo_mp': codigo, 'nombre': nombre,
+                'stock_minimo': st_min, 'stock_actual': round(st_act, 1),
+                'tipo_material': tipo, 'cobertura_pct': round(ratio * 100, 1),
+                'severidad': 'critico' if ratio < 0.25 else ('alto' if ratio < 0.5 else 'medio')
+            })
+    stock_bajo.sort(key=lambda x: x['cobertura_pct'])
+
+    # ── 3. Discrepancias de conteo cíclico no resueltas ───────────────────────
+    discrepancias = []
+    try:
+        c.execute("""
+            SELECT cf.id, cf.numero, cf.estanteria, cf.cerrado_en,
+                   COUNT(ci.id) as n_items,
+                   SUM(CASE WHEN ABS(ci.diferencia) > 0 THEN 1 ELSE 0 END) as n_dif
+            FROM conteos_fisicos cf
+            LEFT JOIN conteo_items ci ON cf.id = ci.conteo_id
+            WHERE cf.estado = 'Cerrado' AND cf.ajuste_aplicado = 0
+            GROUP BY cf.id
+            HAVING n_dif > 0
+            ORDER BY cf.cerrado_en DESC
+            LIMIT 20
+        """)
+        for r in c.fetchall():
+            discrepancias.append({
+                'conteo_id': r[0], 'numero': r[1], 'estanteria': r[2],
+                'cerrado_en': r[3], 'items_con_diferencia': r[5],
+                'severidad': 'alto'
+            })
+    except sqlite3.OperationalError:
+        # Tabla puede no tener columna ajuste_aplicado en versiones legacy
+        pass
+
+    # ── 4. Cuarentenas extendidas (>5 días esperando QC) ──────────────────────
+    c.execute("""
+        SELECT m.id, m.material_id, m.material_nombre, m.lote, m.fecha,
+               m.cantidad, m.proveedor
+        FROM movimientos m
+        WHERE m.estado_lote IN ('CUARENTENA', 'CUARENTENA_EXTENDIDA')
+          AND m.tipo = 'Entrada'
+          AND m.fecha < ?
+        ORDER BY m.fecha ASC
+        LIMIT 50
+    """, (hace_5,))
+    cuarentena_extendida = [
+        {'mov_id': r[0], 'material_id': r[1], 'material_nombre': r[2],
+         'lote': r[3], 'fecha_ingreso': r[4], 'cantidad_g': r[5],
+         'proveedor': r[6], 'severidad': 'alto'}
+        for r in c.fetchall()
+    ]
+
+    total = (len(vencimientos) + len(stock_bajo) +
+             len(discrepancias) + len(cuarentena_extendida))
+    sevs = (
+        [v['severidad'] for v in vencimientos] +
+        [v['severidad'] for v in stock_bajo] +
+        [v['severidad'] for v in discrepancias] +
+        [v['severidad'] for v in cuarentena_extendida]
+    )
+    sev_orden = {'critico': 3, 'alto': 2, 'medio': 1, 'ok': 0}
+    severidad_max = max(sevs, key=lambda s: sev_orden.get(s, 0)) if sevs else 'ok'
+
+    return jsonify({
+        'vencimientos':           vencimientos,
+        'stock_bajo':             stock_bajo,
+        'discrepancias':          discrepancias,
+        'cuarentena_extendida':   cuarentena_extendida,
+        'total':                  total,
+        'severidad_max':          severidad_max,
+        'evaluado_en':            hoy.isoformat(),
+    })
+
+
+# ─── KARDEX + VALORACIÓN FIFO ────────────────────────────────────────────────
+# Reporte estándar contable para auditoría y costeo.
+
+@bp.route('/api/planta/kardex/<codigo_mp>', methods=['GET'])
+def planta_kardex(codigo_mp):
+    """Kardex de un MP específico: entradas, salidas, saldo running, valor FIFO.
+
+    Query params:
+      - desde: YYYY-MM-DD (opcional, default hace 12 meses)
+      - hasta: YYYY-MM-DD (opcional, default hoy)
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+
+    from datetime import date, timedelta
+    desde = (request.args.get('desde') or
+             (date.today() - timedelta(days=365)).isoformat())
+    hasta = request.args.get('hasta') or date.today().isoformat()
+
+    conn = get_db(); c = conn.cursor()
+
+    # Datos maestros
+    c.execute("""SELECT codigo_mp, nombre_comercial, nombre_inci,
+                        COALESCE(precio_referencia,0), COALESCE(stock_minimo,0),
+                        COALESCE(tipo_material,'MP')
+                 FROM maestro_mps WHERE codigo_mp=?""", (codigo_mp,))
+    mp = c.fetchone()
+    if not mp:
+        return jsonify({'error': f'MP {codigo_mp} no existe'}), 404
+
+    # Movimientos del rango
+    c.execute("""SELECT id, fecha, tipo, cantidad, lote, observaciones,
+                        proveedor, COALESCE(precio_kg,0), numero_oc, numero_factura,
+                        estado_lote, fecha_vencimiento
+                 FROM movimientos
+                 WHERE material_id=? AND fecha >= ? AND fecha <= ?
+                 ORDER BY fecha ASC, id ASC""",
+              (codigo_mp, desde, hasta + 'T23:59:59'))
+    rows = c.fetchall()
+
+    # Algoritmo FIFO: cada entrada va a una "capa" (queue) con su precio.
+    # Cada salida consume capas FIFO (más antigua primero) y registra el
+    # costo unitario ponderado de esa salida.
+    capas = []  # [(cantidad_kg_restante, precio_kg, lote)]
+    movimientos = []
+    saldo_g = 0.0
+    valor_acum = 0.0
+
+    for r in rows:
+        mid, fecha, tipo, cant, lote, obs, prov, pkg, oc, fac, est_lote, fvenc = r
+        cant_kg = (cant or 0) / 1000.0
+
+        if tipo == 'Entrada':
+            saldo_g += (cant or 0)
+            costo_entrada = cant_kg * (pkg or 0)
+            valor_acum += costo_entrada
+            capas.append({
+                'cantidad_kg_restante': cant_kg,
+                'precio_kg': pkg or 0,
+                'lote': lote, 'fecha': fecha,
+            })
+            mov = {
+                'id': mid, 'fecha': fecha, 'tipo': 'Entrada',
+                'cantidad_kg': round(cant_kg, 3), 'precio_kg': round(pkg or 0, 2),
+                'costo': round(costo_entrada, 2), 'lote': lote, 'proveedor': prov,
+                'oc': oc, 'factura': fac, 'estado_lote': est_lote,
+                'fecha_vencimiento': fvenc,
+                'saldo_g_running': round(saldo_g, 1),
+                'valor_running': round(valor_acum, 2),
+            }
+        else:  # Salida
+            saldo_g -= (cant or 0)
+            # Consumir capas FIFO
+            falta_kg = cant_kg
+            costo_salida = 0.0
+            consumos = []
+            i = 0
+            while falta_kg > 1e-9 and i < len(capas):
+                if capas[i]['cantidad_kg_restante'] <= 1e-9:
+                    i += 1
+                    continue
+                tomar = min(capas[i]['cantidad_kg_restante'], falta_kg)
+                costo_salida += tomar * capas[i]['precio_kg']
+                consumos.append({
+                    'lote': capas[i]['lote'],
+                    'kg': round(tomar, 3),
+                    'precio_kg': capas[i]['precio_kg']
+                })
+                capas[i]['cantidad_kg_restante'] -= tomar
+                falta_kg -= tomar
+                if capas[i]['cantidad_kg_restante'] <= 1e-9:
+                    i += 1
+            valor_acum -= costo_salida
+            costo_unit = (costo_salida / cant_kg) if cant_kg > 0 else 0
+            mov = {
+                'id': mid, 'fecha': fecha, 'tipo': 'Salida',
+                'cantidad_kg': round(cant_kg, 3),
+                'costo_unit_kg': round(costo_unit, 2),
+                'costo_total': round(costo_salida, 2),
+                'lote': lote, 'observaciones': obs,
+                'consumos_fifo': consumos,
+                'saldo_g_running': round(saldo_g, 1),
+                'valor_running': round(valor_acum, 2),
+            }
+        movimientos.append(mov)
+
+    # Capas remanentes = stock actual valorado FIFO
+    stock_actual = [
+        {
+            'lote': cp['lote'],
+            'cantidad_kg': round(cp['cantidad_kg_restante'], 3),
+            'precio_kg': cp['precio_kg'],
+            'valor': round(cp['cantidad_kg_restante'] * cp['precio_kg'], 2),
+            'fecha_entrada': cp['fecha'],
+        }
+        for cp in capas if cp['cantidad_kg_restante'] > 1e-6
+    ]
+
+    # Totales
+    total_entradas = sum(m['cantidad_kg'] for m in movimientos if m['tipo'] == 'Entrada')
+    total_salidas = sum(m['cantidad_kg'] for m in movimientos if m['tipo'] == 'Salida')
+    valor_actual = round(sum(c['valor'] for c in stock_actual), 2)
+
+    return jsonify({
+        'mp': {
+            'codigo_mp': mp[0], 'nombre_comercial': mp[1],
+            'nombre_inci': mp[2], 'precio_referencia': mp[3],
+            'stock_minimo': mp[4], 'tipo_material': mp[5],
+        },
+        'rango': {'desde': desde, 'hasta': hasta},
+        'totales': {
+            'entradas_kg': round(total_entradas, 3),
+            'salidas_kg':  round(total_salidas, 3),
+            'saldo_actual_g': round(saldo_g, 1),
+            'valor_actual_fifo': valor_actual,
+            'movimientos_count': len(movimientos),
+        },
+        'movimientos': movimientos,
+        'stock_actual_capas': stock_actual,
+    })
+
+
+@bp.route('/api/planta/valoracion-inventario', methods=['GET'])
+def planta_valoracion_inventario():
+    """Valoración total del inventario FIFO de todas las MPs activas.
+
+    Calcula el valor de cada MP con su stock actual al precio FIFO
+    (capas en orden de ingreso). Útil para reporte contable y cierre.
+    Query: ?tipo_material=MP|Envase Primario|Envase Secundario|Empaque
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+
+    tipo_filter = (request.args.get('tipo_material') or '').strip()
+    conn = get_db(); c = conn.cursor()
+
+    # MPs candidatas
+    if tipo_filter in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
+        c.execute("""SELECT codigo_mp, nombre_comercial, COALESCE(tipo_material,'MP')
+                     FROM maestro_mps WHERE activo=1 AND tipo_material=?""",
+                  (tipo_filter,))
+    else:
+        c.execute("""SELECT codigo_mp, nombre_comercial, COALESCE(tipo_material,'MP')
+                     FROM maestro_mps WHERE activo=1""")
+    mps = c.fetchall()
+
+    out = []
+    valor_total = 0.0
+    for codigo, nombre, tipo in mps:
+        c.execute("""SELECT fecha, tipo, cantidad, COALESCE(precio_kg,0), lote
+                     FROM movimientos WHERE material_id=?
+                     ORDER BY fecha ASC, id ASC""", (codigo,))
+        movs = c.fetchall()
+        capas = []
+        stock_g = 0
+        for mv in movs:
+            fecha, tp, cant, pkg, lote = mv
+            cant_kg = (cant or 0) / 1000.0
+            if tp == 'Entrada':
+                stock_g += (cant or 0)
+                capas.append([cant_kg, pkg or 0, lote])
+            else:
+                stock_g -= (cant or 0)
+                falta = cant_kg
+                for capa in capas:
+                    if falta <= 1e-9:
+                        break
+                    if capa[0] <= 1e-9:
+                        continue
+                    tomar = min(capa[0], falta)
+                    capa[0] -= tomar
+                    falta -= tomar
+        valor = sum(cap[0] * cap[1] for cap in capas if cap[0] > 1e-6)
+        if stock_g > 0 or valor > 0:
+            out.append({
+                'codigo_mp': codigo, 'nombre': nombre, 'tipo_material': tipo,
+                'stock_g': round(stock_g, 1),
+                'stock_kg': round(stock_g / 1000, 3),
+                'valor_fifo': round(valor, 2),
+            })
+            valor_total += valor
+
+    out.sort(key=lambda x: x['valor_fifo'], reverse=True)
+
+    # Totales por tipo de material
+    por_tipo = {}
+    for item in out:
+        t = item['tipo_material']
+        por_tipo.setdefault(t, {'count': 0, 'valor': 0, 'stock_kg': 0})
+        por_tipo[t]['count'] += 1
+        por_tipo[t]['valor'] += item['valor_fifo']
+        por_tipo[t]['stock_kg'] += item['stock_kg']
+    for t in por_tipo:
+        por_tipo[t]['valor'] = round(por_tipo[t]['valor'], 2)
+        por_tipo[t]['stock_kg'] = round(por_tipo[t]['stock_kg'], 3)
+
+    return jsonify({
+        'items': out,
+        'valor_total_fifo': round(valor_total, 2),
+        'count': len(out),
+        'por_tipo_material': por_tipo,
+        'filtro_tipo': tipo_filter or 'todos',
+    })
+
 
 # ═══════════════════════════════════════════════
 #  MAQUILA 360 — API
