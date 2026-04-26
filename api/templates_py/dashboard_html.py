@@ -494,29 +494,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div id="venc30-content" style="color:#999;">Cargando...</div>
     </div>
 
-    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:20px;">
-      <h3 style="color:#856404;margin-bottom:10px;">&#128308; MPs bajo stock minimo (basado en plan anual)</h3>
-      <p style="font-size:0.88em;color:#664d03;margin-bottom:12px;">Stock minimo calculado: consumo anual / 12 x 2 meses x 1.10 de buffer</p>
-      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
-        <span style="font-size:0.85em;color:#664d03;flex:1;">Edita el proveedor de cada MP directamente — se guarda automaticamente en el maestro.</span>
-        <button onclick="solicitarTodasMPs()" style="background:#2B7A78;color:white;padding:8px 18px;border-radius:6px;font-weight:700;font-size:0.88em;">
-          Enviar todas a Compras
-        </button>
-      </div>
-      <div id="alertas-reabas-tabla">
-        <table class="table">
-          <thead><tr><th>Tipo</th><th>Codigo</th><th>Material</th><th>Proveedor (editable)</th><th style="text-align:right;">Minimo</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Deficit</th><th style="text-align:center;">Criticidad</th><th style="text-align:center;">Accion</th></tr></thead>
-          <tbody id="reabas-body"><tr><td colspan="9" style="text-align:center;color:#999;">Calculando...</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <h3 style="margin-bottom:10px;">Alertas manuales de stock</h3>
-    <button onclick="loadAlertas()" style="margin-bottom:12px;">Actualizar</button>
-    <table class="table" id="alertas-table">
-      <thead><tr><th>Material</th><th>Stock Actual</th><th>Stock Minimo</th><th>Estado</th><th>Fecha</th></tr></thead>
-      <tbody><tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr></tbody>
-    </table>
 
     <!-- ALERTAS MEE -->
     <div style="margin-top:28px;border-top:3px solid #2B7A78;padding-top:24px;">
@@ -1533,7 +1510,7 @@ function switchTab(n,btn){
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
-  if(n==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
+  if(n==='alertas'){ loadVenc30(); loadAlertasMEE(); }
   if(n==='stock') loadMEE();
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
   if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
