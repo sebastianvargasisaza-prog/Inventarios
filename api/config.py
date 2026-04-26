@@ -28,8 +28,11 @@ COMPRAS_USERS = {
     "camilo":     os.environ.get("PASS_CAMILO",     "espagiria2026"),
 }
 ADMIN_USERS     = {"sebastian", "alejandro"}
-CONTADORA_USERS = {"mayra"}
-RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "alejandro", "sebastian"}
+# Mayra (contadora) + Catalina (asistente compras): mismo perfil financiero/contable
+CONTADORA_USERS = {"mayra", "catalina"}
+# Gloria (sólo RRHH), + asistentes de gerencia (daniela ÁNIMUS, luz Espagiria),
+# + contadora/asist. compras (mayra, catalina), + admins.
+RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "catalina", "alejandro", "sebastian"}
 CALIDAD_USERS   = {"laura", "miguel", "yuliel", "alejandro", "sebastian"}
 PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
 
@@ -40,11 +43,19 @@ DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 # validate_config() las detecta y emite un warning por cada usuario afectado.
 _INSECURE_PLAINTEXT_DEFAULTS = {"hha2026", "espagiria2026", "animus2026"}
 
-COMPRAS_ACCESS  = {"luz", "catalina", "mayra", "daniela", "alejandro", "sebastian"}
+# Compras: contabilidad/finanzas + admins. (Daniela y Luz se movieron a marketing
+# de su empresa — ya no participan del flujo de compras del holding.)
+COMPRAS_ACCESS  = {"catalina", "mayra", "alejandro", "sebastian"}
 FINANZAS_ACCESS = {"mayra", "catalina", "sebastian", "alejandro"}
-CLIENTES_ACCESS = {"mayra", "luz", "catalina", "valentina", "daniela", "alejandro", "sebastian"}
+# Clientes: contabilidad + asistentes (ventas, gerencias) + admins.
+CLIENTES_ACCESS = {"mayra", "catalina", "valentina", "daniela", "luz", "alejandro", "sebastian"}
 TECNICA_USERS   = {"hernando", "miguel", "alejandro", "sebastian"}
-MARKETING_USERS = {"jefferson", "sebastian", "alejandro", "felipe"}
+# Marketing: equipo de marketing + asistentes de gerencia (cada una para su empresa).
+MARKETING_USERS = {"jefferson", "felipe", "daniela", "luz", "alejandro", "sebastian"}
+# Acceso al módulo ÁNIMUS Lab (skincare): asistente de gerencia + admins.
+ANIMUS_ACCESS   = {"daniela", "alejandro", "sebastian"}
+# Acceso al módulo Espagiria (pendiente de crear blueprint): asist. gerencia + admins.
+ESPAGIRIA_ACCESS = {"luz", "alejandro", "sebastian"}
 
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN

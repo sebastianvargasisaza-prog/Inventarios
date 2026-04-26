@@ -1,7 +1,7 @@
 import sqlite3, json, traceback, urllib.request
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
-from config import DB_PATH, ADMIN_USERS
+from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
 from database import get_db
 
 bp = Blueprint("animus", __name__)
@@ -28,6 +28,8 @@ def _auth():
     u = session.get("compras_user", "")
     if not u:
         return None, jsonify({"error": "No autenticado"}), 401
+    if u not in ANIMUS_ACCESS:
+        return None, jsonify({"error": "Sin acceso al módulo ÁNIMUS"}), 403
     return u, None, None
 
 def _fmt(row):
