@@ -2133,6 +2133,175 @@ document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>
 // AGENCIA
 // ──────────────────────────────────────────────────────────────────────────────
 let _agLoaded = false;
+
+function scoreColor(s) {
+  if (s >= 75) return '#34d399';
+  if (s >= 50) return '#667eea';
+  if (s >= 25) return '#f59e0b';
+  return '#f87171';
+}
+function scoreBadge(s) {
+  const c = scoreColor(s);
+  return '<span style="display:inline-block;background:'+c+'22;color:'+c+';border:1px solid '+c+'44;border-radius:20px;padding:2px 10px;font-weight:700;font-size:13px;min-width:42px;text-align:center;">'+s+'</span>';
+}
+function sevColor(sev) {
+  return {critical:'#f87171',high:'#fb923c',medium:'#f59e0b',low:'#34d399'}[sev]||'#94a3b8';
+}
+function sevLabel(sev) {
+  return {critical:'CRITICO',high:'ALTO',medium:'MEDIO',low:'BAJO'}[sev]||sev.toUpperCase();
+}
+
+async function loadAgencia(force) {
+  if (_agLoaded && !force) return;
+  _agLoaded = true;
+  var errHtml = '';
+  try {
+    document.getElementById('ag-scoring-tbody').innerHTML = '<tr class="empty-row"><td colspan="8">Analizando portafolio...</td></tr>';
+    document.getElementById('ag-audit-list').innerHTML = '<div style="color:#64748b;font-size:13px;">Calculando...</div>';
+    document.getElementById('ag-competition').innerHTML = '<div style="color:#64748b;font-size:13px;">Calculando...</div>';
+    document.getElementById('ag-proposals').innerHTML = '<div style="color:#64748b;font-size:13px;">Generando propuestas...</div>';
+  } catch(domErr) {
+    console.error('[loadAgencia] DOM error:', domErr);
+    _agLoaded = false;
+    return;
+  }
+  try {
+    var r = await fetch('/api/marketing/agencia/audit');
+    var d = await r.json();
+    if (!r.ok) { throw new Error(d.error || 'Error del servidor'); }
+    renderAgencia(d);
+  } catch(fetchErr) {
+    errHtml = '<div style="color:#f87171;font-size:13px;padding:12px;background:#7f1d1d22;border-radius:8px;border:1px solid #f87171;">Error: '+fetchErr.message+'</div>';
+    try { document.getElementById('ag-scoring-tbody').innerHTML = '<tr><td colspan="8">'+errHtml+'</td></tr>'; } catch(_){}
+    try { document.getElementById('ag-audit-list').innerHTML = errHtml; } catch(_){}
+    try { document.getElementById('ag-competition').innerHTML = errHtml; } catch(_){}
+    try { document.getElementById('ag-proposals').innerHTML = errHtml; } catch(_){}
+    console.error('[loadAgencia]', fetchErr);
+    _agLoaded = false;
+  }
+}
+
+function renderAgencia(d) {
+  var influencers = d.influencers || [];
+  var audit = d.audit || [];
+  var competition = d.competition || {};
+  var proposals = d.proposals || [];
+  var portfolio = d.portfolio || {};
+
+  // KPIs
+  document.getElementById('ag-kpi-activos').textContent = portfolio.activos || 0;
+  var avgScore = influencers.length ? Math.round(influencers.reduce(function(s,i){ return s+(i.score||0); },0)/influencers.length) : 0;
+  document.getElementById('ag-kpi-score').textContent = avgScore+'/100';
+  document.getElementById('ag-kpi-score').style.color = scoreColor(avgScore);
+  document.getElementById('ag-kpi-riesgo').textContent = portfolio.en_riesgo || 0;
+  var criticals = audit.filter(function(a){ return a.severity==='critical'; }).length;
+  document.getElementById('ag-kpi-critical').textContent = criticals;
+  var totalInv = influencers.reduce(function(s,i){ return s+(i.total_pagado||0); },0);
+  document.getElementById('ag-kpi-inversion').textContent = fmtM(totalInv);
+
+  // Scoring table
+  var sorted = influencers.slice().sort(function(a,b){ return (b.score||0)-(a.score||0); });
+  var rows = '';
+  sorted.forEach(function(inf) {
+    var est = inf.estado === 'Activo'
+      ? '<span style="color:#34d399;font-size:11px;font-weight:700;">Activo</span>'
+      : '<span style="color:#64748b;font-size:11px;">Inactivo</span>';
+    var eng = inf.engagement_rate ? (inf.engagement_rate*100).toFixed(1)+'%' : '&#x2014;';
+    var seg = inf.seguidores ? Number(inf.seguidores).toLocaleString('es-CO') : '&#x2014;';
+    rows += '<tr style="border-bottom:1px solid #1e293b;">'
+      +'<td style="padding:8px;font-weight:600;color:#e2e8f0;">'+(inf.nombre||'&#x2014;')+'</td>'
+      +'<td style="padding:8px;color:#94a3b8;font-size:12px;">'+(inf.nicho||'&#x2014;')+'</td>'
+      +'<td style="padding:8px;text-align:center;">'+scoreBadge(inf.score||0)+'</td>'
+      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+eng+'</td>'
+      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+seg+'</td>'
+      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+(inf.campanas_count||0)+'</td>'
+      +'<td style="padding:8px;text-align:right;color:#34d399;font-weight:600;">'+fmtM(inf.total_pagado||0)+'</td>'
+      +'<td style="padding:8px;text-align:center;">'+est+'</td>'
+      +'</tr>';
+  });
+  document.getElementById('ag-scoring-tbody').innerHTML = rows || '<tr class="empty-row"><td colspan="8">Sin influencers.</td></tr>';
+
+  // Audit
+  var bySev = {critical:[],high:[],medium:[],low:[]};
+  audit.forEach(function(a) { if(bySev[a.severity]) bySev[a.severity].push(a); });
+  var auditHtml = '';
+  ['critical','high','medium','low'].forEach(function(sev) {
+    if (!bySev[sev].length) return;
+    var c = sevColor(sev);
+    auditHtml += '<div style="margin-bottom:12px;">'
+      +'<div style="font-size:11px;font-weight:700;color:'+c+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">'+sevLabel(sev)+' ('+bySev[sev].length+')</div>';
+    bySev[sev].forEach(function(item) {
+      auditHtml += '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #1e293b;">'
+        +'<span style="color:'+c+';margin-top:1px;flex-shrink:0;">&#x25CF;</span>'
+        +'<div>'
+        +'<div style="color:#e2e8f0;font-size:13px;">'+item.finding+'</div>'
+        +(item.recommendation ? '<div style="color:#64748b;font-size:11px;margin-top:2px;">'+item.recommendation+'</div>' : '')
+        +'</div></div>';
+    });
+    auditHtml += '</div>';
+  });
+  document.getElementById('ag-audit-list').innerHTML = auditHtml || '<div style="color:#34d399;font-size:13px;">Sin hallazgos.</div>';
+
+  // Competition
+  var niches = competition.niches || {};
+  var gaps = competition.gaps || [];
+  var compHtml = '';
+  var nicheKeys = Object.keys(niches).sort(function(a,b){ return niches[b]-niches[a]; });
+  if (nicheKeys.length) {
+    var total = nicheKeys.reduce(function(s,k){ return s+niches[k]; },0);
+    compHtml += '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Distribucion por nicho</div>';
+    nicheKeys.forEach(function(nicho) {
+      var cnt = niches[nicho];
+      var pct = total ? Math.round(cnt/total*100) : 0;
+      compHtml += '<div style="margin-bottom:8px;">'
+        +'<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:3px;">'
+        +'<span>'+nicho+'</span><span>'+cnt+' &middot; '+pct+'%</span></div>'
+        +'<div style="background:#1e293b;border-radius:4px;height:6px;">'
+        +'<div style="background:#667eea;width:'+pct+'%;height:6px;border-radius:4px;"></div></div></div>';
+    });
+  }
+  if (gaps.length) {
+    compHtml += '<div style="margin-top:14px;font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Brechas detectadas</div>';
+    gaps.forEach(function(g) {
+      compHtml += '<div style="padding:5px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#e2e8f0;">&#x26A0; '+g+'</div>';
+    });
+  }
+  document.getElementById('ag-competition').innerHTML = compHtml || '<div style="color:#64748b;font-size:13px;">Sin datos suficientes.</div>';
+
+  // Proposals
+  var propHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">';
+  if (proposals.length) {
+    proposals.forEach(function(p) {
+      var priCol = p.priority==='alta' ? '#f87171' : (p.priority==='media' ? '#f59e0b' : '#34d399');
+      propHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;border-left:3px solid '+priCol+';">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
+        +'<div style="font-weight:700;color:#e2e8f0;font-size:14px;">'+(p.title||'')+'</div>'
+        +'<span style="font-size:10px;font-weight:700;color:'+priCol+';text-transform:uppercase;background:'+priCol+'22;padding:2px 8px;border-radius:10px;">'+(p.priority||'media')+'</span></div>'
+        +'<div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:10px;">'+(p.description||'')+'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+        +(p.budget_est ? '<span style="font-size:11px;color:#34d399;background:#34d39922;padding:2px 8px;border-radius:8px;">'+p.budget_est+'</span>' : '')
+        +(p.influencers_needed ? '<span style="font-size:11px;color:#667eea;background:#667eea22;padding:2px 8px;border-radius:8px;">'+p.influencers_needed+' influencers</span>' : '')
+        +(p.expected_reach ? '<span style="font-size:11px;color:#f59e0b;background:#f59e0b22;padding:2px 8px;border-radius:8px;">'+p.expected_reach+'</span>' : '')
+        +'</div></div>';
+    });
+  } else {
+    propHtml += '<div style="color:#64748b;font-size:13px;padding:20px;">Sin propuestas.</div>';
+  }
+  propHtml += '</div>';
+  document.getElementById('ag-proposals').innerHTML = propHtml;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// MODAL HELPERS
+// ──────────────────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('open'); }));
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// AGENCIA
+// ──────────────────────────────────────────────────────────────────────────────
+let _agLoaded = false;
 async function loadAgencia(force=false) {
   if (_agLoaded && !force) return;
   _agLoaded = true;
@@ -2146,7 +2315,20 @@ async function loadAgencia(force=false) {
     if (!r.ok) throw new Error(d.error||'Error');
     renderAgencia(d);
   } catch(e) {
-    document.getElementById('ag-scoring-tbody').innerHTML = `<tr class="empty-row"><td colspan="8" style="color:#f87171;">Error: ${e.message}</td></tr>`;
+    const errHtml = `<div style="color:#f87171;font-size:13px;padding:12px;background:#7f1d1d22;border-radius:8px;border:1px solid #f87171;">Error al cargar: ${e.message}</div>`;
+    document.getElementById('ag-scoring-tbody').innerHTML = `<tr><td colspan="8">${errHtml}</td></tr>`;
+    document.getElementById('ag-audit-list').innerHTML = errHtml;
+    document.getElementById('ag-competition').innerHTML = errHtml;
+    document.getElementById('ag-proposals').innerHTML = errHtml;
+    console.error('[loadAgencia]', e);
+  }
+
+  } catch(re) {
+    const errHtml = `<div style="color:#f87171;font-size:13px;padding:12px;">Error al renderizar: ${re.message}</div>`;
+    try { document.getElementById('ag-scoring-tbody').innerHTML = `<tr><td colspan="8">${errHtml}</td></tr>`; } catch(_){}
+    try { document.getElementById('ag-audit-list').innerHTML = errHtml; } catch(_){}
+    try { document.getElementById('ag-proposals').innerHTML = errHtml; } catch(_){}
+    console.error('[renderAgencia]', re);
   }
 }
 
@@ -2168,6 +2350,7 @@ function sevLabel(sev) {
 }
 
 function renderAgencia(d) {
+  try {
   const influencers = d.influencers || [];
   const audit = d.audit || [];
   const competition = d.competition || {};
