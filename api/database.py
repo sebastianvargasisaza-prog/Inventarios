@@ -1141,6 +1141,57 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE marketing_influencers ADD COLUMN cedula_nit TEXT DEFAULT ''""",
         """ALTER TABLE marketing_influencers ADD COLUMN tipo_cuenta TEXT DEFAULT 'Ahorros'""",
     ]),
+    (21, "marketing_influencers: importar perfiles desde solicitudes_compra (beneficiario + datos bancarios)", [
+        """WITH parsed AS (
+            SELECT DISTINCT
+                CASE WHEN observaciones LIKE '%BENEFICIARIO: %'
+                     THEN TRIM(SUBSTR(observaciones,
+                          INSTR(observaciones, 'BENEFICIARIO: ') + 14,
+                          CASE WHEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'BENEFICIARIO: ') + 14), ' | ') > 0
+                               THEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'BENEFICIARIO: ') + 14), ' | ') - 1
+                               ELSE 200 END))
+                     ELSE TRIM(solicitante) END AS nombre,
+                CASE WHEN observaciones LIKE '%BANCO: %'
+                     THEN TRIM(SUBSTR(observaciones,
+                          INSTR(observaciones, 'BANCO: ') + 7,
+                          CASE WHEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'BANCO: ') + 7), ' | ') > 0
+                               THEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'BANCO: ') + 7), ' | ') - 1
+                               ELSE 100 END))
+                     ELSE '' END AS banco,
+                CASE WHEN observaciones LIKE '%CUENTA/CEL: %'
+                     THEN TRIM(SUBSTR(observaciones,
+                          INSTR(observaciones, 'CUENTA/CEL: ') + 12,
+                          CASE WHEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'CUENTA/CEL: ') + 12), ' | ') > 0
+                               THEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'CUENTA/CEL: ') + 12), ' | ') - 1
+                               ELSE 50 END))
+                     ELSE '' END AS cuenta,
+                CASE WHEN observaciones LIKE '%CED/NIT: %'
+                     THEN TRIM(SUBSTR(observaciones,
+                          INSTR(observaciones, 'CED/NIT: ') + 9,
+                          CASE WHEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'CED/NIT: ') + 9), ' | ') > 0
+                               THEN INSTR(SUBSTR(observaciones, INSTR(observaciones, 'CED/NIT: ') + 9), ' | ') - 1
+                               ELSE 30 END))
+                     ELSE '' END AS cedula
+            FROM solicitudes_compra
+            WHERE categoria = 'Influencer/Marketing Digital'
+              AND TRIM(COALESCE(solicitante, '')) != ''
+        )
+        INSERT INTO marketing_influencers
+            (nombre, estado, red_social, banco, cuenta_bancaria, cedula_nit, tipo_cuenta, notas, fecha_registro)
+        SELECT nombre, 'Activo', 'Instagram', banco, cuenta, cedula,
+               'Ahorros', 'Importado desde Compras', datetime('now')
+        FROM parsed
+        WHERE TRIM(COALESCE(nombre, '')) != ''
+          AND nombre NOT IN (SELECT nombre FROM marketing_influencers)""",
+        """UPDATE solicitudes_compra
+           SET influencer_id = (
+               SELECT mi.id FROM marketing_influencers mi
+               WHERE LOWER(TRIM(mi.nombre)) = LOWER(TRIM(solicitudes_compra.solicitante))
+               LIMIT 1
+           )
+           WHERE categoria = 'Influencer/Marketing Digital'
+             AND influencer_id IS NULL""",
+    ]),
 ]
 
 
