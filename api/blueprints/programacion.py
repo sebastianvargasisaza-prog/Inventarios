@@ -849,7 +849,10 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         })
 
     order = {'rojo': 0, 'amarillo': 1, 'verde': 2}
-    projection.sort(key=lambda x: (order.get(x['semaforo'], 3), x['producto']))
+    def _sort_key(x):
+        sin_fecha = 1 if x['prox_produccion'] == 'No programado' else 0
+        return (sin_fecha, order.get(x['semaforo'], 3), x['producto'])
+    projection.sort(key=_sort_key)
     all_alerts.sort(key=lambda x: {'critico': 0, 'alto': 1, 'medio': 2}.get(x['nivel'], 3))
 
     return projection, all_alerts
