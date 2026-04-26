@@ -145,6 +145,7 @@ from blueprints.marketing import bp as marketing_bp
 from blueprints.animus import bp as animus_bp
 from blueprints.contabilidad import bp as contabilidad_bp
 from blueprints.programacion import bp as programacion_bp
+from blueprints.admin import bp as admin_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -162,6 +163,7 @@ app.register_blueprint(marketing_bp)
 app.register_blueprint(animus_bp)
 app.register_blueprint(contabilidad_bp)
 app.register_blueprint(programacion_bp)
+app.register_blueprint(admin_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
@@ -185,6 +187,29 @@ def _attach_request_context():
     request._start_time = _time_module.time()
     incoming = request.headers.get("X-Request-Id", "").strip()
     request.id = incoming if (incoming and len(incoming) <= 64) else _uuid.uuid4().hex[:12]
+
+
+# Trigger oportunista de backup automático: chequea cada N requests si toca
+# correr. El chequeo es liviano (1 query) y solo lanza el backup si han
+# pasado >23h del último completado. Multi-worker safe via backup_log lock.
+_backup_check_counter = [0]
+_BACKUP_CHECK_EVERY_N_REQUESTS = 50
+
+
+@app.before_request
+def _maybe_trigger_backup():
+    """Cada N requests, evalúa si toca correr backup automático."""
+    _backup_check_counter[0] += 1
+    if _backup_check_counter[0] % _BACKUP_CHECK_EVERY_N_REQUESTS != 0:
+        return
+    try:
+        from backup import should_run_backup, trigger_backup_async
+        from database import get_db
+        if should_run_backup(get_db()):
+            trigger_backup_async(triggered_by="auto")
+    except Exception:
+        # Backup falla en silencio — no debe afectar el request del usuario.
+        pass
 
 
 @app.after_request

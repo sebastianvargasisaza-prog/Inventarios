@@ -1443,6 +1443,19 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             changed_by    TEXT NOT NULL DEFAULT ''
         )""",
     ]),
+    (26, "backup_log: registro de backups automaticos para auditoria y locking multi-worker", [
+        """CREATE TABLE IF NOT EXISTS backup_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at   TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            completed_at TEXT,
+            file_path    TEXT,
+            size_bytes   INTEGER,
+            status       TEXT NOT NULL DEFAULT 'running',
+            error        TEXT,
+            triggered_by TEXT NOT NULL DEFAULT 'auto'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_backup_log_started ON backup_log(started_at DESC)",
+    ]),
 ]
 
 
