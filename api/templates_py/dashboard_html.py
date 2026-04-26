@@ -1527,6 +1527,7 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
+  if(n==='programacion') cargarProgramacion(null);
 }
 
 
