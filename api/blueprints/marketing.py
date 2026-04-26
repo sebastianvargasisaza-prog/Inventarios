@@ -2749,3 +2749,190 @@ def mkt_agencia_audit():
     finally:
         conn.close()
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AGENCIA DE ADS — Multi-plataforma con skill claude-ads embebido
+# 7 plataformas (Google, Meta, LinkedIn, TikTok, YouTube, Apple, Microsoft)
+# 4 acciones por plataforma (audit, plan, creative, budget)
+# 4 acciones globales (competitor, landing, test, dna)
+# Total: 32 capacidades. Modelo: claude-sonnet-4-5 con prompt caching.
+# ══════════════════════════════════════════════════════════════════════════════
+
+from ads_skill import (
+    run_ads_skill, list_capabilities,
+    PLATFORMS as _ADS_PLATFORMS,
+    ACTIONS_PLATFORM as _ADS_ACTIONS_PLATFORM,
+    ACTIONS_GLOBAL as _ADS_ACTIONS_GLOBAL,
+)
+
+
+@bp.route("/api/marketing/ads/capabilities", methods=["GET"])
+def ads_capabilities():
+    """Lista plataformas y acciones disponibles para el frontend."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    return jsonify(list_capabilities())
+
+
+@bp.route("/api/marketing/ads/run", methods=["POST"])
+def ads_run():
+    """Ejecuta una skill de ads. Body JSON:
+    {
+      "platform": "google" | "meta" | "linkedin" | "tiktok" | "youtube" | "apple" | "microsoft" | null,
+      "action":   "audit" | "plan" | "creative" | "budget" | "competitor" | "landing" | "test" | "dna",
+      "payload":  "<datos de la cuenta del cliente, CSV, o descripcion>",
+      "business_context": {
+         "industry": "skincare/cosmetica",
+         "monthly_spend_usd": 5000,
+         "goal": "ventas",
+         "active_platforms": ["meta","google"],
+         "client_name": "Cliente XYZ"
+      },
+      "model": "claude-sonnet-4-5" | "claude-haiku-4-5-20251001"  (opcional)
+    }
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+
+    body = request.get_json(silent=True) or {}
+    platform = (body.get("platform") or "").strip().lower() or None
+    action = (body.get("action") or "").strip().lower()
+    payload = body.get("payload") or ""
+    business_context = body.get("business_context") or {}
+    model = body.get("model")
+
+    if not action:
+        return jsonify({"error": "Falta 'action'"}), 400
+
+    valid_actions = _ADS_ACTIONS_PLATFORM | _ADS_ACTIONS_GLOBAL
+    if action not in valid_actions:
+        return jsonify({
+            "error": f"action invalida: {action}",
+            "validas": sorted(valid_actions),
+        }), 400
+
+    if action in _ADS_ACTIONS_PLATFORM and platform not in _ADS_PLATFORMS:
+        return jsonify({
+            "error": f"action '{action}' requiere platform validas: {sorted(_ADS_PLATFORMS)}"
+        }), 400
+
+    if not payload or len(payload.strip()) < 10:
+        return jsonify({
+            "error": "Payload muy corto. Pega datos de la cuenta, metricas, o describe el caso."
+        }), 400
+
+    conn = _db()
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        return jsonify({
+            "error": "anthropic_api_key no esta configurada en animus_config. "
+                     "Agregala desde Centro de Mando → Configuracion → API Keys."
+        }), 503
+
+    result = run_ads_skill(
+        platform=platform,
+        action=action,
+        payload=payload,
+        api_key=api_key,
+        model=model,
+        business_context=business_context,
+    )
+
+    if "error" in result:
+        return jsonify(result), 502
+
+    try:
+        c = conn.cursor()
+        agente_label = f"ads_{platform}" if platform else f"ads_{action}"
+        log_payload = {
+            "platform": platform,
+            "action": action,
+            "model": result.get("model"),
+            "client": business_context.get("client_name") or "",
+            "tokens_in": result.get("input_tokens"),
+            "tokens_out": result.get("output_tokens"),
+            "cache_read": result.get("cache_read_tokens"),
+            "cost_usd": result.get("cost_usd_estimate"),
+            "preview": (result.get("text") or "")[:300],
+            "full_text": result.get("text") or "",
+        }
+        _log_agente(c, agente_label, action, log_payload, u)
+        conn.commit()
+    except Exception:
+        pass
+
+    return jsonify(result)
+
+
+@bp.route("/api/marketing/ads/log", methods=["GET"])
+def ads_log():
+    """Historial de ejecuciones de la agencia de ads."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, agente, accion, fecha, ejecutado_por, resultado
+        FROM marketing_agentes_log
+        WHERE agente LIKE 'ads_%'
+        ORDER BY fecha DESC LIMIT 50
+    """).fetchall()
+    out = []
+    for r in rows:
+        try:
+            res = json.loads(r["resultado"]) if r["resultado"] else {}
+        except Exception:
+            res = {}
+        out.append({
+            "id": r["id"],
+            "agente": r["agente"],
+            "accion": r["accion"],
+            "fecha": r["fecha"],
+            "ejecutado_por": r["ejecutado_por"],
+            "client": res.get("client", ""),
+            "platform": res.get("platform"),
+            "model": res.get("model"),
+            "cost_usd": res.get("cost_usd"),
+            "preview": res.get("preview", ""),
+        })
+    return jsonify(out)
+
+
+@bp.route("/api/marketing/ads/log/<int:log_id>", methods=["GET"])
+def ads_log_detail(log_id):
+    """Devuelve el texto completo de una ejecucion (markdown)."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    row = c.execute(
+        "SELECT id, agente, accion, fecha, ejecutado_por, resultado "
+        "FROM marketing_agentes_log WHERE id=? AND agente LIKE 'ads_%'",
+        (log_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "no encontrado"}), 404
+    try:
+        res = json.loads(row["resultado"]) if row["resultado"] else {}
+    except Exception:
+        res = {}
+    return jsonify({
+        "id": row["id"],
+        "agente": row["agente"],
+        "accion": row["accion"],
+        "fecha": row["fecha"],
+        "ejecutado_por": row["ejecutado_por"],
+        "platform": res.get("platform"),
+        "client": res.get("client", ""),
+        "model": res.get("model"),
+        "cost_usd": res.get("cost_usd"),
+        "tokens_in": res.get("tokens_in"),
+        "tokens_out": res.get("tokens_out"),
+        "cache_read": res.get("cache_read"),
+        "text": res.get("full_text") or res.get("preview", ""),
+    })
+

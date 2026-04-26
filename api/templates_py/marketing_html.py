@@ -187,6 +187,7 @@ function showToast(msg, type) {
   <button class="tab-btn" onclick="switchTab('agentes')">&#x1F916; Agentes IA</button>
   <button class="tab-btn" onclick="switchTab('analytics')">&#x1F4CA; Analytics</button>
   <button class="tab-btn" onclick="switchTab('agencia')">&#x1F3E2; Agencia</button>
+  <button class="tab-btn" onclick="switchTab('ads')">&#x1F680; Agencia Ads</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -898,6 +899,11 @@ function showToast(msg, type) {
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- TAB: AGENCIA ADS (Multi-plataforma con claude-ads skill)        -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="tab-ads" class="tab-panel"></div>
+
 
 <script>
 // ──────────────────────────────────────────────────────────────────────────────
@@ -942,7 +948,7 @@ function showAlert(containerId, msg, type='success') {
 const _loaded = {};
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
-    const n = ['dashboard','campanas','influencers','contenido','agentes','analytics','agencia'][i];
+    const n = ['dashboard','campanas','influencers','contenido','agentes','analytics','agencia','ads'][i];
     b.classList.toggle('active', n===name);
   });
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
@@ -957,6 +963,7 @@ function loadTab(name) {
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
+  else if(name==='ads') renderAdsTab();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2293,6 +2300,372 @@ function renderAgencia(d) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AGENCIA ADS — Multi-plataforma con claude-ads skill
+// ══════════════════════════════════════════════════════════════════════════════
+const ADS_PLATFORMS = [
+  {id:'google',    name:'Google Ads',     icon:'&#x1F50D;', color:'#4285F4', desc:'Search · PMax · YouTube'},
+  {id:'meta',      name:'Meta Ads',       icon:'&#x1F4F1;', color:'#1877F2', desc:'Facebook · Instagram'},
+  {id:'linkedin',  name:'LinkedIn Ads',   icon:'&#x1F4BC;', color:'#0A66C2', desc:'B2B · Lead Gen'},
+  {id:'tiktok',    name:'TikTok Ads',     icon:'&#x1F3B5;', color:'#FE2C55', desc:'Creative · Smart+'},
+  {id:'youtube',   name:'YouTube Ads',    icon:'&#x25B6;',  color:'#FF0000', desc:'Video · Shorts'},
+  {id:'apple',     name:'Apple Search',   icon:'&#xF8FF;',  color:'#000000', desc:'iOS App Store'},
+  {id:'microsoft', name:'Microsoft Ads',  icon:'&#x1F50E;', color:'#00A4EF', desc:'Bing · Edge · LinkedIn'},
+];
+const ADS_ACTIONS_PLATFORM = [
+  {id:'audit',    label:'Audit',    icon:'&#x1F50D;', desc:'Diagnostico completo + score 0-100'},
+  {id:'plan',     label:'Plan',     icon:'&#x1F5FA;', desc:'Estrategia 90 dias por industria'},
+  {id:'creative', label:'Creative', icon:'&#x1F3A8;', desc:'Copy + briefs + specs por formato'},
+  {id:'budget',   label:'Budget',   icon:'&#x1F4B0;', desc:'Asignacion + bidding strategy'},
+];
+const ADS_ACTIONS_GLOBAL = [
+  {id:'competitor', label:'Competitor',  icon:'&#x1F575;', desc:'Inteligencia competitiva'},
+  {id:'landing',    label:'Landing',     icon:'&#x1F310;', desc:'Auditoria de pagina destino'},
+  {id:'test',       label:'A/B Test',    icon:'&#x1F9EA;', desc:'Diseno de experimentos'},
+  {id:'dna',        label:'Brand DNA',   icon:'&#x1F9EC;', desc:'Extrae perfil de marca de URL'},
+];
+let ADS_STATE = { platform: 'meta', action: 'audit', running: false };
+
+function renderAdsTab() {
+  const root = document.getElementById('tab-ads');
+  if (!root || root.dataset.rendered === '1') return;
+  root.dataset.rendered = '1';
+
+  const platCards = ADS_PLATFORMS.map(p =>
+    `<div class="ads-plat-card" data-platform="${p.id}" onclick="selectAdsPlatform('${p.id}')" style="border-color:${p.color}33;">
+       <div style="font-size:28px;line-height:1;color:${p.color};">${p.icon}</div>
+       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:8px;">${p.name}</div>
+       <div style="font-size:10px;color:#64748b;margin-top:2px;">${p.desc}</div>
+     </div>`).join('');
+
+  const actPlatBtns = ADS_ACTIONS_PLATFORM.map(a =>
+    `<div class="ads-act-card" data-action="${a.id}" onclick="selectAdsAction('${a.id}',false)">
+       <div style="font-size:22px;">${a.icon}</div>
+       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:6px;">${a.label}</div>
+       <div style="font-size:10px;color:#64748b;margin-top:2px;">${a.desc}</div>
+     </div>`).join('');
+
+  const actGlobBtns = ADS_ACTIONS_GLOBAL.map(a =>
+    `<div class="ads-act-card global" data-action="${a.id}" onclick="selectAdsAction('${a.id}',true)">
+       <div style="font-size:22px;">${a.icon}</div>
+       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:6px;">${a.label}</div>
+       <div style="font-size:10px;color:#64748b;margin-top:2px;">${a.desc}</div>
+     </div>`).join('');
+
+  root.innerHTML = `
+    <style>
+      .ads-hero{background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#1e293b 100%);border:1px solid #4c1d95;border-radius:16px;padding:24px;margin-bottom:18px;position:relative;overflow:hidden;}
+      .ads-hero:after{content:'';position:absolute;top:-50%;right:-10%;width:400px;height:400px;background:radial-gradient(circle,#7c3aed44 0%,transparent 70%);pointer-events:none;}
+      .ads-hero h2{font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:10px;}
+      .ads-hero .sub{color:#a78bfa;font-size:13px;max-width:720px;line-height:1.5;}
+      .ads-hero .stats{display:flex;gap:18px;margin-top:18px;flex-wrap:wrap;}
+      .ads-hero .stat{background:#0f172a99;border:1px solid #334155;border-radius:10px;padding:10px 14px;}
+      .ads-hero .stat .v{font-size:20px;font-weight:800;color:#a78bfa;line-height:1;}
+      .ads-hero .stat .l{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;}
+
+      .ads-section-title{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
+      .ads-section-title .num{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#4c1d95;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center;}
+
+      .ads-plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
+      .ads-plat-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;cursor:pointer;text-align:center;transition:.2s;}
+      .ads-plat-card:hover{transform:translateY(-2px);background:#263348;}
+      .ads-plat-card.active{background:#1e1b4b;border-color:#7c3aed!important;box-shadow:0 0 0 3px #7c3aed33;}
+
+      .ads-act-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
+      .ads-act-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;cursor:pointer;text-align:center;transition:.15s;}
+      .ads-act-card:hover{background:#263348;border-color:#475569;}
+      .ads-act-card.active{background:linear-gradient(135deg,#1e1b4b,#312e81);border-color:#7c3aed;}
+      .ads-act-card.global{border-style:dashed;}
+
+      .ads-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:10px;}
+      .ads-input{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;}
+      .ads-input:focus{outline:none;border-color:#7c3aed;}
+      .ads-textarea{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:12px;border-radius:8px;font-size:12px;width:100%;font-family:'Cascadia Code',Consolas,monospace;min-height:140px;resize:vertical;}
+      .ads-textarea:focus{outline:none;border-color:#7c3aed;}
+      .ads-label{font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:block;}
+
+      .ads-run-btn{width:100%;padding:16px;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;font-size:15px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;transition:.2s;display:flex;align-items:center;justify-content:center;gap:10px;}
+      .ads-run-btn:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 8px 24px #7c3aed44;}
+      .ads-run-btn:disabled{opacity:.5;cursor:wait;transform:none;}
+
+      .ads-output{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;margin-top:18px;}
+      .ads-output h1{font-size:20px;color:#f1f5f9;margin:18px 0 10px;font-weight:800;border-bottom:1px solid #334155;padding-bottom:8px;}
+      .ads-output h2{font-size:16px;color:#e2e8f0;margin:16px 0 8px;font-weight:700;}
+      .ads-output h3{font-size:14px;color:#a78bfa;margin:14px 0 6px;font-weight:700;}
+      .ads-output p{color:#cbd5e1;font-size:13px;line-height:1.65;margin:6px 0;}
+      .ads-output ul,.ads-output ol{margin:8px 0 8px 22px;color:#cbd5e1;font-size:13px;line-height:1.7;}
+      .ads-output li{margin:3px 0;}
+      .ads-output strong{color:#f1f5f9;font-weight:700;}
+      .ads-output code{background:#0f172a;color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:'Cascadia Code',Consolas,monospace;}
+      .ads-output pre{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;overflow-x:auto;margin:10px 0;}
+      .ads-output pre code{background:transparent;color:#e2e8f0;padding:0;font-size:12px;}
+      .ads-output table{width:100%;margin:10px 0;border-collapse:collapse;}
+      .ads-output th{background:#0f172a;text-align:left;padding:8px 10px;font-size:11px;color:#94a3b8;text-transform:uppercase;border-bottom:1px solid #334155;}
+      .ads-output td{padding:8px 10px;font-size:12px;color:#cbd5e1;border-bottom:1px solid #1e293b;}
+      .ads-output blockquote{border-left:3px solid #7c3aed;padding:6px 14px;margin:10px 0;color:#a78bfa;background:#1e1b4b33;font-style:italic;}
+      .ads-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#64748b;margin-top:14px;padding-top:12px;border-top:1px solid #334155;}
+      .ads-meta span{background:#0f172a;padding:3px 9px;border-radius:6px;border:1px solid #334155;}
+
+      .ads-loader{display:flex;flex-direction:column;align-items:center;gap:14px;padding:60px 20px;}
+      .ads-loader .ring{width:48px;height:48px;border:3px solid #334155;border-top-color:#7c3aed;border-radius:50%;animation:adsspin 0.9s linear infinite;}
+      @keyframes adsspin{to{transform:rotate(360deg);}}
+      .ads-loader .lbl{color:#a78bfa;font-size:13px;font-weight:600;}
+      .ads-loader .sub{color:#64748b;font-size:11px;}
+
+      .ads-history{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;margin-top:18px;}
+      .ads-history-item{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #263348;cursor:pointer;font-size:12px;transition:.1s;}
+      .ads-history-item:hover{background:#0f172a44;border-radius:6px;}
+      .ads-history-item:last-child{border-bottom:none;}
+    </style>
+
+    <div class="ads-hero">
+      <h2>&#x1F680; Agencia de Ads — Multi-plataforma</h2>
+      <div class="sub">
+        Auditoria, planning, creative y budget para 7 plataformas pagadas.
+        Powered by claude-sonnet-4-5 con 250+ checks, scoring 0-100, benchmarks por industria,
+        y biblioteca de specs creativos. Output en markdown listo para cliente.
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="v">7</div><div class="l">Plataformas</div></div>
+        <div class="stat"><div class="v">32</div><div class="l">Capacidades</div></div>
+        <div class="stat"><div class="v">~$0.06</div><div class="l">Por audit (con cache)</div></div>
+        <div class="stat"><div class="v">~30s</div><div class="l">Tiempo respuesta</div></div>
+      </div>
+    </div>
+
+    <div class="grid2" style="gap:18px;">
+      <div>
+        <div class="ads-section-title"><span class="num">1</span> Plataforma</div>
+        <div class="ads-plat-grid">${platCards}</div>
+
+        <div class="ads-section-title"><span class="num">2</span> Accion por plataforma</div>
+        <div class="ads-act-grid">${actPlatBtns}</div>
+
+        <div class="ads-section-title"><span class="num">2b</span> Acciones globales (sin plataforma)</div>
+        <div class="ads-act-grid">${actGlobBtns}</div>
+
+        <div class="ads-section-title"><span class="num">3</span> Contexto del cliente</div>
+        <div class="ads-form-grid">
+          <div><label class="ads-label">Cliente</label>
+            <input class="ads-input" id="ads-client" placeholder="ej. ANIMUS Lab" /></div>
+          <div><label class="ads-label">Industria</label>
+            <select class="ads-input" id="ads-industry">
+              <option value="">Seleccionar...</option>
+              <option>SaaS</option><option>E-commerce</option><option>Skincare/Cosmetica</option>
+              <option>Local Service</option><option>B2B Enterprise</option><option>Info Products</option>
+              <option>Mobile App</option><option>Real Estate</option><option>Healthcare</option>
+              <option>Finance</option><option>Agency</option><option>Other</option>
+            </select></div>
+          <div><label class="ads-label">Spend mensual (USD)</label>
+            <input class="ads-input" id="ads-spend" type="number" placeholder="5000" /></div>
+          <div><label class="ads-label">Objetivo principal</label>
+            <select class="ads-input" id="ads-goal">
+              <option value="">Seleccionar...</option>
+              <option>Ventas / Revenue</option><option>Leads / Demos</option>
+              <option>App Installs</option><option>Calls</option><option>Brand</option>
+            </select></div>
+        </div>
+
+        <div class="ads-section-title"><span class="num">4</span> Datos / contexto (CSV, metricas, descripcion)</div>
+        <textarea class="ads-textarea" id="ads-payload"
+          placeholder="Pega aqui datos de la cuenta. Ejemplos:&#10;&#10;- Export CSV de Google Ads (campañas, keywords, search terms)&#10;- Screenshot de Events Manager / Pixel health&#10;- Metricas: CTR, CPC, CVR, CPA, ROAS, impressions, spend&#10;- URL de la landing page o competidor&#10;- Brief del cliente: 'tenemos 3 campañas activas, gastamos $5k/mes en Meta, CPA $35, target $20...'&#10;&#10;Mientras mas contexto, mejor el analisis."></textarea>
+
+        <button class="ads-run-btn" id="ads-run-btn" onclick="runAdsSkill()">
+          <span id="ads-run-icon">&#x26A1;</span>
+          <span id="ads-run-lbl">Ejecutar analisis</span>
+        </button>
+      </div>
+
+      <div>
+        <div class="ads-section-title"><span class="num">&#x2728;</span> Resultado</div>
+        <div id="ads-output-wrap" class="ads-output" style="min-height:300px;">
+          <div style="text-align:center;padding:60px 20px;color:#64748b;">
+            <div style="font-size:48px;margin-bottom:12px;">&#x1F680;</div>
+            <div style="font-size:14px;font-weight:600;color:#94a3b8;">Configura los pasos 1-4 y ejecuta</div>
+            <div style="font-size:11px;margin-top:8px;">El reporte aparecera aqui en markdown</div>
+          </div>
+        </div>
+
+        <div class="ads-history">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:700;color:#94a3b8;">&#x23F1; Historial reciente</div>
+            <button class="btn btn-outline btn-sm" onclick="loadAdsHistory()">Actualizar</button>
+          </div>
+          <div id="ads-history-list" style="font-size:12px;color:#64748b;">Cargando...</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  selectAdsPlatform('meta');
+  selectAdsAction('audit', false);
+  loadAdsHistory();
+}
+
+function selectAdsPlatform(id) {
+  ADS_STATE.platform = id;
+  document.querySelectorAll('#tab-ads .ads-plat-card').forEach(el => {
+    el.classList.toggle('active', el.dataset.platform === id);
+  });
+}
+function selectAdsAction(id, isGlobal) {
+  ADS_STATE.action = id;
+  document.querySelectorAll('#tab-ads .ads-act-card').forEach(el => {
+    el.classList.toggle('active', el.dataset.action === id);
+  });
+  if (isGlobal) {
+    document.querySelectorAll('#tab-ads .ads-plat-card').forEach(el => el.style.opacity = '0.4');
+  } else {
+    document.querySelectorAll('#tab-ads .ads-plat-card').forEach(el => el.style.opacity = '1');
+  }
+}
+
+// Markdown -> HTML minimal renderer (sin dependencias externas)
+function adsRenderMarkdown(md) {
+  if (!md) return '';
+  let html = md;
+  html = html.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  html = html.replace(/```([a-z]*)\n([\s\S]*?)```/g,(m,l,c)=>'<pre><code>'+c.trim()+'</code></pre>');
+  html = html.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  html = html.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  html = html.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
+  html = html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+  html = html.replace(/(?<!\*)\*([^\*\n]+)\*(?!\*)/g,'<em>$1</em>');
+  // tables
+  html = html.replace(/(\|.+\|\n\|[\s\-:|]+\|\n(?:\|.+\|\n?)+)/g,(tbl)=>{
+    const lines = tbl.trim().split('\n');
+    const head = lines[0].split('|').slice(1,-1).map(s=>s.trim());
+    const rows = lines.slice(2).map(r=>r.split('|').slice(1,-1).map(s=>s.trim()));
+    let h='<table><thead><tr>'+head.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+    rows.forEach(r=>h+='<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>');
+    return h+'</tbody></table>';
+  });
+  // lists
+  html = html.replace(/(^- .+(?:\n- .+)+)/gm,(m)=>'<ul>'+m.split('\n').map(l=>'<li>'+l.replace(/^- /,'')+'</li>').join('')+'</ul>');
+  html = html.replace(/(^\d+\. .+(?:\n\d+\. .+)+)/gm,(m)=>'<ol>'+m.split('\n').map(l=>'<li>'+l.replace(/^\d+\. /,'')+'</li>').join('')+'</ol>');
+  // paragraphs (lineas que no son ya bloque)
+  html = html.split(/\n{2,}/).map(p=>{
+    if (/^<(h[1-6]|ul|ol|pre|table|blockquote)/.test(p.trim())) return p;
+    return p.trim() ? '<p>'+p.replace(/\n/g,'<br>')+'</p>' : '';
+  }).join('\n');
+  return html;
+}
+
+async function runAdsSkill() {
+  if (ADS_STATE.running) return;
+  const isGlobal = ['competitor','landing','test','dna'].includes(ADS_STATE.action);
+  const platform = isGlobal ? null : ADS_STATE.platform;
+  const action = ADS_STATE.action;
+  const payload = (document.getElementById('ads-payload')||{}).value || '';
+  if (payload.trim().length < 10) {
+    alert('Pega al menos 10 caracteres de datos o contexto.');
+    return;
+  }
+  const business_context = {
+    client_name: (document.getElementById('ads-client')||{}).value || '',
+    industry:    (document.getElementById('ads-industry')||{}).value || '',
+    monthly_spend_usd: parseInt((document.getElementById('ads-spend')||{}).value || '0',10) || null,
+    goal:        (document.getElementById('ads-goal')||{}).value || '',
+    active_platforms: platform ? [platform] : [],
+  };
+
+  ADS_STATE.running = true;
+  const btn = document.getElementById('ads-run-btn');
+  btn.disabled = true;
+  document.getElementById('ads-run-icon').innerHTML = '&#x231B;';
+  document.getElementById('ads-run-lbl').textContent = 'Analizando con Claude...';
+
+  const out = document.getElementById('ads-output-wrap');
+  out.innerHTML = `
+    <div class="ads-loader">
+      <div class="ring"></div>
+      <div class="lbl">Claude esta procesando ${(platform||'').toUpperCase()} ${action.toUpperCase()}</div>
+      <div class="sub">Cargando skills (~30k tokens) + analizando tus datos. Suele tardar 20-40s.</div>
+    </div>`;
+
+  try {
+    const r = await fetch('/api/marketing/ads/run', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({platform, action, payload, business_context}),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      out.innerHTML = `<div style="color:#f87171;font-weight:700;font-size:14px;">&#x26A0; Error</div>
+        <div style="color:#fca5a5;font-size:12px;margin-top:8px;">${data.error||'Fallo desconocido'}</div>
+        ${data.detail ? '<pre style="background:#0f172a;padding:10px;border-radius:8px;font-size:11px;color:#94a3b8;margin-top:10px;overflow-x:auto;">'+data.detail+'</pre>' : ''}`;
+    } else {
+      const cacheTag = data.cache_read_tokens ? ` <span style="color:#34d399;">cache hit ${data.cache_read_tokens.toLocaleString()} tok</span>` : '';
+      out.innerHTML = adsRenderMarkdown(data.text || '(sin texto)') +
+        `<div class="ads-meta">
+          <span>&#x1F916; ${data.model||'?'}</span>
+          <span>&#x21AA; in: ${(data.input_tokens||0).toLocaleString()}</span>
+          <span>&#x21AA; out: ${(data.output_tokens||0).toLocaleString()}</span>
+          ${cacheTag ? '<span>'+cacheTag+'</span>' : ''}
+          <span>&#x1F4B5; ~$${(data.cost_usd_estimate||0).toFixed(4)}</span>
+        </div>`;
+      loadAdsHistory();
+    }
+  } catch (e) {
+    out.innerHTML = `<div style="color:#f87171;">Error de red: ${e.message}</div>`;
+  } finally {
+    ADS_STATE.running = false;
+    btn.disabled = false;
+    document.getElementById('ads-run-icon').innerHTML = '&#x26A1;';
+    document.getElementById('ads-run-lbl').textContent = 'Ejecutar analisis';
+  }
+}
+
+async function loadAdsHistory() {
+  const wrap = document.getElementById('ads-history-list');
+  if (!wrap) return;
+  try {
+    const r = await fetch('/api/marketing/ads/log');
+    const list = await r.json();
+    if (!Array.isArray(list) || list.length === 0) {
+      wrap.innerHTML = '<div style="color:#64748b;padding:8px;">Sin ejecuciones aun.</div>';
+      return;
+    }
+    wrap.innerHTML = list.slice(0,12).map(x => {
+      const cost = x.cost_usd != null ? '$'+Number(x.cost_usd).toFixed(3) : '';
+      const plat = x.platform ? x.platform.toUpperCase() : 'GLOBAL';
+      return `<div class="ads-history-item" onclick="loadAdsLogDetail(${x.id})">
+        <span style="background:#4c1d95;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;">${plat}</span>
+        <span style="color:#a78bfa;font-weight:600;">${x.accion||''}</span>
+        <span style="color:#cbd5e1;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.client||x.preview||''}</span>
+        <span style="color:#64748b;font-size:10px;">${(x.fecha||'').slice(5,16)}</span>
+        <span style="color:#34d399;font-size:10px;">${cost}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    wrap.innerHTML = '<div style="color:#f87171;">Error: '+e.message+'</div>';
+  }
+}
+
+async function loadAdsLogDetail(id) {
+  const out = document.getElementById('ads-output-wrap');
+  out.innerHTML = `<div class="ads-loader"><div class="ring"></div><div class="lbl">Cargando #${id}</div></div>`;
+  try {
+    const r = await fetch('/api/marketing/ads/log/'+id);
+    const data = await r.json();
+    if (!r.ok) {
+      out.innerHTML = '<div style="color:#f87171;">No se pudo cargar</div>';
+      return;
+    }
+    out.innerHTML = adsRenderMarkdown(data.text || '(vacio)') +
+      `<div class="ads-meta">
+        <span>&#x1F516; #${data.id}</span>
+        <span>${(data.platform||'global').toUpperCase()} / ${data.accion}</span>
+        <span>&#x1F464; ${data.ejecutado_por||'?'}</span>
+        <span>&#x1F4C5; ${data.fecha||''}</span>
+        <span>&#x1F4B5; ~$${(data.cost_usd||0).toFixed(4)}</span>
+      </div>`;
+  } catch (e) {
+    out.innerHTML = '<div style="color:#f87171;">Error: '+e.message+'</div>';
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // INIT
