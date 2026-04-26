@@ -3940,6 +3940,10 @@ function _renderProgramacion(d){
     if(e.target === this) cerrarModalProgramar();
   });
 
+  function actualizarDashboard() {
+    cargarProgramacion(null);
+  }
+
   function guardarProgramacion() {
     var producto = document.getElementById('mp-producto').value;
     var fecha    = document.getElementById('mp-fecha').value;

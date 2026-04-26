@@ -669,10 +669,12 @@ var PAGOS = [];
 // Mapa categoria → grupos de strings
 var CMAP = {
   mp:  ['MPs','MP','Materia Prima','Materias Primas'],
-  mee: ['Envase','Insumos','MEE','Empaque'],
-  svc: ['Servicios','Analisis','Acondicionamiento','SVC','Servicio'],
-  adm: ['Admin','Nomina','ADM','Administrativo'],
-  inf: ['Infraestructura','INF'],
+  mee: ['Envase','Insumos','MEE','Empaque','Material de Empaque'],
+  svc: ['Servicios','Analisis','Acondicionamiento','SVC','Servicio',
+        'Servicios Profesionales','Software/Tecnologia'],
+  adm: ['Admin','Nomina','ADM','Administrativo',
+        'EPP','Aseo/Limpieza','Papeleria/Oficina','Dotacion','Otro'],
+  inf: ['Infraestructura','INF','Mantenimiento','Repuestos','Reactivos/Laboratorio'],
   cc:  ['CC','Cuenta de Cobro','Cuentas de Cobro']
 };
 // Acepta tildes normalizando

@@ -872,6 +872,20 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo)
         VALUES ('MAXLASH', 'MAXLASH', 1)"""
     ]),
+    (12, 'produccion_programada table', [
+        """CREATE TABLE IF NOT EXISTS produccion_programada (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto TEXT NOT NULL,
+            fecha_programada TEXT NOT NULL,
+            lotes INTEGER DEFAULT 1,
+            estado TEXT DEFAULT 'pendiente',
+            observaciones TEXT,
+            creado_en TEXT DEFAULT (datetime('now')),
+            gcal_event_id TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pp_producto ON produccion_programada(producto)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_fecha ON produccion_programada(fecha_programada)"
+    ]),
         (13, 'mp_formula_bridge — formula_id to bodega_id mapping', [
         """CREATE TABLE IF NOT EXISTS mp_formula_bridge (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1086,20 +1100,6 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('MPTERSSO01', 'TERPENOS SOLUBLES 80-98%', 'MP00176', 'terpenos solubles = centella asiatica extract', 1),
            ('MPTOCOFE01', 'SODIUM TOCOFERIL FOSFATO', 'MP00078', 'sodium tocopheryl phosphate = vitamina E', 1)
         """
-    ]),
-(12, 'produccion_programada table', [
-        """CREATE TABLE IF NOT EXISTS produccion_programada (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            producto TEXT NOT NULL,
-            fecha_programada TEXT NOT NULL,
-            lotes INTEGER DEFAULT 1,
-            estado TEXT DEFAULT 'pendiente',
-            observaciones TEXT,
-            creado_en TEXT DEFAULT (datetime('now')),
-            gcal_event_id TEXT
-        )""",
-        "CREATE INDEX IF NOT EXISTS idx_pp_producto ON produccion_programada(producto)",
-        "CREATE INDEX IF NOT EXISTS idx_pp_fecha ON produccion_programada(fecha_programada)"
     ]),
 ]
 
