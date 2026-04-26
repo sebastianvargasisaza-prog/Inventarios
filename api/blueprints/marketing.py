@@ -2373,3 +2373,379 @@ def mkt_fix_pago_link():
         """, (influencer_id, nombre, int(valor), estado, f"Pago OC {numero_oc}", numero_oc))
         conn.commit()
         return jsonify({"ok": True, "action": "inserted"})
+
+
+@bp.route("/api/marketing/agencia/audit", methods=["GET"])
+def mkt_agencia_audit():
+    """Agencia tab: influencer scoring, portfolio audit, competition analysis, campaign proposals."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+
+        # ── 1. Load influencers ────────────────────────────────────────────────
+        influencers = [dict(r) for r in c.execute(
+            "SELECT * FROM marketing_influencers ORDER BY nombre"
+        ).fetchall()]
+
+        # ── 2. Load pagos ──────────────────────────────────────────────────────
+        try:
+            pagos_rows = [dict(r) for r in c.execute(
+                "SELECT influencer_id, influencer_nombre, valor, fecha, estado FROM pagos_influencers"
+            ).fetchall()]
+        except Exception:
+            pagos_rows = []
+
+        # ── 3. Load campanas per influencer ────────────────────────────────────
+        try:
+            camp_rows = [dict(r) for r in c.execute(
+                "SELECT influencer_id, estado FROM marketing_campana_influencer"
+            ).fetchall()]
+        except Exception:
+            camp_rows = []
+
+        # ── 4. Load contenido per influencer ───────────────────────────────────
+        try:
+            cont_rows = [dict(r) for r in c.execute(
+                "SELECT influencer_id, estado FROM marketing_contenido"
+            ).fetchall()]
+        except Exception:
+            cont_rows = []
+
+        # Index helpers
+        pagos_by_id   = {}
+        pagos_by_name = {}
+        for p in pagos_rows:
+            if p.get("influencer_id"):
+                pagos_by_id.setdefault(p["influencer_id"], []).append(p)
+            nm = (p.get("influencer_nombre") or "").strip().lower()
+            if nm:
+                pagos_by_name.setdefault(nm, []).append(p)
+
+        camps_by_id  = {}
+        for r in camp_rows:
+            if r.get("influencer_id"):
+                camps_by_id.setdefault(r["influencer_id"], []).append(r)
+
+        cont_by_id  = {}
+        for r in cont_rows:
+            if r.get("influencer_id"):
+                cont_by_id.setdefault(r["influencer_id"], []).append(r)
+
+        today = _dt.today()
+
+        # ── 5. Score each influencer ───────────────────────────────────────────
+        def _score(inf, pagos, camps, conts):
+            s = 0
+
+            # Engagement (30 pts): engagement_rate stored as decimal (0.05 = 5%)
+            eng = float(inf.get("engagement_rate") or 0)
+            # If stored as percentage already (> 1.0), normalise
+            if eng > 1.0:
+                eng = eng / 100.0
+            if eng >= 0.05:
+                s += 30
+            elif eng >= 0.03:
+                s += 22
+            elif eng >= 0.01:
+                s += 12
+            elif eng > 0:
+                s += 5
+
+            # Total investment in Pagada pagos (25 pts)
+            pagadas = [p for p in pagos if p.get("estado") == "Pagada"]
+            total_inv = sum(p.get("valor") or 0 for p in pagadas)
+            if total_inv >= 5_000_000:
+                s += 25
+            elif total_inv >= 2_000_000:
+                s += 18
+            elif total_inv >= 500_000:
+                s += 10
+            elif total_inv > 0:
+                s += 4
+
+            # Seguidores (20 pts)
+            seg = int(inf.get("seguidores") or 0)
+            if seg >= 100_000:
+                s += 20
+            elif seg >= 50_000:
+                s += 15
+            elif seg >= 10_000:
+                s += 8
+            elif seg >= 1_000:
+                s += 3
+
+            # Recencia del ultimo pago (15 pts)
+            fechas = [p.get("fecha") for p in pagadas if p.get("fecha")]
+            if fechas:
+                try:
+                    ultima = max(_dt.strptime(f[:10], "%Y-%m-%d") for f in fechas)
+                    days = (today - ultima).days
+                    if days <= 30:
+                        s += 15
+                    elif days <= 90:
+                        s += 10
+                    elif days <= 180:
+                        s += 5
+                    else:
+                        s += 1
+                except Exception:
+                    pass
+
+            # Contenido publicado (10 pts)
+            pub = [c2 for c2 in conts if c2.get("estado") == "Publicado"]
+            if len(pub) >= 10:
+                s += 10
+            elif len(pub) >= 5:
+                s += 7
+            elif len(pub) >= 1:
+                s += 3
+
+            return min(s, 100)
+
+        scored = []
+        for inf in influencers:
+            iid = inf["id"]
+            pagos = pagos_by_id.get(iid, [])
+            if not pagos:
+                pagos = pagos_by_name.get(inf["nombre"].strip().lower(), [])
+            pagadas_inf = [p for p in pagos if p.get("estado") == "Pagada"]
+            camps = camps_by_id.get(iid, [])
+            conts = cont_by_id.get(iid, [])
+            score = _score(inf, pagos, camps, conts)
+
+            inf["score"] = score
+            inf["total_pagado"] = sum(p.get("valor") or 0 for p in pagadas_inf)
+            inf["campanas_count"] = len(camps)
+            scored.append(inf)
+
+        # ── 6. Portfolio health ────────────────────────────────────────────────
+        activos   = [i for i in scored if i.get("estado") == "Activo"]
+        inactivos = [i for i in scored if i.get("estado") != "Activo"]
+        # At-risk: active with score < 25 or no payment in 180+ days
+        en_riesgo = []
+        for i in activos:
+            if i["score"] < 25:
+                en_riesgo.append(i)
+            else:
+                pagos_i = pagos_by_id.get(i["id"], []) or pagos_by_name.get(i["nombre"].strip().lower(), [])
+                pagadas_i = [p for p in pagos_i if p.get("estado") == "Pagada"]
+                if pagadas_i:
+                    try:
+                        ultima = max(_dt.strptime(p["fecha"][:10], "%Y-%m-%d") for p in pagadas_i if p.get("fecha"))
+                        if (today - ultima).days > 180:
+                            en_riesgo.append(i)
+                    except Exception:
+                        pass
+
+        portfolio = {
+            "activos": len(activos),
+            "inactivos": len(inactivos),
+            "en_riesgo": len(en_riesgo),
+            "total": len(scored),
+        }
+
+        # ── 7. Audit findings ─────────────────────────────────────────────────
+        audit = []
+
+        # Critical: influencers with pending payments > 60 days
+        try:
+            old_pending = [dict(r) for r in c.execute("""
+                SELECT influencer_nombre, valor, fecha FROM pagos_influencers
+                WHERE estado='Pendiente' AND fecha <= date('now','-60 days')
+            """).fetchall()]
+            for op in old_pending:
+                audit.append({
+                    "severity": "critical",
+                    "finding": f"Pago pendiente de ${op.get('valor',0):,} para {op['influencer_nombre']} con +60 días sin resolver (desde {op.get('fecha','?')})",
+                    "recommendation": "Revisar OC correspondiente y confirmar método de pago."
+                })
+        except Exception:
+            pass
+
+        # Critical: missing banking data for active influencers
+        no_banco = [i for i in activos if not i.get("banco") and not i.get("cuenta_bancaria")]
+        if no_banco:
+            audit.append({
+                "severity": "critical",
+                "finding": f"{len(no_banco)} influencer(s) activos sin datos bancarios registrados: {', '.join(i['nombre'] for i in no_banco[:5])}{'...' if len(no_banco)>5 else ''}",
+                "recommendation": "Completar información bancaria antes del próximo ciclo de pagos."
+            })
+
+        # High: active influencers with score < 30
+        low_score = [i for i in activos if i["score"] < 30]
+        if low_score:
+            audit.append({
+                "severity": "high",
+                "finding": f"{len(low_score)} influencer(s) activo(s) con score bajo (<30): {', '.join(i['nombre'] for i in low_score[:4])}",
+                "recommendation": "Evaluar renovar acuerdo o reemplazar por perfiles con mejor performance."
+            })
+
+        # High: no campaigns active
+        try:
+            active_camps = c.execute(
+                "SELECT COUNT(*) FROM marketing_campanas WHERE estado IN ('Activa','En Ejecucion','Planificada')"
+            ).fetchone()[0]
+            if active_camps == 0:
+                audit.append({
+                    "severity": "high",
+                    "finding": "Sin campañas activas o planificadas en el sistema.",
+                    "recommendation": "Crear al menos una campaña para el siguiente período."
+                })
+        except Exception:
+            pass
+
+        # Medium: no engagement rate for active influencers
+        no_eng = [i for i in activos if not i.get("engagement_rate")]
+        if no_eng:
+            audit.append({
+                "severity": "medium",
+                "finding": f"{len(no_eng)} influencer(s) sin tasa de engagement registrada.",
+                "recommendation": "Actualizar perfil con datos de IG/TikTok para scoring preciso."
+            })
+
+        # Medium: no seguidores for active influencers
+        no_seg = [i for i in activos if not i.get("seguidores")]
+        if no_seg:
+            audit.append({
+                "severity": "medium",
+                "finding": f"{len(no_seg)} influencer(s) sin número de seguidores registrado.",
+                "recommendation": "Sincronizar Instagram o actualizar manualmente los perfiles."
+            })
+
+        # Low: concentration risk — if top 3 influencers > 70% of spend
+        total_inv_all = sum(i.get("total_pagado", 0) for i in scored)
+        if total_inv_all > 0:
+            top3_inv = sum(i.get("total_pagado", 0) for i in sorted(scored, key=lambda x: x.get("total_pagado", 0), reverse=True)[:3])
+            if top3_inv / total_inv_all > 0.70:
+                audit.append({
+                    "severity": "low",
+                    "finding": f"Concentración de inversión: los 3 influencers con mayor pago acumulan el {round(top3_inv/total_inv_all*100)}% del presupuesto total.",
+                    "recommendation": "Diversificar el portafolio para reducir dependencia en perfiles individuales."
+                })
+
+        # Low: at-risk influencers
+        if en_riesgo:
+            audit.append({
+                "severity": "low",
+                "finding": f"{len(en_riesgo)} influencer(s) en riesgo de inactividad (sin pago en 6+ meses o score muy bajo).",
+                "recommendation": "Contactar proactivamente para reactivar relación o dar de baja."
+            })
+
+        # ── 8. Competition analysis ───────────────────────────────────────────
+        niches = {}
+        for i in activos:
+            nicho = (i.get("nicho") or "Sin clasificar").strip()
+            niches[nicho] = niches.get(nicho, 0) + 1
+
+        # Detect gaps: key niches for skincare that are missing
+        target_niches = {"Skincare", "Belleza", "Lifestyle", "Fitness", "Nutricion", "Maternidad"}
+        present_niches_lower = {n.lower() for n in niches.keys()}
+        gaps = []
+        for tn in target_niches:
+            if tn.lower() not in present_niches_lower:
+                gaps.append(f"Nicho '{tn}' no representado en el portafolio actual — alta afinidad con ÁNIMUS Lab")
+
+        competition = {
+            "niches": niches,
+            "gaps": gaps[:5],
+        }
+
+        # ── 9. Campaign proposals ─────────────────────────────────────────────
+        proposals = []
+        top_influencers = sorted(activos, key=lambda x: x.get("score", 0), reverse=True)[:5]
+        top_names = [i["nombre"] for i in top_influencers]
+
+        # Proposal 1: Re-activate top scorers
+        if top_influencers:
+            proposals.append({
+                "title": "Campaña de Reactivación — Top Performers",
+                "description": f"Activar los {len(top_influencers)} influencers con mayor score para una campaña coordenada de lanzamiento de producto. Enfoque en contenido tipo unboxing + review honesta.",
+                "priority": "alta",
+                "budget_est": f"${len(top_influencers) * 800_000:,}",
+                "influencers_needed": len(top_influencers),
+                "expected_reach": f"{len(top_influencers) * 15000:,} impresiones est."
+            })
+
+        # Proposal 2: Niche gap fill
+        if gaps:
+            proposals.append({
+                "title": "Expansión de Nicho — Skincare Científico",
+                "description": "Reclutar 3–5 influencers especializados en skincare con audiencia Latam (Colombia, México, Chile). Perfil ideal: dermatología divulgativa, rutinas AM/PM, piel latina.",
+                "priority": "alta",
+                "budget_est": "$2,500,000",
+                "influencers_needed": 4,
+                "expected_reach": "50K+ impresiones est."
+            })
+
+        # Proposal 3: Content series
+        proposals.append({
+            "title": "Serie de Contenido — 'Ciencia en tu Piel'",
+            "description": "5 publicaciones semanales durante 4 semanas con 3 influencers rotatorios. Cada post explica un ingrediente activo de ÁNIMUS Lab. Ideal para construir autoridad de marca.",
+            "priority": "media",
+            "budget_est": "$3,600,000",
+            "influencers_needed": 3,
+            "expected_reach": "80K+ impresiones est."
+        })
+
+        # Proposal 4: If there are low-score actives, suggest cleanup
+        if low_score:
+            proposals.append({
+                "title": "Revisión de Portafolio — Optimización Q2",
+                "description": f"Evaluar la continuidad de {len(low_score)} influencer(s) con score bajo. Redirigir presupuesto hacia perfiles con mejor engagement y mayor afinidad de nicho con ÁNIMUS Lab.",
+                "priority": "media",
+                "budget_est": "Sin costo adicional",
+                "influencers_needed": 0,
+                "expected_reach": "Optimización de ROI"
+            })
+
+        # Proposal 5: Seasonality
+        month = today.month
+        if month in [11, 12]:
+            proposals.append({
+                "title": "Campaña Fin de Año — Kits de Regalo",
+                "description": "Campaña de regalo navideño con kits ÁNIMUS Lab. Influencers con audiencia femenina 25–40 años, foco en productos de hidratación y antienvejecimiento.",
+                "priority": "alta",
+                "budget_est": "$5,000,000",
+                "influencers_needed": 6,
+                "expected_reach": "120K+ impresiones est."
+            })
+        elif month in [1, 2]:
+            proposals.append({
+                "title": "Campaña 'Nuevo Año, Nueva Rutina'",
+                "description": "Aprovechar el peak de resolutions en enero/febrero. Influencers presentan rutina skincare AM/PM completa usando productos ÁNIMUS Lab como base científica.",
+                "priority": "media",
+                "budget_est": "$4,000,000",
+                "influencers_needed": 5,
+                "expected_reach": "100K+ impresiones est."
+            })
+        else:
+            proposals.append({
+                "title": "Campaña Awareness — 'Piel Latina Merece Ciencia'",
+                "description": "Campaña de posicionamiento de marca con énfasis en diferenciación científica vs. cosmética genérica. Stories + Reels cortos mostrando resultados reales.",
+                "priority": "baja",
+                "budget_est": "$2,000,000",
+                "influencers_needed": 4,
+                "expected_reach": "60K+ impresiones est."
+            })
+
+        return jsonify({
+            "influencers": scored,
+            "portfolio": portfolio,
+            "audit": audit,
+            "competition": competition,
+            "proposals": proposals,
+        })
+
+    except Exception as _exc:
+        import traceback as _tb
+        return jsonify({
+            "error": str(_exc),
+            "trace": _tb.format_exc()[-1000:]
+        }), 500
+    finally:
+        conn.close()
+
