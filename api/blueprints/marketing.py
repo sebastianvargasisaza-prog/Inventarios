@@ -549,32 +549,51 @@ def mkt_analytics_influencers():
                 "nuevos_creadores": nuevos_por_mes.get(r[0], 0)
             })
 
-        # Ranking por creador
+        # Ranking por creador — ALL TIME
         ranking_raw = c.execute("""
             SELECT p.influencer_nombre,
                    COUNT(CASE WHEN p.estado='Pagada' THEN 1 END) as colabs,
                    COALESCE(SUM(CASE WHEN p.estado='Pagada' THEN p.valor ELSE 0 END),0) as total,
-                   COALESCE(m.estado, 'Activo') as estado_inf
+                   COALESCE(SUM(CASE WHEN p.estado='Pendiente' THEN p.valor ELSE 0 END),0) as pendiente,
+                   COALESCE(m.estado, 'Activo') as estado_inf,
+                   MIN(p.fecha) as primer_pago,
+                   MAX(p.fecha) as ultimo_pago
             FROM pagos_influencers p
             LEFT JOIN marketing_influencers m ON LOWER(TRIM(m.nombre))=LOWER(TRIM(p.influencer_nombre))
-            WHERE p.fecha LIKE ?
             GROUP BY LOWER(TRIM(p.influencer_nombre))
-            ORDER BY total DESC LIMIT 30
-        """, (f"{now_year}%",)).fetchall()
+            ORDER BY total DESC LIMIT 50
+        """).fetchall()
 
         ranking = [{"nombre": r[0], "colabs": r[1], "total": r[2],
-                    "promedio": int(r[2]/r[1]) if r[1] else 0, "estado": r[3]}
+                    "pendiente": r[3],
+                    "promedio": int(r[2]/r[1]) if r[1] else 0,
+                    "estado": r[4], "primer_pago": r[5], "ultimo_pago": r[6]}
                    for r in ranking_raw]
 
+        # All-time historico totals
+        hist = c.execute("""
+            SELECT COALESCE(SUM(CASE WHEN estado='Pagada' THEN valor ELSE 0 END),0),
+                   COUNT(CASE WHEN estado='Pagada' THEN 1 END),
+                   COUNT(DISTINCT CASE WHEN estado='Pagada' THEN LOWER(TRIM(influencer_nombre)) END)
+            FROM pagos_influencers
+        """).fetchone()
+        total_historico = hist[0] or 0
+        colabs_historico = hist[1] or 0
+        creadores_historico = hist[2] or 0
+
         return jsonify({
-            "total_pagado_anio":  total_anio,
-            "total_pendiente":    total_pendiente,
-            "total_colabs":       total_colabs,
-            "creadores_unicos":   creadores_unicos,
-            "promedio_por_colab": promedio,
-            "top_creador":        top_creador,
-            "por_mes":            por_mes,
-            "ranking":            ranking,
+            "total_pagado_anio":    total_anio,
+            "total_pagado_historico": total_historico,
+            "total_pendiente":      total_pendiente,
+            "total_colabs":         total_colabs,
+            "colabs_historico":     colabs_historico,
+            "creadores_unicos":     creadores_unicos,
+            "creadores_historico":  creadores_historico,
+            "promedio_por_colab":   promedio,
+            "top_creador":          top_creador,
+            "por_mes":              por_mes,
+            "ranking":              ranking,
+            "anio_actual":          now_year,
         })
     except Exception as e:
         import traceback
