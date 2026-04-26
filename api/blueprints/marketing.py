@@ -1893,6 +1893,34 @@ def mkt_agente_log_detalle(log_id):
 # PANEL INFLUENCERS — vista unificada perfil + historial de pagos
 # ──────────────────────────────────────────────────────────────────────────────
 
+@bp.route("/api/marketing/debug-influencers", methods=["GET"])
+def mkt_debug_influencers():
+    """Diagnóstico público: estado de tablas de influencers."""
+    conn = _db()
+    cur = conn.cursor()
+    # Count marketing_influencers
+    mi_count = cur.execute("SELECT COUNT(*) FROM marketing_influencers").fetchone()[0]
+    mi_rows = [dict(r) for r in cur.execute("SELECT id,nombre,estado,banco FROM marketing_influencers LIMIT 20").fetchall()]
+    # Count solicitudes influencer
+    sol_count = cur.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE categoria='Influencer/Marketing Digital'").fetchone()[0]
+    sol_rows = [dict(r) for r in cur.execute(
+        "SELECT numero,solicitante,estado,valor,influencer_id FROM solicitudes_compra WHERE categoria='Influencer/Marketing Digital' ORDER BY fecha DESC LIMIT 20"
+    ).fetchall()]
+    # Check if column exists
+    try:
+        cur.execute("SELECT influencer_id FROM solicitudes_compra LIMIT 1")
+        has_inf_id = True
+    except Exception as e:
+        has_inf_id = str(e)
+    return jsonify({
+        "marketing_influencers_count": mi_count,
+        "marketing_influencers": mi_rows,
+        "solicitudes_influencer_count": sol_count,
+        "solicitudes_influencer": sol_rows,
+        "has_influencer_id_column": has_inf_id,
+    })
+
+
 @bp.route("/api/marketing/influencers-panel", methods=["GET"])
 def mkt_influencers_panel():
     """Vista unificada: perfiles marketing_influencers + sus solicitudes de pago vinculadas."""
