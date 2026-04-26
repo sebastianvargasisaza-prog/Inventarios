@@ -1101,6 +1101,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('MPTOCOFE01', 'SODIUM TOCOFERIL FOSFATO', 'MP00078', 'sodium tocopheryl phosphate = vitamina E', 1)
         """
     ]),
+    (18, "fix proveedor: En quimica → Inchemical en maestro_mps y proveedores", [
+        """UPDATE maestro_mps
+           SET proveedor = 'Inchemical'
+           WHERE LOWER(TRIM(proveedor)) IN ('en química','en quimica','enquimica','en química ','en quimica ')
+              OR LOWER(TRIM(proveedor)) LIKE '%en q%mica%'""",
+        """INSERT OR IGNORE INTO proveedores (nombre, contacto, email, telefono,
+               categoria, condiciones_pago, nit, direccion, num_cuenta,
+               tipo_cuenta, banco, concepto_compra, fecha_creacion)
+           VALUES ('Inchemical','','','','mp','30 dias','','','','','',
+                   'Materias Primas', datetime('now'))""",
+    ]),
     (17, "sku_producto_map: codigos cortos de calendario de produccion", [
         """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
         ('NPHA',   'SUERO EXFOLIANTE NOVA PHA',          1),

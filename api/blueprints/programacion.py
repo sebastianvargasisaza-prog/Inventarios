@@ -2064,9 +2064,11 @@ def planificacion_estrategica():
         # ── Inteligencia de origen ──────────────────────────────────────────
         # Palabras clave que sugieren origen China / importación directa
         _CHINA_KEYWORDS = {'lyphar','tianki','bloomage','sinomax','croda','basf','evonik',
-                           'givaudan','dsm','lubrizol','ashland','clariant','solvay'}
-        _COL_KEYWORDS   = {'inchemical','quiminet','prodycon','corquiven','quimicos','colombia',
-                           'agenquimicos','ytbio','bolite'}
+                           'givaudan','dsm','lubrizol','ashland','clariant','solvay',
+                           'chinese','china','guangzhou','shanghai','beijing'}
+        _COL_KEYWORDS   = {'inchemical','en qu','quiminet','prodycon','corquiven','quimicos',
+                           'colombia','agenquimicos','ytbio','bolite','laboratorios','bogota',
+                           'medellin','cali','distribuidora'}
         prov_lower = proveedor.lower()
         is_china   = any(k in prov_lower for k in _CHINA_KEYWORDS) or mid.startswith('MP001') or mid.startswith('MP002')
         is_col     = any(k in prov_lower for k in _COL_KEYWORDS)
