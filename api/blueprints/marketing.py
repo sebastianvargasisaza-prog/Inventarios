@@ -1926,7 +1926,7 @@ def mkt_debug_influencers():
 
 @bp.route("/api/marketing/influencers-panel", methods=["GET"])
 def mkt_influencers_panel():
-    """Vista unificada: perfiles marketing_influencers + sus solicitudes de pago vinculadas."""
+    """Vista unificada: perfiles marketing_influencers + pagos desde pagos_influencers."""
     u, err, code = _auth()
     if err:
         return err, code
@@ -1937,7 +1937,6 @@ def mkt_influencers_panel():
         estado_fil = request.args.get("estado", "")
 
         # 1. Todos los influencers del catálogo
-        base_sql = "SELECT * FROM marketing_influencers"
         conds, params = [], []
         if q:
             conds.append("(nombre LIKE ? OR usuario_red LIKE ? OR nicho LIKE ?)")
@@ -1945,143 +1944,96 @@ def mkt_influencers_panel():
         if estado_fil:
             conds.append("estado=?")
             params.append(estado_fil)
+        base_sql = "SELECT * FROM marketing_influencers"
         sql = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
         influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
 
-        # 2. Todas las solicitudes de pago Influencer (vinculadas por influencer_id O por nombre)
-        # Query without influencer_id column (resilient if migration 20/22 not yet applied)
+        # 2. Todos los pagos desde pagos_influencers
         try:
-            solic_rows = c.execute("""
-                SELECT s.numero, s.fecha, s.estado,
-                       COALESCE(o.valor_total, 0) as valor,
-                       s.observaciones, s.numero_oc, s.solicitante, s.influencer_id
-                FROM solicitudes_compra s
-                LEFT JOIN ordenes_compra o ON s.numero_oc = o.numero_oc
-                WHERE s.categoria = 'Influencer/Marketing Digital'
-                ORDER BY s.fecha DESC
+            pago_rows = c.execute("""
+                SELECT id, influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc
+                FROM pagos_influencers ORDER BY fecha DESC
             """).fetchall()
+            pago_list = [dict(r) for r in pago_rows]
         except Exception:
-            solic_rows = c.execute("""
-                SELECT s.numero, s.fecha, s.estado,
-                       COALESCE(o.valor_total, 0) as valor,
-                       s.observaciones, s.numero_oc, s.solicitante, NULL as influencer_id
-                FROM solicitudes_compra s
-                LEFT JOIN ordenes_compra o ON s.numero_oc = o.numero_oc
-                WHERE s.categoria = 'Influencer/Marketing Digital'
-                ORDER BY s.fecha DESC
-            """).fetchall()
-        solic_list = [dict(r) for r in solic_rows]
+            pago_list = []
 
-        # Index solicitudes by influencer_id (primary) or by name match (fallback)
-        solic_by_id   = {}   # influencer_id -> list of solicitudes
-        solic_by_name = {}   # nombre_lower  -> list of solicitudes
-
-        for s in solic_list:
-            if s["influencer_id"]:
-                solic_by_id.setdefault(s["influencer_id"], []).append(s)
-            else:
-                # fallback: match by solicitante name
-                key = (s["solicitante"] or "").strip().lower()
-                if key:
-                    solic_by_name.setdefault(key, []).append(s)
+        # Index by influencer_id and by nombre (lower)
+        pagos_by_id   = {}
+        pagos_by_name = {}
+        for p in pago_list:
+            if p["influencer_id"]:
+                pagos_by_id.setdefault(p["influencer_id"], []).append(p)
+            key = (p["influencer_nombre"] or "").strip().lower()
+            if key:
+                pagos_by_name.setdefault(key, []).append(p)
 
         # 3. Merge
         now_month = datetime.now().strftime("%Y-%m")
         result = []
         for inf in influencers:
-            iid  = inf["id"]
+            iid = inf["id"]
             inombre_low = inf["nombre"].strip().lower()
 
-            pagos = solic_by_id.get(iid, []) + solic_by_name.get(inombre_low, [])
-            # dedup by numero
-            seen = set()
-            pagos_uniq = []
+            pagos = pagos_by_id.get(iid, [])
+            # Avoid double-counting if already linked by id
+            if not pagos:
+                pagos = pagos_by_name.get(inombre_low, [])
+            else:
+                # merge name matches that lack influencer_id
+                for p in pagos_by_name.get(inombre_low, []):
+                    if p["influencer_id"] is None:
+                        pagos.append(p)
+
+            # dedup by id
+            seen, pagos_uniq = set(), []
             for p in pagos:
-                if p["numero"] not in seen:
-                    seen.add(p["numero"])
+                if p["id"] not in seen:
+                    seen.add(p["id"])
                     pagos_uniq.append(p)
 
             pagadas   = [p for p in pagos_uniq if p["estado"] == "Pagada"]
-            pendiente = [p for p in pagos_uniq if p["estado"] in ("Aprobada", "Pendiente")]
+            pendientes = [p for p in pagos_uniq if p["estado"] == "Pendiente"]
             mes_pagos = [p for p in pagadas if (p["fecha"] or "").startswith(now_month)]
 
-            inf["pagos"] = pagos_uniq
+            inf["pagos"]             = pagos_uniq
             inf["total_pagado"]      = sum(p["valor"] or 0 for p in pagadas)
-            inf["total_pendiente"]   = sum(p["valor"] or 0 for p in pendiente)
+            inf["total_pendiente"]   = sum(p["valor"] or 0 for p in pendientes)
             inf["pagos_count"]       = len(pagadas)
-            inf["pendiente_count"]   = len(pendiente)
+            inf["pendiente_count"]   = len(pendientes)
             inf["pagado_mes_actual"] = sum(p["valor"] or 0 for p in mes_pagos)
             inf["ultimo_pago"]       = pagadas[0]["fecha"] if pagadas else None
-            inf["tiene_pendiente"]   = len(pendiente) > 0
-
+            inf["tiene_pendiente"]   = len(pendientes) > 0
             result.append(inf)
 
-        # Auto-populate marketing_influencers from solicitudes_compra
-        # (catches cases where migration 21 found no BENEFICIARIO: format)
-        known_names = {inf["nombre"].strip().lower() for inf in influencers}
-        new_names = []
-        for s in solic_list:
-            name = (s["solicitante"] or "").strip()
-            if name and name.lower() not in known_names:
-                known_names.add(name.lower())
-                new_names.append(name)
-        if new_names:
-            for nm in new_names:
-                c.execute(
-                    "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)"
-                    , (nm, "Instagram", "Activo")
-                )
-            conn.commit()
-            # Reload influencers now that new ones are inserted
-            sql2 = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
-            influencers = [dict(r) for r in c.execute(sql2, params).fetchall()]
-            # Re-merge with solic data
-            result = []
-            for inf in influencers:
-                iid  = inf["id"]
-                inombre_low = inf["nombre"].strip().lower()
-                pagos = solic_by_id.get(iid, []) + solic_by_name.get(inombre_low, [])
-                seen = set()
-                pagos_uniq = []
-                for p in pagos:
-                    if p["numero"] not in seen:
-                        seen.add(p["numero"])
-                        pagos_uniq.append(p)
-                pagadas   = [p for p in pagos_uniq if p["estado"] == "Pagada"]
-                pendiente = [p for p in pagos_uniq if p["estado"] in ("Aprobada", "Pendiente")]
-                mes_pagos = [p for p in pagadas if (p["fecha"] or "").startswith(now_month)]
-                inf["pagos"] = pagos_uniq
-                inf["total_pagado"]      = sum(p["valor"] or 0 for p in pagadas)
-                inf["total_pendiente"]   = sum(p["valor"] or 0 for p in pendiente)
-                inf["pagos_count"]       = len(pagadas)
-                inf["pendiente_count"]   = len(pendiente)
-                inf["pagado_mes_actual"] = sum(p["valor"] or 0 for p in mes_pagos)
-                inf["ultimo_pago"]       = pagadas[0]["fecha"] if pagadas else None
-                inf["tiene_pendiente"]   = len(pendiente) > 0
-                result.append(inf)
-
-        # Panel KPIs
-        total_pagado_mes  = sum(inf["pagado_mes_actual"] for inf in result)
-        total_pendiente_v = sum(inf["total_pendiente"]   for inf in result)
+        # 4. KPIs
+        now_year = datetime.now().year
+        total_pagado_anio = sum(
+            p["valor"] or 0
+            for p in pago_list
+            if p["estado"] == "Pagada" and (p["fecha"] or "").startswith(str(now_year))
+        )
+        total_pendiente_v = sum(p["valor"] or 0 for p in pago_list if p["estado"] == "Pendiente")
         total_activos     = len([i for i in result if i.get("estado") == "Activo"])
         con_pendiente     = len([i for i in result if i["tiene_pendiente"]])
 
         return jsonify({
             "influencers": result,
             "kpis": {
-                "total_activos":  total_activos,
-                "total":          len(result),
-                "pagado_mes":     total_pagado_mes,
+                "total_activos":   total_activos,
+                "total":           len(result),
+                "pagado_mes":      sum(inf["pagado_mes_actual"] for inf in result),
                 "total_pendiente": total_pendiente_v,
-                "con_pendiente":  con_pendiente,
+                "con_pendiente":   con_pendiente,
+                "pagado_anio":     total_pagado_anio,
             }
         })
-    except Exception as _panel_exc:
+    except Exception as _exc:
         import traceback as _tb
         return jsonify({
             "influencers": [],
             "kpis": {},
-            "_error": str(_panel_exc),
+            "_error": str(_exc),
             "_trace": _tb.format_exc()[-800:]
         }), 200
     finally:
@@ -2175,6 +2127,17 @@ def mkt_solicitar_pago_influencer(iid):
             "UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?",
             (oc_num, numero)
         )
+
+        # Also register in pagos_influencers for the marketing panel
+        try:
+            c.execute("""
+                INSERT INTO pagos_influencers
+                (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                VALUES (?,?,?,date('now'),'Pendiente',?,?)
+            """, (iid, inf["nombre"], int(monto), concepto, oc_num))
+        except Exception:
+            pass  # tabla puede no existir aún en instancias viejas
+
         conn.commit()
 
         return jsonify({"ok": True, "numero": numero, "oc": oc_num, "monto": monto})

@@ -781,6 +781,14 @@ def pagar_oc(numero_oc):
     fecha_pago = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Pagada', pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=? WHERE numero_oc=?",
                 (usuario_actual, fecha_pago, medio, comprobante_imagen, numero_oc))
+    # Sync marketing payment status
+    try:
+        cur.execute(
+            "UPDATE pagos_influencers SET estado='Pagada' WHERE numero_oc=? AND estado='Pendiente'",
+            (numero_oc,)
+        )
+    except Exception:
+        pass
     try:
         cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
