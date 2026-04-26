@@ -483,7 +483,7 @@ def handle_solicitudes_compra():
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
-    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida FROM solicitudes_compra WHERE 1=1"
+    sql = "SELECT numero,fecha,estado,solicitante,urgencia,observaciones,empresa,categoria,tipo,area,email_solicitante,fecha_requerida,numero_oc,COALESCE(valor,0) as valor FROM solicitudes_compra WHERE 1=1"
     params = []
     if filtro_estado: sql += " AND estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND empresa=?"; params.append(filtro_empresa)
@@ -495,16 +495,21 @@ def handle_solicitudes_compra():
         sql += " AND categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     sql += " ORDER BY fecha DESC LIMIT 200"
     c.execute(sql, params)
-    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida']
+    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor']
     rows_sol = [dict(zip(cols_sol, r)) for r in c.fetchall()]
-    # Enrich with numero_oc and total valor
+    # Enrich: if valor still 0, fall back to OC valor_total or items sum
     for row in rows_sol:
-        c2 = conn.cursor()
-        c2.execute("SELECT numero_oc, aprobado_por FROM solicitudes_compra WHERE numero=?", (row['numero'],))
-        extra = c2.fetchone()
-        row['numero_oc'] = extra[0] if extra else None
-        c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
-        row['valor'] = c2.fetchone()[0] or 0
+        if not row.get('valor'):
+            c2 = conn.cursor()
+            # Try linked OC
+            if row.get('numero_oc'):
+                c2.execute("SELECT COALESCE(valor_total,0) FROM ordenes_compra WHERE numero_oc=?", (row['numero_oc'],))
+                oc_row = c2.fetchone()
+                row['valor'] = oc_row[0] if oc_row else 0
+            # Final fallback: items sum
+            if not row.get('valor'):
+                c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
+                row['valor'] = c2.fetchone()[0] or 0
     return jsonify({'solicitudes': rows_sol})
 
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
