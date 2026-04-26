@@ -4313,7 +4313,7 @@ function _renderProgramacion(d){
     _planData.mps_deficit.forEach(function(mp){
       rows.push([mp.nombre,mp.material_id,mp.proveedor,mp.total_g,mp.stock_g,mp.deficit_g,mp.cobertura_pct,mp.n_meses,mp.productos.join('|')]);
     });
-    var csv=rows.map(function(r){return r.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+    var csv=rows.map(function(r){return r.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');}).join('\\n');
     var blob=new Blob([csv],{type:'text/csv'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='planificacion_mps_'+_planMeses+'m_'+new Date().toISOString().slice(0,10)+'.csv';
@@ -4356,7 +4356,7 @@ function _renderProgramacion(d){
           '<span style="flex:1;font-weight:600">'+ev.fecha+'</span>' +
           '<span style="color:#555">'+ev.lotes+' lote'+(ev.lotes>1?'s':'')+'</span>' +
           '<span style="background:'+estadoColor+';color:#fff;padding:2px 7px;border-radius:8px">'+ev.estado+'</span>' +
-          '<button onclick="cancelarEvento('+ev.id+',\''+producto+'\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
+          '<button onclick="cancelarEvento('+ev.id+',\\''+producto+'\\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
           '</div>';
       }).join('');
     });
@@ -4399,8 +4399,7 @@ function _renderProgramacion(d){
                   bodega_material_id: c.material_id,
                   bodega_material_nombre: c.material_nombre
                 }));
-                return '<button onclick="linkBridge(this,\'' + safeF + '\')" ' +
-                  'style="background:#f0f4ff;border:1px solid #c5cef9;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin:2px">' +
+                return '<button onclick="linkBridge(this,' + "'" + safeF + "')" + '" style="background:#f0f4ff;border:1px solid #c5cef9;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin:2px">' +
                   c.material_id + ' — ' + (c.material_nombre||'').substring(0,30) +
                   ' (' + c.shared_keywords.join(',') + ')' +
                   '</button>';
@@ -4415,7 +4414,7 @@ function _renderProgramacion(d){
                 'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:160px">' +
               '<input id="fn-' + u.formula_material_id + '" placeholder="Nombre bodega (opcional)" ' +
                 'style="border:1px solid #ccc;border-radius:4px;padding:3px 7px;font-size:11px;width:200px">' +
-              '<button onclick="linkBridgeManual(this,\'' + u.formula_material_id + '\',\'' + u.formula_material_nombre.replace(/'/g,"") + '\')" ' +
+              '<button onclick="linkBridgeManual(this,' + "'" + u.formula_material_id + "','" + u.formula_material_nombre.replace(/'/g,"") + "')" + '" ' +
                 'style="background:#5c3317;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Enlazar</button>' +
             '</div>' +
           '</div>';
