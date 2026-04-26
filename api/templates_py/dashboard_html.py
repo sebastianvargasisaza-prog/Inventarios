@@ -4154,11 +4154,6 @@ function _renderProgramacion(d){
   function cerrarModalProgramar() {
     document.getElementById('modal-programar').style.display = 'none';
   }
-  // Close on backdrop click
-  document.getElementById('modal-programar').addEventListener('click', function(e){
-    if(e.target === this) cerrarModalProgramar();
-  });
-
   function actualizarDashboard() {
     cargarProgramacion(null);
   }
@@ -4183,6 +4178,12 @@ function _renderProgramacion(d){
       _toast('Error en switchProgTab: ' + err.message, 0);
     }
   }
+  // Safe modal backdrop close — placed after all functions are defined
+  (function(){
+    var _m = document.getElementById('modal-programar');
+    if(_m) _m.addEventListener('click', function(e){ if(e.target===this) cerrarModalProgramar(); });
+  })();
+
   var _planLoaded = false;
   var _planData   = null;
   var _planMeses  = 2;
