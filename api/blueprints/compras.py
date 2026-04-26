@@ -1311,3 +1311,29 @@ def consolidado_por_proveedor():
 
 # ─── MÓDULO CLIENTES — Rutas ──────────────────────────────────
 
+
+
+@bp.route('/api/solicitudes-compra/<numero>/observaciones', methods=['PUT'])
+def update_sol_observaciones(numero):
+    """Admin: actualiza observaciones (y opcionalmente solicitante) de una solicitud."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    d = request.json or {}
+    obs = d.get('observaciones')
+    solicitante = d.get('solicitante')
+    if not obs and not solicitante:
+        return jsonify({'error': 'Nada que actualizar'}), 400
+    row = c.execute("SELECT numero FROM solicitudes_compra WHERE numero=?", (numero.upper(),)).fetchone()
+    if not row:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    updates, params = [], []
+    if obs is not None:
+        updates.append("observaciones=?"); params.append(obs)
+    if solicitante is not None:
+        updates.append("solicitante=?"); params.append(solicitante)
+    params.append(numero.upper())
+    c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
+    conn.commit()
+    return jsonify({'ok': True, 'numero': numero.upper()})
