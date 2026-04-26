@@ -2,6 +2,7 @@
 marketing.py — Blueprint módulo Marketing
 Campañas, Influencers, Contenido, Analytics, 5 Agentes IA internos
 """
+import os
 import sqlite3, urllib.request
 import traceback
 import json
@@ -2824,11 +2825,13 @@ def ads_run():
         }), 400
 
     conn = _db()
-    api_key = _cfg(conn, "anthropic_api_key")
+    # Prioridad: variable de entorno (Render) → tabla animus_config (fallback)
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or _cfg(conn, "anthropic_api_key")
     if not api_key:
         return jsonify({
-            "error": "anthropic_api_key no esta configurada en animus_config. "
-                     "Agregala desde Centro de Mando → Configuracion → API Keys."
+            "error": "ANTHROPIC_API_KEY no configurada. "
+                     "Defínela en Render → Environment, o agrega la clave "
+                     "'anthropic_api_key' a la tabla animus_config."
         }), 503
 
     result = run_ads_skill(
