@@ -1308,23 +1308,26 @@ function guardarProveedorMP(inp){
     }).then(function(r){ return r.json(); }).then(function(d){
       if(d.ok){
         inp.style.borderColor='#28a745';
-        inp.title='Proveedor guardado: '+val;
-        setTimeout(function(){ inp.style.borderColor=''; inp.title=''; },2000);
+        inp.title=val ? 'Guardado en maestro y directorio de proveedores' : 'Proveedor borrado';
+        setTimeout(function(){ inp.style.borderColor=''; inp.title='Edita y presiona Enter o Tab para guardar'; },2500);
         // Actualizar _alertasData para que solicitarTodasMPs use datos frescos
         var ad=window._alertasData||[];
         var found=ad.find(function(a){return a.codigo_mp===cod;});
         if(found) found.proveedor=val;
-        // Actualizar tambien el datalist de compras si esta disponible
+        // Actualizar datalist de compras si esta disponible
         if(window._proveedoresList && val && !window._proveedoresList.includes(val)){
           window._proveedoresList.push(val);
         }
+        if(val) _toast('Proveedor guardado: '+val,1);
       } else {
         inp.style.borderColor='#dc3545';
-        inp.title='Error al guardar: '+(d.error||'desconocido');
+        inp.title='Error: '+(d.error||'desconocido');
+        _toast('Error guardando proveedor: '+(d.error||''), 0);
       }
     }).catch(function(e){
       inp.style.borderColor='#dc3545';
       inp.title='Error de conexion';
+      _toast('Error de conexion al guardar proveedor', 0);
     });
   },700);
 }

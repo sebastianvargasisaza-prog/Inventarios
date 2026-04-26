@@ -558,15 +558,14 @@ def update_stock_minimo(codigo):
 @bp.route('/api/maestro-mps/<codigo>/proveedor', methods=['PUT'])
 def update_mp_proveedor(codigo):
     """Actualiza el proveedor asignado a una MP en maestro_mps.
-    Si la MP aun no tiene fila en maestro_mps, la crea a partir de movimientos."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    Sin auth — edicion de catalogo, no accion sensible de inventario.
+    Al guardar, tambien registra el proveedor en proveedores (directorio Compras)."""
     d = request.json or {}
     proveedor = (d.get('proveedor') or '').strip()
     conn = get_db()
     c = conn.cursor()
 
-    # Intento 1: UPDATE normal
+    # 1. Actualizar maestro_mps
     c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?", (proveedor, codigo))
     updated = c.rowcount
 
@@ -581,10 +580,27 @@ def update_mp_proveedor(codigo):
             VALUES (?, ?, '', 'MP', ?, 0, 1)
             ON CONFLICT(codigo_mp) DO UPDATE SET proveedor=excluded.proveedor
         """, (codigo, nombre, proveedor))
-        updated = c.rowcount
+
+    # 2. Upsert en directorio de proveedores (tabla proveedores) si tiene nombre
+    if proveedor:
+        from datetime import datetime as _dt
+        exists = c.execute(
+            "SELECT nombre FROM proveedores WHERE nombre=?", (proveedor,)
+        ).fetchone()
+        if not exists:
+            try:
+                c.execute("""
+                    INSERT INTO proveedores
+                    (nombre, contacto, email, telefono, categoria, condiciones_pago,
+                     nit, direccion, num_cuenta, tipo_cuenta, banco, concepto_compra, fecha_creacion)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (proveedor, '', '', '', 'mp', '30 dias',
+                      '', '', '', '', '', 'Materias Primas', _dt.now().isoformat()))
+            except Exception:
+                pass  # Si ya existe por nombre con diferente case, ignorar
 
     conn.commit()
-    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor, 'created': updated > 0})
+    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
 
 @bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])
 def update_mee_stock_minimo(codigo):
