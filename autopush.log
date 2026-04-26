@@ -652,3 +652,9 @@ error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog
 hint: Updates were rejected because the tip of your current branch is behind
 hint: it
 [2026-04-25 19:49:27] Cambios detectados — haciendo push...
+[2026-04-25 19:49:29] Push fallo: error: To https://github.com/sebastianvargasisaza-prog/Inventarios.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'https://github.com/sebastianvargasisaza-prog/Inventarios.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: it
+[2026-04-25 19:49:44] Cambios detectados — haciendo push...
