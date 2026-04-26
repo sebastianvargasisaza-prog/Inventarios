@@ -521,61 +521,57 @@ function showToast(msg, type) {
 <!-- TAB: ANALYTICS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-analytics" class="tab-panel">
-  <div class="page-title">&#x1F4CA; Analytics</div>
-  <div class="page-sub">ROI, tendencias y análisis de rendimiento.</div>
+  <div class="page-title">&#x1F4CA; Analytics de Influencers</div>
+  <div class="page-sub">Gasto mensual, nuevos creadores y rendimiento del programa.</div>
 
-  <div class="kpi-grid" id="analytics-kpis">
-    <div class="kpi-card blue"><div class="kpi-label">ROI Global</div><div class="kpi-val" id="an-roi">—</div><div class="kpi-sub">Return on investment</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Ventas atribuidas</div><div class="kpi-val" id="an-ventas">—</div><div class="kpi-sub">Total campañas</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Mejor campaña</div><div class="kpi-val" id="an-mejor" style="font-size:14px;">—</div><div class="kpi-sub">Por ROI</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Mejor canal</div><div class="kpi-val" id="an-canal" style="font-size:14px;">—</div><div class="kpi-sub">Por ROI promedio</div></div>
+  <!-- KPI resumen -->
+  <div class="kpi-grid" id="an-inf-kpis" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-bottom:24px;">
+    <div class="kpi-card blue"><div class="kpi-label">Total pagado 2025</div><div class="kpi-val" id="an-total-2025">—</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Promedio por colaboración</div><div class="kpi-val" id="an-avg-colab">—</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Colaboraciones 2025</div><div class="kpi-val" id="an-colabs-2025">—</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Creadores únicos 2025</div><div class="kpi-val" id="an-creadores-2025">—</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Pendiente por pagar</div><div class="kpi-val" id="an-pendiente-total">—</div></div>
+    <div class="kpi-card" style="border-color:#6366f1;"><div class="kpi-label">Top creador 2025</div><div class="kpi-val" id="an-top-creador" style="font-size:14px;color:#818cf8;">—</div></div>
   </div>
 
   <div class="grid2" style="margin-bottom:20px;">
+    <!-- Gasto mensual -->
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F4E2; ROI por Campaña</span></div>
-      <div class="card-body">
-        <table>
-          <thead><tr><th>Campaña</th><th>Canal</th><th>Invertido</th><th>Ventas</th><th>ROI</th><th>% Objetivo</th></tr></thead>
-          <tbody id="an-campanas-body"><tr class="empty-row"><td colspan="6">Cargando...</td></tr></tbody>
-        </table>
+      <div class="card-hdr">
+        <span class="card-title">&#x1F4B0; Gasto mensual (COP)</span>
+        <span id="an-total-label" style="font-size:12px;color:#64748b;"></span>
       </div>
+      <div class="card-body" id="an-gasto-chart" style="min-height:200px;padding:8px 0;"></div>
     </div>
+    <!-- Nuevos creadores por mes -->
     <div class="card">
-      <div class="card-hdr"><span class="card-title">&#x1F465; ROI por Influencer</span></div>
-      <div class="card-body">
-        <table>
-          <thead><tr><th>Influencer</th><th>Red</th><th>Campañas</th><th>Invertido</th><th>Conversiones</th><th>Costo/Conv</th></tr></thead>
-          <tbody id="an-infl-body"><tr class="empty-row"><td colspan="6">Cargando...</td></tr></tbody>
-        </table>
-      </div>
+      <div class="card-hdr"><span class="card-title">&#x1F331; Nuevos creadores por mes</span></div>
+      <div class="card-body" id="an-nuevos-chart" style="min-height:200px;padding:8px 0;"></div>
     </div>
   </div>
 
+  <!-- Ranking creadores -->
   <div class="card" style="margin-bottom:20px;">
-    <div class="card-hdr">
-      <span class="card-title">&#x1F4C8; Tendencias SKU</span>
-      <select id="an-meses-sel" onchange="loadAnalyticsTendencias()" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:4px 8px;color:#e2e8f0;font-size:12px;">
-        <option value="3">3 meses</option>
-        <option value="6" selected>6 meses</option>
-        <option value="12">12 meses</option>
-      </select>
-    </div>
-    <div class="card-body">
-      <div id="an-tendencias-body">Cargando...</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">&#x1F4B0; Rendimiento por Canal</span></div>
+    <div class="card-hdr"><span class="card-title">&#x1F3C6; Ranking — Gasto por creador 2025</span></div>
     <div class="card-body">
       <table>
-        <thead><tr><th>Canal</th><th>Campañas</th><th>Total invertido</th><th>Total ventas</th><th>ROI%</th></tr></thead>
-        <tbody id="an-canal-body"><tr class="empty-row"><td colspan="5">Cargando...</td></tr></tbody>
+        <thead><tr><th>#</th><th>Creador</th><th>Colaboraciones</th><th>Total pagado</th><th>Promedio/colab</th><th>Estado</th></tr></thead>
+        <tbody id="an-ranking-body"><tr class="empty-row"><td colspan="6">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
-</div>
+
+  <!-- Detalle mensual -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">&#x1F4C5; Detalle por mes</span></div>
+    <div class="card-body">
+      <table>
+        <thead><tr><th>Mes</th><th>Colaboraciones</th><th>Creadores únicos</th><th>Total pagado</th><th>Total pendiente</th><th>Nuevos</th></tr></thead>
+        <tbody id="an-meses-body"><tr class="empty-row"><td colspan="6">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- MODALS -->
@@ -705,6 +701,10 @@ function showToast(msg, type) {
       <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
       <div class="form-group"><label>Concepto</label><input id="pago-concepto" placeholder="Post + Story / Reel..."></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha de publicación</label><input type="date" id="pago-fecha-pub"></div>
+      <div class="form-group"><label>Entregable</label><input id="pago-entregable" placeholder="1 Reel + 2 Stories..."></div>
+    </div>
     <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:#94a3b8;">
       <div style="font-weight:700;color:#a78bfa;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
       <div id="pago-banco-preview" style="line-height:1.8;"></div>
@@ -713,6 +713,44 @@ function showToast(msg, type) {
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
       <button class="btn btn-outline" onclick="closeModal('modal-inf-pago')">Cancelar</button>
       <button class="btn btn-primary" onclick="confirmarPagoInf()">Crear Solicitud</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal: Dar de Baja Influencer -->
+<div class="modal-bg" id="modal-dar-baja">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-hdr">
+      <div class="modal-title">&#x26D4; Dar de Baja Influencer</div>
+      <button class="modal-close" onclick="closeModal('modal-dar-baja')">&times;</button>
+    </div>
+    <input type="hidden" id="baja-inf-id">
+    <div style="margin-bottom:14px;">
+      <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">Influencer</div>
+      <div id="baja-inf-nombre" style="font-weight:700;font-size:15px;color:#e2e8f0;"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Motivo de baja *</label>
+      <select id="baja-motivo-tipo" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;color:#e2e8f0;">
+        <option value="Pausa temporal">Pausa temporal</option>
+        <option value="No cumplió métricas">No cumplió métricas</option>
+        <option value="Conflicto de marca">Conflicto de marca</option>
+        <option value="Presupuesto">Presupuesto</option>
+        <option value="Solicitud del influencer">Solicitud del influencer</option>
+        <option value="Otro">Otro</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label>Observación (opcional)</label>
+      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;color:#e2e8f0;resize:vertical;"></textarea>
+    </div>
+    <div style="background:#1c1a14;border:1px solid #78350f;border-radius:8px;padding:10px;font-size:12px;color:#fcd34d;margin-bottom:12px;">
+      &#x26A0;&#xFE0F; El influencer quedará en estado <b>Baja</b> y visible en el historial. Podrá reactivarse en cualquier momento.
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('modal-dar-baja')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarDarDeBaja()">Dar de Baja</button>
     </div>
   </div>
 </div>
@@ -1263,7 +1301,7 @@ async function loadInfluencers() {
     const de = (r.cedula_nit||'').replace(/'/g,"\\'");
     const te = (r.tipo_cuenta||'Ahorros').replace(/'/g,"\\'");
     return `<tr>`
-      +`<td style="color:#64748b;">${r.id}</td>`
+      +`<td style="color:#64748b;">${idx+1}</td>`
       +`<td style="font-weight:700;">${r.nombre}</td>`
       +`<td><span class="badge badge-gray">${r.red_social}</span></td>`
       +`<td style="color:#818cf8;">${r.usuario_red||'\u2014'}</td>`
@@ -1277,7 +1315,7 @@ async function loadInfluencers() {
       +`<td style="white-space:nowrap;">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar">&#x270F;&#xFE0F;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Solicitar pago">&#x1F4B8;</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="deleteInfluencer(${r.id},'${ne}')" title="Eliminar">&#x1F5D1;&#xFE0F;</button>`
+        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button>`
       +'</td>'
       +'</tr>';
   }).join('');
@@ -1344,12 +1382,27 @@ async function saveInfluencer() {
   else showAlert('inf-alert',data.error||'Error','error');
 }
 
-async function deleteInfluencer(id, nombre) {
-  if(!confirm(`¿Eliminar influencer "${nombre}"?`)) return;
-  const resp = await fetch(`/api/marketing/influencers/${id}`,{method:'DELETE'});
+function abrirDarDeBaja(id, nombre) {
+  document.getElementById('baja-inf-id').value = id;
+  document.getElementById('baja-inf-nombre').textContent = nombre;
+  document.getElementById('baja-motivo-tipo').value = 'Pausa temporal';
+  document.getElementById('baja-observacion').value = '';
+  document.getElementById('modal-dar-baja').classList.add('open');
+}
+async function confirmarDarDeBaja() {
+  const id = document.getElementById('baja-inf-id').value;
+  const motivo = document.getElementById('baja-motivo-tipo').value;
+  const obs    = document.getElementById('baja-observacion').value;
+  const resp = await fetch(`/api/marketing/influencers/${id}/dar-baja`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({motivo, observacion: obs})
+  });
   const data = await resp.json();
-  if(data.ok) { showAlert('inf-alert','Influencer eliminado'); loadInfluencers(); }
-  else showAlert('inf-alert',data.error||'Error','error');
+  if(data.ok) {
+    closeModal('modal-dar-baja');
+    showAlert('inf-alert',`Influencer dado de baja: ${motivo}`,'warning');
+    loadInfluencers();
+  } else showAlert('inf-alert', data.error||'Error','error');
 }
 
 function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
@@ -1376,10 +1429,12 @@ async function confirmarPagoInf() {
   const valor = parseFloat(document.getElementById('pago-valor').value)||0;
   const concepto = document.getElementById('pago-concepto').value.trim()||'Cuenta de cobro influencer';
   if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
+  const fechaPub   = document.getElementById('pago-fecha-pub').value;
+  const entregable = document.getElementById('pago-entregable').value;
   const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({valor, concepto})
+    body: JSON.stringify({valor, concepto, fecha_publicacion:fechaPub, entregable})
   });
   const data = await resp.json();
   if(data.ok) {
@@ -1806,107 +1861,77 @@ async function verResultadoLog(id) {
 // ANALYTICS
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadAnalytics() {
-  await Promise.all([loadAnalyticsROI(), loadAnalyticsTendencias()]);
+  const data = await fetch('/api/marketing/analytics/influencers').then(r=>r.json()).catch(()=>({}));
+  const fmt  = v => v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':String(v);
+  const fmtM = v => '$'+fmt(v||0);
+
+  // KPIs
+  document.getElementById('an-total-2025').textContent     = fmtM(data.total_pagado_anio||0);
+  document.getElementById('an-avg-colab').textContent      = fmtM(data.promedio_por_colab||0);
+  document.getElementById('an-colabs-2025').textContent    = data.total_colabs||0;
+  document.getElementById('an-creadores-2025').textContent = data.creadores_unicos||0;
+  document.getElementById('an-pendiente-total').textContent= fmtM(data.total_pendiente||0);
+  document.getElementById('an-top-creador').textContent    = data.top_creador||'—';
+
+  // Gasto mensual — SVG bar chart
+  const meses = data.por_mes||[];
+  const gastoEl = document.getElementById('an-gasto-chart');
+  if(meses.length) {
+    const maxG = Math.max(...meses.map(m=>m.total_pagado),1);
+    const W=460,H=180,pad=40,barW=Math.max(18,Math.floor((W-pad*2)/meses.length)-4);
+    let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;display:block;">`;
+    meses.forEach((m,i)=>{
+      const x=pad+i*((W-pad*2)/meses.length);
+      const bh=Math.max(4,Math.round((m.total_pagado/maxG)*(H-50)));
+      const by=H-30-bh;
+      svg+=`<rect x="${x}" y="${by}" width="${barW}" height="${bh}" rx="3" fill="#6366f1" opacity="0.85"/>`;
+      svg+=`<text x="${x+barW/2}" y="${H-14}" text-anchor="middle" font-size="9" fill="#64748b">${m.mes.slice(5)}</text>`;
+      if(m.total_pagado>0) svg+=`<text x="${x+barW/2}" y="${by-4}" text-anchor="middle" font-size="9" fill="#a5b4fc">$${fmt(m.total_pagado)}</text>`;
+    });
+    svg+='</svg>';
+    gastoEl.innerHTML=svg;
+    document.getElementById('an-total-label').textContent='Total: $'+fmt(data.total_pagado_anio||0);
+  } else { gastoEl.innerHTML='<div style="color:#64748b;text-align:center;padding:40px;">Sin datos</div>'; }
+
+  // Nuevos creadores — bar chart
+  const nuevosEl = document.getElementById('an-nuevos-chart');
+  if(meses.length) {
+    const maxN = Math.max(...meses.map(m=>m.nuevos_creadores||0),1);
+    const W2=460,H2=180,pad2=40;
+    let svg2=`<svg viewBox="0 0 ${W2} ${H2}" style="width:100%;max-width:${W2}px;display:block;">`;
+    meses.forEach((m,i)=>{
+      const bW=Math.max(18,Math.floor((W2-pad2*2)/meses.length)-4);
+      const x=pad2+i*((W2-pad2*2)/meses.length);
+      const bh=Math.max(4,Math.round(((m.nuevos_creadores||0)/maxN)*(H2-50)));
+      const by=H2-30-bh;
+      svg2+=`<rect x="${x}" y="${by}" width="${bW}" height="${bh}" rx="3" fill="#34d399" opacity="0.85"/>`;
+      svg2+=`<text x="${x+bW/2}" y="${H2-14}" text-anchor="middle" font-size="9" fill="#64748b">${m.mes.slice(5)}</text>`;
+      if((m.nuevos_creadores||0)>0) svg2+=`<text x="${x+bW/2}" y="${by-4}" text-anchor="middle" font-size="9" fill="#6ee7b7">${m.nuevos_creadores}</text>`;
+    });
+    svg2+='</svg>';
+    nuevosEl.innerHTML=svg2;
+  } else { nuevosEl.innerHTML='<div style="color:#64748b;text-align:center;padding:40px;">Sin datos</div>'; }
+
+  // Ranking
+  const ranking = data.ranking||[];
+  const rb = document.getElementById('an-ranking-body');
+  rb.innerHTML = ranking.length ? ranking.map((r,i)=>
+    `<tr><td style="color:#64748b;">${i+1}</td><td style="font-weight:600;">${r.nombre}</td>`
+    +`<td>${r.colabs}</td><td style="color:#818cf8;font-weight:700;">${fmtM(r.total)}</td>`
+    +`<td style="color:#94a3b8;">${fmtM(r.promedio)}</td>`
+    +`<td>${r.estado==='Activo'?'<span style="color:#34d399;">Activo</span>':'<span style="color:#f87171;">'+r.estado+'</span>'}</td></tr>`
+  ).join('') : '<tr class="empty-row"><td colspan="6">Sin datos</td></tr>';
+
+  // Detalle mensual
+  const mb = document.getElementById('an-meses-body');
+  mb.innerHTML = meses.length ? meses.map(m=>
+    `<tr><td style="font-weight:600;">${m.mes}</td><td>${m.colabs}</td><td>${m.creadores_unicos_mes}</td>`
+    +`<td style="color:#818cf8;font-weight:700;">${fmtM(m.total_pagado)}</td>`
+    +`<td style="color:#f59e0b;">${fmtM(m.total_pendiente||0)}</td>`
+    +`<td style="color:#34d399;">${m.nuevos_creadores||0}</td></tr>`
+  ).join('') : '<tr class="empty-row"><td colspan="6">Sin datos</td></tr>';
 }
 
-async function loadAnalyticsROI() {
-  const data = await fetch('/api/marketing/analytics/roi').then(r=>r.json());
-  const sh = data.shopify_kpis || {};
-
-  // KPIs — usa campañas si hay datos, sino usa Shopify como baseline
-  const totalInv    = data.campanas.reduce((s,c)=>s+(c.presupuesto_gastado||0),0);
-  const totalVentas = data.campanas.reduce((s,c)=>s+(c.resultado_ventas||0),0);
-  const hasCampanas = data.campanas.some(c=>(c.presupuesto_gastado||0)>0);
-
-  if(hasCampanas) {
-    const roiGlobal = totalInv>0 ? ((totalVentas-totalInv)/totalInv*100).toFixed(1) : 0;
-    document.getElementById('an-roi').textContent = (roiGlobal>=0?'+':'')+roiGlobal+'%';
-    document.getElementById('an-ventas').textContent = fmtM(totalVentas);
-  } else {
-    // Fallback: mostrar crecimiento Shopify 30d vs 30d anterior
-    const grow = sh.crecimiento_pct || 0;
-    document.getElementById('an-roi').textContent = (grow>=0?'+':'')+grow+'%';
-    document.getElementById('an-ventas').textContent = fmtM(sh.revenue_30d||0);
-    // Update subtitles
-    const roiCard = document.querySelector('#an-roi')?.closest('.kpi-card');
-    const ventasCard = document.querySelector('#an-ventas')?.closest('.kpi-card');
-    if(roiCard) roiCard.querySelector('.kpi-sub').textContent = 'Crecimiento Shopify 30d';
-    if(ventasCard) ventasCard.querySelector('.kpi-sub').textContent = 'Revenue Shopify 30d';
-  }
-
-  const mejorCamp = data.campanas.find(c=>c.roi_pct!==null && c.roi_pct>0);
-  document.getElementById('an-mejor').textContent = mejorCamp ? mejorCamp.nombre : (sh.pedidos_30d ? sh.pedidos_30d+' pedidos' : '—');
-  const mejorCanal = data.por_canal[0];
-  document.getElementById('an-canal').textContent = mejorCanal ? mejorCanal.canal : 'Shopify';
-
-  // Tabla campañas ROI
-  const cBody = document.getElementById('an-campanas-body');
-  if(!data.campanas.length) {
-    cBody.innerHTML = sh.revenue_30d
-      ? `<tr><td colspan="6" style="color:#94a3b8;padding:12px;">Sin campañas registradas. Revenue Shopify 30d: <strong style="color:#34d399;">${fmtM(sh.revenue_30d)}</strong> (${sh.pedidos_30d} pedidos)</td></tr>`
-      : '<tr class="empty-row"><td colspan="6">Sin campañas con datos</td></tr>';
-  } else {
-    cBody.innerHTML = data.campanas.map(c=>`
-      <tr>
-        <td style="font-weight:700;">${c.nombre}</td>
-        <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
-        <td>${fmtM(c.presupuesto_gastado)}</td>
-        <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
-        <td>${roiBadge(c.roi_pct)}</td>
-        <td>${c.pct_objetivo?c.pct_objetivo+'%':'—'}</td>
-      </tr>`).join('');
-  }
-
-  // Tabla influencers ROI
-  const iBody = document.getElementById('an-infl-body');
-  if(!data.influencers.length) { iBody.innerHTML='<tr class="empty-row"><td colspan="6">Sin influencers registrados</td></tr>'; }
-  else iBody.innerHTML = data.influencers.map(i=>`
-    <tr>
-      <td style="font-weight:700;">${i.nombre}</td>
-      <td><span class="badge badge-gray">${i.red_social}</span></td>
-      <td>${i.campanas}</td>
-      <td>${fmtM(i.total_invertido)}</td>
-      <td>${i.conversiones}</td>
-      <td>${i.costo_por_conversion?fmtM(i.costo_por_conversion):'—'}</td>
-    </tr>`).join('');
-
-  // Tabla por canal
-  const chBody = document.getElementById('an-canal-body');
-  if(!data.por_canal.length) { chBody.innerHTML='<tr class="empty-row"><td colspan="5">Sin datos por canal</td></tr>'; }
-  else chBody.innerHTML = data.por_canal.map(c=>`
-    <tr>
-      <td style="font-weight:700;">${c.canal}</td>
-      <td>${c.campanas}</td>
-      <td>${fmtM(c.total_invertido)}</td>
-      <td style="color:#34d399;">${fmtM(c.total_ventas)}</td>
-      <td>${roiBadge(c.roi_pct)}</td>
-    </tr>`).join('');
-}
-
-async function loadAnalyticsTendencias() {
-  const meses = document.getElementById('an-meses-sel').value;
-  const data = await fetch(`/api/marketing/analytics/tendencias?meses=${meses}`).then(r=>r.json());
-  const cont = document.getElementById('an-tendencias-body');
-  if(!data.crecimiento.length) { cont.innerHTML='<div style="color:#64748b;padding:16px;">Sin datos de liberaciones</div>'; return; }
-  const maxAbs = Math.max(...data.crecimiento.map(t=>Math.abs(t.crecimiento_pct)),1);
-  cont.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;">` +
-    data.crecimiento.map(t=>{
-      const pct = t.crecimiento_pct;
-      const color = pct>20?'#34d399':pct<-20?'#f87171':'#94a3b8';
-      const barW = Math.round(Math.abs(pct)/maxAbs*100);
-      return `<div style="background:#0f172a;border-radius:8px;padding:12px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-weight:700;">${t.sku}</span>
-          <span style="color:${color};font-weight:700;">${pct>0?'+':''}${pct}%</span>
-        </div>
-        <div class="progress-bar"><div style="width:${barW}%;height:100%;background:${color};border-radius:4px;"></div></div>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#64748b;">
-          <span>Reciente: ${fmt(t.reciente_90d)}</span>
-          <span>Anterior: ${fmt(t.anterior_90d)}</span>
-        </div>
-      </div>`;
-    }).join('') + '</div>';
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // MODAL HELPERS

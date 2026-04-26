@@ -468,6 +468,119 @@ def mkt_dashboard():
 # ──────────────────────────────────────────────────────────────────────────────
 # CAMPAÑAS
 # ──────────────────────────────────────────────────────────────────────────────
+@bp.route("/api/marketing/influencers/<int:iid>/dar-baja", methods=["POST"])
+def mkt_dar_de_baja(iid):
+    """Marca un influencer como Baja con motivo — no lo elimina."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); d = request.get_json() or {}
+    motivo = str(d.get("motivo") or "Sin especificar").strip()
+    obs    = str(d.get("observacion") or "").strip()
+    nota   = f"{motivo}" + (f" — {obs}" if obs else "")
+    conn.execute("""
+        UPDATE marketing_influencers
+        SET estado='Baja', motivo_baja=?, fecha_baja=date('now'), notas=?
+        WHERE id=?
+    """, (nota, obs, iid))
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/marketing/analytics/influencers", methods=["GET"])
+def mkt_analytics_influencers():
+    """Analytics completos de influencers desde pagos_influencers."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    try:
+        now_year = datetime.now().year
+
+        # Totales globales
+        row = c.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN estado='Pagada' AND fecha LIKE ? THEN valor ELSE 0 END),0) as total_anio,
+                COALESCE(SUM(CASE WHEN estado='Pendiente' THEN valor ELSE 0 END),0) as total_pendiente,
+                COUNT(CASE WHEN estado='Pagada' AND fecha LIKE ? THEN 1 END) as total_colabs,
+                COUNT(DISTINCT CASE WHEN estado='Pagada' AND fecha LIKE ? THEN LOWER(TRIM(influencer_nombre)) END) as creadores_unicos
+            FROM pagos_influencers
+        """, (f"{now_year}%", f"{now_year}%", f"{now_year}%")).fetchone()
+
+        total_anio       = row[0] or 0
+        total_pendiente  = row[1] or 0
+        total_colabs     = row[2] or 0
+        creadores_unicos = row[3] or 0
+        promedio         = int(total_anio / total_colabs) if total_colabs else 0
+
+        # Top creador
+        top = c.execute("""
+            SELECT influencer_nombre, SUM(valor) as t FROM pagos_influencers
+            WHERE estado='Pagada' AND fecha LIKE ?
+            GROUP BY LOWER(TRIM(influencer_nombre)) ORDER BY t DESC LIMIT 1
+        """, (f"{now_year}%",)).fetchone()
+        top_creador = top[0] if top else "—"
+
+        # Por mes
+        meses_raw = c.execute("""
+            SELECT
+                strftime('%Y-%m', fecha) as mes,
+                COUNT(CASE WHEN estado='Pagada' THEN 1 END) as colabs,
+                COUNT(DISTINCT CASE WHEN estado='Pagada' THEN LOWER(TRIM(influencer_nombre)) END) as creadores_unicos_mes,
+                COALESCE(SUM(CASE WHEN estado='Pagada' THEN valor ELSE 0 END),0) as total_pagado,
+                COALESCE(SUM(CASE WHEN estado='Pendiente' THEN valor ELSE 0 END),0) as total_pendiente
+            FROM pagos_influencers
+            WHERE fecha IS NOT NULL AND fecha != ''
+            GROUP BY mes ORDER BY mes
+        """).fetchall()
+
+        # Nuevos creadores por mes (primer pago de cada creador)
+        primeros = c.execute("""
+            SELECT LOWER(TRIM(influencer_nombre)), MIN(strftime('%Y-%m', fecha)) as primer_mes
+            FROM pagos_influencers GROUP BY LOWER(TRIM(influencer_nombre))
+        """).fetchall()
+        nuevos_por_mes = {}
+        for _, pm in primeros:
+            if pm: nuevos_por_mes[pm] = nuevos_por_mes.get(pm, 0) + 1
+
+        por_mes = []
+        for r in meses_raw:
+            por_mes.append({
+                "mes": r[0], "colabs": r[1], "creadores_unicos_mes": r[2],
+                "total_pagado": r[3], "total_pendiente": r[4],
+                "nuevos_creadores": nuevos_por_mes.get(r[0], 0)
+            })
+
+        # Ranking por creador
+        ranking_raw = c.execute("""
+            SELECT p.influencer_nombre,
+                   COUNT(CASE WHEN p.estado='Pagada' THEN 1 END) as colabs,
+                   COALESCE(SUM(CASE WHEN p.estado='Pagada' THEN p.valor ELSE 0 END),0) as total,
+                   COALESCE(m.estado, 'Activo') as estado_inf
+            FROM pagos_influencers p
+            LEFT JOIN marketing_influencers m ON LOWER(TRIM(m.nombre))=LOWER(TRIM(p.influencer_nombre))
+            WHERE p.fecha LIKE ?
+            GROUP BY LOWER(TRIM(p.influencer_nombre))
+            ORDER BY total DESC LIMIT 30
+        """, (f"{now_year}%",)).fetchall()
+
+        ranking = [{"nombre": r[0], "colabs": r[1], "total": r[2],
+                    "promedio": int(r[2]/r[1]) if r[1] else 0, "estado": r[3]}
+                   for r in ranking_raw]
+
+        return jsonify({
+            "total_pagado_anio":  total_anio,
+            "total_pendiente":    total_pendiente,
+            "total_colabs":       total_colabs,
+            "creadores_unicos":   creadores_unicos,
+            "promedio_por_colab": promedio,
+            "top_creador":        top_creador,
+            "por_mes":            por_mes,
+            "ranking":            ranking,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"_error": str(e), "_trace": traceback.format_exc()[-600:]}), 200
+
+
 @bp.route("/api/marketing/campanas", methods=["GET", "POST"])
 def mkt_campanas():
     u, err, code = _auth()

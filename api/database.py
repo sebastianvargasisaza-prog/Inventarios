@@ -1386,6 +1386,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """INSERT OR IGNORE INTO pagos_influencers (influencer_id, influencer_nombre, valor, fecha, estado, concepto) SELECT mi.id, 'Alejandra duque', 2500000, '2025-05-01', 'Pendiente', 'Pago histórico importado' FROM marketing_influencers mi WHERE TRIM(LOWER(mi.nombre))=TRIM(LOWER('Alejandra duque')) UNION ALL SELECT NULL, 'Alejandra duque', 2500000, '2025-05-01', 'Pendiente', 'Pago histórico importado' WHERE NOT EXISTS (SELECT 1 FROM marketing_influencers WHERE TRIM(LOWER(nombre))=TRIM(LOWER('Alejandra duque')))""",
         """INSERT OR IGNORE INTO pagos_influencers (influencer_id, influencer_nombre, valor, fecha, estado, concepto) SELECT mi.id, 'Valeria osorno', 450000, '2025-05-01', 'Pendiente', 'Pago histórico importado' FROM marketing_influencers mi WHERE TRIM(LOWER(mi.nombre))=TRIM(LOWER('Valeria osorno')) UNION ALL SELECT NULL, 'Valeria osorno', 450000, '2025-05-01', 'Pendiente', 'Pago histórico importado' WHERE NOT EXISTS (SELECT 1 FROM marketing_influencers WHERE TRIM(LOWER(nombre))=TRIM(LOWER('Valeria osorno')))""",
     ]),
+    (24, "marketing_influencers: motivo_baja + fecha_publicacion en pagos_influencers", [
+        """ALTER TABLE marketing_influencers ADD COLUMN motivo_baja TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN fecha_baja TEXT DEFAULT ''""",
+        """ALTER TABLE pagos_influencers ADD COLUMN fecha_publicacion TEXT DEFAULT ''""",
+        """ALTER TABLE pagos_influencers ADD COLUMN entregable TEXT DEFAULT ''""",
+    ]),
 ]
 
 
