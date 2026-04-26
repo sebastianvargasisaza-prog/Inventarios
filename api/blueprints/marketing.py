@@ -2383,7 +2383,9 @@ def mkt_fix_pago_link():
 
 @bp.route('/api/marketing/agencia/audit', methods=['GET'])
 def mkt_agencia_audit():
-    """Auditoría completa: scores de influencers + audit de campañas + salud del portafolio."""
+    """Auditoría completa: scores de influencers + audit de campañas + salud del portafolio.
+    v2 — deploy fix 2026-04-26.
+    """
     db = get_db()
     c = db.cursor()
     today = datetime.now().date()
