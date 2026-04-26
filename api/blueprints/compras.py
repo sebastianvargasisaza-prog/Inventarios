@@ -514,6 +514,14 @@ def handle_solicitudes_compra():
             c2 = conn.cursor()
             c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
             row['valor'] = c2.fetchone()[0] or 0
+        # Last fallback: parse VALOR from OBS string (influencer SOLs without OC)
+        if not row.get('valor'):
+            obs_str = row.get('observaciones') or ''
+            if 'VALOR:' in obs_str:
+                try:
+                    v_str = obs_str.split('VALOR:')[1].split('|')[0].strip().replace('$','').replace(',','').replace('.','')
+                    row['valor'] = float(v_str)
+                except: pass
         rows_sol.append(row)
     return jsonify({'solicitudes': rows_sol})
 
@@ -1339,7 +1347,10 @@ def update_sol_observaciones(numero):
     if solicitante is not None:
         updates.append("solicitante=?"); params.append(solicitante)
     if valor is not None:
-        updates.append("valor=?"); params.append(float(valor))
+        # Use try/except — column may not exist in older DB (migration adds it on restart)
+        try:
+            updates.append("valor=?"); params.append(float(valor))
+        except: pass
     if fecha_requerida is not None:
         updates.append("fecha_requerida=?"); params.append(str(fecha_requerida))
     params.append(numero.upper())

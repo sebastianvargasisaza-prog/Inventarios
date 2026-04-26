@@ -1556,6 +1556,9 @@ def init_db():
         c.execute("ALTER TABLE solicitudes_compra ADD COLUMN fecha_requerida TEXT DEFAULT ''")
     except: pass
     try:
+        c.execute("ALTER TABLE solicitudes_compra ADD COLUMN valor REAL DEFAULT 0")
+    except: pass
+    try:
         c.execute("ALTER TABLE producciones ADD COLUMN presentacion TEXT DEFAULT ''")
     except: pass
 
