@@ -1134,6 +1134,15 @@ def pagar_oc(numero_oc):
             # con el desglose correcto.
             pass
 
+        # Empresa pagadora según categoría:
+        #   Influencer/Marketing/Cuenta de Cobro → ANIMUS LAB S.A.S.
+        #   Resto (mercancía, MPs, planta, etc.)  → ESPAGIRIA LABORATORIO S.A.S.
+        cat_low = (categoria or '').lower()
+        if 'influencer' in cat_low or 'marketing' in cat_low or 'cuenta de cobro' in cat_low:
+            empresa_pagadora = 'Animus'
+        else:
+            empresa_pagadora = 'Espagiria'
+
         comp = crear_comprobante_y_pdf(
             conn, beneficiario=beneficiario, items=items_pdf,
             monto_subtotal=subtotal_ce,
@@ -1142,7 +1151,7 @@ def pagar_oc(numero_oc):
             aplicar_iva=aplicar_iva,
             medio_pago=medio, observaciones=obs,
             pagado_por=usuario_actual, numero_oc=numero_oc,
-            pago_oc_id=pago_oc_id, empresa='Espagiria',
+            pago_oc_id=pago_oc_id, empresa=empresa_pagadora,
         )
         comprobante_info = {
             'numero_ce': comp['numero_ce'],
@@ -1172,7 +1181,7 @@ def pagar_oc(numero_oc):
                         pdf_bytes=comp['pdf_bytes'],
                         fecha_emision=fecha_pago[:10],
                         numero_oc=numero_oc,
-                        empresa='Espagiria',
+                        empresa=empresa_pagadora,
                     )
                     comprobante_info['email_enviado_a'] = email_dest
                 else:

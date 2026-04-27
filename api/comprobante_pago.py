@@ -37,18 +37,53 @@ COLOR_BEIGE = (247, 244, 239)
 COLOR_BLANCO = (255, 255, 255)
 COLOR_NEGRO = (0, 0, 0)
 
-# ── Datos empresa pagadora (del PDF de referencia + logo HHA) ───────────────
-EMPRESA_PAGADORA = {
-    "razon_social": "ESPAGIRIA LABORATORIO S.A.S.",
-    "nit": "901622676-0",
-    "direccion": "Cra 1 # 32 46 P 2",
-    "ciudad": "Cali, Valle del Cauca, Colombia",
-    "telefono": "305 3427171",
-    "email": "facturasespagirialaboratorio@gmail.com",
-    "regimen": "Responsable del impuesto sobre las ventas IVA",
-    "actividad_economica": "2100 - Fabricación de productos farmacéuticos y cosméticos",
-    "tarifa_ica": "6.6 x 1000 en Cali",
+# ── Datos empresas pagadoras del grupo HHA ───────────────────────────────────
+# Cada categoría de pago dispatcha a la empresa correcta:
+#   Influencers / Marketing / Cuenta de Cobro → ANIMUS LAB S.A.S.
+#   Mercancía / MPs / Servicios planta / etc. → ESPAGIRIA LABORATORIO S.A.S.
+EMPRESAS_PAGADORAS = {
+    "espagiria": {
+        "razon_social": "ESPAGIRIA LABORATORIO S.A.S.",
+        "nombre_corto": "Espagiria",
+        "nit": "901622676-0",
+        "direccion": "Cra 1 # 32 46 P 2",
+        "ciudad": "Cali, Valle del Cauca, Colombia",
+        "telefono": "305 3427171",
+        "email": "facturasespagirialaboratorio@gmail.com",
+        "regimen": "Responsable del impuesto sobre las ventas IVA",
+        "actividad_economica": "2100 - Fabricación de productos farmacéuticos y cosméticos",
+        "tarifa_ica": "6.6 x 1000 en Cali",
+    },
+    "animus": {
+        "razon_social": "ANIMUS LAB S.A.S.",
+        "nombre_corto": "ANIMUS Lab",
+        "nit": "901962051-1",
+        "direccion": "Cra 1 # 32 46 P 2",
+        "ciudad": "Cali, Valle del Cauca, Colombia",
+        "telefono": "305 3427171",
+        "email": "facturasespagirialaboratorio@gmail.com",
+        "regimen": "Responsable del impuesto sobre las ventas IVA",
+        "actividad_economica": "4645 - Comercio al por mayor de productos farmacéuticos, medicinales, cosméticos y de tocador",
+        # ICA Cali para CIIU 4645 (comercio al por mayor): tarifa estándar
+        # 6.6 x 1000. Verificar con contadora si el RUT trae otra tarifa.
+        "tarifa_ica": "6.6 x 1000 en Cali",
+    },
 }
+
+# Compat: alias del dict viejo, apunta a Espagiria (default histórico)
+EMPRESA_PAGADORA = EMPRESAS_PAGADORAS["espagiria"]
+
+
+def _empresa(empresa_clave):
+    """Devuelve el dict de la empresa pagadora correspondiente.
+
+    Acepta variaciones case-insensitive: 'animus', 'ANIMUS', 'Animus Lab',
+    'espagiria', 'Espagiria', etc. Si no reconoce, cae a Espagiria.
+    """
+    k = (empresa_clave or "espagiria").strip().lower()
+    if "animus" in k:
+        return EMPRESAS_PAGADORAS["animus"]
+    return EMPRESAS_PAGADORAS["espagiria"]
 
 
 def _safe(text):
@@ -185,6 +220,7 @@ def generar_comprobante_egreso_pdf(
     W = pdf.w - 20  # ancho útil
 
     logo_p = _logo_path(empresa_clave)
+    emp = _empresa(empresa_clave)
 
     # ════════════════════════════════════════════════════════════════════
     # ENCABEZADO: Logo izquierda + Datos empresa centro + Box documento derecha
@@ -203,22 +239,22 @@ def generar_comprobante_egreso_pdf(
     pdf.set_xy(50, HEAD_Y + 1)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*HHA_TEAL)
-    pdf.cell(95, 6, _safe(EMPRESA_PAGADORA["razon_social"]), ln=True)
+    pdf.cell(95, 6, _safe(emp["razon_social"]), ln=True)
 
     pdf.set_x(50)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*COLOR_TEXT)
-    pdf.cell(95, 4, _safe(f"NIT: {EMPRESA_PAGADORA['nit']}"), ln=True)
+    pdf.cell(95, 4, _safe(f"NIT: {emp['nit']}"), ln=True)
     pdf.set_x(50)
-    pdf.cell(95, 4, _safe(EMPRESA_PAGADORA["direccion"] + " - " + EMPRESA_PAGADORA["ciudad"]), ln=True)
+    pdf.cell(95, 4, _safe(emp["direccion"] + " - " + emp["ciudad"]), ln=True)
     pdf.set_x(50)
-    pdf.cell(95, 4, _safe("Tel: " + EMPRESA_PAGADORA["telefono"]), ln=True)
+    pdf.cell(95, 4, _safe("Tel: " + emp["telefono"]), ln=True)
     pdf.set_x(50)
-    pdf.cell(95, 4, _safe(EMPRESA_PAGADORA["email"]), ln=True)
+    pdf.cell(95, 4, _safe(emp["email"]), ln=True)
     pdf.set_x(50)
     pdf.set_font("Helvetica", "I", 7)
     pdf.set_text_color(*COLOR_TEXT_SOFT)
-    pdf.cell(95, 4, _safe(EMPRESA_PAGADORA["regimen"]), ln=True)
+    pdf.cell(95, 4, _safe(emp["regimen"]), ln=True)
 
     # Box documento derecha (estilo factura)
     box_x, box_y = 148, HEAD_Y
@@ -314,9 +350,12 @@ def generar_comprobante_egreso_pdf(
     y = BENEF_Y + 6
     _kv("Medio", medio_pago, 128, y, w_label=22); y += 4.5
     _kv("Forma", "Contado", 128, y, w_label=22); y += 4.5
-    _kv("Pagado por", pagado_por, 128, y, w_label=22); y += 4.5
+    # "Pagado por" debe mostrar la EMPRESA emisora (Espagiria o ANIMUS Lab),
+    # no la persona que registró el pago. La persona aparece como EMISOR
+    # en el bloque de firmas al final del documento.
+    _kv("Pagado por", emp["nombre_corto"], 128, y, w_label=22); y += 4.5
     _kv("Moneda", "PESOS COL", 128, y, w_label=22); y += 4.5
-    _kv("Empresa", "Espagiria" if empresa_clave == "espagiria" else "ANIMUS Lab", 128, y, w_label=22)
+    _kv("NIT pagador", emp["nit"], 128, y, w_label=22)
 
     pdf.set_y(BENEF_Y + BENEF_H + 4)
 
@@ -456,13 +495,13 @@ def generar_comprobante_egreso_pdf(
     notas.append(
         "DOCUMENTO SOPORTE DE PAGO segun ETT art. 1.6.1.4.12 - "
         "No constituye factura electronica de venta. "
-        f"ACT. ECONOMICA: {EMPRESA_PAGADORA['actividad_economica']}. "
-        f"TARIFA ICA: {EMPRESA_PAGADORA['tarifa_ica']}."
+        f"ACT. ECONOMICA: {emp['actividad_economica']}. "
+        f"TARIFA ICA: {emp['tarifa_ica']}."
     )
     notas.append(
-        "PARA CUALQUIER CONSULTA SOBRE ESTE COMPROBANTE: contactar al area de "
-        "compras de Espagiria al correo facturasespagirialaboratorio@gmail.com. "
-        "El beneficiario declara haber recibido el pago indicado."
+        f"PARA CUALQUIER CONSULTA SOBRE ESTE COMPROBANTE: contactar al area de "
+        f"compras de {emp['nombre_corto']} al correo {emp['email']}. "
+        f"El beneficiario declara haber recibido el pago indicado."
     )
     for n in notas:
         pdf.multi_cell(W, 4, _safe(n))
@@ -471,7 +510,10 @@ def generar_comprobante_egreso_pdf(
     # ════════════════════════════════════════════════════════════════════
     # AUTORIZACION NUMERACION INTERNA + FIRMAS
     # ════════════════════════════════════════════════════════════════════
-    # Espacio reservado a la firma — fixed Y para que no se mueva con notas
+    # Espacio reservado a las firmas — fixed Y para que no se mueva con notas.
+    # Dos firmas: EMISOR (representante legal de la empresa que paga) y
+    # BENEFICIARIO (quien recibe el pago). El usuario que registró la
+    # operación (pagado_por) queda solo como auditoría interna abajo.
     pdf.set_y(-40)
     pdf.set_draw_color(*COLOR_LINE_DARK)
     pdf.set_line_width(0.2)
@@ -479,11 +521,22 @@ def generar_comprobante_egreso_pdf(
     pdf.line(20, y, 90, y)
     pdf.line(120, y, 190, y)
     pdf.set_xy(20, y + 1)
-    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*COLOR_TEXT)
+    pdf.cell(70, 4, "EMISOR", align="C", ln=True)
+    pdf.set_x(20)
+    pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*COLOR_TEXT_SOFT)
-    pdf.cell(70, 4, _safe("Pagado por: " + (pagado_por or "")), align="C")
+    pdf.cell(70, 3.5, _safe(emp["razon_social"]), align="C")
+
     pdf.set_xy(120, y + 1)
-    pdf.cell(70, 4, "Firma del beneficiario", align="C")
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*COLOR_TEXT)
+    pdf.cell(70, 4, "BENEFICIARIO", align="C", ln=True)
+    pdf.set_x(120)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(*COLOR_TEXT_SOFT)
+    pdf.cell(70, 3.5, _safe(beneficiario.get("nombre", "") + (" - CC " + beneficiario["cedula"] if beneficiario.get("cedula") else "")), align="C")
 
     # Numeracion interna + autorizacion
     pdf.set_y(-22)

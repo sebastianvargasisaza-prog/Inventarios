@@ -399,6 +399,12 @@ def admin_test_email():
 
     body = request.get_json(silent=True) or {}
     destinatario = (body.get('destinatario') or '').strip()
+    # 'animus' o 'espagiria' — para probar ambos formatos del PDF
+    empresa_test = (body.get('empresa') or 'espagiria').strip().lower()
+    if 'animus' in empresa_test:
+        empresa_test = 'animus'
+    else:
+        empresa_test = 'espagiria'
 
     # Probar primero la config SMTP
     try:
@@ -471,7 +477,7 @@ def admin_test_email():
             medio_pago='N/A — prueba',
             observaciones=f'Test enviado por {u} desde /admin',
             pagado_por=u,
-            empresa_clave='espagiria',
+            empresa_clave=empresa_test,
         )
     except Exception as e:
         import traceback
@@ -491,7 +497,7 @@ def admin_test_email():
             pdf_bytes=pdf_bytes,
             fecha_emision=_dt.now().strftime('%Y-%m-%d'),
             numero_oc='OC-TEST-0000',
-            empresa='Espagiria',
+            empresa='ANIMUS Lab' if empresa_test == 'animus' else 'Espagiria',
         )
     except Exception as e:
         return jsonify({'error': 'Excepción al enviar', 'detalle': str(e)}), 500
@@ -934,6 +940,11 @@ tr:hover td{background:#263348;}
     <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
       <input type="email" id="test-email-dest" placeholder="destinatario@gmail.com (opcional)"
              style="padding:9px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;min-width:280px;font-size:13px;">
+      <select id="test-email-empresa"
+              style="padding:9px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:13px;">
+        <option value="espagiria">PDF como Espagiria</option>
+        <option value="animus">PDF como ANIMUS Lab</option>
+      </select>
       <button class="btn" onclick="enviarTestEmail()">&#x26A1; Enviar correo de prueba</button>
     </div>
     <div id="test-email-result" style="margin-top:14px;"></div>
@@ -1204,13 +1215,15 @@ async function loadConfigStatus() {
 // ── TEST EMAIL (SMTP) ─────────────────────────────────────────────────────────
 async function enviarTestEmail() {
   const dest = (document.getElementById('test-email-dest').value || '').trim();
+  const empSel = document.getElementById('test-email-empresa');
+  const empresa = empSel ? empSel.value : 'espagiria';
   const out = document.getElementById('test-email-result');
-  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Generando PDF y enviando...</div>';
+  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Generando PDF (' + empresa + ') y enviando...</div>';
   try {
     const r = await fetch('/api/admin/test-email', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({destinatario: dest})
+      body: JSON.stringify({destinatario: dest, empresa: empresa})
     });
     let data;
     try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
