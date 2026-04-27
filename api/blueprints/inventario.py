@@ -232,6 +232,29 @@ def handle_produccion():
                 'detalle': 'Crea la fórmula en /tecnica antes de producir'
             }), 400
 
+        # ─── Validación 3: idempotencia (anti-doble-click / replay) ─────────
+        # Si en los últimos 90 segundos ya se registró la MISMA producción
+        # (mismo producto + cantidad + operador), devolvemos la existente
+        # en lugar de crear una nueva. Cubre el caso clásico de doble-click,
+        # cliente con red lenta que reintenta, o un POST replay.
+        try:
+            c.execute("""SELECT id, fecha, lote
+                         FROM producciones
+                         WHERE producto=? AND cantidad=? AND operador=?
+                           AND datetime(fecha) >= datetime('now','-90 seconds')
+                         ORDER BY id DESC LIMIT 1""",
+                      (producto, cantidad_kg, operador))
+            dup = c.fetchone()
+            if dup:
+                return jsonify({
+                    'message': 'Producción ya registrada hace <90s — duplicado evitado',
+                    'lote': dup[2] or f'PROD-{dup[0]:05d}',
+                    'duplicado': True,
+                    'id_existente': dup[0],
+                }), 200
+        except sqlite3.OperationalError:
+            pass  # esquema antiguo sin alguna columna — continuar normal
+
         # ─── MPs ilimitadas (no requieren validación de stock) ──────────────
         # Carga la lista desde programacion (única fuente de verdad)
         try:
@@ -1437,12 +1460,23 @@ def conteo_cerrar(conteo_id):
             'rollback': 'aplicado — ningún ajuste se persistió',
         }), 500
 
-    # Email de alerta a gerencia si hay pendientes (best-effort, no bloquea)
+    # Email de alerta a gerencia si hay pendientes (best-effort, no bloquea).
+    # Se envía a EMAIL_GERENCIA (env var, separado del buzón de facturación).
+    # Soporta múltiples destinatarios separados por coma.
+    # Si EMAIL_GERENCIA no está configurado, fallback a EMAIL_REMITENTE para
+    # no perder el alerta — pero el operador debe configurarlo en Render.
     if pendientes_gerencia_lista:
         try:
             from notificaciones import SistemaNotificaciones
+            import os as _os
             sn = SistemaNotificaciones()
             if sn.email_remitente and sn.contraseña:
+                gerencia_raw = _os.environ.get('EMAIL_GERENCIA', '').strip()
+                if gerencia_raw:
+                    destinatarios = [e.strip() for e in gerencia_raw.split(',')
+                                     if e.strip() and '@' in e.strip()]
+                else:
+                    destinatarios = [sn.email_remitente]
                 total_valor = sum(p.get('valor_diferencia') or 0 for p in pendientes_gerencia_lista)
                 lista_html = ''.join([
                     f"<li><strong>{p['codigo_mp']}</strong> — {p['nombre']}: "
@@ -1462,7 +1496,7 @@ def conteo_cerrar(conteo_id):
                     sn._enviar_email,
                     asunto=f"[HHA] Conteo cíclico #{conteo_id}: {len(pendientes_gerencia_lista)} items requieren Gerencia",
                     body=body,
-                    destinatarios=[sn.email_remitente],
+                    destinatarios=destinatarios,
                 )
         except Exception as _e_mail:
             __import__('logging').getLogger('inventario').error(
