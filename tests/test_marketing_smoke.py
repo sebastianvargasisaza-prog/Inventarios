@@ -217,6 +217,49 @@ def test_agente_estrategia_runs(app, db_clean):
         assert key in j["snapshot"], f"falta {key} en snapshot"
 
 
+def test_marketing_modals_outside_tab_panels(app, db_clean):
+    """Cada div .modal-bg debe vivir FUERA de cualquier .tab-panel.
+
+    Bug reportado: 'el modal Editar Influencer solo aparece cuando estoy
+    en la sub-tab Histórico de inversión'. Causa: modal-historial,
+    modal-influencer, etc. estaban dentro de tab-analytics. Cuando esa
+    tab era display:none, todos los modales también — abrirlos no surtía
+    efecto visible.
+    """
+    import html.parser
+    c = _login(app)
+    r = c.get("/marketing")
+    html_doc = r.get_data(as_text=True)
+
+    class Checker(html.parser.HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+            self.modals_in_tabs = []
+        def handle_starttag(self, tag, attrs):
+            if tag != "div":
+                return
+            d = dict(attrs)
+            cls = d.get("class", "")
+            mid = d.get("id", "")
+            if "modal-bg" in cls:
+                for (t, i, c) in self.stack:
+                    if "tab-panel" in c:
+                        self.modals_in_tabs.append((mid, i))
+                        break
+            self.stack.append((tag, mid, cls))
+        def handle_endtag(self, tag):
+            if tag == "div" and self.stack:
+                self.stack.pop()
+
+    ck = Checker()
+    ck.feed(html_doc)
+    assert not ck.modals_in_tabs, (
+        f"Modales dentro de tab-panel (se ocultarán cuando la tab no esté "
+        f"activa): {ck.modals_in_tabs}"
+    )
+
+
 def test_marketing_html_js_parses():
     """Compila el JS embebido en MARKETING_HTML con node.
 

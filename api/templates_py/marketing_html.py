@@ -777,10 +777,14 @@ window.addEventListener('unhandledrejection', function(ev) {
   <span id="an-total-2025" style="display:none;"></span>
   <span id="an-colabs-2025" style="display:none;"></span>
   <span id="an-creadores-2025" style="display:none;"></span>
-
+</div><!-- /tab-analytics -->
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- MODALS -->
+<!-- MODALS — DEBEN VIVIR FUERA de cualquier tab-panel.               -->
+<!-- Bug previo: tab-analytics no cerraba antes de los modales, así    -->
+<!-- que cuando esa tab era display:none, todos los modales también.   -->
+<!-- El user veía: 'el botón editar solo abre el modal cuando estoy    -->
+<!-- en la pestaña Histórico de inversión'.                            -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 
 <!-- Modal: Historial Influencer -->
@@ -1057,7 +1061,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div id="modal-agent-content" style="font-size:13px;color:#e2e8f0;white-space:pre-wrap;max-height:500px;overflow-y:auto;background:#0f172a;border-radius:8px;padding:16px;font-family:'Segoe UI',sans-serif;"></div>
   </div>
 </div>
-</div>
+<!-- /MODALS -->
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: AGENCIA                                                   -->
