@@ -535,6 +535,39 @@ def admin_test_email():
 
 # ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
 
+@bp.route("/api/admin/debug-solicitud/<numero>", methods=["GET"])
+def admin_debug_solicitud(numero):
+    """Devuelve los items RAW de una solicitud para depurar.
+
+    Útil cuando el modal muestra cantidades raras y queremos ver qué hay
+    realmente en la DB sin transformaciones del frontend.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    sol = c.execute(
+        "SELECT numero, fecha, estado, observaciones, numero_oc, categoria FROM solicitudes_compra WHERE numero=?",
+        (numero.upper(),)
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': 'Solicitud no encontrada', 'numero': numero}), 404
+    items = c.execute(
+        """SELECT id, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion
+           FROM solicitudes_compra_items WHERE numero=?""",
+        (numero.upper(),)
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        'solicitud': dict(sol),
+        'items_raw': [dict(i) for i in items],
+        'count': len(items),
+        'items_con_cantidad_cero': sum(1 for i in items if (i['cantidad_g'] or 0) <= 0),
+    })
+
+
 @bp.route("/api/admin/stock-mp-diagnostico", methods=["GET"])
 def admin_stock_mp_diagnostico():
     """Diagnóstico de por qué un MP aparece con stock 0.
