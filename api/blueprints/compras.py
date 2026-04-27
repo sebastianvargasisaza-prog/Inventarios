@@ -1179,43 +1179,62 @@ def pagar_oc(numero_oc):
                  comprobante_imagen, numero_oc))
     # Sync solicitudes_compra estado → Pagada so it leaves the pending list
     cur.execute("UPDATE solicitudes_compra SET estado='Pagada' WHERE numero_oc=? AND estado='Aprobada'", (numero_oc,))
-    # Sync marketing payment status (insert si no existe, luego marcar pagada)
+    # Sync marketing payment status:
+    # 1. Si ya existe un row en pagos_influencers para esta OC → marcar Pagada
+    #    SIEMPRE (sin importar categoria — la existencia del row es señal
+    #    suficiente; el bug previo era que si categoria estaba mal/vacía, no
+    #    se actualizaba y quedaba como Pendiente).
+    # 2. Si no existe row pero categoria sugiere influencer → crearlo Pagada.
     try:
-        if 'influencer' in (categoria or '').lower() or 'marketing' in (categoria or '').lower():
-            # Try to get influencer info from the linked solicitud
+        cat_low = (categoria or '').lower()
+        is_influencer_cat = 'influencer' in cat_low or 'marketing' in cat_low
+        existing = cur.execute(
+            "SELECT id FROM pagos_influencers WHERE numero_oc=? LIMIT 1",
+            (numero_oc,)
+        ).fetchone()
+
+        # Recolectar info del influencer para enriquecer (best-effort)
+        inf_id = None
+        inf_name = proveedor  # fallback
+        try:
             sol_row = cur.execute(
                 "SELECT influencer_id, solicitante FROM solicitudes_compra WHERE numero_oc=? LIMIT 1",
                 (numero_oc,)
             ).fetchone()
-            inf_id   = sol_row[0] if sol_row and sol_row[0] else None
-            inf_name = proveedor  # fallback
-            if inf_id:
-                inf_row = cur.execute(
-                    "SELECT nombre FROM marketing_influencers WHERE id=?", (inf_id,)
-                ).fetchone()
-                if inf_row:
-                    inf_name = inf_row[0]
-            elif sol_row and sol_row[1]:
-                inf_name = sol_row[1]  # solicitante name as fallback
+            if sol_row:
+                inf_id = sol_row[0] if sol_row[0] else None
+                if inf_id:
+                    inf_row = cur.execute(
+                        "SELECT nombre FROM marketing_influencers WHERE id=?", (inf_id,)
+                    ).fetchone()
+                    if inf_row:
+                        inf_name = inf_row[0]
+                elif sol_row[1]:
+                    inf_name = sol_row[1]  # solicitante name as fallback
+        except sqlite3.OperationalError:
+            pass  # columnas pueden no existir en instancias viejas
+
+        if existing:
+            # Update SIEMPRE: si la fila existe, este pago la marca como Pagada
             cur.execute(
-                "SELECT id FROM pagos_influencers WHERE numero_oc=? LIMIT 1",
-                (numero_oc,)
+                "UPDATE pagos_influencers SET estado='Pagada', "
+                "influencer_id=COALESCE(influencer_id,?), "
+                "influencer_nombre=CASE WHEN influencer_nombre IN ('','Pago') "
+                "THEN ? ELSE influencer_nombre END "
+                "WHERE numero_oc=?",
+                (inf_id, inf_name, numero_oc)
             )
-            if not cur.fetchone():
-                # OC creada antes del cambio — crear registro ahora
-                cur.execute("""
-                    INSERT INTO pagos_influencers
-                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                    VALUES (?,?,?,date('now'),'Pagada',?,?)
-                """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
-            else:
-                # Update existing: fix nombre/id if still orphaned, and mark Pagada
-                cur.execute(
-                    "UPDATE pagos_influencers SET estado='Pagada', influencer_id=COALESCE(influencer_id,?), influencer_nombre=CASE WHEN influencer_nombre IN ('','Pago') THEN ? ELSE influencer_nombre END WHERE numero_oc=?",
-                    (inf_id, inf_name, numero_oc)
-                )
-    except Exception:
-        pass
+        elif is_influencer_cat:
+            # No hay fila pero la categoría dice influencer → crear Pagada
+            cur.execute("""
+                INSERT INTO pagos_influencers
+                (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                VALUES (?,?,?,date('now'),'Pagada',?,?)
+            """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
+    except Exception as _e:
+        __import__('logging').getLogger('compras').warning(
+            "sync pagos_influencers falló para OC %s: %s", numero_oc, _e
+        )
     try:
         cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
@@ -1636,8 +1655,9 @@ def get_pagos():
 
 # ── Categorías que NO requieren recepción física: van directo a "por pagar" ──
 # El contador ve estos como pagos directos (servicios, no mercancía).
+# NOTA: 'Influencer/Marketing Digital' NO va aquí — Marketing tiene su propio
+# panel para pagar influencers y no debe aparecer en /compras.
 CATEGORIAS_PAGO_DIRECTO = (
-    'Influencer/Marketing Digital',
     'Cuenta de Cobro',
     'Servicio',
     'SVC',

@@ -2081,11 +2081,36 @@ def mkt_influencers_panel():
         sql = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
         influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
 
-        # 2. Todos los pagos desde pagos_influencers
+        # AUTO-BACKFILL: si la OC ya está Pagada pero la fila quedó como
+        # 'Pendiente' por un sync fallido, corregir aquí. Idempotente.
+        try:
+            c.execute("""
+                UPDATE pagos_influencers
+                SET estado='Pagada'
+                WHERE estado='Pendiente'
+                  AND numero_oc IN (
+                    SELECT numero_oc FROM ordenes_compra
+                    WHERE estado='Pagada'
+                  )
+            """)
+            if c.rowcount:
+                conn.commit()
+        except Exception:
+            pass
+
+        # 2. Todos los pagos desde pagos_influencers — estado derivado de oc.estado
         try:
             pago_rows = c.execute("""
-                SELECT id, influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc
-                FROM pagos_influencers ORDER BY fecha DESC
+                SELECT pi.id, pi.influencer_id, pi.influencer_nombre,
+                       pi.valor, pi.fecha,
+                       CASE
+                         WHEN COALESCE(oc.estado,'') = 'Pagada' THEN 'Pagada'
+                         ELSE pi.estado
+                       END as estado,
+                       pi.concepto, pi.numero_oc
+                FROM pagos_influencers pi
+                LEFT JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
+                ORDER BY pi.fecha DESC
             """).fetchall()
             pago_list = [dict(r) for r in pago_rows]
         except Exception:
@@ -2223,10 +2248,43 @@ def mkt_pagos_influencers_list():
     conn = _db()
     c = conn.cursor()
     try:
-        # Pagos enriquecidos con comprobante (LEFT JOIN, último CE por OC)
+        # AUTO-BACKFILL idempotente: si alguna fila quedó con estado='Pendiente'
+        # pero la OC ya está Pagada (sync fallido en pagar_oc por categoría
+        # rara/vacía), corregirla aquí. Es una sola UPDATE barata y vuelve los
+        # datos consistentes sin esperar a un nuevo pago.
+        try:
+            c.execute("""
+                UPDATE pagos_influencers
+                SET estado='Pagada'
+                WHERE estado='Pendiente'
+                  AND numero_oc IN (
+                    SELECT numero_oc FROM ordenes_compra
+                    WHERE estado='Pagada'
+                  )
+            """)
+            if c.rowcount:
+                conn.commit()
+        except Exception as _ef:
+            import logging
+            logging.getLogger("marketing").warning(
+                "auto-backfill pagos_influencers falló: %s", _ef
+            )
+
+        # Pagos enriquecidos con comprobante (LEFT JOIN, último CE por OC).
+        # IMPORTANTE: estado se deriva del estado real de la OC (oc.estado).
+        # Si la OC está Pagada en ordenes_compra, mostramos Pagada — incluso
+        # si pi.estado quedó stale en 'Pendiente' por algún sync fallido.
+        # También una OC con CE generado se considera Pagada (un CE solo se
+        # genera tras un pago exitoso).
         sql = """
             SELECT pi.id, pi.influencer_id, pi.influencer_nombre,
-                   pi.valor, pi.fecha, pi.estado, pi.concepto, pi.numero_oc,
+                   pi.valor, pi.fecha,
+                   CASE
+                     WHEN COALESCE(oc.estado,'') = 'Pagada' THEN 'Pagada'
+                     WHEN cp.id IS NOT NULL THEN 'Pagada'
+                     ELSE pi.estado
+                   END as estado,
+                   pi.concepto, pi.numero_oc,
                    COALESCE(pi.fecha_publicacion,'') as fecha_publicacion,
                    cp.id          as comprobante_id,
                    cp.numero_ce   as numero_ce,
@@ -2235,6 +2293,7 @@ def mkt_pagos_influencers_list():
                    COALESCE(mi.email,'')   as inf_email,
                    COALESCE(mi.banco,'')   as inf_banco
             FROM pagos_influencers pi
+            LEFT JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
             LEFT JOIN comprobantes_pago cp
                    ON cp.numero_oc = pi.numero_oc
                   AND cp.id = (SELECT MAX(id) FROM comprobantes_pago
@@ -2244,7 +2303,13 @@ def mkt_pagos_influencers_list():
             WHERE 1=1
         """
         params = []
-        if estado:
+        # Filtro por estado: usamos el estado DERIVADO (no pi.estado raw).
+        # Replicamos la lógica del CASE en el WHERE.
+        if estado == 'Pagada':
+            sql += " AND (COALESCE(oc.estado,'') = 'Pagada' OR cp.id IS NOT NULL OR pi.estado = 'Pagada')"
+        elif estado == 'Pendiente':
+            sql += " AND COALESCE(oc.estado,'') != 'Pagada' AND cp.id IS NULL AND pi.estado = 'Pendiente'"
+        elif estado:
             sql += " AND pi.estado = ?"
             params.append(estado)
         if mes:

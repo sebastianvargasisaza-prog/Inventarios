@@ -27,13 +27,20 @@ def test_por_pagar_endpoint_works(app, db_clean):
     assert "mercancia_recibida" in data["desglose"]
 
 
-def test_por_pagar_includes_influencer_oc(app, db_clean):
-    """OCs en estado Aprobada con categoría Influencer deben aparecer."""
+def test_por_pagar_excludes_influencer_oc(app, db_clean):
+    """Influencers tienen su propio panel en /marketing — NO deben aparecer
+    en /compras Pendiente de pago. Solo Cuenta de Cobro y Servicios genéricos.
+    """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
                     (numero_oc, fecha, estado, proveedor, categoria, valor_total)
                     VALUES ('OC-TEST-INF', date('now'), 'Aprobada', 'Influencer X',
                             'Influencer/Marketing Digital', 500000)""")
+    # Cuenta de Cobro sí debe aparecer
+    conn.execute("""INSERT INTO ordenes_compra
+                    (numero_oc, fecha, estado, proveedor, categoria, valor_total)
+                    VALUES ('OC-TEST-CC', date('now'), 'Aprobada', 'Proveedor Y',
+                            'Cuenta de Cobro', 300000)""")
     conn.commit()
     conn.close()
 
@@ -41,9 +48,8 @@ def test_por_pagar_includes_influencer_oc(app, db_clean):
     r = c.get("/api/compras/por-pagar")
     items = r.get_json()["items"]
     nums = [i["numero_oc"] for i in items]
-    assert "OC-TEST-INF" in nums
-    inf_item = next(i for i in items if i["numero_oc"] == "OC-TEST-INF")
-    assert inf_item["pago_directo"] is True
+    assert "OC-TEST-INF" not in nums, "Influencer OC no debe aparecer en /compras"
+    assert "OC-TEST-CC" in nums, "Cuenta de Cobro sí debe aparecer"
 
 
 # ═══ Sprint 1: permisos + bug first_oc ════════════════════════════════════
