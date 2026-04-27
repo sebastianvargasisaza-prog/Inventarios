@@ -2867,7 +2867,33 @@ async function cargarProgramacionCiclica(){
     if(!tbody) return;
     if(!d.semanas || d.semanas.length === 0){
       var msg = d.mensaje || 'Sin datos de estanter&iacute;as';
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">'+msg+'</td></tr>';
+      var html = '<tr><td colspan="5" style="padding:18px;background:#fffaf2;border:1px dashed #f0c674;">';
+      html += '<div style="font-size:14px;font-weight:600;color:#8b5a00;margin-bottom:8px;">&#x26A0; '+msg+'</div>';
+      if(d.diagnostico){
+        var dx = d.diagnostico;
+        html += '<div style="font-size:12px;color:#555;line-height:1.7;">';
+        html += '<div><strong>Catálogo total:</strong> '+dx.total_catalogo+' items activos</div>';
+        if(dx.sin_clasificar > 0){
+          html += '<div style="color:#b94400;"><strong>'+dx.sin_clasificar+' items</strong> sin tipo asignado (“MP” por defecto)</div>';
+        }
+        if(dx.tipos_existentes && dx.tipos_existentes.length){
+          html += '<div style="margin-top:6px;"><strong>Tipos actualmente en catálogo:</strong></div>';
+          html += '<ul style="margin:4px 0 8px 22px;color:#444;">';
+          dx.tipos_existentes.forEach(function(t){
+            html += '<li><code style="background:#f3f0ea;padding:1px 6px;border-radius:3px;">'+t.tipo+'</code> &mdash; '+t.total+' items</li>';
+          });
+          html += '</ul>';
+        }
+        html += '<div style="margin-top:10px;padding:10px 12px;background:#fff;border-left:3px solid #2B7A78;color:#1f5f5b;">'
+              + '<strong>Acción sugerida:</strong> '+dx.accion_sugerida+'</div>';
+        html += '<div style="margin-top:10px;"><a href="/admin" target="_blank" '
+              + 'style="display:inline-block;background:#2B7A78;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">'
+              + 'Abrir /admin &raquo; tab Banco / diagnóstico</a> '
+              + '<span style="margin-left:8px;font-size:11px;color:#888;">(o ir directo al Catálogo MPs en Planta)</span></div>';
+        html += '</div>';
+      }
+      html += '</td></tr>';
+      tbody.innerHTML = html;
       return;
     }
     var modoItems = (d.modo === 'items');
@@ -2907,8 +2933,13 @@ async function cargarProgramacionCiclica(){
       resumen = 'Tipo: <strong>'+d.tipo_material+'</strong> · Total &iacute;tems: '+d.total_items+
                 ' · 3 items por semana · Ciclo completo en ~'+Math.ceil(d.total_items/3)+' semanas';
     } else {
+      // Modo legacy MP: aclarar al usuario que solo cubre Materias Primas
+      // físicas. Para Envase/Empaque hay que cambiar el filtro arriba.
+      var hint = (!_conteoTipoFiltro || _conteoTipoFiltro === 'MP')
+        ? ' · <span style="color:#1f5f5b;">Solo Materias Primas. Para Envase Primario/Secundario o Empaque cambia el filtro arriba.</span>'
+        : '';
       resumen = 'Total estanter&iacute;as en rotaci&oacute;n: '+d.total_estanterias+
-                ' &mdash; ciclo completo cada '+d.total_estanterias+' semanas';
+                ' &mdash; ciclo completo cada '+d.total_estanterias+' semanas' + hint;
     }
     html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">'+resumen+'</td></tr>';
     tbody.innerHTML = html;

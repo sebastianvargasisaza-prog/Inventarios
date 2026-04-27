@@ -1063,9 +1063,40 @@ def _conteo_programacion_items(tipo_material):
         items = c.fetchall()
 
     if not items:
+        # Diagnóstico para que la UI guíe al usuario:
+        # cuántos items hay en total, cuántos sin clasificar, y los tipos
+        # actualmente presentes (para detectar errores de capitalización).
+        try:
+            stats = c.execute("""
+                SELECT COALESCE(NULLIF(TRIM(tipo_material),''),'(sin tipo)') AS tipo,
+                       COUNT(*) AS total
+                FROM maestro_mps WHERE activo=1
+                GROUP BY tipo
+                ORDER BY total DESC
+            """).fetchall()
+            tipos_existentes = [{'tipo': r[0], 'total': r[1]} for r in stats]
+            total_catalogo = sum(r['total'] for r in tipos_existentes)
+            sin_tipo = next((r['total'] for r in tipos_existentes if r['tipo'] == '(sin tipo)'), 0)
+        except Exception:
+            tipos_existentes, total_catalogo, sin_tipo = [], 0, 0
         return jsonify({
-            'semanas': [], 'total_items': 0, 'tipo_material': tipo_material,
-            'mensaje': f"No hay items de tipo '{tipo_material}' en el catálogo."
+            'semanas': [],
+            'total_items': 0,
+            'tipo_material': tipo_material,
+            'mensaje': f"No hay items de tipo '{tipo_material}' en el catálogo.",
+            'diagnostico': {
+                'total_catalogo': total_catalogo,
+                'sin_clasificar': sin_tipo,
+                'tipos_existentes': tipos_existentes,
+                'accion_sugerida': (
+                    f"Ve a Catálogo MPs y asigna 'tipo_material = {tipo_material}' "
+                    f"a los items que correspondan. Tienes {sin_tipo} items sin "
+                    f"clasificar ahora mismo." if sin_tipo > 0
+                    else f"Tu catálogo tiene {total_catalogo} items, pero ninguno "
+                         f"está marcado como '{tipo_material}'. Verifica que el "
+                         f"tipo se escriba exactamente igual en el catálogo."
+                ),
+            }
         })
 
     L = len(items)
