@@ -671,6 +671,288 @@ def admin_import_mps_nombres_excel():
     })
 
 
+@bp.route("/api/admin/audit-inventario-vs-excel", methods=["POST"])
+def admin_audit_inventario_vs_excel():
+    """Compara el inventario actual contra un Excel "dia cero" sin escribir nada.
+
+    Caso de uso (CEO 2026-04-27): el inventario de planta esta inconsistente
+    contra la realidad fisica. Tenemos un Excel con el conteo fisico hecho
+    por Catalina antes de las producciones recientes. Cada fila tiene un
+    color que indica si el lote existe fisicamente (verde) o no (rojo /
+    blanco / gris claro). Solo verde cuenta como real.
+
+    Este endpoint:
+      1. Lee el Excel uploaded (campo 'file' en multipart)
+      2. Filtra rows verdes (FF92D050) — el resto se ignora
+      3. Compara cada (codigo_mp, lote) verde contra el estado actual
+         del kardex en movimientos
+      4. Retorna reporte JSON con:
+         - lotes_verde: total que catalina marco como reales
+         - en_db_match: presentes en DB con cantidad esperada (excel - salidas)
+         - en_db_con_delta: presentes pero cantidad no coincide
+         - faltantes_en_db: en Excel pero no en DB (lote desaparecio del kardex)
+         - solo_db: en DB pero NO en Excel verde (post-day-zero o sobrante)
+         - producciones_post_excel: count + total kg
+         - resumen_g: total_excel_verde, total_db_actual, total_post_dia_cero,
+                      delta_total_g
+
+    SIN ESCRITURA. Reporte de solo lectura. El usuario decide despues
+    si aplicar reset+replay o ajustes quirurgicos.
+
+    Solo admins.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return jsonify({'error': 'openpyxl no instalado'}), 500
+
+    GREEN = 'FF92D050'
+
+    try:
+        wb = load_workbook(f, data_only=True)
+    except Exception as _e:
+        return jsonify({'error': f'No pude abrir el Excel: {_e}'}), 400
+
+    if not wb.sheetnames:
+        return jsonify({'error': 'Excel sin hojas'}), 400
+
+    # Heuristica: usar la primera hoja (tipicamente "INVENTARIO")
+    ws = wb[wb.sheetnames[0]]
+
+    # Detectar fila header buscando por palabras clave
+    header_row = None
+    for r in range(1, min(20, ws.max_row + 1)):
+        row_vals = [str(ws.cell(row=r, column=col).value or '').upper()
+                    for col in range(1, min(15, ws.max_column + 1))]
+        joined = ' | '.join(row_vals)
+        if ('CÓDIGO MP' in joined or 'CODIGO MP' in joined) and 'LOTE' in joined:
+            header_row = r
+            break
+    if header_row is None:
+        header_row = 5  # fallback al esperado
+
+    # Mapear columnas
+    col_idx = {}
+    for col in range(1, ws.max_column + 1):
+        v = (ws.cell(row=header_row, column=col).value or '')
+        v = str(v).upper().strip()
+        if 'CÓDIGO MP' in v or 'CODIGO MP' in v:
+            col_idx['codigo'] = col
+        elif 'NOMBRE INCI' in v or v == 'INCI':
+            col_idx['inci'] = col
+        elif 'NOMBRE COMERCIAL' in v or v == 'COMERCIAL':
+            col_idx['comercial'] = col
+        elif 'PROVEEDOR' in v:
+            col_idx['proveedor'] = col
+        elif 'LOTE' in v and 'N' in v:
+            col_idx['lote'] = col
+        elif 'CONTEO' in v:
+            col_idx['cant_conteo'] = col
+        elif 'ESTANTER' in v:
+            col_idx['estanteria'] = col
+        elif v == 'POS.' or v == 'POSICION' or v == 'POSICIÓN':
+            col_idx['posicion'] = col
+        elif 'FECHA VENC' in v or v == 'VENCE':
+            col_idx['venc'] = col
+
+    if 'codigo' not in col_idx or 'lote' not in col_idx or 'cant_conteo' not in col_idx:
+        return jsonify({
+            'error': 'Excel no tiene columnas requeridas',
+            'detail': f'columnas detectadas: {list(col_idx.keys())}, '
+                      f'header_row={header_row}'
+        }), 400
+
+    # ── Parsear filas verdes ─────────────────────────────────────────────
+    excel_verde = {}  # (codigo, lote) -> dict
+    excel_total_g = 0.0
+    rows_no_verde_count = 0
+    for r in range(header_row + 1, ws.max_row + 1):
+        cell_color = (ws.cell(row=r, column=col_idx['codigo']).fill.fgColor.rgb
+                      if ws.cell(row=r, column=col_idx['codigo']).fill.fgColor.type == 'rgb'
+                      else None)
+        if cell_color != GREEN:
+            rows_no_verde_count += 1
+            continue
+        cod = ws.cell(row=r, column=col_idx['codigo']).value
+        if not cod:
+            continue
+        cod = str(cod).strip()
+        lote_raw = ws.cell(row=r, column=col_idx['lote']).value
+        lote = str(lote_raw).strip() if lote_raw else ''
+        cant_raw = ws.cell(row=r, column=col_idx['cant_conteo']).value
+        try:
+            cant = float(cant_raw or 0)
+        except (TypeError, ValueError):
+            cant = 0.0
+        venc = ws.cell(row=r, column=col_idx['venc']).value if 'venc' in col_idx else None
+        if hasattr(venc, 'isoformat'):
+            venc = venc.isoformat()[:10]
+        else:
+            venc = str(venc)[:10] if venc else ''
+
+        key = (cod, lote)
+        if key in excel_verde:
+            # Lote duplicado en Excel: sumar cantidades, mantener primer registro
+            excel_verde[key]['cantidad_g'] += cant
+            excel_verde[key]['lotes_duplicados'] = excel_verde[key].get('lotes_duplicados', 1) + 1
+        else:
+            excel_verde[key] = {
+                'codigo_mp': cod,
+                'lote': lote,
+                'inci': str(ws.cell(row=r, column=col_idx['inci']).value or '') if 'inci' in col_idx else '',
+                'nombre_comercial': str(ws.cell(row=r, column=col_idx['comercial']).value or '') if 'comercial' in col_idx else '',
+                'proveedor': str(ws.cell(row=r, column=col_idx['proveedor']).value or '') if 'proveedor' in col_idx else '',
+                'estanteria': str(ws.cell(row=r, column=col_idx['estanteria']).value or '') if 'estanteria' in col_idx else '',
+                'posicion': str(ws.cell(row=r, column=col_idx['posicion']).value or '') if 'posicion' in col_idx else '',
+                'fecha_vencimiento': venc,
+                'cantidad_g': cant,
+            }
+        excel_total_g += cant
+
+    # ── Estado actual del kardex ─────────────────────────────────────────
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    db_lotes = {}  # (cod, lote) -> dict
+    c.execute("""SELECT material_id,
+                        COALESCE(lote,''),
+                        SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END) as entradas,
+                        SUM(CASE WHEN tipo='Salida'  THEN cantidad ELSE 0 END) as salidas,
+                        COUNT(*) as nmovs
+                 FROM movimientos
+                 GROUP BY material_id, lote""")
+    db_total_neto_g = 0.0
+    for row in c.fetchall():
+        cod = (row[0] or '').strip()
+        lote = (row[1] or '').strip()
+        entradas = float(row[2] or 0)
+        salidas = float(row[3] or 0)
+        neto = entradas - salidas
+        db_lotes[(cod, lote)] = {
+            'entradas_g': entradas,
+            'salidas_g': salidas,
+            'neto_g': neto,
+            'n_movs': row[4],
+        }
+        db_total_neto_g += neto
+
+    # Producciones — info de contexto
+    try:
+        prod_n = c.execute("SELECT COUNT(*) FROM producciones").fetchone()[0]
+    except sqlite3.OperationalError:
+        prod_n = 0
+    try:
+        prod_total_kg = float(c.execute(
+            "SELECT COALESCE(SUM(cantidad), 0) FROM producciones"
+        ).fetchone()[0] or 0)
+    except sqlite3.OperationalError:
+        prod_total_kg = 0.0
+
+    conn.close()
+
+    # ── Diff ─────────────────────────────────────────────────────────────
+    en_db_match = []
+    en_db_con_delta = []
+    faltantes_en_db = []  # excel verde pero NO en DB
+    solo_db = []  # en DB pero NO en excel verde
+
+    TOLERANCIA_G = 0.5  # tolerancia de redondeo
+
+    excel_keys = set(excel_verde.keys())
+    db_keys = set(db_lotes.keys())
+
+    for k in excel_keys & db_keys:
+        e = excel_verde[k]
+        d = db_lotes[k]
+        # Esperado: el lote tenia excel_g al dia cero. Si hubo salidas
+        # despues, el neto ahora debe ser excel_g - salidas. Si hubo
+        # entradas adicionales (raro, mismo lote re-recibido), tambien
+        # se suman. Mas simple: comparar neto actual con (excel - salidas
+        # + entradas_post_dia_cero) — pero no sabemos cual entrada fue
+        # la inicial. Aproximacion: neto_esperado = excel_g - salidas.
+        # Si DB tiene mas entradas que el excel, eso es post-day-zero.
+        neto_esperado = e['cantidad_g'] - d['salidas_g']
+        delta = d['neto_g'] - neto_esperado
+        item = {
+            'codigo_mp': k[0], 'lote': k[1],
+            'nombre_comercial': e['nombre_comercial'],
+            'proveedor_excel': e['proveedor'],
+            'cant_excel_g': round(e['cantidad_g'], 1),
+            'entradas_db_g': round(d['entradas_g'], 1),
+            'salidas_db_g': round(d['salidas_g'], 1),
+            'neto_db_g': round(d['neto_g'], 1),
+            'neto_esperado_g': round(neto_esperado, 1),
+            'delta_g': round(delta, 1),
+        }
+        if abs(delta) <= TOLERANCIA_G:
+            en_db_match.append(item)
+        else:
+            en_db_con_delta.append(item)
+
+    for k in excel_keys - db_keys:
+        e = excel_verde[k]
+        faltantes_en_db.append({
+            'codigo_mp': k[0], 'lote': k[1],
+            'nombre_comercial': e['nombre_comercial'],
+            'proveedor_excel': e['proveedor'],
+            'cant_excel_g': round(e['cantidad_g'], 1),
+        })
+
+    for k in db_keys - excel_keys:
+        d = db_lotes[k]
+        if d['neto_g'] <= 0.5:
+            continue  # lote vacio en DB que tampoco esta en Excel — irrelevante
+        solo_db.append({
+            'codigo_mp': k[0], 'lote': k[1],
+            'entradas_db_g': round(d['entradas_g'], 1),
+            'salidas_db_g': round(d['salidas_g'], 1),
+            'neto_db_g': round(d['neto_g'], 1),
+        })
+
+    # Ordenar por mayor delta para visualizar primero los problemas grandes
+    en_db_con_delta.sort(key=lambda x: -abs(x['delta_g']))
+    faltantes_en_db.sort(key=lambda x: -x['cant_excel_g'])
+    solo_db.sort(key=lambda x: -x['neto_db_g'])
+
+    delta_total_g = sum(x['delta_g'] for x in en_db_con_delta)
+
+    return jsonify({
+        'ok': True,
+        'resumen': {
+            'archivo': f.filename,
+            'lotes_verde_excel': len(excel_verde),
+            'lotes_excluidos_no_verde': rows_no_verde_count,
+            'stock_total_excel_g': round(excel_total_g, 1),
+            'stock_total_db_actual_g': round(db_total_neto_g, 1),
+            'producciones_registradas': prod_n,
+            'producciones_total_kg': round(prod_total_kg, 1),
+            'count_match': len(en_db_match),
+            'count_delta': len(en_db_con_delta),
+            'count_faltantes_en_db': len(faltantes_en_db),
+            'count_solo_db_no_excel': len(solo_db),
+            'delta_total_g': round(delta_total_g, 1),
+        },
+        'en_db_con_delta': en_db_con_delta[:300],
+        'faltantes_en_db': faltantes_en_db[:300],
+        'solo_db_no_excel': solo_db[:300],
+        'en_db_match_sample': en_db_match[:20],
+        'nota_truncado': (
+            len(en_db_con_delta) > 300 or len(faltantes_en_db) > 300
+            or len(solo_db) > 300
+        ),
+    })
+
+
 @bp.route("/api/admin/debug-solicitud/<numero>", methods=["GET"])
 def admin_debug_solicitud(numero):
     """Devuelve los items RAW de una solicitud para depurar.
@@ -1656,6 +1938,7 @@ tr:hover td{background:#263348;}
   <button class="tab" data-tab="config" onclick="switchTab('config')">&#x2699; Config Status</button>
   <button class="tab" data-tab="banco" onclick="switchTab('banco')">&#x1F4B3; Banco Influencers</button>
   <button class="tab" data-tab="mps" onclick="switchTab('mps')">&#x1F9EA; Cat&aacute;logo MPs</button>
+  <button class="tab" data-tab="audit-inv" onclick="switchTab('audit-inv')">&#x1F50D; Auditar Inventario</button>
 </div>
 
 <div class="main">
@@ -1885,6 +2168,25 @@ tr:hover td{background:#263348;}
   </div>
 </div>
 
+<!-- ─── TAB AUDITAR INVENTARIO vs EXCEL día cero ─── -->
+<div id="tab-audit-inv" class="tab-panel">
+  <div class="card">
+    <h2>&#x1F50D; Auditar Inventario vs Excel d&iacute;a cero</h2>
+    <div class="section-sub">
+      Sube el Excel del conteo f&iacute;sico (ej: <code>INVENTARIO_MP_v8_1.xlsx</code>) — solo se contar&aacute;n las
+      filas marcadas en <strong style="color:#16a34a;">verde</strong>. Las rojas y sin marcar se ignoran (Catalina las marc&oacute; como NO presentes).
+      <br><br>
+      <strong>Cero escritura</strong>. El reporte muestra c&oacute;mo difiere el kardex actual contra ese conteo + las producciones que se han hecho desde entonces.
+      Despu&eacute;s decides: ajustes quir&uacute;rgicos o reset+replay.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+      <input type="file" id="audit-inv-file" accept=".xlsx,.xlsm" style="padding:6px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;">
+      <button class="btn" onclick="auditarInvVsExcel()">&#x1F4CA; Generar reporte</button>
+    </div>
+    <div id="audit-inv-result" style="margin-top:18px;"></div>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -1908,7 +2210,7 @@ tr:hover td{background:#263348;}
 
 <script>
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const _loaded = {backups:false, users:false, security:false, config:false, banco:false, mps:false};
+const _loaded = {backups:false, users:false, security:false, config:false, banco:false, mps:false, 'audit-inv':false};
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1933,6 +2235,99 @@ function toast(msg, kind) {
 }
 
 // ── BACKUPS ───────────────────────────────────────────────────────────────────
+// ── Auditar inventario contra Excel día cero ─────────────────────────────────
+function _fmtG(n) {
+  if (n == null) return '—';
+  if (Math.abs(n) >= 1000) return (n/1000).toLocaleString('es-CO',{maximumFractionDigits:2}) + ' kg';
+  return Math.round(n).toLocaleString('es-CO') + ' g';
+}
+function _esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+async function auditarInvVsExcel() {
+  const fileEl = document.getElementById('audit-inv-file');
+  const out = document.getElementById('audit-inv-result');
+  if (!fileEl.files || !fileEl.files[0]) {
+    out.innerHTML = '<div style="color:#fca5a5;">Selecciona un .xlsx primero.</div>';
+    return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;">Procesando Excel + comparando contra DB... espera...</div>';
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  try {
+    const r = await fetch('/api/admin/audit-inventario-vs-excel', {method: 'POST', body: fd});
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + (d.detail?' — '+_esc(d.detail):'') + '</div>'; return; }
+    const s = d.resumen;
+    let h = '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi"><div class="kpi-l">Lotes verdes (Excel)</div><div class="kpi-v">' + s.lotes_verde_excel + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Excluidos (no verde)</div><div class="kpi-v">' + s.lotes_excluidos_no_verde + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Stock total Excel</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(s.stock_total_excel_g) + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Stock total DB ahora</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(s.stock_total_db_actual_g) + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Producciones desde día 0</div><div class="kpi-v">' + s.producciones_registradas + ' (' + s.producciones_total_kg.toLocaleString('es-CO') + ' kg)</div></div>';
+    h += '</div>';
+
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi" style="background:rgba(16,185,129,.12);"><div class="kpi-l" style="color:#34d399;">✓ Match (cantidad ok)</div><div class="kpi-v">' + s.count_match + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(245,158,11,.12);"><div class="kpi-l" style="color:#fbbf24;">⚠ Con delta</div><div class="kpi-v">' + s.count_delta + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(239,68,68,.12);"><div class="kpi-l" style="color:#fca5a5;">✗ Faltantes en DB</div><div class="kpi-v">' + s.count_faltantes_en_db + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(99,102,241,.12);"><div class="kpi-l" style="color:#a5b4fc;">+ Solo en DB (post)</div><div class="kpi-v">' + s.count_solo_db_no_excel + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Δ total</div><div class="kpi-v" style="font-size:14px;color:' + (s.delta_total_g < 0 ? '#fca5a5' : '#34d399') + ';">' + _fmtG(s.delta_total_g) + '</div></div>';
+    h += '</div>';
+
+    function table(items, cols, title, color) {
+      let t = '<h3 style="color:' + color + ';margin-top:18px;margin-bottom:8px;">' + title + ' (' + items.length + ')</h3>';
+      if (!items.length) return t + '<div style="color:#94a3b8;font-size:12px;">— vacío —</div>';
+      t += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      t += '<thead style="background:#1e293b;"><tr>' + cols.map(c => '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">' + c.label + '</th>').join('') + '</tr></thead><tbody>';
+      items.forEach(it => {
+        t += '<tr style="border-top:1px solid #334155;">';
+        cols.forEach(c => {
+          let v = it[c.key];
+          if (c.fmt === 'g') v = _fmtG(v);
+          t += '<td style="padding:6px 10px;color:' + (c.color||'#e2e8f0') + ';' + (c.fmt==='g'?'text-align:right;font-family:monospace;':'') + '">' + _esc(v) + '</td>';
+        });
+        t += '</tr>';
+      });
+      t += '</tbody></table></div>';
+      return t;
+    }
+
+    h += table(d.en_db_con_delta, [
+      {label:'Código', key:'codigo_mp'},
+      {label:'Material', key:'nombre_comercial'},
+      {label:'Lote', key:'lote'},
+      {label:'Excel (g)', key:'cant_excel_g', fmt:'g'},
+      {label:'Salidas DB', key:'salidas_db_g', fmt:'g'},
+      {label:'Esperado', key:'neto_esperado_g', fmt:'g'},
+      {label:'Actual DB', key:'neto_db_g', fmt:'g'},
+      {label:'Δ', key:'delta_g', fmt:'g', color:'#fbbf24'},
+    ], '⚠ Lotes con cantidad distinta a la esperada', '#fbbf24');
+
+    h += table(d.faltantes_en_db, [
+      {label:'Código', key:'codigo_mp'},
+      {label:'Material', key:'nombre_comercial'},
+      {label:'Lote', key:'lote'},
+      {label:'Proveedor (Excel)', key:'proveedor_excel'},
+      {label:'Cant Excel', key:'cant_excel_g', fmt:'g', color:'#fca5a5'},
+    ], '✗ Lotes verdes en Excel pero NO en DB (desaparecieron)', '#fca5a5');
+
+    h += table(d.solo_db_no_excel, [
+      {label:'Código', key:'codigo_mp'},
+      {label:'Lote', key:'lote'},
+      {label:'Entradas DB', key:'entradas_db_g', fmt:'g'},
+      {label:'Salidas DB', key:'salidas_db_g', fmt:'g'},
+      {label:'Neto DB', key:'neto_db_g', fmt:'g', color:'#a5b4fc'},
+    ], '+ Lotes en DB pero NO en Excel verde (post-día-cero o sobrante)', '#a5b4fc');
+
+    if (d.nota_truncado) {
+      h += '<div style="margin-top:14px;color:#94a3b8;font-size:11px;">ℹ Tablas truncadas a 300 items. Hay más — contacta para ver el JSON completo o exportar.</div>';
+    }
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
+  }
+}
+
 async function loadBackups() {
   const r = await fetch('/api/admin/backups');
   if (!r.ok) {

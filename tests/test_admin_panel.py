@@ -196,3 +196,114 @@ def test_config_status_lists_all_user_passwords(admin_client, db_clean):
     user_pass_names = {v["name"] for v in data["user_passwords"]}
     assert len(user_pass_names) == 19
     assert "PASS_SEBASTIAN" in user_pass_names
+
+
+# ═══ Auditoria inventario vs Excel dia cero ═════════════════════════════════
+
+
+def test_audit_inventario_vs_excel_solo_admin(app, db_clean):
+    """POST /api/admin/audit-inventario-vs-excel → 403 para no-admin."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": "luis", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    r = c.post("/api/admin/audit-inventario-vs-excel",
+               data={}, headers=csrf_headers())
+    assert r.status_code == 403
+
+
+def test_audit_inventario_vs_excel_filtra_solo_verde(admin_client, db_clean):
+    """El endpoint solo cuenta filas en color VERDE (FF92D050).
+
+    Construye un Excel sintetico con 3 filas: 1 verde, 1 roja, 1 sin marcar.
+    Verifica que solo la verde llega al reporte.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    import io
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "INVENTARIO"
+    ws.cell(row=1, column=1, value="INVENTARIO DE MATERIAS PRIMAS")
+    ws.cell(row=5, column=1, value="CÓDIGO MP")
+    ws.cell(row=5, column=2, value="NOMBRE INCI")
+    ws.cell(row=5, column=3, value="NOMBRE COMERCIAL")
+    ws.cell(row=5, column=4, value="TIPO")
+    ws.cell(row=5, column=5, value="PROVEEDOR")
+    ws.cell(row=5, column=6, value="STOCK MIN")
+    ws.cell(row=5, column=7, value="N° LOTE")
+    ws.cell(row=5, column=8, value="CANT. CONTEO(g)")
+    ws.cell(row=5, column=9, value="CANT. ACTUAL")
+    ws.cell(row=5, column=10, value="ESTANTERIA")
+    ws.cell(row=5, column=11, value="POS.")
+    ws.cell(row=5, column=12, value="FECHA VENC.")
+
+    verde = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
+    rojo = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+    blanco = PatternFill(start_color="FFFFFFFF", end_color="FFFFFFFF", fill_type="solid")
+
+    # Fila verde — debe contar
+    for col in range(1, 13):
+        ws.cell(row=6, column=col).fill = verde
+    ws.cell(row=6, column=1, value="MP_VERDE_T")
+    ws.cell(row=6, column=3, value="Material verde test")
+    ws.cell(row=6, column=5, value="Lyphar")
+    ws.cell(row=6, column=7, value="LOTE-V-1")
+    ws.cell(row=6, column=8, value=1000)
+
+    # Fila roja — debe excluir
+    for col in range(1, 13):
+        ws.cell(row=7, column=col).fill = rojo
+    ws.cell(row=7, column=1, value="MP_ROJO_T")
+    ws.cell(row=7, column=3, value="Material rojo test")
+    ws.cell(row=7, column=7, value="LOTE-R-1")
+    ws.cell(row=7, column=8, value=999999)
+
+    # Fila blanca — debe excluir
+    for col in range(1, 13):
+        ws.cell(row=8, column=col).fill = blanco
+    ws.cell(row=8, column=1, value="MP_BLANCO_T")
+    ws.cell(row=8, column=7, value="LOTE-B-1")
+    ws.cell(row=8, column=8, value=888888)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    r = admin_client.post(
+        "/api/admin/audit-inventario-vs-excel",
+        data={"file": (buf, "test.xlsx")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200, f"body: {r.data[:300]!r}"
+    j = r.get_json()
+    s = j["resumen"]
+    assert s["lotes_verde_excel"] == 1, f"solo 1 verde, recibido: {s}"
+    assert s["lotes_excluidos_no_verde"] == 2, (
+        f"2 no-verde (rojo+blanco), recibido: {s}"
+    )
+    assert s["stock_total_excel_g"] == 1000.0
+    # MP_VERDE_T no esta en DB → debe aparecer en faltantes
+    faltantes_codigos = [x["codigo_mp"] for x in j["faltantes_en_db"]]
+    assert "MP_VERDE_T" in faltantes_codigos
+    # MP_ROJO_T y MP_BLANCO_T NO deben estar en ningun bucket
+    todos = (j["en_db_match_sample"] + j["en_db_con_delta"]
+             + j["faltantes_en_db"] + j["solo_db_no_excel"])
+    codigos_total = [x.get("codigo_mp") for x in todos]
+    assert "MP_ROJO_T" not in codigos_total
+    assert "MP_BLANCO_T" not in codigos_total
+
+
+def test_audit_inventario_vs_excel_excel_invalido(admin_client, db_clean):
+    """Sin archivo o no-xlsx → 400."""
+    r = admin_client.post("/api/admin/audit-inventario-vs-excel", data={})
+    assert r.status_code == 400
+    import io
+    r = admin_client.post(
+        "/api/admin/audit-inventario-vs-excel",
+        data={"file": (io.BytesIO(b"not an excel"), "test.txt")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
