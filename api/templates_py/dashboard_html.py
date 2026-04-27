@@ -162,6 +162,35 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Modal EDITAR PROVEEDOR (a nivel lote + catalogo) -->
+<div id="modal-editar-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#2B7A78;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#9999;&#65039; Editar Proveedor</h2>
+      <button onclick="cerrarEditarProveedor()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <div style="background:#f0f9f4;border:1px solid #c6e6d4;border-radius:8px;padding:12px;margin-bottom:14px;">
+        <div style="font-size:0.78em;color:#1b5e20;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Materia Prima / Lote</div>
+        <div style="font-weight:700;color:#222;" id="ep-mp-info">—</div>
+        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ep-prov-actual">—</div>
+      </div>
+      <p style="color:#666;font-size:0.85em;margin-bottom:8px;">Selecciona un proveedor existente del listado, o escribe uno nuevo si falta. El cambio aplica a <b>este lote</b> y al <b>cat&#225;logo de la MP</b> (futuras recepciones lo heredan correcto). Queda registrado en audit_log.</p>
+      <div class="form-group">
+        <label>Proveedor *</label>
+        <input type="text" id="ep-input" list="ep-prov-list" placeholder="Empieza a escribir o selecciona del menu" autocomplete="off" style="text-transform:none;">
+        <datalist id="ep-prov-list"></datalist>
+        <small id="ep-hint" style="color:#888;font-size:0.78em;display:block;margin-top:4px;"></small>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button onclick="guardarProveedor()" style="flex:1;background:#2B7A78;padding:9px;font-weight:700;color:white;">&#10003; Guardar</button>
+        <button onclick="cerrarEditarProveedor()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
+      </div>
+      <div id="ep-msg" style="margin-top:10px;font-size:0.85em;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal ELIMINAR LOTE (a nivel lote, motivo obligatorio) -->
 <div id="modal-eliminar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -1408,6 +1437,62 @@ async function enviarSolicitarLote(){
   }
 }
 
+// ─── Editar Proveedor (afecta lote + catalogo MP) ──────────────────────────
+var _epLote=null; var _epProveedoresCargados=false;
+async function _cargarProveedoresUnicos(){
+  if(_epProveedoresCargados)return;
+  try{
+    var r=await fetch('/api/proveedores-unicos');
+    if(!r.ok)return;
+    var d=await r.json();
+    var dl=document.getElementById('ep-prov-list');
+    if(!dl)return;
+    dl.innerHTML='';
+    (d.proveedores||[]).forEach(function(p){
+      var o=document.createElement('option'); o.value=p; dl.appendChild(o);
+    });
+    _epProveedoresCargados=true;
+  }catch(e){/* no critico */}
+}
+function abrirEditarProveedor(idx){
+  var i=_lotes[idx]; if(!i){alert('Lote no encontrado'); return;}
+  _epLote=i;
+  var info=(i.material_nombre||'')+' · '+(i.material_id||'');
+  if(i.lote)info+=' · Lote '+i.lote;
+  document.getElementById('ep-mp-info').textContent=info;
+  document.getElementById('ep-prov-actual').textContent='Proveedor actual: '+(i.proveedor||'(vacio)');
+  document.getElementById('ep-input').value=i.proveedor||'';
+  document.getElementById('ep-msg').innerHTML='';
+  document.getElementById('ep-hint').textContent='Sugerencia: usa el desplegable para evitar duplicados por typo.';
+  _cargarProveedoresUnicos();
+  document.getElementById('modal-editar-prov').style.display='flex';
+  setTimeout(function(){var el=document.getElementById('ep-input');if(el)el.focus();},120);
+}
+function cerrarEditarProveedor(){document.getElementById('modal-editar-prov').style.display='none';_epLote=null;}
+async function guardarProveedor(){
+  if(!_epLote)return;
+  var msg=document.getElementById('ep-msg');
+  var nuevo=document.getElementById('ep-input').value.trim();
+  if(nuevo.length<2){msg.innerHTML='<span style="color:#c00;">Proveedor debe tener al menos 2 caracteres.</span>';return;}
+  if(nuevo===(_epLote.proveedor||'')){msg.innerHTML='<span style="color:#888;">Sin cambios — el proveedor es el mismo.</span>';return;}
+  msg.innerHTML='<span style="color:#666;">Guardando...</span>';
+  var loteSeg=_epLote.lote||'_SIN_LOTE_';
+  var url='/api/lotes/'+encodeURIComponent(_epLote.material_id)+'/'+encodeURIComponent(loteSeg)+'/proveedor';
+  try{
+    var r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({proveedor:nuevo})});
+    var d=await r.json();
+    if(r.ok){
+      msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Proveedor actualizado')+'</span>';
+      _epProveedoresCargados=false; // re-cargar lista la proxima vez (incluye nuevo si lo creo)
+      setTimeout(function(){cerrarEditarProveedor();loadStock();},1500);
+    }else{
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' — '+d.detail:'')+'</span>';
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+  }
+}
+
 // ─── Eliminar Lote (a nivel lote, motivo obligatorio) ──────────────────────
 var _delLote=null;
 function abrirEliminarLote(idx){
@@ -1854,7 +1939,7 @@ function renderStock(items){
     h+='<td style="color:#444;font-size:0.82em;">'+i.nombre_inci+'</td>';
     h+='<td style="font-weight:600;">'+i.material_nombre+'</td>';
     h+='<td style="color:#888;">'+i.tipo+'</td>';
-    h+='<td style="color:#555;">'+i.proveedor+'</td>';
+    h+='<td style="color:#555;">'+(i.proveedor||'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
     h+='<td style="text-align:right;'+min_style+'">'+i.stock_min_g.toLocaleString()+'</td>';
     h+='<td style="font-family:monospace;">'+i.lote+'</td>';
     h+='<td style="text-align:right;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';

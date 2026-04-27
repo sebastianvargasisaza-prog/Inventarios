@@ -387,3 +387,133 @@ def test_solicitar_desde_lote_crea_solicitud_compra(app, db_clean):
                 (j["numero"],))
     conn.commit()
     conn.close()
+
+
+# ═══ Editar proveedor de lote (afecta movimientos + maestro_mps) ═══════════
+
+
+def test_proveedores_unicos_lista(app, db_clean):
+    """GET /api/proveedores-unicos devuelve lista deduplicada de proveedores."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MP_PRV_T1','t1','T1','Lyphar', 1)""")
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MP_PRV_T2','t2','T2','Inchemical', 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MP_PRV_T1','T1','L-A',100,'Entrada',
+                           '2026-04-20','Lyphar','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MP_PRV_T2','T2','L-B',100,'Entrada',
+                           '2026-04-21','Agenquimicos','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/proveedores-unicos")
+    assert r.status_code == 200
+    provs = r.get_json()["proveedores"]
+    # Lyphar e Inchemical desde catalogo, Agenquimicos desde movimientos
+    for esperado in ("Lyphar", "Inchemical", "Agenquimicos"):
+        assert esperado in provs, f'{esperado} debería estar en {provs}'
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id IN ('MP_PRV_T1','MP_PRV_T2')")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_PRV_T1','MP_PRV_T2')")
+    conn.commit(); conn.close()
+
+
+def test_editar_proveedor_lote_validacion(app, db_clean):
+    """PUT con proveedor vacío o muy corto → 400."""
+    c = _login(app, "luis")
+    r = c.put("/api/lotes/MP_X/LOTE-X/proveedor",
+              json={}, headers=csrf_headers())
+    assert r.status_code == 400
+    r = c.put("/api/lotes/MP_X/LOTE-X/proveedor",
+              json={"proveedor": "A"}, headers=csrf_headers())
+    assert r.status_code == 400
+    r = c.put("/api/lotes/MP_X/LOTE-X/proveedor",
+              json={"proveedor": "   "}, headers=csrf_headers())
+    assert r.status_code == 400
+
+
+def test_editar_proveedor_lote_mp_inexistente(app, db_clean):
+    """PUT sobre MP que no existe en catalogo → 404."""
+    c = _login(app, "luis")
+    r = c.put("/api/lotes/MP_NO_HAY/LOTE-X/proveedor",
+              json={"proveedor": "Lyphar"}, headers=csrf_headers())
+    assert r.status_code == 404
+
+
+def test_editar_proveedor_lote_actualiza_movs_y_catalogo(app, db_clean):
+    """PUT correcto: movimientos del lote y maestro_mps quedan en sync."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MP_EDIT_PRV','test inci','Test Edit',
+                           'Inchemical', 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MP_EDIT_PRV','Test Edit','LOTE-EP-1', 1000,
+                           'Entrada','2026-04-20','Inchemical','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MP_EDIT_PRV','Test Edit','LOTE-EP-1', 200,
+                           'Salida','2026-04-22','Inchemical','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.put("/api/lotes/MP_EDIT_PRV/LOTE-EP-1/proveedor",
+              json={"proveedor": "Lyphar Corregido"},
+              headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["movimientos_actualizados"] == 2
+    assert j["proveedor_anterior_lote"] == "Inchemical"
+    assert j["proveedor_anterior_catalogo"] == "Inchemical"
+    assert j["proveedor_nuevo"] == "Lyphar Corregido"
+
+    # Verificar DB
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT proveedor FROM movimientos WHERE material_id='MP_EDIT_PRV' "
+        "AND lote='LOTE-EP-1'"
+    ).fetchall()
+    assert all(r[0] == "Lyphar Corregido" for r in rows), (
+        f"movimientos no actualizados: {rows}"
+    )
+    cat = cur.execute(
+        "SELECT proveedor FROM maestro_mps WHERE codigo_mp='MP_EDIT_PRV'"
+    ).fetchone()
+    assert cat[0] == "Lyphar Corregido", (
+        f"catalogo no actualizado: {cat[0]}"
+    )
+
+    # Audit log
+    audit = cur.execute(
+        "SELECT usuario, accion FROM audit_log "
+        "WHERE accion='EDITAR_PROVEEDOR_LOTE' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert audit is not None and audit[0] == "luis"
+
+    cur.execute("DELETE FROM movimientos WHERE material_id='MP_EDIT_PRV'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_EDIT_PRV'")
+    conn.commit(); conn.close()

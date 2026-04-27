@@ -762,6 +762,161 @@ def get_lotes():
                        'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta})
     return jsonify({'lotes': result, 'total': len(result)})
 
+@bp.route('/api/proveedores-unicos', methods=['GET'])
+def proveedores_unicos():
+    """Lista de proveedores únicos para autocompletado en edición de lote.
+
+    Une los valores de movimientos.proveedor + maestro_mps.proveedor para
+    sugerir solo nombres ya conocidos y evitar duplicados por typo
+    ('Inchemical' vs 'INCHEMICAL'). Caso-sensitive para conservar el
+    formato canónico que el usuario ya escogió.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db()
+    c = conn.cursor()
+    proveedores = set()
+    try:
+        for row in c.execute("SELECT DISTINCT proveedor FROM movimientos "
+                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
+            proveedores.add(row[0].strip())
+    except sqlite3.OperationalError:
+        pass
+    try:
+        for row in c.execute("SELECT DISTINCT proveedor FROM maestro_mps "
+                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
+            proveedores.add(row[0].strip())
+    except sqlite3.OperationalError:
+        pass
+    return jsonify({'proveedores': sorted(proveedores, key=lambda s: s.lower())})
+
+
+@bp.route('/api/lotes/<material_id>/<path:lote>/proveedor', methods=['PUT'])
+def editar_proveedor_lote(material_id, lote):
+    """Corrige el proveedor de un lote y del catálogo de la MP.
+
+    Caso de uso (jefe de produccion): "este lote en realidad lo trajo
+    Lyphar, no Inchemical — corrijamos para no repetir el bug en futuras
+    recepciones".
+
+    Doble efecto:
+      1. UPDATE movimientos SET proveedor=? WHERE material_id=? AND lote=?
+      2. UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?
+
+    Esto evita que la siguiente recepción de la misma MP herede el
+    proveedor erroneo desde el catalogo. El audit_log captura el cambio
+    para trazabilidad (snapshot del valor anterior + nuevo).
+
+    Body JSON:
+      proveedor: str (obligatorio, 2..120 chars, no solo espacios)
+
+    Soporta lote vacío con placeholder _SIN_LOTE_ (igual que DELETE).
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    nuevo_proveedor = (d.get('proveedor') or '').strip()
+    if not nuevo_proveedor or len(nuevo_proveedor) < 2:
+        return jsonify({
+            'error': 'Proveedor invalido',
+            'detail': 'Debe tener al menos 2 caracteres.'
+        }), 400
+    if len(nuevo_proveedor) > 120:
+        return jsonify({
+            'error': 'Proveedor demasiado largo',
+            'detail': 'Maximo 120 caracteres.'
+        }), 400
+
+    sin_lote = (lote == '_SIN_LOTE_')
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Snapshot valores actuales antes de cambiar
+    if sin_lote:
+        prov_anterior_row = c.execute(
+            "SELECT MAX(proveedor) FROM movimientos "
+            "WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (material_id,)
+        ).fetchone()
+    else:
+        prov_anterior_row = c.execute(
+            "SELECT MAX(proveedor) FROM movimientos "
+            "WHERE material_id=? AND lote=?",
+            (material_id, lote)
+        ).fetchone()
+    prov_anterior_lote = (prov_anterior_row[0] if prov_anterior_row else '') or ''
+
+    cat_row = c.execute(
+        "SELECT proveedor FROM maestro_mps WHERE codigo_mp=?",
+        (material_id,)
+    ).fetchone()
+    if cat_row is None:
+        return jsonify({
+            'error': 'MP no encontrada',
+            'detail': f'Codigo {material_id} no existe en maestro_mps'
+        }), 404
+    prov_anterior_cat = (cat_row[0] or '')
+
+    # Update movimientos del lote
+    if sin_lote:
+        c.execute(
+            "UPDATE movimientos SET proveedor=? "
+            "WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (nuevo_proveedor, material_id)
+        )
+    else:
+        c.execute(
+            "UPDATE movimientos SET proveedor=? "
+            "WHERE material_id=? AND lote=?",
+            (nuevo_proveedor, material_id, lote)
+        )
+    movs_actualizados = c.rowcount
+
+    # Update catalogo
+    c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
+              (nuevo_proveedor, material_id))
+
+    # Audit log
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'EDITAR_PROVEEDOR_LOTE', 'movimientos+maestro_mps',
+                   f'{material_id}/{"" if sin_lote else lote}',
+                   _json.dumps({
+                       'material_id': material_id,
+                       'lote': '' if sin_lote else lote,
+                       'proveedor_anterior_lote': prov_anterior_lote,
+                       'proveedor_anterior_catalogo': prov_anterior_cat,
+                       'proveedor_nuevo': nuevo_proveedor,
+                       'movimientos_actualizados': movs_actualizados,
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log no disponible — editar_proveedor por %s sobre %s/%s "
+            "no quedo registrado.", u, material_id, lote,
+        )
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Proveedor actualizado a "{nuevo_proveedor}" en '
+                    f'{movs_actualizados} movimiento(s) del lote y en el '
+                    f'catalogo de {material_id}.'),
+        'movimientos_actualizados': movs_actualizados,
+        'proveedor_anterior_lote': prov_anterior_lote,
+        'proveedor_anterior_catalogo': prov_anterior_cat,
+        'proveedor_nuevo': nuevo_proveedor,
+    }), 200
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>', methods=['DELETE'])
 def eliminar_lote(material_id, lote):
     """Elimina un lote completo por incoherencia (jefe de produccion).
