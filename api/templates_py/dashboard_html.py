@@ -2822,7 +2822,26 @@ function setConteoTipo(tipo){
   cargarProgramacionCiclica();
 }
 
+function _esTipoEE(tipo){
+  if(!tipo) return false;
+  var t = tipo.toLowerCase();
+  return t.indexOf('envase') >= 0 || t.indexOf('empaque') >= 0;
+}
+
 async function cargarEstanterias(){
+  var sel = document.getElementById('cnt-est-sel');
+  if(!sel) return;
+  // Si el filtro es E&E, el selector de estantería NO aplica (no hay
+  // localización). Mostramos un único option informativo y dejamos que
+  // el usuario use el botón "Iniciar" de la fila "Esta semana" arriba.
+  if(_esTipoEE(_conteoTipoFiltro)){
+    while(sel.options.length > 1) sel.remove(1);
+    sel.options[0].textContent = '— No aplica para E&E (cuenta los 3 items asignados arriba)';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  if(sel.options[0]) sel.options[0].textContent = '-- Selecciona estanteria --';
   try{
     var url = '/api/conteo/estanterias';
     if(_conteoTipoFiltro){
@@ -2830,8 +2849,6 @@ async function cargarEstanterias(){
     }
     var r = await fetch(url);
     var data = await r.json();
-    var sel = document.getElementById('cnt-est-sel');
-    if(!sel) return;
     while(sel.options.length > 1) sel.remove(1);
     if(!data || data.length === 0){
       var opt = document.createElement('option');

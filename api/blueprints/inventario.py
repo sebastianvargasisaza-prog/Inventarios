@@ -1033,68 +1033,82 @@ def conteo_programacion():
 def _conteo_programacion_items(tipo_material):
     """Programación cíclica para E&E: 3 ítems por semana, deterministas.
 
+    El stock de Envase y Empaque vive en `maestro_mee` (NO en maestro_mps).
+    No tiene localización física específica como las MPs, por eso la rotación
+    es por ÍTEM en lugar de por estantería.
+
     Algoritmo:
-      1. Lista ordenada de todos los ítems del tipo con stock_minimo > 0 o
-         con stock vivo (los que vale la pena auditar).
+      1. Lista ordenada de items activos en maestro_mee filtrados por
+         categoría según el tipo solicitado:
+           'Envase Primario'   → categoria LIKE '%envase%'  (frasco, tubo, gotero)
+           'Envase Secundario' → categoria LIKE '%envase%'  (caja, display)
+           'Empaque'           → categoria LIKE '%empaque%' (etiqueta, sello)
+         Si solo hay un valor 'Envase' genérico, los 3 botones muestran lo
+         mismo (es lo que el user pidió: rotar todos los E&E).
       2. Para una semana ISO N: índices [(3*N) % L, (3*N+1) % L, (3*N+2) % L]
-         donde L = total ítems. Esto garantiza:
+         donde L = total ítems. Garantiza:
            - Mismos 3 ítems para la misma semana (determinístico).
            - Rotación completa: tras ⌈L/3⌉ semanas se han contado todos.
            - Sin solapamiento: 3 ítems distintos cada semana.
-      3. Devuelve esquema compatible con UI: 'estanteria' lleva descripción
-         del item, 'items_programados' contiene los códigos y nombres.
+      3. Devuelve esquema compatible con UI: 'estanteria' lleva etiqueta
+         sintética "E&E-<tipo>-S<sem>", 'items_programados' los códigos+nombres.
     """
     from datetime import date, timedelta
 
     conn = get_db(); c = conn.cursor()
-    # Universo: items activos del tipo con stock_minimo > 0 (operacionales).
-    # Si no hay ninguno con stock_minimo, fallback a todos los activos del tipo.
-    c.execute("""SELECT codigo_mp, nombre_comercial
-                 FROM maestro_mps
-                 WHERE activo=1 AND COALESCE(tipo_material,'MP')=?
-                       AND COALESCE(stock_minimo, 0) > 0
-                 ORDER BY codigo_mp""", (tipo_material,))
+    # Universo: items activos en maestro_mee. Filtramos por categoría según
+    # el tipo solicitado. Si no hay distinción real en la categoría, devuelve
+    # todos (es lo que el user quiere: que el jefe de planta vea cualquier
+    # item de E&E rotando, no le importa la sub-clasificación rígida).
+    if 'empaque' in tipo_material.lower():
+        cat_pattern = '%empaque%'
+    else:
+        # Envase Primario o Envase Secundario → ambos toman de categoria
+        # tipo "Envase" (sin distinguir, porque el catálogo no lo hace).
+        cat_pattern = '%envase%'
+
+    c.execute("""SELECT codigo, descripcion
+                 FROM maestro_mee
+                 WHERE LOWER(COALESCE(estado,''))='activo'
+                   AND LOWER(COALESCE(categoria,'')) LIKE ?
+                 ORDER BY codigo""", (cat_pattern,))
     items = c.fetchall()
+    # Fallback: si la categoría no calza (ej: usuario pone categoría diferente
+    # o solo tiene 'Otro'), devolver TODOS los items activos. El user prefiere
+    # tener algo que rotar antes que un mensaje vacío.
     if not items:
-        c.execute("""SELECT codigo_mp, nombre_comercial
-                     FROM maestro_mps
-                     WHERE activo=1 AND COALESCE(tipo_material,'MP')=?
-                     ORDER BY codigo_mp""", (tipo_material,))
+        c.execute("""SELECT codigo, descripcion FROM maestro_mee
+                     WHERE LOWER(COALESCE(estado,''))='activo'
+                     ORDER BY codigo""")
         items = c.fetchall()
 
     if not items:
-        # Diagnóstico para que la UI guíe al usuario:
-        # cuántos items hay en total, cuántos sin clasificar, y los tipos
-        # actualmente presentes (para detectar errores de capitalización).
+        # Diagnóstico contra maestro_mee (que es la tabla del stock de E&E)
         try:
             stats = c.execute("""
-                SELECT COALESCE(NULLIF(TRIM(tipo_material),''),'(sin tipo)') AS tipo,
+                SELECT COALESCE(NULLIF(TRIM(categoria),''),'(sin categoria)') AS cat,
                        COUNT(*) AS total
-                FROM maestro_mps WHERE activo=1
-                GROUP BY tipo
-                ORDER BY total DESC
+                FROM maestro_mee
+                GROUP BY cat ORDER BY total DESC
             """).fetchall()
-            tipos_existentes = [{'tipo': r[0], 'total': r[1]} for r in stats]
-            total_catalogo = sum(r['total'] for r in tipos_existentes)
-            sin_tipo = next((r['total'] for r in tipos_existentes if r['tipo'] == '(sin tipo)'), 0)
+            cats_existentes = [{'tipo': r[0], 'total': r[1]} for r in stats]
+            total_catalogo = sum(r['total'] for r in cats_existentes)
         except Exception:
-            tipos_existentes, total_catalogo, sin_tipo = [], 0, 0
+            cats_existentes, total_catalogo = [], 0
         return jsonify({
             'semanas': [],
             'total_items': 0,
             'tipo_material': tipo_material,
-            'mensaje': f"No hay items de tipo '{tipo_material}' en el catálogo.",
+            'mensaje': f"No hay items de E&E activos en maestro_mee para '{tipo_material}'.",
             'diagnostico': {
                 'total_catalogo': total_catalogo,
-                'sin_clasificar': sin_tipo,
-                'tipos_existentes': tipos_existentes,
+                'sin_clasificar': 0,
+                'tipos_existentes': cats_existentes,
                 'accion_sugerida': (
-                    f"Ve a Catálogo MPs y asigna 'tipo_material = {tipo_material}' "
-                    f"a los items que correspondan. Tienes {sin_tipo} items sin "
-                    f"clasificar ahora mismo." if sin_tipo > 0
-                    else f"Tu catálogo tiene {total_catalogo} items, pero ninguno "
-                         f"está marcado como '{tipo_material}'. Verifica que el "
-                         f"tipo se escriba exactamente igual en el catálogo."
+                    "El catálogo de Envase y Empaque (maestro_mee) está vacío "
+                    "o todos los items están en estado Inactivo. Ve a Planta → "
+                    "Maestro de Envase y Empaque y agrega/activa los items que "
+                    "tu equipo debe contar cíclicamente."
                 ),
             }
         })
