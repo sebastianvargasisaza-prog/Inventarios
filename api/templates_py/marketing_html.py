@@ -1478,7 +1478,7 @@ function renderPagos() {
     }
     // Botón regenerar siempre visible junto al comprobante (corrige PDFs viejos)
     if (p.comprobante_id) {
-      comprobante += ' <button onclick="regenerarCE('+p.comprobante_id+',''+p.numero_ce+'')" '
+      comprobante += ' <button onclick="regenerarCE('+p.comprobante_id+',\''+(p.numero_ce||'')+'\')" '
         + 'title="Re-generar PDF (corrige empresa, banco, monto)" '
         + 'style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.55;" '
         + '>&#x1F504;</button>';
