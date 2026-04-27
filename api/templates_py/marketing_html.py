@@ -188,7 +188,6 @@ function showToast(msg, type) {
   <button class="tab-btn" onclick="switchTab('agentes')">&#x1F916; Agentes IA</button>
   <button class="tab-btn" onclick="switchTab('analytics')">&#x1F4CA; Analytics</button>
   <button class="tab-btn" onclick="switchTab('agencia')">&#x1F3E2; Agencia</button>
-  <button class="tab-btn" onclick="switchTab('ads')">&#x1F680; Agencia Ads</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -434,7 +433,24 @@ function showToast(msg, type) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-agentes" class="tab-panel">
   <div class="page-title">&#x1F916; Agentes IA — Marketing</div>
-  <div class="page-sub">10 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
+  <div class="page-sub">11 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
+
+  <!-- ═══ Agente destacado: Estrategia (master) ════════════════════════════ -->
+  <div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#312e81 100%);border:1px solid #7c3aed;border-radius:14px;padding:22px;margin-bottom:22px;position:relative;overflow:hidden;">
+    <div style="position:absolute;top:-40%;right:-10%;width:300px;height:300px;background:radial-gradient(circle,#7c3aed33 0%,transparent 70%);pointer-events:none;"></div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;z-index:1;">
+      <div style="font-size:36px;line-height:1;">&#x1F9E0;</div>
+      <div style="flex:1;min-width:240px;">
+        <div style="font-size:11px;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px;">Master agent · cruza todo</div>
+        <div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">Estrategia del mes</div>
+        <div style="font-size:12px;color:#cbd5e1;line-height:1.5;">Analiza ventas Shopify, engagement IG, stock, producción programada, influencers activos y eventos cosméticos. Devuelve: foco del mes · calendario de publicaciones (4 semanas) · 3 oportunidades de venta · 3 riesgos · recomendación al fundador.</div>
+      </div>
+      <button class="btn-agent" id="btn-estrategia" onclick="runAgent('estrategia')" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;border:none;padding:14px 22px;font-size:14px;font-weight:800;border-radius:10px;white-space:nowrap;">
+        <span>&#x25B6; Generar estrategia</span>
+      </button>
+    </div>
+    <div class="agent-result" id="result-estrategia" style="margin-top:18px;"></div>
+  </div>
 
   <div class="agents-grid">
 
@@ -941,10 +957,11 @@ function showToast(msg, type) {
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: AGENCIA ADS (Multi-plataforma con claude-ads skill)        -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-ads" class="tab-panel"></div>
+<!-- Tab "Agencia Ads" eliminado: no se usaba data HHA y se solapaba con
+     el agente master Estrategia (que sí cruza Shopify + IG + stock + calendar
+     + influencers). El skill genérico ads_skill.py se conserva en backend
+     por si se necesita en el futuro (reusable). -->
+<div id="tab-ads" class="tab-panel" style="display:none !important;"></div>
 
 
 <script>
@@ -1820,7 +1837,8 @@ const AGENT_LABELS = {
   roi: 'Calcular ROI', tendencias: 'Ver tendencias', brief: 'Generar brief',
   pricing: 'Calcular precios promo', reorden: 'Predecir reórdenes',
   canibal: 'Detectar conflictos', contenido_auto: 'Generar contenido',
-  alerta_stock: 'Ver alertas stock'
+  alerta_stock: 'Ver alertas stock',
+  estrategia: 'Generar estrategia del mes'
 };
 
 async function syncPlatform(platform, full) {
@@ -2074,7 +2092,87 @@ function formatAgentResult(agente, data) {
     return `<pre>${out}</pre>${fmtIA(data)}`;
   }
 
+  if(agente==='estrategia') {
+    const k = data.kpis || {};
+    const snap = data.snapshot || {};
+    // KPIs del snapshot
+    let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">`;
+    const kpiCards = [
+      {label:'SKUs para empujar', val:k.skus_a_empujar||0, color:'#fbbf24'},
+      {label:'SKUs en riesgo',    val:k.skus_en_riesgo||0, color:'#ef4444'},
+      {label:'Influencers activos', val:k.influencers_activos||0, color:'#34d399'},
+      {label:'Eventos próx. 60d', val:k.eventos_en_60d||0, color:'#a78bfa'},
+      {label:'Producción planificada', val:k.produccion_planificada||0, color:'#60a5fa'},
+    ];
+    html += kpiCards.map(c=>`
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
+        <div style="font-size:22px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">${c.label}</div>
+      </div>`).join('');
+    html += '</div>';
+    // Análisis IA (markdown del modelo) — render con markdown básico
+    if(data.analisis_ia) {
+      html += `<div style="background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(124,58,237,.03));border:1px solid rgba(124,58,237,.35);border-radius:12px;padding:18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:16px;">🧠</span>
+          <span style="font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:.5px;text-transform:uppercase;">Análisis estratégico — Claude Sonnet</span>
+        </div>
+        <div class="estrategia-md">${renderMarkdownBasic(data.analisis_ia)}</div>
+      </div>`;
+    } else {
+      html += `<div style="padding:14px;color:#f59e0b;background:#78350f33;border:1px solid #f59e0b44;border-radius:8px;font-size:13px;">⚠️ Sin análisis IA — verificá que ANTHROPIC_API_KEY esté configurada en animus_config.</div>`;
+    }
+    // Datos crudos colapsables (para debug / power user)
+    html += `<details style="margin-top:14px;">
+      <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">Ver snapshot crudo (debug)</summary>
+      <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-top:8px;font-size:11px;color:#94a3b8;max-height:300px;overflow:auto;">${esc(JSON.stringify(snap, null, 2))}</pre>
+    </details>`;
+    return html;
+  }
+
   return `<pre>${JSON.stringify(data, null, 2)}</pre>${fmtIA(data)}`;
+}
+
+// ─── Markdown muy básico para output del agente Estrategia ─────────────
+function renderMarkdownBasic(md) {
+  if(!md) return '';
+  // Escape HTML primero
+  let h = md.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Tablas markdown (| col | col |)
+  h = h.replace(/((?:^\|.+\|\s*\n)+)/gm, function(block) {
+    const lines = block.trim().split('\n');
+    if(lines.length < 2) return block;
+    const headers = lines[0].split('|').slice(1,-1).map(s=>s.trim());
+    const rowsMd = lines.slice(2);
+    let tbl = '<table style="width:100%;margin:10px 0;border-collapse:collapse;font-size:12px;">';
+    tbl += '<thead><tr>'+headers.map(h=>`<th style="text-align:left;padding:8px;background:#0f172a;color:#a78bfa;border-bottom:1px solid #334155;">${h}</th>`).join('')+'</tr></thead>';
+    tbl += '<tbody>'+rowsMd.map(r=>{
+      const cols = r.split('|').slice(1,-1).map(s=>s.trim());
+      return '<tr>'+cols.map(c=>`<td style="padding:7px 8px;color:#cbd5e1;border-bottom:1px solid #1e293b;">${c}</td>`).join('')+'</tr>';
+    }).join('')+'</tbody></table>';
+    return tbl;
+  });
+  // Headings
+  h = h.replace(/^## (.+)$/gm, '<h3 style="font-size:14px;color:#a78bfa;margin:18px 0 8px;font-weight:700;">$1</h3>');
+  h = h.replace(/^# (.+)$/gm, '<h2 style="font-size:16px;color:#f1f5f9;margin:18px 0 10px;font-weight:800;">$1</h2>');
+  // Bold + italic
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#f1f5f9;">$1</strong>');
+  h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Listas numeradas
+  h = h.replace(/^(\d+)\. (.+)$/gm, '<div style="margin:4px 0;"><span style="color:#a78bfa;font-weight:700;margin-right:6px;">$1.</span>$2</div>');
+  // Listas bullets
+  h = h.replace(/^[-*] (.+)$/gm, '<div style="margin:4px 0 4px 16px;"><span style="color:#a78bfa;margin-right:6px;">·</span>$1</div>');
+  // Saltos de línea (no dentro de tablas/divs ya generados)
+  h = h.replace(/\n\n+/g, '<div style="height:8px;"></div>');
+  h = h.replace(/\n/g, '<br>');
+  // Limpiar dobles <br> alrededor de tablas/headings/divs
+  h = h.replace(/<br>\s*(<(?:h[123]|table|div|details))/g, '$1');
+  h = h.replace(/(<\/(?:h[123]|table|div|details)>)\s*<br>/g, '$1');
+  return `<div style="font-size:13px;color:#e2e8f0;line-height:1.7;">${h}</div>`;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 async function loadAgentLog() {

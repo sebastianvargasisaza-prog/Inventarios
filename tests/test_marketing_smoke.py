@@ -38,6 +38,28 @@ def test_marketing_page(app, db_clean):
     assert r.status_code in (200, 302), f"unexpected status: {r.status_code}"
 
 
+def test_agente_estrategia_runs(app, db_clean):
+    """El master agent estrategia no debe 500 con DB vacía.
+
+    Sin ANTHROPIC_API_KEY el endpoint igual debe responder con el snapshot
+    crudo (sin analisis_ia). El front renderiza un warning en ese caso.
+    """
+    c = _login(app)
+    r = c.post("/api/marketing/agentes/estrategia",
+               headers=csrf_headers(), json={})
+    assert r.status_code == 200, f"unexpected: {r.status_code} | {r.get_data(as_text=True)[:300]}"
+    j = r.get_json()
+    assert "error" not in j, f"agente error: {j.get('error')}"
+    assert j.get("agente") == "estrategia"
+    # Debe traer el snapshot estructurado aunque la DB esté vacía
+    assert "snapshot" in j
+    assert "kpis" in j
+    for key in ("top_shopify_30d", "skus_para_empujar", "skus_en_riesgo",
+                "influencers_top", "produccion_proxima", "eventos_proximos",
+                "campanas_activas"):
+        assert key in j["snapshot"], f"falta {key} en snapshot"
+
+
 def test_marketing_html_js_parses():
     """Compila el JS embebido en MARKETING_HTML con node.
 

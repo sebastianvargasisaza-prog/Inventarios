@@ -150,12 +150,49 @@ def _call_claude(conn, agente, datos):
         "canibal":        "Eres el director de marketing de ÁNIMUS Lab. Detecta conflictos entre campañas activas (mismo SKU, canal, fechas). Propón un calendario de campañas optimizado para maximizar el impacto sin canibalización. Máximo 200 palabras, en español.",
         "contenido_auto": "Eres el community manager de ÁNIMUS Lab (skincare científico premium para piel latina). Revisa los captions generados y da feedback sobre tono, claims científicos y potencial de conversión. Sugiere mejoras concretas. Máximo 200 palabras, en español.",
         "alerta_stock":   "Eres el director de operaciones de ÁNIMUS Lab. Analiza los SKUs con cobertura crítica cruzando ERP y Shopify. Da instrucciones específicas de producción urgente con cantidades y fechas. Máximo 200 palabras, en español.",
+        "estrategia": (
+            "Eres el director de marketing y crecimiento de ÁNIMUS Lab "
+            "(skincare científico premium, marca colombiana influencer-driven). "
+            "Te paso un snapshot completo del negocio HOY: ventas Shopify, "
+            "engagement Instagram, stock por SKU, producción programada, "
+            "influencers activos, eventos cosméticos próximos.\n\n"
+            "Tu trabajo es proponer la ESTRATEGIA del próximo mes. Devuelve "
+            "EXACTAMENTE este formato markdown — nada antes, nada después:\n\n"
+            "## Foco del mes\n"
+            "1 frase con la prioridad #1 (ej: 'Empujar SKU X que tiene 4 meses "
+            "de stock y 0 ventas Shopify, atacando con influencer Y antes del "
+            "evento Z').\n\n"
+            "## Calendario de publicaciones (próximas 4 semanas)\n"
+            "Tabla con columnas: Fecha · SKU · Influencer sugerido · Formato "
+            "(Reel/Post/Story) · Mensaje principal. Mínimo 8 filas, máximo 16. "
+            "Distribuye según stock alto + eventos próximos + engagement IG. "
+            "NO inventes influencers — usa los que aparecen en los datos.\n\n"
+            "## 3 oportunidades de venta inmediatas\n"
+            "Para cada una: SKU + razón concreta (con números) + acción "
+            "específica (canal, fecha, descuento si aplica).\n\n"
+            "## 3 riesgos prioritarios\n"
+            "SKU + problema (con números) + mitigación.\n\n"
+            "## Recomendación al fundador\n"
+            "1 párrafo (≤80 palabras) con la decisión más importante de la "
+            "semana. Habla de tú a tú, sin filtro. En español."
+        ),
     }
     prompt = PROMPTS.get(agente, "Analiza estos datos de ÁNIMUS Lab y da recomendaciones accionables en español. Máximo 200 palabras.")
+    # estrategia es el master agent — necesita razonamiento profundo y output
+    # más largo (calendario completo + 3 oportunidades + 3 riesgos + recomendación).
+    # Usa Sonnet (más capaz) y datos sin truncar al máximo posible.
+    if agente == "estrategia":
+        model = "claude-sonnet-4-6"
+        max_tokens = 3500
+        datos_str = json.dumps(datos, ensure_ascii=False, default=str)[:12000]
+    else:
+        model = "claude-haiku-4-5-20251001"
+        max_tokens = 500
+        datos_str = json.dumps(datos, ensure_ascii=False, default=str)[:3000]
     payload = json.dumps({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 500,
-        "messages": [{"role": "user", "content": prompt + "\n\nDatos del sistema:\n" + json.dumps(datos, ensure_ascii=False, default=str)[:3000]}]
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt + "\n\nDatos del sistema:\n" + datos_str}]
     }).encode("utf-8")
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -163,8 +200,10 @@ def _call_claude(conn, agente, datos):
         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
         method="POST"
     )
+    # Sonnet con output largo necesita más tiempo (Haiku: 20s, Sonnet: 90s)
+    timeout = 90 if agente == "estrategia" else 20
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return data["content"][0]["text"]
     except Exception:
@@ -1703,7 +1742,11 @@ def mkt_ig_debug():
 
 AGENTES_DISPONIBLES = {
     "estacionalidad", "oportunidad", "roi", "tendencias",
-    "brief", "pricing", "reorden", "canibal", "contenido_auto", "alerta_stock"
+    "brief", "pricing", "reorden", "canibal", "contenido_auto", "alerta_stock",
+    # Master agent: cruza TODA la data (Shopify + IG + stock + producción +
+    # influencers + calendario cosmético) y propone calendario de publicaciones
+    # de las próximas 4 semanas + oportunidades de venta + riesgos.
+    "estrategia",
 }
 
 @bp.route("/api/marketing/agentes/<agente>", methods=["POST"])
@@ -1977,6 +2020,185 @@ def mkt_ejecutar_agente(agente):
                         "accion": f"{'REPOSICIÓN URGENTE' if nivel=='critico' else 'Planificar producción'}: {sku} tiene {dias_real} días de cobertura."})
             alertas.sort(key=lambda x: x["dias_cobertura_real"])
             resultado = {"titulo": "Alertas de Stock vs Demanda Real", "alertas": alertas, "total": len(alertas)}
+
+        # ── Agente 11: ESTRATEGIA (master) ─────────────────────────────────────
+        # Cruza Shopify + IG + stock + producción + influencers + calendario
+        # cosmético. Pasa a Claude un snapshot rico y le pide calendario de
+        # publicaciones, oportunidades, riesgos y recomendación al fundador.
+        elif agente == "estrategia":
+            # NOTA schema: animus_shopify_orders tiene `sku_items` (TEXT multi-SKU)
+            # y `total` (no total_cop). Usamos LIKE por SKU desde stock_pt — mismo
+            # patrón que el agente oportunidad.
+            sku_universe = [r["sku"] for r in c.execute(
+                "SELECT DISTINCT sku FROM stock_pt WHERE sku IS NOT NULL AND sku != ''"
+            ).fetchall()]
+
+            def _shopify_por_sku(sku, desde):
+                row = c.execute(
+                    "SELECT COALESCE(SUM(unidades_total),0) as uds, "
+                    "       COALESCE(SUM(total),0) as revenue "
+                    "FROM animus_shopify_orders "
+                    "WHERE sku_items LIKE ? AND creado_en >= ?",
+                    (f"%{sku}%", desde)
+                ).fetchone()
+                return {"uds": row["uds"] or 0, "revenue": row["revenue"] or 0}
+
+            top_shopify_30, top_shopify_90 = [], []
+            for sku in sku_universe:
+                d30 = _shopify_por_sku(sku, hace30)
+                if d30["revenue"] > 0:
+                    top_shopify_30.append({"sku": sku, **d30})
+                d90 = _shopify_por_sku(sku, hace90)
+                if d90["revenue"] > 0:
+                    top_shopify_90.append({"sku": sku, **d90})
+            top_shopify_30.sort(key=lambda x: -x["revenue"])
+            top_shopify_90.sort(key=lambda x: -x["revenue"])
+            top_shopify_30 = top_shopify_30[:10]
+            top_shopify_90 = top_shopify_90[:10]
+
+            # 2) SKUs con stock alto + baja rotación = empuje urgente
+            empuje = []
+            for r in c.execute("""
+                SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
+                FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock DESC LIMIT 20
+            """).fetchall():
+                sku, stock, precio = r["sku"], r["stock"], r["precio"] or 0
+                if not sku or stock < 30:
+                    continue
+                lib_90 = c.execute(
+                    "SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?",
+                    (sku, hace90)
+                ).fetchone()["t"]
+                shopify_30 = c.execute(
+                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                    (f"%{sku}%", hace30)
+                ).fetchone()["t"]
+                rotacion_mensual = lib_90 / 3.0 if lib_90 else 0
+                meses_cobertura = round(stock / rotacion_mensual, 1) if rotacion_mensual > 0 else 99
+                if meses_cobertura > 2.5 or shopify_30 == 0:
+                    empuje.append({
+                        "sku": sku, "stock": stock, "precio": precio,
+                        "rotacion_mensual": round(rotacion_mensual, 1),
+                        "meses_cobertura": meses_cobertura,
+                        "ventas_shopify_30d": shopify_30,
+                    })
+
+            # 3) SKUs en riesgo (cobertura baja vs demanda)
+            riesgo = []
+            for r in c.execute("""
+                SELECT sku, SUM(unidades_disponible) as stock
+                FROM stock_pt WHERE estado='Disponible' GROUP BY sku
+            """).fetchall():
+                sku, stock = r["sku"], r["stock"]
+                if not sku:
+                    continue
+                lib_30 = c.execute(
+                    "SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?",
+                    (sku, hace30)
+                ).fetchone()["t"]
+                shopify_30 = c.execute(
+                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                    (f"%{sku}%", hace30)
+                ).fetchone()["t"]
+                demanda = (lib_30 + shopify_30) / 30.0
+                dias_cob = round(stock / demanda, 0) if demanda > 0 else 999
+                if dias_cob <= 21 and demanda > 0:
+                    riesgo.append({
+                        "sku": sku, "stock": stock,
+                        "demanda_diaria": round(demanda, 1),
+                        "dias_cobertura": dias_cob,
+                    })
+            riesgo.sort(key=lambda x: x["dias_cobertura"])
+
+            # 4) Top influencers por inversión histórica (con datos de contacto)
+            influencers_top = []
+            try:
+                for r in c.execute("""
+                    SELECT mi.id, mi.nombre, mi.usuario_red, mi.red_social, mi.nicho,
+                           mi.seguidores, mi.engagement_rate, mi.estado,
+                           COALESCE(SUM(CASE WHEN pi.estado='Pagada' THEN pi.valor ELSE 0 END), 0) as invertido,
+                           COUNT(CASE WHEN pi.estado='Pagada' THEN 1 END) as colabs
+                    FROM marketing_influencers mi
+                    LEFT JOIN pagos_influencers pi ON pi.influencer_id = mi.id
+                    WHERE COALESCE(mi.estado,'Activo') = 'Activo'
+                    GROUP BY mi.id
+                    ORDER BY invertido DESC LIMIT 12
+                """).fetchall():
+                    influencers_top.append(dict(r))
+            except Exception:
+                pass
+
+            # 5) Producción programada próximas 4 semanas
+            prox_30 = (hoy + timedelta(days=30)).strftime("%Y-%m-%d")
+            try:
+                produccion_proxima = [dict(r) for r in c.execute("""
+                    SELECT producto, fecha_programada, lotes, estado
+                    FROM produccion_programada
+                    WHERE fecha_programada BETWEEN date('now') AND ?
+                      AND estado NOT IN ('cancelado','completado')
+                    ORDER BY fecha_programada LIMIT 30
+                """, (prox_30,)).fetchall()]
+            except Exception:
+                produccion_proxima = []
+
+            # 6) IG: top posts últimos 30d (engagement)
+            ig_top_posts = []
+            try:
+                ig_top_posts = [dict(r) for r in c.execute("""
+                    SELECT id, caption, likes, comentarios, media_type, permalink,
+                           timestamp_post
+                    FROM animus_instagram_posts
+                    WHERE timestamp_post >= ?
+                    ORDER BY (COALESCE(likes,0) + COALESCE(comentarios,0)*5) DESC
+                    LIMIT 8
+                """, (hace30,)).fetchall()]
+            except Exception:
+                pass
+
+            # 7) Eventos cosméticos próximos 60 días
+            from datetime import datetime as _dt2
+            eventos_proximos = []
+            for ev in CALENDARIO_COSMETICO:
+                try:
+                    dias = (_dt2.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
+                except Exception:
+                    continue
+                if 0 <= dias <= 60:
+                    eventos_proximos.append({
+                        "evento": ev["evento"], "fecha": ev["fecha"],
+                        "dias_restantes": dias, "multiplicador": ev["multiplicador"],
+                    })
+            eventos_proximos.sort(key=lambda x: x["dias_restantes"])
+
+            # 8) Campañas activas/planificadas
+            campanas_activas = [dict(r) for r in c.execute("""
+                SELECT id, nombre, canal, tipo, estado, fecha_inicio, fecha_fin,
+                       presupuesto, sku_objetivo
+                FROM marketing_campanas
+                WHERE estado IN ('Planificada','Activa') ORDER BY fecha_inicio LIMIT 15
+            """).fetchall()]
+
+            resultado = {
+                "titulo": "Estrategia del mes",
+                "snapshot": {
+                    "top_shopify_30d":    top_shopify_30,
+                    "top_shopify_90d":    top_shopify_90,
+                    "skus_para_empujar":  empuje[:10],
+                    "skus_en_riesgo":     riesgo[:8],
+                    "influencers_top":    influencers_top,
+                    "produccion_proxima": produccion_proxima,
+                    "ig_top_posts_30d":   ig_top_posts,
+                    "eventos_proximos":   eventos_proximos,
+                    "campanas_activas":   campanas_activas,
+                },
+                "kpis": {
+                    "skus_a_empujar":    len(empuje),
+                    "skus_en_riesgo":    len(riesgo),
+                    "influencers_activos": len(influencers_top),
+                    "eventos_en_60d":    len(eventos_proximos),
+                    "produccion_planificada": len(produccion_proxima),
+                },
+            }
 
         # Enriquecer con Claude IA
         try:
