@@ -363,3 +363,183 @@ def test_inventario_diagnostico_detecta_doble_carga(admin_client, db_clean):
     cur = conn.cursor()
     cur.execute("DELETE FROM movimientos WHERE material_id IN ('MP_DIAG_OK','MP_DIAG_DUP')")
     conn.commit(); conn.close()
+
+
+# ═══ Reset+Replay del inventario ═════════════════════════════════════════════
+
+
+def test_inventario_snapshot_solo_admin(app, db_clean):
+    c = app.test_client()
+    r = c.post("/login", data={"username": "luis", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    r = c.get("/api/admin/inventario-snapshot-pre-reset")
+    assert r.status_code == 403
+
+
+def test_inventario_snapshot_descarga_json(admin_client, db_clean):
+    r = admin_client.get("/api/admin/inventario-snapshot-pre-reset")
+    assert r.status_code == 200
+    assert r.mimetype == "application/json"
+    import json
+    data = json.loads(r.data)
+    assert "meta" in data and "tablas" in data
+    for t in ("movimientos", "producciones", "ordenes_compra",
+              "comprobantes_pago", "maestro_mps", "audit_log"):
+        assert t in data["tablas"], f"falta {t}"
+
+
+def _build_excel_verde_test():
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    import io
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "INVENTARIO"
+    ws.cell(row=1, column=1, value="INV MP")
+    headers = ["CODIGO MP", "NOMBRE INCI", "NOMBRE COMERCIAL", "TIPO",
+               "PROVEEDOR", "STOCK MIN", "N LOTE", "CANT. CONTEO(g)",
+               "CANT. ACTUAL", "ESTANTERIA", "POS.", "FECHA VENC."]
+    for i, h in enumerate(headers, 1):
+        ws.cell(row=5, column=i, value=h)
+    verde = PatternFill(start_color="FF92D050", end_color="FF92D050", fill_type="solid")
+    rojo = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+    for col in range(1, 13):
+        ws.cell(row=6, column=col).fill = verde
+    ws.cell(row=6, column=1, value="MP_RESET_A")
+    ws.cell(row=6, column=3, value="Material A reset")
+    ws.cell(row=6, column=5, value="Lyphar")
+    ws.cell(row=6, column=7, value="LOTE-A")
+    ws.cell(row=6, column=8, value=2000)
+    for col in range(1, 13):
+        ws.cell(row=7, column=col).fill = verde
+    ws.cell(row=7, column=1, value="MP_RESET_B")
+    ws.cell(row=7, column=3, value="Material B reset")
+    ws.cell(row=7, column=5, value="Inchemical")
+    ws.cell(row=7, column=7, value="LOTE-B")
+    ws.cell(row=7, column=8, value=500)
+    for col in range(1, 13):
+        ws.cell(row=8, column=col).fill = rojo
+    ws.cell(row=8, column=1, value="MP_RESET_RED")
+    ws.cell(row=8, column=7, value="LOTE-RED")
+    ws.cell(row=8, column=8, value=99999)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def test_inventario_reset_preview_muestra_plan(admin_client, db_clean):
+    import sqlite3
+    import os
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador) "
+                "VALUES ('MP_DIRTY','Dirty','L1',888,'Entrada','2026-04-15','sistema')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, observaciones) "
+                "VALUES ('MP_RESET_A','MA','LOTE-A',300,'Salida','2026-04-20','luis','FEFO:PROD-X:T x 1kg')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, numero_oc) "
+                "VALUES ('MP_RESET_B','MB','LOTE-B',100,'Entrada','2026-04-22','catalina','OC-1')")
+    conn.commit()
+    conn.close()
+
+    buf = _build_excel_verde_test()
+    r = admin_client.post("/api/admin/inventario-reset-preview",
+                          data={"file": (buf, "test.xlsx")},
+                          content_type="multipart/form-data")
+    assert r.status_code == 200, f"body: {r.data[:300]!r}"
+    p = r.get_json()["plan"]
+    assert p["movimientos_a_borrar"] == 3
+    assert p["entradas_iniciales_a_crear"]["count"] == 2
+    assert p["entradas_iniciales_a_crear"]["total_g"] == 2500.0
+    assert p["entradas_oc_a_preservar"]["count"] == 1
+    assert p["salidas_produccion_a_preservar"]["count"] == 1
+    assert p["rows_no_verde_excluidas"] == 1
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    n = cur.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+    assert n == 3, "Preview no debe modificar movimientos"
+    cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP%'")
+    conn.commit()
+    conn.close()
+
+
+def test_inventario_reset_aplicar_requiere_token(admin_client, db_clean):
+    buf = _build_excel_verde_test()
+    r = admin_client.post("/api/admin/inventario-reset-aplicar",
+                          data={"file": (buf, "test.xlsx")},
+                          content_type="multipart/form-data")
+    assert r.status_code == 400
+
+
+def test_inventario_reset_aplicar_token_incorrecto(admin_client, db_clean):
+    buf = _build_excel_verde_test()
+    r = admin_client.post("/api/admin/inventario-reset-aplicar",
+                          data={"file": (buf, "test.xlsx"),
+                                "confirmacion": "TOKEN_RANDOM"},
+                          content_type="multipart/form-data")
+    assert r.status_code == 400
+
+
+def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
+    import sqlite3
+    import os
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador) "
+                "VALUES ('MP_DIRTY','D','L1',999,'Entrada','2026-04-15','sistema')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador) "
+                "VALUES ('MP_DIRTY','D','L1',999,'Entrada','2026-04-15','sistema')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, observaciones) "
+                "VALUES ('MP_RESET_A','MA','LOTE-A',300,'Salida','2026-04-20','luis','FEFO:PROD-X:T x 1kg')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, numero_oc) "
+                "VALUES ('MP_RESET_B','MB','LOTE-B',100,'Entrada','2026-04-22','catalina','OC-LEG')")
+    conn.commit()
+    conn.close()
+
+    TOKEN = "BORRAR_INVENTARIO_Y_CARGAR_EXCEL_2026_04_27"
+    buf = _build_excel_verde_test()
+    r = admin_client.post("/api/admin/inventario-reset-aplicar",
+                          data={"file": (buf, "test.xlsx"),
+                                "confirmacion": TOKEN},
+                          content_type="multipart/form-data")
+    assert r.status_code == 200, f"body: {r.data[:400]!r}"
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["resumen"]["movs_borrados"] == 4
+    assert j["resumen"]["lotes_excel_cargados"] == 2
+    assert j["resumen"]["entradas_oc_preservadas"] == 1
+    assert j["resumen"]["salidas_prod_preservadas"] == 1
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT material_id, lote, cantidad, tipo FROM movimientos "
+        "ORDER BY material_id, fecha, cantidad"
+    ).fetchall()
+    assert len(rows) == 4, f"Esperado 4 movs, recibido {len(rows)}: {rows}"
+    codigos = {r[0] for r in rows}
+    assert "MP_DIRTY" not in codigos
+    assert ("MP_RESET_A", "LOTE-A", 2000.0, "Entrada") in rows
+    assert ("MP_RESET_A", "LOTE-A", 300.0, "Salida") in rows
+    assert ("MP_RESET_B", "LOTE-B", 500.0, "Entrada") in rows
+    assert ("MP_RESET_B", "LOTE-B", 100.0, "Entrada") in rows
+
+    audits = cur.execute(
+        "SELECT accion FROM audit_log WHERE accion LIKE 'RESET_INVENTARIO%'"
+    ).fetchall()
+    actions = {a[0] for a in audits}
+    assert "RESET_INVENTARIO_PRE" in actions
+    assert "RESET_INVENTARIO_POST" in actions
+
+    cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP%'")
+    conn.commit()
+    conn.close()

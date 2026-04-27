@@ -671,6 +671,165 @@ def admin_import_mps_nombres_excel():
     })
 
 
+def _parse_excel_verde(file_storage):
+    """Parsea Excel del conteo fisico, retorna solo filas verdes.
+
+    Devuelve: (excel_verde dict, total_g, rows_no_verde_count, errores_list)
+    excel_verde[(cod, lote)] = {codigo_mp, lote, inci, nombre_comercial,
+                                proveedor, estanteria, posicion,
+                                fecha_vencimiento, cantidad_g}
+
+    Compartido entre audit / preview / aplicar para mantener una sola
+    fuente de verdad sobre como interpretamos el Excel.
+    """
+    from openpyxl import load_workbook
+
+    GREEN = 'FF92D050'
+    errors = []
+
+    try:
+        wb = load_workbook(file_storage, data_only=True)
+    except Exception as _e:
+        return None, 0, 0, [f'No pude abrir el Excel: {_e}']
+
+    if not wb.sheetnames:
+        return None, 0, 0, ['Excel sin hojas']
+
+    ws = wb[wb.sheetnames[0]]
+
+    # Detectar fila header
+    header_row = None
+    for r in range(1, min(20, ws.max_row + 1)):
+        row_vals = [str(ws.cell(row=r, column=col).value or '').upper()
+                    for col in range(1, min(15, ws.max_column + 1))]
+        joined = ' | '.join(row_vals)
+        if ('CÓDIGO MP' in joined or 'CODIGO MP' in joined) and 'LOTE' in joined:
+            header_row = r
+            break
+    if header_row is None:
+        header_row = 5
+
+    col_idx = {}
+    for col in range(1, ws.max_column + 1):
+        v = (ws.cell(row=header_row, column=col).value or '')
+        v = str(v).upper().strip()
+        if 'CÓDIGO MP' in v or 'CODIGO MP' in v:
+            col_idx['codigo'] = col
+        elif 'NOMBRE INCI' in v or v == 'INCI':
+            col_idx['inci'] = col
+        elif 'NOMBRE COMERCIAL' in v or v == 'COMERCIAL':
+            col_idx['comercial'] = col
+        elif 'PROVEEDOR' in v:
+            col_idx['proveedor'] = col
+        elif 'LOTE' in v and 'N' in v:
+            col_idx['lote'] = col
+        elif 'CONTEO' in v:
+            col_idx['cant_conteo'] = col
+        elif 'ESTANTER' in v:
+            col_idx['estanteria'] = col
+        elif v == 'POS.' or v == 'POSICION' or v == 'POSICIÓN':
+            col_idx['posicion'] = col
+        elif 'FECHA VENC' in v or v == 'VENCE':
+            col_idx['venc'] = col
+
+    if 'codigo' not in col_idx or 'lote' not in col_idx or 'cant_conteo' not in col_idx:
+        return None, 0, 0, [f'Excel sin columnas requeridas: {list(col_idx.keys())}']
+
+    excel_verde = {}
+    total_g = 0.0
+    rows_no_verde = 0
+
+    for r in range(header_row + 1, ws.max_row + 1):
+        cell_codigo = ws.cell(row=r, column=col_idx['codigo'])
+        cell_color = (cell_codigo.fill.fgColor.rgb
+                      if cell_codigo.fill.fgColor.type == 'rgb' else None)
+        if cell_color != GREEN:
+            rows_no_verde += 1
+            continue
+        cod = cell_codigo.value
+        if not cod:
+            continue
+        cod = str(cod).strip()
+        lote_raw = ws.cell(row=r, column=col_idx['lote']).value
+        lote = str(lote_raw).strip() if lote_raw else ''
+        cant_raw = ws.cell(row=r, column=col_idx['cant_conteo']).value
+        try:
+            cant = float(cant_raw or 0)
+        except (TypeError, ValueError):
+            cant = 0.0
+        venc = ws.cell(row=r, column=col_idx['venc']).value if 'venc' in col_idx else None
+        if hasattr(venc, 'isoformat'):
+            venc = venc.isoformat()[:10]
+        else:
+            venc = str(venc)[:10] if venc else ''
+
+        key = (cod, lote)
+        if key in excel_verde:
+            # Lote duplicado en Excel verde — sumar (raro pero defensivo)
+            excel_verde[key]['cantidad_g'] += cant
+        else:
+            excel_verde[key] = {
+                'codigo_mp': cod, 'lote': lote,
+                'inci': str(ws.cell(row=r, column=col_idx['inci']).value or '') if 'inci' in col_idx else '',
+                'nombre_comercial': str(ws.cell(row=r, column=col_idx['comercial']).value or '') if 'comercial' in col_idx else '',
+                'proveedor': str(ws.cell(row=r, column=col_idx['proveedor']).value or '') if 'proveedor' in col_idx else '',
+                'estanteria': str(ws.cell(row=r, column=col_idx['estanteria']).value or '') if 'estanteria' in col_idx else '',
+                'posicion': str(ws.cell(row=r, column=col_idx['posicion']).value or '') if 'posicion' in col_idx else '',
+                'fecha_vencimiento': venc,
+                'cantidad_g': cant,
+            }
+        total_g += cant
+
+    return excel_verde, total_g, rows_no_verde, errors
+
+
+def _identify_movimientos_a_preservar(c):
+    """Devuelve dos listas de movimientos a re-insertar tras el reset:
+
+      - entradas_oc_legitimas: tipo='Entrada' con numero_oc no vacio
+      - salidas_produccion: tipo='Salida' con observaciones que empiezan
+        con 'FEFO:' (las que vienen de handle_produccion en inventario.py)
+
+    Cualquier otro movimiento (Entradas sin OC, Salidas que no son de
+    produccion, ajustes manuales) se descarta — esos son los datos
+    sucios que el reset esta limpiando.
+    """
+    cols = ('id, material_id, material_nombre, cantidad, tipo, fecha, '
+            'observaciones, lote, fecha_vencimiento, estanteria, posicion, '
+            'proveedor, estado_lote, operador, '
+            'COALESCE(numero_oc,"") as numero_oc, '
+            'COALESCE(numero_factura,"") as numero_factura, '
+            'COALESCE(precio_kg,0) as precio_kg')
+    try:
+        entradas_oc = c.execute(f"""SELECT {cols} FROM movimientos
+                                    WHERE tipo='Entrada'
+                                    AND COALESCE(numero_oc,'') != ''
+                                    AND COALESCE(numero_oc,'') != '0'
+                                    ORDER BY fecha ASC, id ASC""").fetchall()
+    except sqlite3.OperationalError:
+        entradas_oc = []
+    try:
+        salidas_prod = c.execute(f"""SELECT {cols} FROM movimientos
+                                     WHERE tipo='Salida'
+                                     AND observaciones LIKE 'FEFO:%'
+                                     ORDER BY fecha ASC, id ASC""").fetchall()
+    except sqlite3.OperationalError:
+        salidas_prod = []
+    return entradas_oc, salidas_prod
+
+
+def _row_to_dict(row, columns):
+    return dict(zip(columns, row))
+
+
+_MOV_PRESERVAR_COLS = (
+    'id', 'material_id', 'material_nombre', 'cantidad', 'tipo', 'fecha',
+    'observaciones', 'lote', 'fecha_vencimiento', 'estanteria', 'posicion',
+    'proveedor', 'estado_lote', 'operador', 'numero_oc', 'numero_factura',
+    'precio_kg',
+)
+
+
 @bp.route("/api/admin/audit-inventario-vs-excel", methods=["POST"])
 def admin_audit_inventario_vs_excel():
     """Compara el inventario actual contra un Excel "dia cero" sin escribir nada.
@@ -950,6 +1109,406 @@ def admin_audit_inventario_vs_excel():
             len(en_db_con_delta) > 300 or len(faltantes_en_db) > 300
             or len(solo_db) > 300
         ),
+    })
+
+
+@bp.route("/api/admin/inventario-snapshot-pre-reset", methods=["GET"])
+def admin_inventario_snapshot_pre_reset():
+    """Descarga snapshot JSON completo de la BD antes del reset.
+
+    Incluye: movimientos (todos), producciones, ordenes_compra + items,
+    comprobantes_pago, audit_log (ultimos 1000), maestro_mps. El
+    usuario lo descarga y guarda fuera de Render. Si el reset falla,
+    podemos reconstruir.
+
+    Solo admins. No escribe nada.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import json as _json
+    from datetime import datetime as _dt
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    snapshot = {
+        'meta': {
+            'generated_at': _dt.utcnow().isoformat() + 'Z',
+            'generated_by': u,
+            'db_path': DB_PATH,
+        },
+        'tablas': {},
+    }
+
+    def _dump(table, where=None, limit=None):
+        sql = f"SELECT * FROM {table}"
+        if where: sql += f" WHERE {where}"
+        if limit: sql += f" LIMIT {limit}"
+        try:
+            rows = c.execute(sql).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.OperationalError as _e:
+            return {'error': str(_e)}
+
+    snapshot['tablas']['movimientos'] = _dump('movimientos')
+    snapshot['tablas']['producciones'] = _dump('producciones')
+    snapshot['tablas']['ordenes_compra'] = _dump('ordenes_compra')
+    snapshot['tablas']['ordenes_compra_items'] = _dump('ordenes_compra_items')
+    snapshot['tablas']['comprobantes_pago'] = _dump('comprobantes_pago')
+    snapshot['tablas']['maestro_mps'] = _dump('maestro_mps')
+    snapshot['tablas']['audit_log'] = _dump(
+        'audit_log', where='1=1 ORDER BY id DESC', limit=1000
+    )
+
+    conn.close()
+
+    # Conteos rapidos para el meta
+    snapshot['meta']['conteos'] = {
+        k: (len(v) if isinstance(v, list) else 0)
+        for k, v in snapshot['tablas'].items()
+    }
+
+    body = _json.dumps(snapshot, ensure_ascii=False, indent=2, default=str)
+    fname = f"snapshot_pre_reset_{_dt.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return Response(
+        body, mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
+
+
+@bp.route("/api/admin/inventario-reset-preview", methods=["POST"])
+def admin_inventario_reset_preview():
+    """Preview del reset: muestra que se va a hacer SIN escribir nada.
+
+    Body: multipart con file = Excel del conteo fisico.
+
+    Devuelve plan detallado:
+      - movimientos_a_borrar: count
+      - entradas_a_crear_desde_excel: 305 lotes verdes
+      - entradas_oc_legitimas_a_preservar: count + total_g
+      - salidas_produccion_a_preservar: count + total_g + lotes consumidos
+      - alertas: lotes que las producciones consumieron pero NO estan en
+                 Excel verde (post-reset darian stock negativo)
+      - resumen_pre_post: stock total antes vs despues
+
+    Solo admins. SIN ESCRITURA.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'Archivo debe ser .xlsx'}), 400
+
+    excel_verde, excel_total_g, rows_no_verde, errs = _parse_excel_verde(f)
+    if excel_verde is None:
+        return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Conteos actuales
+    movs_actuales = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+    stock_total_actual_g = float(c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos"
+    ).fetchone()[0] or 0)
+
+    # Movimientos a preservar
+    entradas_oc, salidas_prod = _identify_movimientos_a_preservar(c)
+    entradas_oc_g = sum(float(r['cantidad'] or 0) for r in entradas_oc)
+    salidas_prod_g = sum(float(r['cantidad'] or 0) for r in salidas_prod)
+
+    # Validar: lotes que las salidas de produccion consumieron, ¿estan en Excel verde?
+    excel_keys = set(excel_verde.keys())
+    salidas_lotes_no_verde = []
+    for s in salidas_prod:
+        cod = s['material_id']
+        lote = s['lote'] or ''
+        if (cod, lote) not in excel_keys:
+            salidas_lotes_no_verde.append({
+                'fecha': str(s['fecha'])[:10],
+                'codigo_mp': cod, 'lote': lote,
+                'cantidad_g': round(float(s['cantidad'] or 0), 1),
+                'observaciones': s['observaciones'],
+            })
+
+    stock_post_g = excel_total_g + entradas_oc_g - salidas_prod_g
+
+    # Sample top lotes a crear (mas grandes)
+    top_excel = sorted(
+        [v for v in excel_verde.values()],
+        key=lambda v: -v['cantidad_g']
+    )[:10]
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'plan': {
+            'movimientos_a_borrar': movs_actuales,
+            'entradas_iniciales_a_crear': {
+                'count': len(excel_verde),
+                'total_g': round(excel_total_g, 1),
+                'sample_top10': top_excel,
+            },
+            'entradas_oc_a_preservar': {
+                'count': len(entradas_oc),
+                'total_g': round(entradas_oc_g, 1),
+                'sample': [{
+                    'fecha': str(r['fecha'])[:10],
+                    'codigo_mp': r['material_id'], 'lote': r['lote'] or '',
+                    'cantidad_g': round(float(r['cantidad'] or 0), 1),
+                    'numero_oc': r['numero_oc'],
+                } for r in entradas_oc[:20]],
+            },
+            'salidas_produccion_a_preservar': {
+                'count': len(salidas_prod),
+                'total_g': round(salidas_prod_g, 1),
+                'sample': [{
+                    'fecha': str(r['fecha'])[:10],
+                    'codigo_mp': r['material_id'], 'lote': r['lote'] or '',
+                    'cantidad_g': round(float(r['cantidad'] or 0), 1),
+                    'observaciones': r['observaciones'],
+                } for r in salidas_prod[:20]],
+            },
+            'rows_no_verde_excluidas': rows_no_verde,
+        },
+        'alertas': {
+            'salidas_a_lotes_no_verde': salidas_lotes_no_verde[:30],
+            'count_salidas_a_lotes_no_verde': len(salidas_lotes_no_verde),
+            'nota': ('Si > 0: la produccion consumio de un lote que '
+                     'Catalina marco como NO presente. Tras reset el '
+                     'stock de ese lote sera negativo. Hay que decidir: '
+                     '(a) ignorar la salida (no replay), (b) ajustar '
+                     'manualmente despues, o (c) revisar el conteo.'),
+        },
+        'resumen_pre_post': {
+            'stock_actual_g': round(stock_total_actual_g, 1),
+            'stock_post_reset_g_estimado': round(stock_post_g, 1),
+            'delta_g': round(stock_post_g - stock_total_actual_g, 1),
+        },
+    })
+
+
+_RESET_TOKEN = "BORRAR_INVENTARIO_Y_CARGAR_EXCEL_2026_04_27"
+
+
+@bp.route("/api/admin/inventario-reset-aplicar", methods=["POST"])
+def admin_inventario_reset_aplicar():
+    """APLICA el reset+replay del inventario. Destructivo. Tiene salvaguardas.
+
+    Salvaguardas:
+      1. Solo admins
+      2. Body MUST contain confirmacion = token textual exacto
+      3. Verifica que haya backup reciente (< 24h) en backup_log o intenta
+         crear uno automaticamente antes de proceder
+      4. Snapshot pre-reset guardado en audit_log (resumen)
+      5. Audit log entry detallado (TRES entries: PRE, RESET, POST)
+      6. Body multipart con Excel + JSON con confirmacion
+
+    Plan ejecutado en orden, dentro de UNA transaccion:
+      a) Capturar entradas_oc_legitimas + salidas_produccion (preservar)
+      b) DELETE FROM movimientos
+      c) INSERT 305 Entradas iniciales desde Excel verde
+         (fecha=2026-04-15 = dia cero, operador='reset_2026_04_27')
+      d) Re-INSERT entradas_oc_legitimas (preservadas, fecha y datos
+         originales)
+      e) Re-INSERT salidas_produccion (preservadas, fecha y datos
+         originales — incluso si apunta a lote no-verde, queda como
+         "stock negativo" para alertar)
+      f) Audit log: ELIMINAR_INVENTARIO + CARGAR_EXCEL + RE_APLICAR_PROD
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    confirmacion = (request.form.get('confirmacion') or '').strip()
+    if confirmacion != _RESET_TOKEN:
+        return jsonify({
+            'error': 'Confirmacion textual requerida',
+            'detail': f'Body form debe incluir confirmacion="{_RESET_TOKEN}"',
+        }), 400
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'Archivo debe ser .xlsx'}), 400
+
+    excel_verde, excel_total_g, rows_no_verde, errs = _parse_excel_verde(f)
+    if excel_verde is None:
+        return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
+
+    # Verificar backup reciente
+    from datetime import datetime as _dt, timedelta as _td
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    backup_reciente = False
+    try:
+        last = c.execute(
+            "SELECT MAX(timestamp) FROM backup_log"
+        ).fetchone()[0]
+        if last:
+            try:
+                last_dt = _dt.fromisoformat(last.replace('Z', ''))
+                if (_dt.utcnow() - last_dt) < _td(hours=24):
+                    backup_reciente = True
+            except Exception:
+                pass
+    except sqlite3.OperationalError:
+        pass
+
+    if not backup_reciente:
+        # Intentar crear backup automatico antes de proceder
+        try:
+            from backup import do_backup
+            do_backup(triggered_by='reset_inventario_pre')
+        except Exception as _e:
+            return jsonify({
+                'error': 'Sin backup reciente y no pude crear uno automatico',
+                'detail': str(_e),
+                'recomendacion': 'Hacer click en /admin → tab Backups → "Backup ahora" antes de re-intentar.',
+            }), 500
+
+    # Capturar movimientos a preservar
+    entradas_oc, salidas_prod = _identify_movimientos_a_preservar(c)
+
+    movs_borrados = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+
+    # Audit pre-reset
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'RESET_INVENTARIO_PRE', 'movimientos', '_BULK_',
+                   _json.dumps({
+                       'movs_a_borrar': movs_borrados,
+                       'entradas_oc_preservar': len(entradas_oc),
+                       'salidas_prod_preservar': len(salidas_prod),
+                       'lotes_excel_verde_a_cargar': len(excel_verde),
+                       'excel_total_g': round(excel_total_g, 1),
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        pass
+
+    # ── ATOMIC: BORRAR + RECREAR ─────────────────────────────────────────
+    # sqlite3 abre transaccion implicita en DML; conn.commit/rollback la cierra.
+    try:
+        # 1. DELETE
+        c.execute("DELETE FROM movimientos")
+
+        # 2. Cargar 305 Entradas iniciales del Excel verde
+        DIA_CERO = '2026-04-15T00:00:00'
+        OBS_INICIAL = 'Carga inicial Excel dia cero v8_1 — reset 2026-04-27'
+        OPERADOR_RESET = 'reset_2026_04_27'
+        for (cod, lote), info in excel_verde.items():
+            if info['cantidad_g'] <= 0:
+                continue
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha,
+                          observaciones, lote, fecha_vencimiento, estanteria,
+                          posicion, proveedor, estado_lote, operador)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (cod, info['nombre_comercial'] or info['inci'] or cod,
+                       float(info['cantidad_g']), 'Entrada', DIA_CERO,
+                       OBS_INICIAL, lote, info['fecha_vencimiento'] or None,
+                       info['estanteria'] or '', info['posicion'] or '',
+                       info['proveedor'] or '', 'VIGENTE', OPERADOR_RESET))
+        n_excel_inserted = len(excel_verde)
+
+        # 3. Re-insertar Entradas con OC legitimas
+        for r in entradas_oc:
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha,
+                          observaciones, lote, fecha_vencimiento, estanteria,
+                          posicion, proveedor, estado_lote, operador,
+                          numero_oc, numero_factura, precio_kg)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (r['material_id'], r['material_nombre'], r['cantidad'],
+                       r['tipo'], r['fecha'], r['observaciones'], r['lote'],
+                       r['fecha_vencimiento'], r['estanteria'], r['posicion'],
+                       r['proveedor'], r['estado_lote'], r['operador'],
+                       r['numero_oc'], r['numero_factura'], r['precio_kg']))
+
+        # 4. Re-insertar Salidas de produccion
+        for r in salidas_prod:
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha,
+                          observaciones, lote, fecha_vencimiento, estanteria,
+                          posicion, proveedor, estado_lote, operador,
+                          numero_oc, numero_factura, precio_kg)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (r['material_id'], r['material_nombre'], r['cantidad'],
+                       r['tipo'], r['fecha'], r['observaciones'], r['lote'],
+                       r['fecha_vencimiento'], r['estanteria'], r['posicion'],
+                       r['proveedor'], r['estado_lote'], r['operador'],
+                       r['numero_oc'], r['numero_factura'], r['precio_kg']))
+
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({
+            'ok': False,
+            'error': f'Reset abortado por error: {_e}',
+            'detail': 'Transaccion revertida. La BD esta como antes. '
+                      'Restaurar backup si hay duda.',
+        }), 500
+
+    # Validacion post: contar lo que quedo
+    movs_post = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+    stock_post_g = float(c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos"
+    ).fetchone()[0] or 0)
+
+    # Audit post-reset
+    try:
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'RESET_INVENTARIO_POST', 'movimientos', '_BULK_',
+                   _json.dumps({
+                       'movs_borrados': movs_borrados,
+                       'lotes_excel_cargados': n_excel_inserted,
+                       'entradas_oc_re_insertadas': len(entradas_oc),
+                       'salidas_prod_re_insertadas': len(salidas_prod),
+                       'movs_post_total': movs_post,
+                       'stock_post_g': round(stock_post_g, 1),
+                       'excel_total_g_origen': round(excel_total_g, 1),
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        pass
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Reset aplicado. Borrados {movs_borrados} movimientos, '
+                    f'cargadas {n_excel_inserted} Entradas iniciales del Excel '
+                    f'verde, preservadas {len(entradas_oc)} Entradas con OC + '
+                    f'{len(salidas_prod)} Salidas de produccion.'),
+        'resumen': {
+            'movs_borrados': movs_borrados,
+            'lotes_excel_cargados': n_excel_inserted,
+            'entradas_oc_preservadas': len(entradas_oc),
+            'salidas_prod_preservadas': len(salidas_prod),
+            'movs_post_total': movs_post,
+            'stock_post_g': round(stock_post_g, 1),
+        },
     })
 
 
@@ -2326,6 +2885,20 @@ tr:hover td{background:#263348;}
       <button class="btn" onclick="auditarInvVsExcel()">&#x1F4CA; Generar reporte</button>
       <button class="btn btn-outline" onclick="diagnosticoEntradas()" title="Antes de borrar nada, ver QUIEN cargo QUE — detecta doble carga vs recepciones manuales legitimas">&#x1F50E; Diagn&oacute;stico de entradas</button>
     </div>
+
+    <div style="margin-top:24px;padding:16px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.4);border-radius:10px;">
+      <h3 style="color:#fca5a5;margin:0 0 8px 0;">&#x26A0; Reset + Replay del inventario</h3>
+      <div style="font-size:12px;color:#cbd5e1;margin-bottom:12px;">
+        <strong style="color:#fca5a5;">DESTRUCTIVO.</strong> Borra todos los movimientos y los recarga desde el Excel verde (estado d&iacute;a cero) + preserva las recepciones formales con OC + re-aplica las salidas de las producciones.
+        <br>Sigue el orden: <strong>1)</strong> Descarga snapshot &rarr; <strong>2)</strong> Preview &rarr; <strong>3)</strong> Aplicar.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="descargarSnapshotPreReset()" title="Descarga JSON con TODOS los movimientos, producciones, OCs, comprobantes — para poder revertir si algo sale mal">&#x1F4BE; 1. Descargar snapshot pre-reset</button>
+        <button class="btn btn-outline" onclick="previewReset()" title="Muestra que va a pasar SIN escribir nada">&#x1F441; 2. Preview reset</button>
+        <button class="btn" onclick="aplicarReset()" style="background:#dc2626;color:#fff;" title="Ejecuta el reset. Pide token textual de confirmacion.">&#x1F4A5; 3. APLICAR reset</button>
+      </div>
+    </div>
+
     <div id="audit-inv-result" style="margin-top:18px;"></div>
   </div>
 </div>
@@ -2465,6 +3038,131 @@ async function auditarInvVsExcel() {
       h += '<div style="margin-top:14px;color:#94a3b8;font-size:11px;">ℹ Tablas truncadas a 300 items. Hay más — contacta para ver el JSON completo o exportar.</div>';
     }
 
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function descargarSnapshotPreReset() {
+  const out = document.getElementById('audit-inv-result');
+  out.innerHTML = '<div style="color:#94a3b8;">Generando snapshot... esto descarga un JSON grande.</div>';
+  try {
+    const r = await fetch('/api/admin/inventario-snapshot-pre-reset');
+    if (!r.ok) {
+      const d = await r.json();
+      out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>';
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    a.download = 'snapshot_pre_reset_' + ts + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    out.innerHTML = '<div style="color:#34d399;font-weight:700;">✓ Snapshot descargado. Guárdalo fuera de Render antes del reset.</div>';
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function previewReset() {
+  const fileEl = document.getElementById('audit-inv-file');
+  const out = document.getElementById('audit-inv-result');
+  if (!fileEl.files || !fileEl.files[0]) {
+    out.innerHTML = '<div style="color:#fca5a5;">Selecciona el .xlsx primero.</div>';
+    return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;">Calculando preview...</div>';
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  try {
+    const r = await fetch('/api/admin/inventario-reset-preview', {method:'POST', body:fd});
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    const p = d.plan;
+    let h = '<h3 style="color:#a5b4fc;margin-top:0;">&#x1F441; Preview del Reset (sin escribir)</h3>';
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi" style="background:rgba(239,68,68,.12);"><div class="kpi-l" style="color:#fca5a5;">Movs a borrar</div><div class="kpi-v">' + p.movimientos_a_borrar + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(16,185,129,.12);"><div class="kpi-l" style="color:#34d399;">Entradas iniciales (Excel)</div><div class="kpi-v">' + p.entradas_iniciales_a_crear.count + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Total g a cargar</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(p.entradas_iniciales_a_crear.total_g) + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Entradas OC preservadas</div><div class="kpi-v">' + p.entradas_oc_a_preservar.count + ' (' + _fmtG(p.entradas_oc_a_preservar.total_g) + ')</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Salidas Producción preservadas</div><div class="kpi-v">' + p.salidas_produccion_a_preservar.count + ' (' + _fmtG(p.salidas_produccion_a_preservar.total_g) + ')</div></div>';
+    h += '</div>';
+
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi"><div class="kpi-l">Stock actual</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(d.resumen_pre_post.stock_actual_g) + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(16,185,129,.12);"><div class="kpi-l" style="color:#34d399;">Stock POST-reset</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(d.resumen_pre_post.stock_post_reset_g_estimado) + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Δ esperado</div><div class="kpi-v" style="font-size:14px;color:' + (d.resumen_pre_post.delta_g < 0 ? '#fca5a5' : '#34d399') + ';">' + _fmtG(d.resumen_pre_post.delta_g) + '</div></div>';
+    h += '</div>';
+
+    if (d.alertas.count_salidas_a_lotes_no_verde > 0) {
+      h += '<div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:12px;margin-bottom:14px;">';
+      h += '<div style="color:#fbbf24;font-weight:700;margin-bottom:4px;">⚠ ' + d.alertas.count_salidas_a_lotes_no_verde + ' salidas de producción consumieron lotes que NO están en Excel verde</div>';
+      h += '<div style="color:#cbd5e1;font-size:11px;">' + _esc(d.alertas.nota) + '</div>';
+      h += '<div style="color:#94a3b8;font-size:11px;margin-top:6px;">Sample (primeros 30):</div>';
+      h += '<ul style="margin:4px 0 0 18px;color:#cbd5e1;font-size:11px;">';
+      d.alertas.salidas_a_lotes_no_verde.forEach(s => {
+        h += '<li>' + _esc(s.fecha) + ' · ' + _esc(s.codigo_mp) + ' · ' + _esc(s.lote) + ' · ' + _fmtG(s.cantidad_g) + ' (' + _esc(s.observaciones) + ')</li>';
+      });
+      h += '</ul></div>';
+    } else {
+      h += '<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);border-radius:8px;padding:10px;margin-bottom:14px;color:#34d399;">✓ Todas las salidas de producción consumieron lotes presentes en Excel verde — replay limpio.</div>';
+    }
+
+    h += '<div style="background:rgba(99,102,241,.10);border:1px solid rgba(99,102,241,.3);border-radius:8px;padding:10px;font-size:12px;color:#cbd5e1;">';
+    h += 'Si todo se ve OK, click en <strong>3. APLICAR reset</strong>. Vas a tener que pegar el token textual:<br>';
+    h += '<code style="background:#0f172a;padding:4px 8px;border-radius:4px;color:#a5b4fc;">BORRAR_INVENTARIO_Y_CARGAR_EXCEL_2026_04_27</code>';
+    h += '</div>';
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function aplicarReset() {
+  const fileEl = document.getElementById('audit-inv-file');
+  const out = document.getElementById('audit-inv-result');
+  if (!fileEl.files || !fileEl.files[0]) {
+    out.innerHTML = '<div style="color:#fca5a5;">Selecciona el .xlsx primero.</div>';
+    return;
+  }
+  const TOKEN = 'BORRAR_INVENTARIO_Y_CARGAR_EXCEL_2026_04_27';
+  const ingresado = prompt('PEGAR EL TOKEN TEXTUAL EXACTO PARA CONFIRMAR:\n\n' + TOKEN + '\n\n(Cualquier otro texto cancela.)');
+  if (ingresado !== TOKEN) {
+    out.innerHTML = '<div style="color:#fbbf24;">Reset cancelado — token no coincide.</div>';
+    return;
+  }
+  if (!confirm('Última confirmación. Esto borra TODOS los movimientos y los recrea. Procedo?')) {
+    out.innerHTML = '<div style="color:#fbbf24;">Reset cancelado.</div>';
+    return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;">Aplicando reset... no cierres la pestaña...</div>';
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('confirmacion', TOKEN);
+  try {
+    const r = await fetch('/api/admin/inventario-reset-aplicar', {method:'POST', body:fd});
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + (d.detail?'<br><small>' + _esc(d.detail) + '</small>':'') + '</div>'; return; }
+    let h = '<div style="background:rgba(16,185,129,.15);border:1px solid #34d399;border-radius:10px;padding:14px;">';
+    h += '<h3 style="color:#34d399;margin:0 0 10px 0;">✓ Reset aplicado con éxito</h3>';
+    h += '<div style="color:#cbd5e1;font-size:13px;margin-bottom:10px;">' + _esc(d.message) + '</div>';
+    h += '<div class="kpi-row">';
+    h += '<div class="kpi"><div class="kpi-l">Movs borrados</div><div class="kpi-v">' + d.resumen.movs_borrados + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Lotes Excel cargados</div><div class="kpi-v">' + d.resumen.lotes_excel_cargados + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Entradas OC preservadas</div><div class="kpi-v">' + d.resumen.entradas_oc_preservadas + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Salidas prod preservadas</div><div class="kpi-v">' + d.resumen.salidas_prod_preservadas + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Movs total post</div><div class="kpi-v">' + d.resumen.movs_post_total + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Stock post</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(d.resumen.stock_post_g) + '</div></div>';
+    h += '</div>';
+    h += '<div style="margin-top:10px;color:#94a3b8;font-size:11px;">Audit log entries creados: RESET_INVENTARIO_PRE + RESET_INVENTARIO_POST. Si necesitas restaurar, usa el snapshot que descargaste.</div>';
+    h += '</div>';
     out.innerHTML = h;
   } catch(e) {
     out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
