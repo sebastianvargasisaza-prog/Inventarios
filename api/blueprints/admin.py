@@ -535,6 +535,105 @@ def admin_test_email():
 
 # ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
 
+@bp.route("/api/admin/stock-mp-diagnostico", methods=["GET"])
+def admin_stock_mp_diagnostico():
+    """Diagnóstico de por qué un MP aparece con stock 0.
+
+    Query: ?codigos=COD1,COD2,COD3  o  ?nombres=GLICERINA,ALOE
+    Devuelve para cada uno:
+      - en_maestro_mps: si existe en el catálogo
+      - movimientos_count: cuántos movimientos hay
+      - movimientos_match_por: 'codigo' / 'nombre' / 'no_match'
+      - stock_total_g: suma calculada
+      - ultimo_movimiento: fecha
+      - sugerencia: qué hacer
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    codigos = (request.args.get('codigos') or '').strip()
+    nombres = (request.args.get('nombres') or '').strip()
+    if not codigos and not nombres:
+        return jsonify({'error': 'Pasa ?codigos= o ?nombres= separados por coma'}), 400
+
+    cods = [x.strip() for x in codigos.split(',') if x.strip()] if codigos else []
+    noms = [x.strip() for x in nombres.split(',') if x.strip()] if nombres else []
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    resultados = []
+    for cod in cods:
+        info = {'codigo_mp': cod, 'busqueda_por': 'codigo'}
+        # ¿existe en maestro?
+        r = c.execute(
+            "SELECT codigo_mp, nombre_comercial, proveedor FROM maestro_mps WHERE codigo_mp=?",
+            (cod,)
+        ).fetchone()
+        if r:
+            info['en_maestro_mps'] = True
+            info['nombre_comercial'] = r['nombre_comercial']
+            info['proveedor_catalogo'] = r['proveedor']
+        else:
+            info['en_maestro_mps'] = False
+        # ¿movimientos por código?
+        r2 = c.execute("""SELECT COUNT(*) as n,
+                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock,
+                          MAX(fecha) as ultimo
+                          FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
+        info['movimientos_count'] = r2['n'] if r2 else 0
+        info['stock_total_g'] = float(r2['stock'] or 0) if r2 else 0
+        info['ultimo_movimiento'] = r2['ultimo'] if r2 else None
+        if info['movimientos_count'] > 0:
+            info['movimientos_match_por'] = 'codigo'
+        else:
+            # Fallback por nombre del catálogo si lo tenemos
+            nm = info.get('nombre_comercial')
+            if nm:
+                r3 = c.execute("""SELECT COUNT(*) as n,
+                                  COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock
+                                  FROM movimientos WHERE UPPER(TRIM(material_nombre))=UPPER(TRIM(?))""", (nm,)).fetchone()
+                if r3 and r3['n'] > 0:
+                    info['movimientos_count'] = r3['n']
+                    info['stock_total_g'] = float(r3['stock'] or 0)
+                    info['movimientos_match_por'] = 'nombre'
+                else:
+                    info['movimientos_match_por'] = 'no_match'
+            else:
+                info['movimientos_match_por'] = 'no_match'
+        # Sugerencia
+        if not info['en_maestro_mps']:
+            info['sugerencia'] = 'Código NO está en catálogo maestro_mps. Crear primero el item en /planta → Catálogo MPs.'
+        elif info['movimientos_count'] == 0:
+            info['sugerencia'] = 'Ítem existe en catálogo pero NUNCA se registró entrada de stock. Hacer carga inicial en /planta → Movimientos (Entrada inicial).'
+        elif info['stock_total_g'] <= 0:
+            info['sugerencia'] = f'Tuvo {info["movimientos_count"]} movimientos pero el balance es 0 o negativo (más salidas que entradas). Revisar si falta registrar una compra reciente.'
+        else:
+            info['sugerencia'] = f'Stock real: {info["stock_total_g"]}g. Si el modal muestra 0, refresca con Ctrl+Shift+R.'
+        resultados.append(info)
+
+    for nom in noms:
+        info = {'nombre': nom, 'busqueda_por': 'nombre'}
+        r = c.execute("""SELECT codigo_mp, nombre_comercial, proveedor FROM maestro_mps
+                         WHERE UPPER(nombre_comercial) LIKE UPPER(?) LIMIT 5""",
+                      (f'%{nom}%',)).fetchall()
+        info['matches_catalogo'] = [dict(x) for x in r]
+        r2 = c.execute("""SELECT COUNT(*) as n,
+                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock,
+                          MAX(fecha) as ultimo
+                          FROM movimientos
+                          WHERE UPPER(material_nombre) LIKE UPPER(?)""", (f'%{nom}%',)).fetchone()
+        info['movimientos_count'] = r2['n'] if r2 else 0
+        info['stock_total_g'] = float(r2['stock'] or 0) if r2 else 0
+        info['ultimo_movimiento'] = r2['ultimo'] if r2 else None
+        resultados.append(info)
+
+    conn.close()
+    return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
 @bp.route("/api/admin/mps-proveedores-status", methods=["GET"])
 def admin_mps_proveedores_status():
     """Diagnóstico: qué MPs tienen proveedor asignado y cuáles no.
