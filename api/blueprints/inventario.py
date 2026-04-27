@@ -2667,37 +2667,106 @@ def envasado_list():
 
         if not lote or not producto:
             return jsonify({'error': 'lote y producto son requeridos'}), 400
+        if unidades <= 0:
+            return jsonify({'error': 'unidades debe ser > 0'}), 400
 
-        # Insert envasado record
-        c.execute("""INSERT INTO envasado
-            (produccion_id, lote, producto, presentacion, batch_g, unidades,
-             envase_codigo, tapa_codigo, operador, fecha, estado, observaciones)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'Completado',?)""",
-            (produccion_id, lote, producto, presentacion, batch_g, unidades,
-             envase_codigo, tapa_codigo, operador, fecha, obs))
-        nuevo_id = c.lastrowid
-
-        # Descontar MEE: envase + tapa
-        alertas_mee = []
-        for codigo_mee, cant in [(envase_codigo, unidades), (tapa_codigo, unidades)]:
-            if not codigo_mee or cant <= 0:
-                continue
-            c.execute("SELECT stock_actual, stock_minimo, descripcion FROM maestro_mee WHERE codigo=?", (codigo_mee,))
-            row = c.fetchone()
+        # ─── PRE-CHECK MEE ──────────────────────────────────────────────────
+        # Validar que los códigos existan en maestro_mee (anti-typo) y que
+        # haya stock suficiente. Si falta cualquiera → 422 sin escribir nada.
+        # Antes: si el código no existía, se hacía continue silencioso y el
+        # INSERT en envasado quedaba sin descuento, dejando data inconsistente.
+        plan_mee = []  # [(codigo, cant, descripcion, stock_actual, stock_minimo)]
+        errores_mee = []
+        for tipo_mee, codigo_mee, cant in [
+            ('envase', envase_codigo, unidades),
+            ('tapa', tapa_codigo, unidades),
+        ]:
+            if not codigo_mee:
+                continue  # opcional: producto sin tapa, etc.
+            row = c.execute(
+                "SELECT stock_actual, stock_minimo, descripcion, estado "
+                "FROM maestro_mee WHERE codigo=?",
+                (codigo_mee,)
+            ).fetchone()
             if not row:
+                errores_mee.append({
+                    'tipo': tipo_mee,
+                    'codigo': codigo_mee,
+                    'error': 'código no existe en maestro_mee',
+                })
                 continue
-            nuevo_stock = max(0, row[0] - cant)
-            c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo_stock, codigo_mee))
-            c.execute("""INSERT INTO movimientos_mee
-                (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha)
-                VALUES (?,?,?,?,?,?,?)""",
-                (codigo_mee, 'Salida', cant, lote,
-                 'Envasado ' + lote + ' - ' + producto + ' ' + presentacion,
-                 operador, fecha))
-            if nuevo_stock < row[1]:
-                deficit = row[1] - nuevo_stock
-                alertas_mee.append({'codigo': codigo_mee, 'nombre': row[2],
-                    'stock': nuevo_stock, 'minimo': row[1], 'deficit': deficit})
+            stock_actual, stock_minimo, descripcion, estado = row[0], row[1], row[2], row[3]
+            if estado != 'Activo':
+                errores_mee.append({
+                    'tipo': tipo_mee,
+                    'codigo': codigo_mee,
+                    'error': f'item está {estado}, no Activo',
+                })
+                continue
+            if (stock_actual or 0) < cant:
+                errores_mee.append({
+                    'tipo': tipo_mee,
+                    'codigo': codigo_mee,
+                    'descripcion': descripcion,
+                    'stock_disponible': stock_actual,
+                    'requerido': cant,
+                    'falta': cant - (stock_actual or 0),
+                    'error': 'stock insuficiente',
+                })
+                continue
+            plan_mee.append((codigo_mee, cant, descripcion or '',
+                             stock_actual, stock_minimo))
+
+        if errores_mee:
+            return jsonify({
+                'error': 'No se puede registrar el envasado',
+                'detalle': 'Códigos MEE inválidos o sin stock suficiente',
+                'errores': errores_mee,
+                'mensaje': (
+                    'Verifica los códigos en el dropdown y que haya stock. '
+                    'Si necesitás más MEE, crea OC en /compras.'
+                ),
+            }), 422
+
+        # ─── ESCRITURA TRANSACCIONAL ─────────────────────────────────────────
+        try:
+            c.execute("""INSERT INTO envasado
+                (produccion_id, lote, producto, presentacion, batch_g, unidades,
+                 envase_codigo, tapa_codigo, operador, fecha, estado, observaciones)
+                VALUES (?,?,?,?,?,?,?,?,?,?,'Completado',?)""",
+                (produccion_id, lote, producto, presentacion, batch_g, unidades,
+                 envase_codigo, tapa_codigo, operador, fecha, obs))
+            nuevo_id = c.lastrowid
+
+            alertas_mee = []
+            for codigo_mee, cant, descripcion, stock_actual, stock_minimo in plan_mee:
+                nuevo_stock = max(0, (stock_actual or 0) - cant)
+                c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
+                          (nuevo_stock, codigo_mee))
+                c.execute("""INSERT INTO movimientos_mee
+                    (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (codigo_mee, 'Salida', cant, lote,
+                     'Envasado ' + lote + ' - ' + producto + ' ' + presentacion,
+                     operador, fecha))
+                if (stock_minimo or 0) > 0 and nuevo_stock < stock_minimo:
+                    deficit = stock_minimo - nuevo_stock
+                    alertas_mee.append({
+                        'codigo': codigo_mee, 'nombre': descripcion,
+                        'stock': nuevo_stock, 'minimo': stock_minimo,
+                        'deficit': deficit,
+                    })
+        except Exception as _e:
+            conn.rollback()
+            __import__('logging').getLogger('inventario').error(
+                "Envasado FALLÓ tras pre-check OK (rollback): lote=%s err=%s",
+                lote, _e, exc_info=True
+            )
+            return jsonify({
+                'error': 'Falla transaccional al registrar envasado',
+                'detalle': str(_e),
+                'rollback': 'aplicado — no se descontó ningún MEE',
+            }), 500
 
         # Si hay MEE bajo minimo, crear solicitud de compra automatica en Compras
         if alertas_mee:

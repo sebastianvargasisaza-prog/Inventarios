@@ -16,7 +16,7 @@ Dependencias de env:
 """
 
 from flask import Blueprint, jsonify, request, session
-import os, json, logging, urllib.request, urllib.error, urllib.parse
+import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
 
