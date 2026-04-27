@@ -1593,6 +1593,44 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """CREATE INDEX IF NOT EXISTS idx_shopify_discount_codes ON animus_shopify_orders(discount_codes)""",
         """CREATE INDEX IF NOT EXISTS idx_influencer_discount_code ON marketing_influencers(discount_code)""",
     ]),
+    (33, "kanban contenido + feedback agentes + push alerts", [
+        # Kanban estados: Brief → Produccion → Pendiente → Publicado → Performance
+        # `estado` ya existe en marketing_contenido; los nuevos campos enriquecen.
+        """ALTER TABLE marketing_contenido ADD COLUMN sku_objetivo TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_contenido ADD COLUMN mensaje_principal TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_contenido ADD COLUMN fecha_programada TEXT DEFAULT ''""",
+        """CREATE INDEX IF NOT EXISTS idx_contenido_estado ON marketing_contenido(estado)""",
+        """CREATE INDEX IF NOT EXISTS idx_contenido_fecha_prog ON marketing_contenido(fecha_programada)""",
+        # Feedback loop sobre agentes IA: el usuario marca cada ejecución como
+        # útil / no útil / ejecutado. Permite medir tasa de acierto y mejorar
+        # los prompts con el tiempo.
+        """CREATE TABLE IF NOT EXISTS marketing_agentes_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            log_id        INTEGER NOT NULL,
+            agente        TEXT NOT NULL,
+            feedback      TEXT NOT NULL CHECK(feedback IN ('util','no_util','ejecutado')),
+            comentario    TEXT,
+            usuario       TEXT,
+            fecha         TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY(log_id) REFERENCES marketing_agentes_log(id)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_feedback_log ON marketing_agentes_feedback(log_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_feedback_agente ON marketing_agentes_feedback(agente)""",
+        # Push alerts: log de alertas disparadas para no enviar duplicadas.
+        # Cada combinación (tipo_alerta + clave_unica) se envía solo 1 vez por día.
+        """CREATE TABLE IF NOT EXISTS marketing_push_alerts_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo          TEXT NOT NULL,
+            clave_unica   TEXT NOT NULL,
+            destinatario  TEXT NOT NULL,
+            asunto        TEXT,
+            cuerpo_resumen TEXT,
+            severidad     TEXT DEFAULT 'medio',
+            fecha         TEXT DEFAULT (datetime('now')),
+            UNIQUE(tipo, clave_unica, destinatario, fecha)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_push_alerts_fecha ON marketing_push_alerts_log(fecha DESC)""",
+    ]),
 ]
 
 

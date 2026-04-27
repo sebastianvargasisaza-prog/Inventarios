@@ -118,6 +118,83 @@ def test_atribucion_influencers_endpoint(app, db_clean):
     assert m["unidades"] == 3
 
 
+def test_kanban_contenido_endpoint(app, db_clean):
+    """Endpoint kanban devuelve 5 columnas con la estructura correcta
+    aunque no haya contenido cargado."""
+    c = _login(app)
+    r = c.get("/api/marketing/contenido/kanban")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j.get("ok") is True
+    assert "columnas" in j
+    estados = [col["estado"] for col in j["columnas"]]
+    assert estados == ["Brief", "Produccion", "Pendiente", "Publicado", "Performance"]
+
+
+def test_kanban_legacy_estado_se_mapea(app, db_clean):
+    """Contenido viejo con estado='Borrador' debe aparecer en columna 'Brief'."""
+    import os
+    import sqlite3
+    db_path = os.environ["DB_PATH"]
+    conn = sqlite3.connect(db_path)
+    conn.execute("""INSERT INTO marketing_contenido
+        (tipo, estado, caption) VALUES ('Post', 'Borrador', 'Test legacy')""")
+    conn.execute("""INSERT INTO marketing_contenido
+        (tipo, estado, caption) VALUES ('Reel', 'Programado', 'Test programado')""")
+    conn.commit()
+    conn.close()
+
+    c = _login(app)
+    r = c.get("/api/marketing/contenido/kanban")
+    j = r.get_json()
+    cols = {col["estado"]: col for col in j["columnas"]}
+    # 'Borrador' legacy → Brief
+    assert any("Test legacy" in (it.get("caption") or "") for it in cols["Brief"]["items"])
+    # 'Programado' legacy → Pendiente
+    assert any("Test programado" in (it.get("caption") or "") for it in cols["Pendiente"]["items"])
+
+
+def test_feedback_loop_agente(app, db_clean):
+    """Feedback se guarda y stats reflejan tasa de acierto."""
+    import os
+    import sqlite3
+    db_path = os.environ["DB_PATH"]
+    conn = sqlite3.connect(db_path)
+    # Crear 2 ejecuciones de log
+    conn.execute("""INSERT INTO marketing_agentes_log
+        (agente, accion, resultado, ejecutado_por)
+        VALUES ('estrategia','Ejecutado','{}','test')""")
+    log1 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute("""INSERT INTO marketing_agentes_log
+        (agente, accion, resultado, ejecutado_por)
+        VALUES ('estrategia','Ejecutado','{}','test')""")
+    log2 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    c = _login(app)
+    # Marcar log1 como útil, log2 como ejecutado
+    r1 = c.post("/api/marketing/agentes/feedback", headers=csrf_headers(),
+                json={"log_id": log1, "feedback": "util"})
+    assert r1.status_code == 200, r1.get_data(as_text=True)
+    r2 = c.post("/api/marketing/agentes/feedback", headers=csrf_headers(),
+                json={"log_id": log2, "feedback": "ejecutado"})
+    assert r2.status_code == 200
+
+    # Stats: 2 feedbacks, ambos contan como acierto → 100%
+    r = c.get("/api/marketing/agentes/feedback/stats")
+    j = r.get_json()
+    assert j["ok"] is True
+    stats = j["agentes"].get("estrategia") or j["agentes"].get("Estrategia") or {}
+    assert stats.get("total") == 2
+    assert stats.get("tasa_acierto_pct") == 100
+
+    # Feedback inválido → 400
+    r_bad = c.post("/api/marketing/agentes/feedback", headers=csrf_headers(),
+                    json={"log_id": log1, "feedback": "lol"})
+    assert r_bad.status_code == 400
+
+
 def test_agente_estrategia_runs(app, db_clean):
     """El master agent estrategia no debe 500 con DB vacía.
 

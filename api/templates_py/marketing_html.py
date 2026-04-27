@@ -424,32 +424,70 @@ function showToast(msg, type) {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: CONTENIDO -->
+<!-- TAB: CONTENIDO (Kanban Brief→Producción→Pendiente→Publicado→Performance) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
+<style>
+.kanban-wrap{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:10px;}
+.kanban-col{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:10px;min-height:300px;display:flex;flex-direction:column;}
+.kanban-col-hdr{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;border-bottom:1px solid #1e293b;margin-bottom:8px;}
+.kanban-col-hdr .name{font-weight:700;font-size:13px;color:#f1f5f9;}
+.kanban-col-hdr .count{background:#1e293b;color:#94a3b8;padding:1px 9px;border-radius:10px;font-size:11px;font-weight:700;}
+.kanban-col[data-estado="Brief"]       .name{color:#60a5fa;}
+.kanban-col[data-estado="Produccion"]  .name{color:#fbbf24;}
+.kanban-col[data-estado="Pendiente"]   .name{color:#a78bfa;}
+.kanban-col[data-estado="Publicado"]   .name{color:#34d399;}
+.kanban-col[data-estado="Performance"] .name{color:#f472b6;}
+.kanban-card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s;font-size:12px;}
+.kanban-card:hover{border-color:#7c3aed;transform:translateY(-1px);}
+.kanban-card .sku{font-family:monospace;color:#34d399;font-size:11px;font-weight:700;}
+.kanban-card .titulo{font-weight:700;color:#e2e8f0;margin:4px 0;line-height:1.3;}
+.kanban-card .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:#64748b;margin-top:6px;}
+.kanban-card .meta span{background:#0f172a;padding:1px 7px;border-radius:6px;}
+.kanban-card .perf{display:flex;gap:8px;font-size:10px;margin-top:6px;color:#94a3b8;}
+.kanban-card .perf b{color:#f1f5f9;}
+.kanban-empty{color:#475569;font-size:11px;text-align:center;padding:20px 0;font-style:italic;}
+.kanban-add-btn{background:#0f172a;color:#64748b;border:1px dashed #334155;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;width:100%;margin-top:auto;transition:.15s;}
+.kanban-add-btn:hover{color:#a78bfa;border-color:#7c3aed;}
+</style>
+
 <div id="tab-contenido" class="tab-panel">
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F4C5; Calendario de Contenido</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px;">Pipeline visual del contenido — desde el brief hasta el performance medido.</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <select id="cont-filtro-estado" onchange="loadContenido()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
-        <option value="">Todos</option>
-        <option value="Borrador">Borrador</option>
-        <option value="Programado">Programado</option>
-        <option value="Publicado">Publicado</option>
-      </select>
-      <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nuevo</button>
+      <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
+      <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nueva pieza</button>
     </div>
   </div>
   <div id="cont-alert" style="display:none;"></div>
 
-  <!-- Vista tabla -->
-  <div class="card">
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>Tipo</th><th>Plataforma</th><th>Campaña</th><th>Influencer</th><th>Fecha</th><th>Estado</th><th>Likes</th><th>Alcance</th><th>Conversiones</th><th>Acciones</th></tr></thead>
-        <tbody id="cont-body"><tr class="empty-row"><td colspan="10"><span class="spin"></span></td></tr></tbody>
-      </table>
+  <div class="kanban-wrap" id="kanban-wrap">
+    <div class="kanban-col" data-estado="Brief">
+      <div class="kanban-col-hdr"><span class="name">&#x1F4DD; Brief</span><span class="count" id="kb-c-Brief">0</span></div>
+      <div class="kanban-items" id="kb-Brief"></div>
+      <button class="kanban-add-btn" onclick="openContenidoModal('Brief')">+ Agregar</button>
+    </div>
+    <div class="kanban-col" data-estado="Produccion">
+      <div class="kanban-col-hdr"><span class="name">&#x1F3AC; Producción</span><span class="count" id="kb-c-Produccion">0</span></div>
+      <div class="kanban-items" id="kb-Produccion"></div>
+      <button class="kanban-add-btn" onclick="openContenidoModal('Produccion')">+ Agregar</button>
+    </div>
+    <div class="kanban-col" data-estado="Pendiente">
+      <div class="kanban-col-hdr"><span class="name">&#x23F0; Pendiente</span><span class="count" id="kb-c-Pendiente">0</span></div>
+      <div class="kanban-items" id="kb-Pendiente"></div>
+      <button class="kanban-add-btn" onclick="openContenidoModal('Pendiente')">+ Agregar</button>
+    </div>
+    <div class="kanban-col" data-estado="Publicado">
+      <div class="kanban-col-hdr"><span class="name">&#x2705; Publicado</span><span class="count" id="kb-c-Publicado">0</span></div>
+      <div class="kanban-items" id="kb-Publicado"></div>
+      <button class="kanban-add-btn" onclick="openContenidoModal('Publicado')">+ Agregar</button>
+    </div>
+    <div class="kanban-col" data-estado="Performance">
+      <div class="kanban-col-hdr"><span class="name">&#x1F4CA; Performance</span><span class="count" id="kb-c-Performance">0</span></div>
+      <div class="kanban-items" id="kb-Performance"></div>
+      <button class="kanban-add-btn" onclick="openContenidoModal('Performance')">+ Agregar</button>
     </div>
   </div>
 </div>
@@ -922,13 +960,26 @@ function showToast(msg, type) {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Fecha Publicación</label><input type="date" id="cont-fecha"></div>
-      <div class="form-group"><label>Estado</label>
-        <select id="cont-estado"><option>Borrador</option><option>Programado</option><option>Publicado</option><option>Archivado</option></select>
+      <div class="form-group"><label>Fecha programada</label><input type="date" id="cont-fecha-prog"></div>
+      <div class="form-group"><label>Fecha publicación real</label><input type="date" id="cont-fecha"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Estado (Kanban)</label>
+        <select id="cont-estado">
+          <option value="Brief">📝 Brief</option>
+          <option value="Produccion">🎬 Producción</option>
+          <option value="Pendiente">⏰ Pendiente publicación</option>
+          <option value="Publicado">✅ Publicado</option>
+          <option value="Performance">📊 Performance</option>
+        </select>
       </div>
+      <div class="form-group"><label>SKU objetivo</label><input id="cont-sku" placeholder="Ej: LBHA-30" style="text-transform:uppercase;font-family:monospace;"></div>
     </div>
     <div class="form-row full">
-      <div class="form-group"><label>URL Publicación</label><input id="cont-url" placeholder="https://..."></div>
+      <div class="form-group"><label>Mensaje principal (claim)</label><input id="cont-mensaje" placeholder="Lo que el creador debe transmitir en una frase"></div>
+    </div>
+    <div class="form-row full">
+      <div class="form-group"><label>URL Publicación (cuando ya se publicó)</label><input id="cont-url" placeholder="https://instagram.com/p/..."></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Likes</label><input type="number" id="cont-likes" value="0"></div>
@@ -939,7 +990,7 @@ function showToast(msg, type) {
       <div class="form-group"><label>Conversiones</label><input type="number" id="cont-conversiones" value="0"></div>
     </div>
     <div class="form-row full">
-      <div class="form-group"><label>Caption / Descripción</label><textarea id="cont-caption"></textarea></div>
+      <div class="form-group"><label>Caption / Descripción completa</label><textarea id="cont-caption"></textarea></div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
       <button class="btn btn-outline" onclick="closeModal('modal-contenido')">Cancelar</button>
@@ -1111,7 +1162,7 @@ function loadTab(name) {
   else if(name==='influencers') loadInfluencers();
   else if(name==='pagos') loadPagosInfluencers();
   else if(name==='contenido') loadContenido();
-  else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
+  else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); loadFeedbackStats(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
 }
@@ -1861,60 +1912,137 @@ async function confirmarPagoInf() {
 // ──────────────────────────────────────────────────────────────────────────────
 // CONTENIDO
 // ──────────────────────────────────────────────────────────────────────────────
+// ─── Kanban de Contenido ───────────────────────────────────────────────
 async function loadContenido() {
-  const estado = document.getElementById('cont-filtro-estado').value;
-  const url = '/api/marketing/contenido'+(estado?'?estado='+estado:'');
-  const rows = await fetch(url).then(r=>r.json());
-  const body = document.getElementById('cont-body');
-  if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="10">Sin contenido registrado.</td></tr>'; return; }
-  body.innerHTML = rows.map(r=>`
-    <tr>
-      <td><span class="badge badge-gray">${r.tipo}</span></td>
-      <td>${r.plataforma}</td>
-      <td style="color:#818cf8;">${r.campana_nombre||'—'}</td>
-      <td>${r.influencer_nombre||'<span style="color:#64748b;">Interno</span>'}</td>
-      <td>${r.fecha_publicacion||'—'}</td>
-      <td>${badgeEstadoCont(r.estado)}</td>
-      <td>❤️ ${fmt(r.likes)}</td>
-      <td>👁 ${fmt(r.alcance)}</td>
-      <td>🎯 ${r.conversiones}</td>
-      <td>
-        <button class="btn btn-outline btn-sm" onclick="editContenido(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteContenido(${r.id})">🗑</button>
-      </td>
-    </tr>`).join('');
+  try {
+    const r = await fetch('/api/marketing/contenido/kanban');
+    const d = await r.json();
+    if (!d.ok) {
+      showAlert('cont-alert', 'Error: ' + (d.error||'desconocido'), 'error');
+      return;
+    }
+    const cols = d.columnas || [];
+    cols.forEach(col => {
+      const target = document.getElementById('kb-' + col.estado);
+      const counter = document.getElementById('kb-c-' + col.estado);
+      if (counter) counter.textContent = col.count;
+      if (!target) return;
+      if (!col.items.length) {
+        target.innerHTML = '<div class="kanban-empty">Sin contenido</div>';
+        return;
+      }
+      target.innerHTML = col.items.map(it => renderKanbanCard(it)).join('');
+    });
+  } catch (e) {
+    showAlert('cont-alert', 'Error de red: ' + e.message, 'error');
+  }
 }
 
-async function openContenidoModal() {
+function renderKanbanCard(it) {
+  const sku = it.sku_objetivo ? `<div class="sku">${esc(it.sku_objetivo)}</div>` : '';
+  const titulo = it.mensaje_principal || it.caption || '(sin mensaje)';
+  const tituloShort = titulo.length > 90 ? titulo.slice(0,90)+'…' : titulo;
+  const meta = [];
+  if (it.tipo) meta.push(`<span>${esc(it.tipo)}</span>`);
+  if (it.plataforma && it.plataforma !== 'Instagram') meta.push(`<span>${esc(it.plataforma)}</span>`);
+  if (it.influencer_nombre) {
+    const code = it.influencer_code ? ` · <code style="color:#34d399;">${esc(it.influencer_code)}</code>` : '';
+    meta.push(`<span>👤 ${esc(it.influencer_nombre)}${code}</span>`);
+  }
+  if (it.campana_nombre) meta.push(`<span>📢 ${esc(it.campana_nombre)}</span>`);
+  if (it.fecha_programada) meta.push(`<span>📅 ${esc(it.fecha_programada)}</span>`);
+  if (it.fecha_publicacion && it.estado === 'Publicado') meta.push(`<span>✅ ${esc(it.fecha_publicacion)}</span>`);
+
+  let perf = '';
+  if (it.estado === 'Performance' || it.estado === 'Publicado') {
+    const stats = [];
+    if (it.likes) stats.push(`❤️ <b>${fmt(it.likes)}</b>`);
+    if (it.comentarios) stats.push(`💬 <b>${fmt(it.comentarios)}</b>`);
+    if (it.alcance) stats.push(`👁 <b>${fmt(it.alcance)}</b>`);
+    if (stats.length) perf = `<div class="perf">${stats.join(' · ')}</div>`;
+  }
+
+  let urlBtn = '';
+  if (it.url_publicacion) {
+    urlBtn = `<a href="${esc(it.url_publicacion)}" target="_blank" style="color:#60a5fa;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
+  }
+
+  return `<div class="kanban-card" onclick="editContenido(${it.id})">
+    ${sku}
+    <div class="titulo">${esc(tituloShort)}</div>
+    <div class="meta">${meta.join('')}</div>
+    ${perf}
+    <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
+      ${urlBtn}
+      <span style="margin-left:auto;">${kanbanMoveButtons(it)}</span>
+    </div>
+  </div>`;
+}
+
+function kanbanMoveButtons(it) {
+  const seq = ['Brief','Produccion','Pendiente','Publicado','Performance'];
+  const idx = seq.indexOf(it.estado_kanban || it.estado);
+  let html = '';
+  if (idx > 0) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx-1]}')" title="← ${seq[idx-1]}" style="background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:13px;">←</button>`;
+  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:#a78bfa;cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
+  return html;
+}
+
+async function moveContenido(id, nuevoEstado) {
+  try {
+    const r = await fetch(`/api/marketing/contenido/${id}`, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({estado: nuevoEstado})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      loadContenido();
+    } else {
+      showAlert('cont-alert', 'Error: ' + (d.error||'no se pudo mover'), 'error');
+    }
+  } catch (e) {
+    showAlert('cont-alert', 'Error de red: ' + e.message, 'error');
+  }
+}
+
+async function openContenidoModal(estadoInicial) {
   document.getElementById('cont-edit-id').value='';
-  document.getElementById('modal-cont-title').textContent='Nueva Pieza de Contenido';
-  ['url','caption'].forEach(f=>document.getElementById('cont-'+f).value='');
+  document.getElementById('modal-cont-title').textContent='Nueva pieza de contenido';
+  ['url','caption','sku','mensaje'].forEach(f=>{const el=document.getElementById('cont-'+f);if(el)el.value='';});
   ['likes','comentarios','alcance','conversiones'].forEach(f=>document.getElementById('cont-'+f).value=0);
   document.getElementById('cont-fecha').value='';
-  document.getElementById('cont-tipo').value='Post';
+  const fp = document.getElementById('cont-fecha-prog'); if(fp) fp.value='';
+  document.getElementById('cont-tipo').value='Reel';
   document.getElementById('cont-plataforma').value='Instagram';
-  document.getElementById('cont-estado').value='Borrador';
+  document.getElementById('cont-estado').value = (typeof estadoInicial === 'string' ? estadoInicial : 'Brief');
   await loadCampanasForSelect('cont-campana-sel');
   await loadInfluencersForSelect('cont-influencer-sel');
   document.getElementById('modal-contenido').classList.add('open');
 }
 
 async function editContenido(id) {
-  const rows = await fetch('/api/marketing/contenido').then(r=>r.json());
-  const r = rows.find(x=>x.id===id);
+  const r_ = await fetch('/api/marketing/contenido/kanban').then(r=>r.json());
+  let r = null;
+  for (const col of (r_.columnas||[])) {
+    const found = (col.items||[]).find(x=>x.id===id);
+    if (found) { r = found; break; }
+  }
   if(!r) return;
   document.getElementById('cont-edit-id').value=id;
-  document.getElementById('modal-cont-title').textContent='Editar Contenido';
+  document.getElementById('modal-cont-title').textContent='Editar contenido';
   document.getElementById('cont-url').value=r.url_publicacion||'';
   document.getElementById('cont-caption').value=r.caption||'';
+  const sku = document.getElementById('cont-sku'); if(sku) sku.value = r.sku_objetivo||'';
+  const mens = document.getElementById('cont-mensaje'); if(mens) mens.value = r.mensaje_principal||'';
+  const fp = document.getElementById('cont-fecha-prog'); if(fp) fp.value = r.fecha_programada||'';
   document.getElementById('cont-likes').value=r.likes||0;
   document.getElementById('cont-comentarios').value=r.comentarios||0;
   document.getElementById('cont-alcance').value=r.alcance||0;
   document.getElementById('cont-conversiones').value=r.conversiones||0;
   document.getElementById('cont-fecha').value=r.fecha_publicacion||'';
-  document.getElementById('cont-tipo').value=r.tipo||'Post';
+  document.getElementById('cont-tipo').value=r.tipo||'Reel';
   document.getElementById('cont-plataforma').value=r.plataforma||'Instagram';
-  document.getElementById('cont-estado').value=r.estado||'Borrador';
+  document.getElementById('cont-estado').value=(r.estado_kanban||r.estado||'Brief');
   await loadCampanasForSelect('cont-campana-sel');
   await loadInfluencersForSelect('cont-influencer-sel');
   if(r.campana_id) document.getElementById('cont-campana-sel').value=r.campana_id;
@@ -1932,7 +2060,10 @@ async function saveContenido() {
     campana_id: campSel ? parseInt(campSel) : null,
     influencer_id: infSel ? parseInt(infSel) : null,
     fecha_publicacion: document.getElementById('cont-fecha').value||null,
+    fecha_programada: (document.getElementById('cont-fecha-prog')||{value:''}).value||'',
     estado: document.getElementById('cont-estado').value,
+    sku_objetivo: ((document.getElementById('cont-sku')||{value:''}).value||'').trim().toUpperCase(),
+    mensaje_principal: ((document.getElementById('cont-mensaje')||{value:''}).value||'').trim(),
     url_publicacion: document.getElementById('cont-url').value.trim(),
     caption: document.getElementById('cont-caption').value.trim(),
     likes: parseInt(document.getElementById('cont-likes').value)||0,
@@ -2047,6 +2178,75 @@ async function loadConnections() {
   } catch(e) {}
 }
 
+// ─── Feedback loop sobre agentes IA ────────────────────────────────────
+let _AGENT_FEEDBACK_STATS = {};
+
+async function loadFeedbackStats() {
+  try {
+    const r = await fetch('/api/marketing/agentes/feedback/stats');
+    const d = await r.json();
+    if (!d.ok) return;
+    _AGENT_FEEDBACK_STATS = d.agentes || {};
+    // Para cada agente con stats, inyectar/actualizar un tag de tasa de acierto
+    // dentro de su card. La card se identifica por el botón btn-<agente>.
+    Object.keys(_AGENT_FEEDBACK_STATS).forEach(ag => {
+      const stats = _AGENT_FEEDBACK_STATS[ag];
+      if (stats.tasa_acierto_pct == null) return;
+      const btn = document.getElementById('btn-' + ag);
+      if (!btn) return;
+      const card = btn.closest('.agent-card') || btn.parentElement;
+      if (!card) return;
+      let tag = card.querySelector('.agent-feedback-tag');
+      if (!tag) {
+        tag = document.createElement('div');
+        tag.className = 'agent-feedback-tag';
+        tag.style.cssText = 'font-size:10px;color:#94a3b8;margin-bottom:6px;padding:3px 8px;background:#0f172a;border-radius:6px;display:inline-block;';
+        // Insertar antes del botón
+        btn.parentElement.insertBefore(tag, btn);
+      }
+      const col = stats.tasa_acierto_pct >= 70 ? '#34d399' :
+                  (stats.tasa_acierto_pct >= 40 ? '#fbbf24' : '#ef4444');
+      tag.innerHTML = `<span style="color:${col};font-weight:700;">${stats.tasa_acierto_pct}%</span> útil · ${stats.total} feedback`;
+    });
+  } catch(e) { /* silencioso */ }
+}
+
+function renderFeedbackBar(logId) {
+  if (!logId) return '';
+  return `<div class="feedback-bar" id="fb-bar-${logId}" style="display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;">
+    <span style="font-size:11px;color:#94a3b8;font-weight:600;">¿Te sirvió este análisis?</span>
+    <button onclick="sendFeedback(${logId},'util',event)" style="background:#064e3b;color:#34d399;border:1px solid #065f46;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👍 Útil</button>
+    <button onclick="sendFeedback(${logId},'ejecutado',event)" style="background:#1e3a8a;color:#60a5fa;border:1px solid #1d4ed8;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">⚡ Ejecuté la acción</button>
+    <button onclick="sendFeedback(${logId},'no_util',event)" style="background:#7f1d1d;color:#f87171;border:1px solid #991b1b;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👎 No sirvió</button>
+    <span id="fb-status-${logId}" style="font-size:10px;color:#64748b;margin-left:auto;"></span>
+  </div>`;
+}
+
+async function sendFeedback(logId, fb, ev) {
+  if (ev) ev.stopPropagation();
+  const status = document.getElementById('fb-status-' + logId);
+  const bar = document.getElementById('fb-bar-' + logId);
+  if (status) status.textContent = 'Enviando...';
+  try {
+    const r = await fetch('/api/marketing/agentes/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({log_id: logId, feedback: fb})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const labels = {util:'👍 Marcado como útil', ejecutado:'⚡ Acción registrada', no_util:'👎 Feedback registrado'};
+      if (bar) bar.style.opacity = '0.5';
+      if (status) status.textContent = labels[fb] || 'Registrado';
+      loadFeedbackStats();
+    } else {
+      if (status) status.textContent = 'Error: ' + (d.error || 'no se pudo guardar');
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Error de red';
+  }
+}
+
 async function runAgent(agente) {
   const btn = document.getElementById('btn-'+agente);
   const resultDiv = document.getElementById('result-'+agente);
@@ -2069,10 +2269,11 @@ async function runAgent(agente) {
     if(data.error) {
       resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${data.error}</pre>`;
     } else {
-      resultDiv.innerHTML = formatAgentResult(agente, data);
+      resultDiv.innerHTML = formatAgentResult(agente, data) + renderFeedbackBar(data.log_id);
     }
     resultDiv.classList.add('show');
     loadAgentLog();
+    loadFeedbackStats();
   } catch(e) {
     resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${e.message}</pre>`;
     resultDiv.classList.add('show');

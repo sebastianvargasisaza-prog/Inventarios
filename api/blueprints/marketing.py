@@ -120,6 +120,105 @@ def _auth():
         return None, jsonify({"error": "Sin acceso al módulo Marketing"}), 403
     return u, None, None
 
+def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
+                     severidad="medio", destinatario=None):
+    """Dispara alerta por email a Sebastian/marketing alerts y la registra en log.
+
+    Idempotente por día: la combinación (tipo, clave_unica, destinatario, fecha)
+    es UNIQUE — si la misma alerta ya se mandó hoy, no re-envía.
+
+    Args:
+      tipo:         'stock_critico', 'oc_pendiente_pago', 'evento_sin_campana', etc.
+      clave_unica:  identificador del recurso (ej: 'SKU-LBHA-30')
+      asunto:       subject del email
+      cuerpo_resumen: cuerpo del email (HTML o texto)
+      severidad:    'critico' | 'alto' | 'medio' | 'bajo'
+      destinatario: email; default = MARKETING_ALERT_EMAIL o EMAIL_SEBASTIAN o
+                    sebastianvargasisaza@gmail.com.
+    """
+    import os
+    if not destinatario:
+        destinatario = (
+            os.environ.get("MARKETING_ALERT_EMAIL") or
+            os.environ.get("EMAIL_SEBASTIAN") or
+            "sebastianvargasisaza@gmail.com"
+        )
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        # UNIQUE constraint maneja la deduplicación por día
+        conn.execute("""INSERT OR IGNORE INTO marketing_push_alerts_log
+            (tipo, clave_unica, destinatario, asunto, cuerpo_resumen, severidad, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (tipo, clave_unica, destinatario, asunto[:200],
+             cuerpo_resumen[:1000], severidad, today))
+        # rowcount == 0 si ya estaba (UNIQUE → ignore) → no mandar email
+        if conn.execute("SELECT changes()").fetchone()[0] == 0:
+            return False
+        conn.commit()
+    except Exception:
+        return False
+
+    # Mandar email en background — no bloquea la respuesta del agente
+    try:
+        from notificaciones import SistemaNotificaciones
+        sn = SistemaNotificaciones()
+        if not sn.email_remitente or not sn.contraseña:
+            return False
+        # Email con plantilla simple — colorear severidad
+        sev_colors = {
+            "critico": "#dc2626", "alto": "#f59e0b",
+            "medio":   "#3b82f6", "bajo":  "#71717a"
+        }
+        color = sev_colors.get(severidad, "#3b82f6")
+        html = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;">
+        <div style="background:#0f172a;color:#f1f5f9;padding:20px;border-radius:8px;border-left:4px solid {color};">
+          <div style="font-size:11px;color:{color};font-weight:700;text-transform:uppercase;letter-spacing:.1em;">
+            ÁNIMUS · alerta {severidad}
+          </div>
+          <h2 style="color:#fff;margin:8px 0 12px;">{asunto}</h2>
+          <div style="color:#cbd5e1;line-height:1.6;font-size:14px;">{cuerpo_resumen}</div>
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid #334155;font-size:11px;color:#64748b;">
+            Tipo: <code>{tipo}</code> · Clave: <code>{clave_unica}</code><br>
+            Generada {datetime.now().strftime('%Y-%m-%d %H:%M')} por el sistema de Marketing.
+          </div>
+        </div>
+        </body></html>"""
+        sn.enviar_en_background(
+            sn._enviar_email_html if hasattr(sn, "_enviar_email_html") else sn.enviar_alerta_stock_bajo,
+            destinatario, asunto, html
+        ) if False else None  # deprecated path
+        # Usar SMTP directamente vía la clase para máxima compatibilidad
+        import smtplib, ssl
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        def _send():
+            try:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = f"[ÁNIMUS] {asunto}"
+                msg["From"] = sn.email_remitente
+                msg["To"] = destinatario
+                msg.attach(MIMEText(html, "html", "utf-8"))
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                    s.login(sn.email_remitente, sn.contraseña)
+                    s.sendmail(sn.email_remitente, [destinatario], msg.as_string())
+            except Exception as _e:
+                import logging
+                logging.getLogger("marketing").warning(
+                    "push alert email falló: %s", _e
+                )
+
+        import threading
+        threading.Thread(target=_send, daemon=True).start()
+        return True
+    except Exception as _e:
+        import logging
+        logging.getLogger("marketing").warning("push alert dispatch falló: %s", _e)
+        return False
+
+
 def _admin_only():
     """Auth + chequeo de admin (solo Sebastian / cuenta administrativa).
 
@@ -930,6 +1029,19 @@ def mkt_update_asignacion(rid):
 # ──────────────────────────────────────────────────────────────────────────────
 # CONTENIDO
 # ──────────────────────────────────────────────────────────────────────────────
+# Estados del Kanban de Contenido — workflow completo de una pieza
+KANBAN_ESTADOS = ["Brief", "Produccion", "Pendiente", "Publicado", "Performance"]
+
+# Migración suave: estados antiguos ('Borrador', 'Programado') se mapean a
+# Kanban al leer. Esto permite que data legacy aparezca en la columna correcta
+# sin necesidad de UPDATE masivo (que destruiría histórico).
+_LEGACY_ESTADO_MAP = {
+    "Borrador":    "Brief",
+    "Programado":  "Pendiente",
+    # Publicado se mantiene
+}
+
+
 @bp.route("/api/marketing/contenido", methods=["GET", "POST"])
 def mkt_contenido():
     u, err, code = _auth()
@@ -942,7 +1054,8 @@ def mkt_contenido():
             campana_id = request.args.get("campana_id", "")
             estado = request.args.get("estado", "")
             base = """
-                SELECT mc.*, c.nombre as campana_nombre, i.nombre as influencer_nombre
+                SELECT mc.*, c.nombre as campana_nombre, i.nombre as influencer_nombre,
+                       i.usuario_red as influencer_usuario, i.discount_code as influencer_code
                 FROM marketing_contenido mc
                 LEFT JOIN marketing_campanas c ON c.id=mc.campana_id
                 LEFT JOIN marketing_influencers i ON i.id=mc.influencer_id
@@ -955,21 +1068,34 @@ def mkt_contenido():
                 conds.append("mc.estado=?")
                 params.append(estado)
             sql = base + (" WHERE " + " AND ".join(conds) if conds else "") + \
-                  " ORDER BY mc.fecha_publicacion DESC, mc.fecha_creacion DESC LIMIT 100"
-            return jsonify(_fmt_many(c.execute(sql, params).fetchall()))
+                  " ORDER BY mc.fecha_programada DESC, mc.fecha_publicacion DESC, mc.fecha_creacion DESC LIMIT 200"
+            rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+            # Normalizar estados legacy → Kanban
+            for r in rows:
+                est = r.get("estado") or "Brief"
+                r["estado_kanban"] = _LEGACY_ESTADO_MAP.get(est, est)
+            return jsonify(rows)
 
         d = request.get_json() or {}
+        # Estado: si lo pasan se respeta, si no default 'Brief'
+        estado_in = d.get("estado", "Brief")
+        if estado_in in _LEGACY_ESTADO_MAP:
+            estado_in = _LEGACY_ESTADO_MAP[estado_in]
         c.execute("""
             INSERT INTO marketing_contenido
             (campana_id, influencer_id, tipo, plataforma, fecha_publicacion,
-             estado, caption, url_publicacion, likes, comentarios, shares,
+             fecha_programada, estado, caption, url_publicacion,
+             sku_objetivo, mensaje_principal,
+             likes, comentarios, shares,
              guardados, alcance, impresiones, clicks, conversiones, notas, creado_por)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             d.get("campana_id"), d.get("influencer_id"),
             d.get("tipo", "Post"), d.get("plataforma", "Instagram"),
-            d.get("fecha_publicacion"), d.get("estado", "Borrador"),
+            d.get("fecha_publicacion"), d.get("fecha_programada", ""),
+            estado_in,
             d.get("caption", ""), d.get("url_publicacion", ""),
+            d.get("sku_objetivo", ""), d.get("mensaje_principal", ""),
             d.get("likes", 0), d.get("comentarios", 0), d.get("shares", 0),
             d.get("guardados", 0), d.get("alcance", 0), d.get("impresiones", 0),
             d.get("clicks", 0), d.get("conversiones", 0),
@@ -978,7 +1104,65 @@ def mkt_contenido():
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
-        pass  # conexión cerrada automáticamente por teardown_appcontext
+        pass
+
+
+@bp.route("/api/marketing/contenido/kanban", methods=["GET"])
+def mkt_contenido_kanban():
+    """Kanban view: contenido agrupado por estado con stats por columna.
+
+    Retorna {columnas: [{estado, count, items: [...]}]} con los 5 estados del
+    Kanban. Optimizado para la UI — un solo fetch que pinta toda la tabla.
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    try:
+        rows = [dict(r) for r in c.execute("""
+            SELECT mc.id, mc.campana_id, mc.influencer_id, mc.tipo, mc.plataforma,
+                   mc.fecha_publicacion, mc.fecha_programada, mc.estado,
+                   mc.caption, mc.url_publicacion, mc.sku_objetivo,
+                   mc.mensaje_principal, mc.likes, mc.comentarios, mc.shares,
+                   mc.alcance, mc.fecha_creacion,
+                   c.nombre as campana_nombre,
+                   i.nombre as influencer_nombre,
+                   i.usuario_red as influencer_usuario,
+                   i.discount_code as influencer_code
+            FROM marketing_contenido mc
+            LEFT JOIN marketing_campanas c ON c.id = mc.campana_id
+            LEFT JOIN marketing_influencers i ON i.id = mc.influencer_id
+            ORDER BY COALESCE(mc.fecha_programada, mc.fecha_publicacion, mc.fecha_creacion) DESC
+            LIMIT 500
+        """).fetchall()]
+
+        # Bucket por estado_kanban (legacy → kanban)
+        buckets = {est: [] for est in KANBAN_ESTADOS}
+        for r in rows:
+            est = r.get("estado") or "Brief"
+            est_k = _LEGACY_ESTADO_MAP.get(est, est)
+            if est_k not in buckets:
+                # Estado raro → tirar a Brief para no perderlo
+                est_k = "Brief"
+            r["estado_kanban"] = est_k
+            buckets[est_k].append(r)
+
+        columnas = []
+        for est in KANBAN_ESTADOS:
+            items = buckets[est]
+            columnas.append({
+                "estado": est,
+                "count": len(items),
+                "items": items,
+            })
+        total = sum(col["count"] for col in columnas)
+        return jsonify({"ok": True, "total": total, "columnas": columnas})
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]}), 500
+    finally:
+        pass
+
 
 @bp.route("/api/marketing/contenido/<int:cid>", methods=["PUT", "DELETE"])
 def mkt_contenido_detail(cid):
@@ -993,10 +1177,15 @@ def mkt_contenido_detail(cid):
             conn.commit()
             return jsonify({"ok": True})
         d = request.get_json() or {}
-        campos = ["tipo", "plataforma", "fecha_publicacion", "estado", "caption",
-                  "url_publicacion", "likes", "comentarios", "shares", "guardados",
-                  "alcance", "impresiones", "clicks", "conversiones", "notas"]
+        campos = ["tipo", "plataforma", "fecha_publicacion", "fecha_programada",
+                  "estado", "caption", "url_publicacion", "sku_objetivo",
+                  "mensaje_principal", "likes", "comentarios", "shares",
+                  "guardados", "alcance", "impresiones", "clicks", "conversiones",
+                  "notas", "campana_id", "influencer_id"]
         updates = {k: d[k] for k in campos if k in d}
+        # Normalizar estado legacy
+        if "estado" in updates and updates["estado"] in _LEGACY_ESTADO_MAP:
+            updates["estado"] = _LEGACY_ESTADO_MAP[updates["estado"]]
         if not updates:
             return jsonify({"error": "Nada que actualizar"}), 400
         set_clause = ", ".join(f"{k}=?" for k in updates)
@@ -1005,7 +1194,7 @@ def mkt_contenido_detail(cid):
         conn.commit()
         return jsonify({"ok": True})
     finally:
-        pass  # conexión cerrada automáticamente por teardown_appcontext
+        pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ANALYTICS
@@ -2245,14 +2434,83 @@ def mkt_ejecutar_agente(agente):
         except Exception:
             pass
 
+        # ── Push alerts: disparar email a Sebastian si hay urgencia detectada
+        # Idempotente por día (UNIQUE en marketing_push_alerts_log).
+        alertas_enviadas = []
+        try:
+            # Stock crítico (≤7d cobertura) — dispara una alerta agregada
+            if agente == "alerta_stock":
+                criticas = [a for a in (resultado.get("alertas") or [])
+                            if a.get("nivel") == "critico"]
+                if criticas:
+                    skus = ", ".join(a["sku"] for a in criticas[:6])
+                    if len(criticas) > 6:
+                        skus += f" +{len(criticas)-6} más"
+                    cuerpo = (
+                        f"<p><strong>{len(criticas)} SKU(s)</strong> con cobertura "
+                        f"≤7 días según el cruce ERP + Shopify:</p><ul>"
+                        + "".join(
+                            f"<li><b>{a['sku']}</b>: {int(a['stock'])} uds · "
+                            f"{int(a['dias_cobertura_real'])}d cobertura</li>"
+                            for a in criticas[:8]
+                        )
+                        + "</ul><p>Acción: priorizar producción o restock urgente.</p>"
+                    )
+                    if _send_push_alert(
+                        conn, "stock_critico",
+                        clave_unica=f"alerta-stock-{datetime.now().strftime('%Y-%m-%d')}",
+                        asunto=f"Stock crítico: {len(criticas)} SKUs ({skus[:60]})",
+                        cuerpo_resumen=cuerpo,
+                        severidad="critico",
+                    ):
+                        alertas_enviadas.append("stock_critico")
+
+            # Estrategia: si hay riesgos detectados → alerta agregada
+            elif agente == "estrategia":
+                snap = resultado.get("snapshot") or {}
+                riesgos = snap.get("skus_en_riesgo") or []
+                criticos = [r for r in riesgos if r.get("dias_cobertura", 999) <= 14]
+                if criticos:
+                    skus = ", ".join(r["sku"] for r in criticos[:5])
+                    cuerpo = (
+                        f"<p>El agente <strong>Estrategia</strong> detectó "
+                        f"<strong>{len(criticos)}</strong> SKUs con riesgo de quiebre "
+                        f"en ≤14 días.</p><ul>"
+                        + "".join(
+                            f"<li><b>{r['sku']}</b>: {int(r['stock'])} uds · "
+                            f"{int(r['dias_cobertura'])}d cobertura</li>"
+                            for r in criticos[:6]
+                        )
+                        + "</ul><p>Recomendación: revisar la pestaña Inteligencia "
+                          "→ Agentes IA → Estrategia para el plan completo.</p>"
+                    )
+                    if _send_push_alert(
+                        conn, "estrategia_riesgo",
+                        clave_unica=f"estrat-riesgo-{datetime.now().strftime('%Y-%m-%d')}",
+                        asunto=f"Estrategia: {len(criticos)} SKUs en riesgo",
+                        cuerpo_resumen=cuerpo,
+                        severidad="alto",
+                    ):
+                        alertas_enviadas.append("estrategia_riesgo")
+        except Exception as _e:
+            import logging
+            logging.getLogger("marketing").warning(
+                "push alert para agente %s falló: %s", agente, _e
+            )
+
         # Guardar log
         c.execute("""INSERT INTO marketing_agentes_log(agente,accion,resultado,ejecutado_por)
             VALUES(?,?,?,?)""",
             (agente.capitalize(), "Ejecutado",
              json.dumps(resultado, ensure_ascii=False)[:2000], u))
+        log_id = c.lastrowid
         conn.commit()
         resultado["agente"] = agente
         resultado["fecha"] = datetime.now().isoformat()
+        # log_id permite que el frontend pueda enviar feedback sobre esta corrida
+        resultado["log_id"] = log_id
+        if alertas_enviadas:
+            resultado["push_alerts_enviadas"] = alertas_enviadas
         return jsonify(resultado)
 
     except Exception as e:
@@ -2276,9 +2534,91 @@ def mkt_agente_log_detalle(log_id):
             r["resultado"] = json.loads(r["resultado"])
         except Exception:
             pass
+        # Anexar feedback si existe
+        try:
+            fb = c.execute(
+                "SELECT feedback, comentario, usuario, fecha FROM marketing_agentes_feedback "
+                "WHERE log_id=? ORDER BY id DESC", (log_id,)
+            ).fetchall()
+            r["feedback_log"] = [dict(x) for x in fb]
+        except Exception:
+            r["feedback_log"] = []
         return jsonify(r)
     finally:
-        pass  # conexión cerrada automáticamente por teardown_appcontext
+        pass
+
+
+# ─── Feedback loop sobre agentes IA ────────────────────────────────────
+@bp.route("/api/marketing/agentes/feedback", methods=["POST"])
+def mkt_agente_feedback():
+    """Registra feedback del usuario sobre la última ejecución de un agente.
+
+    Body: { log_id, feedback: 'util'|'no_util'|'ejecutado', comentario? }
+
+    Permite medir tasa de acierto por agente con el tiempo y mejorar prompts.
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    d = request.get_json() or {}
+    log_id = d.get("log_id")
+    fb     = (d.get("feedback") or "").strip().lower()
+    coment = (d.get("comentario") or "").strip()
+    if fb not in ("util", "no_util", "ejecutado"):
+        return jsonify({"error": "feedback inválido — usar util|no_util|ejecutado"}), 400
+    if not log_id:
+        return jsonify({"error": "log_id requerido"}), 400
+
+    conn = _db()
+    c = conn.cursor()
+    try:
+        # Resolver agente desde el log
+        row = c.execute(
+            "SELECT agente FROM marketing_agentes_log WHERE id=?", (log_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "log_id no existe"}), 404
+        agente = (row["agente"] or "").lower()
+        c.execute("""INSERT INTO marketing_agentes_feedback
+            (log_id, agente, feedback, comentario, usuario)
+            VALUES (?,?,?,?,?)""",
+            (log_id, agente, fb, coment, u))
+        conn.commit()
+        return jsonify({"ok": True, "feedback_id": c.lastrowid})
+    finally:
+        pass
+
+
+@bp.route("/api/marketing/agentes/feedback/stats", methods=["GET"])
+def mkt_agentes_feedback_stats():
+    """Stats de feedback por agente — para mostrar tasa de acierto en UI."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT agente,
+                   SUM(CASE WHEN feedback='util'      THEN 1 ELSE 0 END) as utiles,
+                   SUM(CASE WHEN feedback='no_util'   THEN 1 ELSE 0 END) as no_utiles,
+                   SUM(CASE WHEN feedback='ejecutado' THEN 1 ELSE 0 END) as ejecutados,
+                   COUNT(*) as total
+            FROM marketing_agentes_feedback
+            GROUP BY agente
+        """).fetchall()
+        agentes = {}
+        for r in rows:
+            d = dict(r)
+            total = d["total"] or 0
+            d["tasa_acierto_pct"] = (
+                round((d["utiles"] + d["ejecutados"]) / total * 100, 0)
+                if total > 0 else None
+            )
+            agentes[d["agente"]] = d
+        return jsonify({"ok": True, "agentes": agentes})
+    finally:
+        pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
