@@ -307,3 +307,59 @@ def test_audit_inventario_vs_excel_excel_invalido(admin_client, db_clean):
         content_type="multipart/form-data",
     )
     assert r.status_code == 400
+
+
+def test_inventario_diagnostico_solo_admin(app, db_clean):
+    """GET /api/admin/inventario-diagnostico-entradas → 403 para no-admin."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": "luis", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    r = c.get("/api/admin/inventario-diagnostico-entradas")
+    assert r.status_code == 403
+
+
+def test_inventario_diagnostico_detecta_doble_carga(admin_client, db_clean):
+    """Si un lote tiene 2 Entradas → debe aparecer en multi_entradas."""
+    import sqlite3
+    import os
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    # Lote con UNA entrada (legitimo)
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo, fecha,
+                    operador)
+                   VALUES ('MP_DIAG_OK','OK','LOTE-OK',1000,'Entrada',
+                           '2026-04-20','sistema')""")
+    # Lote con DOS entradas (doble carga)
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo, fecha,
+                    operador)
+                   VALUES ('MP_DIAG_DUP','DUP','LOTE-DUP',500,'Entrada',
+                           '2026-04-20','sistema')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo, fecha,
+                    operador)
+                   VALUES ('MP_DIAG_DUP','DUP','LOTE-DUP',500,'Entrada',
+                           '2026-04-21','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = admin_client.get("/api/admin/inventario-diagnostico-entradas")
+    assert r.status_code == 200
+    j = r.get_json()
+    duplicados = [m for m in j["multi_entradas"] if m["codigo_mp"] == "MP_DIAG_DUP"]
+    assert len(duplicados) == 1, f"Doble carga no detectada: {j['multi_entradas']}"
+    assert duplicados[0]["n_entradas"] == 2
+    assert duplicados[0]["total_g"] == 1000.0
+
+    # MP_DIAG_OK NO debe aparecer (solo 1 entrada)
+    legits = [m for m in j["multi_entradas"] if m["codigo_mp"] == "MP_DIAG_OK"]
+    assert len(legits) == 0
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id IN ('MP_DIAG_OK','MP_DIAG_DUP')")
+    conn.commit(); conn.close()

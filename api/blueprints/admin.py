@@ -953,6 +953,148 @@ def admin_audit_inventario_vs_excel():
     })
 
 
+@bp.route("/api/admin/inventario-diagnostico-entradas", methods=["GET"])
+def admin_inventario_diagnostico_entradas():
+    """Diagnostico de Entradas en movimientos para detectar doble carga
+    vs recepciones legitimas.
+
+    Caso de uso (CEO 2026-04-27): el audit muestra DB con 2x el stock
+    del Excel. Antes de tomar decision destructiva, ver el timeline real
+    de entradas:
+
+      - Lotes con multiples Entradas (smoking gun de doble carga)
+      - Entradas por dia (timeline)
+      - Entradas por operador (quien entro que)
+      - Entradas con OC vs sin OC (recepcion formal vs manual)
+
+    Solo lectura, admins.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # 1. Lotes con MULTIPLES entradas (doble carga sospechosa)
+    multi_entradas = []
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,'') as lote,
+                   COUNT(*) as n_entradas,
+                   SUM(cantidad) as total_g,
+                   GROUP_CONCAT(DISTINCT COALESCE(operador,''))  as operadores,
+                   MIN(fecha) as primera,
+                   MAX(fecha) as ultima
+            FROM movimientos
+            WHERE tipo='Entrada'
+            GROUP BY material_id, lote
+            HAVING COUNT(*) >= 2
+            ORDER BY COUNT(*) DESC, SUM(cantidad) DESC
+            LIMIT 200
+        """).fetchall()
+        for r in rows:
+            multi_entradas.append({
+                'codigo_mp': r[0], 'lote': r[1] or '(sin lote)',
+                'n_entradas': r[2], 'total_g': round(r[3] or 0, 1),
+                'operadores': r[4] or '',
+                'primera_fecha': str(r[5])[:10] if r[5] else '',
+                'ultima_fecha':  str(r[6])[:10] if r[6] else '',
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # 2. Timeline: entradas por dia (para detectar bursts de carga)
+    timeline = []
+    try:
+        rows = c.execute("""
+            SELECT SUBSTR(fecha,1,10) as dia,
+                   COUNT(*) as n_movs,
+                   SUM(cantidad) as total_g
+            FROM movimientos
+            WHERE tipo='Entrada'
+            GROUP BY SUBSTR(fecha,1,10)
+            ORDER BY dia ASC
+        """).fetchall()
+        for r in rows:
+            timeline.append({
+                'fecha': r[0],
+                'n_entradas': r[1],
+                'total_g': round(r[2] or 0, 1),
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # 3. Por operador
+    por_operador = []
+    try:
+        rows = c.execute("""
+            SELECT COALESCE(operador,'(vacio)') as op,
+                   COUNT(*) as n_movs,
+                   SUM(cantidad) as total_g,
+                   MIN(fecha) as primera,
+                   MAX(fecha) as ultima
+            FROM movimientos
+            WHERE tipo='Entrada'
+            GROUP BY operador
+            ORDER BY n_movs DESC
+        """).fetchall()
+        for r in rows:
+            por_operador.append({
+                'operador': r[0],
+                'n_entradas': r[1],
+                'total_g': round(r[2] or 0, 1),
+                'primera_fecha': str(r[3])[:10] if r[3] else '',
+                'ultima_fecha':  str(r[4])[:10] if r[4] else '',
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # 4. Origen: con OC vs sin OC
+    con_oc = 0; sin_oc = 0; total_g_con_oc = 0; total_g_sin_oc = 0
+    try:
+        r = c.execute("""
+            SELECT COUNT(*), COALESCE(SUM(cantidad),0)
+            FROM movimientos
+            WHERE tipo='Entrada' AND COALESCE(numero_oc,'') != ''
+        """).fetchone()
+        con_oc = r[0]; total_g_con_oc = float(r[1] or 0)
+        r = c.execute("""
+            SELECT COUNT(*), COALESCE(SUM(cantidad),0)
+            FROM movimientos
+            WHERE tipo='Entrada' AND COALESCE(numero_oc,'') = ''
+        """).fetchone()
+        sin_oc = r[0]; total_g_sin_oc = float(r[1] or 0)
+    except sqlite3.OperationalError:
+        pass
+
+    # 5. Total resumen
+    try:
+        total_entradas = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(cantidad),0) FROM movimientos WHERE tipo='Entrada'"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        total_entradas = (0, 0)
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'resumen': {
+            'total_entradas': total_entradas[0],
+            'total_entradas_g': round(total_entradas[1], 1),
+            'lotes_con_multiples_entradas': len(multi_entradas),
+            'entradas_con_oc': con_oc,
+            'entradas_con_oc_g': round(total_g_con_oc, 1),
+            'entradas_sin_oc': sin_oc,
+            'entradas_sin_oc_g': round(total_g_sin_oc, 1),
+        },
+        'multi_entradas': multi_entradas,
+        'timeline': timeline[:60],   # primeros 60 dias
+        'por_operador': por_operador,
+    })
+
+
 @bp.route("/api/admin/debug-solicitud/<numero>", methods=["GET"])
 def admin_debug_solicitud(numero):
     """Devuelve los items RAW de una solicitud para depurar.
@@ -2182,6 +2324,7 @@ tr:hover td{background:#263348;}
     <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
       <input type="file" id="audit-inv-file" accept=".xlsx,.xlsm" style="padding:6px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;">
       <button class="btn" onclick="auditarInvVsExcel()">&#x1F4CA; Generar reporte</button>
+      <button class="btn btn-outline" onclick="diagnosticoEntradas()" title="Antes de borrar nada, ver QUIEN cargo QUE — detecta doble carga vs recepciones manuales legitimas">&#x1F50E; Diagn&oacute;stico de entradas</button>
     </div>
     <div id="audit-inv-result" style="margin-top:18px;"></div>
   </div>
@@ -2320,6 +2463,93 @@ async function auditarInvVsExcel() {
 
     if (d.nota_truncado) {
       h += '<div style="margin-top:14px;color:#94a3b8;font-size:11px;">ℹ Tablas truncadas a 300 items. Hay más — contacta para ver el JSON completo o exportar.</div>';
+    }
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function diagnosticoEntradas() {
+  const out = document.getElementById('audit-inv-result');
+  out.innerHTML = '<div style="color:#94a3b8;">Analizando entradas en el kardex...</div>';
+  try {
+    const r = await fetch('/api/admin/inventario-diagnostico-entradas');
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    const s = d.resumen;
+    let h = '<h3 style="color:#a5b4fc;margin-top:0;">&#x1F50E; Diagn&oacute;stico de Entradas</h3>';
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi"><div class="kpi-l">Total Entradas</div><div class="kpi-v">' + s.total_entradas + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Total Entradas (g)</div><div class="kpi-v" style="font-size:14px;">' + _fmtG(s.total_entradas_g) + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(239,68,68,.12);"><div class="kpi-l" style="color:#fca5a5;">Lotes c/ multiples Entradas</div><div class="kpi-v">' + s.lotes_con_multiples_entradas + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(16,185,129,.12);"><div class="kpi-l" style="color:#34d399;">Entradas con OC (formal)</div><div class="kpi-v">' + s.entradas_con_oc + ' (' + _fmtG(s.entradas_con_oc_g) + ')</div></div>';
+    h += '<div class="kpi" style="background:rgba(245,158,11,.12);"><div class="kpi-l" style="color:#fbbf24;">Entradas SIN OC (manual)</div><div class="kpi-v">' + s.entradas_sin_oc + ' (' + _fmtG(s.entradas_sin_oc_g) + ')</div></div>';
+    h += '</div>';
+
+    // Por operador
+    h += '<h3 style="color:#a5b4fc;margin-top:18px;">Entradas por operador</h3>';
+    h += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e293b;"><tr>';
+    h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Operador</th>';
+    h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">N° Entradas</th>';
+    h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">Total (g)</th>';
+    h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Primera</th>';
+    h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Última</th>';
+    h += '</tr></thead><tbody>';
+    d.por_operador.forEach(o => {
+      h += '<tr style="border-top:1px solid #334155;">';
+      h += '<td style="padding:6px 10px;color:#e2e8f0;font-weight:600;">' + _esc(o.operador) + '</td>';
+      h += '<td style="padding:6px 10px;text-align:right;font-family:monospace;">' + o.n_entradas + '</td>';
+      h += '<td style="padding:6px 10px;text-align:right;font-family:monospace;color:#a5b4fc;">' + _fmtG(o.total_g) + '</td>';
+      h += '<td style="padding:6px 10px;color:#94a3b8;">' + _esc(o.primera_fecha) + '</td>';
+      h += '<td style="padding:6px 10px;color:#94a3b8;">' + _esc(o.ultima_fecha) + '</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+
+    // Timeline
+    h += '<h3 style="color:#a5b4fc;margin-top:18px;">Timeline de Entradas (primeros 60 dias con actividad)</h3>';
+    h += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:8px;max-height:300px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e293b;position:sticky;top:0;"><tr>';
+    h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Fecha</th>';
+    h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">N° Entradas</th>';
+    h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">Total (g)</th>';
+    h += '</tr></thead><tbody>';
+    d.timeline.forEach(t => {
+      const isHigh = t.n_entradas > 50;  // dia con burst
+      h += '<tr style="border-top:1px solid #334155;' + (isHigh ? 'background:rgba(245,158,11,.08);' : '') + '">';
+      h += '<td style="padding:6px 10px;color:#e2e8f0;font-family:monospace;">' + _esc(t.fecha) + (isHigh ? ' <span style="color:#fbbf24;">⚠ burst</span>' : '') + '</td>';
+      h += '<td style="padding:6px 10px;text-align:right;font-family:monospace;">' + t.n_entradas + '</td>';
+      h += '<td style="padding:6px 10px;text-align:right;font-family:monospace;color:#a5b4fc;">' + _fmtG(t.total_g) + '</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+
+    // Multi-entradas (smoking gun)
+    h += '<h3 style="color:#fca5a5;margin-top:18px;">⚠ Lotes con MULTIPLES Entradas (' + d.multi_entradas.length + ')</h3>';
+    h += '<div style="color:#94a3b8;font-size:11px;margin-bottom:6px;">Si un lote aparece 2 veces como Entrada con la misma cantidad → doble carga. Si tiene 2 entradas pero cantidades distintas → recepción posterior legítima.</div>';
+    if (!d.multi_entradas.length) {
+      h += '<div style="color:#34d399;">✓ Ningún lote con múltiples entradas — no hay doble carga.</div>';
+    } else {
+      h += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:8px;max-height:400px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead style="background:#1e293b;position:sticky;top:0;"><tr>';
+      h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Código</th>';
+      h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Lote</th>';
+      h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">N° Entradas</th>';
+      h += '<th style="padding:8px 10px;text-align:right;color:#cbd5e1;">Total Sumado</th>';
+      h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Operadores</th>';
+      h += '<th style="padding:8px 10px;text-align:left;color:#cbd5e1;">Primera → Última</th>';
+      h += '</tr></thead><tbody>';
+      d.multi_entradas.forEach(m => {
+        h += '<tr style="border-top:1px solid #334155;">';
+        h += '<td style="padding:6px 10px;font-family:monospace;color:#e2e8f0;">' + _esc(m.codigo_mp) + '</td>';
+        h += '<td style="padding:6px 10px;font-family:monospace;color:#94a3b8;">' + _esc(m.lote) + '</td>';
+        h += '<td style="padding:6px 10px;text-align:right;font-weight:700;color:' + (m.n_entradas >= 2 ? '#fca5a5' : '#e2e8f0') + ';">' + m.n_entradas + '</td>';
+        h += '<td style="padding:6px 10px;text-align:right;font-family:monospace;color:#fca5a5;">' + _fmtG(m.total_g) + '</td>';
+        h += '<td style="padding:6px 10px;color:#94a3b8;font-size:11px;">' + _esc(m.operadores) + '</td>';
+        h += '<td style="padding:6px 10px;color:#94a3b8;font-size:11px;">' + _esc(m.primera_fecha) + ' → ' + _esc(m.ultima_fecha) + '</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
     }
 
     out.innerHTML = h;
