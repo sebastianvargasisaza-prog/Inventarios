@@ -1756,9 +1756,16 @@ def prog_productos():
 
 @bp.route('/api/programacion/generar-oc', methods=['POST'])
 def prog_generar_oc():
-    """
-    Analiza faltantes de MP por producto y crea solicitudes de compra automáticas.
-    Sólo crea SOL si no existe ya una pendiente para el mismo MP (dedup 7 días).
+    """Genera solicitudes de compra agrupadas POR PROVEEDOR.
+
+    Política operacional definida con el dueño del negocio:
+      - 1 solicitud por cada proveedor que tenga MPs en déficit
+      - 1 solicitud SEPARADA con todas las MPs sin proveedor asignado
+        (proveedor='Sin asignar') para que Catalina las revise, asigne en
+        /admin → Catálogo MPs, y al refrescar la próxima vez ya queden
+        agrupadas en sus proveedores correctos.
+
+    Lee el proveedor de cada MP desde maestro_mps.proveedor.
     """
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
@@ -1773,7 +1780,7 @@ def prog_generar_oc():
         return jsonify({'error': 'Sin fórmulas cargadas'}), 400
 
     china_mps_set = _get_china_mps(conn)
-    projection, alerts = _project_stock(
+    projection, _alerts = _project_stock(
         conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
         china_mps=china_mps_set
     )
@@ -1784,7 +1791,7 @@ def prog_generar_oc():
         if prod['mp_lista']:
             continue
         for mp in prod.get('mp_check', []):
-            if mp['deficit_g'] > 0:
+            if mp.get('deficit_g', 0) > 0:
                 cod = mp['material_id']
                 if cod not in mp_deficit:
                     mp_deficit[cod] = {
@@ -1793,60 +1800,167 @@ def prog_generar_oc():
                         'productos': [],
                     }
                 mp_deficit[cod]['deficit_g'] += mp['deficit_g']
-                mp_deficit[cod]['productos'].append(prod['producto'])
+                if prod['producto'] not in mp_deficit[cod]['productos']:
+                    mp_deficit[cod]['productos'].append(prod['producto'])
 
     if not mp_deficit:
         return jsonify({'ok': True, 'mensaje': 'No hay déficits de MP — sin OC necesaria', 'creadas': []})
 
-    # Check for existing pending solicitudes (dedup last 7 days)
-    since_7d = (datetime.now() - timedelta(days=7)).isoformat()
-    existing = conn.execute(
-        "SELECT observaciones FROM solicitudes_compra WHERE estado='Pendiente' AND fecha >= ? AND categoria='Materia Prima'",
-        (since_7d,)
-    ).fetchall()
-    existing_obs = ' '.join(r[0] or '' for r in existing).upper()
+    # Lookup proveedor por codigo_mp desde maestro_mps
+    prov_map = {}
+    try:
+        for r in conn.execute(
+            "SELECT codigo_mp, COALESCE(TRIM(proveedor),'') FROM maestro_mps"
+        ).fetchall():
+            if r[1]:
+                prov_map[r[0]] = r[1]
+    except Exception:
+        pass
 
-    # Generate SOL number
-    year = datetime.now().strftime('%Y')
+    # Agrupar MPs en déficit por proveedor; sin proveedor → '(Sin asignar)'
+    SIN_PROV = 'Sin asignar'
+    grupos = {}  # proveedor → lista de items
+    for cod, info in mp_deficit.items():
+        prov = prov_map.get(cod) or SIN_PROV
+        grupos.setdefault(prov, []).append({
+            'codigo': cod,
+            'nombre': info['nombre'],
+            'deficit_g': info['deficit_g'],
+            'productos': info['productos'],
+        })
+
+    # Numero de SOL inicial
+    from datetime import datetime as _dt
+    year = _dt.now().strftime('%Y')
     last_n = conn.execute(
         "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
         (f"SOL-{year}-%",)
     ).fetchone()[0] or 0
-    sol_num = last_n + 1
+    n_sol = last_n
+    user = session.get('compras_user', 'Sistema')
 
-    sol_numero = f"SOL-{year}-{sol_num:04d}"
-    productos_str = ', '.join(set(p for v in mp_deficit.values() for p in v['productos']))
-    obs = f"Auto-generada Centro Programación — Déficit MP para: {productos_str[:200]}"
+    creadas = []
+    huerfana_info = None
 
-    conn.execute("""INSERT INTO solicitudes_compra
-        (numero, fecha, estado, solicitante, urgencia, observaciones, area, empresa, categoria, tipo)
-        VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        (sol_numero, datetime.now().isoformat(), 'Pendiente',
-         session.get('compras_user', 'Sistema'), 'Alta', obs,
-         'Produccion', 'Espagiria', 'Materia Prima', 'Compra'))
+    # Ordenar: primero proveedores reales, al final 'Sin asignar' para que
+    # quede visualmente claro como solicitud "por revisar"
+    proveedores_ordenados = sorted(
+        grupos.keys(),
+        key=lambda p: (p == SIN_PROV, p.lower())
+    )
 
-    items_created = []
-    for cod, info in mp_deficit.items():
-        just = f"Déficit para producción de: {', '.join(info['productos'][:3])}"
-        conn.execute("""INSERT INTO solicitudes_compra_items
-            (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion)
-            VALUES (?,?,?,?,?,?)""",
-            (sol_numero, cod, info['nombre'],
-             info['deficit_g'], 'g', just))
-        items_created.append({
-            'codigo': cod,
-            'nombre': info['nombre'],
-            'deficit_g': round(info['deficit_g'], 1),
-        })
+    try:
+        for prov in proveedores_ordenados:
+            items = grupos[prov]
+            if not items:
+                continue
+            n_sol += 1
+            sol_numero = f"SOL-{year}-{n_sol:04d}"
+            n_oc = (conn.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?",
+                (f"OC-{year}-%",)
+            ).fetchone()[0] or 0) + 1
+            num_oc = f"OC-{year}-{n_oc:04d}"
 
-    conn.commit()
+            # Resumen de MPs principales para observaciones (legibilidad)
+            mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
+            mps_resumen = ', '.join([
+                (it['nombre'][:25] + ' (' +
+                 (f"{it['deficit_g']/1000:.1f}kg" if it['deficit_g'] >= 1000 else f"{int(it['deficit_g'])}g") +
+                 ')')
+                for it in mps_resumen_items
+            ])
+            if len(items) > 5:
+                mps_resumen += f' +{len(items) - 5} más'
+
+            es_sin_prov = (prov == SIN_PROV)
+            obs_prefix = (
+                "REQUIERE ASIGNAR PROVEEDOR — " if es_sin_prov else
+                "Auto-generada Centro Programación — "
+            )
+            obs = (
+                f"{obs_prefix}Proveedor: {prov} · "
+                f"{len(items)} MPs · {mps_resumen}"
+            )
+            if es_sin_prov:
+                obs += " · ACCIÓN: Catalina debe asignar proveedor en /admin → Catálogo MPs y disparar Generar OC nuevamente."
+
+            conn.execute("""INSERT INTO solicitudes_compra
+                (numero, fecha, estado, solicitante, urgencia, observaciones,
+                 area, empresa, categoria, tipo, numero_oc)
+                VALUES (?, datetime('now'), 'Pendiente', ?, 'Alta', ?,
+                        'Produccion', 'Espagiria', 'Materia Prima', 'Compra', ?)""",
+                (sol_numero, user, obs, num_oc))
+
+            # OC asociada con el proveedor correcto (o 'Sin asignar')
+            valor_estimado_total = 0
+            conn.execute("""INSERT INTO ordenes_compra
+                (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por, categoria)
+                VALUES (?, datetime('now'), 'Borrador', ?, 0, ?, ?, 'MP')""",
+                (num_oc, prov,
+                 f"OC sugerida desde Centro Programación · {len(items)} MPs",
+                 user))
+
+            items_created_this = []
+            for it in items:
+                just = f"Déficit para producción de: {', '.join(it['productos'][:3])}"
+                if len(it['productos']) > 3:
+                    just += f' +{len(it["productos"])-3} más'
+                conn.execute("""INSERT INTO solicitudes_compra_items
+                    (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion)
+                    VALUES (?,?,?,?,?,?)""",
+                    (sol_numero, it['codigo'], it['nombre'],
+                     it['deficit_g'], 'g', just))
+                try:
+                    conn.execute("""INSERT INTO ordenes_compra_items
+                        (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
+                        VALUES (?,?,?,?,0,0)""",
+                        (num_oc, it['codigo'], it['nombre'], it['deficit_g']))
+                except sqlite3.OperationalError:
+                    pass
+                items_created_this.append({
+                    'codigo': it['codigo'],
+                    'nombre': it['nombre'],
+                    'deficit_g': round(it['deficit_g'], 1),
+                })
+
+            entry = {
+                'solicitud': sol_numero,
+                'orden_compra': num_oc,
+                'proveedor': prov,
+                'n_items': len(items_created_this),
+                'items': items_created_this,
+                'requiere_asignacion': es_sin_prov,
+            }
+            creadas.append(entry)
+            if es_sin_prov:
+                huerfana_info = entry
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            'error': 'Falló la generación de OCs',
+            'detalle': str(e),
+        }), 500
+
+    n_total_mps = sum(len(g) for g in grupos.values())
+    n_proveedores = len([p for p in grupos.keys() if p != SIN_PROV])
+    n_huerfanos = len(grupos.get(SIN_PROV, []))
+
+    msg = f'{len(creadas)} solicitudes creadas — {n_total_mps} MPs en {n_proveedores} proveedores'
+    if n_huerfanos:
+        msg += f' + 1 solicitud SIN ASIGNAR ({n_huerfanos} MPs huérfanos para revisar)'
 
     return jsonify({
         'ok': True,
-        'solicitud': sol_numero,
-        'n_items': len(items_created),
-        'items': items_created,
-        'mensaje': f'Solicitud {sol_numero} creada con {len(items_created)} MPs faltantes',
+        'creadas': creadas,
+        'total_solicitudes': len(creadas),
+        'total_mps': n_total_mps,
+        'proveedores_resueltos': n_proveedores,
+        'mps_huerfanos': n_huerfanos,
+        'huerfana': huerfana_info,
+        'mensaje': msg,
     })
 
 
