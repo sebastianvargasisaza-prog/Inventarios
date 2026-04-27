@@ -4555,14 +4555,21 @@ function _renderProgramacion(d){
           nombre_mp: mp.nombre||'',
           cantidad_g: deficit_g,
           unidad: 'g',
-          justificacion: 'Planificación '+_planMeses+'m — '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +más':''),
+          justificacion: 'Planificación '+_planMeses+'m — Para producir: '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +'+(mp.productos.length-3)+' más':''),
           valor_estimado: 0
         };
       });
+      // Resumen de MPs principales para que el card de solicitudes muestre
+      // exactamente qué se está pidiendo, no solo el conteo.
+      var mpsResumen = mps.slice(0, 5).map(function(mp){
+        var kg = (mp.deficit_g/1000);
+        return mp.nombre + ' (' + (kg >= 1 ? kg.toFixed(1)+'kg' : Math.ceil(mp.deficit_g)+'g') + ')';
+      }).join(', ');
+      if(mps.length > 5) mpsResumen += ' +' + (mps.length-5) + ' más';
       var payload = {
         solicitante: 'sebastian',
         urgencia: 'Normal',
-        observaciones: 'Generado automáticamente desde Planificación Estratégica ('+_planMeses+' meses). Proveedor: '+prov+'. '+mps.length+' MPs en déficit.',
+        observaciones: 'Planificación Estratégica '+_planMeses+'m · Proveedor: '+prov+' · '+mps.length+' MPs · '+mpsResumen,
         area: 'Produccion',
         empresa: 'Espagiria',
         categoria: 'Materia Prima',

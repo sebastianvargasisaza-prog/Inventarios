@@ -328,6 +328,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <option value="Rechazada">Rechazada</option>
     </select>
     <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
+    <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="Descarga PDF ejecutivo con todas las solicitudes pendientes/aprobadas para revisión de Gerencia">&#x1F4C4; Descargar PDF</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -870,11 +871,26 @@ async function loadData(){
     _MPCAT = d3.mps||[];
   }catch(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }
   try{
-    var r4 = await fetch('/api/alertas-reabastecimiento');
-    if(!r4.ok) throw new Error('Alert API '+r4.status);
+    // Usar Centro de Programación (con velocidad Shopify + producciones
+    // futuras) en vez de stock_actual<stock_minimo simple, que está
+    // basado en una columna que no se actualiza y daba data engañosa.
+    var r4 = await fetch('/api/programacion/mps-deficit');
+    if(!r4.ok) throw new Error('Programacion deficit API '+r4.status);
     var d4 = await r4.json();
-    _ALERTAS_MP = (d4.alertas||[]).filter(function(a){ return a.tipo==='MP'; });
-  }catch(e){ console.error('Alert load error:',e); _ALERTAS_MP=[]; }
+    _ALERTAS_MP = (d4.mps||[]).map(function(m){
+      return {
+        codigo_mp: m.codigo_mp,
+        nombre: m.nombre,
+        stock_actual: m.stock_actual_g === -1 ? Infinity : m.stock_actual_g,
+        stock_minimo: 0, // ya no aplica el concepto de mínimo, es déficit real
+        deficit: m.deficit_g,
+        proveedor: m.proveedor || '',
+        productos: m.productos_afectados || [],
+        tipo: 'MP',
+        es_china: m.es_china || false,
+      };
+    });
+  }catch(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; }
   renderDash();
   renderMPAlerts();
   renderOCS();
@@ -1734,6 +1750,9 @@ function reloadProvs(selectAfter){
 
 
 // ─── MP: Banner de alertas ──────────────────────────────────
+// Fuente: Centro de Programación (velocidad Shopify + producciones futuras
+// del calendario + stock real). Lista MPs con déficit operacional REAL,
+// no items que tienen stock_actual<stock_minimo de un campo desactualizado.
 function renderMPAlerts(){
   var banner=document.getElementById('mp-alert-banner');
   var text=document.getElementById('mp-alert-text');
@@ -1741,14 +1760,23 @@ function renderMPAlerts(){
   if(!banner) return;
   if(!_ALERTAS_MP||!_ALERTAS_MP.length){ banner.style.display='none'; return; }
   var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
+  var n_china = _ALERTAS_MP.filter(function(a){ return a.es_china; }).length;
   banner.style.display='block';
-  text.textContent=_ALERTAS_MP.length+' MPs bajo stock mínimo — Deficit total: '+Math.round(total_def/1000)+'kg';
+  var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) — Faltante total: '+Math.round(total_def/1000)+'kg';
+  if(n_china > 0) resumen += ' · ⚠ '+n_china+' de China (lead 60d)';
+  text.textContent=resumen;
   list.innerHTML=_ALERTAS_MP.slice(0,8).map(function(a){
-    var pct=a.stock_minimo>0?Math.round(a.stock_actual/a.stock_minimo*100):0;
-    var col=pct<30?'#dc2626':'#d97706';
+    var col = a.es_china ? '#b91c1c' : '#d97706';
+    var deficit_g = Math.round(a.deficit||0);
+    var deficit_str = deficit_g >= 1000 ? (deficit_g/1000).toFixed(1)+'kg' : deficit_g+'g';
+    var stock_str = a.stock_actual === Infinity ? '∞' :
+                    Math.round(a.stock_actual||0) >= 1000 ? (a.stock_actual/1000).toFixed(1)+'kg' :
+                    Math.round(a.stock_actual||0)+'g';
+    var prov_str = a.proveedor ? ' · '+a.proveedor : '';
+    var china_mark = a.es_china ? '🇨🇳 ' : '';
     return '<span style="background:#fff;border:1px solid '+col+';color:'+col
-      +';border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">'
-      +esc(a.nombre.substring(0,24))+' ('+Math.round(a.stock_actual)+'g / min '+Math.round(a.stock_minimo)+'g)</span>';
+      +';border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;" title="Stock: '+stock_str+prov_str+'">'
+      +china_mark+esc(a.nombre.substring(0,28))+' (faltan '+deficit_str+')</span>';
   }).join('');
 }
 
@@ -2387,6 +2415,14 @@ async function openOCDetail(num){
 var SOLIC=[];
 var INFLUENCERS=[];
 var CC_SOLIC=[];
+function descargarSolicitudesPDF(){
+  // Filtra por el estado seleccionado en el dropdown si lo hay; si no, baja
+  // Pendientes+Aprobadas (lo más útil para que Gerencia revise lo que falta).
+  var estados = (document.getElementById('s-solic')||{value:''}).value;
+  var qs = estados ? '?estados='+encodeURIComponent(estados) : '?estados=Pendiente,Aprobada';
+  window.open('/api/compras/solicitudes/pdf'+qs, '_blank');
+}
+
 async function loadSolicitudes(){
   try{
     var r=await fetch('/api/solicitudes-compra');

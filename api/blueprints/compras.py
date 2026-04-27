@@ -2107,6 +2107,265 @@ def consolidado_por_proveedor():
     result.sort(key=lambda x: x['valor_total'], reverse=True)
     return jsonify({'proveedores': result, 'total': len(result)})
 
+@bp.route('/api/compras/solicitudes/pdf', methods=['GET'])
+def solicitudes_pdf_resumen():
+    """Genera PDF ejecutivo con todas las solicitudes filtradas — para que
+    Gerencia (Alejandro) revise lo que falta y dé visto bueno antes de
+    convertir en OCs.
+
+    Query params:
+      - estados: lista (default 'Pendiente,Aprobada')
+      - categoria: filtra (default sin filtro, excluye Influencer/CC)
+
+    Cada solicitud incluye su detalle de items (codigo, nombre, cantidad,
+    unidad, justificación) agrupado y totalizado.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    estados = (request.args.get('estados') or 'Pendiente,Aprobada').split(',')
+    estados = [e.strip() for e in estados if e.strip()]
+    if not estados:
+        estados = ['Pendiente', 'Aprobada']
+
+    conn = get_db(); c = conn.cursor()
+    placeholders = ','.join('?' * len(estados))
+    sql = f"""
+        SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
+               sc.observaciones, sc.empresa, sc.categoria, sc.area,
+               sc.fecha_requerida, sc.numero_oc,
+               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(oc.proveedor, '') as proveedor
+        FROM solicitudes_compra sc
+        LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
+        WHERE sc.estado IN ({placeholders})
+          AND sc.categoria NOT IN ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+        ORDER BY
+          CASE sc.urgencia WHEN 'Alta' THEN 0 WHEN 'Normal' THEN 1 ELSE 2 END,
+          sc.fecha_requerida ASC, sc.numero ASC
+    """
+    sols = c.execute(sql, estados).fetchall()
+
+    # Cargar items por solicitud
+    items_por_sol = {}
+    for sol_row in sols:
+        numero = sol_row[0]
+        try:
+            it = c.execute("""SELECT codigo_mp, nombre_mp, cantidad_g, unidad,
+                                     justificacion, COALESCE(valor_estimado, 0)
+                              FROM solicitudes_compra_items
+                              WHERE numero=?""", (numero,)).fetchall()
+            items_por_sol[numero] = it
+        except sqlite3.OperationalError:
+            items_por_sol[numero] = []
+
+    if not sols:
+        return jsonify({
+            'error': 'No hay solicitudes con esos estados',
+            'estados_solicitados': estados,
+        }), 404
+
+    # ── Generar PDF con fpdf2 ──────────────────────────────────────────────
+    from fpdf import FPDF
+    from datetime import datetime as _dt
+    from pathlib import Path
+
+    HHA_TEAL = (31, 95, 91)
+    HHA_TEAL_DARK = (16, 70, 67)
+    COLOR_TEXT = (40, 40, 40)
+    COLOR_TEXT_SOFT = (110, 110, 110)
+    COLOR_LINE = (200, 195, 188)
+
+    def _safe(t):
+        if t is None:
+            return ''
+        if not isinstance(t, str):
+            t = str(t)
+        repl = {'—': '-', '–': '-', '…': '...', '"': '"', '"': '"',
+                ''': "'", ''': "'", '•': '·', '→': '->', 'á':'a', 'é':'e',
+                'í':'i', 'ó':'o', 'ú':'u', 'Á':'A', 'É':'E', 'Í':'I',
+                'Ó':'O', 'Ú':'U', 'ñ':'n', 'Ñ':'N'}
+        for k, v in repl.items():
+            t = t.replace(k, v)
+        return t.encode('latin-1', errors='replace').decode('latin-1')
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    # Header con logo HHA si existe
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+        for cand in [repo_root / 'api' / 'static' / 'logo_hha.png',
+                     repo_root / 'logo_hha.png']:
+            if cand.exists():
+                pdf.image(str(cand), x=12, y=10, w=24, h=24)
+                break
+    except Exception:
+        pass
+
+    pdf.set_xy(40, 12)
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.set_text_color(*HHA_TEAL)
+    pdf.cell(0, 7, _safe('HHA GROUP - SOLICITUDES DE COMPRA'), ln=True)
+    pdf.set_x(40)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.set_text_color(*COLOR_TEXT_SOFT)
+    pdf.cell(0, 4, _safe(f'Reporte ejecutivo · Estados: {", ".join(estados)} · Generado: {_dt.now().strftime("%Y-%m-%d %H:%M")}'), ln=True)
+    pdf.set_x(40)
+    pdf.cell(0, 4, _safe(f'Total solicitudes: {len(sols)}'), ln=True)
+    pdf.ln(10)
+
+    # Línea separadora
+    pdf.set_draw_color(*HHA_TEAL)
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(4)
+
+    # Sumarios
+    total_general_g = 0.0
+    total_general_valor = 0.0
+    n_pendientes = sum(1 for s in sols if s[2] == 'Pendiente')
+    n_aprobadas = sum(1 for s in sols if s[2] == 'Aprobada')
+
+    # Cuerpo: una sección por solicitud
+    for s in sols:
+        (numero, fecha, estado, solicitante, urgencia, obs, empresa,
+         categoria, area, fecha_req, numero_oc, valor_oc, proveedor) = s
+
+        if pdf.get_y() > 240:
+            pdf.add_page()
+
+        # Header de solicitud
+        pdf.set_font('Helvetica', 'B', 11)
+        pdf.set_text_color(*HHA_TEAL_DARK)
+        pdf.cell(0, 6, _safe(f'{numero}  ·  {estado}  ·  Urgencia: {urgencia}'), ln=True)
+        pdf.set_font('Helvetica', '', 8)
+        pdf.set_text_color(*COLOR_TEXT_SOFT)
+        meta_line = f'Fecha: {(fecha or "")[:10]}  ·  Solicitante: {solicitante or ""}  ·  Area: {area or ""}  ·  Empresa: {empresa or ""}'
+        pdf.cell(0, 4, _safe(meta_line), ln=True)
+        if proveedor or fecha_req:
+            extra = []
+            if proveedor: extra.append(f'Proveedor: {proveedor}')
+            if fecha_req: extra.append(f'Fecha requerida: {fecha_req}')
+            if numero_oc: extra.append(f'OC: {numero_oc}')
+            pdf.cell(0, 4, _safe('  ·  '.join(extra)), ln=True)
+        if obs:
+            pdf.set_font('Helvetica', 'I', 8)
+            pdf.set_text_color(*COLOR_TEXT)
+            pdf.multi_cell(0, 4, _safe(f'Obs: {obs[:300]}'))
+        pdf.ln(1)
+
+        # Tabla de items
+        items = items_por_sol.get(numero, [])
+        if items:
+            cols = [(15, 'CODIGO', 'L'), (78, 'MATERIAL', 'L'),
+                    (22, 'CANTIDAD', 'R'), (10, 'UM', 'C'),
+                    (45, 'JUSTIFICACION', 'L'), (20, 'VALOR EST', 'R')]
+            pdf.set_fill_color(*HHA_TEAL)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font('Helvetica', 'B', 7)
+            for w, name, _al in cols:
+                pdf.cell(w, 5, _safe(name), border=0, fill=True, align='C')
+            pdf.ln()
+
+            pdf.set_text_color(*COLOR_TEXT)
+            pdf.set_font('Helvetica', '', 7.5)
+            sol_total_g = 0.0
+            sol_total_valor = 0.0
+            for it in items:
+                cod_mp, nom_mp, cant_g, unidad, just, val_est = it
+                cant = float(cant_g or 0)
+                val = float(val_est or 0)
+                sol_total_g += cant
+                sol_total_valor += val
+                # Formatear cantidad
+                if cant >= 1000:
+                    cant_str = f'{cant/1000:.1f} kg'
+                elif unidad and unidad != 'g':
+                    cant_str = f'{int(cant)} {unidad}'
+                else:
+                    cant_str = f'{int(cant)} g'
+                row_h = 4
+                pdf.cell(15, row_h, _safe((cod_mp or '')[:12]), border='B')
+                pdf.cell(78, row_h, _safe((nom_mp or '')[:50]), border='B')
+                pdf.cell(22, row_h, _safe(cant_str), border='B', align='R')
+                pdf.cell(10, row_h, _safe(unidad or 'g'), border='B', align='C')
+                pdf.cell(45, row_h, _safe((just or '')[:35]), border='B')
+                pdf.cell(20, row_h, _safe(f'${val:,.0f}' if val > 0 else '—'), border='B', align='R')
+                pdf.ln()
+
+            # Total por solicitud
+            pdf.set_font('Helvetica', 'B', 8)
+            pdf.set_fill_color(245, 245, 240)
+            cant_total_str = f'{sol_total_g/1000:.1f} kg' if sol_total_g >= 1000 else f'{int(sol_total_g)} g'
+            pdf.cell(15 + 78, 5, _safe(f'Total: {len(items)} items'), fill=True, border=0, align='R')
+            pdf.cell(22, 5, _safe(cant_total_str), fill=True, border=0, align='R')
+            pdf.cell(10 + 45, 5, '', fill=True, border=0)
+            pdf.cell(20, 5, _safe(f'${sol_total_valor:,.0f}' if sol_total_valor > 0 else '—'),
+                     fill=True, border=0, align='R')
+            pdf.ln(8)
+            total_general_g += sol_total_g
+            total_general_valor += sol_total_valor
+        else:
+            pdf.set_font('Helvetica', 'I', 8)
+            pdf.set_text_color(*COLOR_TEXT_SOFT)
+            pdf.cell(0, 4, '(sin items detallados)', ln=True)
+            pdf.ln(3)
+
+    # Resumen final
+    if pdf.get_y() > 240:
+        pdf.add_page()
+    pdf.ln(4)
+    pdf.set_draw_color(*HHA_TEAL)
+    pdf.set_line_width(0.5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_text_color(*HHA_TEAL_DARK)
+    pdf.cell(0, 6, _safe('RESUMEN GENERAL'), ln=True)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.set_text_color(*COLOR_TEXT)
+    pdf.cell(0, 5, _safe(f'  · {len(sols)} solicitudes ({n_pendientes} pendientes, {n_aprobadas} aprobadas)'), ln=True)
+    cant_g_str = f'{total_general_g/1000:.1f} kg' if total_general_g >= 1000 else f'{int(total_general_g)} g'
+    pdf.cell(0, 5, _safe(f'  · Cantidad total a comprar: {cant_g_str}'), ln=True)
+    if total_general_valor > 0:
+        pdf.cell(0, 5, _safe(f'  · Valor estimado total: ${total_general_valor:,.0f}'), ln=True)
+
+    # Bloque de aprobación para Gerencia
+    pdf.ln(12)
+    pdf.set_draw_color(*COLOR_LINE)
+    pdf.set_line_width(0.2)
+    y_firma = pdf.get_y()
+    pdf.line(20, y_firma, 90, y_firma)
+    pdf.line(120, y_firma, 190, y_firma)
+    pdf.set_xy(20, y_firma + 1)
+    pdf.set_font('Helvetica', 'B', 8)
+    pdf.set_text_color(*COLOR_TEXT)
+    pdf.cell(70, 4, 'REVISADO POR', align='C', ln=True)
+    pdf.set_x(20)
+    pdf.set_font('Helvetica', '', 7)
+    pdf.set_text_color(*COLOR_TEXT_SOFT)
+    pdf.cell(70, 3.5, _safe('(Compras / Logística)'), align='C')
+
+    pdf.set_xy(120, y_firma + 1)
+    pdf.set_font('Helvetica', 'B', 8)
+    pdf.set_text_color(*COLOR_TEXT)
+    pdf.cell(70, 4, 'APROBADO POR GERENCIA', align='C', ln=True)
+    pdf.set_x(120)
+    pdf.set_font('Helvetica', '', 7)
+    pdf.set_text_color(*COLOR_TEXT_SOFT)
+    pdf.cell(70, 3.5, _safe('(Alejandro / Sebastian)'), align='C')
+
+    # Output
+    pdf_bytes = bytes(pdf.output())
+    fname = f'solicitudes_compra_{_dt.now().strftime("%Y%m%d_%H%M")}.pdf'
+    return Response(
+        pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'}
+    )
+
+
 # ─── MÓDULO CLIENTES — Rutas ──────────────────────────────────
 
 

@@ -1850,6 +1850,90 @@ def prog_generar_oc():
     })
 
 
+@bp.route('/api/programacion/mps-deficit')
+def prog_mps_deficit():
+    """Lista plana de MPs con déficit real según Centro de Programación.
+
+    A diferencia de /api/alertas-reabastecimiento (que compara stock_actual
+    < stock_minimo y depende de un campo desactualizado), esta calcula
+    déficit REAL: necesidad para producciones futuras + velocidad de ventas
+    proyectada vs stock actual.
+
+    Cada item: codigo_mp, nombre, stock_actual_g, deficit_g, productos_afectados,
+                proveedor, lead_time_estimado.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    try:
+        vel_data = _shopify_velocity(conn, days=60)
+        mp_stock = _get_mp_stock(conn)
+        formulas = _get_formulas(conn)
+        cal = _fetch_calendar_events(days_ahead=90)
+        china_mps_set = _get_china_mps(conn)
+        if not formulas:
+            return jsonify({'mps': [], 'total': 0, 'deficit_total_kg': 0})
+        projection, _alerts = _project_stock(
+            conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
+            china_mps=china_mps_set
+        )
+        # Agrupar MPs en déficit por codigo
+        mp_def = {}
+        for prod in projection:
+            for m in prod.get('mp_check', []):
+                mid = str(m.get('material_id', '')).strip()
+                if not mid or m.get('ok'):
+                    continue
+                deficit_g = float(m.get('deficit_g') or 0)
+                if deficit_g <= 0:
+                    continue
+                if mid not in mp_def:
+                    mp_def[mid] = {
+                        'codigo_mp': mid,
+                        'nombre': m.get('nombre', ''),
+                        'stock_actual_g': float(m.get('available_g') or 0)
+                                          if m.get('available_g') != '∞' else float('inf'),
+                        'deficit_g': 0.0,
+                        'productos_afectados': [],
+                        'es_china': mid in china_mps_set,
+                    }
+                mp_def[mid]['deficit_g'] += deficit_g
+                if prod['producto'] not in mp_def[mid]['productos_afectados']:
+                    mp_def[mid]['productos_afectados'].append(prod['producto'])
+
+        # Proveedor por MP
+        try:
+            for row in conn.execute(
+                "SELECT codigo_mp, COALESCE(proveedor,'') FROM maestro_mps"
+            ).fetchall():
+                if row[0] in mp_def:
+                    mp_def[row[0]]['proveedor'] = row[1]
+        except Exception:
+            pass
+
+        items = sorted(mp_def.values(), key=lambda x: -x['deficit_g'])
+        # Limpiar inf antes de jsonify
+        for it in items:
+            if it['stock_actual_g'] == float('inf'):
+                it['stock_actual_g'] = -1  # marca de "ilimitado"
+        deficit_total_kg = sum(i['deficit_g'] for i in items) / 1000.0
+
+        return jsonify({
+            'mps': items,
+            'total': len(items),
+            'deficit_total_kg': round(deficit_total_kg, 2),
+            'china_count': sum(1 for i in items if i.get('es_china')),
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()[-500:],
+            'mps': [],
+            'total': 0,
+        }), 500
+
+
 @bp.route('/api/programacion/n-alertas')
 def prog_n_alertas():
     """Endpoint rápido — retorna solo el conteo de alertas (para badge en Compras)."""
