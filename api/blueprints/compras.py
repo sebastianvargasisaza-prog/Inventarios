@@ -1790,21 +1790,24 @@ def descargar_comprobante_pdf(comp_id):
     )
 
 
-@bp.route('/api/comprobantes-pago/<int:comp_id>/regenerar', methods=['POST'])
-def regenerar_comprobante_pdf(comp_id):
-    """Re-genera el PDF de un comprobante existente con datos actualizados.
+def _regenerate_ce_internal(conn, c, comp_id, forzar_obs=False,
+                            empresa_override=None):
+    """Helper interno: regenera el PDF + actualiza DB de un comprobante.
 
-    Útil para corregir comprobantes generados antes de que se implementara:
-      - Dispatch correcto empresa (Espagiria vs ANIMUS Lab)
-      - Parseo OBS para datos bancarios
-      - Formateo correcto de montos COP
+    Centraliza la logica para ser invocada tanto desde:
+      - POST /api/comprobantes-pago/<id>/regenerar (single, via UI)
+      - POST /api/comprobantes-pago/regenerar-legacy (bulk admin)
 
-    Body JSON (todos opcionales — si no se pasan, se re-derivan de la DB):
-      empresa: "Animus" | "Espagiria"
-      forzar_obs: true  — fuerza re-parseo OBS aunque ya haya banco en DB
+    Args:
+      conn, c: conexion + cursor de SQLite (se hace commit al final)
+      comp_id: id del comprobantes_pago row
+      forzar_obs: si True, fuerza re-parseo de OBS aunque ya tenga banco
+      empresa_override: si no None, fuerza la empresa (skip multi-signal)
+
+    Returns dict:
+      {ok: True, numero_ce, empresa, beneficiario, subtotal_usado, pdf_size_kb}
+      {ok: False, error}
     """
-    conn = get_db()
-    c = conn.cursor()
     c.execute("""
         SELECT id, numero_ce, numero_oc, beneficiario_nombre, beneficiario_cedula,
                beneficiario_banco, beneficiario_cuenta, beneficiario_tipo_cta,
@@ -1815,20 +1818,17 @@ def regenerar_comprobante_pdf(comp_id):
     """, (comp_id,))
     row = c.fetchone()
     if not row:
-        return jsonify({'ok': False, 'error': 'Comprobante no encontrado'}), 404
+        return {'ok': False, 'error': 'Comprobante no encontrado'}
 
     (_, numero_ce, numero_oc, ben_nombre, ben_cedula, ben_banco, ben_cuenta,
      ben_tipo_cta, ben_ciudad, subtotal, iva_pct, rete_pct, retica_pct,
      medio_pago, observaciones, pagado_por, empresa_db, _, fecha_emision_str) = row
 
-    d = request.get_json(silent=True) or {}
-    forzar_obs = d.get('forzar_obs', False)
-
-    # ── Empresa: usa la del body, sino re-deriva multi-señal ──
+    # ── Empresa: usa override del caller, sino re-deriva multi-señal ──
     # _is_animus_payment cubre CEs legacy donde 'empresa_db' quedó en
     # 'Espagiria' por default histórico aunque era pago de influencer.
-    if 'empresa' in d:
-        empresa = d['empresa']
+    if empresa_override is not None:
+        empresa = empresa_override
     else:
         oc_row = c.execute(
             "SELECT categoria FROM ordenes_compra WHERE numero_oc=?",
@@ -1964,13 +1964,140 @@ def regenerar_comprobante_pdf(comp_id):
     ))
     conn.commit()
 
-    return jsonify({
+    return {
         'ok': True,
         'numero_ce': numero_ce,
         'empresa': empresa,
         'beneficiario': {k: v for k, v in beneficiario.items() if k != 'email'},
         'subtotal_usado': monto,
         'pdf_size_kb': round(len(pdf_bytes) / 1024, 1),
+    }
+
+
+@bp.route('/api/comprobantes-pago/<int:comp_id>/regenerar', methods=['POST'])
+def regenerar_comprobante_pdf(comp_id):
+    """Re-genera el PDF de un comprobante existente con datos actualizados.
+
+    Útil para corregir comprobantes generados antes de que se implementara:
+      - Dispatch correcto empresa (Espagiria vs ANIMUS Lab)
+      - Parseo OBS para datos bancarios
+      - Formateo correcto de montos COP
+
+    Body JSON (todos opcionales — si no se pasan, se re-derivan de la DB):
+      empresa: "Animus" | "Espagiria"
+      forzar_obs: true  — fuerza re-parseo OBS aunque ya haya banco en DB
+    """
+    d = request.get_json(silent=True) or {}
+    forzar_obs = bool(d.get('forzar_obs', False))
+    empresa_override = d.get('empresa') if 'empresa' in d else None
+
+    conn = get_db(); c = conn.cursor()
+    result = _regenerate_ce_internal(
+        conn, c, comp_id,
+        forzar_obs=forzar_obs,
+        empresa_override=empresa_override,
+    )
+    if not result.get('ok'):
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@bp.route('/api/comprobantes-pago/regenerar-legacy', methods=['POST'])
+def regenerar_comprobantes_legacy():
+    """Bulk-regenera CEs con dispatch Animus/Espagiria incorrecto.
+
+    Detecta CEs marcados como 'Espagiria' que en realidad eran pagos a
+    influencer (multi-señal _is_animus_payment) y regenera todos los
+    PDFs con la empresa correcta (ANIMUS LAB).
+
+    Util para corregir CEs creados antes del feature de 2 empresas
+    pagadoras (commit 19443c9). Antes el flujo era: usuario va al
+    modulo /marketing y hace clic en 'Regenerar' uno por uno; con este
+    endpoint admin lo hace de un golpe.
+
+    Body JSON (opcional):
+      dry_run: bool (default false) — solo lista candidatos, no toca
+
+    Solo admins. Audita en security_events cada CE corregido.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({
+            'error': 'Solo administradores pueden bulk-regenerar comprobantes'
+        }), 403
+
+    d = request.get_json(silent=True) or {}
+    dry_run = bool(d.get('dry_run', False))
+
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, numero_ce, numero_oc, beneficiario_nombre, observaciones
+        FROM comprobantes_pago
+        WHERE LOWER(COALESCE(empresa,'')) != 'animus'
+        ORDER BY id ASC
+    """).fetchall()
+
+    candidatos = []
+    for cid, ce, oc, ben_nom, obs in rows:
+        cat = ''
+        if oc:
+            oc_row = c.execute(
+                "SELECT categoria FROM ordenes_compra WHERE numero_oc=?",
+                (oc,)
+            ).fetchone()
+            cat = (oc_row[0] if oc_row else '') or ''
+        if _is_animus_payment(
+            c, numero_oc=oc, beneficiario_nombre=ben_nom,
+            observaciones=obs, categoria=cat,
+        ):
+            candidatos.append({
+                'id': cid, 'numero_ce': ce, 'numero_oc': oc or '',
+                'beneficiario': ben_nom or '',
+            })
+
+    if dry_run:
+        return jsonify({
+            'ok': True, 'dry_run': True,
+            'candidatos': candidatos,
+            'count': len(candidatos),
+        })
+
+    fixed = []
+    errors = []
+    for cand in candidatos:
+        try:
+            result = _regenerate_ce_internal(
+                conn, c, cand['id'],
+                forzar_obs=False,
+                empresa_override='Animus',
+            )
+            if result.get('ok'):
+                fixed.append({
+                    'id': cand['id'],
+                    'numero_ce': cand['numero_ce'],
+                    'pdf_size_kb': result.get('pdf_size_kb'),
+                })
+            else:
+                errors.append({
+                    'id': cand['id'],
+                    'numero_ce': cand['numero_ce'],
+                    'error': result.get('error', 'unknown'),
+                })
+        except Exception as _e:
+            errors.append({
+                'id': cand['id'],
+                'numero_ce': cand['numero_ce'],
+                'error': str(_e),
+            })
+
+    return jsonify({
+        'ok': True, 'dry_run': False,
+        'corregidos': fixed,
+        'errores': errors,
+        'count_corregidos': len(fixed),
+        'count_errores': len(errors),
     })
 
 

@@ -380,3 +380,140 @@ def test_comprobante_regenerar_dispatch_animus_legacy(app, db_clean):
     cur.execute("DELETE FROM marketing_influencers WHERE id=9998")
     conn.commit()
     conn.close()
+
+
+def test_bulk_regenerar_legacy_solo_admin(app, db_clean):
+    """POST /api/comprobantes-pago/regenerar-legacy → 403 para no-admin."""
+    c = app.test_client()
+    r = c.post("/login", data={"username": "luis", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    r = c.post("/api/comprobantes-pago/regenerar-legacy",
+               json={"dry_run": True}, headers=csrf_headers())
+    assert r.status_code == 403
+
+
+def test_bulk_regenerar_legacy_dry_run_lista(app, db_clean):
+    """dry_run lista candidatos sin tocar la DB."""
+    import sqlite3
+    import os
+
+    c = _login(app)  # admin sebastian via existing helper
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    # Influencer registrado + CE marcado como Espagiria pero deberia ser Animus
+    cur.execute("""INSERT OR IGNORE INTO marketing_influencers
+                   (id, nombre, instagram, estado)
+                   VALUES (9997, 'Bulk Test Inf', '@bti', 'Activa')""")
+    cur.execute("""INSERT INTO ordenes_compra
+                   (numero_oc, fecha, estado, proveedor, categoria, valor_total)
+                   VALUES ('OC-BULK-TEST', '2026-04-27', 'Pagada',
+                           'Bulk Test Inf', '', 100000)""")
+    cur.execute("""INSERT INTO comprobantes_pago
+                   (numero_ce, anio, numero_oc, beneficiario_nombre, subtotal,
+                    total_pagado, medio_pago, observaciones, pagado_por,
+                    empresa, pdf_archivo, fecha_emision, iva_pct,
+                    retefuente_pct, retica_pct)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CE-BULK-TEST-1", 2026, "OC-BULK-TEST", "Bulk Test Inf",
+                 100000, 100000, "Transferencia", "Pago influencer mensual",
+                 "sebastian", "Espagiria", "", "2026-04-27T18:00:00",
+                 0, 0, 0))
+    # Otro CE legitimamente Espagiria (NO debe aparecer como candidato)
+    cur.execute("""INSERT INTO ordenes_compra
+                   (numero_oc, fecha, estado, proveedor, categoria, valor_total)
+                   VALUES ('OC-MP-TEST', '2026-04-27', 'Pagada',
+                           'Inchemical', 'Materia Prima', 50000)""")
+    cur.execute("""INSERT INTO comprobantes_pago
+                   (numero_ce, anio, numero_oc, beneficiario_nombre, subtotal,
+                    total_pagado, medio_pago, observaciones, pagado_por,
+                    empresa, pdf_archivo, fecha_emision, iva_pct,
+                    retefuente_pct, retica_pct)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CE-MP-TEST-1", 2026, "OC-MP-TEST", "Inchemical",
+                 50000, 50000, "Transferencia", "Compra materia prima",
+                 "sebastian", "Espagiria", "", "2026-04-27T18:00:00",
+                 0, 0, 0))
+    conn.commit()
+    conn.close()
+
+    r = c.post("/api/comprobantes-pago/regenerar-legacy",
+               json={"dry_run": True}, headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["dry_run"] is True
+    cands = [x["numero_ce"] for x in j["candidatos"]]
+    assert "CE-BULK-TEST-1" in cands, f'Should detect influencer CE: {cands}'
+    assert "CE-MP-TEST-1" not in cands, (
+        f'Materia prima CE should not be flagged: {cands}'
+    )
+
+    # Verificar que dry_run NO toca empresa en la DB
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    emp = cur.execute(
+        "SELECT empresa FROM comprobantes_pago WHERE numero_ce='CE-BULK-TEST-1'"
+    ).fetchone()[0]
+    assert emp == "Espagiria", f'dry_run no debe modificar empresa: {emp}'
+
+    cur.execute("DELETE FROM comprobantes_pago WHERE numero_ce IN "
+                "('CE-BULK-TEST-1','CE-MP-TEST-1')")
+    cur.execute("DELETE FROM ordenes_compra WHERE numero_oc IN "
+                "('OC-BULK-TEST','OC-MP-TEST')")
+    cur.execute("DELETE FROM marketing_influencers WHERE id=9997")
+    conn.commit(); conn.close()
+
+
+def test_bulk_regenerar_legacy_aplica_fix(app, db_clean):
+    """Sin dry_run: aplica fix a todos los candidatos."""
+    import sqlite3
+    import os
+
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO marketing_influencers
+                   (id, nombre, instagram, estado, banco, cuenta_bancaria,
+                    tipo_cuenta, ciudad, cedula_nit, email)
+                   VALUES (9996, 'Bulk Apply Inf', '@bai', 'Activa',
+                           'BANCOLOMBIA', '1111', 'Ahorros',
+                           'Cali', '999', '')""")
+    cur.execute("""INSERT INTO ordenes_compra
+                   (numero_oc, fecha, estado, proveedor, categoria, valor_total)
+                   VALUES ('OC-BULK-APPLY', '2026-04-27', 'Pagada',
+                           'Bulk Apply Inf', '', 200000)""")
+    cur.execute("""INSERT INTO comprobantes_pago
+                   (numero_ce, anio, numero_oc, beneficiario_nombre, subtotal,
+                    total_pagado, medio_pago, observaciones, pagado_por,
+                    empresa, pdf_archivo, fecha_emision, iva_pct,
+                    retefuente_pct, retica_pct)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CE-BULK-APPLY-1", 2026, "OC-BULK-APPLY", "Bulk Apply Inf",
+                 200000, 200000, "Transferencia", "Pago a influencer",
+                 "sebastian", "Espagiria", "", "2026-04-27T19:00:00",
+                 0, 0, 0))
+    conn.commit()
+    conn.close()
+
+    r = c.post("/api/comprobantes-pago/regenerar-legacy",
+               json={"dry_run": False}, headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["dry_run"] is False
+    assert j["count_corregidos"] >= 1
+    fixed_ce = [x["numero_ce"] for x in j["corregidos"]]
+    assert "CE-BULK-APPLY-1" in fixed_ce
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    new_emp = cur.execute(
+        "SELECT empresa FROM comprobantes_pago WHERE numero_ce='CE-BULK-APPLY-1'"
+    ).fetchone()[0]
+    assert (new_emp or '').lower() == 'animus', (
+        f'tras bulk fix debe quedar Animus, quedo: {new_emp!r}'
+    )
+
+    cur.execute("DELETE FROM comprobantes_pago WHERE numero_ce='CE-BULK-APPLY-1'")
+    cur.execute("DELETE FROM ordenes_compra WHERE numero_oc='OC-BULK-APPLY'")
+    cur.execute("DELETE FROM marketing_influencers WHERE id=9996")
+    conn.commit(); conn.close()

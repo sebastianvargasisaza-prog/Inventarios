@@ -353,7 +353,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Descripcion *</label><input type="text" id="nmee-desc" placeholder="Descripcion del material"></div>
         <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Categoria *</label>
           <select id="nmee-cat" style="width:100%;"><option>Envase</option><option>Tapa</option><option>Etiqueta</option><option>Plegable</option><option>Serigrafia</option><option>Gotero</option><option>Frasco</option><option>Contorno</option><option>Otro</option></select></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Proveedor</label><input type="text" id="nmee-prov" placeholder="Proveedor"></div>
+        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Proveedor</label><input type="text" id="nmee-prov" list="prov-list-global" placeholder="Selecciona o escribe nuevo" autocomplete="off"></div>
         <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Inicial (und)</label><input type="number" id="nmee-stock" value="2000"></div>
         <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Minimo (und)</label><input type="number" id="nmee-min" value="1000"></div>
       </div>
@@ -407,7 +407,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           </select>
         </div>
         <div class="form-group"><label>Subtipo / categor&#237;a</label><input type="text" id="nmp-tipo" placeholder="Ej: Activo, Emoliente, Conservante..."></div>
-        <div class="form-group"><label>Proveedor</label><input type="text" id="nmp-prov" placeholder="Nombre del proveedor"></div>
+        <div class="form-group"><label>Proveedor</label><input type="text" id="nmp-prov" list="prov-list-global" placeholder="Selecciona o escribe nuevo" autocomplete="off"></div>
         <div class="form-group"><label>Stock Minimo (g)</label><input type="number" id="nmp-smin" placeholder="0" value="500"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:12px;">
@@ -421,7 +421,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
-        <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" placeholder="Auto (editable)"></div>
+        <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" list="prov-list-global" placeholder="Auto — selecciona o escribe nuevo" autocomplete="off"></div>
       </div>
       <div id="ing-nueva-mp-inline" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
         <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima — Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
@@ -1344,6 +1344,9 @@ document.addEventListener('DOMContentLoaded',function(){
   if(!OPER_ACTUAL){
     try{var saved=localStorage.getItem('espagiria_operador');if(saved)OPER_ACTUAL=saved;}catch(e){}
   }
+  // Pre-cargar lista de proveedores para los datalists (recepcion, catalogo,
+  // editar lote, solicitar). Idempotente: si ya se cargo, no hace nada.
+  if(typeof _cargarProveedoresUnicos==='function'){_cargarProveedoresUnicos();}
   var c=document.getElementById('oper-chip');
   if(OPER_ACTUAL){
     if(c) c.innerHTML='<span onclick="cambiarOperador()" title="Cambiar operador" style="cursor:pointer;">&#128100; '+OPER_ACTUAL+' <span style="font-size:0.75em;opacity:0.7;">[cambiar]</span></span>';

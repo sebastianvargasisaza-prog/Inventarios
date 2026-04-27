@@ -395,6 +395,7 @@ window.addEventListener('unhandledrejection', function(ev) {
         <option value="Pendiente">Pendientes</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
+      <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Detectar y corregir comprobantes que dicen Espagiria pero deberian decir ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:6px 10px;">&#x1F527; Fix legacy ANIMUS</button>
     </div>
   </div>
 
@@ -1637,6 +1638,54 @@ async function deleteCampana(id, nombre) {
 // ──────────────────────────────────────────────────────────────────────────────
 // ─── PAGOS REALIZADOS — vista cronológica para Marketing ───────────────────
 let _PAGOS_INF_CACHE = [];
+
+async function bulkRegenerarLegacy() {
+  // Paso 1: dry_run para listar candidatos
+  let drylist;
+  try {
+    const r = await fetch('/api/comprobantes-pago/regenerar-legacy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: true})
+    });
+    if (r.status === 403) {
+      showToast('Solo administradores pueden corregir comprobantes en bloque.', 'error');
+      return;
+    }
+    drylist = await r.json();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+    return;
+  }
+  const cands = (drylist && drylist.candidatos) || [];
+  if (cands.length === 0) {
+    showToast('No hay comprobantes legacy con dispatch incorrecto. Todo en orden.', 'ok');
+    return;
+  }
+  // Paso 2: confirmar con el listado
+  const preview = cands.slice(0, 6).map(x => '· ' + x.numero_ce + ' (' + (x.beneficiario||'?') + ')').join('\n');
+  const extra = cands.length > 6 ? '\n  + ' + (cands.length-6) + ' mas...' : '';
+  if (!confirm('Se detectaron ' + cands.length + ' comprobante(s) marcados como Espagiria que deberian ser ANIMUS Lab:\n\n' + preview + extra + '\n\nRegenerar todos? El PDF de cada uno se reemplaza con la version correcta.')) return;
+  // Paso 3: aplicar
+  showToast('Regenerando ' + cands.length + ' PDFs...', 'info');
+  try {
+    const r = await fetch('/api/comprobantes-pago/regenerar-legacy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({dry_run: false})
+    });
+    const d = await r.json();
+    const ok = (d.count_corregidos || 0);
+    const err = (d.count_errores || 0);
+    if (err > 0) {
+      showToast(ok + ' corregidos, ' + err + ' con error. Ver consola.', 'error');
+      console.warn('Errores bulk regenerar:', d.errores);
+    } else {
+      showToast(ok + ' comprobantes corregidos. Ahora dicen ANIMUS Lab.', 'ok');
+    }
+    setTimeout(() => loadPagosInfluencers(), 800);
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
 
 async function regenerarCE(compId, numCE) {
   if (!confirm('Re-generar PDF del ' + numCE + '?\n\nEsto corrige empresa (ANIMUS vs Espagiria), datos bancarios y montos en el PDF almacenado.')) return;
