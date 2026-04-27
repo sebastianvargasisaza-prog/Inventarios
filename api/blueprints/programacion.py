@@ -16,7 +16,7 @@ Dependencias de env:
 """
 
 from flask import Blueprint, jsonify, request, session
-import os, json, urllib.request, urllib.error, urllib.parse
+import os, json, logging, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
 
@@ -378,6 +378,40 @@ _MP_UNLIMITED = {
 _MP_UNLIMITED_NORM = set()  # populated lazily in _get_mp_stock
 
 
+def _detect_alias_collisions(conn):
+    """Detecta nombres de MP distintos que colapsan al mismo nombre normalizado.
+
+    Si dos MPs reales con codigos distintos normalizan al mismo nombre, el
+    alias map puede hacer que el stock de uno se atribuya al otro silenciosamente.
+    Esta función lo detecta y devuelve la lista para alertar al usuario.
+
+    Returns: lista de dicts con {'norm', 'variantes': [{codigo, nombre}, ...]}
+    """
+    by_norm = {}
+    try:
+        rows = conn.execute(
+            "SELECT codigo_mp, nombre_comercial FROM maestro_mps WHERE activo=1"
+        ).fetchall()
+        for codigo, nombre in rows:
+            n = _norm_mp_name(nombre or '')
+            if not n:
+                continue
+            by_norm.setdefault(n, []).append({
+                'codigo': str(codigo or ''),
+                'nombre': str(nombre or ''),
+            })
+    except Exception:
+        return []
+    collisions = []
+    for n, variantes in by_norm.items():
+        if len(variantes) >= 2:
+            # Solo es colisión real si los nombres originales son distintos
+            distintos = {v['nombre'].strip().upper() for v in variantes}
+            if len(distintos) >= 2:
+                collisions.append({'normalizado': n, 'variantes': variantes})
+    return collisions
+
+
 def _is_unlimited_mp(nombre):
     """Return True if the MP is produced on-site (water equipment, etc.)."""
     n = str(nombre or '').strip().upper()
@@ -508,49 +542,107 @@ def _get_formulas(conn):
 # ─── Helpers: PT stock y MEE stock ──────────────────────────────────────────
 
 def _get_stock_pt(conn):
+    """Stock real de producto terminado desde stock_pt.
+
+    REGLA DE AUTORIDAD (fix CRITICAL #1 auditoría): si para un SKU hay rows
+    liberados por CC (lote_produccion NO empieza con 'SHOPIFY-'), ESOS son
+    la fuente de verdad. Los snapshots de Shopify se IGNORAN para ese SKU
+    (porque la app ya descuenta y libera; los rows SHOPIFY son redundantes
+    y al sumarlos se doble contaba el stock).
+
+    Si para un SKU SOLO hay rows de SHOPIFY (porque nunca se ha liberado
+    desde CC), se usan como fallback. Eso cubre productos que aún no han
+    pasado por el flujo de maquila local.
+
+    Loguea warning si los rows SHOPIFY tienen >24h (staleness) — señal de
+    que el sync se está retrasando y conviene revisar el cron.
     """
-    Stock real de producto terminado desde stock_pt.
-    Cuando Espagiria libera un lote de CC, el sistema crea entradas en stock_pt
-    con unidades_disponible. Los despachos la reducen.
-    Mapea sku -> producto_nombre via sku_producto_map.
-    Returns dict {PRODUCTO_UPPER: stock_int}
-    """
-    # SKU -> producto_nombre (from sku_producto_map)
     sku_map = {}
     try:
-        for row in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1").fetchall():
+        for row in conn.execute(
+            "SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
             k = str(row[0] or '').strip().upper()
             if k:
                 sku_map[k] = str(row[1] or '').strip().upper()
     except Exception:
         pass
 
-    # Stock disponible por SKU desde stock_pt (fuente real de PT liberado)
-    stock = {}
+    # Separar stock por origen: CC liberado vs SHOPIFY snapshot
+    cc_stock = {}      # SKU → uds (autoridad real)
+    shop_stock = {}    # SKU → uds (snapshot, fallback)
+    shop_max_age_hours = 0.0
     try:
         rows = conn.execute("""
-            SELECT sku, COALESCE(SUM(unidades_disponible), 0)
+            SELECT UPPER(TRIM(sku)) AS sku,
+                   COALESCE(lote_produccion, '') AS lote,
+                   COALESCE(SUM(unidades_disponible), 0) AS uds,
+                   MAX(COALESCE(fecha_liberacion, fecha_creacion, '')) AS fmax
             FROM stock_pt
             WHERE estado = 'Disponible'
-            GROUP BY sku
+            GROUP BY UPPER(TRIM(sku)),
+                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                          THEN 'SHOPIFY' ELSE 'CC' END
         """).fetchall()
-        for row in rows:
-            raw_sku = str(row[0] or '').strip().upper()
-            uds = max(int(row[1] or 0), 0)
-            if not raw_sku:
-                continue
-            # Try exact SKU match first, then prefix match
-            prod = sku_map.get(raw_sku)
-            if not prod:
-                prefix = raw_sku.split('-')[0]
-                prod = sku_map.get(prefix)
-            if prod:
-                stock[prod] = stock.get(prod, 0) + uds
-            else:
-                # Store by raw SKU as fallback so it's visible in debug
-                stock[raw_sku] = stock.get(raw_sku, 0) + uds
-    except Exception:
-        pass
+    except sqlite3.OperationalError:
+        # Esquema viejo sin fecha_liberacion/fecha_creacion: fallback simple
+        rows = conn.execute("""
+            SELECT UPPER(TRIM(sku)) AS sku,
+                   COALESCE(lote_produccion, '') AS lote,
+                   COALESCE(SUM(unidades_disponible), 0) AS uds,
+                   '' AS fmax
+            FROM stock_pt
+            WHERE estado = 'Disponible'
+            GROUP BY UPPER(TRIM(sku)),
+                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                          THEN 'SHOPIFY' ELSE 'CC' END
+        """).fetchall()
+
+    from datetime import datetime as _dt
+    for row in rows:
+        raw_sku = str(row[0] or '').strip().upper()
+        lote = str(row[1] or '')
+        uds = max(int(row[2] or 0), 0)
+        fmax = str(row[3] or '')
+        if not raw_sku or uds <= 0:
+            continue
+        if lote.startswith('SHOPIFY-'):
+            shop_stock[raw_sku] = shop_stock.get(raw_sku, 0) + uds
+            if fmax:
+                try:
+                    age_h = (_dt.utcnow() - _dt.fromisoformat(fmax.replace('Z', ''))).total_seconds() / 3600.0
+                    if age_h > shop_max_age_hours:
+                        shop_max_age_hours = age_h
+                except Exception:
+                    pass
+        else:
+            cc_stock[raw_sku] = cc_stock.get(raw_sku, 0) + uds
+
+    # Resolver: CC manda; SHOPIFY solo para SKUs sin row de CC
+    resolved = {}
+    for sku, uds in cc_stock.items():
+        resolved[sku] = uds
+    for sku, uds in shop_stock.items():
+        if sku not in resolved:
+            resolved[sku] = uds
+
+    if shop_max_age_hours > 24:
+        logging.getLogger('programacion').warning(
+            "Stock PT desde SHOPIFY tiene %.1fh de antigüedad — revisa el cron de sync",
+            shop_max_age_hours
+        )
+
+    # Mapear SKU → producto_nombre
+    stock = {}
+    for raw_sku, uds in resolved.items():
+        prod = sku_map.get(raw_sku)
+        if not prod:
+            prefix = raw_sku.split('-')[0]
+            prod = sku_map.get(prefix)
+        if prod:
+            stock[prod] = stock.get(prod, 0) + uds
+        else:
+            stock[raw_sku] = stock.get(raw_sku, 0) + uds
 
     return stock
 
@@ -1095,6 +1187,32 @@ def prog_resumen():
     )
     proxima = prox_prod_dates[0] if prox_prod_dates else 'Sin programar'
 
+    # Warnings de integridad de datos (no son alertas operacionales)
+    warnings_data = []
+    try:
+        collisions = _detect_alias_collisions(conn)
+        if collisions:
+            warnings_data.append({
+                'tipo': 'alias_collision',
+                'severidad': 'alta',
+                'mensaje': (
+                    f"{len(collisions)} grupo(s) de MPs con nombres distintos "
+                    f"colapsan al mismo nombre normalizado. El alias map puede "
+                    f"hacer que el stock de uno se atribuya al otro silenciosamente."
+                ),
+                'detalle': collisions[:10],
+                'accion': "GET /api/programacion/diagnostico-alias para detalle completo",
+            })
+    except Exception as _e_w:
+        logging.getLogger('programacion').error("warnings_data falló: %s", _e_w)
+    if cal.get('error'):
+        warnings_data.append({
+            'tipo': 'calendar_error',
+            'severidad': 'media',
+            'mensaje': f"Calendario inaccesible: {cal['error']}",
+            'accion': "Las próximas producciones pueden estar incompletas. Verifica GCAL_ICAL_URL o GOOGLE_API_KEY en env.",
+        })
+
     return jsonify({
         'velocidad_total': round(total_vel, 0),
         'proxima_produccion': proxima,
@@ -1105,7 +1223,36 @@ def prog_resumen():
         'alertas': alerts,
         'velocidad': vel_data,
         'calendario': cal,
+        'calendario_ok': cal.get('error') is None,
         'narrativa_ia': narrativa,
+        'warnings_datos': warnings_data,
+        'thresholds': {
+            'dias_criticos': DIAS_CRITICOS,
+            'dias_alerta': DIAS_ALERTA,
+            'lead_time_china': LEAD_TIME_CHINA,
+            'lead_time_local': LEAD_TIME_LOCAL,
+        },
+    })
+
+
+@bp.route('/api/programacion/diagnostico-alias')
+def prog_diagnostico_alias():
+    """Lista colisiones del alias map: 2+ MPs con nombres distintos que
+    normalizan al mismo nombre. Si aparecen, el stock de uno puede
+    atribuirse silenciosamente al otro.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    collisions = _detect_alias_collisions(conn)
+    return jsonify({
+        'collisions': collisions,
+        'count': len(collisions),
+        'accion_sugerida': (
+            "Para cada grupo, verifica que sean realmente la misma MP. Si lo son, "
+            "estandariza el nombre en maestro_mps. Si NO son la misma, renombra "
+            "una para que el normalizador no las colapse."
+        ),
     })
 
 
