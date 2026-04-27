@@ -535,6 +535,142 @@ def admin_test_email():
 
 # ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
 
+@bp.route("/api/admin/import-mps-nombres-excel", methods=["POST"])
+def admin_import_mps_nombres_excel():
+    """Importa Excel con código + nombre comercial (+ proveedor opcional) para
+    corregir el catálogo masivamente.
+
+    Caso de uso: el catálogo tiene nombre_comercial = código en muchas filas
+    porque alguien se confundió al importar. Excel con la corrección rápida.
+
+    Detecta columnas automáticamente:
+      - código: 'codigo', 'code', 'mp', 'sku'
+      - nombre: 'nombre', 'descripcion', 'material', 'comercial'
+      - proveedor: 'proveedor', 'supplier' (opcional)
+
+    Body: multipart/form-data con 'file' = .xlsx
+    Query: ?dry_run=1 para preview
+
+    Devuelve por fila: actualizado | sin_cambios | sin_match | sin_codigo
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+
+    dry_run = request.args.get('dry_run', '0') in ('1', 'true', 'True')
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return jsonify({'error': 'openpyxl no instalado'}), 500
+
+    try:
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({'error': f'Excel inválido: {e}'}), 400
+
+    ws = wb[wb.sheetnames[0]]
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 2:
+        return jsonify({'error': 'Hoja con menos de 2 filas'}), 400
+
+    headers = rows[0]
+    norms = [_norm_header(h) for h in headers]
+
+    def _find(*kws):
+        for i, h in enumerate(norms):
+            if any(k in h for k in kws):
+                return i
+        return None
+
+    idx_cod = _find('codigo', 'code', 'sku')
+    idx_nom = _find('nombre', 'descripcion', 'comercial', 'material')
+    idx_prov = _find('proveedor', 'supplier')
+
+    if idx_cod is None or idx_nom is None:
+        return jsonify({
+            'error': 'No detecté columnas de código y nombre',
+            'headers': [str(h) for h in headers if h],
+            'sugerencia': 'El Excel debe tener al menos columnas "código" y "nombre"',
+        }), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    actualizados = []
+    sin_cambios = []
+    sin_match = []
+    sin_codigo = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if not row or not any(row):
+            continue
+        cod = str(row[idx_cod] or '').strip() if idx_cod is not None else ''
+        nom_nuevo = str(row[idx_nom] or '').strip() if idx_nom is not None else ''
+        prov_nuevo = str(row[idx_prov] or '').strip() if idx_prov is not None else ''
+        if not cod:
+            sin_codigo.append({'fila': i, 'nombre_excel': nom_nuevo})
+            continue
+        # Buscar item actual
+        cur = c.execute(
+            "SELECT codigo_mp, nombre_comercial, COALESCE(proveedor,'') FROM maestro_mps WHERE codigo_mp=?",
+            (cod,)
+        ).fetchone()
+        if not cur:
+            sin_match.append({'fila': i, 'codigo': cod, 'nombre_excel': nom_nuevo})
+            continue
+        cambios = {}
+        # Solo actualizar nombre si el actual está vacío o es igual al código
+        # (señal de que está mal cargado). NO sobrescribir nombres reales.
+        actual_nom = (cur['nombre_comercial'] or '').strip()
+        if nom_nuevo and (not actual_nom or actual_nom == cod):
+            cambios['nombre_comercial'] = nom_nuevo
+        # Proveedor: solo actualizar si actual está vacío y Excel tiene
+        actual_prov = (cur[2] or '').strip()
+        if prov_nuevo and not actual_prov:
+            cambios['proveedor'] = prov_nuevo
+        if cambios:
+            if not dry_run:
+                sets = ', '.join(f"{k}=?" for k in cambios)
+                vals = list(cambios.values()) + [cod]
+                c.execute(f"UPDATE maestro_mps SET {sets} WHERE codigo_mp=?", vals)
+            actualizados.append({
+                'codigo': cod,
+                'nombre_antes': actual_nom,
+                'nombre_nuevo': cambios.get('nombre_comercial', actual_nom),
+                'proveedor_nuevo': cambios.get('proveedor', actual_prov),
+            })
+        else:
+            sin_cambios.append(cod)
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    if not dry_run:
+        _log_sec(u, _client_ip(),
+                 "admin_import_mps_nombres_excel",
+                 f"actualizados={len(actualizados)} sin_match={len(sin_match)}")
+
+    return jsonify({
+        'ok': True,
+        'dry_run': dry_run,
+        'actualizados': {'count': len(actualizados), 'lista': actualizados[:50]},
+        'sin_cambios': {'count': len(sin_cambios)},
+        'sin_match': {'count': len(sin_match), 'lista': sin_match[:30]},
+        'sin_codigo': {'count': len(sin_codigo), 'lista': sin_codigo[:10]},
+        'columnas_mapeadas': {'codigo': idx_cod, 'nombre': idx_nom, 'proveedor': idx_prov},
+        'nota': 'Solo actualiza nombres si el actual está vacío o = código. Nombres correctos NO se sobrescriben.',
+    })
+
+
 @bp.route("/api/admin/debug-solicitud/<numero>", methods=["GET"])
 def admin_debug_solicitud(numero):
     """Devuelve los items RAW de una solicitud para depurar.
@@ -1730,6 +1866,23 @@ tr:hover td{background:#263348;}
       <tbody id="mps-tbody-sin"><tr><td>Cargando...</td></tr></tbody>
     </table>
   </div>
+
+  <div class="card" style="border-left:3px solid #fbbf24;">
+    <h2>&#x1F4DD; Corregir nombres masivos desde Excel</h2>
+    <div class="section-sub">
+      Sube un Excel con columnas <code>código</code> + <code>nombre</code>
+      (+ <code>proveedor</code> opcional). Solo actualiza nombres que est&aacute;n
+      <strong>vac&iacute;os o iguales al c&oacute;digo</strong> (mal cargados).
+      <strong>Nombres correctos NO se sobrescriben.</strong>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input type="file" id="mps-nom-file" accept=".xlsx,.xlsm"
+             style="padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;">
+      <button class="btn btn-outline" onclick="syncMpsNombres(true)">&#x1F441; Vista previa</button>
+      <button class="btn" onclick="syncMpsNombres(false)" style="background:linear-gradient(135deg,#f59e0b,#d97706);">&#x26A1; Aplicar correcci&oacute;n</button>
+    </div>
+    <div id="mps-nom-result" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 </div>
@@ -2227,6 +2380,57 @@ async function asignarMpProv(selEl){
   } else {
     toast('Error: ' + (d.error || 'no se pudo asignar'), 0);
     selEl.value = '';
+  }
+}
+
+async function syncMpsNombres(dryRun){
+  const fi = document.getElementById('mps-nom-file');
+  const out = document.getElementById('mps-nom-result');
+  if(!fi.files.length){ toast('Selecciona un .xlsx','warn'); return; }
+  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Procesando...</div>';
+  const fd = new FormData();
+  fd.append('file', fi.files[0]);
+  const url = '/api/admin/import-mps-nombres-excel' + (dryRun ? '?dry_run=1' : '');
+  try{
+    const r = await fetch(url, {method:'POST', body: fd});
+    const d = await r.json();
+    if(!r.ok){
+      out.innerHTML = '<div style="color:#f87171;padding:14px;background:#1e293b;border-radius:8px;">'
+        + 'Error '+r.status+': '+(d.error||'')
+        + (d.headers ? '<div style="margin-top:8px;font-size:11px;color:#94a3b8;">Headers detectados: '+d.headers.join(' · ')+'</div>' : '')
+        + (d.sugerencia ? '<div style="margin-top:8px;font-size:12px;color:#fbbf24;">'+d.sugerencia+'</div>' : '')
+        + '</div>';
+      return;
+    }
+    const banner = dryRun
+      ? '<div style="color:#fbbf24;padding:10px 14px;background:#0f172a;border:1px solid #fbbf24;border-radius:8px;margin-bottom:14px;">&#x1F441; <strong>VISTA PREVIA</strong> — sin escribir</div>'
+      : '<div style="color:#34d399;padding:10px 14px;background:#0f172a;border:1px solid #34d399;border-radius:8px;margin-bottom:14px;">&#x2705; <strong>APLICADO</strong></div>';
+    let kpis = '<div class="kpi-row">'
+      + '<div class="kpi"><div class="kpi-l">A actualizar</div><div class="kpi-v" style="color:#34d399;">'+d.actualizados.count+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Sin cambios</div><div class="kpi-v" style="color:#94a3b8;">'+d.sin_cambios.count+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Sin match</div><div class="kpi-v" style="color:#f87171;">'+d.sin_match.count+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Sin código</div><div class="kpi-v" style="color:#f87171;">'+d.sin_codigo.count+'</div></div>'
+      + '</div>';
+    let preview = '';
+    if(d.actualizados.lista && d.actualizados.lista.length){
+      preview = '<div class="card"><h2>Cambios</h2><table><thead><tr><th>Código</th><th>Nombre antes</th><th>Nombre nuevo</th></tr></thead><tbody>'
+        + d.actualizados.lista.map(a => '<tr><td style="font-family:monospace;font-size:11px;">'+a.codigo+'</td><td style="color:#94a3b8;">'+(a.nombre_antes||'(vacío)')+'</td><td style="color:#34d399;font-weight:600;">'+a.nombre_nuevo+'</td></tr>').join('')
+        + '</tbody></table></div>';
+    }
+    let nomatch = '';
+    if(d.sin_match.lista && d.sin_match.lista.length){
+      nomatch = '<div class="card" style="border-left:3px solid #f87171;"><h2>Sin match en catálogo ('+d.sin_match.count+')</h2>'
+        + '<div style="font-size:12px;color:#fbbf24;margin-bottom:8px;">Estos códigos del Excel no están en maestro_mps. Crea primero el MP en /planta.</div>'
+        + '<table><tbody>' + d.sin_match.lista.map(a => '<tr><td style="font-size:11px;">fila '+a.fila+'</td><td style="font-family:monospace;">'+a.codigo+'</td><td>'+a.nombre_excel+'</td></tr>').join('')
+        + '</tbody></table></div>';
+    }
+    out.innerHTML = banner + kpis + preview + nomatch;
+    if(!dryRun){
+      toast('Aplicado: '+d.actualizados.count+' nombres corregidos','ok');
+      loadMpsStatus();  // Refresca el panel principal
+    }
+  }catch(e){
+    out.innerHTML = '<div style="color:#f87171;padding:14px;">Error: '+e.message+'</div>';
   }
 }
 

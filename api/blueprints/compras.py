@@ -2147,6 +2147,21 @@ def solicitudes_pdf_resumen():
     COLOR_TEXT_SOFT = (110, 110, 110)
     COLOR_LINE = (200, 195, 188)
 
+    def _fmt_cant(g, u='g'):
+        """Preserva decimales para péptidos (<10g) — usado en items y totales."""
+        n = float(g or 0)
+        if u and u != 'g':
+            return f'{n:.0f} {u}' if n == int(n) else f'{n:.2f} {u}'
+        if n >= 1000:
+            return f'{n/1000:.2f} kg'
+        if n >= 10:
+            return f'{int(round(n))} g'
+        if n >= 1:
+            return f'{n:.1f} g'
+        if n > 0:
+            return f'{n:.2f} g'
+        return '0 g'
+
     def _safe(t):
         if t is None:
             return ''
@@ -2250,13 +2265,7 @@ def solicitudes_pdf_resumen():
                 val = float(val_est or 0)
                 sol_total_g += cant
                 sol_total_valor += val
-                # Formatear cantidad
-                if cant >= 1000:
-                    cant_str = f'{cant/1000:.1f} kg'
-                elif unidad and unidad != 'g':
-                    cant_str = f'{int(cant)} {unidad}'
-                else:
-                    cant_str = f'{int(cant)} g'
+                cant_str = _fmt_cant(cant, unidad)
                 row_h = 4
                 pdf.cell(15, row_h, _safe((cod_mp or '')[:12]), border='B')
                 pdf.cell(78, row_h, _safe((nom_mp or '')[:50]), border='B')
@@ -2269,7 +2278,7 @@ def solicitudes_pdf_resumen():
             # Total por solicitud
             pdf.set_font('Helvetica', 'B', 8)
             pdf.set_fill_color(245, 245, 240)
-            cant_total_str = f'{sol_total_g/1000:.1f} kg' if sol_total_g >= 1000 else f'{int(sol_total_g)} g'
+            cant_total_str = _fmt_cant(sol_total_g, 'g')
             pdf.cell(15 + 78, 5, _safe(f'Total: {len(items)} items'), fill=True, border=0, align='R')
             pdf.cell(22, 5, _safe(cant_total_str), fill=True, border=0, align='R')
             pdf.cell(10 + 45, 5, '', fill=True, border=0)
@@ -2298,8 +2307,7 @@ def solicitudes_pdf_resumen():
     pdf.set_font('Helvetica', '', 9)
     pdf.set_text_color(*COLOR_TEXT)
     pdf.cell(0, 5, _safe(f'  · {len(sols)} solicitudes ({n_pendientes} pendientes, {n_aprobadas} aprobadas)'), ln=True)
-    cant_g_str = f'{total_general_g/1000:.1f} kg' if total_general_g >= 1000 else f'{int(total_general_g)} g'
-    pdf.cell(0, 5, _safe(f'  · Cantidad total a comprar: {cant_g_str}'), ln=True)
+    pdf.cell(0, 5, _safe(f'  · Cantidad total a comprar: {_fmt_cant(total_general_g)}'), ln=True)
     if total_general_valor > 0:
         pdf.cell(0, 5, _safe(f'  · Valor estimado total: ${total_general_valor:,.0f}'), ln=True)
 
