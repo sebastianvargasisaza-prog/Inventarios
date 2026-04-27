@@ -517,3 +517,137 @@ def test_editar_proveedor_lote_actualiza_movs_y_catalogo(app, db_clean):
     cur.execute("DELETE FROM movimientos WHERE material_id='MP_EDIT_PRV'")
     cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_EDIT_PRV'")
     conn.commit(); conn.close()
+
+
+# ═══ Detector y unificador de proveedores duplicados ════════════════════════
+
+
+def test_proveedores_duplicados_detecta_typos(app, db_clean):
+    """Detecta variantes del mismo proveedor (mayuscula/minuscula/espacios/SAS)."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    # Inchemical en 3 formas distintas
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPDUP1','x','X1','Inchemical', 1)""")
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPDUP2','y','Y1','INCHEMICAL', 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MPDUP3','Z1','LZ',100,'Entrada',
+                           '2026-04-20','Inchemical S.A.S.','luis')""")
+    # Lyphar como proveedor unico (no debe estar en duplicados)
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPLYU','l','L','Lyphar', 1)""")
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/proveedores-duplicados")
+    assert r.status_code == 200
+    grupos = r.get_json()["grupos"]
+    # Buscar el grupo de Inchemical
+    inchemical_grupo = None
+    for g in grupos:
+        if "inchemical" in g["clave_normalizada"]:
+            inchemical_grupo = g
+            break
+    assert inchemical_grupo is not None, f"No detectó grupo Inchemical: {grupos}"
+    variantes_lower = [v.lower() for v in inchemical_grupo["variantes"]]
+    assert "inchemical" in variantes_lower
+    assert "inchemical" in [v.lower() for v in inchemical_grupo["variantes"]]
+    # Lyphar NO debe aparecer (es unico)
+    for g in grupos:
+        if "lyphar" in g["clave_normalizada"]:
+            assert False, f"Lyphar es unico, no debe estar en duplicados: {g}"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id='MPDUP3'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MPDUP1','MPDUP2','MPLYU')")
+    conn.commit(); conn.close()
+
+
+def test_proveedores_unificar_validacion(app, db_clean):
+    """POST sin canonico o sin variantes → 400."""
+    c = _login(app, "luis")
+    r = c.post("/api/proveedores-unificar",
+               json={}, headers=csrf_headers())
+    assert r.status_code == 400
+    r = c.post("/api/proveedores-unificar",
+               json={"canonico": "X"}, headers=csrf_headers())
+    assert r.status_code == 400  # < 2 chars
+    r = c.post("/api/proveedores-unificar",
+               json={"canonico": "Inchemical"}, headers=csrf_headers())
+    assert r.status_code == 400  # falta variantes
+    r = c.post("/api/proveedores-unificar",
+               json={"canonico": "Inchemical", "variantes": []},
+               headers=csrf_headers())
+    assert r.status_code == 400  # variantes vacia
+
+
+def test_proveedores_unificar_aplica_cambio(app, db_clean):
+    """POST correcto → actualiza movimientos + maestro_mps + audit log."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPUNI1','a','A','INCHEMICAL', 1)""")
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPUNI2','b','B','inchemical sas', 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MPUNI1','A','L1',100,'Entrada',
+                           '2026-04-20','INCHEMICAL','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, operador)
+                   VALUES ('MPUNI2','B','L2',200,'Entrada',
+                           '2026-04-21','inchemical sas','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.post("/api/proveedores-unificar",
+               json={
+                   "canonico": "Inchemical",
+                   "variantes": ["INCHEMICAL", "inchemical sas"],
+               }, headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["movimientos_actualizados"] == 2
+    assert j["catalogo_actualizado"] == 2
+
+    # Verificar DB
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT proveedor FROM movimientos WHERE material_id IN ('MPUNI1','MPUNI2')"
+    ).fetchall()
+    assert all(r[0] == "Inchemical" for r in rows), (
+        f"Movs no unificados: {rows}"
+    )
+    cat_rows = cur.execute(
+        "SELECT proveedor FROM maestro_mps WHERE codigo_mp IN ('MPUNI1','MPUNI2')"
+    ).fetchall()
+    assert all(r[0] == "Inchemical" for r in cat_rows)
+
+    audit = cur.execute(
+        "SELECT usuario, accion FROM audit_log "
+        "WHERE accion='UNIFICAR_PROVEEDORES' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert audit is not None and audit[0] == "luis"
+
+    cur.execute("DELETE FROM movimientos WHERE material_id IN ('MPUNI1','MPUNI2')")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MPUNI1','MPUNI2')")
+    conn.commit(); conn.close()

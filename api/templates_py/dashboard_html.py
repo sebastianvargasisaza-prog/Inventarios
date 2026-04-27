@@ -195,6 +195,25 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Modal LIMPIEZA PROVEEDORES — detecta duplicados y los unifica -->
+<div id="modal-limpieza-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:760px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#7c3aed;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#129529; Limpieza de Proveedores</h2>
+      <button onclick="cerrarLimpiezaProveedores()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <p style="color:#666;font-size:0.88em;margin-bottom:14px;">Grupos de proveedores que probablemente son el mismo escrito de distinta forma (mayuscula/minuscula, sufijos juridicos, espacios). Escoge el canonico de cada grupo y unifica — actualiza movimientos y catalogo de MPs.</p>
+      <div id="lp-content" style="font-size:0.88em;">
+        <div style="text-align:center;color:#888;padding:24px;">Detectando duplicados...</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+        <button onclick="cerrarLimpiezaProveedores()" style="background:#6c757d;padding:8px 16px;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal ELIMINAR LOTE (a nivel lote, motivo obligatorio) -->
 <div id="modal-eliminar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -312,7 +331,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
-      <div style="display:flex;gap:10px;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button></div>
+      <div style="display:flex;gap:10px;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
@@ -1498,6 +1517,78 @@ async function guardarProveedor(){
       setTimeout(function(){cerrarEditarProveedor();loadStock();},1500);
     }else{
       msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' — '+d.detail:'')+'</span>';
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+  }
+}
+
+// ─── Limpieza de Proveedores (detectar y unificar duplicados) ──────────────
+function _escHTML(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+async function abrirLimpiezaProveedores(){
+  document.getElementById('modal-limpieza-prov').style.display='flex';
+  await _renderLimpiezaProveedores();
+}
+function cerrarLimpiezaProveedores(){
+  document.getElementById('modal-limpieza-prov').style.display='none';
+  // Refrescar datalist global por si hubo cambios
+  _epProveedoresCargados=false;
+  _cargarProveedoresUnicos();
+}
+async function _renderLimpiezaProveedores(){
+  var cont=document.getElementById('lp-content');
+  cont.innerHTML='<div style="text-align:center;color:#888;padding:24px;">Detectando duplicados...</div>';
+  try{
+    var r=await fetch('/api/proveedores-duplicados');
+    var d=await r.json();
+    var grupos=d.grupos||[];
+    if(!grupos.length){
+      cont.innerHTML='<div style="text-align:center;color:#1a8a1a;padding:24px;font-weight:700;">&#10003; Sin duplicados detectados — todos los proveedores tienen formato unico.</div>';
+      return;
+    }
+    var html='<div style="margin-bottom:8px;color:#7c3aed;font-weight:700;">'+grupos.length+' grupo(s) con variantes</div>';
+    grupos.forEach(function(g,gi){
+      html+='<div id="lp-grupo-'+gi+'" style="border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:10px;background:#fafafa;">';
+      html+='<div style="font-size:0.78em;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">'+g.count_variantes+' variantes &middot; clave: <code>'+_escHTML(g.clave_normalizada)+'</code></div>';
+      html+='<div style="margin-bottom:8px;">';
+      g.variantes.forEach(function(v,vi){
+        var uso=g.usos[v]||0;
+        var checked=(v===g.canonico_sugerido)?'checked':'';
+        html+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">';
+        html+='<input type="radio" name="lp-canon-'+gi+'" value="'+_escHTML(v)+'" '+checked+'>';
+        html+='<span style="flex:1;"><b>'+_escHTML(v)+'</b> <span style="color:#888;font-size:0.85em;">('+uso+' mov)</span></span>';
+        html+='</label>';
+      });
+      html+='</div>';
+      html+='<div id="lp-msg-'+gi+'" style="font-size:0.85em;margin-bottom:6px;"></div>';
+      html+='<button onclick="unificarGrupo('+gi+')" style="background:#7c3aed;color:white;padding:6px 12px;font-size:0.85em;border-radius:6px;">&#128279; Unificar este grupo</button>';
+      html+='</div>';
+    });
+    cont.innerHTML=html;
+    // Guardamos los grupos en una variable global para acceder desde unificarGrupo
+    window._lpGrupos=grupos;
+  }catch(e){
+    cont.innerHTML='<div style="color:#c00;padding:24px;">Error: '+e.message+'</div>';
+  }
+}
+async function unificarGrupo(gi){
+  var grupos=window._lpGrupos||[]; var g=grupos[gi]; if(!g)return;
+  var radios=document.getElementsByName('lp-canon-'+gi);
+  var canonico='';
+  for(var i=0;i<radios.length;i++){if(radios[i].checked){canonico=radios[i].value;break;}}
+  if(!canonico){alert('Selecciona el proveedor canonico');return;}
+  if(!confirm('Unificar todas las variantes a "'+canonico+'"?\\n\\nEsto actualiza movimientos + catalogo de MPs. Reversible solo via audit_log.')){return;}
+  var msg=document.getElementById('lp-msg-'+gi);
+  msg.innerHTML='<span style="color:#666;">Unificando...</span>';
+  try{
+    var r=await fetch('/api/proveedores-unificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({canonico:canonico,variantes:g.variantes})});
+    var d=await r.json();
+    if(r.ok){
+      msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Unificado')+'</span>';
+      // Re-render despues de un momento
+      setTimeout(function(){_renderLimpiezaProveedores();loadStock();},1500);
+    }else{
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+'</span>';
     }
   }catch(e){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';

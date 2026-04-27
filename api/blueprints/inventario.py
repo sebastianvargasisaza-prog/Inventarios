@@ -792,6 +792,196 @@ def proveedores_unicos():
     return jsonify({'proveedores': sorted(proveedores, key=lambda s: s.lower())})
 
 
+@bp.route('/api/proveedores-duplicados', methods=['GET'])
+def proveedores_duplicados():
+    """Agrupa proveedores que se ven como el mismo con diferente formato.
+
+    Heuristica: normalizar (lowercase, strip, eliminar sufijos juridicos
+    SAS/LTDA/SA/SL/CIA/INC/CORP, eliminar puntos y comas, colapsar
+    espacios multiples) y agrupar los que despues de normalizar son
+    iguales pero en raw son diferentes.
+
+    Devuelve solo grupos con >= 2 variantes — los unicos vale la pena
+    unificar. Para cada grupo sugiere un canonico: la variante con mas
+    caracteres (probablemente la mas completa).
+
+    Solo lectura, autenticado.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+
+    import re
+    SUFIJOS = (
+        r'\bs\.?a\.?s\.?\b', r'\bs\.?a\.?\b', r'\bltda\b', r'\bs\.?l\.?\b',
+        r'\bcia\b', r'\binc\b', r'\bcorp\b', r'\bllc\b', r'\b& cia\b',
+    )
+
+    def normalizar(nombre):
+        n = (nombre or '').lower().strip()
+        for pat in SUFIJOS:
+            n = re.sub(pat, '', n)
+        n = re.sub(r'[.,;:]+', '', n)
+        n = re.sub(r'\s+', ' ', n).strip()
+        return n
+
+    conn = get_db()
+    c = conn.cursor()
+    raw = set()
+    try:
+        for row in c.execute("SELECT DISTINCT proveedor FROM movimientos "
+                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
+            raw.add(row[0].strip())
+    except sqlite3.OperationalError:
+        pass
+    try:
+        for row in c.execute("SELECT DISTINCT proveedor FROM maestro_mps "
+                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
+            raw.add(row[0].strip())
+    except sqlite3.OperationalError:
+        pass
+
+    grupos = {}
+    for nombre in raw:
+        clave = normalizar(nombre)
+        if not clave:
+            continue
+        grupos.setdefault(clave, []).append(nombre)
+
+    duplicados = []
+    for clave, variantes in grupos.items():
+        if len(variantes) < 2:
+            continue
+        # Canonico sugerido: variante con mas caracteres (mas info)
+        canonico = max(variantes, key=lambda s: (len(s), s))
+        # Contar uso de cada variante en movimientos para que el usuario vea
+        # cual es la mas usada (puede preferir esa como canonico).
+        usos = {}
+        for v in variantes:
+            try:
+                row = c.execute(
+                    "SELECT COUNT(*) FROM movimientos WHERE proveedor=?", (v,)
+                ).fetchone()
+                usos[v] = row[0] if row else 0
+            except sqlite3.OperationalError:
+                usos[v] = 0
+        duplicados.append({
+            'clave_normalizada': clave,
+            'canonico_sugerido': canonico,
+            'variantes': sorted(variantes, key=lambda s: -usos.get(s, 0)),
+            'usos': usos,
+            'count_variantes': len(variantes),
+        })
+
+    duplicados.sort(key=lambda g: -g['count_variantes'])
+    return jsonify({'grupos': duplicados, 'total_grupos': len(duplicados)})
+
+
+@bp.route('/api/proveedores-unificar', methods=['POST'])
+def proveedores_unificar():
+    """Unifica varios alias de proveedor a un canonico.
+
+    Body:
+      canonico: str — nombre que queda como version oficial
+      variantes: list[str] — todas las que se reemplazaran (incluye el
+                              canonico tambien por idempotencia)
+
+    Doble efecto (igual que editar proveedor de lote):
+      1. UPDATE movimientos SET proveedor=canonico WHERE proveedor IN (variantes)
+      2. UPDATE maestro_mps SET proveedor=canonico WHERE proveedor IN (variantes)
+
+    Audit log con snapshot del cambio (variantes -> canonico, conteo).
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    canonico = (d.get('canonico') or '').strip()
+    variantes = d.get('variantes') or []
+    if not canonico or len(canonico) < 2:
+        return jsonify({'error': 'canonico requerido (>=2 chars)'}), 400
+    if not isinstance(variantes, list) or len(variantes) < 1:
+        return jsonify({'error': 'variantes requerido (lista no vacia)'}), 400
+    # Limpiar variantes: dedup, strip, no vacias
+    variantes = sorted({(v or '').strip() for v in variantes if (v or '').strip()})
+    if not variantes:
+        return jsonify({'error': 'variantes vacias tras limpieza'}), 400
+    # No permitir mas de 50 a la vez (sanity check)
+    if len(variantes) > 50:
+        return jsonify({'error': 'max 50 variantes por unificacion'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+
+    placeholders = ','.join('?' * len(variantes))
+    try:
+        movs_antes = c.execute(
+            f"SELECT COUNT(*) FROM movimientos WHERE proveedor IN ({placeholders})",
+            tuple(variantes)
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        movs_antes = 0
+    try:
+        cat_antes = c.execute(
+            f"SELECT COUNT(*) FROM maestro_mps WHERE proveedor IN ({placeholders})",
+            tuple(variantes)
+        ).fetchone()[0]
+    except sqlite3.OperationalError:
+        cat_antes = 0
+
+    # Update movimientos
+    try:
+        c.execute(
+            f"UPDATE movimientos SET proveedor=? WHERE proveedor IN ({placeholders})",
+            (canonico, *variantes)
+        )
+        movs_actualizados = c.rowcount
+    except sqlite3.OperationalError:
+        movs_actualizados = 0
+
+    # Update maestro
+    try:
+        c.execute(
+            f"UPDATE maestro_mps SET proveedor=? WHERE proveedor IN ({placeholders})",
+            (canonico, *variantes)
+        )
+        cat_actualizados = c.rowcount
+    except sqlite3.OperationalError:
+        cat_actualizados = 0
+
+    # Audit log
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'UNIFICAR_PROVEEDORES', 'movimientos+maestro_mps',
+                   canonico,
+                   _json.dumps({
+                       'canonico': canonico,
+                       'variantes_unificadas': variantes,
+                       'movimientos_actualizados': movs_actualizados,
+                       'catalogo_actualizado': cat_actualizados,
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        pass
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Unificado a "{canonico}". '
+                    f'{movs_actualizados} movimientos + {cat_actualizados} '
+                    f'entradas de catalogo actualizadas.'),
+        'canonico': canonico,
+        'variantes_unificadas': variantes,
+        'movimientos_actualizados': movs_actualizados,
+        'catalogo_actualizado': cat_actualizados,
+    })
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>/proveedor', methods=['PUT'])
 def editar_proveedor_lote(material_id, lote):
     """Corrige el proveedor de un lote y del catálogo de la MP.
