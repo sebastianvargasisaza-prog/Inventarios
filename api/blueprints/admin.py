@@ -535,6 +535,99 @@ def admin_test_email():
 
 # ─── Diagnóstico: tipos de material en maestro_mps ────────────────────────────
 
+@bp.route("/api/admin/mps-proveedores-status", methods=["GET"])
+def admin_mps_proveedores_status():
+    """Diagnóstico: qué MPs tienen proveedor asignado y cuáles no.
+
+    El campo maestro_mps.proveedor lo lee la auto-generación de OCs sugeridas
+    para agrupar el déficit. Si está vacío, las solicitudes salen con
+    'Sin asignar' como proveedor y el user tiene que corregir a mano.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Resumen por proveedor
+    rows = c.execute("""
+        SELECT COALESCE(NULLIF(TRIM(proveedor), ''), '(SIN PROVEEDOR)') AS prov,
+               COUNT(*) AS total
+        FROM maestro_mps
+        WHERE activo = 1
+        GROUP BY prov
+        ORDER BY (CASE WHEN prov='(SIN PROVEEDOR)' THEN 0 ELSE 1 END), total DESC, prov
+    """).fetchall()
+    por_proveedor = [{'proveedor': r['prov'], 'total': r['total']} for r in rows]
+    total_activos = sum(r['total'] for r in por_proveedor)
+    sin_proveedor_count = next(
+        (r['total'] for r in por_proveedor if r['proveedor'] == '(SIN PROVEEDOR)'), 0
+    )
+
+    # Lista detallada de los SIN proveedor
+    rows_sin = c.execute("""
+        SELECT codigo_mp, nombre_comercial, COALESCE(tipo,'') as tipo
+        FROM maestro_mps
+        WHERE activo = 1
+          AND (proveedor IS NULL OR TRIM(proveedor) = '')
+        ORDER BY codigo_mp LIMIT 200
+    """).fetchall()
+    sin_proveedor_lista = [
+        {'codigo_mp': r['codigo_mp'], 'nombre': r['nombre_comercial'], 'tipo': r['tipo']}
+        for r in rows_sin
+    ]
+
+    # Lista de proveedores existentes (para que la UI ofrezca dropdown)
+    provs_existentes = [
+        r['prov'] for r in por_proveedor if r['prov'] != '(SIN PROVEEDOR)'
+    ]
+
+    # Cross-check con MPs en déficit real (los que importan operacionalmente)
+    # Esto requiere correr la lógica de Programación, lo evitamos aquí para
+    # mantener este endpoint rápido. El user lo puede ver en /compras banner.
+
+    conn.close()
+    return jsonify({
+        'total_activos': total_activos,
+        'con_proveedor': total_activos - sin_proveedor_count,
+        'sin_proveedor': sin_proveedor_count,
+        'pct_cobertura': round(
+            (total_activos - sin_proveedor_count) / total_activos * 100, 1
+        ) if total_activos else 0,
+        'por_proveedor': por_proveedor,
+        'sin_proveedor_lista': sin_proveedor_lista,
+        'proveedores_existentes': provs_existentes,
+    })
+
+
+@bp.route("/api/admin/mps-asignar-proveedor", methods=["POST"])
+def admin_mps_asignar_proveedor():
+    """Asigna proveedor a una MP. Body: {codigo_mp, proveedor}."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    codigo = (d.get('codigo_mp') or '').strip()
+    proveedor = (d.get('proveedor') or '').strip()
+    if not codigo:
+        return jsonify({'error': 'codigo_mp requerido'}), 400
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
+              (proveedor, codigo))
+    n = c.rowcount or 0
+    conn.commit()
+    conn.close()
+    if n == 0:
+        return jsonify({'error': f"No se encontró MP '{codigo}'"}), 404
+    _log_sec(u, _client_ip(),
+             "admin_mp_asignar_proveedor",
+             f"codigo={codigo} proveedor={proveedor}")
+    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
+
+
 @bp.route("/api/admin/tipos-mp-stats", methods=["GET"])
 def admin_tipos_mp_stats():
     """Cuenta items en maestro_mps agrupados por tipo_material.
@@ -1294,6 +1387,7 @@ tr:hover td{background:#263348;}
   <button class="tab" data-tab="security" onclick="switchTab('security')">&#x1F6E1; Eventos de Seguridad</button>
   <button class="tab" data-tab="config" onclick="switchTab('config')">&#x2699; Config Status</button>
   <button class="tab" data-tab="banco" onclick="switchTab('banco')">&#x1F4B3; Banco Influencers</button>
+  <button class="tab" data-tab="mps" onclick="switchTab('mps')">&#x1F9EA; Cat&aacute;logo MPs</button>
 </div>
 
 <div class="main">
@@ -1475,6 +1569,37 @@ tr:hover td{background:#263348;}
   </div>
 </div>
 
+<!-- ─── TAB CATÁLOGO MPs ─── -->
+<div id="tab-mps" class="tab-panel">
+  <div class="card">
+    <h2>&#x1F9EA; Cat&aacute;logo de Materias Primas - estado de proveedor</h2>
+    <div class="section-sub">
+      Cuando creas una OC sugerida desde Compras, el sistema agrupa las MPs por
+      <code>maestro_mps.proveedor</code>. Las MPs sin proveedor caen en
+      'Sin asignar' y tienes que corregir manualmente cada vez. Asigna aqu&iacute;
+      el proveedor habitual de cada MP para que las futuras OCs salgan
+      correctamente agrupadas.
+    </div>
+    <div class="kpi-row" id="mps-kpis">
+      <div class="kpi"><div class="kpi-l">Total activos</div><div class="kpi-v" id="mps-kpi-total">-</div></div>
+      <div class="kpi"><div class="kpi-l">Con proveedor</div><div class="kpi-v" id="mps-kpi-con" style="color:#34d399;">-</div></div>
+      <div class="kpi"><div class="kpi-l">Sin proveedor</div><div class="kpi-v" id="mps-kpi-sin" style="color:#f87171;">-</div></div>
+      <div class="kpi"><div class="kpi-l">Cobertura</div><div class="kpi-v" id="mps-kpi-pct" style="font-size:14px;">-</div></div>
+    </div>
+    <h3 style="color:#a78bfa;font-size:13px;margin-top:16px;margin-bottom:8px;">Distribuci&oacute;n por proveedor</h3>
+    <table>
+      <thead><tr><th>Proveedor</th><th style="text-align:right;">Cantidad de MPs</th></tr></thead>
+      <tbody id="mps-tbody-prov"><tr><td>Cargando...</td></tr></tbody>
+    </table>
+    <h3 style="color:#f87171;font-size:13px;margin-top:20px;margin-bottom:8px;">MPs sin proveedor asignado</h3>
+    <div id="mps-sin-prov-info" style="font-size:12px;color:#94a3b8;margin-bottom:8px;"></div>
+    <table>
+      <thead><tr><th>C&oacute;digo</th><th>Nombre</th><th>Tipo</th><th>Asignar proveedor</th></tr></thead>
+      <tbody id="mps-tbody-sin"><tr><td>Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -1498,7 +1623,7 @@ tr:hover td{background:#263348;}
 
 <script>
 // ── Tabs ──────────────────────────────────────────────────────────────────────
-const _loaded = {backups:false, users:false, security:false, config:false, banco:false};
+const _loaded = {backups:false, users:false, security:false, config:false, banco:false, mps:false};
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1509,6 +1634,7 @@ function switchTab(name) {
     if (name === 'users')    loadUsers();
     if (name === 'security') loadSecurityEvents();
     if (name === 'config')   loadConfigStatus();
+    if (name === 'mps')      loadMpsStatus();
   }
 }
 
@@ -1884,6 +2010,92 @@ async function syncPagos(dryRun) {
     + '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Hoja: <strong>' + (data.hoja_usada || '?') + '</strong> · Columnas: ' + cmList + '</div>'
     + kpis + preview + nomatch;
   if (!dryRun) toast('Importación aplicada: ' + (data.importadas ? data.importadas.count : 0) + ' nuevas, ' + (data.reset ? data.reset.solicitudes : 0) + ' borradas', 'ok');
+}
+
+// ── CATÁLOGO MPs (proveedores) ─────────────────────────────────────────────
+let _MPS_PROVS_LIST = [];
+
+async function loadMpsStatus(){
+  const r = await fetch('/api/admin/mps-proveedores-status');
+  if (!r.ok) {
+    document.getElementById('mps-tbody-sin').innerHTML =
+      '<tr><td colspan="4" style="color:#f87171;">Error '+r.status+'</td></tr>';
+    return;
+  }
+  const data = await r.json();
+  document.getElementById('mps-kpi-total').textContent = data.total_activos || 0;
+  document.getElementById('mps-kpi-con').textContent = data.con_proveedor || 0;
+  document.getElementById('mps-kpi-sin').textContent = data.sin_proveedor || 0;
+  document.getElementById('mps-kpi-pct').textContent = (data.pct_cobertura || 0) + '%';
+
+  // Tabla por proveedor
+  const tbody1 = document.getElementById('mps-tbody-prov');
+  if (data.por_proveedor && data.por_proveedor.length) {
+    tbody1.innerHTML = data.por_proveedor.map(p => {
+      const isSin = p.proveedor === '(SIN PROVEEDOR)';
+      const color = isSin ? '#f87171' : '#cbd5e1';
+      return '<tr><td style="color:'+color+';font-weight:'+(isSin?'700':'400')+';">'+p.proveedor+'</td>'
+        + '<td style="text-align:right;font-family:monospace;">'+p.total+'</td></tr>';
+    }).join('');
+  } else {
+    tbody1.innerHTML = '<tr><td colspan="2" style="color:#94a3b8;">Sin datos</td></tr>';
+  }
+
+  // Lista de MPs sin proveedor (con dropdown para asignar)
+  _MPS_PROVS_LIST = data.proveedores_existentes || [];
+  const sinList = data.sin_proveedor_lista || [];
+  const info = document.getElementById('mps-sin-prov-info');
+  if (info) {
+    info.textContent = sinList.length === 0
+      ? '✅ Todas las MPs tienen proveedor asignado.'
+      : sinList.length + ' MPs sin proveedor — asígnalos para que la auto-generación de OC los agrupe correctamente.';
+  }
+  const tbody2 = document.getElementById('mps-tbody-sin');
+  if (sinList.length === 0) {
+    tbody2.innerHTML = '<tr><td colspan="4" style="color:#34d399;text-align:center;padding:20px;">✅ Sin pendientes</td></tr>';
+  } else {
+    tbody2.innerHTML = sinList.map(m => {
+      const opts = '<option value="">(sin asignar)</option>'
+        + _MPS_PROVS_LIST.map(p => '<option value="'+p+'">'+p+'</option>').join('')
+        + '<option value="__nuevo__">+ Otro proveedor (escribir)...</option>';
+      return '<tr>'
+        + '<td style="font-family:monospace;font-size:11px;">'+m.codigo_mp+'</td>'
+        + '<td>'+m.nombre+'</td>'
+        + '<td style="color:#94a3b8;font-size:11px;">'+(m.tipo||'')+'</td>'
+        + '<td><select class="mp-prov-sel" data-cod="'+m.codigo_mp+'" style="background:#0f172a;border:1px solid #334155;border-radius:4px;color:#e2e8f0;padding:4px 8px;font-size:12px;width:100%;" onchange="asignarMpProv(this)">'
+        + opts
+        + '</select></td></tr>';
+    }).join('');
+  }
+}
+
+async function asignarMpProv(selEl){
+  const codigo = selEl.dataset.cod;
+  let proveedor = selEl.value;
+  if (proveedor === '__nuevo__') {
+    proveedor = (prompt('Nombre del nuevo proveedor para ' + codigo + ':') || '').trim();
+    if (!proveedor) {
+      selEl.value = '';
+      return;
+    }
+  }
+  if (!proveedor) {
+    if (!confirm('¿Quitar proveedor de ' + codigo + '?')) return;
+  }
+  const r = await fetch('/api/admin/mps-asignar-proveedor', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({codigo_mp: codigo, proveedor: proveedor})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    toast(codigo + ' → ' + (proveedor || 'sin proveedor'), 'ok');
+    // Recargar para que la fila desaparezca de la tabla
+    loadMpsStatus();
+  } else {
+    toast('Error: ' + (d.error || 'no se pudo asignar'), 0);
+    selEl.value = '';
+  }
 }
 
 // Init
