@@ -1390,6 +1390,24 @@ async function deleteCampana(id, nombre) {
 // ─── PAGOS REALIZADOS — vista cronológica para Marketing ───────────────────
 let _PAGOS_INF_CACHE = [];
 
+async function regenerarCE(compId, numCE) {
+  if (!confirm('Re-generar PDF del ' + numCE + '?\n\nEsto corrige empresa (ANIMUS vs Espagiria), datos bancarios y montos en el PDF almacenado.')) return;
+  try {
+    const r = await fetch('/api/comprobantes-pago/' + compId + '/regenerar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({forzar_obs: true})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('PDF regenerado: ' + d.numero_ce + ' · ' + d.empresa + ' · ' + d.pdf_size_kb + ' KB', 'ok');
+      setTimeout(() => loadPagosInfluencers(), 600);
+    } else {
+      showToast('Error: ' + (d.error || 'Fallo al regenerar'), 'error');
+    }
+  } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
+}
+
 async function loadPagosInfluencers() {
   const body = document.getElementById('pag-body');
   if (body) body.innerHTML = '<tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr>';
@@ -1457,6 +1475,13 @@ function renderPagos() {
         + '&#x1F4C4; '+p.numero_ce+'</a>';
     } else if (p.estado === 'Pagada') {
       comprobante = '<span style="color:#dc2626;font-size:11px;font-style:italic;" title="Pago hecho antes del feature de comprobantes">sin CE</span>';
+    }
+    // Botón regenerar siempre visible junto al comprobante (corrige PDFs viejos)
+    if (p.comprobante_id) {
+      comprobante += ' <button onclick="regenerarCE('+p.comprobante_id+',''+p.numero_ce+'')" '
+        + 'title="Re-generar PDF (corrige empresa, banco, monto)" '
+        + 'style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 2px;opacity:0.55;" '
+        + '>&#x1F504;</button>';
     }
     const ocStr = p.numero_oc
       ? '<span style="font-family:monospace;font-size:11px;color:#94a3b8;">'+p.numero_oc+'</span>'

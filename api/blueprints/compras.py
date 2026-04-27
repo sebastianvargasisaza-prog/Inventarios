@@ -1359,6 +1359,34 @@ def pagar_oc(numero_oc):
             # con el desglose correcto.
             pass
 
+        # ── OBS string fallback: si aún faltan datos bancarios, parsear OBS ──
+        # Ocurre cuando influencer_id era NULL en solicitudes antiguas
+        # o cuando el registro en marketing_influencers no tiene banco/cuenta.
+        if not beneficiario.get('banco') or not beneficiario.get('cuenta'):
+            try:
+                from comprobante_pago import parse_obs_beneficiario
+                obs_row = cur.execute(
+                    "SELECT observaciones FROM solicitudes_compra WHERE numero_oc=? LIMIT 1",
+                    (numero_oc,)
+                ).fetchone()
+                if obs_row and obs_row[0]:
+                    parsed = parse_obs_beneficiario(obs_row[0])
+                    # Completar solo lo que falta (no pisar datos ya correctos)
+                    if not beneficiario.get('banco') and parsed.get('banco'):
+                        beneficiario['banco'] = parsed['banco']
+                    if not beneficiario.get('tipo_cuenta') and parsed.get('tipo_cuenta'):
+                        beneficiario['tipo_cuenta'] = parsed['tipo_cuenta']
+                    if not beneficiario.get('cuenta') and parsed.get('cuenta'):
+                        beneficiario['cuenta'] = parsed['cuenta']
+                    if not beneficiario.get('cedula') and parsed.get('cedula'):
+                        beneficiario['cedula'] = parsed['cedula']
+                    if not beneficiario.get('nombre') and parsed.get('nombre'):
+                        beneficiario['nombre'] = parsed['nombre']
+            except Exception as _e_obs:
+                __import__('logging').getLogger('compras').warning(
+                    "OBS fallback para beneficiario falló: %s", _e_obs
+                )
+
         # Empresa pagadora según categoría:
         #   Influencer/Marketing/Cuenta de Cobro → ANIMUS LAB S.A.S.
         #   Resto (mercancía, MPs, planta, etc.)  → ESPAGIRIA LABORATORIO S.A.S.
@@ -1497,6 +1525,166 @@ def descargar_comprobante_pdf(comp_id):
         pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{numero_ce}.pdf"'}
     )
+
+
+@bp.route('/api/comprobantes-pago/<int:comp_id>/regenerar', methods=['POST'])
+def regenerar_comprobante_pdf(comp_id):
+    """Re-genera el PDF de un comprobante existente con datos actualizados.
+
+    Útil para corregir comprobantes generados antes de que se implementara:
+      - Dispatch correcto empresa (Espagiria vs ANIMUS Lab)
+      - Parseo OBS para datos bancarios
+      - Formateo correcto de montos COP
+
+    Body JSON (todos opcionales — si no se pasan, se re-derivan de la DB):
+      empresa: "Animus" | "Espagiria"
+      forzar_obs: true  — fuerza re-parseo OBS aunque ya haya banco en DB
+    """
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, numero_ce, numero_oc, beneficiario_nombre, beneficiario_cedula,
+               beneficiario_banco, beneficiario_cuenta, beneficiario_tipo_cta,
+               beneficiario_ciudad, subtotal, iva_pct, retefuente_pct, retica_pct,
+               medio_pago, observaciones, pagado_por, empresa, pdf_archivo,
+               fecha_emision
+        FROM comprobantes_pago WHERE id=?
+    """, (comp_id,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Comprobante no encontrado'}), 404
+
+    (_, numero_ce, numero_oc, ben_nombre, ben_cedula, ben_banco, ben_cuenta,
+     ben_tipo_cta, ben_ciudad, subtotal, iva_pct, rete_pct, retica_pct,
+     medio_pago, observaciones, pagado_por, empresa_db, _, fecha_emision_str) = row
+
+    d = request.get_json(silent=True) or {}
+    forzar_obs = d.get('forzar_obs', False)
+
+    # ── Empresa: usa la del body, sino re-deriva de la OC ──
+    if 'empresa' in d:
+        empresa = d['empresa']
+    else:
+        oc_row = c.execute(
+            "SELECT categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+        ).fetchone()
+        cat = (oc_row[0] if oc_row else '') or ''
+        cat_low = cat.lower()
+        if 'influencer' in cat_low or 'marketing' in cat_low or 'cuenta de cobro' in cat_low:
+            empresa = 'Animus'
+        else:
+            empresa = empresa_db or 'Espagiria'
+
+    # ── Beneficiario base ──
+    beneficiario = {
+        'nombre': ben_nombre or '',
+        'cedula': ben_cedula or '',
+        'banco': ben_banco or '',
+        'cuenta': ben_cuenta or '',
+        'tipo_cuenta': ben_tipo_cta or '',
+        'ciudad': ben_ciudad or '',
+        'email': '',
+    }
+
+    # ── Si datos bancarios vacíos O forzar_obs: parsear OBS del comprobante ──
+    if forzar_obs or not beneficiario['banco'] or not beneficiario['cuenta']:
+        from comprobante_pago import parse_obs_beneficiario
+        obs_src = observaciones  # OBS guardado en comprobante
+        if not obs_src and numero_oc:
+            obs_row = c.execute(
+                "SELECT observaciones FROM solicitudes_compra WHERE numero_oc=? LIMIT 1",
+                (numero_oc,)
+            ).fetchone()
+            if obs_row:
+                obs_src = obs_row[0] or ''
+        if obs_src:
+            parsed = parse_obs_beneficiario(obs_src)
+            if forzar_obs or not beneficiario['banco']:
+                beneficiario['banco'] = parsed.get('banco') or beneficiario['banco']
+                beneficiario['tipo_cuenta'] = parsed.get('tipo_cuenta') or beneficiario['tipo_cuenta']
+            if forzar_obs or not beneficiario['cuenta']:
+                beneficiario['cuenta'] = parsed.get('cuenta') or beneficiario['cuenta']
+            if forzar_obs or not beneficiario['cedula']:
+                beneficiario['cedula'] = parsed.get('cedula') or beneficiario['cedula']
+
+    # ── Intentar completar email desde marketing_influencers ──
+    try:
+        mi = c.execute(
+            "SELECT email FROM marketing_influencers WHERE nombre=? LIMIT 1",
+            (beneficiario['nombre'],)
+        ).fetchone()
+        if mi and mi[0]:
+            beneficiario['email'] = mi[0]
+    except Exception:
+        pass
+
+    # ── Valor: re-leer del comprobante (subtotal ya almacenado) ──
+    # Si el subtotal almacenado parece incorrecto (< 10000 para pesos COP),
+    # intentar recuperarlo de la OC.
+    monto = subtotal or 0
+    if monto < 1000 and numero_oc:
+        oc_val = c.execute(
+            "SELECT valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+        ).fetchone()
+        if oc_val and oc_val[0] and float(oc_val[0]) > monto:
+            monto = float(oc_val[0])
+            __import__('logging').getLogger('compras').warning(
+                "regenerar CE %s: subtotal almacenado=%s parece incorrecto, "
+                "usando valor_total OC=%s", numero_ce, subtotal, monto
+            )
+
+    # ── Reconstruir items ──
+    items_pdf = [{'descripcion': observaciones or f'Pago {numero_oc}',
+                  'cantidad': 1, 'valor_unit': monto}]
+
+    # ── Re-generar PDF ──
+    from comprobante_pago import generar_comprobante_egreso_pdf
+    import base64
+    from datetime import datetime as _dt
+
+    try:
+        fecha_pago = _dt.fromisoformat(fecha_emision_str.replace('Z', '')) if fecha_emision_str else _dt.now()
+    except Exception:
+        fecha_pago = _dt.now()
+
+    pdf_bytes = generar_comprobante_egreso_pdf(
+        numero_ce=numero_ce,
+        fecha_pago=fecha_pago,
+        beneficiario=beneficiario,
+        items=items_pdf,
+        aplicar_retefuente=(rete_pct or 0) > 0,
+        aplicar_retica=(retica_pct or 0) > 0,
+        aplicar_iva=(iva_pct or 0) > 0,
+        medio_pago=medio_pago or 'Transferencia',
+        observaciones='',
+        pagado_por=pagado_por or '',
+        empresa_clave=empresa.lower(),
+    )
+    pdf_b64 = base64.b64encode(pdf_bytes).decode('ascii')
+
+    # ── Actualizar DB ──
+    c.execute("""
+        UPDATE comprobantes_pago
+        SET pdf_archivo=?, empresa=?,
+            beneficiario_banco=?, beneficiario_cuenta=?,
+            beneficiario_tipo_cta=?, beneficiario_cedula=?
+        WHERE id=?
+    """, (
+        pdf_b64, empresa,
+        beneficiario['banco'], beneficiario['cuenta'],
+        beneficiario['tipo_cuenta'], beneficiario['cedula'],
+        comp_id,
+    ))
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'numero_ce': numero_ce,
+        'empresa': empresa,
+        'beneficiario': {k: v for k, v in beneficiario.items() if k != 'email'},
+        'subtotal_usado': monto,
+        'pdf_size_kb': round(len(pdf_bytes) / 1024, 1),
+    })
 
 
 @bp.route('/api/comprobantes-pago/<int:comp_id>/email', methods=['POST'])

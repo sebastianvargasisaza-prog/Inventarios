@@ -149,6 +149,39 @@ def _numero_a_letras(n):
     return " ".join(parts) + " PESOS M/CTE"
 
 
+def parse_obs_beneficiario(obs_str):
+    """Extrae datos de beneficiario desde el string OBS estructurado.
+
+    Formato esperado (generado por marketing.py al crear SOLs de influencer):
+      BENEFICIARIO: {nombre} | BANCO: {banco} {tipo} | CUENTA/CEL: {cuenta} |
+      CED/NIT: {cedula} | CONCEPTO: {x} | VALOR: ${x}
+
+    Devuelve dict con las claves del beneficiario, todas pueden ser "".
+    """
+    result = {"nombre": "", "banco": "", "tipo_cuenta": "", "cuenta": "",
+              "cedula": "", "email": "", "ciudad": ""}
+    if not obs_str:
+        return result
+    for part in obs_str.split("|"):
+        part = part.strip()
+        if part.upper().startswith("BENEFICIARIO:"):
+            result["nombre"] = part.split(":", 1)[1].strip()
+        elif part.upper().startswith("BANCO:"):
+            banco_raw = part.split(":", 1)[1].strip()
+            # "Bancolombia Ahorros" → banco="Bancolombia", tipo_cuenta="Ahorros"
+            tokens = banco_raw.split()
+            if len(tokens) >= 2:
+                result["banco"] = " ".join(tokens[:-1])
+                result["tipo_cuenta"] = tokens[-1]
+            else:
+                result["banco"] = banco_raw
+        elif part.upper().startswith("CUENTA/CEL:"):
+            result["cuenta"] = part.split(":", 1)[1].strip()
+        elif part.upper().startswith("CED/NIT:"):
+            result["cedula"] = part.split(":", 1)[1].strip()
+    return result
+
+
 def _logo_path(empresa_clave="hha"):
     """Devuelve path del logo si existe.
 
