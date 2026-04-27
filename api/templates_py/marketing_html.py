@@ -376,6 +376,34 @@ function showToast(msg, type) {
       <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
     </div>
   </div>
+
+  <!-- ═══ Atribución de ventas (discount codes) ═══════════════════════════ -->
+  <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#34d399;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Revenue Shopify atribuido vía discount code de cada influencer.</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="loadAtribucion()" title="Refrescar atribución">&#x21BB;</button>
+    </div>
+    <div id="atrib-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;"></div>
+    <div class="tbl-wrap">
+      <table style="font-size:12px;">
+        <thead><tr>
+          <th>Influencer</th>
+          <th>Discount code</th>
+          <th style="text-align:right;">Pedidos</th>
+          <th style="text-align:right;">Unidades</th>
+          <th style="text-align:right;">Revenue</th>
+          <th style="text-align:right;">Invertido</th>
+          <th style="text-align:right;">ROI</th>
+          <th>Último</th>
+        </tr></thead>
+        <tbody id="atrib-body"><tr class="empty-row"><td colspan="8" style="color:#64748b;text-align:center;padding:14px;">Cargando atribución...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div id="pag-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
   <div class="card">
     <div class="tbl-wrap">
@@ -777,6 +805,19 @@ function showToast(msg, type) {
       <div class="form-row">
         <div class="form-group"><label>Número cuenta / Cel</label><input id="inf-cuenta" placeholder="3114902203 / 0123456789"></div>
         <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#34d399;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Discount code de Shopify</label>
+          <input id="inf-discount-code" placeholder="ANIMUS_LAURA10" style="text-transform:uppercase;font-family:monospace;">
+          <div style="font-size:10px;color:#64748b;margin-top:4px;line-height:1.4;">
+            Cuando un cliente use este código en Shopify, la venta se atribuye automáticamente a este influencer.
+            Convención: <code style="background:#0f172a;padding:1px 6px;border-radius:4px;color:#34d399;">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
+          </div>
+        </div>
       </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
@@ -1474,7 +1515,61 @@ async function regenerarCE(compId, numCE) {
   } catch(e) { showToast('Error de red: ' + e.message, 'error'); }
 }
 
+// ─── Atribución de ventas via discount codes ───────────────────────────
+async function loadAtribucion() {
+  const body = document.getElementById('atrib-body');
+  const kpiEl = document.getElementById('atrib-kpis');
+  if (body) body.innerHTML = '<tr class="empty-row"><td colspan="8"><span class="spin"></span></td></tr>';
+  try {
+    const r = await fetch('/api/marketing/atribucion-influencers');
+    const d = await r.json();
+    if (!d.ok) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error: ' + (d.error||'desconocido') + '</td></tr>';
+      return;
+    }
+    const k = d.kpis || {};
+    const list = d.influencers || [];
+
+    // KPIs
+    kpiEl.innerHTML = [
+      {label:'Influencers con código', val: k.influencers_con_code||0, color:'#34d399'},
+      {label:'Pedidos atribuidos',     val: k.pedidos_atribuidos||0,   color:'#60a5fa'},
+      {label:'Revenue atribuido',      val: fmtM(k.revenue_atribuido||0), color:'#f59e0b'},
+      {label:'Inversión total',        val: fmtM(k.inversion_total||0),  color:'#a78bfa'},
+      {label:'ROI global',             val: (k.roi_global_pct==null?'—':k.roi_global_pct+'%'),
+        color: k.roi_global_pct==null ? '#64748b' : (k.roi_global_pct >= 100 ? '#34d399' : (k.roi_global_pct >= 0 ? '#fbbf24' : '#ef4444'))},
+    ].map(c=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 12px;">
+      <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:4px;">${c.label}</div>
+    </div>`).join('');
+
+    if (!list.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#64748b;text-align:center;padding:18px;">Ningún influencer tiene discount code asignado todavía. Editá un influencer y agregá el código (ej: ANIMUS_LAURA10).</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map(x => {
+      const roi = x.roi_pct;
+      const roiCol = (roi==null) ? '#64748b' : (roi >= 100 ? '#34d399' : (roi >= 0 ? '#fbbf24' : '#ef4444'));
+      const roiTxt = (roi==null) ? '—' : roi + '%';
+      return `<tr>
+        <td style="font-weight:600;">${x.nombre||'—'}${x.usuario_red?'<div style="font-size:10px;color:#64748b;font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
+        <td><code style="background:#0f172a;color:#34d399;padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
+        <td style="text-align:right;">${x.n_pedidos||0}</td>
+        <td style="text-align:right;color:#94a3b8;">${x.unidades||0}</td>
+        <td style="text-align:right;font-weight:700;color:#34d399;">${fmtM(x.revenue_total||0)}</td>
+        <td style="text-align:right;color:#94a3b8;">${fmtM(x.invertido||0)}</td>
+        <td style="text-align:right;font-weight:700;color:${roiCol};">${roiTxt}</td>
+        <td style="font-size:11px;color:#64748b;">${(x.ultimo_pedido||'').slice(0,10)||'—'}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error de red: ' + e.message + '</td></tr>';
+  }
+}
+
 async function loadPagosInfluencers() {
+  // Trigger atribución en paralelo (independiente de pagos)
+  loadAtribucion();
   const body = document.getElementById('pag-body');
   if (body) body.innerHTML = '<tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr>';
   try {
@@ -1664,6 +1759,8 @@ async function editInfluencer(id) {
   document.getElementById('inf-tipo-cta').value=r.tipo_cuenta||'Ahorros';
   document.getElementById('inf-cuenta').value=r.cuenta_bancaria||'';
   document.getElementById('inf-cedula').value=r.cedula_nit||'';
+  const dcEl = document.getElementById('inf-discount-code');
+  if(dcEl) dcEl.value = r.discount_code || '';
   document.getElementById('modal-influencer').classList.add('open');
 }
 
@@ -1684,7 +1781,8 @@ async function saveInfluencer() {
     banco: document.getElementById('inf-banco').value.trim(),
     tipo_cuenta: document.getElementById('inf-tipo-cta').value,
     cuenta_bancaria: document.getElementById('inf-cuenta').value.trim(),
-    cedula_nit: document.getElementById('inf-cedula').value.trim()
+    cedula_nit: document.getElementById('inf-cedula').value.trim(),
+    discount_code: (document.getElementById('inf-discount-code')||{value:''}).value.trim().toUpperCase()
   };
   if(!body.nombre) { showAlert('inf-alert','El nombre es obligatorio','error'); return; }
   const url = id ? `/api/marketing/influencers/${id}` : '/api/marketing/influencers';

@@ -848,8 +848,13 @@ def mkt_influencer_detail(iid):
         if request.method == "PUT":
             d = request.get_json() or {}
             campos = ["nombre", "red_social", "usuario_red", "seguidores", "engagement_rate",
-                      "nicho", "tarifa", "estado", "email", "telefono", "notas"]
+                      "nicho", "tarifa", "estado", "email", "telefono", "notas",
+                      "discount_code"]
             updates = {k: d[k] for k in campos if k in d}
+            # Normalizar discount_code: uppercase, sin espacios, prefijo ANIMUS_ opcional
+            if "discount_code" in updates:
+                dc = (updates["discount_code"] or "").strip().upper().replace(" ", "")
+                updates["discount_code"] = dc
             if not updates:
                 return jsonify({"error": "Nada que actualizar"}), 400
             set_clause = ", ".join(f"{k}=?" for k in updates)
@@ -1388,10 +1393,21 @@ def mkt_sync(platform):
                     total_uds = sum(li.get("quantity", 0) for li in line_items)
                     addr = o.get("shipping_address") or o.get("billing_address") or {}
                     ciudad = addr.get("city") or addr.get("province") or ""
+                    # Capturar discount codes usados en la orden — es lo que
+                    # atribuye la venta al influencer correspondiente.
+                    # Shopify retorna: discount_codes: [{code, amount, type}, ...]
+                    dc_list = o.get("discount_codes", []) or []
+                    dc_codes = ",".join(
+                        (dc.get("code") or "").upper().strip()
+                        for dc in dc_list if dc.get("code")
+                    )
+                    subtotal_o = float(o.get("subtotal_price") or 0)
+                    total_desc = float(o.get("total_discounts") or 0)
                     conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
                         (shopify_id,nombre,email,total,moneda,estado,estado_pago,
-                         sku_items,unidades_total,ciudad,pais,creado_en,synced_at)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                         sku_items,unidades_total,ciudad,pais,creado_en,synced_at,
+                         discount_codes,subtotal,total_descuentos)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?,?)""",
                         (str(o["id"]), o.get("name",""), o.get("email",""),
                          float(o.get("total_price") or 0),
                          o.get("currency","COP"),
@@ -1399,7 +1415,8 @@ def mkt_sync(platform):
                          o.get("financial_status",""),
                          items_sku, total_uds, ciudad,
                          addr.get("country_code","CO"),
-                         (o.get("created_at") or "")[:10]))
+                         (o.get("created_at") or "")[:10],
+                         dc_codes, subtotal_o, total_desc))
                     synced += 1
                 if not orders:
                     break
@@ -2473,6 +2490,125 @@ def mkt_influencers_panel():
         pass
 
 
+@bp.route("/api/marketing/atribucion-influencers", methods=["GET"])
+def mkt_atribucion_influencers():
+    """Atribución de ventas Shopify por influencer via discount_code.
+
+    Para cada influencer con discount_code asignado, busca en
+    animus_shopify_orders todas las órdenes que usaron ese código y agrega:
+      - n_pedidos       : cantidad de órdenes
+      - revenue_total   : suma de total (post-descuento)
+      - subtotal_total  : suma pre-descuento (mide demanda real)
+      - descuento_total : suma de descuentos otorgados
+      - unidades        : suma de unidades vendidas
+      - clientes_unicos : emails distintos
+      - ultimo_pedido   : fecha más reciente
+      - roi_estimado    : revenue_total / inversion_pagada (si hay pago)
+
+    Query param `desde` (YYYY-MM-DD) limita el periodo. Default: últimos 90d.
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    desde = (request.args.get("desde") or "").strip()
+    if not desde:
+        desde = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+
+    conn = _db()
+    c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT id, nombre, usuario_red, red_social, discount_code, estado
+            FROM marketing_influencers
+            WHERE COALESCE(discount_code,'') != ''
+            ORDER BY nombre
+        """).fetchall()
+
+        resultado = []
+        for r in rows:
+            code_val = (r["discount_code"] or "").upper().strip()
+            if not code_val:
+                continue
+            # Match exacto en lista CSV de codes (rodeada de , para evitar
+            # matches parciales tipo CODE10 matcheando CODE)
+            stats = c.execute("""
+                SELECT COUNT(*) as n_pedidos,
+                       COALESCE(SUM(total),0) as revenue_total,
+                       COALESCE(SUM(subtotal),0) as subtotal_total,
+                       COALESCE(SUM(total_descuentos),0) as descuento_total,
+                       COALESCE(SUM(unidades_total),0) as unidades,
+                       COUNT(DISTINCT email) as clientes_unicos,
+                       MAX(creado_en) as ultimo_pedido
+                FROM animus_shopify_orders
+                WHERE creado_en >= ?
+                  AND (
+                       discount_codes = ?
+                    OR discount_codes LIKE ?
+                    OR discount_codes LIKE ?
+                    OR discount_codes LIKE ?
+                  )
+            """, (
+                desde, code_val,
+                f"{code_val},%", f"%,{code_val}", f"%,{code_val},%"
+            )).fetchone()
+
+            # Inversión pagada al influencer en el mismo periodo
+            invertido = c.execute("""
+                SELECT COALESCE(SUM(valor),0) as t
+                FROM pagos_influencers
+                WHERE influencer_id = ? AND estado = 'Pagada' AND fecha >= ?
+            """, (r["id"], desde)).fetchone()["t"] or 0
+
+            revenue = stats["revenue_total"] or 0
+            roi_pct = round((revenue - invertido) / invertido * 100, 1) if invertido > 0 else None
+
+            resultado.append({
+                "influencer_id":   r["id"],
+                "nombre":          r["nombre"],
+                "usuario_red":     r["usuario_red"] or "",
+                "red_social":      r["red_social"] or "",
+                "discount_code":   code_val,
+                "estado":          r["estado"] or "",
+                "n_pedidos":       stats["n_pedidos"] or 0,
+                "revenue_total":   round(revenue, 0),
+                "subtotal_total":  round(stats["subtotal_total"] or 0, 0),
+                "descuento_total": round(stats["descuento_total"] or 0, 0),
+                "unidades":        stats["unidades"] or 0,
+                "clientes_unicos": stats["clientes_unicos"] or 0,
+                "ultimo_pedido":   stats["ultimo_pedido"] or "",
+                "invertido":       round(invertido, 0),
+                "roi_pct":         roi_pct,
+            })
+
+        # Ordenar: revenue desc → ranking de influencers más rentables
+        resultado.sort(key=lambda x: -x["revenue_total"])
+
+        # KPIs globales del programa
+        kpis = {
+            "influencers_con_code": len(resultado),
+            "revenue_atribuido":    sum(x["revenue_total"] for x in resultado),
+            "pedidos_atribuidos":   sum(x["n_pedidos"]     for x in resultado),
+            "inversion_total":      sum(x["invertido"]     for x in resultado),
+            "descuento_total":      sum(x["descuento_total"] for x in resultado),
+        }
+        kpis["roi_global_pct"] = (
+            round((kpis["revenue_atribuido"] - kpis["inversion_total"])
+                  / kpis["inversion_total"] * 100, 1)
+            if kpis["inversion_total"] > 0 else None
+        )
+
+        return jsonify({
+            "ok": True,
+            "desde": desde,
+            "kpis": kpis,
+            "influencers": resultado,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]}), 500
+    finally:
+        pass
+
+
 @bp.route("/api/marketing/pagos-influencers", methods=["GET"])
 def mkt_pagos_influencers_list():
     """Lista cronológica de pagos a influencers con comprobante PDF asociado.
@@ -2779,7 +2915,11 @@ def mkt_influencer_banco(iid):
     d = request.get_json() or {}
     campos = ["banco", "cuenta_bancaria", "cedula_nit", "tipo_cuenta",
               "nombre", "red_social", "usuario_red", "seguidores",
-              "engagement_rate", "nicho", "tarifa", "estado", "email", "telefono", "notas"]
+              "engagement_rate", "nicho", "tarifa", "estado", "email", "telefono", "notas",
+              "discount_code"]
+    # Normalizar discount_code (UPPERCASE, sin espacios)
+    if "discount_code" in d:
+        d["discount_code"] = (d["discount_code"] or "").strip().upper().replace(" ", "")
     updates = {k: d[k] for k in campos if k in d}
     if not updates:
         return jsonify({"error": "Nada que actualizar"}), 400

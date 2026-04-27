@@ -70,6 +70,54 @@ def test_debug_endpoints_admin_only(app, db_clean):
         assert r.status_code != 403, f"sebastian no debería ser rechazado en {url}"
 
 
+def test_atribucion_influencers_endpoint(app, db_clean):
+    """Endpoint de atribución por discount code retorna estructura correcta
+    aunque no haya influencers con code asignado.
+
+    Schema check: depende de migration 32 (discount_code, discount_codes,
+    subtotal, total_descuentos). Si rompe, la migración no corrió.
+    """
+    import os
+    import sqlite3
+    db_path = os.environ.get("DB_PATH")
+    assert db_path
+    conn = sqlite3.connect(db_path)
+    # Insertar 1 influencer con code y 2 órdenes que lo usan
+    conn.execute("""INSERT INTO marketing_influencers
+        (nombre, red_social, estado, discount_code) VALUES (?,?,?,?)""",
+        ("Test Inf", "Instagram", "Activo", "ANIMUS_TEST10"))
+    conn.execute("""INSERT INTO animus_shopify_orders
+        (shopify_id, nombre, email, total, sku_items, unidades_total,
+         creado_en, discount_codes, subtotal, total_descuentos)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        ("9001", "#9001", "a@b.com", 100000, "[]", 1,
+         "2026-04-20", "ANIMUS_TEST10", 110000, 10000))
+    conn.execute("""INSERT INTO animus_shopify_orders
+        (shopify_id, nombre, email, total, sku_items, unidades_total,
+         creado_en, discount_codes, subtotal, total_descuentos)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        ("9002", "#9002", "c@d.com", 200000, "[]", 2,
+         "2026-04-21", "OTRO,ANIMUS_TEST10", 220000, 20000))
+    conn.commit()
+    conn.close()
+
+    c = _login(app)
+    r = c.get("/api/marketing/atribucion-influencers")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j.get("ok") is True
+    assert "kpis" in j and "influencers" in j
+
+    # Debe encontrar 1 influencer con 2 pedidos y revenue = 100k+200k
+    infs = j["influencers"]
+    matching = [x for x in infs if x["discount_code"] == "ANIMUS_TEST10"]
+    assert len(matching) == 1, f"Expected 1 influencer, got {infs}"
+    m = matching[0]
+    assert m["n_pedidos"] == 2
+    assert m["revenue_total"] == 300000
+    assert m["unidades"] == 3
+
+
 def test_agente_estrategia_runs(app, db_clean):
     """El master agent estrategia no debe 500 con DB vacía.
 

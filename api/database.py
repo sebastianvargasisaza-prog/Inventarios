@@ -1578,6 +1578,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE marketing_influencers ADD COLUMN instagram TEXT DEFAULT ''""",
         """ALTER TABLE marketing_influencers ADD COLUMN tipo TEXT DEFAULT ''""",
     ]),
+    (32, "atribucion: discount_code en influencers + discount_codes en shopify orders", [
+        # Discount code asignado al influencer. Cuando un cliente usa este code
+        # en Shopify, la venta se atribuye automáticamente al influencer.
+        # Convención: prefijo 'ANIMUS_' + slug del nombre, ej: ANIMUS_LAURA10.
+        """ALTER TABLE marketing_influencers ADD COLUMN discount_code TEXT DEFAULT ''""",
+        # Lista (JSON) de discount codes usados en cada orden de Shopify.
+        # Necesario para hacer el matching → ventas atribuidas por influencer.
+        """ALTER TABLE animus_shopify_orders ADD COLUMN discount_codes TEXT DEFAULT ''""",
+        # Subtotal pre-descuento (para calcular ROI real de la campaña descuento).
+        """ALTER TABLE animus_shopify_orders ADD COLUMN subtotal REAL DEFAULT 0""",
+        """ALTER TABLE animus_shopify_orders ADD COLUMN total_descuentos REAL DEFAULT 0""",
+        # Index para búsquedas rápidas por código (LIKE %CODE%)
+        """CREATE INDEX IF NOT EXISTS idx_shopify_discount_codes ON animus_shopify_orders(discount_codes)""",
+        """CREATE INDEX IF NOT EXISTS idx_influencer_discount_code ON marketing_influencers(discount_code)""",
+    ]),
 ]
 
 
