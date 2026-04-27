@@ -724,6 +724,214 @@ DIAS_CRITICOS, DIAS_ALERTA = _dias_thresholds()
 LEAD_TIME_CHINA = int(os.environ.get('LEAD_TIME_CHINA') or 60)
 LEAD_TIME_LOCAL = int(os.environ.get('LEAD_TIME_LOCAL') or 21)
 
+
+def _compute_mp_deficit_aggregated(conn, days_ahead=90):
+    """Calcula déficit REAL de MPs agregando primero, restando stock una sola vez.
+
+    Esta es la lógica correcta — agrupa todas las producciones planificadas
+    (calendario + DB local), suma cuánto se necesita por MP, y resta el stock
+    actual UNA vez para obtener el déficit real.
+
+    El bug que esto fixea: si calculas deficit per-product y sumas, cuando hay
+    stock parcial cada producto "ve" el mismo stock disponible y under-cuentas
+    el déficit total. Ej: A pide 3g, B pide 5g, stock=4g → A: déf=0, B: déf=1,
+    suma=1g. Real: 3+5-4 = 4g. La suma per-product subestima en 3g.
+
+    Returns dict {material_id: {nombre, total_g, stock_g, deficit_g, productos,
+                                proveedor, por_mes, n_meses}}.
+    Solo incluye MPs con deficit_g > 0. MPs ilimitados (agua, etc.) excluidos.
+    """
+    import datetime as _dt
+    import re as _re
+
+    cal = _fetch_calendar_events(days_ahead=days_ahead)
+    events = cal.get('events', [])
+    formulas = _get_formulas(conn)
+    mp_stock = _get_mp_stock(conn)
+    if not formulas:
+        return {}
+
+    # SKU → producto map
+    _sku_to_prod = {}
+    try:
+        for row in conn.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            _sku_to_prod[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # Proveedor por MP
+    _prov_map = {}
+    try:
+        for row in conn.execute(
+            "SELECT codigo_mp, COALESCE(proveedor,'') FROM maestro_mps"
+        ).fetchall():
+            _prov_map[row[0]] = row[1]
+    except Exception:
+        pass
+
+    today = _dt.date.today()
+    cutoff = today + _dt.timedelta(days=days_ahead)
+
+    # Tokens que no son SKUs en títulos del calendario
+    _NOT_SKU = {
+        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+        'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
+    }
+
+    def _skus(titulo):
+        tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+        return [t for t in tokens if t not in _NOT_SKU]
+
+    def _kg_ev(titulo):
+        m = _re.findall(r'~?(\d+(?:[,.]\d+)*)\s*kg', titulo, _re.IGNORECASE)
+        if not m:
+            return None
+        try:
+            return float(m[-1].replace(',', '.'))
+        except Exception:
+            return None
+
+    # Filtro: ignorar fases que NO consumen MPs (envasado/acondicionamiento/QC)
+    _NON_FAB_KW = {
+        'envasado', 'acondicionamiento', 'micro qc', 'control de calidad',
+        'dispensado', 'etiquetado', 'llenado',
+    }
+
+    producciones = []
+    seen_events = set()
+
+    # Calendario
+    for ev in events:
+        titulo = ev.get('titulo', '')
+        fecha_s = ev.get('fecha', '')
+        if not fecha_s:
+            continue
+        try:
+            fecha = _dt.date.fromisoformat(fecha_s)
+        except ValueError:
+            continue
+        if fecha < today or fecha > cutoff:
+            continue
+        if any(kw in titulo.lower() for kw in _NON_FAB_KW):
+            continue
+        key = (titulo.strip(), fecha_s)
+        if key in seen_events:
+            continue
+        seen_events.add(key)
+        kg = _kg_ev(titulo)
+        for sku in _skus(titulo):
+            prod = _sku_to_prod.get(sku)
+            if prod and prod in formulas:
+                producciones.append({
+                    'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
+                    'producto': prod, 'kg': kg or formulas[prod]['lote_size_kg'],
+                })
+                break
+
+    # produccion_programada (DB local) — complementa el calendario
+    _upper_to_prod = {p.upper(): p for p in formulas.keys()}
+    try:
+        local_rows = conn.execute(
+            """SELECT producto, fecha_programada, lotes FROM produccion_programada
+               WHERE estado NOT IN ('completado','cancelado')
+                 AND fecha_programada >= date('now', '-7 days')
+                 AND fecha_programada <= ?
+               ORDER BY fecha_programada""",
+            (cutoff.isoformat(),)
+        ).fetchall()
+        for row in local_rows:
+            prod_raw = (row[0] or '').strip()
+            fecha_s = (row[1] or '').strip()
+            lotes = int(row[2] or 1)
+            prod = prod_raw if prod_raw in formulas else _upper_to_prod.get(prod_raw.upper())
+            if not prod or not fecha_s:
+                continue
+            key = (prod, fecha_s)
+            if key in seen_events:
+                continue
+            seen_events.add(key)
+            try:
+                fecha = _dt.date.fromisoformat(fecha_s)
+            except ValueError:
+                continue
+            lote_kg = formulas[prod]['lote_size_kg']
+            producciones.append({
+                'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
+                'producto': prod, 'kg': lote_kg * lotes,
+            })
+    except Exception:
+        pass
+
+    # Agregar necesidad por MP a través de TODAS las producciones
+    mp_needed = {}  # mid → {nombre, total_g, productos, por_mes}
+    for pr in producciones:
+        prod = pr['producto']
+        kg_ev = pr['kg']
+        formula = formulas.get(prod, {})
+        lote_kg = formula.get('lote_size_kg', 1)
+        factor = kg_ev / lote_kg if lote_kg > 0 else 1.0
+        for item in formula.get('items', []):
+            mid = str(item['material_id']).strip()
+            nombre = item.get('material_nombre', '')
+            g_lote = item.get('cantidad_g_por_lote', 0)
+            g_need = float(g_lote) * factor
+            if g_need <= 0 or not mid:
+                continue
+            if _is_unlimited_mp(nombre):
+                continue
+            if mid not in mp_needed:
+                mp_needed[mid] = {
+                    'nombre': nombre, 'total_g': 0.0,
+                    'productos': [], 'por_mes': {},
+                }
+            mp_needed[mid]['total_g'] += g_need
+            mp_needed[mid]['por_mes'][pr['mes']] = (
+                mp_needed[mid]['por_mes'].get(pr['mes'], 0) + g_need
+            )
+            if prod not in mp_needed[mid]['productos']:
+                mp_needed[mid]['productos'].append(prod)
+
+    # Lookup stock por mid o por nombre normalizado
+    def _lookup_stock(mid, nombre):
+        s = mp_stock.get(mid)
+        if s is not None:
+            return s
+        s = mp_stock.get(mid.upper())
+        if s is not None:
+            return s
+        s = mp_stock.get((nombre or '').upper())
+        if s is not None:
+            return s
+        s = mp_stock.get(_norm_mp_name(nombre or ''))
+        if s is not None:
+            return s
+        return 0
+
+    # Calcular déficit (UNA sola resta — total_g - stock)
+    out = {}
+    for mid, data in mp_needed.items():
+        stock_g = _lookup_stock(mid, data['nombre'])
+        deficit = max(0.0, data['total_g'] - stock_g)
+        if deficit <= 0:
+            continue
+        out[mid] = {
+            'material_id': mid,
+            'nombre': data['nombre'],
+            'total_g': round(data['total_g'], 1),
+            'stock_g': round(stock_g, 1),
+            'deficit_g': round(deficit, 1),
+            'productos': data['productos'],
+            'por_mes': data['por_mes'],
+            'n_meses': len(data['por_mes']),
+            'proveedor': _prov_map.get(mid, ''),
+        }
+    return out
+
+
 def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mps=None):
     """
     Logica correcta de programacion:
@@ -1820,52 +2028,18 @@ def prog_regenerar_oc():
             'detalle': str(e),
         }), 500
 
-    # 2. Llamar internamente a la lógica de generar-oc reutilizando código
-    # Hacemos lo mismo que prog_generar_oc para no duplicar y mantener
-    # 1 sola fuente de verdad.
-    vel_data = _shopify_velocity(conn, days=60)
-    mp_stock = _get_mp_stock(conn)
-    formulas = _get_formulas(conn)
-    cal = _fetch_calendar_events(days_ahead=90)
-    if not formulas:
-        return jsonify({'ok': True, 'mensaje': 'Sin fórmulas — solo se borraron viejas',
-                        'borradas': deleted, 'creadas': []})
-
-    china_mps_set = _get_china_mps(conn)
-    projection, _alerts = _project_stock(
-        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
-        china_mps=china_mps_set
-    )
-
-    mp_deficit = {}
-    for prod in projection:
-        if prod['mp_lista']:
-            continue
-        for mp in prod.get('mp_check', []):
-            if mp.get('deficit_g', 0) > 0:
-                cod = mp['material_id']
-                if cod not in mp_deficit:
-                    mp_deficit[cod] = {'nombre': mp['nombre'], 'deficit_g': 0, 'productos': []}
-                mp_deficit[cod]['deficit_g'] += mp['deficit_g']
-                if prod['producto'] not in mp_deficit[cod]['productos']:
-                    mp_deficit[cod]['productos'].append(prod['producto'])
+    # 2. Recalcular déficit con la lógica correcta (total_g - stock una sola
+    # vez). Misma fuente de verdad que /programacion para no divergir.
+    mp_deficit = _compute_mp_deficit_aggregated(conn, days_ahead=90)
 
     if not mp_deficit:
         return jsonify({'ok': True, 'mensaje': 'Sin déficits actuales — solo se borraron viejas',
                         'borradas': deleted, 'creadas': []})
 
-    prov_map = {}
-    try:
-        for r in conn.execute("SELECT codigo_mp, COALESCE(TRIM(proveedor),'') FROM maestro_mps").fetchall():
-            if r[1]:
-                prov_map[r[0]] = r[1]
-    except Exception:
-        pass
-
     SIN_PROV = 'Sin asignar'
     grupos = {}
     for cod, info in mp_deficit.items():
-        prov = prov_map.get(cod) or SIN_PROV
+        prov = info.get('proveedor') or SIN_PROV
         grupos.setdefault(prov, []).append({
             'codigo': cod,
             'nombre': info['nombre'],
@@ -2005,57 +2179,25 @@ def prog_generar_oc():
         return jsonify({'error': 'No autenticado'}), 401
 
     conn = get_db()
-    vel_data = _shopify_velocity(conn, days=60)
-    mp_stock = _get_mp_stock(conn)
-    formulas = _get_formulas(conn)
-    cal = _fetch_calendar_events(days_ahead=90)
 
-    if not formulas:
-        return jsonify({'error': 'Sin fórmulas cargadas'}), 400
-
-    china_mps_set = _get_china_mps(conn)
-    projection, _alerts = _project_stock(
-        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
-        china_mps=china_mps_set
-    )
-
-    # Collect all missing MPs across products
-    mp_deficit = {}  # codigo -> {nombre, deficit_g, productos}
-    for prod in projection:
-        if prod['mp_lista']:
-            continue
-        for mp in prod.get('mp_check', []):
-            if mp.get('deficit_g', 0) > 0:
-                cod = mp['material_id']
-                if cod not in mp_deficit:
-                    mp_deficit[cod] = {
-                        'nombre': mp['nombre'],
-                        'deficit_g': 0,
-                        'productos': [],
-                    }
-                mp_deficit[cod]['deficit_g'] += mp['deficit_g']
-                if prod['producto'] not in mp_deficit[cod]['productos']:
-                    mp_deficit[cod]['productos'].append(prod['producto'])
+    # Cálculo correcto: agrega total_g por MP y resta stock UNA vez.
+    # Antes se sumaban deficits per-product (under-cuenta cuando hay stock
+    # parcial). Esto deja las cantidades del OC alineadas con lo que muestra
+    # /programacion (planificacion_estrategica + mps-deficit).
+    mp_deficit = _compute_mp_deficit_aggregated(conn, days_ahead=90)
 
     if not mp_deficit:
-        return jsonify({'ok': True, 'mensaje': 'No hay déficits de MP — sin OC necesaria', 'creadas': []})
-
-    # Lookup proveedor por codigo_mp desde maestro_mps
-    prov_map = {}
-    try:
-        for r in conn.execute(
-            "SELECT codigo_mp, COALESCE(TRIM(proveedor),'') FROM maestro_mps"
-        ).fetchall():
-            if r[1]:
-                prov_map[r[0]] = r[1]
-    except Exception:
-        pass
+        return jsonify({
+            'ok': True,
+            'mensaje': 'No hay déficits de MP — sin OC necesaria',
+            'creadas': []
+        })
 
     # Agrupar MPs en déficit por proveedor; sin proveedor → '(Sin asignar)'
     SIN_PROV = 'Sin asignar'
     grupos = {}  # proveedor → lista de items
     for cod, info in mp_deficit.items():
-        prov = prov_map.get(cod) or SIN_PROV
+        prov = info.get('proveedor') or SIN_PROV
         grupos.setdefault(prov, []).append({
             'codigo': cod,
             'nombre': info['nombre'],
@@ -2214,56 +2356,24 @@ def prog_mps_deficit():
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db()
     try:
-        vel_data = _shopify_velocity(conn, days=60)
-        mp_stock = _get_mp_stock(conn)
-        formulas = _get_formulas(conn)
-        cal = _fetch_calendar_events(days_ahead=90)
         china_mps_set = _get_china_mps(conn)
-        if not formulas:
+        # Misma fuente de verdad que /generar-oc y /planificacion
+        mp_def_raw = _compute_mp_deficit_aggregated(conn, days_ahead=90)
+        if not mp_def_raw:
             return jsonify({'mps': [], 'total': 0, 'deficit_total_kg': 0})
-        projection, _alerts = _project_stock(
-            conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
-            china_mps=china_mps_set
-        )
-        # Agrupar MPs en déficit por codigo
-        mp_def = {}
-        for prod in projection:
-            for m in prod.get('mp_check', []):
-                mid = str(m.get('material_id', '')).strip()
-                if not mid or m.get('ok'):
-                    continue
-                deficit_g = float(m.get('deficit_g') or 0)
-                if deficit_g <= 0:
-                    continue
-                if mid not in mp_def:
-                    mp_def[mid] = {
-                        'codigo_mp': mid,
-                        'nombre': m.get('nombre', ''),
-                        'stock_actual_g': float(m.get('available_g') or 0)
-                                          if m.get('available_g') != '∞' else float('inf'),
-                        'deficit_g': 0.0,
-                        'productos_afectados': [],
-                        'es_china': mid in china_mps_set,
-                    }
-                mp_def[mid]['deficit_g'] += deficit_g
-                if prod['producto'] not in mp_def[mid]['productos_afectados']:
-                    mp_def[mid]['productos_afectados'].append(prod['producto'])
 
-        # Proveedor por MP
-        try:
-            for row in conn.execute(
-                "SELECT codigo_mp, COALESCE(proveedor,'') FROM maestro_mps"
-            ).fetchall():
-                if row[0] in mp_def:
-                    mp_def[row[0]]['proveedor'] = row[1]
-        except Exception:
-            pass
-
-        items = sorted(mp_def.values(), key=lambda x: -x['deficit_g'])
-        # Limpiar inf antes de jsonify
-        for it in items:
-            if it['stock_actual_g'] == float('inf'):
-                it['stock_actual_g'] = -1  # marca de "ilimitado"
+        items = []
+        for mid, info in mp_def_raw.items():
+            items.append({
+                'codigo_mp': mid,
+                'nombre': info['nombre'],
+                'stock_actual_g': info['stock_g'],
+                'deficit_g': info['deficit_g'],
+                'productos_afectados': info['productos'],
+                'es_china': mid in china_mps_set,
+                'proveedor': info.get('proveedor', ''),
+            })
+        items.sort(key=lambda x: -x['deficit_g'])
         deficit_total_kg = sum(i['deficit_g'] for i in items) / 1000.0
 
         return jsonify({
