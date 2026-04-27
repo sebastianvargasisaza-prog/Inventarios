@@ -142,7 +142,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div style="color:#666;font-size:0.85em;" id="sol-mp-cod">—</div>
         <div style="color:#888;font-size:0.78em;margin-top:4px;" id="sol-mp-stock">—</div>
       </div>
-      <div class="form-group"><label>Proveedor</label><input type="text" id="sol-prov" placeholder="Si conoces el proveedor"></div>
+      <div class="form-group">
+        <label>Proveedor</label>
+        <input type="text" id="sol-prov" list="prov-list-global" placeholder="Selecciona del menu o escribe uno nuevo" autocomplete="off">
+        <small id="sol-prov-hint" style="color:#888;font-size:0.78em;display:block;margin-top:4px;">Empieza a escribir para ver los existentes. Si falta uno, escr&iacute;belo y queda registrado.</small>
+      </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
         <div class="form-group"><label>Cantidad necesaria *</label><input type="number" id="sol-cant" placeholder="Ej: 5000" step="0.1" min="0.01"></div>
         <div class="form-group"><label>Unidad</label><select id="sol-unidad" style="width:100%;"><option value="g">g</option><option value="kg">kg</option><option value="und">und</option></select></div>
@@ -178,8 +182,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <p style="color:#666;font-size:0.85em;margin-bottom:8px;">Selecciona un proveedor existente del listado, o escribe uno nuevo si falta. El cambio aplica a <b>este lote</b> y al <b>cat&#225;logo de la MP</b> (futuras recepciones lo heredan correcto). Queda registrado en audit_log.</p>
       <div class="form-group">
         <label>Proveedor *</label>
-        <input type="text" id="ep-input" list="ep-prov-list" placeholder="Empieza a escribir o selecciona del menu" autocomplete="off" style="text-transform:none;">
-        <datalist id="ep-prov-list"></datalist>
+        <input type="text" id="ep-input" list="prov-list-global" placeholder="Empieza a escribir o selecciona del menu" autocomplete="off" style="text-transform:none;">
+        <datalist id="prov-list-global"></datalist>
         <small id="ep-hint" style="color:#888;font-size:0.78em;display:block;margin-top:4px;"></small>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;">
@@ -1389,6 +1393,10 @@ function abrirSolicitarLote(idx){
   document.getElementById('sol-urg').value='Normal';
   document.getElementById('sol-obs').value='';
   document.getElementById('sol-msg').innerHTML='';
+  // Cargar proveedores existentes en el desplegable (mismo datalist global
+  // que usa Editar Proveedor) — evita typos y registra implicitamente
+  // proveedores nuevos cuando el usuario escribe uno que no esta en la lista.
+  _cargarProveedoresUnicos();
   document.getElementById('modal-solicitar-lote').style.display='flex';
 }
 function cerrarSolicitarLote(){document.getElementById('modal-solicitar-lote').style.display='none';_solLote=null;}
@@ -1445,7 +1453,7 @@ async function _cargarProveedoresUnicos(){
     var r=await fetch('/api/proveedores-unicos');
     if(!r.ok)return;
     var d=await r.json();
-    var dl=document.getElementById('ep-prov-list');
+    var dl=document.getElementById('prov-list-global');
     if(!dl)return;
     dl.innerHTML='';
     (d.proveedores||[]).forEach(function(p){
