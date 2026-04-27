@@ -946,7 +946,7 @@ async function renderDash(){
           +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span>'
           +(s.observaciones?'<span style="font-size:11px;color:#57534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">'+esc((s.observaciones||'').substring(0,50))+'</span>':'')
           +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
-          +'<div class="acts"><button class="btn bi bs" onclick="document.querySelector(\'[data-tab=solic]\').click();setTimeout(function(){var el=document.querySelector(\'[data-num=\\\'' +esc(s.numero)+ '\\\']\');if(el)el.scrollIntoView({behavior:\'smooth\'});},400);">Revisar</button></div>'
+          +'<div class="acts"><button class="btn bi bs" onclick="revisarSolicitudPendiente(&quot;'+esc(s.numero)+'&quot;)">Revisar</button></div>'
           +'</div>';
       }).join('')
     : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>';
@@ -980,6 +980,20 @@ async function renderDash(){
 function mkKpi(l,v,s,c){
   return '<div class="kpi"><div class="kpi-l">'+l+'</div><div class="kpi-v'+(c?' '+c:'')+'" >'+v+'</div><div class="kpi-s">'+s+'</div></div>';
 }
+// Click "Revisar" en la mini-card del Centro de Mando — abre el tab Solicitudes
+// y hace scroll suave a la solicitud específica. Antes esto vivía como onclick
+// inline con triple-escape de comillas que rompía el parser de JS al render
+// (SyntaxError "Invalid left-hand side in assignment") y dejaba TODO el
+// <script> de compras inerte — todos los botones quedaban sin handlers.
+function revisarSolicitudPendiente(numero){
+  var tabBtn = document.querySelector('[data-tab=solic]');
+  if (tabBtn) tabBtn.click();
+  setTimeout(function(){
+    var el = document.querySelector('[data-num="'+(numero||'')+'"]');
+    if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 400);
+}
+
 function miniCard(o){
   var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">Ver detalle</button>';
   if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
@@ -1653,13 +1667,19 @@ async function eliminarOC(oc){
 async function loadMPLookup(){
   if(_MP_LIST.length) return;
   try{
-    var r=await fetch('/api/materiales?tipo=MP&limit=500');
+    // /api/maestro-mps devuelve {mps:[{codigo_mp,nombre_comercial,...}]}.
+    // Antes apuntaba a /api/materiales (404) con keys incorrectos
+    // (codigo_interno/nombre_material) — el datalist quedaba vacío y
+    // autoFillMP nunca acertaba ningún MP.
+    var r=await fetch('/api/maestro-mps?tipo_material=MP');
     var d=await r.json();
-    _MP_LIST=(d.items||d||[]);
+    _MP_LIST=(d.mps||d.items||d||[]);
     var dl=document.getElementById('mp-dl');
     if(!dl){ dl=document.createElement('datalist'); dl.id='mp-dl'; document.body.appendChild(dl); }
     dl.innerHTML=_MP_LIST.map(function(m){
-      return '<option value="'+m.codigo_interno+'">'+m.nombre_material+'</option>';
+      var cod=m.codigo_mp||m.codigo_interno||'';
+      var nom=m.nombre_comercial||m.nombre_material||m.nombre_inci||'';
+      return '<option value="'+cod+'">'+nom+'</option>';
     }).join('');
   }catch(e){ console.warn('MP lookup unavailable',e); }
 }
@@ -1667,10 +1687,10 @@ function autoFillMP(n){
   var codEl=document.getElementById('ic'+n);
   if(!codEl) return;
   var val=codEl.value.trim();
-  var mp=_MP_LIST.find(function(m){ return m.codigo_interno===val; });
+  var mp=_MP_LIST.find(function(m){ return (m.codigo_mp||m.codigo_interno)===val; });
   if(mp){
     var nameEl=document.getElementById('in'+n);
-    if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_material||'';
+    if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_comercial||mp.nombre_material||'';
   }
 }
 // ─── Inline provider creation ─────────────────────────────────────────
@@ -2440,7 +2460,7 @@ async function regenerarSolicitudesAuto(){
   }
 }
 
-async async function loadSolicitudes(){
+async function loadSolicitudes(){
   try{
     var _results=await Promise.all([
       fetch('/api/solicitudes-compra').then(function(r){ return r.json(); }),
@@ -3888,9 +3908,15 @@ async function loadAlertasCompras(){
   }catch(e){ console.error(e); }
 }
 
+// Stub no-op: el tab Cuentas de Cobro fue absorbido por Solicitudes en el
+// refactor del Centro de Mando, pero quedaron 2 callsites sin protección
+// (líneas init + post-decisión). El ReferenceError tiraba TODO el init
+// async — todos los handlers quedaban sin engancharse. Stub idempotente
+// = compras vuelve a la vida.
+async function loadCCSolicitudes(){ /* no-op: tab absorbido en Solicitudes */ }
+
 // ─── Init ─────────────────────────────────────────────────────────────
 loadData();
-loadCCSolicitudes();
 </script>
 </body>
 </html>"""
