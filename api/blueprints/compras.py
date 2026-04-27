@@ -453,6 +453,182 @@ def editar_oc(numero_oc):
     conn.commit()
     return jsonify({'ok': True, 'message': f'OC {numero_oc} actualizada', 'valor_total': valor_total})
 
+@bp.route('/api/ordenes-compra/<numero_oc>/proveedor', methods=['PATCH'])
+def confirmar_proveedor_oc(numero_oc):
+    """Confirma o cambia el proveedor de una OC.
+
+    Body: { proveedor: 'Nombre Proveedor', confirmado: true }
+
+    Pensado para el flujo donde Catalina revisa la solicitud pendiente y:
+      - Si el proveedor sugerido es correcto → confirma con click (proveedor
+        sigue igual, solo actualiza fecha y marca confirmacion).
+      - Si quiere cambiarlo → escribe el nuevo nombre y se actualiza.
+
+    NO requiere estado Borrador — confirmacion también es válida en
+    Aprobada (siempre que no haya pagos hechos).
+
+    Cuando se confirma o cambia, alimentamos el catálogo: si el proveedor
+    es nuevo y no existe en `proveedores`, se crea con datos mínimos para
+    que aparezca en futuros selectores. Esto es lo que el user pidió:
+    'sirve para confirmar y que el sistema se alimente'.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    nuevo_prov = (d.get('proveedor') or '').strip()
+    if not nuevo_prov:
+        return jsonify({'error': 'proveedor requerido'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        'SELECT estado, proveedor, categoria FROM ordenes_compra WHERE numero_oc=?',
+        (numero_oc,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    estado_oc, proveedor_actual, categoria = row[0], (row[1] or ''), (row[2] or 'MP')
+
+    # No permitir cambio si ya hay pagos (audit trail)
+    try:
+        n_pagos = c.execute(
+            'SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=?', (numero_oc,)
+        ).fetchone()[0] or 0
+        if n_pagos > 0 and proveedor_actual.lower() != nuevo_prov.lower():
+            return jsonify({
+                'error': 'No se puede cambiar proveedor de una OC con pagos registrados',
+                'codigo': 'OC_CON_PAGOS'
+            }), 400
+    except Exception:
+        pass
+
+    # Si el proveedor no existe en catálogo, crearlo (alimenta sistema)
+    creado_nuevo = False
+    try:
+        existe = c.execute(
+            'SELECT 1 FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+            (nuevo_prov,)
+        ).fetchone()
+        if not existe:
+            c.execute(
+                """INSERT INTO proveedores (nombre, categoria, fecha_creacion)
+                   VALUES (?, ?, ?)""",
+                (nuevo_prov, categoria, datetime.now().isoformat())
+            )
+            creado_nuevo = True
+    except sqlite3.OperationalError:
+        pass
+
+    # Actualizar la OC
+    c.execute(
+        'UPDATE ordenes_compra SET proveedor=? WHERE numero_oc=?',
+        (nuevo_prov, numero_oc)
+    )
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero_oc': numero_oc,
+        'proveedor_anterior': proveedor_actual,
+        'proveedor_nuevo': nuevo_prov,
+        'creado_en_catalogo': creado_nuevo,
+        'cambio': proveedor_actual.lower() != nuevo_prov.lower(),
+    })
+
+
+@bp.route('/api/ordenes-compra/<numero_oc>/items-precios', methods=['PATCH'])
+def actualizar_precios_items_oc(numero_oc):
+    """Actualiza precios unitarios de items de una OC + alimenta histórico.
+
+    Body: { items: [{ codigo_mp, precio_unitario, cantidad_g? }, ...] }
+
+    Para que Catalina (en el flujo de confirmar solicitud) cargue precios
+    por item — esto:
+      1. Actualiza precio_unitario y subtotal en ordenes_compra_items
+      2. Alimenta precios_mp_historico para que aparezca en próximos
+         pedidos como precio sugerido
+      3. Recalcula valor_total de la OC
+
+    El user pidió: 'que catalina coloque el valor de cada cosa y guardar
+    asi empezamos a tener almacenado los valores de las cosas para que
+    sea mas automatico'.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    items_in = d.get('items') or []
+    if not items_in:
+        return jsonify({'error': 'items requerido'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        'SELECT estado, proveedor FROM ordenes_compra WHERE numero_oc=?', (numero_oc,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    proveedor = row[1] or ''
+
+    # Actualizar cada item por codigo_mp (y opcionalmente cantidad_g)
+    actualizados = 0
+    for it in items_in:
+        cod = (it.get('codigo_mp') or '').strip()
+        if not cod:
+            continue
+        precio = float(it.get('precio_unitario', 0) or 0)
+        # Cantidad: si la pasan, la actualizamos; si no, la dejamos como está
+        cant = it.get('cantidad_g')
+        if cant is not None:
+            try:
+                cant = float(cant)
+                # subtotal = cantidad * precio
+                subtotal = round(cant * precio, 2)
+                c.execute(
+                    """UPDATE ordenes_compra_items
+                       SET precio_unitario=?, cantidad_g=?, subtotal=?
+                       WHERE numero_oc=? AND codigo_mp=?""",
+                    (precio, cant, subtotal, numero_oc, cod)
+                )
+            except (ValueError, TypeError):
+                continue
+        else:
+            # Solo precio: recalcula subtotal con la cantidad existente
+            c.execute(
+                """UPDATE ordenes_compra_items
+                   SET precio_unitario=?,
+                       subtotal=ROUND(COALESCE(cantidad_g,0)*?, 2)
+                   WHERE numero_oc=? AND codigo_mp=?""",
+                (precio, precio, numero_oc, cod)
+            )
+        actualizados += 1
+
+        # Alimentar histórico de precios (si la tabla existe)
+        if precio > 0:
+            try:
+                c.execute(
+                    """INSERT OR IGNORE INTO precios_mp_historico
+                       (codigo_mp, precio_kg, proveedor, fecha)
+                       VALUES (?, ?, ?, datetime('now'))""",
+                    (cod, precio, proveedor)
+                )
+            except sqlite3.OperationalError:
+                pass
+
+    # Recalcular valor_total de la OC
+    total = c.execute(
+        'SELECT COALESCE(SUM(COALESCE(subtotal,0)),0) FROM ordenes_compra_items WHERE numero_oc=?',
+        (numero_oc,)
+    ).fetchone()[0] or 0
+    c.execute(
+        'UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?',
+        (round(float(total), 2), numero_oc)
+    )
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero_oc': numero_oc,
+        'items_actualizados': actualizados,
+        'valor_total_nuevo': round(float(total), 2),
+    })
+
+
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
     conn = get_db(); c = conn.cursor()

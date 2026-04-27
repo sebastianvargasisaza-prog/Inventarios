@@ -2320,6 +2320,125 @@ async function _guardarNuevoProv(){
   }catch(e){ alert('Error: '+e); }
 }
 
+// ─── Confirmar / Cambiar proveedor desde el detalle de SOL ──────
+// El user pidió: en lugar del bloque de abajo "Gestionar Solicitud", poner
+// arriba la opción de Confirmar (sigue igual el proveedor) o Cambiar.
+// Cuando confirma o cambia, alimenta el catálogo de proveedores y la OC.
+async function confirmarProveedorOC(numOC){
+  var btn = document.getElementById('btn-confirmar-prov');
+  var nameEl = document.getElementById('prov-card-name');
+  if (!nameEl) return;
+  var prov = nameEl.textContent.trim();
+  if (!prov) { alert('No hay proveedor para confirmar'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Confirmando...'; }
+  try {
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({proveedor: prov})
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('Error: '+(d.error||'no se pudo confirmar')); return; }
+    if (btn) {
+      btn.style.background = '#065f46';
+      btn.textContent = '✓ Confirmado';
+      setTimeout(function(){ if(btn) btn.disabled = false; }, 1500);
+    }
+  } catch (e) {
+    alert('Error de red: '+e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmar'; }
+  }
+}
+
+function abrirCambiarProveedor(){
+  var box = document.getElementById('prov-cambiar-box');
+  if (!box) return;
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  if (box.style.display === 'block') {
+    var input = document.getElementById('prov-cambiar-input');
+    if (input) {
+      // Pre-poblar con el proveedor actual para que el user solo edite
+      var cur = document.getElementById('prov-card-name');
+      if (cur && !input.value) input.value = cur.textContent.trim();
+      input.focus();
+      input.select();
+    }
+  }
+}
+
+async function guardarCambioProveedor(numOC){
+  var input = document.getElementById('prov-cambiar-input');
+  if (!input) return;
+  var nuevo = (input.value||'').trim();
+  if (!nuevo) { alert('Ingresá un nombre de proveedor'); return; }
+  try {
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({proveedor: nuevo})
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('Error: '+(d.error||'no se pudo cambiar')); return; }
+    // Update UI: nombre nuevo + ocultar selector + recargar lista de provs
+    var nameEl = document.getElementById('prov-card-name');
+    if (nameEl) nameEl.textContent = nuevo;
+    var box = document.getElementById('prov-cambiar-box');
+    if (box) box.style.display = 'none';
+    if (d.creado_en_catalogo) {
+      alert('Proveedor cambiado a "'+nuevo+'" — agregado al catálogo para próximos pedidos.');
+      // Recargar proveedores en cache global
+      try { await loadData(); } catch(e){}
+    } else {
+      // No alert if just confirmed existing — silent success
+    }
+  } catch (e) {
+    alert('Error de red: '+e.message);
+  }
+}
+
+// ─── Guardar precios de items (alimenta histórico de precios) ──────
+async function guardarPreciosItems(numOC){
+  var rows = document.querySelectorAll('#sol-items-table tbody tr[data-cod]');
+  if (!rows.length) { alert('No hay items para actualizar'); return; }
+  var btn = document.getElementById('btn-guardar-precios');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  var items = [];
+  rows.forEach(function(tr){
+    var cod = tr.getAttribute('data-cod');
+    var inp = tr.querySelector('input.precio-unit');
+    if (!cod || !inp) return;
+    var precio = parseFloat((inp.value||'').replace(/[^\d.]/g,''));
+    if (!isFinite(precio) || precio <= 0) return;
+    items.push({codigo_mp: cod, precio_unitario: precio});
+  });
+  if (!items.length) {
+    alert('Ingresá al menos un precio antes de guardar');
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar precios'; }
+    return;
+  }
+  try {
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/items-precios', {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items: items})
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('Error: '+(d.error||'no se pudo guardar')); }
+    else {
+      var totalEl = document.getElementById('sol-valor-total');
+      if (totalEl && d.valor_total_nuevo != null) totalEl.textContent = fmt(d.valor_total_nuevo);
+      // Visual feedback
+      if (btn) { btn.style.background = '#065f46'; btn.textContent = '✓ Guardado · '+d.items_actualizados+' items'; }
+      setTimeout(function(){
+        if (btn) { btn.disabled = false; btn.style.background = '#0f766e'; btn.textContent = '💾 Guardar precios'; }
+      }, 2000);
+    }
+  } catch (e) {
+    alert('Error de red: '+e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar precios'; }
+  }
+}
+
 // ─── Detalle OC ─────────────────────────────────────────────────
 async function openOCDetail(num){
   openModal('m-oc-det');
@@ -2978,29 +3097,64 @@ async function openSolicitudDetail(num){
     // Cuerpo
     h+='<div style="padding:24px 28px;">';
 
-    // ── PROVEEDOR DESTACADO (card grande, solo) ────────────────────────
+    // ── PROVEEDOR INTERACTIVO ─────────────────────────────────────────
+    // Card del proveedor con acciones inline: Confirmar (verde) / Cambiar.
+    // Esto reemplaza al "selector + valor + fecha" que vivía abajo.
+    // Sirve para alimentar el sistema cuando Catalina valida/corrige.
     var provName = (oc && oc.proveedor) ? oc.proveedor : '';
-    if(provName){
-      h+='<div style="background:linear-gradient(135deg,#f0fdfa 0%,#ccfbf1 100%);border:1px solid #5eead4;border-radius:12px;padding:16px 22px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;box-shadow:0 1px 3px rgba(15,118,110,.08);">';
+    var ocNum = oc ? esc(oc.numero_oc) : '';
+    if(provName && oc){
+      h+='<div id="prov-card" data-oc="'+ocNum+'" style="background:linear-gradient(135deg,#f0fdfa 0%,#ccfbf1 100%);border:1px solid #5eead4;border-radius:12px;padding:16px 22px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,118,110,.08);">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">';
       h+='<div style="display:flex;align-items:center;gap:14px;">';
       h+='<div style="font-size:34px;line-height:1;">🏢</div>';
       h+='<div>';
-      h+='<div style="font-size:10px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;font-weight:700;">PROVEEDOR</div>';
-      h+='<div style="font-size:22px;font-weight:800;color:#0f766e;letter-spacing:.3px;margin-top:2px;">'+esc(provName)+'</div>';
+      h+='<div style="font-size:10px;color:#0f766e;text-transform:uppercase;letter-spacing:1px;font-weight:700;">PROVEEDOR SUGERIDO</div>';
+      h+='<div id="prov-card-name" style="font-size:22px;font-weight:800;color:#0f766e;letter-spacing:.3px;margin-top:2px;">'+esc(provName)+'</div>';
       h+='</div>';
       h+='</div>';
-      if(oc.valor_total > 0){
+      // Acciones (solo si la SOL está pendiente) + Valor total
+      if(s.estado === 'Pendiente'){
+        h+='<div style="display:flex;gap:8px;align-items:center;">';
+        h+='<button id="btn-confirmar-prov" onclick="confirmarProveedorOC(&quot;'+ocNum+'&quot;)" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">✓ Confirmar</button>';
+        h+='<button onclick="abrirCambiarProveedor()" style="background:#fff;color:#0f766e;border:1px solid #5eead4;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;">↻ Cambiar</button>';
+        h+='</div>';
+      } else if(oc.valor_total > 0){
         h+='<div style="text-align:right;">';
         h+='<div style="font-size:10px;color:#0f766e;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">Valor total OC</div>';
         h+='<div style="font-size:24px;font-weight:800;color:#0f766e;">'+fmt(oc.valor_total)+'</div>';
         h+='</div>';
       }
       h+='</div>';
+      // Selector inline (oculto por defecto)
+      h+='<div id="prov-cambiar-box" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #5eead4;">';
+      h+='<div style="font-size:11px;color:#0f766e;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;">Cambiar proveedor</div>';
+      h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+      h+='<input id="prov-cambiar-input" list="prov-dl-detail" placeholder="Nombre del proveedor..." style="flex:1;min-width:200px;padding:8px 12px;border:1px solid #5eead4;border-radius:8px;font-size:13px;">';
+      h+='<datalist id="prov-dl-detail">';
+      PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; });
+      h+='</datalist>';
+      h+='<button onclick="guardarCambioProveedor(&quot;'+ocNum+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Guardar</button>';
+      h+='<button onclick="document.getElementById(&quot;prov-cambiar-box&quot;).style.display=&quot;none&quot;" style="background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">Cancelar</button>';
+      h+='</div>';
+      h+='<div style="font-size:11px;color:#64748b;margin-top:6px;">Si el proveedor no existe se crea automáticamente y queda en el catálogo para próximos pedidos.</div>';
+      h+='</div>';
+      h+='</div>';
     } else if(oc){
-      // OC existe pero sin proveedor asignado — alerta visible
-      h+='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:12px;padding:14px 22px;margin-bottom:18px;">';
-      h+='<div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">⚠ Proveedor sin asignar</div>';
-      h+='<div style="font-size:14px;color:#7f1d1d;margin-top:4px;">Definir proveedor en el catálogo (/admin → Catálogo MPs) antes de enviar la OC '+esc(oc.numero_oc)+'</div>';
+      // OC existe pero sin proveedor asignado — selector grande para asignar
+      h+='<div id="prov-card" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:12px;padding:14px 22px;margin-bottom:18px;">';
+      h+='<div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">⚠ Sin proveedor asignado</div>';
+      if(s.estado==='Pendiente'){
+        h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+        h+='<input id="prov-cambiar-input" list="prov-dl-detail" placeholder="Asigna un proveedor..." style="flex:1;min-width:240px;padding:8px 12px;border:1px solid #fca5a5;border-radius:8px;font-size:13px;">';
+        h+='<datalist id="prov-dl-detail">';
+        PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; });
+        h+='</datalist>';
+        h+='<button onclick="guardarCambioProveedor(&quot;'+esc(oc.numero_oc)+'&quot;)" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">Asignar y guardar</button>';
+        h+='</div>';
+      } else {
+        h+='<div style="font-size:13px;color:#7f1d1d;">Definir proveedor antes de avanzar la OC '+esc(oc.numero_oc)+'</div>';
+      }
       h+='</div>';
     }
 
@@ -3040,16 +3194,23 @@ async function openSolicitudDetail(num){
       }
     }
     if(items.length){
-      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')</div>';
+      // Solo mostrar input de precio si la SOL está pendiente Y es categoría
+      // tangible (MPs/MEE/Servicios). Influencers/CC tienen su propio flujo.
+      var puedeEditarPrecios = (s.estado === 'Pendiente') &&
+        ['Materia Prima','MP','MEE','Insumos','Servicio','SVC','Acondicionamiento'].indexOf(s.categoria||'') >= 0;
+      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')'+(puedeEditarPrecios?' <span style="color:#0f766e;font-weight:600;text-transform:none;letter-spacing:0;">— editá los precios y guardá para alimentar el histórico</span>':'')+'</div>';
       h+='<div style="border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);">';
-      h+='<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      h+='<table id="sol-items-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
       h+='<thead style="background:#1F5F5B;color:#fff;">';
       h+='<tr>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">CÓDIGO</th>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:42%;">MATERIAL</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:15%;">EN ESTANTERÍA</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">A PEDIR</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:15%;">VALOR EST.</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:12%;">CÓDIGO</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'30':'42')+'%;">MATERIAL</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:13%;">EN ESTANTERÍA</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:12%;">A PEDIR</th>';
+      if(puedeEditarPrecios){
+        h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">PRECIO UNIT (g)</th>';
+      }
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'19':'15')+'%;">VALOR EST.</th>';
       h+='</tr></thead><tbody>';
       // Formatea cantidades preservando decimales en péptidos (< 10g):
       // 0.4g → "0.4 g", 7g → "7 g", 1500g → "1.5 kg"
@@ -3094,20 +3255,36 @@ async function openSolicitudDetail(num){
         if(it.justificacion){
           justificacionesUnicas[it.justificacion] = (justificacionesUnicas[it.justificacion]||0) + 1;
         }
-        h+='<tr style="background:'+bg+';border-bottom:1px solid #f0edec;">';
+        // precio unitario actual (si ya hay) para pre-poblar el input
+        var precioActual = parseFloat(it.precio_unitario||0) || 0;
+        h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
         h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'—')+'</td>';
         h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_mp||'—')+'</td>';
         h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
         h+='<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(pedir, it.unidad)+'</td>';
+        if(puedeEditarPrecios){
+          // Input numérico inline. step 0.01 permite precios <$1/g (poco común
+          // pero posible en commodities). placeholder con sugerencia si la
+          // tabla precios_mp_historico devuelve uno (TODO en backend futuro).
+          h+='<td style="padding:8px 10px;text-align:right;">';
+          h+='<input class="precio-unit" type="number" min="0" step="0.01" value="'+(precioActual||'')+'" placeholder="$/g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;">';
+          h+='</td>';
+        }
         h+='<td style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
         h+='</tr>';
       });
       // Fila de total
+      var colspanTotal = puedeEditarPrecios ? 2 : 2;
       h+='<tr style="background:#f0fdfa;border-top:2px solid #1F5F5B;">';
-      h+='<td colspan="2" style="padding:12px 14px;font-weight:700;color:#0f766e;text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
+      h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:#0f766e;text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
       h+='<td style="padding:12px 14px;text-align:right;color:#0f766e;font-size:11px;text-transform:uppercase;font-weight:700;">cantidad total</td>';
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(totalCantPedir,'g')+'</td>';
-      h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+(totalValorEst > 0 ? fmt(totalValorEst) : '—')+'</td>';
+      if(puedeEditarPrecios){
+        h+='<td style="padding:8px 10px;text-align:right;">';
+        h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar precios</button>';
+        h+='</td>';
+      }
+      h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;" id="sol-valor-total">'+(totalValorEst > 0 ? fmt(totalValorEst) : '—')+'</td>';
       h+='</tr>';
       h+='</tbody></table></div>';
 
@@ -3145,38 +3322,23 @@ async function openSolicitudDetail(num){
       h+='</div>';
     }
     if(s.estado==='Pendiente'){
+      // Bloque inferior reducido: solo textarea de motivo + hidden state.
+      // El proveedor se confirma/cambia desde la card de arriba.
+      // Los precios se editan inline en cada item de la tabla.
+      // Esto elimina la duplicación que tenía el modal antes.
       h+='<div style="margin-top:16px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">';
-      h+='<div style="font-weight:700;font-size:13px;margin-bottom:10px;">&#9997; Gestionar Solicitud</div>';
-      h+='<div class="fg" style="margin-bottom:10px;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Proveedor / Beneficiario</label>';
-      h+='<select id="sol-prov-sel" onchange="_solFillProv()" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"><option value="">-- Seleccionar proveedor --</option>';
-      h+='<option value="__tercero__">&#x1F4B3; Pago a Terceros (ingrese nombre)</option>';
-      PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>'; });
-      h+='<option value="__nuevo__">&#x2795; Crear nuevo proveedor...</option>';
-      h+='</select>';
-      h+='<div id="sol-prov-ibox" class="ibox" style="display:none;margin-top:6px;"></div>';
-      h+='<div id="sol-tercero-box" style="display:none;margin-top:6px;"><input type="text" id="sol-tercero-txt" placeholder="Nombre del beneficiario..." style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
-      h+='<div id="sol-nuevo-prov-box" style="display:none;margin-top:10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;">';
-      h+='<div style="font-weight:700;font-size:12px;color:#0369a1;margin-bottom:8px;">&#x2795; Nuevo Proveedor</div>';
-      h+='<div class="g2" style="gap:6px;margin-bottom:6px;">';
-      h+='<input type="text" id="snp-nombre" placeholder="Nombre / Razon social *" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;">';
-      h+='<input type="text" id="snp-nit" placeholder="NIT / CC" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;"></div>';
-      h+='<div class="g2" style="gap:6px;margin-bottom:6px;">';
-      h+='<input type="text" id="snp-banco" placeholder="Banco" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;">';
-      h+='<select id="snp-tipo" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;"><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option></select></div>';
-      h+='<input type="text" id="snp-cuenta" placeholder="Numero de cuenta" style="padding:6px 8px;border:1px solid #bae6fd;border-radius:6px;font-size:12px;width:100%;margin-bottom:6px;">';
-      h+='<button class="btn bp" onclick="_guardarNuevoProv()" style="width:100%;font-size:12px;">&#x1F4BE; Guardar y seleccionar</button>';
-      h+='</div>';
-      h+='</div>';
-      h+='<div class="g2" style="margin-bottom:10px;">';
-      h+='<div class="fg"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Valor estimado ($)</label>';
-      h+='<input type="number" id="sol-valor" placeholder="0" min="0" step="1000" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div>';
-      h+='<div class="fg"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Fecha entrega est.</label>';
-      h+='<input type="date" id="sol-fent" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;"></div></div>';
-      h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario</label>';
-      h+='<textarea id="sol-motivo" placeholder="Razon de aprobacion o rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
+      h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario (opcional)</label>';
+      h+='<textarea id="sol-motivo" placeholder="Comentario al aprobar o motivo del rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
+      // Hidden state — los pickers que ya no existen visualmente quedan
+      // vacíos para que _solDetApr() use los defaults (proveedor de la OC,
+      // valor calculado de items, sin fecha entrega).
       h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
       h+='<input type="hidden" id="sol-det-cat" value="'+esc(s.categoria||'MP')+'">';
       h+='<input type="hidden" id="sol-det-area" value="'+esc(s.area||'')+'">';
+      h+='<input type="hidden" id="sol-prov-sel" value="">';
+      h+='<input type="hidden" id="sol-tercero-txt" value="">';
+      h+='<input type="hidden" id="sol-valor" value="0">';
+      h+='<input type="hidden" id="sol-fent" value="">';
       h+='</div>';
     }
     h+='</div>';
@@ -3199,11 +3361,21 @@ async function openSolicitudDetail(num){
 }
 async function gestionarSol(decision){
   var num=document.getElementById('sol-det-num').value;
+  // Bloque de campos viejos (selector + valor + fecha) ya no existe
+  // visualmente pero los hidden quedan vacíos. El proveedor lo tomamos
+  // de la card de arriba (donde se confirma/cambia). El valor de la OC
+  // ya está calculado por items (no lo sobrescribimos). Esto reemplaza
+  // el flujo viejo que duplicaba campos arriba/abajo.
   var _provSel=(document.getElementById('sol-prov-sel')||{value:''}).value;
   if(_provSel==='__nuevo__'){ alert('Primero guarda el nuevo proveedor antes de continuar.'); return; }
   var prov=_provSel==='__tercero__'
     ? ((document.getElementById('sol-tercero-txt')||{value:''}).value.trim()||'Pago a Terceros')
     : _provSel;
+  // Fallback: si no hay selector activo, leer del card top (caso usual ahora)
+  if (!prov) {
+    var nameEl = document.getElementById('prov-card-name');
+    if (nameEl) prov = (nameEl.textContent||'').trim();
+  }
   var valor=parseFloat((document.getElementById('sol-valor')||{value:0}).value||0);
   var motivo=(document.getElementById('sol-motivo')||{value:''}).value.trim();
   var fent=(document.getElementById('sol-fent')||{value:''}).value;
