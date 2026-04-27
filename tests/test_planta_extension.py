@@ -651,3 +651,97 @@ def test_proveedores_unificar_aplica_cambio(app, db_clean):
     cur.execute("DELETE FROM movimientos WHERE material_id IN ('MPUNI1','MPUNI2')")
     cur.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MPUNI1','MPUNI2')")
     conn.commit(); conn.close()
+
+
+# ═══ Conteo cíclico per-lote (no agrupado por MP) ═══════════════════════════
+
+
+def test_conteo_materiales_devuelve_lotes_separados(app, db_clean):
+    """/api/conteo/materiales: 2 lotes de la misma MP en la estanteria
+    deben aparecer como 2 rows separados, no agrupados."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MPCNT01','test','Test MP','Inchemical', 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, estanteria, posicion, proveedor, fecha_vencimiento, operador)
+                   VALUES ('MPCNT01','Test MP','LOTE-A',1000,'Entrada',
+                           '2026-04-20','EST-99','A1','Inchemical',
+                           '2027-01-01','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, estanteria, posicion, proveedor, fecha_vencimiento, operador)
+                   VALUES ('MPCNT01','Test MP','LOTE-B',500,'Entrada',
+                           '2026-04-22','EST-99','A2','Inchemical',
+                           '2027-03-01','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/conteo/materiales?estanteria=EST-99")
+    assert r.status_code == 200
+    items = r.get_json()
+    lotes_devueltos = sorted([it["lote"] for it in items if it["codigo_mp"] == "MPCNT01"])
+    assert lotes_devueltos == ["LOTE-A", "LOTE-B"], (
+        f"Deberian aparecer ambos lotes separados: {lotes_devueltos}"
+    )
+    # Cada row trae proveedor, posicion, fecha_vencimiento
+    for it in items:
+        if it["codigo_mp"] == "MPCNT01":
+            assert it["proveedor"] == "Inchemical"
+            assert "posicion" in it
+            assert "fecha_vencimiento" in it
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id='MPCNT01'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MPCNT01'")
+    conn.commit(); conn.close()
+
+
+def test_conteo_materiales_excluye_lotes_a_cero(app, db_clean):
+    """Lote consumido a 0 no debe aparecer en el conteo (HAVING > 0).
+
+    Politica CEO: lotes vacios no se cuentan (no hay nada que contar).
+    Para limpiarlos formalmente del kardex usar 'Eliminar' con motivo
+    desde Stock por Lote.
+    """
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, activo)
+                   VALUES ('MPCNT_VACIO','x','Vacio', 1)""")
+    # Entrada 100, salida 100 → stock = 0
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, estanteria, operador)
+                   VALUES ('MPCNT_VACIO','Vacio','LOTE-VACIO',100,'Entrada',
+                           '2026-04-20','EST-VAC','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, estanteria, operador)
+                   VALUES ('MPCNT_VACIO','Vacio','LOTE-VACIO',100,'Salida',
+                           '2026-04-22','EST-VAC','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/conteo/materiales?estanteria=EST-VAC")
+    assert r.status_code == 200
+    items = r.get_json()
+    codigos = [it["codigo_mp"] for it in items]
+    assert "MPCNT_VACIO" not in codigos, (
+        f"Lote a 0 no debe aparecer en conteo: {items}"
+    )
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id='MPCNT_VACIO'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MPCNT_VACIO'")
+    conn.commit(); conn.close()

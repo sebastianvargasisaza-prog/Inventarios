@@ -888,13 +888,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <table class="table" id="cnt-tabla">
         <thead>
           <tr>
-            <th>Codigo</th><th>INCI</th><th>Material</th>
+            <th>Codigo</th><th>Material</th>
+            <th>Lote</th>
+            <th>Proveedor</th>
             <th style="text-align:right;">Stock Sistema (g)</th>
             <th style="text-align:right;width:130px;">Stock Fisico (g)</th>
             <th style="text-align:right;">Diferencia</th>
-            <th>%</th><th>Valor diff</th>
-            <th style="width:160px;">Causa</th>
-            <th>Ajuste</th>
+            <th>%</th>
+            <th style="width:140px;">Causa</th>
+            <th style="text-align:center;">Acciones</th>
           </tr>
         </thead>
         <tbody id="cnt-tbody"></tbody>
@@ -3353,6 +3355,35 @@ async function iniciarConteo(){
   }catch(e){alert('Error: '+e.message);}
 }
 
+// Event delegation: botones editar proveedor / eliminar lote dentro del
+// conteo ciclico. Reusan los modales de Stock por Lote (mismo patron) —
+// se construye un objeto compatible y se pushea a _lotes para que los
+// handlers existentes lo encuentren por indice.
+document.addEventListener('click', function(e){
+  var btnProv = e.target.closest && e.target.closest('.cnt-prov-edit');
+  var btnDel = e.target.closest && e.target.closest('.cnt-del-lote');
+  if (!btnProv && !btnDel) return;
+  var idx = parseInt((btnProv||btnDel).getAttribute('data-idx'),10);
+  if (isNaN(idx) || !_conteoItems || !_conteoItems[idx]) return;
+  var ci = _conteoItems[idx];
+  // Adaptar al formato que esperan los modales existentes (mismo shape de /api/lotes)
+  var fakeIdx = _lotes.push({
+    material_id: ci.codigo_mp,
+    material_nombre: ci.nombre,
+    nombre_inci: ci.inci || '',
+    proveedor: ci.proveedor || '',
+    lote: ci.lote || '',
+    cantidad_g: ci.stock_sistema,
+    fecha_vencimiento: ci.fecha_vencimiento || '',
+    stock_min_g: 0,
+  }) - 1;
+  if (btnProv) {
+    abrirEditarProveedor(fakeIdx);
+  } else {
+    abrirEliminarLote(fakeIdx);
+  }
+});
+
 async function cargarItemsConteo(est){
   try{
     var url = '/api/conteo/materiales?estanteria='+encodeURIComponent(est);
@@ -3369,17 +3400,27 @@ async function cargarItemsConteo(est){
     _conteoItems.forEach(function(mp, i){
       var tipo = mp.tipo_material || 'MP';
       var col = tipoColor[tipo] || '#666';
-      h += '<tr id="cnt-row-'+i+'">';
-      h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'</td>';
-      h += '<td style="font-size:0.78em;color:#555;">'+(mp.inci||'')+'</td>';
-      h += '<td style="font-size:0.88em;">'+mp.nombre+'<br><span style="font-size:0.7em;font-weight:700;color:'+col+';text-transform:uppercase;letter-spacing:0.5px;">'+tipo+'</span></td>';
+      var lote = mp.lote || '';
+      var prov = mp.proveedor || '';
+      var loteSeg = lote || '_SIN_LOTE_';
+      // Wrap row en index para que los handlers _conteoItems[i] sigan funcionando.
+      h += '<tr id="cnt-row-'+i+'" data-cod="'+mp.codigo_mp+'" data-lote="'+lote+'">';
+      h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'<br><span style="font-size:0.7em;color:'+col+';font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">'+tipo+'</span></td>';
+      h += '<td style="font-size:0.85em;">'+mp.nombre+(mp.inci?'<br><span style="font-size:0.72em;color:#888;">'+mp.inci+'</span>':'')+'</td>';
+      var loteTxt = lote ? '<span style="font-family:monospace;font-size:0.82em;">'+lote+'</span>' : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin lote —</span>';
+      var posTxt = mp.posicion ? '<br><span style="font-size:0.72em;color:#888;">Pos: '+mp.posicion+'</span>' : '';
+      var venTxt = mp.fecha_vencimiento ? '<br><span style="font-size:0.72em;color:#888;">Vence: '+mp.fecha_vencimiento.substr(0,10)+'</span>' : '';
+      h += '<td>'+loteTxt+posTxt+venTxt+'</td>';
+      // Proveedor con boton editar (reusa modal y datalist global del flujo Stock por Lote)
+      var provHtml = prov ? prov : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin proveedor —</span>';
+      h += '<td class="cnt-prov-cell" data-idx="'+i+'" style="font-size:0.82em;color:#475569;">'+provHtml+' <button class="cnt-prov-edit" data-idx="'+i+'" title="Editar proveedor del lote" style="margin-left:3px;padding:1px 5px;font-size:0.72em;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
       h += '<td style="text-align:right;font-weight:600;font-family:monospace;">'+Number(mp.stock_sistema).toLocaleString()+'</td>';
       h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid #dde;border-radius:6px;text-align:right;font-family:monospace;"></td>';
       h += '<td id="cnt-diff-'+i+'" style="text-align:right;font-family:monospace;font-weight:700;">--</td>';
       h += '<td id="cnt-pct-'+i+'" style="font-size:0.85em;">--</td>';
-      h += '<td id="cnt-val-'+i+'" style="font-size:0.82em;color:#888;">--</td>';
-      h += '<td><select id="cnt-causa-'+i+'" style="width:150px;padding:5px;border:1px solid #dde;border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
-      h += '<td id="cnt-adj-'+i+'"></td>';
+      h += '<td><select id="cnt-causa-'+i+'" style="width:140px;padding:5px;border:1px solid #dde;border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
+      // Acciones: eliminar lote (con motivo) — reusa modal-eliminar-lote
+      h += '<td style="text-align:center;"><button class="cnt-del-lote" data-idx="'+i+'" title="Eliminar lote (motivo obligatorio)" style="padding:3px 8px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;cursor:pointer;">&#128465;</button></td>';
       h += '</tr>';
     });
     document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria con el filtro seleccionado</td></tr>';
@@ -3419,6 +3460,7 @@ async function guardarConteo(){
     items.push({
       codigo_mp: mp.codigo_mp,
       nombre: mp.nombre,
+      lote: mp.lote || '',
       stock_sistema: mp.stock_sistema,
       stock_fisico: parseFloat(fisEl.value),
       precio_ref: mp.precio_ref,

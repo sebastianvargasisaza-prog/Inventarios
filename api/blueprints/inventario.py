@@ -1573,6 +1573,22 @@ def conteo_estanterias():
 
 @bp.route('/api/conteo/materiales', methods=['GET'])
 def conteo_materiales_estanteria():
+    """Items a contar en una estanteria. Devuelve UN row por (MP, lote).
+
+    Cambio 2026-04-27 (CEO): el conteo ciclico antes agrupaba por MP
+    perdiendo precision. Ahora cada lote es su propia fila — el operario
+    puede contar lote por lote (que es como estan fisicamente acomodados
+    en bodega). Lotes con stock_sistema <= 0 se filtran (HAVING) — no
+    aparecen en el conteo, lo cual responde a "que pasa con lotes a 0":
+    naturalmente desaparecen del conteo y de Bodega MP filtrada por
+    stock > 0. Si el usuario quiere borrarlos formalmente del kardex,
+    el boton 'Eliminar' con motivo (en Stock por Lote y aqui en conteo)
+    hace el hard-delete con audit_log.
+
+    Cada row trae proveedor + posicion + fecha_venc para que el operario
+    contextualice: "este lote es de Inchemical, posicion E1-01, vence
+    2027-08-19".
+    """
     est = request.args.get('estanteria', '')
     tipo = (request.args.get('tipo_material') or '').strip()
     conn = get_db(); c = conn.cursor()
@@ -1588,26 +1604,36 @@ def conteo_materiales_estanteria():
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
                             MAX(m.estanteria) as estanteria,
-                            COALESCE(mp.tipo_material,'MP') as tipo_material
+                            COALESCE(mp.tipo_material,'MP') as tipo_material,
+                            COALESCE(m.lote,'') as lote,
+                            COALESCE(MAX(m.proveedor),'') as proveedor,
+                            COALESCE(MAX(m.posicion),'') as posicion,
+                            COALESCE(MAX(m.fecha_vencimiento),'') as fecha_vencimiento
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE m.estanteria=?{type_filter}
-                     GROUP BY m.material_id HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre""", (est,) + type_args)
+                     GROUP BY m.material_id, m.lote HAVING stock_sistema > 0
+                     ORDER BY m.material_nombre, m.lote""", (est,) + type_args)
     else:
         c.execute(f"""SELECT m.material_id, m.material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
                             '' as estanteria,
-                            COALESCE(mp.tipo_material,'MP') as tipo_material
+                            COALESCE(mp.tipo_material,'MP') as tipo_material,
+                            COALESCE(m.lote,'') as lote,
+                            COALESCE(MAX(m.proveedor),'') as proveedor,
+                            COALESCE(MAX(m.posicion),'') as posicion,
+                            COALESCE(MAX(m.fecha_vencimiento),'') as fecha_vencimiento
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}
-                     GROUP BY m.material_id HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre""", type_args)
+                     GROUP BY m.material_id, m.lote HAVING stock_sistema > 0
+                     ORDER BY m.material_nombre, m.lote""", type_args)
     rows = c.fetchall()
-    cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema','estanteria','tipo_material']
+    cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema',
+            'estanteria','tipo_material','lote','proveedor','posicion',
+            'fecha_vencimiento']
     return jsonify([dict(zip(cols, r)) for r in rows])
 
 @bp.route('/api/conteo/iniciar', methods=['POST'])
@@ -1862,11 +1888,11 @@ def conteo_guardar(conteo_id):
         if abs(diff) > 0: items_con_diff += 1
         c.execute("""INSERT OR REPLACE INTO conteo_items
                      (conteo_id,codigo_mp,nombre_mp,stock_sistema,stock_fisico,diferencia,
-                      estanteria,causa_diferencia,valor_diferencia,requiere_gerencia,observaciones)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                      estanteria,causa_diferencia,valor_diferencia,requiere_gerencia,observaciones,lote)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (conteo_id, codigo, item.get('nombre',''), stock_sis, stock_fis, diff,
                    item.get('estanteria',''), causa, round(valor_diff,0), requiere_gerencia,
-                   item.get('observaciones','')))
+                   item.get('observaciones',''), item.get('lote','') or ''))
     c.execute("UPDATE conteos_fisicos SET items_diferencia=?,total_items=? WHERE id=?",
               (items_con_diff, len(items), conteo_id))
     conn.commit()
