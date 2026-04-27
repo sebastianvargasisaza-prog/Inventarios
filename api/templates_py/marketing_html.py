@@ -154,6 +154,9 @@ textarea{resize:vertical;min-height:80px;}
 </head>
 
 <div id="toast-container" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+<!-- Banner de errores JS — visible para diagnosticar en prod cuando un botón
+     no responde. Si ves este banner, hay un bug específico para reportar. -->
+<div id="js-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;"></div>
 <script>
 function showToast(msg, type) {
   const c = document.getElementById('toast-container');
@@ -165,6 +168,24 @@ function showToast(msg, type) {
   c.appendChild(t);
   setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(), 400); }, 3200);
 }
+
+// Captura errores globales y los muestra en banner para no esconder
+// problemas silenciosos en producción.
+window.addEventListener('error', function(ev) {
+  try {
+    const banner = document.getElementById('js-error-banner');
+    if (!banner) return;
+    const msg = (ev.message || ev.error?.message || 'Error desconocido') +
+                ' @ ' + (ev.filename || '').split('/').pop() + ':' + (ev.lineno||'?');
+    banner.style.display = 'block';
+    banner.innerHTML = '⚠️ Error JS: ' + msg.substring(0, 280) +
+      ' <button onclick="this.parentElement.style.display=\'none\'" style="float:right;background:transparent;border:1px solid #fca5a5;color:#fff;padding:1px 8px;border-radius:4px;cursor:pointer;font-size:11px;">cerrar</button>';
+    console.error('[marketing] global error', ev);
+  } catch (e) { /* swallow */ }
+});
+window.addEventListener('unhandledrejection', function(ev) {
+  console.error('[marketing] unhandled rejection', ev.reason);
+});
 </script>
 <body>
 
@@ -504,8 +525,34 @@ function showToast(msg, type) {
 .intel-subnav button.intel-active{background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;}
 </style>
 
+<!-- Sub-tab dedicada para el resultado de Estrategia (agente master).
+     Persiste el último output para que el jefe pueda volver y accionar
+     sin tener que regenerar. Si nunca se generó, invita a generarlo. -->
+<div id="tab-estrategia" class="tab-panel intel-sub">
+  <div class="intel-subnav" data-intel-nav="1">
+    <button class="intel-active" onclick="showSub('estrategia')">&#x1F9E0; Estrategia del mes</button>
+    <button onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
+    <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
+    <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
+  </div>
+  <div id="estrategia-vista" style="margin-top:12px;">
+    <div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#312e81 100%);border:1px solid #7c3aed;border-radius:14px;padding:36px 24px;text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">&#x1F9E0;</div>
+      <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:8px;">Estrategia del mes</div>
+      <div style="font-size:13px;color:#cbd5e1;max-width:560px;margin:0 auto 18px;line-height:1.6;">
+        Aún no generaste la estrategia este mes. El agente cruza ventas Shopify, engagement IG, stock, producción programada, influencers activos y eventos cosméticos para devolver el plan accionable.
+      </div>
+      <button onclick="runAgent('estrategia')"
+        style="background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;border:none;padding:14px 28px;font-size:14px;font-weight:800;border-radius:10px;cursor:pointer;box-shadow:0 8px 24px rgba(124,58,237,.4);">
+        &#x25B6; Generar estrategia ahora
+      </button>
+    </div>
+  </div>
+</div>
+
 <div id="tab-agentes" class="tab-panel intel-sub">
   <div class="intel-subnav" data-intel-nav="1">
+    <button onclick="showSub('estrategia')">&#x1F9E0; Estrategia del mes</button>
     <button class="intel-active" onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
     <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
     <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
@@ -660,6 +707,7 @@ function showToast(msg, type) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-analytics" class="tab-panel intel-sub">
   <div class="intel-subnav" data-intel-nav="1">
+    <button onclick="showSub('estrategia')">&#x1F9E0; Estrategia del mes</button>
     <button onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
     <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
     <button class="intel-active" onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
@@ -1016,6 +1064,7 @@ function showToast(msg, type) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-agencia" class="tab-panel intel-sub">
   <div class="intel-subnav" data-intel-nav="1">
+    <button onclick="showSub('estrategia')">&#x1F9E0; Estrategia del mes</button>
     <button onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
     <button class="intel-active" onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
     <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
@@ -1121,7 +1170,8 @@ function showAlert(containerId, msg, type='success') {
 const _loaded = {};
 // Sub-tab activa dentro de "Inteligencia". Persiste para que cuando el user
 // vuelve a la tab Inteligencia se quede en la última vista que estaba viendo.
-let _intelSub = 'agentes';
+// Default = 'estrategia' — el master agent es lo que el jefe ve primero.
+let _intelSub = 'estrategia';
 
 function switchTab(name) {
   // Resolver: 'inteligencia' es virtual — abre el sub-panel actual (default agentes)
@@ -1132,7 +1182,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => {
     const t = b.dataset.tab;
     const isActive = (t === name) ||
-                     (t === 'inteligencia' && ['agentes','analytics','agencia'].includes(realPanel));
+                     (t === 'inteligencia' && ['estrategia','agentes','analytics','agencia'].includes(realPanel));
     b.classList.toggle('active', isActive);
   });
 
@@ -1162,9 +1212,45 @@ function loadTab(name) {
   else if(name==='influencers') loadInfluencers();
   else if(name==='pagos') loadPagosInfluencers();
   else if(name==='contenido') loadContenido();
+  else if(name==='estrategia') loadUltimaEstrategia();
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); loadFeedbackStats(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
+}
+
+// ─── Vista persistente de Estrategia ──────────────────────────────────
+async function loadUltimaEstrategia() {
+  // Buscar la ejecución más reciente del agente 'Estrategia' en el log
+  try {
+    const rows = await fetch('/api/marketing/agentes/log').then(r=>r.json());
+    const latest = (rows||[]).find(r => (r.agente||'').toLowerCase() === 'estrategia');
+    if (!latest) return; // no hay corrida previa — vista invitando se mantiene
+    const det = await fetch('/api/marketing/agentes/log/' + latest.id).then(r=>r.json());
+    const view = document.getElementById('estrategia-vista');
+    if (!view) return;
+    let resultado = det.resultado;
+    if (typeof resultado === 'string') {
+      try { resultado = JSON.parse(resultado); } catch (e) { /* keep as string */ }
+    }
+    // Header con timestamp + botón regenerar
+    const fecha = (det.fecha || latest.fecha || '').slice(0, 16).replace('T',' ');
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 18px;margin-bottom:14px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#a78bfa;">&#x1F9E0; Última estrategia generada</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">${fecha} · por ${det.ejecutado_por||'sistema'}</div>
+      </div>
+      <button onclick="runAgent('estrategia')" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;border:none;padding:8px 16px;font-size:12px;font-weight:700;border-radius:8px;cursor:pointer;">&#x21BB; Regenerar</button>
+    </div>`;
+    if (typeof resultado === 'object' && resultado) {
+      html += formatAgentResult('estrategia', resultado);
+      if (latest.id) html += renderFeedbackBar(latest.id);
+    } else {
+      html += '<div style="color:#94a3b8;padding:14px;">Sin contenido detallado.</div>';
+    }
+    view.innerHTML = html;
+  } catch(e) {
+    console.warn('[loadUltimaEstrategia]', e);
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1712,6 +1798,13 @@ function renderPagos() {
   }).join('');
 }
 
+// Cache global de influencers — verHistorial lookup. Antes se serializaba la
+// fila completa en el atributo onclick, lo cual corrompía el HTML porque las
+// comillas dobles del JSON cerraban el atributo prematuramente. Eso hacía
+// que TODOS los botones de la fila (Editar, Pagar, Dar de baja) dejaran de
+// funcionar visualmente.
+let _INFLUENCERS_CACHE = {};
+
 async function loadInfluencers() {
   const q = document.getElementById('inf-search').value;
   const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');
@@ -1720,6 +1813,9 @@ async function loadInfluencers() {
   // Show debug error if backend returned one
   if(data._error) { console.warn('[panel error]', data._error, data._trace); }
   const infs = data.influencers || [];
+  // Llenar cache para verHistorial — pasamos solo ID por onclick, no JSON
+  _INFLUENCERS_CACHE = {};
+  for (const inf of infs) _INFLUENCERS_CACHE[inf.id] = inf;
   const kpis = data.kpis || {};
   const kpiBar = document.getElementById('inf-kpi-bar');
   if(kpiBar) {
@@ -1771,7 +1867,7 @@ async function loadInfluencers() {
       +`<td style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
       +`<td style="white-space:nowrap;">`
-        +`<button class="btn btn-outline btn-sm" onclick="verHistorial(${r.id},${JSON.stringify(r).replace(/`/g,'\`')})" title="Ver historial" style="color:#818cf8;border-color:#818cf8;">&#x1F4CB;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="verHistorial(${r.id})" title="Ver historial" style="color:#818cf8;border-color:#818cf8;">&#x1F4CB;</button> `
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar">&#x270F;&#xFE0F;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Solicitar pago">&#x1F4B8;</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button>`
@@ -2270,6 +2366,22 @@ async function runAgent(agente) {
       resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${data.error}</pre>`;
     } else {
       resultDiv.innerHTML = formatAgentResult(agente, data) + renderFeedbackBar(data.log_id);
+
+      // Master agent Estrategia: redirige a la sub-tab dedicada con el output
+      // persistente. Así el jefe puede volver luego sin re-generar.
+      if (agente === 'estrategia') {
+        // Marcar como cargada y refrescar la vista persistente
+        _loaded.estrategia = false; // forzar re-render
+        await loadUltimaEstrategia();
+        // Ir a la sub-tab Estrategia (dentro de Inteligencia)
+        showSub('estrategia');
+        // Scroll al inicio de la vista
+        setTimeout(() => {
+          const view = document.getElementById('estrategia-vista');
+          if (view) view.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 250);
+        showToast('✅ Estrategia generada — revisá el calendario y oportunidades', 'success');
+      }
     }
     resultDiv.classList.add('show');
     loadAgentLog();
@@ -2657,9 +2769,15 @@ async function loadAnalytics() {
 // ──────────────────────────────────────────────────────────────────────────────
 // HISTORIAL INFLUENCER
 // ──────────────────────────────────────────────────────────────────────────────
-function verHistorial(id, inf) {
+function verHistorial(id, infOptional) {
+  // Resolver desde cache si no llega el objeto completo (caso normal ahora)
+  const inf = infOptional || _INFLUENCERS_CACHE[id];
+  if (!inf) {
+    showToast('Datos del influencer no disponibles. Recargá la página.', 'error');
+    return;
+  }
   const fmtM = v => v>=1e6?'$'+(v/1e6).toFixed(1)+'M':v>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Number(v||0).toLocaleString('es-CO');
-  document.getElementById('hist-title').textContent = '📋 ' + inf.nombre;
+  document.getElementById('hist-title').textContent = '📋 ' + (inf.nombre||'Influencer');
   const pagos  = inf.pagos || [];
   const pagadas   = pagos.filter(p=>p.estado==='Pagada');
   const pendientes= pagos.filter(p=>p.estado==='Pendiente');
