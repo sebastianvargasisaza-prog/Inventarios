@@ -3052,8 +3052,12 @@ def mkt_pagos_influencers_list():
         # Sin esto, los pagos quedan invisibles para Marketing.
         try:
             ocs_ya = {(p["numero_oc"] or "") for p in pagos if p["numero_oc"]}
+            # NOTA: la columna en pagos_oc se llama 'medio' (no 'medio_pago').
+            # Bug previo: SELECT po.medio_pago tiraba SQLOperationalError
+            # silenciosamente y rompía el fallback completo.
             extra_sql = """
-                SELECT po.id, po.numero_oc, po.monto, po.fecha_pago, po.medio_pago, po.observaciones,
+                SELECT po.id, po.numero_oc, po.monto, po.fecha_pago,
+                       po.medio AS medio_pago, po.observaciones,
                        oc.proveedor, oc.categoria,
                        cp.id          as comprobante_id,
                        cp.numero_ce   as numero_ce

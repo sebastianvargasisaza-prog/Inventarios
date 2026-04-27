@@ -1677,17 +1677,19 @@ def regenerar_comprobante_pdf(comp_id):
     )
     pdf_b64 = base64.b64encode(pdf_bytes).decode('ascii')
 
-    # ── Actualizar DB ──
+    # ── Actualizar DB ── (incluye ciudad, antes faltaba y quedaba NULL)
     c.execute("""
         UPDATE comprobantes_pago
         SET pdf_archivo=?, empresa=?,
             beneficiario_banco=?, beneficiario_cuenta=?,
-            beneficiario_tipo_cta=?, beneficiario_cedula=?
+            beneficiario_tipo_cta=?, beneficiario_cedula=?,
+            beneficiario_ciudad=?
         WHERE id=?
     """, (
         pdf_b64, empresa,
         beneficiario['banco'], beneficiario['cuenta'],
         beneficiario['tipo_cuenta'], beneficiario['cedula'],
+        beneficiario.get('ciudad') or '',
         comp_id,
     ))
     conn.commit()
