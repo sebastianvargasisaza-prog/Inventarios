@@ -946,10 +946,43 @@ def admin_import_pagos_influencers_excel():
     c = conn.cursor()
     c.execute("SELECT id, nombre FROM marketing_influencers")
     inf_by_norm = {}
+    inf_norm_keys = []  # lista para fuzzy matching con difflib
     for r in c.fetchall():
         nm = _norm_nombre(r['nombre'])
         if nm and nm not in inf_by_norm:
             inf_by_norm[nm] = r['id']
+            inf_norm_keys.append(nm)
+
+    import difflib
+
+    def _match_influencer(nombre_str):
+        """Devuelve (inf_id, match_type, match_nombre) o (None, None, None).
+
+        Estrategia escalonada:
+          1. Match exacto normalizado
+          2. Prefix match (uno empieza con el otro)
+          3. Substring match (uno contiene al otro)
+          4. Fuzzy con difflib.get_close_matches cutoff 0.82
+        """
+        nm = _norm_nombre(nombre_str)
+        if not nm:
+            return None, None, None
+        if nm in inf_by_norm:
+            return inf_by_norm[nm], 'exacto', nm
+        # Prefix
+        for k in inf_norm_keys:
+            if k.startswith(nm) or nm.startswith(k):
+                return inf_by_norm[k], 'prefix', k
+        # Substring
+        for k in inf_norm_keys:
+            if nm in k or k in nm:
+                return inf_by_norm[k], 'substring', k
+        # Fuzzy
+        candidatos = difflib.get_close_matches(nm, inf_norm_keys, n=1, cutoff=0.82)
+        if candidatos:
+            k = candidatos[0]
+            return inf_by_norm[k], 'fuzzy', k
+        return None, None, None
 
     # Procesar filas
     plan_import = []
@@ -984,14 +1017,7 @@ def admin_import_pagos_influencers_excel():
             pagadas_skipped.append({'fila': i, 'nombre': nombre_str, 'valor': valor})
             continue
 
-        nombre_norm = _norm_nombre(nombre_str)
-        inf_id = inf_by_norm.get(nombre_norm)
-        if not inf_id:
-            # Fuzzy: buscar prefix match
-            for k, v in inf_by_norm.items():
-                if k.startswith(nombre_norm) or nombre_norm.startswith(k):
-                    inf_id = v
-                    break
+        inf_id, match_type, match_nombre = _match_influencer(nombre_str)
         if not inf_id:
             sin_match.append({
                 'fila': i, 'nombre': nombre_str, 'valor': valor,
@@ -1006,6 +1032,8 @@ def admin_import_pagos_influencers_excel():
             'valor': valor,
             'fecha_publicacion': _parse_fecha(fecha_raw),
             'concepto': str(concepto_raw or '').strip() or 'Pago influencer',
+            'match_type': match_type,
+            'match_nombre_banco': match_nombre,
         })
 
     if dry_run:
@@ -1030,6 +1058,36 @@ def admin_import_pagos_influencers_excel():
         })
 
     # ── APLICAR ─────────────────────────────────────────────────────────────
+    # SAFETY: si no hay nada para importar (plan_import vacío) NO borramos
+    # las solicitudes pendientes existentes — eso dejaría la base vacía.
+    # El user debe arreglar nombres en el Excel o agregar al banco primero.
+    # Override con ?force=1 si el user QUIERE limpiar todo aunque no importe nada.
+    force = request.args.get('force', '0') in ('1', 'true', 'True')
+    if not plan_import and not force:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({
+            'error': 'No hay filas válidas para importar — reset abortado',
+            'detalle': (
+                f'{len(sin_match)} fila(s) sin match en el banco, '
+                f'{len(sin_valor)} sin valor, {len(sin_nombre)} sin nombre, '
+                f'{len(pagadas_skipped)} ya marcadas como pagadas. '
+                'No se borró nada. Arregla los nombres del Excel o agrega los '
+                'influencers al banco antes de aplicar. Si querés forzar el '
+                'reset igual (vaciar pendientes), usa ?force=1.'
+            ),
+            'hoja_usada': sheet_name,
+            'columnas_mapeadas': cols_idx,
+            'sin_match': {
+                'count': len(sin_match),
+                'lista': sin_match[:30],
+            },
+            'sin_valor': {'count': len(sin_valor)},
+            'pagadas_skipped': {'count': len(pagadas_skipped)},
+        }), 400
+
     # Reset opción B: borrar solicitudes Influencer no-pagadas + sus OCs y pagos
     deleted = {'solicitudes': 0, 'ordenes_compra': 0, 'pagos_influencers': 0}
     try:
