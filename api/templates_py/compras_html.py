@@ -2577,7 +2577,8 @@ function renderInfluencers(){
     var btns='';
     if(s.estado==='Aprobada'){
       btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;">💸 Pagar ahora</button>'
-          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>';
+          +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
+          +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
       btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
@@ -2662,13 +2663,39 @@ function renderInfluencers(){
       var bp=e.target.closest('.inf-pagar');
       var br=e.target.closest('.inf-rechazar');
       var bd=e.target.closest('[data-act="del-sol"]');
+      var be=e.target.closest('.inf-eliminar');
       if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
       if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
       if(bd) eliminarSolicitud(bd.dataset.sol);
+      if(be) eliminarSolicitudAprobada(be.dataset.sol, be.dataset.nombre);
     };
   }
   attachEvents(gel);
   attachEvents(gpag);
+}
+
+function eliminarSolicitudAprobada(sol_num, nombre){
+  // Confirmación más fuerte porque la solicitud está Aprobada (lista para
+  // pagar). Si la borrás se pierde la cola de pago.
+  var msg = 'ELIMINAR ' + (nombre || sol_num) + '?\\n\\n'
+          + 'Esta solicitud está APROBADA (lista para pagar). Si la eliminas se '
+          + 'borra del sistema y NO podrás generar comprobante después.\\n\\n'
+          + 'Solo confirma si:\\n'
+          + ' · Ya pagaste por fuera y no necesitas comprobante en la app\\n'
+          + ' · La cargaste por error\\n\\n'
+          + '¿Eliminar definitivamente?';
+  if(!confirm(msg)) return;
+  fetch('/api/solicitudes-compra/'+encodeURIComponent(sol_num),
+        {method:'DELETE'})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok || d.message){
+        loadInfluencers();
+      } else {
+        alert('Error: ' + (d.error || 'no se pudo eliminar'));
+      }
+    })
+    .catch(function(){ alert('Error de conexión'); });
 }
 // ─── Pagar influencer ───────────────────────────────────────────────
 function pagarInfluencer(oc_num, sol_num, valor){

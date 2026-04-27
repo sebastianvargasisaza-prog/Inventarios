@@ -244,30 +244,83 @@ def generar_oc_automatica():
 # ── MÓDULO COMPRAS ──────────────────────────────────────────────────────────
 @bp.route('/api/solicitudes-compra/<numero>', methods=['DELETE'])
 def eliminar_solicitud(numero):
-    """Elimina una solicitud de compra. Solo Pendiente o Rechazada (sin OC generada)."""
+    """Elimina una solicitud de compra y limpia OC asociada cuando aplica.
+
+    Reglas:
+    - OC en estado Borrador/Rechazada → se borra junto con sus items.
+    - OC en estado Aprobada Y categoría es Influencer/Marketing/CC Y NO tiene
+      pagos en pagos_oc Y NO tiene pago en pagos_influencers con estado='Pagada'
+        → se borra todo (OC + items + pagos_influencers pendientes).
+    - OC en cualquier otro estado o con pagos hechos → se borra SOLO la
+      solicitud, la OC se conserva (mantiene historial).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT estado, numero_oc FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    c.execute("SELECT estado, numero_oc, categoria FROM solicitudes_compra WHERE numero=?",
+              (numero.upper(),))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'No encontrada'}), 404
-    estado, numero_oc = row
-    # If OC exists, try to clean it up too (only if in Borrador state)
+    estado, numero_oc, categoria = row[0], row[1], (row[2] or '').strip()
+
+    oc_borrada = False
+    pagos_inf_borrados = 0
+    is_intangible = categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+
     if numero_oc and numero_oc.strip():
         cur = conn.cursor()
         cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
         oc_row = cur.fetchone()
-        if oc_row and oc_row[0] in ('Borrador', 'Rechazada'):
-            cur.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
-            cur.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
-        elif oc_row:
-            # OC exists and is active — unlink solicitud from OC but keep OC
-            pass  # just delete the solicitud
-    c.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+        if oc_row:
+            oc_estado = oc_row[0]
+            puede_borrar_oc = False
+            if oc_estado in ('Borrador', 'Rechazada'):
+                puede_borrar_oc = True
+            elif oc_estado == 'Aprobada' and is_intangible:
+                # Verificar que NO haya pagos efectivos
+                try:
+                    cur.execute("SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+                    n_pagos_oc = cur.fetchone()[0] or 0
+                except sqlite3.OperationalError:
+                    n_pagos_oc = 0
+                try:
+                    cur.execute("SELECT COUNT(*) FROM pagos_influencers WHERE numero_oc=? AND estado='Pagada'",
+                                (numero_oc,))
+                    n_pagos_inf_pagados = cur.fetchone()[0] or 0
+                except sqlite3.OperationalError:
+                    n_pagos_inf_pagados = 0
+                if n_pagos_oc == 0 and n_pagos_inf_pagados == 0:
+                    puede_borrar_oc = True
+            if puede_borrar_oc:
+                # Borrar pagos_influencers pendientes asociados (no Pagados)
+                try:
+                    d = cur.execute(
+                        "DELETE FROM pagos_influencers WHERE numero_oc=? AND COALESCE(estado,'') != 'Pagada'",
+                        (numero_oc,)
+                    )
+                    pagos_inf_borrados = d.rowcount or 0
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    cur.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+                except sqlite3.OperationalError:
+                    pass
+                cur.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+                oc_borrada = True
+    try:
+        c.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
+    except sqlite3.OperationalError:
+        pass
     c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
     conn.commit()
-    return jsonify({'ok': True, 'eliminada': numero.upper()})
+    return jsonify({
+        'ok': True,
+        'eliminada': numero.upper(),
+        'oc_borrada': oc_borrada,
+        'numero_oc': numero_oc or '',
+        'pagos_influencers_borrados': pagos_inf_borrados,
+    })
 
 @bp.route('/api/ordenes-compra', methods=['GET','POST'])
 def handle_ordenes_compra():
