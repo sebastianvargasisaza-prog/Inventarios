@@ -905,17 +905,43 @@ def mkt_influencers():
         d = request.get_json() or {}
         if not d.get("nombre"):
             return jsonify({"error": "nombre requerido"}), 400
-        c.execute("""
-            INSERT INTO marketing_influencers
-            (nombre, red_social, usuario_red, seguidores, engagement_rate,
-             nicho, tarifa, estado, email, telefono, notas)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            d["nombre"], d.get("red_social", "Instagram"), d.get("usuario_red", ""),
-            d.get("seguidores", 0), d.get("engagement_rate", 0),
-            d.get("nicho", ""), d.get("tarifa", 0), d.get("estado", "Activo"),
-            d.get("email", ""), d.get("telefono", ""), d.get("notas", "")
-        ))
+        # Normalizar discount_code: uppercase sin espacios
+        dc = (d.get("discount_code") or "").strip().upper().replace(" ", "")
+        # Bug fix: el INSERT viejo solo guardaba 11 campos básicos. Datos
+        # bancarios (banco, cuenta, cédula, tipo cta, ciudad) y el discount
+        # code para atribución Shopify NO se persistían — el frontend los
+        # mandaba pero quedaban en NULL/default. Ahora se guardan todos.
+        try:
+            c.execute("""
+                INSERT INTO marketing_influencers
+                (nombre, red_social, usuario_red, seguidores, engagement_rate,
+                 nicho, tarifa, estado, email, telefono, notas,
+                 banco, cuenta_bancaria, tipo_cuenta, cedula_nit, ciudad,
+                 discount_code)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                d["nombre"], d.get("red_social", "Instagram"), d.get("usuario_red", ""),
+                d.get("seguidores", 0), d.get("engagement_rate", 0),
+                d.get("nicho", ""), d.get("tarifa", 0), d.get("estado", "Activo"),
+                d.get("email", ""), d.get("telefono", ""), d.get("notas", ""),
+                d.get("banco", ""), d.get("cuenta_bancaria", ""),
+                d.get("tipo_cuenta", ""), d.get("cedula_nit", ""),
+                d.get("ciudad", ""), dc,
+            ))
+        except sqlite3.OperationalError:
+            # Fallback para instalaciones MUY viejas donde algun ALTER no
+            # corrió: insertar con campos básicos primero, después update.
+            c.execute("""
+                INSERT INTO marketing_influencers
+                (nombre, red_social, usuario_red, seguidores, engagement_rate,
+                 nicho, tarifa, estado, email, telefono, notas)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                d["nombre"], d.get("red_social", "Instagram"), d.get("usuario_red", ""),
+                d.get("seguidores", 0), d.get("engagement_rate", 0),
+                d.get("nicho", ""), d.get("tarifa", 0), d.get("estado", "Activo"),
+                d.get("email", ""), d.get("telefono", ""), d.get("notas", "")
+            ))
         conn.commit()
         return jsonify({"ok": True, "id": c.lastrowid}), 201
     finally:
