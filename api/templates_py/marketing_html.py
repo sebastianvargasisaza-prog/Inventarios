@@ -183,6 +183,7 @@ function showToast(msg, type) {
   <button class="tab-btn active" onclick="switchTab('dashboard')">&#x1F3AF; Dashboard</button>
   <button class="tab-btn" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
   <button class="tab-btn" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
+  <button class="tab-btn" onclick="switchTab('pagos')">&#x1F4B0; Pagos Realizados</button>
   <button class="tab-btn" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
   <button class="tab-btn" onclick="switchTab('agentes')">&#x1F916; Agentes IA</button>
   <button class="tab-btn" onclick="switchTab('analytics')">&#x1F4CA; Analytics</button>
@@ -351,6 +352,47 @@ function showToast(msg, type) {
       <table>
         <thead><tr><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Email</th><th>Banco / Cuenta</th><th>Estado Pago</th><th>Acciones</th></tr></thead>
         <tbody id="inf-body"><tr class="empty-row"><td colspan="12"><span class="spin"></span></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- TAB: PAGOS REALIZADOS — vista cronológica para Jefferson/Marketing -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="tab-pagos" class="tab-panel">
+  <div class="actions-bar">
+    <div>
+      <div class="page-title">&#x1F4B0; Pagos Realizados a Influencers</div>
+      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Histórico cronológico · descarga el comprobante PDF de cada pago</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input class="search-box" id="pag-search" placeholder="Buscar influencer, OC, concepto..." oninput="renderPagos()">
+      <select id="pag-mes" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
+        <option value="">Todos los meses</option>
+      </select>
+      <select id="pag-estado" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
+        <option value="">Todos</option>
+        <option value="Pagada" selected>Pagados</option>
+        <option value="Pendiente">Pendientes</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
+    </div>
+  </div>
+  <div id="pag-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Fecha</th>
+          <th>Influencer</th>
+          <th>Concepto</th>
+          <th style="text-align:right;">Valor</th>
+          <th>OC</th>
+          <th>Comprobante</th>
+          <th>Estado</th>
+        </tr></thead>
+        <tbody id="pag-body"><tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -959,6 +1001,7 @@ function loadTab(name) {
   if(name==='dashboard') loadDashboard();
   else if(name==='campanas') loadCampanas();
   else if(name==='influencers') loadInfluencers();
+  else if(name==='pagos') loadPagosInfluencers();
   else if(name==='contenido') loadContenido();
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
   else if(name==='analytics') loadAnalytics();
@@ -1344,6 +1387,94 @@ async function deleteCampana(id, nombre) {
 // ──────────────────────────────────────────────────────────────────────────────
 // INFLUENCERS
 // ──────────────────────────────────────────────────────────────────────────────
+// ─── PAGOS REALIZADOS — vista cronológica para Marketing ───────────────────
+let _PAGOS_INF_CACHE = [];
+
+async function loadPagosInfluencers() {
+  const body = document.getElementById('pag-body');
+  if (body) body.innerHTML = '<tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr>';
+  try {
+    const r = await fetch('/api/marketing/pagos-influencers');
+    const d = await r.json();
+    _PAGOS_INF_CACHE = d.pagos || [];
+    // Llenar select de meses con los disponibles + opción 'Todos'
+    const mesSel = document.getElementById('pag-mes');
+    if (mesSel) {
+      const cur = mesSel.value;
+      mesSel.innerHTML = '<option value="">Todos los meses</option>'
+        + (d.meses_disponibles || []).map(m => '<option value="' + m + '"' + (m===cur?' selected':'') + '>' + m + '</option>').join('');
+    }
+    // KPIs
+    const kpis = d.kpis || {};
+    const kpiBar = document.getElementById('pag-kpi-bar');
+    if (kpiBar) {
+      kpiBar.style.display = 'grid';
+      kpiBar.innerHTML = [
+        {label:'Pagado este mes', val:fmtM(kpis.pagos_mes_valor||0), sub:(kpis.pagos_mes_count||0)+' pagos', color:'#34d399'},
+        {label:'Pagado en 2026', val:fmtM(kpis.pagos_anio_valor||0), sub:(kpis.pagos_anio_count||0)+' pagos', color:'#60a5fa'},
+        {label:'Pendientes (todos)', val:fmtM(kpis.total_pendiente||0), sub:'sin ejecutar', color:'#f59e0b'},
+        {label:'Total mostrado', val:fmtM(kpis.total_pagado||0), sub:_PAGOS_INF_CACHE.length+' filas', color:'#a78bfa'},
+      ].map(k => '<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;">'
+        + '<div style="font-size:18px;font-weight:800;color:'+k.color+';">'+k.val+'</div>'
+        + '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+k.label+'</div>'
+        + '<div style="font-size:10px;color:#475569;margin-top:1px;">'+k.sub+'</div>'
+      + '</div>').join('');
+    }
+    renderPagos();
+  } catch(e) {
+    if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#f87171;padding:20px;">Error: '+e.message+'</td></tr>';
+  }
+}
+
+function renderPagos() {
+  const body = document.getElementById('pag-body');
+  if (!body) return;
+  const q = (document.getElementById('pag-search')||{value:''}).value.toLowerCase();
+  const mes = (document.getElementById('pag-mes')||{value:''}).value;
+  const estado = (document.getElementById('pag-estado')||{value:''}).value;
+  const list = _PAGOS_INF_CACHE.filter(p => {
+    if (estado && p.estado !== estado) return false;
+    if (mes && (p.fecha||'').slice(0,7) !== mes) return false;
+    if (q) {
+      const hay = ((p.influencer_nombre||'')+(p.concepto||'')+(p.numero_oc||'')).toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+  if (!list.length) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin pagos para los filtros seleccionados.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(p => {
+    const fecha = (p.fecha || '').slice(0,10);
+    const estadoBadge = p.estado === 'Pagada'
+      ? '<span style="background:#064e3b;color:#34d399;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
+      : '<span style="background:#78350f;color:#fcd34d;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
+    let comprobante = '<span style="color:#475569;font-size:11px;">—</span>';
+    if (p.comprobante_id && p.numero_ce) {
+      comprobante = '<a href="/api/comprobantes-pago/'+p.comprobante_id+'/pdf" target="_blank" '
+        + 'style="color:#1F5F5B;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#f0fdfa;padding:3px 10px;border-radius:6px;font-size:12px;">'
+        + '&#x1F4C4; '+p.numero_ce+'</a>';
+    } else if (p.estado === 'Pagada') {
+      comprobante = '<span style="color:#dc2626;font-size:11px;font-style:italic;" title="Pago hecho antes del feature de comprobantes">sin CE</span>';
+    }
+    const ocStr = p.numero_oc
+      ? '<span style="font-family:monospace;font-size:11px;color:#94a3b8;">'+p.numero_oc+'</span>'
+      : '—';
+    return '<tr>'
+      + '<td style="font-size:12px;color:#cbd5e1;">'+fecha+'</td>'
+      + '<td style="font-weight:700;">'+(p.influencer_nombre||'—')
+        + (p.inf_email ? '<div style="font-size:11px;color:#64748b;font-weight:400;">'+p.inf_email+'</div>' : '')
+      + '</td>'
+      + '<td style="font-size:12px;color:#94a3b8;">'+(p.concepto||'—')+'</td>'
+      + '<td style="text-align:right;font-weight:700;color:#1F5F5B;">'+fmtM(p.valor||0)+'</td>'
+      + '<td>'+ocStr+'</td>'
+      + '<td>'+comprobante+'</td>'
+      + '<td>'+estadoBadge+'</td>'
+      + '</tr>';
+  }).join('');
+}
+
 async function loadInfluencers() {
   const q = document.getElementById('inf-search').value;
   const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');

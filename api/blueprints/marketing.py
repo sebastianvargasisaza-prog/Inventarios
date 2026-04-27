@@ -2201,6 +2201,96 @@ def mkt_influencers_panel():
         pass
 
 
+@bp.route("/api/marketing/pagos-influencers", methods=["GET"])
+def mkt_pagos_influencers_list():
+    """Lista cronológica de pagos a influencers con comprobante PDF asociado.
+
+    Permite a Marketing (Jefferson) ver todos los pagos hechos sin tener que
+    abrir el panel de cada influencer uno por uno.
+
+    Query params:
+      - estado: 'Pagada' | 'Pendiente' (vacío = todos)
+      - mes:    'YYYY-MM' filtro por fecha
+      - q:      búsqueda en nombre/concepto/numero_oc
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    estado = (request.args.get("estado") or "").strip()
+    mes = (request.args.get("mes") or "").strip()
+    q = (request.args.get("q") or "").strip()
+
+    conn = _db()
+    c = conn.cursor()
+    try:
+        # Pagos enriquecidos con comprobante (LEFT JOIN, último CE por OC)
+        sql = """
+            SELECT pi.id, pi.influencer_id, pi.influencer_nombre,
+                   pi.valor, pi.fecha, pi.estado, pi.concepto, pi.numero_oc,
+                   COALESCE(pi.fecha_publicacion,'') as fecha_publicacion,
+                   cp.id          as comprobante_id,
+                   cp.numero_ce   as numero_ce,
+                   cp.empresa     as empresa_pagadora,
+                   cp.total_pagado as ce_total,
+                   COALESCE(mi.email,'')   as inf_email,
+                   COALESCE(mi.banco,'')   as inf_banco
+            FROM pagos_influencers pi
+            LEFT JOIN comprobantes_pago cp
+                   ON cp.numero_oc = pi.numero_oc
+                  AND cp.id = (SELECT MAX(id) FROM comprobantes_pago
+                                WHERE numero_oc = pi.numero_oc)
+            LEFT JOIN marketing_influencers mi
+                   ON mi.id = pi.influencer_id
+            WHERE 1=1
+        """
+        params = []
+        if estado:
+            sql += " AND pi.estado = ?"
+            params.append(estado)
+        if mes:
+            sql += " AND substr(pi.fecha, 1, 7) = ?"
+            params.append(mes)
+        if q:
+            sql += " AND (pi.influencer_nombre LIKE ? OR pi.concepto LIKE ? OR pi.numero_oc LIKE ?)"
+            ql = f"%{q}%"
+            params.extend([ql, ql, ql])
+        sql += " ORDER BY pi.fecha DESC, pi.id DESC LIMIT 1000"
+        rows = c.execute(sql, params).fetchall()
+        pagos = [dict(r) for r in rows]
+
+        # KPIs sobre la lista filtrada
+        from datetime import datetime as _dt
+        now_month = _dt.now().strftime("%Y-%m")
+        now_year = _dt.now().strftime("%Y")
+        total_pagado = sum(p["valor"] or 0 for p in pagos if p["estado"] == "Pagada")
+        total_pendiente = sum(p["valor"] or 0 for p in pagos if p["estado"] == "Pendiente")
+        pagos_mes = [p for p in pagos if p["estado"] == "Pagada" and (p["fecha"] or "").startswith(now_month)]
+        pagos_anio = [p for p in pagos if p["estado"] == "Pagada" and (p["fecha"] or "").startswith(now_year)]
+
+        # Lista de meses únicos para filtro UI
+        meses_set = sorted({(p["fecha"] or "")[:7] for p in pagos if p["fecha"]}, reverse=True)
+
+        return jsonify({
+            "pagos": pagos,
+            "total": len(pagos),
+            "kpis": {
+                "total_pagado": round(total_pagado, 0),
+                "total_pendiente": round(total_pendiente, 0),
+                "pagos_mes_count": len(pagos_mes),
+                "pagos_mes_valor": round(sum(p["valor"] or 0 for p in pagos_mes), 0),
+                "pagos_anio_count": len(pagos_anio),
+                "pagos_anio_valor": round(sum(p["valor"] or 0 for p in pagos_anio), 0),
+            },
+            "meses_disponibles": meses_set,
+        })
+    except Exception as e:
+        import traceback as _tb
+        return jsonify({
+            "pagos": [], "total": 0, "kpis": {},
+            "_error": str(e), "_trace": _tb.format_exc()[-500:],
+        }), 200
+
+
 @bp.route("/api/marketing/influencers/<int:iid>/solicitar-pago", methods=["POST"])
 def mkt_solicitar_pago_influencer(iid):
     """Crea una solicitud de pago (cuenta de cobro) vinculada a un influencer."""
