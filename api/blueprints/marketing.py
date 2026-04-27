@@ -2258,6 +2258,67 @@ def mkt_pagos_influencers_list():
         rows = c.execute(sql, params).fetchall()
         pagos = [dict(r) for r in rows]
 
+        # FALLBACK CRÍTICO: si una OC se pagó (existe en pagos_oc) y la
+        # categoría es Influencer/Marketing pero NO existe row en
+        # pagos_influencers (sync falló), la traemos igual desde pagos_oc.
+        # Sin esto, los pagos quedan invisibles para Marketing.
+        try:
+            ocs_ya = {(p["numero_oc"] or "") for p in pagos if p["numero_oc"]}
+            extra_sql = """
+                SELECT po.id, po.numero_oc, po.monto, po.fecha_pago, po.medio_pago, po.observaciones,
+                       oc.proveedor, oc.categoria,
+                       cp.id          as comprobante_id,
+                       cp.numero_ce   as numero_ce
+                FROM pagos_oc po
+                LEFT JOIN ordenes_compra oc ON oc.numero_oc = po.numero_oc
+                LEFT JOIN comprobantes_pago cp
+                       ON cp.numero_oc = po.numero_oc
+                      AND cp.id = (SELECT MAX(id) FROM comprobantes_pago
+                                    WHERE numero_oc = po.numero_oc)
+                WHERE (LOWER(COALESCE(oc.categoria,'')) LIKE '%influencer%'
+                       OR LOWER(COALESCE(oc.categoria,'')) LIKE '%marketing%')
+                ORDER BY po.fecha_pago DESC LIMIT 500
+            """
+            extra_rows = c.execute(extra_sql).fetchall()
+            for r in extra_rows:
+                d = dict(r)
+                if d["numero_oc"] in ocs_ya:
+                    continue  # ya está en pagos_influencers
+                # Convertir a formato de pagos_influencers
+                pagos.append({
+                    "id": -d["id"],   # negativo para distinguir de pagos_influencers
+                    "influencer_id": None,
+                    "influencer_nombre": d["proveedor"] or "(sin nombre)",
+                    "valor": d["monto"] or 0,
+                    "fecha": d["fecha_pago"] or "",
+                    "estado": "Pagada",
+                    "concepto": (d["observaciones"] or "")[:100],
+                    "numero_oc": d["numero_oc"],
+                    "fecha_publicacion": "",
+                    "comprobante_id": d["comprobante_id"],
+                    "numero_ce": d["numero_ce"],
+                    "empresa_pagadora": "",
+                    "ce_total": 0,
+                    "inf_email": "",
+                    "inf_banco": "",
+                    "_origen": "pagos_oc_fallback",  # marca para debug
+                })
+            # Re-aplicar filtros sobre el merge
+            if estado:
+                pagos = [p for p in pagos if (p.get("estado") or "") == estado]
+            if mes:
+                pagos = [p for p in pagos if (p.get("fecha") or "")[:7] == mes]
+            if q:
+                ql = q.lower()
+                pagos = [p for p in pagos if ql in (
+                    (p.get("influencer_nombre") or "") + (p.get("concepto") or "") + (p.get("numero_oc") or "")
+                ).lower()]
+            # Re-ordenar
+            pagos.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
+        except Exception as _ef:
+            import logging
+            logging.getLogger("marketing").error("fallback pagos_oc falló: %s", _ef)
+
         # KPIs sobre la lista filtrada
         from datetime import datetime as _dt
         now_month = _dt.now().strftime("%Y-%m")

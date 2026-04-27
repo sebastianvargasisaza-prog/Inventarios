@@ -372,8 +372,8 @@ function showToast(msg, type) {
         <option value="">Todos los meses</option>
       </select>
       <select id="pag-estado" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
-        <option value="">Todos</option>
-        <option value="Pagada" selected>Pagados</option>
+        <option value="" selected>Todos</option>
+        <option value="Pagada">Pagados</option>
         <option value="Pendiente">Pendientes</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
