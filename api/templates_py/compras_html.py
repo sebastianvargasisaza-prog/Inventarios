@@ -215,15 +215,24 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <div id="pane-influencer" class="pane">
   <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
-  <div class="bar">
+  <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
-    <select id="s-influencer" onchange="renderInfluencers()">
+    <select id="s-influencer" onchange="renderInfluencers()" title="Filtrar por estado">
       <option value="Aprobada">Por pagar</option>
       <option value="">Todos los estados</option>
       <option value="Pagada">Pagadas</option>
       <option value="Rechazada">Rechazadas</option>
     </select>
+    <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid #c4b5fd;color:#5b21b6;font-weight:600;">
+      <option value="estado_fecha">📌 Por pagar primero (default)</option>
+      <option value="urgente">⏰ Más urgente arriba (fecha pago)</option>
+      <option value="valor_desc">💰 Mayor valor primero</option>
+      <option value="valor_asc">💵 Menor valor primero</option>
+      <option value="reciente">🆕 Más reciente arriba</option>
+      <option value="antiguo">📜 Más antiguo arriba</option>
+    </select>
   </div>
+  <div id="pills-influencer-help" style="font-size:11px;color:#64748b;padding:0 4px 8px;"></div>
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer"></div>
   <div id="grid-influencer-pagadas"></div>
@@ -2392,35 +2401,90 @@ async function loadInfluencers(){
     var d=await r.json();
     INFLUENCERS=d.solicitudes||[];
   }catch(e){ INFLUENCERS=[]; }
-  // Sort explícito en frontend para garantizar el orden visual incluso si el
-  // backend trae algo distinto. Prioridad de fecha:
-  //   1. fecha_requerida (cuando el pago es debido)
-  //   2. fecha (cuando se creó la solicitud)
-  // Más antiguas arriba (urgentes primero). Aprobadas primero, luego el resto.
-  function _fechaOrden(s){
-    return (s.fecha_requerida && String(s.fecha_requerida).trim())
-        || (s.fecha && String(s.fecha).trim())
-        || '9999-12-31';
+  renderInfluencers();
+}
+
+// Helpers para ordenar — usados por renderInfluencers()
+function _infFechaOrden(s){
+  return (s.fecha_requerida && String(s.fecha_requerida).trim())
+      || (s.fecha && String(s.fecha).trim())
+      || '9999-12-31';
+}
+function _infEstadoRank(e){
+  if(e==='Aprobada')  return 0;
+  if(e==='Pendiente') return 1;
+  if(e==='Pagada')    return 2;
+  return 3;
+}
+function _infSortFn(criterio){
+  // Devuelve la función de comparación según el criterio elegido por el user.
+  if(criterio==='urgente'){
+    return function(a,b){
+      var fa=_infFechaOrden(a), fb=_infFechaOrden(b);
+      if(fa!==fb) return fa<fb?-1:1;
+      return (a.numero||'').localeCompare(b.numero||'');
+    };
   }
-  function _estadoRank(e){
-    if(e==='Aprobada')  return 0;
-    if(e==='Pendiente') return 1;
-    if(e==='Pagada')    return 2;
-    return 3;
+  if(criterio==='valor_desc'){
+    return function(a,b){ return (b.valor||0)-(a.valor||0); };
   }
-  INFLUENCERS.sort(function(a,b){
-    var ra=_estadoRank(a.estado), rb=_estadoRank(b.estado);
+  if(criterio==='valor_asc'){
+    return function(a,b){ return (a.valor||0)-(b.valor||0); };
+  }
+  if(criterio==='reciente'){
+    return function(a,b){
+      var fa=(a.fecha||''), fb=(b.fecha||'');
+      if(fa!==fb) return fa<fb?1:-1; // descendente
+      return (a.numero||'').localeCompare(b.numero||'');
+    };
+  }
+  if(criterio==='antiguo'){
+    return function(a,b){
+      var fa=(a.fecha||'9999'), fb=(b.fecha||'9999');
+      if(fa!==fb) return fa<fb?-1:1;
+      return (a.numero||'').localeCompare(b.numero||'');
+    };
+  }
+  // default: estado_fecha (Aprobadas → Pendientes → Pagadas → resto, fecha asc)
+  return function(a,b){
+    var ra=_infEstadoRank(a.estado), rb=_infEstadoRank(b.estado);
     if(ra!==rb) return ra-rb;
-    var fa=_fechaOrden(a), fb=_fechaOrden(b);
+    var fa=_infFechaOrden(a), fb=_infFechaOrden(b);
     if(fa!==fb) return fa<fb?-1:1;
     return (a.numero||'').localeCompare(b.numero||'');
-  });
-  renderInfluencers();
+  };
 }
 function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
 function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-influencer')||{value:'Aprobada'}).value;
+  var ordCriterio=(document.getElementById('order-influencer')||{value:'estado_fecha'}).value;
+  // Sort defensivo: aplicamos el criterio elegido SIEMPRE antes de filtrar/render
+  if(Array.isArray(INFLUENCERS) && INFLUENCERS.length){
+    INFLUENCERS.sort(_infSortFn(ordCriterio));
+  }
+  // Mostrar al user el criterio activo + diagnóstico de fechas
+  var helpEl=document.getElementById('pills-influencer-help');
+  if(helpEl){
+    var labels={
+      estado_fecha:'Por pagar primero (Aprobadas → Pendientes → Pagadas, luego fecha más vieja)',
+      urgente:'Fecha de pago debido — más antiguas arriba',
+      valor_desc:'Mayor valor de pago primero',
+      valor_asc:'Menor valor de pago primero',
+      reciente:'Fecha de creación — más reciente arriba',
+      antiguo:'Fecha de creación — más antiguo arriba',
+    };
+    // Cuántas tienen fecha_requerida (para que vea por qué a veces parece desordenado)
+    var con_fecha_req = INFLUENCERS.filter(function(s){return s.fecha_requerida && String(s.fecha_requerida).trim();}).length;
+    var msg='Orden: <strong>'+(labels[ordCriterio]||ordCriterio)+'</strong>';
+    if((ordCriterio==='estado_fecha' || ordCriterio==='urgente') && INFLUENCERS.length){
+      msg += ' · '+con_fecha_req+'/'+INFLUENCERS.length+' tienen fecha de pago debido';
+      if(con_fecha_req===0){
+        msg += ' <span style="color:#b94400;font-weight:600;">→ todas usan fecha de creación, prueba "Mayor valor" para mejor orden</span>';
+      }
+    }
+    helpEl.innerHTML=msg;
+  }
 
   // ── Parse beneficiary block from observaciones text ──────────────────────
   function parseBenef(obs){
