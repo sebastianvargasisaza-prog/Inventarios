@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
@@ -37,8 +37,7 @@ bp = Blueprint('inventario', __name__)
 #     u, err, code = _require_planta_write()
 #     if err: return err, code
 
-PLANTA_WRITE_USERS = PLANTA_USERS | ADMIN_USERS | CALIDAD_USERS
-QC_USERS           = CALIDAD_USERS | ADMIN_USERS
+QC_USERS = CALIDAD_USERS | ADMIN_USERS
 
 
 def _require_session():
@@ -50,18 +49,23 @@ def _require_session():
 
 
 def _require_planta_write():
-    """Para operaciones que ESCRIBEN inventario: PLANTA + CALIDAD + ADMIN.
+    """Operaciones que ESCRIBEN inventario: cualquier usuario autenticado.
 
-    Excluye marketing, ventas, clientes y operarios sin rol técnico.
+    Política decidida por CEO 2026-04-27: el flujo operativo cruza áreas
+    (contadoría que registra recepción, asistentes que ajustan conteos,
+    técnica que da entrada a piezas), por lo que se abre a cualquier
+    usuario logueado. La trazabilidad se mantiene por:
+      - audit_log con username + IP en cada operación
+      - campo 'operador' en cada movimiento de la tabla movimientos
+      - security_events con login/logout
+
+    Operaciones destructivas (reset, delete masivo) siguen requiriendo
+    _require_admin(). QC (aprobar lote, etc.) sigue requiriendo
+    _require_qc() (CALIDAD + ADMIN).
     """
     u = session.get('compras_user', '')
     if not u:
         return None, jsonify({'error': 'No autenticado'}), 401
-    if u not in PLANTA_WRITE_USERS:
-        return None, jsonify({
-            'error': 'Sin acceso a operaciones de Planta',
-            'detail': f"User '{u}' no está en PLANTA/CALIDAD/ADMIN"
-        }), 403
     return u, None, None
 
 

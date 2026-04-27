@@ -10,16 +10,28 @@ def _login(app, user):
     return c
 
 
-# ── POST /api/movimientos requires PLANTA/CALIDAD/ADMIN ──────────────────────
+# ── POST /api/movimientos: cualquier usuario autenticado ────────────────────
+# Política CEO 2026-04-27: el flujo operativo cruza áreas (contadoría registra
+# recepción, asistentes ajustan conteos, técnica da entrada). La trazabilidad
+# se mantiene por audit_log + operador en cada movimiento. QC y reset siguen
+# restringidos.
 
-def test_movimientos_post_blocked_for_marketing(app, db_clean):
-    """Felipe (Marketing) NO debe poder registrar movimientos de inventario."""
+def test_movimientos_post_allowed_for_marketing(app, db_clean):
+    """Felipe (Marketing) AHORA puede registrar movimientos.
+
+    Bajo la nueva política de planta abierta — la trazabilidad queda en
+    audit_log y campo operador. Antes esto era 403.
+    """
     c = _login(app, "felipe")
     r = c.post("/api/movimientos",
-               json={"material_id": "X", "material_nombre": "Test", "cantidad": 100,
-                     "tipo": "Entrada"},
+               json={"material_id": "TEST_MKT", "material_nombre": "Test MKT",
+                     "cantidad": 100, "tipo": "Entrada"},
                headers=csrf_headers())
-    assert r.status_code == 403
+    # Lo importante: NO es 403 (puede ser 201 si todo OK, o 400 por validación)
+    assert r.status_code != 403, (
+        f"Marketing debería poder escribir en planta bajo la nueva política, "
+        f"recibió {r.status_code}: {r.data[:200]!r}"
+    )
 
 
 def test_movimientos_post_allowed_for_planta(app, db_clean):
@@ -41,6 +53,16 @@ def test_movimientos_post_allowed_for_calidad(app, db_clean):
     assert r.status_code == 201
 
 
+def test_movimientos_post_blocked_for_unauthenticated(app, db_clean):
+    """Sin login = 401. La política abrió a usuarios autenticados, no anónimos."""
+    c = app.test_client()  # sin login
+    r = c.post("/api/movimientos",
+               json={"material_id": "X", "material_nombre": "Test",
+                     "cantidad": 100, "tipo": "Entrada"},
+               headers=csrf_headers())
+    assert r.status_code == 401
+
+
 def test_movimientos_get_open_to_authenticated(app, db_clean):
     """GET es lectura — cualquier autenticado puede consultar."""
     c = _login(app, "valentina")
@@ -50,22 +72,37 @@ def test_movimientos_get_open_to_authenticated(app, db_clean):
 
 # ── POST /api/produccion ─────────────────────────────────────────────────────
 
-def test_produccion_blocked_for_marketing(app, db_clean):
+def test_produccion_allowed_for_marketing(app, db_clean):
+    """Jefferson (Marketing) AHORA puede tocar producción.
+
+    Política CEO 2026-04-27. Antes era 403.
+    """
     c = _login(app, "jefferson")
     r = c.post("/api/produccion",
                json={"producto": "TEST", "cantidad_kg": 1},
                headers=csrf_headers())
-    assert r.status_code == 403
+    assert r.status_code != 403, (
+        f"Marketing debería poder tocar producción, recibió {r.status_code}"
+    )
 
 
 # ── POST /api/recepcion ──────────────────────────────────────────────────────
 
-def test_recepcion_blocked_for_marketing(app, db_clean):
+def test_recepcion_allowed_for_marketing(app, db_clean):
+    """Felipe (Marketing) AHORA puede registrar recepción.
+
+    Política CEO 2026-04-27 — el flujo operativo lo necesitaba (Catalina y
+    Mayra registrando recepciones, Luz haciendo conteos en planta de Espagiria).
+    Antes era 403.
+    """
     c = _login(app, "felipe")
     r = c.post("/api/recepcion",
                json={"codigo_mp": "MP_TEST", "cantidad": 10},
                headers=csrf_headers())
-    assert r.status_code == 403
+    assert r.status_code != 403, (
+        f"Marketing debería poder registrar recepción bajo la nueva política, "
+        f"recibió {r.status_code}: {r.data[:200]!r}"
+    )
 
 
 def test_recepcion_allowed_for_planta(app, db_clean):
@@ -76,6 +113,17 @@ def test_recepcion_allowed_for_planta(app, db_clean):
                      "lote": "TESTLOTE001"},
                headers=csrf_headers())
     # Esperado 200 o 201 si todo OK; lo importante es que NO sea 403
+    assert r.status_code != 403
+
+
+def test_recepcion_allowed_for_contadora(app, db_clean):
+    """Mayra (Contadora) puede registrar recepción — caso explícito del CEO."""
+    c = _login(app, "mayra")
+    r = c.post("/api/recepcion",
+               json={"codigo_mp": "MP_TEST_CONT", "cantidad": 5,
+                     "nombre_inci": "Test", "nombre_comercial": "Test Cont",
+                     "lote": "TESTLOTECONT"},
+               headers=csrf_headers())
     assert r.status_code != 403
 
 
