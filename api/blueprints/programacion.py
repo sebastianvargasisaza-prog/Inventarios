@@ -135,20 +135,43 @@ def _shopify_velocity(conn, days=60):
             # Store full SKU — no truncation
             sku_units[raw_sku] = sku_units.get(raw_sku, 0) + qty
 
-    # Denominador = días reales de datos en tabla, no la ventana solicitada.
-    # Si el sync solo jaló 4 días, dividir por 60 daría velocidad 10x baja.
+    # Denominador inteligente: prefiere ventana real solicitada (`days`) si
+    # hay cobertura suficiente; sino cae a `actual_days` PERO marca data
+    # quality como baja para que la UI advierta al usuario.
+    #
+    # Antes (CRITICAL fix #6 auditoría): siempre dividía por (d_max - d_min)
+    # → si solo había 4 días de datos, la velocidad salía 10× más alta de
+    # lo real, sobreestimando ventas y subestimando días de cobertura.
+    actual_days = days  # default conservador
+    data_quality = 'ok'
+    coverage_pct = 100
     if rows:
         all_dates = [r[2] for r in rows if r[2]]
         if len(all_dates) >= 2:
             from datetime import date as _dt
-            d_min = _dt.fromisoformat(min(all_dates))
-            d_max = _dt.fromisoformat(max(all_dates))
-            actual_days = max((d_max - d_min).days, 1)
+            d_min = _dt.fromisoformat(min(all_dates)[:10])
+            d_max = _dt.fromisoformat(max(all_dates)[:10])
+            real_span = max((d_max - d_min).days, 1)
+            coverage_pct = int(min(100, (real_span / max(days, 1)) * 100))
+            # Si cobertura >= 80%: el período pedido es representativo,
+            # dividir por `days` evita inflar por gaps al inicio/final.
+            # Si < 80%: dividimos por real_span pero marcamos baja calidad.
+            if coverage_pct >= 80:
+                actual_days = days
+                data_quality = 'ok'
+            else:
+                actual_days = real_span
+                data_quality = 'low'  # poca data → no confiable para decisiones
         else:
-            actual_days = 1
+            # 1 sola fecha: extrapolar es engañoso. Usamos days completo.
+            actual_days = days
+            data_quality = 'very_low'
+            coverage_pct = 0
     else:
         actual_days = days
-    months = max(actual_days / 30.0, 1/30.0)  # mínimo 1 día
+        data_quality = 'no_data'
+        coverage_pct = 0
+    months = max(actual_days / 30.0, 1/30.0)
     sku_vel = {sku: round(units / months, 1) for sku, units in sku_units.items()}
 
     # Build lookup map: SKU -> producto_nombre
@@ -173,6 +196,8 @@ def _shopify_velocity(conn, days=60):
         'days_requested': days,
         'actual_days_data': actual_days,
         'months_analyzed': round(months, 2),
+        'data_quality': data_quality,    # ok|low|very_low|no_data
+        'coverage_pct': coverage_pct,
     }
 
 # ─── Google Calendar ─────────────────────────────────────────────────────────
@@ -1211,6 +1236,37 @@ def prog_resumen():
             'severidad': 'media',
             'mensaje': f"Calendario inaccesible: {cal['error']}",
             'accion': "Las próximas producciones pueden estar incompletas. Verifica GCAL_ICAL_URL o GOOGLE_API_KEY en env.",
+        })
+    # Warning si la velocidad de ventas viene de datos pobres
+    dq = vel_data.get('data_quality', 'ok')
+    if dq != 'ok':
+        cov = vel_data.get('coverage_pct', 0)
+        warnings_data.append({
+            'tipo': 'velocidad_data_pobre',
+            'severidad': 'alta' if dq in ('no_data', 'very_low') else 'media',
+            'mensaje': (
+                f"Velocidad de ventas calculada con datos insuficientes "
+                f"(calidad={dq}, cobertura={cov}%). Las decisiones de "
+                f"producción/compra basadas en esto pueden estar sesgadas."
+            ),
+            'accion': "Verifica el sync con Shopify (/api/programacion/test-shopify).",
+        })
+    # Fórmulas con cantidades incompletas
+    formulas_incompletas = [
+        p for p in projection
+        if p.get('mp_lista') is None  # can_produce=None → fórmula sin cantidades
+    ]
+    if formulas_incompletas:
+        warnings_data.append({
+            'tipo': 'formulas_incompletas',
+            'severidad': 'alta',
+            'mensaje': (
+                f"{len(formulas_incompletas)} fórmula(s) tienen cantidades vacías "
+                f"o inválidas. La proyección de MPs para esos productos no es "
+                f"confiable."
+            ),
+            'productos': [p['producto'] for p in formulas_incompletas[:10]],
+            'accion': "Edita la fórmula en /tecnica y completa las cantidades por lote.",
         })
 
     return jsonify({
