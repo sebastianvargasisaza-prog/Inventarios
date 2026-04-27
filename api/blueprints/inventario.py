@@ -762,6 +762,126 @@ def get_lotes():
                        'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta})
     return jsonify({'lotes': result, 'total': len(result)})
 
+@bp.route('/api/lotes/<material_id>/<path:lote>', methods=['DELETE'])
+def eliminar_lote(material_id, lote):
+    """Elimina un lote completo por incoherencia (jefe de produccion).
+
+    Hard-delete de todos los movimientos que comparten (material_id, lote).
+    El bloque ENTRADA original + sus salidas asociadas se borran. Antes de
+    borrar, se hace snapshot al audit_log con el estado completo del lote
+    (cantidad neta, fecha venc, proveedor, # movs) + el motivo del usuario,
+    para mantener trazabilidad de lo que se borro y por que.
+
+    Body JSON:
+      motivo: str (obligatorio, min 10 chars) - razon documentada
+
+    Caso de uso: recepcion duplicada, codigo MP equivocado, lote registrado
+    contra el material erroneo, etc. Para correcciones de cantidad usar
+    'Ajustar' en su lugar (genera contra-movimiento, preserva historia).
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    motivo = (d.get('motivo') or '').strip()
+    if len(motivo) < 10:
+        return jsonify({
+            'error': 'Motivo obligatorio',
+            'detail': 'Explica por que eliminas este lote (min 10 caracteres). '
+                      'Esto queda en audit_log para trazabilidad.'
+        }), 400
+
+    # _SIN_LOTE_ es placeholder del frontend para movimientos sin lote
+    # (lote NULL o ''). Hacemos match contra ambos.
+    sin_lote = (lote == '_SIN_LOTE_')
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Snapshot del lote antes de borrar — solo columnas garantizadas en
+    # el schema actual de movimientos (ver database.py CREATE TABLE).
+    cols_select = ("m.id, m.tipo, m.cantidad, m.fecha, m.proveedor, "
+                   "m.fecha_vencimiento, m.operador, m.observaciones")
+    if sin_lote:
+        c.execute(f"""SELECT {cols_select}
+                     FROM movimientos m
+                     WHERE m.material_id=? AND (m.lote IS NULL OR m.lote='')
+                     ORDER BY m.fecha ASC""", (material_id,))
+    else:
+        c.execute(f"""SELECT {cols_select}
+                     FROM movimientos m
+                     WHERE m.material_id=? AND m.lote=?
+                     ORDER BY m.fecha ASC""", (material_id, lote))
+    movs = c.fetchall()
+    if not movs:
+        return jsonify({
+            'error': 'Lote no encontrado',
+            'detail': f'No existen movimientos para {material_id} / {lote}'
+        }), 404
+
+    # Calcular saldo neto + nombre comercial para el log
+    saldo_neto = sum(
+        (mv[2] or 0) if mv[1] == 'Entrada' else -(mv[2] or 0)
+        for mv in movs
+    )
+    nombre_row = c.execute(
+        "SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?",
+        (material_id,)
+    ).fetchone()
+    nombre_comercial = (nombre_row[0] if nombre_row else '') or material_id
+
+    snapshot = {
+        'material_id': material_id,
+        'nombre_comercial': nombre_comercial,
+        'lote': '' if sin_lote else lote,
+        'saldo_neto_g_al_eliminar': round(saldo_neto, 2),
+        'num_movimientos': len(movs),
+        'fechas': [str(mv[3])[:10] for mv in movs if mv[3]],
+        'proveedores': sorted({(mv[4] or '') for mv in movs if mv[4]}),
+        'operadores':  sorted({(mv[6] or '') for mv in movs if mv[6]}),
+        'motivo':      motivo,
+    }
+
+    # Audit log antes de borrar (sobrevive aunque algo falle abajo)
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'ELIMINAR_LOTE', 'movimientos',
+                   f'{material_id}/{lote}',
+                   _json.dumps(snapshot, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        # audit_log no existe en deploy super-viejo — log en Sentry
+        # via excepcion explicita y seguir.
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log no disponible — eliminar_lote por %s sobre %s/%s "
+            "no quedo registrado en BD. motivo=%s",
+            u, material_id, lote, motivo,
+        )
+
+    # Hard delete de los movimientos del lote
+    if sin_lote:
+        c.execute("DELETE FROM movimientos WHERE material_id=? "
+                  "AND (lote IS NULL OR lote='')", (material_id,))
+    else:
+        c.execute("DELETE FROM movimientos WHERE material_id=? AND lote=?",
+                  (material_id, lote))
+    deleted = c.rowcount
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Lote {lote} de {nombre_comercial} eliminado. '
+                    f'{deleted} movimientos borrados. Saldo neto al momento '
+                    f'de eliminar: {saldo_neto:.2f}g.'),
+        'deleted_count': deleted,
+        'snapshot': snapshot,
+    }), 200
+
+
 @bp.route('/api/maestro-mps', methods=['GET','POST'])
 def handle_maestro():
     conn = get_db(); c = conn.cursor()

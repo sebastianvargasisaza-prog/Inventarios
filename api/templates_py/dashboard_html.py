@@ -127,6 +127,67 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 </div>
+<!-- Modal SOLICITAR (a nivel MP) -->
+<div id="modal-solicitar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:560px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#27ae60;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#128203; Solicitar Materia Prima</h2>
+      <button onclick="cerrarSolicitarLote()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <p style="color:#888;font-size:0.85em;margin-bottom:14px;">Genera una solicitud de compra que llega al m&#243;dulo Compras. Se solicita la materia prima como tal — el lote es solo de referencia.</p>
+      <div style="background:#f0f9f4;border:1px solid #c6e6d4;border-radius:8px;padding:12px;margin-bottom:14px;">
+        <div style="font-size:0.78em;color:#1b5e20;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Materia Prima</div>
+        <div style="font-weight:700;color:#222;font-size:1.05em;" id="sol-mp-nombre">—</div>
+        <div style="color:#666;font-size:0.85em;" id="sol-mp-cod">—</div>
+        <div style="color:#888;font-size:0.78em;margin-top:4px;" id="sol-mp-stock">—</div>
+      </div>
+      <div class="form-group"><label>Proveedor</label><input type="text" id="sol-prov" placeholder="Si conoces el proveedor"></div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;">
+        <div class="form-group"><label>Cantidad necesaria *</label><input type="number" id="sol-cant" placeholder="Ej: 5000" step="0.1" min="0.01"></div>
+        <div class="form-group"><label>Unidad</label><select id="sol-unidad" style="width:100%;"><option value="g">g</option><option value="kg">kg</option><option value="und">und</option></select></div>
+      </div>
+      <div class="form-group"><label>Urgencia</label>
+        <select id="sol-urg" style="width:100%;"><option value="Alta">Alta</option><option value="Normal" selected>Normal</option><option value="Baja">Baja</option></select>
+      </div>
+      <div class="form-group"><label>Observaci&#243;n / justificaci&#243;n *</label>
+        <textarea id="sol-obs" rows="3" placeholder="Ej: Stock por debajo del m&#237;nimo, requerido para producci&#243;n GEL HID semana del 5 mayo"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button onclick="enviarSolicitarLote()" style="flex:1;background:#27ae60;padding:9px;font-weight:700;">&#10003; Enviar a Compras</button>
+        <button onclick="cerrarSolicitarLote()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
+      </div>
+      <div id="sol-msg" style="margin-top:10px;font-size:0.85em;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal ELIMINAR LOTE (a nivel lote, motivo obligatorio) -->
+<div id="modal-eliminar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#c0392b;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#9888; Eliminar Lote</h2>
+      <button onclick="cerrarEliminarLote()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <div style="background:#fff5f5;border:1px solid #f5c6cb;border-radius:8px;padding:12px;margin-bottom:14px;">
+        <div style="font-size:0.78em;color:#922;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Lote a eliminar</div>
+        <div style="font-weight:700;color:#222;" id="del-mp-nombre">—</div>
+        <div style="color:#666;font-size:0.85em;" id="del-mp-info">—</div>
+      </div>
+      <p style="color:#666;font-size:0.85em;margin-bottom:8px;"><b>Acci&#243;n permanente.</b> Borra todos los movimientos de este lote (entradas + salidas). El motivo queda registrado en audit_log para trazabilidad. Para correcciones de cantidad, mejor usa &laquo;Ajustar&raquo;.</p>
+      <div class="form-group"><label style="color:#c0392b;font-weight:700;">Motivo de eliminaci&#243;n * (m&#237;n. 10 caracteres)</label>
+        <textarea id="del-motivo" rows="3" placeholder="Ej: Recepci&#243;n duplicada — el mismo lote se carg&#243; el 18 y el 20 de abril por error"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button onclick="confirmarEliminarLote()" style="flex:1;background:#c0392b;padding:9px;font-weight:700;color:white;">&#128465; Confirmar eliminaci&#243;n</button>
+        <button onclick="cerrarEliminarLote()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
+      </div>
+      <div id="del-msg" style="margin-top:10px;font-size:0.85em;"></div>
+    </div>
+  </div>
+</div>
+
 <div class="container">
   <div class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
     <div><div style="display:flex;align-items:center;gap:12px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="34" height="34"><path d="M30 18 L30 38 L16 60 L64 60 L50 38 L50 18 Z" fill="none" stroke="white" stroke-width="3"/><line x1="27" y1="24" x2="53" y2="24" stroke="white" stroke-width="2.5"/><path d="M40 48 Q33 40 33 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q47 40 47 33 Q40 38 40 48Z" fill="white" opacity="0.8"/><path d="M40 48 Q29 45 27 52 Q34 50 40 48Z" fill="white" opacity="0.6"/><path d="M40 48 Q51 45 53 52 Q46 50 40 48Z" fill="white" opacity="0.6"/></svg><div><div style="font-size:1.4em;font-weight:700;">Módulo Planta</div><div style="font-size:0.75em;letter-spacing:2px;opacity:0.8;font-weight:500;margin-top:2px;">ESPAGIRIA LABORATORIOS</div></div></div>
@@ -230,9 +291,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <th style="text-align:right;">Cantidad (g)</th>
         <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
         <th style="text-align:center;">Fecha Venc.</th>
-        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th><th style="text-align:center;">Historial</th>
+        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th><th style="text-align:center;">Historial</th><th style="text-align:center;">Solicitar</th><th style="text-align:center;">Eliminar</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="17" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   
@@ -1282,6 +1343,110 @@ function abrirAjusteIdx(idx){
   if(!i)return;
   abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g);
 }
+
+// ─── Solicitar MP (a nivel materia prima, no lote) ─────────────────────────
+var _solLote=null;
+function abrirSolicitarLote(idx){
+  var i=_lotes[idx]; if(!i){alert('Lote no encontrado'); return;}
+  _solLote=i;
+  document.getElementById('sol-mp-nombre').textContent=(i.material_nombre||'')+(i.nombre_inci?' ('+i.nombre_inci+')':'');
+  document.getElementById('sol-mp-cod').textContent='Codigo: '+(i.material_id||'-');
+  var stock_label='Stock min: '+(i.stock_min_g||0).toLocaleString()+' g';
+  if(i.lote){stock_label+=' · Lote ref.: '+i.lote;}
+  document.getElementById('sol-mp-stock').textContent=stock_label;
+  document.getElementById('sol-prov').value=i.proveedor||'';
+  document.getElementById('sol-cant').value='';
+  document.getElementById('sol-unidad').value='g';
+  document.getElementById('sol-urg').value='Normal';
+  document.getElementById('sol-obs').value='';
+  document.getElementById('sol-msg').innerHTML='';
+  document.getElementById('modal-solicitar-lote').style.display='flex';
+}
+function cerrarSolicitarLote(){document.getElementById('modal-solicitar-lote').style.display='none';_solLote=null;}
+async function enviarSolicitarLote(){
+  if(!_solLote)return;
+  var msg=document.getElementById('sol-msg');
+  var prov=document.getElementById('sol-prov').value.trim();
+  var cant=parseFloat(document.getElementById('sol-cant').value||0);
+  var und=document.getElementById('sol-unidad').value;
+  var urg=document.getElementById('sol-urg').value;
+  var obs=document.getElementById('sol-obs').value.trim();
+  if(!cant||cant<=0){msg.innerHTML='<span style="color:#c00;">Cantidad debe ser mayor a 0.</span>';return;}
+  if(obs.length<5){msg.innerHTML='<span style="color:#c00;">Justificacion requerida (min. 5 chars).</span>';return;}
+  // Convertir a gramos para solicitudes_compra (cantidad_g)
+  var cant_g=cant; if(und==='kg')cant_g=cant*1000;
+  var obs_full=obs+(prov?(' · Proveedor sugerido: '+prov):'');
+  var payload={
+    solicitante:(window.OPER_ACTUAL||window._usuario||'planta'),
+    urgencia:urg,
+    observaciones:obs_full,
+    empresa:'Espagiria',
+    categoria:'Materia Prima',
+    tipo:'Compra',
+    area:'Produccion',
+    items:[{
+      codigo_mp:_solLote.material_id,
+      nombre_mp:_solLote.material_nombre,
+      cantidad_g:cant_g,
+      unidad:und,
+      justificacion:obs,
+      valor_estimado:0
+    }]
+  };
+  msg.innerHTML='<span style="color:#666;">Enviando...</span>';
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    var d=await r.json();
+    if(r.ok){
+      msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Solicitud creada')+'. Llega a Compras.</span>';
+      setTimeout(cerrarSolicitarLote,1800);
+    }else{
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+'</span>';
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+  }
+}
+
+// ─── Eliminar Lote (a nivel lote, motivo obligatorio) ──────────────────────
+var _delLote=null;
+function abrirEliminarLote(idx){
+  var i=_lotes[idx]; if(!i){alert('Lote no encontrado'); return;}
+  _delLote=i;
+  document.getElementById('del-mp-nombre').textContent=(i.material_nombre||'')+' · '+(i.material_id||'');
+  var partes=[];
+  if(i.lote)partes.push('Lote: '+i.lote); else partes.push('Lote: (sin lote)');
+  partes.push('Cantidad actual: '+(i.cantidad_g||0).toLocaleString()+' g');
+  if(i.fecha_vencimiento)partes.push('Vence: '+i.fecha_vencimiento);
+  if(i.proveedor)partes.push('Prov.: '+i.proveedor);
+  document.getElementById('del-mp-info').textContent=partes.join(' · ');
+  document.getElementById('del-motivo').value='';
+  document.getElementById('del-msg').innerHTML='';
+  document.getElementById('modal-eliminar-lote').style.display='flex';
+}
+function cerrarEliminarLote(){document.getElementById('modal-eliminar-lote').style.display='none';_delLote=null;}
+async function confirmarEliminarLote(){
+  if(!_delLote)return;
+  var msg=document.getElementById('del-msg');
+  var motivo=document.getElementById('del-motivo').value.trim();
+  if(motivo.length<10){msg.innerHTML='<span style="color:#c00;">Motivo min. 10 caracteres.</span>';return;}
+  if(!confirm('Eliminar definitivamente el lote '+(_delLote.lote||'(sin lote)')+' de '+_delLote.material_nombre+'? Esta accion borra todos los movimientos asociados.')){return;}
+  msg.innerHTML='<span style="color:#666;">Eliminando...</span>';
+  var loteSeg=_delLote.lote||'_SIN_LOTE_';
+  var url='/api/lotes/'+encodeURIComponent(_delLote.material_id)+'/'+encodeURIComponent(loteSeg);
+  try{
+    var r=await fetch(url,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo})});
+    var d=await r.json();
+    if(r.ok){
+      msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Lote eliminado')+'</span>';
+      setTimeout(function(){cerrarEliminarLote();loadStock();},1500);
+    }else{
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' — '+d.detail:'')+'</span>';
+    }
+  }catch(e){
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+  }
+}
 async function abrirAjuste(mid,mn,lt,sa){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
@@ -1667,12 +1832,12 @@ async function loadStock(){
     document.getElementById('stock-count').textContent=_lotes.length+' lotes';
     renderStock(_lotes);
   }catch(e){
-    document.getElementById('stock-body').innerHTML='<tr><td colspan="13" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
+    document.getElementById('stock-body').innerHTML='<tr><td colspan="17" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
   }
 }
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  if(!items.length){tb.innerHTML='<tr><td colspan="17" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
   var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent'};
   var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a'};
   var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE'};
@@ -1700,6 +1865,8 @@ function renderStock(items){
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
     h+='<td style="text-align:center;"><button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
     h+='<td style="text-align:center;"><button onclick="verHistorialLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#667eea;color:#fff;border-radius:4px;">Historial</button></td>';
+    h+='<td style="text-align:center;"><button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#27ae60;color:#fff;border-radius:4px;">Solicitar</button></td>';
+    h+='<td style="text-align:center;"><button onclick="abrirEliminarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;">Eliminar</button></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;

@@ -222,3 +222,168 @@ def test_valoracion_inventario_filter(admin_client, db_clean):
     # Todos los items devueltos deben ser de Empaque
     for item in data["items"]:
         assert item["tipo_material"] == "Empaque"
+
+
+# ═══ Sprint solicitud + eliminar lote desde Stock por Lote ═══════════════════
+# Política CEO 2026-04-27: jefe de producción puede solicitar MP desde la vista
+# de Stock por Lote (modal a nivel MP) y eliminar lotes con motivo obligatorio
+# para corregir incoherencias de carga (recepción duplicada, código equivocado).
+
+
+def test_eliminar_lote_requiere_motivo(app, db_clean):
+    """DELETE /api/lotes/<mid>/<lote> sin motivo o con < 10 chars debe ser 400."""
+    c = _login(app, "luis")
+    r = c.delete("/api/lotes/MPTEST/LOTE-A",
+                 json={}, headers=csrf_headers())
+    assert r.status_code == 400
+    body = r.get_json()
+    assert "motivo" in (body.get("error") or "").lower()
+
+    r = c.delete("/api/lotes/MPTEST/LOTE-A",
+                 json={"motivo": "corto"}, headers=csrf_headers())
+    assert r.status_code == 400
+
+
+def test_eliminar_lote_lote_inexistente(app, db_clean):
+    """Si el lote no tiene movimientos, 404."""
+    c = _login(app, "luis")
+    r = c.delete("/api/lotes/MP_NO_EXISTE/LOTE_X",
+                 json={"motivo": "limpieza de prueba"},
+                 headers=csrf_headers())
+    assert r.status_code == 404
+
+
+def test_eliminar_lote_borra_movimientos_y_audit(app, db_clean):
+    """Lote con varios movimientos: borra todos + escribe audit_log."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT OR IGNORE INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, tipo,
+                    proveedor, stock_minimo, activo)
+                   VALUES ('MP_DEL_TEST','TEST INCI','Test MP','Activo',
+                           'Prov X', 0, 1)""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, proveedor, fecha_vencimiento, operador)
+                   VALUES ('MP_DEL_TEST','Test MP','LOTE-DEL-1',1000,
+                           'Entrada','2026-04-20','Prov X','2027-01-01','luis')""")
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, operador)
+                   VALUES ('MP_DEL_TEST','Test MP','LOTE-DEL-1',300,
+                           'Salida','2026-04-22','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.delete("/api/lotes/MP_DEL_TEST/LOTE-DEL-1",
+                 json={"motivo": "Recepcion duplicada de prueba"},
+                 headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["deleted_count"] == 2
+    assert j["snapshot"]["saldo_neto_g_al_eliminar"] == 700.0
+    assert j["snapshot"]["motivo"] == "Recepcion duplicada de prueba"
+
+    # Verificar que los movimientos ya no existen
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT COUNT(*) FROM movimientos WHERE material_id='MP_DEL_TEST' "
+        "AND lote='LOTE-DEL-1'"
+    ).fetchone()
+    assert rows[0] == 0
+
+    # Verificar que quedó audit_log
+    audit = cur.execute(
+        "SELECT usuario, accion, registro_id FROM audit_log "
+        "WHERE accion='ELIMINAR_LOTE' AND registro_id='MP_DEL_TEST/LOTE-DEL-1' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert audit is not None, "audit_log no registró el ELIMINAR_LOTE"
+    assert audit[0] == "luis"
+    cur.execute("DELETE FROM movimientos WHERE material_id='MP_DEL_TEST'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_DEL_TEST'")
+    conn.commit()
+    conn.close()
+
+
+def test_eliminar_lote_sin_lote_placeholder(app, db_clean):
+    """Lote vacío (NULL/'') usa placeholder _SIN_LOTE_ del frontend."""
+    import os
+    c = _login(app, "luis")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO movimientos
+                   (material_id, material_nombre, lote, cantidad, tipo,
+                    fecha, operador)
+                   VALUES ('MP_NOLOTE','Test MP NoLote', NULL, 500,
+                           'Entrada','2026-04-20','luis')""")
+    conn.commit()
+    conn.close()
+
+    r = c.delete("/api/lotes/MP_NOLOTE/_SIN_LOTE_",
+                 json={"motivo": "Movimiento sin lote — limpieza"},
+                 headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["deleted_count"] == 1
+
+
+def test_solicitar_desde_lote_crea_solicitud_compra(app, db_clean):
+    """El payload del modal Solicitar (POST /api/solicitudes-compra) crea
+    una solicitud Pendiente con el item de la MP."""
+    c = _login(app, "luis")
+
+    payload = {
+        "solicitante": "luis",
+        "urgencia": "Alta",
+        "observaciones": "Stock bajo mínimo, requiero para producción",
+        "empresa": "Espagiria",
+        "categoria": "Materia Prima",
+        "tipo": "Compra",
+        "area": "Produccion",
+        "items": [{
+            "codigo_mp": "MP00245",
+            "nombre_mp": "1,2-Hexanediol",
+            "cantidad_g": 5000,
+            "unidad": "g",
+            "justificacion": "Producción GEL HID",
+            "valor_estimado": 0,
+        }],
+    }
+    r = c.post("/api/solicitudes-compra",
+               json=payload, headers=csrf_headers())
+    assert r.status_code == 201
+    j = r.get_json()
+    assert j["numero"].startswith("SOL-")
+
+    # Verificar estado en DB
+    import os
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    sol = cur.execute(
+        "SELECT estado, urgencia, area, categoria FROM solicitudes_compra "
+        "WHERE numero=?", (j["numero"],)
+    ).fetchone()
+    assert sol is not None
+    assert sol[0] == "Pendiente"
+    assert sol[1] == "Alta"
+    items = cur.execute(
+        "SELECT codigo_mp, cantidad_g FROM solicitudes_compra_items "
+        "WHERE numero=?", (j["numero"],)
+    ).fetchall()
+    assert len(items) == 1
+    assert items[0][0] == "MP00245"
+    assert items[0][1] == 5000
+
+    cur.execute("DELETE FROM solicitudes_compra_items WHERE numero=?",
+                (j["numero"],))
+    cur.execute("DELETE FROM solicitudes_compra WHERE numero=?",
+                (j["numero"],))
+    conn.commit()
+    conn.close()
