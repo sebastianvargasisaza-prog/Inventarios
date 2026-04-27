@@ -566,9 +566,18 @@ def handle_solicitudes_compra():
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
                sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
-               COALESCE(oc.valor_total, 0) as valor_oc
+               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(mi.nombre, '')           as inf_nombre,
+               COALESCE(mi.banco, '')            as inf_banco,
+               COALESCE(mi.cuenta_bancaria, '')  as inf_cuenta,
+               COALESCE(mi.tipo_cuenta, '')      as inf_tipo_cuenta,
+               COALESCE(mi.cedula_nit, '')       as inf_cedula,
+               COALESCE(mi.email, '')            as inf_email,
+               COALESCE(mi.ciudad, '')           as inf_ciudad,
+               COALESCE(mi.instagram, '')        as inf_instagram
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
+        LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
         WHERE 1=1"""
     params = []
     if filtro_estado: sql += " AND sc.estado=?"; params.append(filtro_estado)
@@ -601,7 +610,8 @@ def handle_solicitudes_compra():
     else:
         sql += " ORDER BY sc.fecha DESC LIMIT 200"
     c.execute(sql, params)
-    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor']
+    cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor',
+                'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram']
     rows_sol = []
     for r in c.fetchall():
         row = dict(zip(cols_sol, r))

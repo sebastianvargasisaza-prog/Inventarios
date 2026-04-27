@@ -2540,6 +2540,16 @@ function renderInfluencers(){
   // ── Card builder ─────────────────────────────────────────────────────────
   function buildCard(s){
     var b=parseBenef(s.observaciones||'');
+    // Fallback: si los datos NO vienen en observaciones, usar los del
+    // influencer linkado (nuevo enriquecimiento desde marketing_influencers
+    // via influencer_id). Así "Luisa" deja de aparecer sin datos cuando la
+    // solicitud fue creada sin el bloque BENEFICIARIO en obs.
+    if(!b.nombre && s.inf_nombre) b.nombre = s.inf_nombre;
+    if(!b.banco && s.inf_banco) {
+      b.banco = s.inf_banco + (s.inf_tipo_cuenta ? ' ' + s.inf_tipo_cuenta : '');
+    }
+    if(!b.cuenta && s.inf_cuenta) b.cuenta = s.inf_cuenta;
+    if(!b.cedNit && s.inf_cedula) b.cedNit = s.inf_cedula;
     var isPagada=s.estado==='Pagada';
     var isRech=s.estado==='Rechazada';
     var borderColor=isPagada?'#059669':isRech?'#dc2626':'#7c3aed';
