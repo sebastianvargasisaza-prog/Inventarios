@@ -180,14 +180,12 @@ function showToast(msg, type) {
 </div>
 
 <div class="tabs-bar">
-  <button class="tab-btn active" onclick="switchTab('dashboard')">&#x1F3AF; Dashboard</button>
-  <button class="tab-btn" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
-  <button class="tab-btn" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
-  <button class="tab-btn" onclick="switchTab('pagos')">&#x1F4B0; Pagos Realizados</button>
-  <button class="tab-btn" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
-  <button class="tab-btn" onclick="switchTab('agentes')">&#x1F916; Agentes IA</button>
-  <button class="tab-btn" onclick="switchTab('analytics')">&#x1F4CA; Analytics</button>
-  <button class="tab-btn" onclick="switchTab('agencia')">&#x1F3E2; Agencia</button>
+  <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F3AF; Dashboard</button>
+  <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
+  <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
+  <button class="tab-btn" data-tab="pagos" onclick="switchTab('pagos')">&#x1F4B0; Pagos Realizados</button>
+  <button class="tab-btn" data-tab="contenido" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
+  <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">&#x1F9E0; Inteligencia</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -429,9 +427,23 @@ function showToast(msg, type) {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: AGENTES IA -->
+<!-- TAB: INTELIGENCIA (envuelve Agentes IA + Histórico + Creadores) -->
+<!-- Es un contenedor lógico — los 3 sub-paneles (tab-agentes, tab-analytics,
+     tab-agencia) viven debajo y se alternan con showSub() / sub-nav.        -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-agentes" class="tab-panel">
+<style>
+.intel-subnav{display:flex;gap:4px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
+.intel-subnav button{flex:1;min-width:130px;padding:9px 16px;background:transparent;color:#94a3b8;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
+.intel-subnav button:hover{color:#e2e8f0;background:#1e293b;}
+.intel-subnav button.intel-active{background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;}
+</style>
+
+<div id="tab-agentes" class="tab-panel intel-sub">
+  <div class="intel-subnav" data-intel-nav="1">
+    <button class="intel-active" onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
+    <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
+    <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
+  </div>
   <div class="page-title">&#x1F916; Agentes IA — Marketing</div>
   <div class="page-sub">11 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
 
@@ -580,7 +592,12 @@ function showToast(msg, type) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: ANALYTICS -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-analytics" class="tab-panel">
+<div id="tab-analytics" class="tab-panel intel-sub">
+  <div class="intel-subnav" data-intel-nav="1">
+    <button onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
+    <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
+    <button class="intel-active" onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
+  </div>
   <div class="page-title">&#x1F4CA; Analytics — Programa de Influencers</div>
   <div class="page-sub">Inversión histórica, rendimiento por creador y Shopify revenue.</div>
 
@@ -905,10 +922,15 @@ function showToast(msg, type) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: AGENCIA                                                   -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-agencia" class="tab-panel">
+<div id="tab-agencia" class="tab-panel intel-sub">
+  <div class="intel-subnav" data-intel-nav="1">
+    <button onclick="showSub('agentes')">&#x1F916; Agentes IA</button>
+    <button class="intel-active" onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
+    <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
+  </div>
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
-      <div class="page-title" style="margin-bottom:2px;">&#x1F3E2; Agencia &#x2014; Inteligencia de Mercado</div>
+      <div class="page-title" style="margin-bottom:2px;">&#x1F3C6; Score de Creadores &#x2014; Inteligencia de Mercado</div>
       <div class="page-sub">Score de influencers, auditoría de portafolio, análisis competitivo y propuestas de campaña.</div>
     </div>
     <button class="btn-primary" style="font-size:12px;padding:8px 16px;" onclick="loadAgencia(true)">&#x1F504; Actualizar</button>
@@ -1005,15 +1027,43 @@ function showAlert(containerId, msg, type='success') {
 // TABS
 // ──────────────────────────────────────────────────────────────────────────────
 const _loaded = {};
+// Sub-tab activa dentro de "Inteligencia". Persiste para que cuando el user
+// vuelve a la tab Inteligencia se quede en la última vista que estaba viendo.
+let _intelSub = 'agentes';
+
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
-    const n = ['dashboard','campanas','influencers','contenido','agentes','analytics','agencia','ads'][i];
-    b.classList.toggle('active', n===name);
+  // Resolver: 'inteligencia' es virtual — abre el sub-panel actual (default agentes)
+  const realPanel = (name === 'inteligencia') ? _intelSub : name;
+
+  // Highlight botón superior — match por data-tab. Inteligencia se activa
+  // cuando estamos viendo cualquiera de sus sub-paneles.
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const t = b.dataset.tab;
+    const isActive = (t === name) ||
+                     (t === 'inteligencia' && ['agentes','analytics','agencia'].includes(realPanel));
+    b.classList.toggle('active', isActive);
   });
-  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  if(!_loaded[name]) { _loaded[name]=true; loadTab(name); }
+
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('tab-' + realPanel);
+  if (panel) panel.classList.add('active');
+
+  if (!_loaded[realPanel]) { _loaded[realPanel] = true; loadTab(realPanel); }
 }
+
+// Sub-navegación dentro de Inteligencia (Agentes / Creadores / Histórico)
+function showSub(sub) {
+  _intelSub = sub;
+  // Highlight de los botones de sub-nav (el activo se sincroniza en TODAS las
+  // copias de la sub-nav porque cada panel tiene su propia copia)
+  document.querySelectorAll('.intel-subnav button').forEach(btn => {
+    const target = (btn.getAttribute('onclick')||'').match(/showSub\('(\w+)'\)/);
+    if (!target) return;
+    btn.classList.toggle('intel-active', target[1] === sub);
+  });
+  switchTab(sub);
+}
+
 function loadTab(name) {
   if(name==='dashboard') loadDashboard();
   else if(name==='campanas') loadCampanas();
@@ -1023,7 +1073,6 @@ function loadTab(name) {
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
-  else if(name==='ads') renderAdsTab();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

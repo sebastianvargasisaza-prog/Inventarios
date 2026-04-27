@@ -120,6 +120,19 @@ def _auth():
         return None, jsonify({"error": "Sin acceso al módulo Marketing"}), 403
     return u, None, None
 
+def _admin_only():
+    """Auth + chequeo de admin (solo Sebastian / cuenta administrativa).
+
+    Para endpoints sensibles de debug/troubleshooting que NO deben quedar
+    expuestos a Jefferson u otros usuarios de Marketing en producción.
+    """
+    u = session.get("compras_user", "")
+    if not u:
+        return None, jsonify({"error": "No autenticado"}), 401
+    if u not in ADMIN_USERS:
+        return None, jsonify({"error": "Endpoint solo para administradores"}), 403
+    return u, None, None
+
 def _fmt(row):
     return dict(row) if row else None
 
@@ -1267,7 +1280,13 @@ def mkt_agentes_log():
 
 @bp.route("/api/marketing/ghl-debug")
 def ghl_debug():
-    """Diagnóstico: key en BD + 3 variantes de llamada a GHL."""
+    """Diagnóstico: key en BD + 3 variantes de llamada a GHL.
+
+    ADMIN ONLY — expone configuración sensible de la integración GHL.
+    """
+    u, err, code = _admin_only()
+    if err:
+        return err, code
     import urllib.error as _ue
     with get_db() as conn:
         key = _cfg(conn, "ghl_api_key") or ""
@@ -1644,7 +1663,8 @@ def mkt_ig_update_token():
 # ── INSTAGRAM DEBUG ───────────────────────────────────────────────────────────
 @bp.route("/api/marketing/ig-debug", methods=["GET"])
 def mkt_ig_debug():
-    u, err, code = _auth()
+    """ADMIN ONLY — expone tokens y configuración Meta/Instagram."""
+    u, err, code = _admin_only()
     if err: return err, code
     conn = _db()
     try:
@@ -2250,7 +2270,12 @@ def mkt_agente_log_detalle(log_id):
 
 @bp.route("/api/marketing/debug-influencers", methods=["GET"])
 def mkt_debug_influencers():
-    """Diagnóstico público: estado de tablas de influencers."""
+    """ADMIN ONLY — diagnóstico de tablas de influencers + solicitudes.
+    Antes era público, ahora restringido (expone IDs y nombres internos).
+    """
+    u, err, code = _admin_only()
+    if err:
+        return err, code
     conn = _db()
     cur = conn.cursor()
     # Count marketing_influencers
@@ -2767,8 +2792,11 @@ def mkt_influencer_banco(iid):
 
 @bp.route("/api/marketing/fix-pago-link", methods=["POST"])
 def mkt_fix_pago_link():
-    """One-time fix: link a pagos_influencers record to the correct influencer by OC number."""
-    u, err, code = _auth()
+    """ADMIN ONLY — one-time fix: link a pagos_influencers record to the
+    correct influencer by OC number. Permite editar estado y datos directos
+    sobre la tabla, no debe estar accesible a Marketing en general.
+    """
+    u, err, code = _admin_only()
     if err:
         return err, code
     d = request.get_json() or {}

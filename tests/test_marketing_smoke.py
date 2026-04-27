@@ -38,6 +38,38 @@ def test_marketing_page(app, db_clean):
     assert r.status_code in (200, 302), f"unexpected status: {r.status_code}"
 
 
+def test_debug_endpoints_admin_only(app, db_clean):
+    """Endpoints debug (ig-debug, ghl-debug, debug-influencers, fix-pago-link)
+    deben rechazar a usuarios marketing comunes — solo admin (sebastian).
+    Antes estaban abiertos a Jefferson y exponían tokens/IDs."""
+    c_jeff = _login(app, "jefferson")
+    c_seb  = _login(app, "sebastian")
+
+    debug_endpoints = [
+        ("GET",  "/api/marketing/ig-debug"),
+        ("GET",  "/api/marketing/ghl-debug"),
+        ("GET",  "/api/marketing/debug-influencers"),
+        ("POST", "/api/marketing/fix-pago-link"),
+    ]
+    for method, url in debug_endpoints:
+        if method == "GET":
+            r = c_jeff.get(url)
+        else:
+            r = c_jeff.post(url, headers=csrf_headers(), json={})
+        assert r.status_code == 403, (
+            f"{url} debió rechazar a jefferson — got {r.status_code}: "
+            f"{r.get_data(as_text=True)[:200]}"
+        )
+
+    # Sebastian (admin) sí puede entrar — al menos no recibe 403
+    for method, url in debug_endpoints:
+        if method == "GET":
+            r = c_seb.get(url)
+        else:
+            r = c_seb.post(url, headers=csrf_headers(), json={})
+        assert r.status_code != 403, f"sebastian no debería ser rechazado en {url}"
+
+
 def test_agente_estrategia_runs(app, db_clean):
     """El master agent estrategia no debe 500 con DB vacía.
 
