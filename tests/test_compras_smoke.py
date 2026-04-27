@@ -193,3 +193,58 @@ def test_compras_no_orphan_fetch_urls():
         f"URLs frontend que no apuntan a ningún endpoint registrado: "
         f"{orphans}. Verificá que coincidan con los @bp.route(...)."
     )
+
+
+def test_solicitudes_pdf_renders(app, db_clean):
+    """El PDF consolidado de solicitudes debe rendear sin crashear.
+
+    Es el documento ejecutivo que va a Alejandro. Si esta ruta falla,
+    Compras pierde el flujo de aprobación. Inserta una solicitud mínima
+    + 1 item y verifica que llega un PDF válido (>1KB con cabecera %PDF).
+    """
+    import sqlite3
+    import os
+
+    c = _login(app)
+
+    # Insertar 1 solicitud Pendiente con 1 item — datos mínimos válidos
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO solicitudes_compra
+           (numero, fecha, estado, solicitante, urgencia, observaciones,
+            empresa, categoria, area, fecha_requerida)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        ("SOL-TEST-PDF", "2026-04-27", "Pendiente", "test_user", "Alta",
+         "Solicitud de prueba para smoke test PDF",
+         "Espagiria", "Materia Prima", "Produccion", "2026-05-01"),
+    )
+    cur.execute(
+        """INSERT INTO solicitudes_compra_items
+           (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+            justificacion, valor_estimado)
+           VALUES (?,?,?,?,?,?,?)""",
+        ("SOL-TEST-PDF", "MPTESTSMK01", "MATERIAL TEST SMOKE",
+         1500, "g", "Deficit para produccion de: TEST", 50000),
+    )
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/compras/solicitudes/pdf?estados=Pendiente,Aprobada")
+    assert r.status_code == 200, (
+        f"PDF endpoint rompió: {r.status_code} — body: {r.data[:300]!r}"
+    )
+    assert r.mimetype == "application/pdf", (
+        f"Mimetype incorrecto: {r.mimetype}"
+    )
+    assert r.data.startswith(b"%PDF"), (
+        f"Respuesta no es PDF: empieza con {r.data[:8]!r}"
+    )
+    # Un PDF con header + caja resumen + 1 card + firmas debe pesar ≥4KB
+    assert len(r.data) > 4000, (
+        f"PDF sospechosamente pequeño: {len(r.data)} bytes"
+    )
+    cd = r.headers.get("Content-Disposition", "")
+    assert "attachment" in cd and "solicitudes_compra_" in cd, (
+        f"Content-Disposition mal formado: {cd}"
+    )

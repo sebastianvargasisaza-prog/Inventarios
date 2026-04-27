@@ -2517,16 +2517,28 @@ def solicitudes_pdf_resumen():
             'estados_solicitados': estados,
         }), 404
 
-    # ── Generar PDF con fpdf2 ──────────────────────────────────────────────
+    # ── Generar PDF con fpdf2 — diseño ejecutivo nivel OC ──────────────────
     from fpdf import FPDF
     from datetime import datetime as _dt
     from pathlib import Path
 
+    # Paleta HHA — coordinada con OC (compras_html.py) y branding
     HHA_TEAL = (31, 95, 91)
     HHA_TEAL_DARK = (16, 70, 67)
     COLOR_TEXT = (40, 40, 40)
     COLOR_TEXT_SOFT = (110, 110, 110)
     COLOR_LINE = (200, 195, 188)
+    CARD_BG = (250, 248, 244)
+    CARD_BORDER = (215, 210, 200)
+    TABLE_HEADER_BG = (45, 45, 45)
+    TABLE_ALT_ROW = (248, 248, 246)
+    BADGE_PEND_BG = (255, 213, 79)       # ámbar Pendiente
+    BADGE_PEND_FG = (90, 70, 0)
+    BADGE_APR_BG = (89, 165, 121)         # verde Aprobada
+    BADGE_APR_FG = (255, 255, 255)
+    BADGE_URG_ALTA = (220, 70, 70)
+    BADGE_URG_NORM = (140, 140, 140)
+    BADGE_URG_BAJA = (180, 180, 180)
 
     def _fmt_cant(g, u='g'):
         """Preserva decimales para péptidos (<10g) — usado en items y totales."""
@@ -2556,168 +2568,333 @@ def solicitudes_pdf_resumen():
             t = t.replace(k, v)
         return t.encode('latin-1', errors='replace').decode('latin-1')
 
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=20)
-
-    # Header con logo HHA si existe
-    try:
-        repo_root = Path(__file__).resolve().parents[2]
-        for cand in [repo_root / 'api' / 'static' / 'logo_hha.png',
-                     repo_root / 'logo_hha.png']:
-            if cand.exists():
-                pdf.image(str(cand), x=12, y=10, w=24, h=24)
-                break
-    except Exception:
-        pass
-
-    pdf.set_xy(40, 12)
-    pdf.set_font('Helvetica', 'B', 14)
-    pdf.set_text_color(*HHA_TEAL)
-    pdf.cell(0, 7, _safe('HHA GROUP - SOLICITUDES DE COMPRA'), ln=True)
-    pdf.set_x(40)
-    pdf.set_font('Helvetica', '', 9)
-    pdf.set_text_color(*COLOR_TEXT_SOFT)
-    pdf.cell(0, 4, _safe(f'Reporte ejecutivo · Estados: {", ".join(estados)} · Generado: {_dt.now().strftime("%Y-%m-%d %H:%M")}'), ln=True)
-    pdf.set_x(40)
-    pdf.cell(0, 4, _safe(f'Total solicitudes: {len(sols)}'), ln=True)
-    pdf.ln(10)
-
-    # Línea separadora
-    pdf.set_draw_color(*HHA_TEAL)
-    pdf.set_line_width(0.5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(4)
-
-    # Sumarios
-    total_general_g = 0.0
-    total_general_valor = 0.0
     n_pendientes = sum(1 for s in sols if s[2] == 'Pendiente')
     n_aprobadas = sum(1 for s in sols if s[2] == 'Aprobada')
+    generado_str = _dt.now().strftime("%d/%m/%Y %H:%M")
+    estados_str = ', '.join(estados)
 
-    # Cuerpo: una sección por solicitud
+    # Logo path resuelto una sola vez
+    repo_root = Path(__file__).resolve().parents[2]
+    logo_path = None
+    for cand in [repo_root / 'api' / 'static' / 'logo_hha.png',
+                 repo_root / 'logo_hha.png']:
+        if cand.exists():
+            logo_path = str(cand)
+            break
+
+    class SolicitudesPDF(FPDF):
+        """Header repetido en cada página + footer con paginación."""
+
+        def header(self_pdf):
+            if self_pdf.page_no() == 1:
+                # Header completo en la primera página
+                if logo_path:
+                    try:
+                        self_pdf.image(logo_path, x=10, y=10, w=22, h=22)
+                    except Exception:
+                        pass
+                self_pdf.set_xy(36, 10)
+                self_pdf.set_font('Helvetica', 'B', 18)
+                self_pdf.set_text_color(*HHA_TEAL)
+                self_pdf.cell(110, 8, _safe('SOLICITUDES DE COMPRA'), ln=True)
+                self_pdf.set_x(36)
+                self_pdf.set_font('Helvetica', '', 9)
+                self_pdf.set_text_color(*COLOR_TEXT_SOFT)
+                self_pdf.cell(110, 4, _safe('HHA Group · Reporte ejecutivo'), ln=True)
+                self_pdf.set_x(36)
+                self_pdf.set_font('Helvetica', '', 8)
+                self_pdf.cell(110, 4, _safe(f'Generado: {generado_str}'), ln=True)
+                self_pdf.set_x(36)
+                self_pdf.cell(110, 4, _safe(f'Estados: {estados_str}'), ln=True)
+
+                # Caja resumen (top right)
+                bx, by, bw, bh = 142, 10, 58, 24
+                self_pdf.set_fill_color(*CARD_BG)
+                self_pdf.set_draw_color(*HHA_TEAL)
+                self_pdf.set_line_width(0.5)
+                self_pdf.rect(bx, by, bw, bh, style='DF')
+                self_pdf.set_xy(bx + 3, by + 2)
+                self_pdf.set_font('Helvetica', 'B', 7)
+                self_pdf.set_text_color(*HHA_TEAL_DARK)
+                self_pdf.cell(bw - 6, 3, _safe('TOTAL SOLICITUDES'))
+                self_pdf.set_xy(bx + 3, by + 6)
+                self_pdf.set_font('Helvetica', 'B', 18)
+                self_pdf.set_text_color(*COLOR_TEXT)
+                self_pdf.cell(bw - 6, 8, str(len(sols)))
+                self_pdf.set_xy(bx + 3, by + 16)
+                self_pdf.set_font('Helvetica', '', 7.5)
+                self_pdf.set_text_color(*COLOR_TEXT_SOFT)
+                self_pdf.cell((bw - 6) / 2, 4, _safe(f'Pendientes: {n_pendientes}'))
+                self_pdf.cell((bw - 6) / 2, 4, _safe(f'Aprobadas: {n_aprobadas}'))
+
+                # Línea separadora horizontal teal
+                self_pdf.set_draw_color(*HHA_TEAL)
+                self_pdf.set_line_width(0.6)
+                self_pdf.line(10, 36, 200, 36)
+                self_pdf.set_y(40)
+            else:
+                # Mini-header en páginas siguientes
+                if logo_path:
+                    try:
+                        self_pdf.image(logo_path, x=10, y=8, w=10, h=10)
+                    except Exception:
+                        pass
+                self_pdf.set_xy(22, 9)
+                self_pdf.set_font('Helvetica', 'B', 10)
+                self_pdf.set_text_color(*HHA_TEAL)
+                self_pdf.cell(0, 4, _safe('SOLICITUDES DE COMPRA'), ln=True)
+                self_pdf.set_x(22)
+                self_pdf.set_font('Helvetica', '', 7)
+                self_pdf.set_text_color(*COLOR_TEXT_SOFT)
+                self_pdf.cell(0, 3, _safe(f'Continuacion · {generado_str}'), ln=True)
+                self_pdf.set_draw_color(*CARD_BORDER)
+                self_pdf.set_line_width(0.3)
+                self_pdf.line(10, 21, 200, 21)
+                self_pdf.set_y(25)
+
+        def footer(self_pdf):
+            self_pdf.set_y(-13)
+            self_pdf.set_font('Helvetica', 'I', 7)
+            self_pdf.set_text_color(*COLOR_TEXT_SOFT)
+            self_pdf.cell(0, 4, _safe(f'HHA Group · Pagina {self_pdf.page_no()} de {{nb}}'),
+                          align='C')
+
+    def _draw_badge(p, x, y, w, h, text, fg, bg):
+        p.set_fill_color(*bg)
+        p.set_draw_color(*bg)
+        p.rect(x, y, w, h, style='DF')
+        p.set_xy(x, y)
+        p.set_font('Helvetica', 'B', 7)
+        p.set_text_color(*fg)
+        p.cell(w, h, _safe(text), align='C')
+
+    def _badge_estado(estado):
+        if (estado or '').strip() == 'Aprobada':
+            return (BADGE_APR_FG, BADGE_APR_BG)
+        return (BADGE_PEND_FG, BADGE_PEND_BG)
+
+    def _badge_urgencia(urg):
+        u = (urg or '').strip()
+        if u == 'Alta':
+            return ((255, 255, 255), BADGE_URG_ALTA)
+        if u == 'Normal':
+            return ((255, 255, 255), BADGE_URG_NORM)
+        return ((255, 255, 255), BADGE_URG_BAJA)
+
+    pdf = SolicitudesPDF(orientation='P', unit='mm', format='A4')
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+
+    total_general_g = 0.0
+    total_general_valor = 0.0
+
+    # ─── Una "card" por solicitud ───────────────────────────────────
     for s in sols:
         (numero, fecha, estado, solicitante, urgencia, obs, empresa,
          categoria, area, fecha_req, numero_oc, valor_oc, proveedor) = s
+        items = items_por_sol.get(numero, [])
 
-        if pdf.get_y() > 240:
+        # Page break preventivo: necesitamos al menos espacio para el header
+        # de la card + 1 fila de tabla. Si no, salta.
+        if pdf.get_y() > 250:
             pdf.add_page()
 
-        # Header de solicitud
-        pdf.set_font('Helvetica', 'B', 11)
-        pdf.set_text_color(*HHA_TEAL_DARK)
-        pdf.cell(0, 6, _safe(f'{numero}  ·  {estado}  ·  Urgencia: {urgencia}'), ln=True)
-        pdf.set_font('Helvetica', '', 8)
-        pdf.set_text_color(*COLOR_TEXT_SOFT)
-        meta_line = f'Fecha: {(fecha or "")[:10]}  ·  Solicitante: {solicitante or ""}  ·  Area: {area or ""}  ·  Empresa: {empresa or ""}'
-        pdf.cell(0, 4, _safe(meta_line), ln=True)
-        if proveedor or fecha_req:
+        card_x = 10
+        card_w = 190
+        card_top = pdf.get_y()
+
+        # Barra teal con número de solicitud + badges (estado, urgencia)
+        bar_h = 9
+        pdf.set_fill_color(*HHA_TEAL)
+        pdf.rect(card_x, card_top, card_w, bar_h, style='F')
+        pdf.set_xy(card_x + 3, card_top + 1.5)
+        pdf.set_font('Helvetica', 'B', 12)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(70, 6, _safe(numero), align='L')
+
+        # Badges en el extremo derecho
+        bw = 24
+        bh = 5
+        gap = 2
+        bx_right = card_x + card_w - 3
+        # Urgencia (más a la derecha)
+        fg_u, bg_u = _badge_urgencia(urgencia)
+        _draw_badge(pdf, bx_right - bw, card_top + 2, bw, bh,
+                    f'URG: {(urgencia or "-").upper()[:8]}', fg_u, bg_u)
+        # Estado
+        fg_e, bg_e = _badge_estado(estado)
+        _draw_badge(pdf, bx_right - 2 * bw - gap, card_top + 2, bw, bh,
+                    (estado or '-').upper()[:10], fg_e, bg_e)
+
+        # Cuerpo de la card
+        pdf.set_y(card_top + bar_h)
+        pdf.set_x(card_x + 3)
+        pdf.set_font('Helvetica', '', 8.5)
+        pdf.set_text_color(*COLOR_TEXT)
+        meta1 = (f"Fecha: {(fecha or '')[:10]}    "
+                 f"Solicitante: {solicitante or '-'}    "
+                 f"Area: {area or '-'}    "
+                 f"Empresa: {empresa or '-'}")
+        pdf.cell(card_w - 6, 5, _safe(meta1), ln=True)
+
+        if proveedor or fecha_req or numero_oc:
             extra = []
             if proveedor: extra.append(f'Proveedor: {proveedor}')
-            if fecha_req: extra.append(f'Fecha requerida: {fecha_req}')
+            if fecha_req: extra.append(f'Fecha req.: {fecha_req}')
             if numero_oc: extra.append(f'OC: {numero_oc}')
-            pdf.cell(0, 4, _safe('  ·  '.join(extra)), ln=True)
+            pdf.set_x(card_x + 3)
+            pdf.set_font('Helvetica', '', 8)
+            pdf.set_text_color(*COLOR_TEXT_SOFT)
+            pdf.cell(card_w - 6, 4, _safe('    '.join(extra)), ln=True)
+
         if obs:
-            pdf.set_font('Helvetica', 'I', 8)
-            pdf.set_text_color(*COLOR_TEXT)
-            pdf.multi_cell(0, 4, _safe(f'Obs: {obs[:300]}'))
-        pdf.ln(1)
+            pdf.set_x(card_x + 3)
+            pdf.set_font('Helvetica', 'I', 7.5)
+            pdf.set_text_color(*COLOR_TEXT_SOFT)
+            pdf.multi_cell(card_w - 6, 3.6, _safe(f'Obs: {obs[:280]}'))
 
         # Tabla de items
-        items = items_por_sol.get(numero, [])
         if items:
-            cols = [(15, 'CODIGO', 'L'), (78, 'MATERIAL', 'L'),
-                    (22, 'CANTIDAD', 'R'), (10, 'UM', 'C'),
-                    (45, 'JUSTIFICACION', 'L'), (20, 'VALOR EST', 'R')]
-            pdf.set_fill_color(*HHA_TEAL)
+            pdf.ln(0.5)
+            cols = [(24, 'CODIGO', 'L'), (72, 'MATERIAL', 'L'),
+                    (24, 'CANTIDAD', 'R'), (10, 'UM', 'C'),
+                    (40, 'JUSTIFICACION', 'L'), (20, 'VALOR EST', 'R')]
+            # Header row (dark gray)
+            pdf.set_x(card_x)
+            pdf.set_fill_color(*TABLE_HEADER_BG)
             pdf.set_text_color(255, 255, 255)
-            pdf.set_font('Helvetica', 'B', 7)
+            pdf.set_font('Helvetica', 'B', 7.5)
             for w, name, _al in cols:
-                pdf.cell(w, 5, _safe(name), border=0, fill=True, align='C')
+                pdf.cell(w, 5.5, _safe(name), border=0, fill=True, align='C')
             pdf.ln()
 
-            pdf.set_text_color(*COLOR_TEXT)
-            pdf.set_font('Helvetica', '', 7.5)
+            # Data rows con alternating fill
             sol_total_g = 0.0
             sol_total_valor = 0.0
-            for it in items:
+            pdf.set_text_color(*COLOR_TEXT)
+            pdf.set_font('Helvetica', '', 8)
+            row_h = 4.5
+            for idx, it in enumerate(items):
                 cod_mp, nom_mp, cant_g, unidad, just, val_est = it
                 cant = float(cant_g or 0)
                 val = float(val_est or 0)
                 sol_total_g += cant
                 sol_total_valor += val
                 cant_str = _fmt_cant(cant, unidad)
-                row_h = 4
-                pdf.cell(15, row_h, _safe((cod_mp or '')[:12]), border='B')
-                pdf.cell(78, row_h, _safe((nom_mp or '')[:50]), border='B')
-                pdf.cell(22, row_h, _safe(cant_str), border='B', align='R')
-                pdf.cell(10, row_h, _safe(unidad or 'g'), border='B', align='C')
-                pdf.cell(45, row_h, _safe((just or '')[:35]), border='B')
-                pdf.cell(20, row_h, _safe(f'${val:,.0f}' if val > 0 else '—'), border='B', align='R')
+                fill_alt = (idx % 2 == 1)
+                if fill_alt:
+                    pdf.set_fill_color(*TABLE_ALT_ROW)
+                pdf.set_x(card_x)
+                pdf.cell(24, row_h, _safe((cod_mp or '')[:14]),
+                         border=0, fill=fill_alt)
+                pdf.cell(72, row_h, _safe((nom_mp or '')[:46]),
+                         border=0, fill=fill_alt)
+                pdf.cell(24, row_h, _safe(cant_str),
+                         border=0, fill=fill_alt, align='R')
+                pdf.cell(10, row_h, _safe(unidad or 'g'),
+                         border=0, fill=fill_alt, align='C')
+                pdf.cell(40, row_h, _safe((just or '')[:32]),
+                         border=0, fill=fill_alt)
+                pdf.cell(20, row_h, _safe(f'${val:,.0f}' if val > 0 else '-'),
+                         border=0, fill=fill_alt, align='R')
                 pdf.ln()
 
-            # Total por solicitud
+            # Total row (teal-dark)
+            pdf.set_x(card_x)
+            pdf.set_fill_color(*HHA_TEAL_DARK)
+            pdf.set_text_color(255, 255, 255)
             pdf.set_font('Helvetica', 'B', 8)
-            pdf.set_fill_color(245, 245, 240)
             cant_total_str = _fmt_cant(sol_total_g, 'g')
-            pdf.cell(15 + 78, 5, _safe(f'Total: {len(items)} items'), fill=True, border=0, align='R')
-            pdf.cell(22, 5, _safe(cant_total_str), fill=True, border=0, align='R')
-            pdf.cell(10 + 45, 5, '', fill=True, border=0)
-            pdf.cell(20, 5, _safe(f'${sol_total_valor:,.0f}' if sol_total_valor > 0 else '—'),
+            pdf.cell(24 + 72, 5.5, _safe(f'TOTAL  ·  {len(items)} items'),
                      fill=True, border=0, align='R')
-            pdf.ln(8)
+            pdf.cell(24, 5.5, _safe(cant_total_str),
+                     fill=True, border=0, align='R')
+            pdf.cell(10 + 40, 5.5, '', fill=True, border=0)
+            pdf.cell(20, 5.5,
+                     _safe(f'${sol_total_valor:,.0f}' if sol_total_valor > 0 else '-'),
+                     fill=True, border=0, align='R')
+            pdf.ln(0)
+
             total_general_g += sol_total_g
             total_general_valor += sol_total_valor
         else:
+            pdf.set_x(card_x + 3)
             pdf.set_font('Helvetica', 'I', 8)
             pdf.set_text_color(*COLOR_TEXT_SOFT)
-            pdf.cell(0, 4, '(sin items detallados)', ln=True)
-            pdf.ln(3)
+            pdf.cell(card_w - 6, 5, _safe('(sin items detallados)'), ln=True)
 
-    # Resumen final
-    if pdf.get_y() > 240:
+        # Borde fino alrededor de toda la card (post-render para altura exacta)
+        card_h = pdf.get_y() - card_top
+        pdf.set_draw_color(*CARD_BORDER)
+        pdf.set_line_width(0.3)
+        pdf.rect(card_x, card_top, card_w, card_h, style='D')
+
+        pdf.ln(5)
+
+    # ─── Resumen final ────────────────────────────────────────────────
+    if pdf.get_y() > 235:
         pdf.add_page()
-    pdf.ln(4)
+
+    pdf.ln(2)
+    res_y = pdf.get_y()
+    res_h = 30 if total_general_valor > 0 else 24
+    pdf.set_fill_color(*CARD_BG)
     pdf.set_draw_color(*HHA_TEAL)
-    pdf.set_line_width(0.5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_line_width(0.6)
+    pdf.rect(10, res_y, 190, res_h, style='DF')
+
+    pdf.set_xy(13, res_y + 2)
+    pdf.set_font('Helvetica', 'B', 11)
     pdf.set_text_color(*HHA_TEAL_DARK)
-    pdf.cell(0, 6, _safe('RESUMEN GENERAL'), ln=True)
+    pdf.cell(0, 5, _safe('RESUMEN GENERAL'), ln=True)
+
+    pdf.set_xy(13, res_y + 8)
     pdf.set_font('Helvetica', '', 9)
     pdf.set_text_color(*COLOR_TEXT)
-    pdf.cell(0, 5, _safe(f'  · {len(sols)} solicitudes ({n_pendientes} pendientes, {n_aprobadas} aprobadas)'), ln=True)
-    pdf.cell(0, 5, _safe(f'  · Cantidad total a comprar: {_fmt_cant(total_general_g)}'), ln=True)
-    if total_general_valor > 0:
-        pdf.cell(0, 5, _safe(f'  · Valor estimado total: ${total_general_valor:,.0f}'), ln=True)
+    pdf.cell(60, 5, _safe(f'Total solicitudes:  {len(sols)}'))
+    pdf.cell(60, 5, _safe(f'Pendientes:  {n_pendientes}'))
+    pdf.cell(60, 5, _safe(f'Aprobadas:  {n_aprobadas}'))
+    pdf.ln(5)
 
-    # Bloque de aprobación para Gerencia
-    pdf.ln(12)
-    pdf.set_draw_color(*COLOR_LINE)
-    pdf.set_line_width(0.2)
+    pdf.set_x(13)
+    pdf.cell(0, 5, _safe(f'Cantidad total a comprar:  {_fmt_cant(total_general_g)}'),
+             ln=True)
+    if total_general_valor > 0:
+        pdf.set_x(13)
+        pdf.set_font('Helvetica', 'B', 9)
+        pdf.cell(0, 5, _safe(f'Valor estimado total:  ${total_general_valor:,.0f} COP'),
+                 ln=True)
+
+    pdf.set_y(res_y + res_h)
+
+    # ─── Firmas ───────────────────────────────────────────────────────
+    pdf.ln(14)
     y_firma = pdf.get_y()
+    pdf.set_draw_color(*COLOR_LINE)
+    pdf.set_line_width(0.3)
     pdf.line(20, y_firma, 90, y_firma)
     pdf.line(120, y_firma, 190, y_firma)
+
     pdf.set_xy(20, y_firma + 1)
     pdf.set_font('Helvetica', 'B', 8)
     pdf.set_text_color(*COLOR_TEXT)
-    pdf.cell(70, 4, 'REVISADO POR', align='C', ln=True)
+    pdf.cell(70, 4, _safe('REVISADO POR'), align='C', ln=True)
     pdf.set_x(20)
     pdf.set_font('Helvetica', '', 7)
     pdf.set_text_color(*COLOR_TEXT_SOFT)
-    pdf.cell(70, 3.5, _safe('(Compras / Logística)'), align='C')
+    pdf.cell(70, 3.5, _safe('(Compras / Logistica)'), align='C')
 
     pdf.set_xy(120, y_firma + 1)
     pdf.set_font('Helvetica', 'B', 8)
     pdf.set_text_color(*COLOR_TEXT)
-    pdf.cell(70, 4, 'APROBADO POR GERENCIA', align='C', ln=True)
+    pdf.cell(70, 4, _safe('APROBADO POR GERENCIA'), align='C', ln=True)
     pdf.set_x(120)
     pdf.set_font('Helvetica', '', 7)
     pdf.set_text_color(*COLOR_TEXT_SOFT)
     pdf.cell(70, 3.5, _safe('(Alejandro / Sebastian)'), align='C')
 
-    # Output
+    # Output (mismo contrato que antes: PDF descargable con timestamp)
     pdf_bytes = bytes(pdf.output())
     fname = f'solicitudes_compra_{_dt.now().strftime("%Y%m%d_%H%M")}.pdf'
     return Response(
