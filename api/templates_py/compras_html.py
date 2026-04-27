@@ -306,6 +306,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     </select>
     <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
     <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="Descarga PDF ejecutivo con todas las solicitudes pendientes/aprobadas para revisión de Gerencia">&#x1F4C4; Descargar PDF</button>
+    <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Borra solicitudes Pendientes auto-generadas y crea nuevas con los déficits ACTUALES de Programación. No toca solicitudes Aprobadas/Pagadas.">&#x1F504; Regenerar auto</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -2396,6 +2397,28 @@ function descargarSolicitudesPDF(){
   var estados = (document.getElementById('s-solic')||{value:''}).value;
   var qs = estados ? '?estados='+encodeURIComponent(estados) : '?estados=Pendiente,Aprobada';
   window.open('/api/compras/solicitudes/pdf'+qs, '_blank');
+}
+
+async function regenerarSolicitudesAuto(){
+  if(!confirm('REGENERAR solicitudes auto-generadas?\\n\\n' +
+              'Esto va a:\\n' +
+              ' • Borrar todas las solicitudes Pendiente que digan "Auto-generada Centro Programación"\\n' +
+              ' • Borrar sus OCs Borrador asociadas\\n' +
+              ' • Crear nuevas con los déficits ACTUALES de Programación\\n\\n' +
+              'NO toca solicitudes Aprobadas ni Pagadas.\\n\\n' +
+              '¿Confirmás?')) return;
+  try{
+    var r = await fetch('/api/programacion/regenerar-oc', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){
+      alert('Error: ' + (d.error || 'desconocido') + (d.detalle ? '\\n' + d.detalle : ''));
+      return;
+    }
+    alert(d.mensaje || 'Regeneración completa');
+    await loadSolicitudes();
+  }catch(e){
+    alert('Error de red: ' + e.message);
+  }
 }
 
 async function loadSolicitudes(){

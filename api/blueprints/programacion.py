@@ -1754,6 +1754,240 @@ def prog_productos():
     })
 
 
+@bp.route('/api/programacion/regenerar-oc', methods=['POST'])
+def prog_regenerar_oc():
+    """Borra solicitudes auto-generadas Pendientes + sus OCs Borrador y
+    vuelve a llamar al generador con los datos ACTUALES de Programación.
+
+    Útil cuando el cálculo cambió (más producciones programadas, nuevos
+    déficits) y las solicitudes viejas tienen cantidades obsoletas.
+
+    NO toca solicitudes en estado Aprobada/Pagada (esas se respetan como
+    histórico). Solo borra Pendientes auto-generadas (observaciones LIKE
+    '%Centro Programación%' o '%Centro Programacion%' o '%Auto-generada%').
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+
+    conn = get_db()
+    c = conn.cursor()
+    deleted = {'solicitudes': 0, 'ordenes_compra': 0, 'items': 0}
+
+    try:
+        # 1. Listar solicitudes auto-generadas Pendientes y sus OCs
+        rows = c.execute("""
+            SELECT numero, numero_oc FROM solicitudes_compra
+            WHERE estado = 'Pendiente'
+              AND categoria IN ('Materia Prima', 'MP')
+              AND (observaciones LIKE '%Centro Programación%'
+                   OR observaciones LIKE '%Centro Programacion%'
+                   OR observaciones LIKE '%Auto-generada%')
+        """).fetchall()
+        nums_sol = [r[0] for r in rows]
+        nums_oc = [r[1] for r in rows if r[1]]
+
+        if nums_sol:
+            ph_sol = ','.join('?' * len(nums_sol))
+            try:
+                d = c.execute(f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph_sol})", nums_sol)
+                deleted['items'] = d.rowcount or 0
+            except sqlite3.OperationalError:
+                pass
+            d = c.execute(f"DELETE FROM solicitudes_compra WHERE numero IN ({ph_sol})", nums_sol)
+            deleted['solicitudes'] = d.rowcount or 0
+
+        if nums_oc:
+            ph_oc = ','.join('?' * len(nums_oc))
+            # Solo borrar OCs en estado Borrador (las Aprobadas/Pagadas son histórico)
+            ocs_borrar = [r[0] for r in c.execute(
+                f"SELECT numero_oc FROM ordenes_compra WHERE numero_oc IN ({ph_oc}) AND estado='Borrador'",
+                nums_oc
+            ).fetchall()]
+            if ocs_borrar:
+                ph_b = ','.join('?' * len(ocs_borrar))
+                try:
+                    c.execute(f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({ph_b})", ocs_borrar)
+                except sqlite3.OperationalError:
+                    pass
+                d = c.execute(f"DELETE FROM ordenes_compra WHERE numero_oc IN ({ph_b})", ocs_borrar)
+                deleted['ordenes_compra'] = d.rowcount or 0
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            'error': 'Falló el borrado de solicitudes viejas',
+            'detalle': str(e),
+        }), 500
+
+    # 2. Llamar internamente a la lógica de generar-oc reutilizando código
+    # Hacemos lo mismo que prog_generar_oc para no duplicar y mantener
+    # 1 sola fuente de verdad.
+    vel_data = _shopify_velocity(conn, days=60)
+    mp_stock = _get_mp_stock(conn)
+    formulas = _get_formulas(conn)
+    cal = _fetch_calendar_events(days_ahead=90)
+    if not formulas:
+        return jsonify({'ok': True, 'mensaje': 'Sin fórmulas — solo se borraron viejas',
+                        'borradas': deleted, 'creadas': []})
+
+    china_mps_set = _get_china_mps(conn)
+    projection, _alerts = _project_stock(
+        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
+        china_mps=china_mps_set
+    )
+
+    mp_deficit = {}
+    for prod in projection:
+        if prod['mp_lista']:
+            continue
+        for mp in prod.get('mp_check', []):
+            if mp.get('deficit_g', 0) > 0:
+                cod = mp['material_id']
+                if cod not in mp_deficit:
+                    mp_deficit[cod] = {'nombre': mp['nombre'], 'deficit_g': 0, 'productos': []}
+                mp_deficit[cod]['deficit_g'] += mp['deficit_g']
+                if prod['producto'] not in mp_deficit[cod]['productos']:
+                    mp_deficit[cod]['productos'].append(prod['producto'])
+
+    if not mp_deficit:
+        return jsonify({'ok': True, 'mensaje': 'Sin déficits actuales — solo se borraron viejas',
+                        'borradas': deleted, 'creadas': []})
+
+    prov_map = {}
+    try:
+        for r in conn.execute("SELECT codigo_mp, COALESCE(TRIM(proveedor),'') FROM maestro_mps").fetchall():
+            if r[1]:
+                prov_map[r[0]] = r[1]
+    except Exception:
+        pass
+
+    SIN_PROV = 'Sin asignar'
+    grupos = {}
+    for cod, info in mp_deficit.items():
+        prov = prov_map.get(cod) or SIN_PROV
+        grupos.setdefault(prov, []).append({
+            'codigo': cod,
+            'nombre': info['nombre'],
+            'deficit_g': info['deficit_g'],
+            'productos': info['productos'],
+        })
+
+    from datetime import datetime as _dt
+    year = _dt.now().strftime('%Y')
+    last_n = conn.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
+        (f"SOL-{year}-%",)
+    ).fetchone()[0] or 0
+    n_sol = last_n
+    user = session.get('compras_user', 'Sistema')
+
+    creadas = []
+    proveedores_ordenados = sorted(grupos.keys(), key=lambda p: (p == SIN_PROV, p.lower()))
+
+    try:
+        for prov in proveedores_ordenados:
+            items = grupos[prov]
+            if not items:
+                continue
+            n_sol += 1
+            sol_numero = f"SOL-{year}-{n_sol:04d}"
+            n_oc = (conn.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?",
+                (f"OC-{year}-%",)
+            ).fetchone()[0] or 0) + 1
+            num_oc = f"OC-{year}-{n_oc:04d}"
+
+            mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
+            mps_resumen = ', '.join([
+                (it['nombre'][:25] + ' (' +
+                 (f"{it['deficit_g']/1000:.1f}kg" if it['deficit_g'] >= 1000 else f"{int(it['deficit_g'])}g") +
+                 ')')
+                for it in mps_resumen_items
+            ])
+            if len(items) > 5:
+                mps_resumen += f' +{len(items) - 5} más'
+
+            es_sin_prov = (prov == SIN_PROV)
+            obs_prefix = (
+                "REQUIERE ASIGNAR PROVEEDOR — " if es_sin_prov else
+                "Auto-generada Centro Programación — "
+            )
+            obs = f"{obs_prefix}Proveedor: {prov} · {len(items)} MPs · {mps_resumen}"
+            if es_sin_prov:
+                obs += " · ACCIÓN: Catalina debe asignar proveedor en /admin → Catálogo MPs y disparar Generar OC nuevamente."
+
+            conn.execute("""INSERT INTO solicitudes_compra
+                (numero, fecha, estado, solicitante, urgencia, observaciones,
+                 area, empresa, categoria, tipo, numero_oc)
+                VALUES (?, datetime('now'), 'Pendiente', ?, 'Alta', ?,
+                        'Produccion', 'Espagiria', 'Materia Prima', 'Compra', ?)""",
+                (sol_numero, user, obs, num_oc))
+
+            conn.execute("""INSERT INTO ordenes_compra
+                (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por, categoria)
+                VALUES (?, datetime('now'), 'Borrador', ?, 0, ?, ?, 'MP')""",
+                (num_oc, prov,
+                 f"OC sugerida desde Centro Programación · {len(items)} MPs",
+                 user))
+
+            items_created_this = []
+            for it in items:
+                just = f"Déficit para producción de: {', '.join(it['productos'][:3])}"
+                if len(it['productos']) > 3:
+                    just += f' +{len(it["productos"])-3} más'
+                conn.execute("""INSERT INTO solicitudes_compra_items
+                    (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion)
+                    VALUES (?,?,?,?,?,?)""",
+                    (sol_numero, it['codigo'], it['nombre'],
+                     it['deficit_g'], 'g', just))
+                try:
+                    conn.execute("""INSERT INTO ordenes_compra_items
+                        (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
+                        VALUES (?,?,?,?,0,0)""",
+                        (num_oc, it['codigo'], it['nombre'], it['deficit_g']))
+                except sqlite3.OperationalError:
+                    pass
+                items_created_this.append({
+                    'codigo': it['codigo'], 'nombre': it['nombre'],
+                    'deficit_g': round(it['deficit_g'], 1),
+                })
+
+            creadas.append({
+                'solicitud': sol_numero, 'orden_compra': num_oc,
+                'proveedor': prov, 'n_items': len(items_created_this),
+                'requiere_asignacion': es_sin_prov,
+            })
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({
+            'error': 'Borrado OK pero falló la regeneración',
+            'detalle': str(e),
+            'borradas': deleted,
+        }), 500
+
+    n_total_mps = sum(len(g) for g in grupos.values())
+    n_proveedores = len([p for p in grupos.keys() if p != SIN_PROV])
+    n_huerfanos = len(grupos.get(SIN_PROV, []))
+
+    return jsonify({
+        'ok': True,
+        'borradas': deleted,
+        'creadas': creadas,
+        'total_solicitudes_nuevas': len(creadas),
+        'total_mps': n_total_mps,
+        'proveedores_resueltos': n_proveedores,
+        'mps_huerfanos': n_huerfanos,
+        'mensaje': (
+            f"✅ Borradas {deleted['solicitudes']} solicitudes viejas + "
+            f"creadas {len(creadas)} nuevas con datos actuales "
+            f"({n_total_mps} MPs, {n_proveedores} proveedores"
+            + (f", {n_huerfanos} huérfanos" if n_huerfanos else "") + ")"
+        ),
+    })
+
+
 @bp.route('/api/programacion/generar-oc', methods=['POST'])
 def prog_generar_oc():
     """Genera solicitudes de compra agrupadas POR PROVEEDOR.
