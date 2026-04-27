@@ -179,38 +179,93 @@ def eliminar_movimiento(mov_id):
 
 @bp.route('/api/produccion', methods=['GET', 'POST'])
 def handle_produccion():
+    """Registra una producción con descuento atómico de MPs (FEFO).
+
+    Flujo robusto (todo o nada):
+      1. VALIDAR input (cantidad > 0, producto no vacío, fórmula existe).
+      2. PRE-CHECK stock: para cada MP, consultar lotes disponibles (excluyendo
+         CUARENTENA/RECHAZADO) y verificar que la suma cubre el requerimiento.
+         Si falta stock para CUALQUIER MP → 422 sin escribir nada.
+      3. EJECUTAR transacción: INSERT producciones + INSERT movimientos por lote.
+         Si algo falla → ROLLBACK explícito + log + 500 con detalle.
+
+    Esto reemplaza el flujo anterior que (a) creaba "salida sin lote" cuando no
+    había stock — generando stock negativo silencioso, y (b) no validaba que la
+    fórmula existiera — registraba producciones sin descuentos.
+
+    Excepción: si una MP está marcada como ilimitada (agua, etc.) en
+    programacion._MP_UNLIMITED, el pre-check la salta. Se sigue registrando el
+    movimiento de salida (para trazabilidad de pesaje) pero sin requerir stock.
+    """
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
         u, err, code = _require_planta_write()
         if err:
             return err, code
-        data = request.json
-        producto = data.get('producto', data.get('producto',''))
+
+        data = request.json or {}
+        producto = (data.get('producto') or '').strip()
         presentacion = data.get('presentacion','')
-        cantidad_kg = float(data.get('cantidad_kg', data.get('cantidad', 0)))
+        cantidad_kg = float(data.get('cantidad_kg', data.get('cantidad', 0)) or 0)
         cantidad_g = cantidad_kg * 1000
-        fecha = datetime.now().isoformat()
-        c.execute('INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, operador, presentacion) VALUES (?,?,?,?,?,?,?)',
-                  (producto, cantidad_kg, fecha, 'Completado', data.get('observaciones', ''), data.get('operador', ''), presentacion))
-        prod_id = c.lastrowid
-        lote_ref = f'PROD-{prod_id:05d}'
-        # Guardar lote_ref en producciones para trazabilidad.
-        # La columna 'lote' puede no existir en versiones antiguas — solo
-        # ignorar si es ese caso específico (OperationalError).
-        try:
-            c.execute("UPDATE producciones SET lote=? WHERE id=?", (lote_ref, prod_id))
-        except sqlite3.OperationalError as _e:
-            if 'no such column' not in str(_e).lower():
-                _logger = __import__('logging').getLogger('inventario')
-                _logger.error("UPDATE producciones lote falló: %s", _e)
-        c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (producto,))
+        operador = (data.get('operador') or '').strip()
+        observaciones_in = data.get('observaciones', '')
+
+        # ─── Validación 1: input ─────────────────────────────────────────────
+        if not producto:
+            return jsonify({'error': 'Producto vacío'}), 400
+        if cantidad_kg <= 0:
+            return jsonify({'error': 'cantidad_kg debe ser > 0'}), 400
+        if not operador:
+            return jsonify({'error': 'Falta operador'}), 400
+
+        # ─── Validación 2: fórmula existe ───────────────────────────────────
+        c.execute(
+            'SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?',
+            (producto,)
+        )
         formula_items = c.fetchall()
-        descuentos = []
+        if not formula_items:
+            return jsonify({
+                'error': f"Producto sin fórmula registrada: '{producto}'",
+                'detalle': 'Crea la fórmula en /tecnica antes de producir'
+            }), 400
+
+        # ─── MPs ilimitadas (no requieren validación de stock) ──────────────
+        # Carga la lista desde programacion (única fuente de verdad)
+        try:
+            from .programacion import _MP_UNLIMITED, _norm_mp_name
+            unlimited_set = set(_MP_UNLIMITED)
+            def _is_unlimited(nombre):
+                return _norm_mp_name(nombre or '').upper() in {x.upper() for x in unlimited_set}
+        except Exception:
+            unlimited_set = set()
+            def _is_unlimited(nombre):  # noqa
+                return False
+
+        # ─── PRE-CHECK: stock suficiente para TODAS las MPs ─────────────────
+        # Construimos el plan completo SIN escribir nada. Si falta stock para
+        # alguna MP, abortamos antes del primer INSERT.
+        plan_descuentos = []  # cada entry: {mat_id, mat_nombre, g_total, lotes_a_usar:[(lote, vence, g)]}
+        faltantes = []        # MPs que no tienen stock suficiente
         for mat_id, mat_nombre, pct in formula_items:
-            g_total = round((pct / 100) * cantidad_g, 2)
-            if g_total <= 0: continue
-            # FEFO: seleccionar lotes por fecha de vencimiento mas proxima con stock disponible
+            g_total = round((pct / 100.0) * cantidad_g, 2)
+            if g_total <= 0:
+                continue
+            entry = {
+                'mat_id': mat_id, 'mat_nombre': mat_nombre,
+                'g_total': g_total, 'lotes_a_usar': [],
+                'g_sin_lote': 0.0, 'unlimited': False,
+            }
+            if _is_unlimited(mat_nombre):
+                # Aguas y similares — pesaje real pero sin requerir stock
+                entry['unlimited'] = True
+                entry['g_sin_lote'] = g_total
+                plan_descuentos.append(entry)
+                continue
+
+            # FEFO sobre lotes disponibles (excluye CUARENTENA/RECHAZADO)
             c.execute("""SELECT lote, fecha_vencimiento,
                                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
                          FROM movimientos
@@ -220,24 +275,108 @@ def handle_produccion():
                          ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento=''
                                   THEN '9999' ELSE fecha_vencimiento END ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
-            g_restante = g_total; lotes_usados = []
+            stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
+            if stock_total_disp + 0.01 < g_total:  # tolerancia 0.01g por floats
+                faltantes.append({
+                    'material': mat_nombre,
+                    'material_id': mat_id,
+                    'requerido_g': g_total,
+                    'disponible_g': round(stock_total_disp, 2),
+                    'falta_g': round(g_total - stock_total_disp, 2),
+                })
+                continue
+
+            # Plan FEFO: cuánto sacar de cada lote
+            g_restante = g_total
             for lrow in lotes_fefo:
-                if g_restante <= 0: break
+                if g_restante <= 0:
+                    break
                 lote_n, lote_v, lote_s = lrow
-                g_lote = round(min(g_restante, lote_s), 2)
-                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
-                          (mat_id, mat_nombre, g_lote, 'Salida', fecha,
-                           f'FEFO:{lote_ref}:{producto} x {cantidad_kg}kg', lote_n, data.get('operador','')))
-                lotes_usados.append({'lote': lote_n, 'vence': str(lote_v)[:10] if lote_v else '', 'cantidad_g': g_lote})
+                g_lote = round(min(g_restante, float(lote_s)), 2)
+                entry['lotes_a_usar'].append({
+                    'lote': lote_n,
+                    'vence': str(lote_v)[:10] if lote_v else '',
+                    'g': g_lote,
+                })
                 g_restante = round(g_restante - g_lote, 2)
-            if g_restante > 0:
-                c.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador) VALUES (?,?,?,?,?,?,?)",
-                          (mat_id, mat_nombre, g_restante, 'Salida', fecha, f'Produccion: {producto} x {cantidad_kg}kg', data.get('operador','')))
-                lotes_usados.append({'lote': 'sin_lote', 'vence': '', 'cantidad_g': g_restante})
-            descuentos.append({'material': mat_nombre, 'material_id': mat_id,
-                                'cantidad_g': g_total, 'lotes_fefo': lotes_usados})
+            plan_descuentos.append(entry)
+
+        if faltantes:
+            return jsonify({
+                'error': 'Stock insuficiente para producir',
+                'producto': producto,
+                'cantidad_kg': cantidad_kg,
+                'faltantes': faltantes,
+                'mensaje': (
+                    f"No se puede producir {cantidad_kg}kg de {producto}: "
+                    f"{len(faltantes)} MP(s) sin stock suficiente. "
+                    f"Verifica entradas en /planta o crea OC en /compras."
+                ),
+            }), 422  # Unprocessable Entity
+
+        # ─── ESCRITURA ATÓMICA ──────────────────────────────────────────────
+        # SQLite con isolation_level='DEFERRED' (default): primer DML inicia
+        # transacción implícita, conn.commit() la cierra, conn.rollback() la
+        # descarta. Si una excepción ocurre antes del commit, los inserts
+        # quedan en transacción y se rollbackean al cerrar la conexión.
+        # Aún así, hacemos rollback EXPLÍCITO para no depender de timing.
+        fecha = datetime.now().isoformat()
+        prod_id = None
+        lote_ref = None
+        descuentos = []
+        try:
+            c.execute(
+                'INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, operador, presentacion) VALUES (?,?,?,?,?,?,?)',
+                (producto, cantidad_kg, fecha, 'Completado', observaciones_in, operador, presentacion)
+            )
+            prod_id = c.lastrowid
+            lote_ref = f'PROD-{prod_id:05d}'
+            try:
+                c.execute("UPDATE producciones SET lote=? WHERE id=?", (lote_ref, prod_id))
+            except sqlite3.OperationalError as _e:
+                if 'no such column' not in str(_e).lower():
+                    raise
+
+            for plan in plan_descuentos:
+                lotes_log = []
+                for uso in plan['lotes_a_usar']:
+                    c.execute(
+                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
+                        (plan['mat_id'], plan['mat_nombre'], uso['g'], 'Salida', fecha,
+                         f"FEFO:{lote_ref}:{producto} x {cantidad_kg}kg", uso['lote'], operador)
+                    )
+                    lotes_log.append({'lote': uso['lote'], 'vence': uso['vence'], 'cantidad_g': uso['g']})
+                # MPs ilimitadas: registrar movimiento de pesaje sin lote
+                if plan.get('unlimited') and plan['g_sin_lote'] > 0:
+                    c.execute(
+                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador) VALUES (?,?,?,?,?,?,?)",
+                        (plan['mat_id'], plan['mat_nombre'], plan['g_sin_lote'], 'Salida', fecha,
+                         f"UNLIMITED:{lote_ref}:{producto} x {cantidad_kg}kg (MP sin requerir stock)", operador)
+                    )
+                    lotes_log.append({'lote': 'unlimited', 'vence': '', 'cantidad_g': plan['g_sin_lote']})
+
+                descuentos.append({
+                    'material': plan['mat_nombre'],
+                    'material_id': plan['mat_id'],
+                    'cantidad_g': plan['g_total'],
+                    'unlimited': plan.get('unlimited', False),
+                    'lotes_fefo': lotes_log,
+                })
+
+            conn.commit()
+        except Exception as _e:
+            conn.rollback()
+            __import__('logging').getLogger('inventario').error(
+                "Producción FALLÓ tras pre-check OK (rollback): producto=%s kg=%s err=%s",
+                producto, cantidad_kg, _e, exc_info=True
+            )
+            return jsonify({
+                'error': 'Falla transaccional al registrar producción',
+                'detalle': str(_e),
+                'rollback': 'aplicado — no se descontó nada y no quedó producción registrada',
+            }), 500
+
         # Stock PT se crea via Acondicionamiento → Liberacion (flujo BPM correcto)
-        conn.commit()
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas.'
@@ -1203,15 +1342,178 @@ def conteo_guardar(conteo_id):
 
 @bp.route('/api/conteo/<int:conteo_id>/cerrar', methods=['POST'])
 def conteo_cerrar(conteo_id):
+    """Cierra un conteo físico aplicando ajustes automáticos.
+
+    Flujo deseado por el dueño del negocio:
+      - Diferencias <5% del stock sistema → AUTO-AJUSTE: se inserta movimiento
+        de Entrada/Salida que sincroniza el kardex con la realidad física.
+      - Diferencias >=5% → NO se aplica ajuste. Se marca como pendiente de
+        gerencia y se genera ALERTA en panel (BDG-PRO-002 num 8). Gerencia
+        revisa el caso (puede ser hurto, mal pesaje, error de fórmula) y
+        aprueba manualmente con /api/conteo/<id>/ajustar.
+
+    Trazabilidad: cada auto-ajuste queda en `movimientos` con lote
+    'AJUSTE-CICLICO-<conteo_id>' y observaciones que indican causa.
+    """
+    user = session.get('compras_user','') or 'sistema'
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM conteo_items WHERE conteo_id=? AND requiere_gerencia=1 AND aprobado_gerencia=0", (conteo_id,))
-    pendientes_gerencia = c.fetchone()[0]
-    c.execute("UPDATE conteos_fisicos SET estado='Cerrado',fecha_cierre=datetime('now') WHERE id=?", (conteo_id,))
-    conn.commit()
-    msg = 'Conteo cerrado.'
-    if pendientes_gerencia:
-        msg += f' ATENCION: {pendientes_gerencia} item(s) con diferencia >5% pendientes de aprobacion Gerencia General antes de ajustar (BDG-PRO-002 num 8).'
-    return jsonify({'message': msg, 'pendientes_gerencia': pendientes_gerencia})
+
+    c.execute("SELECT estado FROM conteos_fisicos WHERE id=?", (conteo_id,))
+    cf = c.fetchone()
+    if not cf:
+        return jsonify({'error': 'Conteo no encontrado'}), 404
+    if cf[0] == 'Cerrado':
+        return jsonify({'error': 'El conteo ya estaba cerrado'}), 400
+
+    # ── Items con diferencia ────────────────────────────────────────────────
+    c.execute("""SELECT id, codigo_mp, nombre_mp, stock_sistema, stock_fisico,
+                        diferencia, estanteria, causa_diferencia, valor_diferencia,
+                        requiere_gerencia, aprobado_gerencia, ajuste_aplicado
+                 FROM conteo_items
+                 WHERE conteo_id=? AND COALESCE(diferencia,0) <> 0""", (conteo_id,))
+    items_con_diff = c.fetchall()
+
+    auto_ajustados = []
+    pendientes_gerencia_lista = []
+
+    try:
+        for it in items_con_diff:
+            (it_id, codigo, nombre, stock_sis, stock_fis, diff, estant,
+             causa, valor, req_ger, aprob_ger, ya_ajustado) = it
+            if ya_ajustado:
+                continue
+            diff = float(diff or 0)
+            if diff == 0:
+                continue
+            tipo_mov = 'Entrada' if diff > 0 else 'Salida'
+
+            if req_ger and not aprob_ger:
+                # Diferencia significativa — NO ajustar. Pendiente de gerencia.
+                pendientes_gerencia_lista.append({
+                    'item_id': it_id, 'codigo_mp': codigo, 'nombre': nombre,
+                    'stock_sistema': stock_sis, 'stock_fisico': stock_fis,
+                    'diferencia_g': diff, 'valor_diferencia': valor,
+                    'causa': causa, 'estanteria': estant,
+                })
+                continue
+
+            # Auto-ajuste para diferencias menores
+            obs = (f"Ajuste automático conteo cíclico #{conteo_id} | "
+                   f"Causa: {causa or 'no indicada'} | Cerrado por: {user}")
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha,
+                          observaciones, lote, estanteria, estado_lote, operador)
+                         VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
+                      (codigo, nombre, abs(diff), tipo_mov, obs,
+                       f'AJUSTE-CICLICO-{conteo_id}', estant or '', user))
+            c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (it_id,))
+            try:
+                c.execute("""INSERT INTO audit_log
+                             (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                             VALUES (?,?,?,?,?,?,datetime('now'))""",
+                          (user, 'AJUSTE_INVENTARIO_AUTO', 'conteo_items', str(it_id),
+                           f'MP:{codigo} Diff:{diff}g Auto:<5% Causa:{causa or "n/a"}',
+                           request.remote_addr if request else ''))
+            except sqlite3.OperationalError:
+                pass  # audit_log puede no existir en versiones viejas
+            auto_ajustados.append({
+                'item_id': it_id, 'codigo_mp': codigo, 'nombre': nombre,
+                'diferencia_g': diff, 'tipo': tipo_mov,
+            })
+
+        c.execute("""UPDATE conteos_fisicos
+                     SET estado='Cerrado', fecha_cierre=datetime('now')
+                     WHERE id=?""", (conteo_id,))
+        conn.commit()
+    except Exception as _e:
+        conn.rollback()
+        __import__('logging').getLogger('inventario').error(
+            "conteo_cerrar(%s) FALLÓ — rollback aplicado: %s",
+            conteo_id, _e, exc_info=True
+        )
+        return jsonify({
+            'error': 'Falla transaccional al cerrar conteo',
+            'detalle': str(_e),
+            'rollback': 'aplicado — ningún ajuste se persistió',
+        }), 500
+
+    # Email de alerta a gerencia si hay pendientes (best-effort, no bloquea)
+    if pendientes_gerencia_lista:
+        try:
+            from notificaciones import SistemaNotificaciones
+            sn = SistemaNotificaciones()
+            if sn.email_remitente and sn.contraseña:
+                total_valor = sum(p.get('valor_diferencia') or 0 for p in pendientes_gerencia_lista)
+                lista_html = ''.join([
+                    f"<li><strong>{p['codigo_mp']}</strong> — {p['nombre']}: "
+                    f"diff <strong>{p['diferencia_g']:+.0f}g</strong> "
+                    f"(${(p.get('valor_diferencia') or 0):,.0f}) — {p.get('causa') or 'sin causa'}</li>"
+                    for p in pendientes_gerencia_lista[:20]
+                ])
+                body = f"""<html><body style="font-family:Arial,sans-serif">
+                <h2 style="color:#c62828">Alerta — Conteo cíclico requiere aprobación Gerencia</h2>
+                <p>Conteo <strong>#{conteo_id}</strong> cerrado por <strong>{user}</strong>.</p>
+                <p>{len(pendientes_gerencia_lista)} item(s) con diferencia &gt;5% no fueron ajustados
+                automáticamente. Valor total estimado: <strong>${total_valor:,.0f}</strong>.</p>
+                <ul>{lista_html}</ul>
+                <p>Ingresa a /planta y aprueba/rechaza cada item para que el ajuste se aplique al kardex.</p>
+                </body></html>"""
+                sn.enviar_en_background(
+                    sn._enviar_email,
+                    asunto=f"[HHA] Conteo cíclico #{conteo_id}: {len(pendientes_gerencia_lista)} items requieren Gerencia",
+                    body=body,
+                    destinatarios=[sn.email_remitente],
+                )
+        except Exception as _e_mail:
+            __import__('logging').getLogger('inventario').error(
+                "Email alerta gerencia conteo %s falló: %s", conteo_id, _e_mail
+            )
+
+    msg_parts = [f'Conteo #{conteo_id} cerrado.']
+    if auto_ajustados:
+        msg_parts.append(f'{len(auto_ajustados)} ajuste(s) automático(s) aplicado(s) al kardex.')
+    if pendientes_gerencia_lista:
+        msg_parts.append(
+            f'ATENCIÓN: {len(pendientes_gerencia_lista)} item(s) con diferencia >5% '
+            f'pendientes de aprobación Gerencia General (BDG-PRO-002).')
+    return jsonify({
+        'message': ' '.join(msg_parts),
+        'auto_ajustados': auto_ajustados,
+        'pendientes_gerencia': pendientes_gerencia_lista,
+        'total_items_ajustados': len(auto_ajustados),
+        'total_pendientes': len(pendientes_gerencia_lista),
+    })
+
+
+@bp.route('/api/conteo/alertas-gerencia', methods=['GET'])
+def conteo_alertas_gerencia():
+    """Lista de items con diferencia >5% pendientes de aprobación de gerencia.
+
+    Útil para que gerencia tenga un dashboard de "qué decisiones están
+    esperándome" sin tener que abrir conteo por conteo.
+    """
+    user = session.get('compras_user','')
+    if not user:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    c.execute("""SELECT cf.id AS conteo_id, cf.numero, cf.estanteria, cf.fecha_cierre,
+                        ci.id AS item_id, ci.codigo_mp, ci.nombre_mp,
+                        ci.stock_sistema, ci.stock_fisico, ci.diferencia,
+                        ci.causa_diferencia, ci.valor_diferencia,
+                        ci.aprobado_gerencia, ci.aprobado_gerencia_por,
+                        ci.ajuste_aplicado
+                 FROM conteo_items ci
+                 JOIN conteos_fisicos cf ON ci.conteo_id = cf.id
+                 WHERE ci.requiere_gerencia=1 AND ci.ajuste_aplicado=0
+                 ORDER BY ABS(ci.valor_diferencia) DESC LIMIT 200""")
+    cols = [d[0] for d in c.description]
+    rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    total_valor = sum(r.get('valor_diferencia') or 0 for r in rows)
+    return jsonify({
+        'pendientes': rows,
+        'total': len(rows),
+        'total_valor_diferencia': round(total_valor, 0),
+    })
 
 @bp.route('/api/conteo/<int:conteo_id>/ajustar', methods=['POST'])
 def conteo_ajustar(conteo_id):
