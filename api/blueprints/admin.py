@@ -743,6 +743,431 @@ def admin_sync_influencers_excel():
     })
 
 
+# ─── Importar pagos pendientes de influencers desde Excel ────────────────────
+
+# Patrones para detectar columnas automáticamente — soporta Excel con
+# diferentes naming sin que el user tenga que renombrar nada
+_COL_PATTERNS_PAGOS = {
+    'nombre':       ['influencer', 'creador', 'nombre', 'usuario'],
+    'fecha':        ['fecha publicacion', 'fecha de publicacion', 'fecha publicación',
+                     'fecha de publicación', 'fecha post', 'fecha contenido',
+                     'publicacion', 'publicación', 'fecha'],
+    'valor':        ['valor', 'monto', 'pago', 'total', 'precio'],
+    'estado':       ['estado', 'pago realizado', 'pagado', 'status'],
+    'concepto':     ['concepto', 'producto', 'campana', 'campaña', 'entregable',
+                     'descripcion', 'descripción'],
+    'instagram':    ['instagram', 'cuenta', 'user', '@'],
+}
+
+
+def _norm_header(s):
+    """Normaliza un header de Excel: lower, sin acentos, sin extra spaces."""
+    import unicodedata as _ud
+    if s is None:
+        return ''
+    s = str(s).strip().lower()
+    s = ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn')
+    return ' '.join(s.split())
+
+
+def _detect_cols(headers):
+    """Devuelve dict {nuestro_campo: indice_en_excel} matcheando por patterns."""
+    out = {}
+    norms = [_norm_header(h) for h in headers]
+    for field, patterns in _COL_PATTERNS_PAGOS.items():
+        for i, h in enumerate(norms):
+            if not h:
+                continue
+            if any(p in h for p in patterns):
+                if field not in out:
+                    out[field] = i
+                    break
+    return out
+
+
+def _norm_nombre(s):
+    """Normaliza nombre influencer para matching: lower + trim + sin acentos."""
+    import unicodedata as _ud
+    if s is None:
+        return ''
+    s = str(s).strip().lower()
+    s = ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn')
+    return ' '.join(s.split())
+
+
+def _parse_fecha(v):
+    """Acepta datetime, date, o string YYYY-MM-DD / DD/MM/YYYY. Devuelve ISO o ''."""
+    if v is None or v == '':
+        return ''
+    from datetime import datetime as _dt, date as _date
+    if isinstance(v, _dt):
+        return v.date().isoformat()
+    if isinstance(v, _date):
+        return v.isoformat()
+    s = str(v).strip()
+    # YYYY-MM-DD
+    try:
+        return _dt.strptime(s[:10], '%Y-%m-%d').date().isoformat()
+    except ValueError:
+        pass
+    # DD/MM/YYYY
+    try:
+        return _dt.strptime(s[:10], '%d/%m/%Y').date().isoformat()
+    except ValueError:
+        pass
+    # DD-MM-YYYY
+    try:
+        return _dt.strptime(s[:10], '%d-%m-%Y').date().isoformat()
+    except ValueError:
+        pass
+    return ''
+
+
+def _parse_valor(v):
+    """Acepta int, float, o string con $/coma/punto. Devuelve float >= 0."""
+    if v is None or v == '':
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace('$', '').replace(' ', '')
+    # Si tiene coma como decimal Y punto como miles → quitar puntos, comma a punto
+    if ',' in s and '.' in s:
+        if s.rfind(',') > s.rfind('.'):
+            s = s.replace('.', '').replace(',', '.')
+        else:
+            s = s.replace(',', '')
+    elif ',' in s:
+        # Solo coma — si tiene 3 dígitos después es miles, sino decimal
+        partes = s.split(',')
+        if len(partes[-1]) == 3:
+            s = s.replace(',', '')
+        else:
+            s = s.replace(',', '.')
+    elif '.' in s:
+        partes = s.split('.')
+        if len(partes[-1]) == 3:
+            s = s.replace('.', '')
+    try:
+        return max(0.0, float(s))
+    except ValueError:
+        return 0.0
+
+
+@bp.route("/api/admin/import-pagos-influencers-excel", methods=["POST"])
+def admin_import_pagos_influencers_excel():
+    """Importa pagos pendientes de influencers desde Excel.
+
+    Modo "reset solo pendientes" (opción B aprobada por user):
+      - Borra solicitudes Influencer con estado != Pagada (más sus OCs y pagos)
+      - Importa cada fila del Excel como nueva solicitud Aprobada lista para pagar
+      - Conserva intacto el historial de pagos hechos
+
+    Detecta columnas del Excel automáticamente buscando keywords en los
+    headers (influencer/creador/nombre, fecha publicación, valor, etc.).
+
+    Body: multipart/form-data 'file' = .xlsx
+    Query: ?dry_run=1 → previsualiza sin escribir nada
+
+    Para cada fila válida:
+      1. Match influencer en marketing_influencers por nombre normalizado
+      2. INSERT solicitudes_compra (estado=Aprobada, categoria=Influencer/Marketing Digital)
+      3. INSERT ordenes_compra (proveedor=nombre, valor_total=valor)
+      4. INSERT ordenes_compra_items (descripción=concepto, valor)
+      5. INSERT pagos_influencers con fecha_publicacion = fecha del Excel
+         (esto es lo que permitirá ordenar correctamente en /compras)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+
+    dry_run = request.args.get('dry_run', '0') in ('1', 'true', 'True')
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return jsonify({'error': 'openpyxl no instalado'}), 500
+
+    try:
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({'error': f'Excel inválido: {e}'}), 400
+
+    # Buscar la hoja: priorizar nombres conocidos, sino la primera
+    nombres_prioridad = ['pagos', 'pagos influencers', 'publicaciones',
+                         'contenido', 'campanas', 'campañas']
+    sheet_name = None
+    for n in wb.sheetnames:
+        if any(p in _norm_header(n) for p in nombres_prioridad):
+            sheet_name = n
+            break
+    if sheet_name is None:
+        # Excluir hojas de banco/configuración si las detecta
+        for n in wb.sheetnames:
+            if 'cuenta' not in _norm_header(n) and 'banco' not in _norm_header(n):
+                sheet_name = n
+                break
+    if sheet_name is None:
+        sheet_name = wb.sheetnames[0]
+
+    ws = wb[sheet_name]
+    rows_excel = list(ws.iter_rows(values_only=True))
+    if len(rows_excel) < 2:
+        return jsonify({
+            'error': f'Hoja "{sheet_name}" tiene menos de 2 filas',
+            'hojas_disponibles': wb.sheetnames,
+        }), 400
+
+    headers = rows_excel[0]
+    cols_idx = _detect_cols(headers)
+
+    if 'nombre' not in cols_idx or 'valor' not in cols_idx:
+        return jsonify({
+            'error': 'No se detectó columna de Influencer y/o Valor en el Excel',
+            'hoja_usada': sheet_name,
+            'headers_detectados': [str(h) for h in headers if h],
+            'columnas_mapeadas': cols_idx,
+            'hojas_disponibles': wb.sheetnames,
+            'sugerencia': (
+                'Asegúrate de que el Excel tenga columnas con nombres como '
+                '"Influencer/Creador/Nombre" y "Valor/Monto/Pago". '
+                'Mira hojas_disponibles si la hoja correcta es otra.'
+            ),
+        }), 400
+
+    # Cargar tabla de influencers para matching
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT id, nombre FROM marketing_influencers")
+    inf_by_norm = {}
+    for r in c.fetchall():
+        nm = _norm_nombre(r['nombre'])
+        if nm and nm not in inf_by_norm:
+            inf_by_norm[nm] = r['id']
+
+    # Procesar filas
+    plan_import = []
+    sin_match = []
+    sin_valor = []
+    sin_nombre = []
+    pagadas_skipped = []
+
+    estado_pagado_kws = {'pagado', 'pagada', 'paid', 'pago realizado', 'si', 'sí', 'yes', 'x'}
+
+    for i, row in enumerate(rows_excel[1:], start=2):
+        if not row or not any(row):
+            continue
+        nombre = row[cols_idx['nombre']] if cols_idx.get('nombre') is not None else None
+        valor_raw = row[cols_idx['valor']] if cols_idx.get('valor') is not None else None
+        fecha_raw = row[cols_idx['fecha']] if cols_idx.get('fecha') is not None else None
+        estado_raw = row[cols_idx.get('estado')] if cols_idx.get('estado') is not None else None
+        concepto_raw = row[cols_idx.get('concepto')] if cols_idx.get('concepto') is not None else None
+        instagram_raw = row[cols_idx.get('instagram')] if cols_idx.get('instagram') is not None else None
+
+        nombre_str = str(nombre or '').strip()
+        if not nombre_str:
+            sin_nombre.append({'fila': i})
+            continue
+        valor = _parse_valor(valor_raw)
+        if valor <= 0:
+            sin_valor.append({'fila': i, 'nombre': nombre_str})
+            continue
+        # Saltar las que ya estén marcadas como pagadas
+        estado_norm = _norm_header(estado_raw)
+        if any(kw in estado_norm for kw in estado_pagado_kws):
+            pagadas_skipped.append({'fila': i, 'nombre': nombre_str, 'valor': valor})
+            continue
+
+        nombre_norm = _norm_nombre(nombre_str)
+        inf_id = inf_by_norm.get(nombre_norm)
+        if not inf_id:
+            # Fuzzy: buscar prefix match
+            for k, v in inf_by_norm.items():
+                if k.startswith(nombre_norm) or nombre_norm.startswith(k):
+                    inf_id = v
+                    break
+        if not inf_id:
+            sin_match.append({
+                'fila': i, 'nombre': nombre_str, 'valor': valor,
+                'instagram': str(instagram_raw or '').strip()
+            })
+            continue
+
+        plan_import.append({
+            'fila': i,
+            'influencer_id': inf_id,
+            'nombre': nombre_str,
+            'valor': valor,
+            'fecha_publicacion': _parse_fecha(fecha_raw),
+            'concepto': str(concepto_raw or '').strip() or 'Pago influencer',
+        })
+
+    if dry_run:
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'hoja_usada': sheet_name,
+            'columnas_mapeadas': cols_idx,
+            'a_importar': {
+                'count': len(plan_import),
+                'preview': plan_import[:30],
+                'valor_total': round(sum(p['valor'] for p in plan_import), 0),
+            },
+            'sin_match': {
+                'count': len(sin_match),
+                'lista': sin_match[:30],
+                'nota': 'Estos NO se van a importar. Agrega el influencer al banco primero (/admin sync banco) o corrige el nombre en el Excel.',
+            },
+            'pagadas_skipped': {'count': len(pagadas_skipped), 'lista': pagadas_skipped[:20]},
+            'sin_valor': {'count': len(sin_valor)},
+            'sin_nombre': {'count': len(sin_nombre)},
+        })
+
+    # ── APLICAR ─────────────────────────────────────────────────────────────
+    # Reset opción B: borrar solicitudes Influencer no-pagadas + sus OCs y pagos
+    deleted = {'solicitudes': 0, 'ordenes_compra': 0, 'pagos_influencers': 0}
+    try:
+        # 1. Listar OCs de influencer cuyo estado de SC sea != 'Pagada'
+        ocs_a_borrar = c.execute("""
+            SELECT DISTINCT sc.numero_oc FROM solicitudes_compra sc
+            WHERE sc.categoria = 'Influencer/Marketing Digital'
+              AND sc.estado IN ('Pendiente', 'Aprobada', 'Rechazada')
+              AND sc.numero_oc IS NOT NULL AND sc.numero_oc != ''
+        """).fetchall()
+        ocs_list = [r[0] for r in ocs_a_borrar]
+        if ocs_list:
+            placeholders = ','.join('?' * len(ocs_list))
+            d = c.execute(
+                f"DELETE FROM pagos_influencers WHERE numero_oc IN ({placeholders}) "
+                f"AND COALESCE(estado,'') != 'Pagada'", ocs_list
+            )
+            deleted['pagos_influencers'] = d.rowcount or 0
+            try:
+                c.execute(
+                    f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({placeholders})",
+                    ocs_list
+                )
+            except sqlite3.OperationalError:
+                pass
+            d = c.execute(
+                f"DELETE FROM ordenes_compra WHERE numero_oc IN ({placeholders})",
+                ocs_list
+            )
+            deleted['ordenes_compra'] = d.rowcount or 0
+        # Items de la solicitud
+        try:
+            c.execute("""DELETE FROM solicitudes_compra_items
+                         WHERE numero IN (SELECT numero FROM solicitudes_compra
+                                          WHERE categoria='Influencer/Marketing Digital'
+                                            AND estado IN ('Pendiente','Aprobada','Rechazada'))""")
+        except sqlite3.OperationalError:
+            pass
+        d = c.execute("""DELETE FROM solicitudes_compra
+                         WHERE categoria='Influencer/Marketing Digital'
+                           AND estado IN ('Pendiente','Aprobada','Rechazada')""")
+        deleted['solicitudes'] = d.rowcount or 0
+
+        # ── Importar plan ───────────────────────────────────────────────────
+        from datetime import datetime as _dt
+        anio = _dt.now().year
+        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero, 10) AS INTEGER)),0) "
+                  "FROM solicitudes_compra WHERE numero LIKE ?", (f'SOL-{anio}-%',))
+        n_sol = (c.fetchone()[0] or 0)
+        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc, 9) AS INTEGER)),0) "
+                  "FROM ordenes_compra WHERE numero_oc LIKE ?", (f'OC-{anio}-%',))
+        n_oc = (c.fetchone()[0] or 0)
+
+        importadas = []
+        for plan in plan_import:
+            n_sol += 1
+            n_oc += 1
+            num_sol = f'SOL-{anio}-{n_sol:04d}'
+            num_oc = f'OC-{anio}-{n_oc:04d}'
+            obs = (f"BENEFICIARIO: {plan['nombre']} | VALOR: ${plan['valor']:,.0f} | "
+                   f"FECHA PUB: {plan['fecha_publicacion'] or 'sin fecha'} | "
+                   f"CONCEPTO: {plan['concepto']} | Importado desde Excel por {u}")
+
+            c.execute("""INSERT INTO solicitudes_compra
+                (numero, fecha, estado, solicitante, urgencia, observaciones,
+                 area, empresa, categoria, tipo, numero_oc, influencer_id, fecha_requerida)
+                VALUES (?, datetime('now'), 'Aprobada', ?, 'Normal', ?, 'Marketing',
+                        'Animus', 'Influencer/Marketing Digital', 'Servicio', ?, ?, ?)""",
+                (num_sol, u, obs, num_oc, plan['influencer_id'],
+                 plan['fecha_publicacion'] or ''))
+            c.execute("""INSERT INTO ordenes_compra
+                (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por)
+                VALUES (?, datetime('now'), 'Aprobada', ?, ?, ?, ?)""",
+                (num_oc, plan['nombre'], plan['valor'],
+                 f"Pago influencer importado desde Excel · pub: {plan['fecha_publicacion'] or 'n/a'}", u))
+            try:
+                c.execute("""INSERT INTO ordenes_compra_items
+                    (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
+                    VALUES (?, '', ?, 1, ?, ?)""",
+                    (num_oc, plan['concepto'][:200], plan['valor'], plan['valor']))
+            except sqlite3.OperationalError:
+                pass
+            try:
+                c.execute("""INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc, fecha_publicacion)
+                    VALUES (?, ?, ?, datetime('now'), 'Pendiente', ?, ?, ?)""",
+                    (plan['influencer_id'], plan['nombre'], plan['valor'],
+                     plan['concepto'][:200], num_oc, plan['fecha_publicacion'] or ''))
+            except sqlite3.OperationalError:
+                pass
+            importadas.append({
+                'sol': num_sol, 'oc': num_oc,
+                'nombre': plan['nombre'], 'valor': plan['valor'],
+                'fecha_publicacion': plan['fecha_publicacion'],
+            })
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        import traceback
+        return jsonify({
+            'error': 'Falla durante la importación',
+            'detalle': str(e),
+            'traceback': traceback.format_exc()[-800:],
+            'rollback': 'aplicado',
+        }), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    _log_sec(u, _client_ip(),
+             "admin_import_pagos_influencers_excel",
+             f"deleted={deleted} imported={len(importadas)}")
+
+    return jsonify({
+        'ok': True,
+        'dry_run': False,
+        'hoja_usada': sheet_name,
+        'reset': deleted,
+        'importadas': {
+            'count': len(importadas),
+            'lista': importadas[:50],
+            'valor_total': round(sum(i['valor'] for i in importadas), 0),
+        },
+        'sin_match': {
+            'count': len(sin_match),
+            'lista': sin_match[:30],
+            'nota': 'NO importados — agrega los influencers al banco o corrige el nombre.',
+        },
+        'pagadas_skipped': {'count': len(pagadas_skipped)},
+        'sin_valor': {'count': len(sin_valor)},
+        'sin_nombre': {'count': len(sin_nombre)},
+    })
+
+
 # ─── Panel HTML ───────────────────────────────────────────────────────────────
 
 _ADMIN_HTML = r"""<!DOCTYPE html>
@@ -968,6 +1393,27 @@ tr:hover td{background:#263348;}
       <button class="btn" onclick="syncExcel(false)">&#x26A1; Aplicar a la base</button>
     </div>
     <div id="banco-result" style="margin-top:18px;"></div>
+  </div>
+
+  <div class="card" style="border-left:3px solid #fbbf24;">
+    <h2>&#x1F4B8; Importar pagos pendientes desde Excel</h2>
+    <div class="section-sub">
+      Sube el Excel con la lista de pagos pendientes (uno por fila). El sistema:
+      <ul style="margin:6px 0 0 16px;">
+        <li>Detecta automáticamente las columnas (Influencer, Fecha publicación, Valor, Estado, Concepto)</li>
+        <li><strong>Borra las solicitudes Influencer no-pagadas</strong> (mantiene las Pagadas)</li>
+        <li>Crea cada fila como solicitud Aprobada lista para pagar, con su <code>fecha_publicacion</code></li>
+        <li>Saltea filas marcadas como "Pagado" en el Excel</li>
+        <li>Saltea filas donde el nombre no matchea ningún influencer del banco</li>
+      </ul>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <input type="file" id="pagos-excel-file" accept=".xlsx,.xlsm"
+             style="padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;">
+      <button class="btn btn-outline" onclick="syncPagos(true)">&#x1F441; Vista previa (dry-run)</button>
+      <button class="btn" onclick="syncPagos(false)" style="background:linear-gradient(135deg,#f59e0b,#d97706);">&#x26A1; Aplicar (borra pendientes + importa)</button>
+    </div>
+    <div id="pagos-result" style="margin-top:18px;"></div>
   </div>
 </div>
 
@@ -1297,6 +1743,89 @@ async function syncExcel(dryRun) {
     + (lstNuevos ? '<div class="card"><h2>&#x2795; Nuevos (' + data.nuevos.count + ')</h2><ul style="font-size:13px;color:#cbd5e1;list-style:none;padding-left:0;">' + lstNuevos + '</ul></div>' : '')
     + (lstAct ? '<div class="card"><h2>&#x270F; Actualizados (' + data.actualizados.count + ')</h2><ul style="font-size:13px;color:#cbd5e1;list-style:none;padding-left:0;">' + lstAct + '</ul></div>' : '');
   if (!dryRun) toast('Sync aplicado: ' + data.nuevos.count + ' nuevos, ' + data.actualizados.count + ' actualizados', 'ok');
+}
+
+// ── PAGOS INFLUENCERS — import Excel + reset pendientes ──────────────────────
+async function syncPagos(dryRun) {
+  const fi = document.getElementById('pagos-excel-file');
+  const out = document.getElementById('pagos-result');
+  if (!fi.files.length) {
+    toast('Selecciona un archivo .xlsx', 'warn');
+    return;
+  }
+  if (!dryRun) {
+    if (!confirm('Esto va a BORRAR todas las solicitudes Influencer no-pagadas y reemplazarlas con las del Excel. Las solicitudes ya pagadas se conservan.\n\n¿Confirmás?')) return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;padding:14px;">Procesando...</div>';
+  const fd = new FormData();
+  fd.append('file', fi.files[0]);
+  const url = '/api/admin/import-pagos-influencers-excel' + (dryRun ? '?dry_run=1' : '');
+  const r = await fetch(url, {method:'POST', body: fd});
+  let data;
+  try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
+  if (!r.ok) {
+    let extra = '';
+    if (data.headers_detectados) {
+      extra += '<div style="margin-top:8px;font-size:11px;color:#94a3b8;"><strong>Headers detectados:</strong> ' + data.headers_detectados.join(' · ') + '</div>';
+    }
+    if (data.hojas_disponibles) {
+      extra += '<div style="margin-top:4px;font-size:11px;color:#94a3b8;"><strong>Hojas en el Excel:</strong> ' + data.hojas_disponibles.join(' · ') + '</div>';
+    }
+    if (data.sugerencia) {
+      extra += '<div style="margin-top:8px;font-size:12px;color:#fbbf24;">' + data.sugerencia + '</div>';
+    }
+    out.innerHTML = '<div style="color:#f87171;padding:14px;background:#1e293b;border-radius:8px;">'
+      + 'Error ' + r.status + ': ' + (data.error || '') + extra + '</div>';
+    return;
+  }
+  const banner = dryRun
+    ? '<div style="color:#fbbf24;padding:10px 14px;background:#0f172a;border:1px solid #fbbf24;border-radius:8px;margin-bottom:14px;">'
+      + '&#x1F441; <strong>VISTA PREVIA</strong> — nada se escribió. Pulsa "Aplicar" para confirmar.</div>'
+    : '<div style="color:#34d399;padding:10px 14px;background:#0f172a;border:1px solid #34d399;border-radius:8px;margin-bottom:14px;">'
+      + '&#x2705; <strong>APLICADO</strong> — la base fue actualizada.</div>';
+
+  const cm = (data.columnas_mapeadas || {});
+  const cmList = Object.entries(cm).map(([k,v]) => k+'→col'+v).join(' · ');
+
+  let kpis = '<div class="kpi-row">';
+  if (data.a_importar) {
+    kpis += '<div class="kpi"><div class="kpi-l">A importar</div><div class="kpi-v" style="color:#34d399;">' + data.a_importar.count + '</div></div>';
+    kpis += '<div class="kpi"><div class="kpi-l">Valor total</div><div class="kpi-v" style="color:#34d399;font-size:14px;">$' + Number(data.a_importar.valor_total||0).toLocaleString('es-CO') + '</div></div>';
+  }
+  if (data.importadas) {
+    kpis += '<div class="kpi"><div class="kpi-l">Importadas</div><div class="kpi-v" style="color:#34d399;">' + data.importadas.count + '</div></div>';
+    kpis += '<div class="kpi"><div class="kpi-l">Valor total</div><div class="kpi-v" style="color:#34d399;font-size:14px;">$' + Number(data.importadas.valor_total||0).toLocaleString('es-CO') + '</div></div>';
+  }
+  if (data.reset) {
+    kpis += '<div class="kpi"><div class="kpi-l">Solic. borradas</div><div class="kpi-v" style="color:#fbbf24;">' + data.reset.solicitudes + '</div></div>';
+  }
+  kpis += '<div class="kpi"><div class="kpi-l">Sin match</div><div class="kpi-v" style="color:#f87171;">' + (data.sin_match ? data.sin_match.count : 0) + '</div></div>';
+  if (data.pagadas_skipped) {
+    kpis += '<div class="kpi"><div class="kpi-l">Skipped (pagadas)</div><div class="kpi-v" style="color:#94a3b8;">' + data.pagadas_skipped.count + '</div></div>';
+  }
+  kpis += '</div>';
+
+  let preview = '';
+  const lst = (data.a_importar && data.a_importar.preview) || (data.importadas && data.importadas.lista) || [];
+  if (lst.length) {
+    preview = '<div class="card"><h2>&#x2795; A importar / Importadas</h2>'
+      + '<table><thead><tr><th>Sol/OC</th><th>Influencer</th><th>Valor</th><th>Fecha pub</th></tr></thead><tbody>'
+      + lst.map(p => '<tr><td style="font-family:monospace;font-size:11px;">' + (p.sol || ('#' + p.fila)) + (p.oc ? ' / ' + p.oc : '') + '</td><td>' + p.nombre + '</td><td>$' + Number(p.valor||0).toLocaleString('es-CO') + '</td><td style="font-size:11px;color:#94a3b8;">' + (p.fecha_publicacion || '—') + '</td></tr>').join('')
+      + '</tbody></table></div>';
+  }
+  let nomatch = '';
+  if (data.sin_match && data.sin_match.count > 0) {
+    nomatch = '<div class="card" style="border-left:3px solid #f87171;"><h2>&#x274C; Sin match en banco (' + data.sin_match.count + ')</h2>'
+      + '<div style="font-size:12px;color:#fbbf24;margin-bottom:8px;">' + (data.sin_match.nota || '') + '</div>'
+      + '<table><tbody>'
+      + data.sin_match.lista.map(p => '<tr><td style="font-size:11px;">fila ' + p.fila + '</td><td>' + p.nombre + '</td><td>$' + Number(p.valor||0).toLocaleString('es-CO') + '</td><td style="font-size:11px;color:#94a3b8;">' + (p.instagram || '') + '</td></tr>').join('')
+      + '</tbody></table></div>';
+  }
+
+  out.innerHTML = banner
+    + '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Hoja: <strong>' + (data.hoja_usada || '?') + '</strong> · Columnas: ' + cmList + '</div>'
+    + kpis + preview + nomatch;
+  if (!dryRun) toast('Importación aplicada: ' + (data.importadas ? data.importadas.count : 0) + ' nuevas, ' + (data.reset ? data.reset.solicitudes : 0) + ' borradas', 'ok');
 }
 
 // Init
