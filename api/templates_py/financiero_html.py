@@ -523,7 +523,7 @@ async function guardarEgreso(){
 }
 
 async function limpiarFlujo(){
-  if(!confirm('⚠️ Esto eliminará TODOS los registros de egresos e ingresos del flujo de caja.\n\n¿Estás seguro?')) return;
+  if(!confirm('⚠ Esto eliminara TODOS los registros de egresos e ingresos del flujo de caja.\\n\\n¿Estas seguro?')) return;
   if(!confirm('Segunda confirmación: ¿BORRAR definitivamente todos los registros de flujo?')) return;
   var msg=document.getElementById('limpiar-msg');
   msg.textContent='Eliminando...'; msg.style.color='#f59e0b';

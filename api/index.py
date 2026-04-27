@@ -241,6 +241,31 @@ def _maybe_trigger_backup():
 
 
 @app.after_request
+def _no_cache_html(response):
+    """Forzar no-cache en TODAS las páginas HTML del app.
+
+    Sin este header, el navegador del usuario cachea HTML viejo y nunca
+    recibe los nuevos templates después de un deploy — los botones quedan
+    apuntando a JS viejo, los IDs no coinciden, y los handlers no responden.
+    Causa raíz reportada: 'ningún botón sirve' después de fixes desplegados.
+
+    Solo aplica a HTML — NO toca /api/* (JSON), assets estáticos, ni PDFs
+    (esos pueden y deben cachearse por el ETag/Last-Modified default).
+    """
+    try:
+        content_type = (response.headers.get("Content-Type") or "").lower()
+        if content_type.startswith("text/html"):
+            response.headers["Cache-Control"] = (
+                "no-cache, no-store, must-revalidate, max-age=0"
+            )
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+    except Exception:
+        pass
+    return response
+
+
+@app.after_request
 def _log_request(response):
     """Log estructurado de cada request — parseable por Render/Datadog/Grafana.
 

@@ -100,6 +100,70 @@ def test_compras_html_js_parses():
         except OSError: pass
 
 
+def test_all_pages_js_parses_with_node(app, db_clean):
+    """Audit V8: cada página HTML del app debe tener JS válido.
+
+    Detecta patrones que rompen toda la página:
+      1. Comillas mal escapadas en onclick inline
+      2. 'async async function' (typo de keyword duplicado)
+      3. Backticks/dollars con escape inválido en templates Python no-raw
+      4. Newlines literales dentro de strings con comilla simple/doble
+
+    Cualquiera de estos hace que TODO el script JS falle al parsear y la
+    página queda inerte — sin handlers, sin tabs, sin loaders.
+    """
+    if not shutil.which("node"):
+        pytest.skip("node no disponible")
+
+    PAGES = [
+        "/hub", "/marketing", "/compras", "/planta", "/admin",
+        "/contabilidad", "/financiero", "/calidad", "/animus",
+        "/clientes", "/recepcion", "/tecnica", "/rrhh", "/gerencia",
+        "/compromisos",
+    ]
+
+    c = _login(app)
+    failures = []
+    for page in PAGES:
+        r = c.get(page)
+        if r.status_code != 200:
+            continue
+        html = r.get_data(as_text=True)
+        scripts = re.findall(
+            r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
+            html, re.DOTALL,
+        )
+        if not scripts:
+            continue
+        full_js = "\n;\n".join(scripts)
+        wrapped = f"(async function() {{\n{full_js}\n}})();"
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".js", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(wrapped)
+            tmp = f.name
+        try:
+            proc = subprocess.run(
+                ["node", "--check", tmp],
+                capture_output=True, text=True, timeout=20,
+            )
+            if proc.returncode != 0:
+                err_first_line = (proc.stderr.split('\n')[1]
+                                  if len(proc.stderr.split('\n')) > 1
+                                  else proc.stderr)[:200]
+                failures.append((page, err_first_line))
+        finally:
+            import os as _os
+            try: _os.unlink(tmp)
+            except OSError: pass
+
+    assert not failures, (
+        f"Páginas con JS inválido — usuarios verán botones inertes:\n" +
+        "\n".join(f"  {p}: {err}" for p, err in failures)
+    )
+
+
 def test_compras_no_orphan_fetch_urls():
     """Audit de URLs que el frontend llama vs endpoints registrados.
 

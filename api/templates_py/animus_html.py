@@ -1153,52 +1153,52 @@ function renderInfGrid(){
 
     const bankOk = inf.banco || inf.cuenta_bancaria;
 
-    return \`<div style="background:var(--bg2);border:1px solid \${hasPend?'rgba(245,158,11,.4)':col+'33'};border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:.2s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+    return `<div style="background:var(--bg2);border:1px solid ${hasPend?'rgba(245,158,11,.4)':col+'33'};border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:.2s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
       <!-- Header -->
-      <div style="background:linear-gradient(135deg,\${col}22,\${col}08);padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);">
-        <div style="width:44px;height:44px;border-radius:50%;background:\${col};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">\${ini}</div>
+      <div style="background:linear-gradient(135deg,${col}22,${col}08);padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);">
+        <div style="width:44px;height:44px;border-radius:50%;background:${col};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">${ini}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${inf.nombre}</div>
-          <div style="font-size:12px;color:var(--text2);">\${inf.usuario_red ? '@'+inf.usuario_red : ''} <span style="color:var(--text3);">\${inf.red_social||'IG'}</span></div>
+          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${inf.nombre}</div>
+          <div style="font-size:12px;color:var(--text2);">${inf.usuario_red ? '@'+inf.usuario_red : ''} <span style="color:var(--text3);">${inf.red_social||'IG'}</span></div>
         </div>
-        <span style="background:\${badge.bg};color:\${badge.fg};padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap;">\${badge.txt}</span>
+        <span style="background:${badge.bg};color:${badge.fg};padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap;">${badge.txt}</span>
       </div>
       <!-- Stats -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid var(--border);">
         <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nicho</div>
-          <div style="font-size:12px;font-weight:600;color:var(--pink);">\${niche}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--pink);">${niche}</div>
         </div>
         <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Seguidores</div>
-          <div style="font-size:13px;font-weight:700;">\${seg}</div>
+          <div style="font-size:13px;font-weight:700;">${seg}</div>
         </div>
         <div style="padding:10px;text-align:center;">
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ER</div>
-          <div style="font-size:13px;font-weight:700;color:var(--green);">\${er}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--green);">${er}</div>
         </div>
       </div>
       <!-- Pagos -->
       <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
         <div>
           <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;">Total pagado</div>
-          <div style="font-size:15px;font-weight:700;color:var(--green);">\${totalPag}</div>
-          <div style="font-size:11px;color:var(--text3);">\${nPagos} \${nPagos===1?'pago':'pagos'} realizados</div>
+          <div style="font-size:15px;font-weight:700;color:var(--green);">${totalPag}</div>
+          <div style="font-size:11px;color:var(--text3);">${nPagos} ${nPagos===1?'pago':'pagos'} realizados</div>
         </div>
-        \${pendMonto ? \`<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 12px;text-align:center;">
+        ${pendMonto ? `<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 12px;text-align:center;">
           <div style="font-size:10px;color:#f59e0b;font-weight:600;text-transform:uppercase;">Pendiente</div>
-          <div style="font-size:13px;font-weight:700;color:#f59e0b;">\${pendMonto}</div>
-        </div>\` : ''}
+          <div style="font-size:13px;font-weight:700;color:#f59e0b;">${pendMonto}</div>
+        </div>` : ''}
       </div>
       <!-- Actions -->
       <div style="padding:12px 16px;display:flex;gap:8px;">
-        <button onclick="abrirModalPago(\${inf.id})" \${bankOk?'':'title="Agrega datos bancarios primero"'} style="flex:1;background:\${bankOk?'linear-gradient(135deg,#059669,#065f46)':'var(--bg3)'};color:\${bankOk?'#fff':'var(--text3)'};border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">
+        <button onclick="abrirModalPago(${inf.id})" ${bankOk?'':'title="Agrega datos bancarios primero"'} style="flex:1;background:${bankOk?'linear-gradient(135deg,#059669,#065f46)':'var(--bg3)'};color:${bankOk?'#fff':'var(--text3)'};border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">
           💸 Solicitar pago
         </button>
-        <button onclick="abrirModalEditInf(\${inf.id})" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">✏️ Editar</button>
+        <button onclick="abrirModalEditInf(${inf.id})" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">✏️ Editar</button>
       </div>
-      \${!bankOk ? '<div style="padding:4px 16px 10px;font-size:10px;color:#f59e0b;">⚠️ Sin datos bancarios — edita el perfil para habilitar pagos</div>' : ''}
-    </div>\`;
+      ${!bankOk ? '<div style="padding:4px 16px 10px;font-size:10px;color:#f59e0b;">⚠️ Sin datos bancarios — edita el perfil para habilitar pagos</div>' : ''}
+    </div>`;
   }).join('');
 }
 
