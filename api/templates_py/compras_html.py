@@ -653,6 +653,34 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 </div>
 
+<!-- MODAL: Cambiar proveedor de UNA MP del catalogo -->
+<div id="m-edit-prov-mp" class="ov" style="z-index:10000;">
+<div class="mdl" style="max-width:480px;width:96vw;">
+  <div style="background:#1F5F5B;color:#fff;padding:14px 18px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="color:#fff;margin:0;font-size:16px;">&#9999;&#65039; Cambiar proveedor de la MP</h3>
+    <button onclick="closeModal('m-edit-prov-mp')" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;">&times;</button>
+  </div>
+  <div class="mb" style="padding:18px;">
+    <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#0f766e;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">MP</div>
+      <div id="epm-info" style="font-weight:700;color:#0f172a;font-size:14px;">&mdash;</div>
+      <div id="epm-prov-actual" style="color:#64748b;font-size:12px;margin-top:2px;">&mdash;</div>
+    </div>
+    <p style="font-size:12px;color:#64748b;margin-bottom:6px;">Solo afecta la MP seleccionada en el cat&aacute;logo (maestro_mps). Las dem&aacute;s MPs de la solicitud no se tocan. Audit log captura el cambio.</p>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:12px;color:#374151;font-weight:600;display:block;margin-bottom:4px;">Proveedor *</label>
+      <input type="text" id="epm-input" list="prov-dl" placeholder="Selecciona o escribe nuevo" autocomplete="off" style="width:100%;padding:8px 12px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px;">
+      <small id="epm-hint" style="color:#94a3b8;font-size:11px;display:block;margin-top:4px;">Usa el desplegable para evitar duplicados por typo.</small>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="guardarProvItemMP()" style="flex:1;background:#0f766e;color:#fff;border:none;border-radius:8px;padding:9px;font-weight:700;cursor:pointer;">&#10003; Guardar</button>
+      <button onclick="closeModal('m-edit-prov-mp')" style="flex:1;background:#e7e5e4;color:#374151;border:none;border-radius:8px;padding:9px;cursor:pointer;">Cancelar</button>
+    </div>
+    <div id="epm-msg" style="margin-top:10px;font-size:12px;"></div>
+  </div>
+</div>
+</div>
+
 <!-- MODAL: Detalle Solicitud (Catalina) -->
 <div id="m-sol-det" class="ov">
 <div class="mdl" style="max-width:1200px;width:96vw;max-height:94vh;overflow-y:auto;position:relative;">
@@ -2285,6 +2313,88 @@ function _ocDetAut(){ closeModal('m-oc-det'); autorizarOC(_detOC.numero_oc||'');
 function _ocDetPago(){ closeModal('m-oc-det'); openPago(_detOC.numero_oc||'',parseFloat(_detOC.valor_total||0),_detOC.proveedor||''); }
 function _ocDetRev(){ closeModal('m-oc-det'); openRev(_detOC.numero_oc||'',_detOC.proveedor||'',parseFloat(_detOC.valor_total||0),(_detOC.observaciones||'').substring(0,80),_detOC.con_iva,parseFloat(_detOC.valor_sin_iva||0)); }
 function _solDetClose(){ closeModal('m-sol-det'); }
+
+// ─── Editar proveedor de UNA MP del catálogo (per-item en solicitud) ─────────
+// Event delegation para evitar problemas de escape de quotes en el HTML render.
+// Se hookea una sola vez en DOMContentLoaded — captura clicks en cualquier
+// boton .btn-edit-prov-mp de la tabla items.
+var _epmActual = null;
+document.addEventListener('click', function(e){
+  var btn = e.target.closest && e.target.closest('.btn-edit-prov-mp');
+  if (!btn) return;
+  var td = btn.closest('.td-prov');
+  if (!td) return;
+  var cod = td.getAttribute('data-cod') || '';
+  var nom = td.getAttribute('data-nom') || '';
+  var prov = td.getAttribute('data-prov') || '';
+  abrirEditarProvItem(cod, nom, prov);
+});
+
+function abrirEditarProvItem(cod, nom, provActual){
+  if(!cod){alert('Codigo MP requerido'); return;}
+  _epmActual = {cod: cod, nom: nom||'', provActual: provActual||''};
+  document.getElementById('epm-info').textContent = (nom||'(sin nombre)') + ' · ' + cod;
+  document.getElementById('epm-prov-actual').textContent = 'Proveedor actual: ' + (provActual || '(vacio)');
+  document.getElementById('epm-input').value = provActual || '';
+  document.getElementById('epm-msg').innerHTML = '';
+  // Asegurar prov-dl populated (PROVS variable global)
+  try {
+    var dl = document.getElementById('prov-dl');
+    if (dl && typeof PROVS !== 'undefined' && (!dl.children || dl.children.length === 0)) {
+      dl.innerHTML = PROVS.map(function(p){
+        return '<option value="'+esc(p.nombre)+'">';
+      }).join('');
+    }
+  } catch(e) {}
+  openModal('m-edit-prov-mp');
+  setTimeout(function(){var el=document.getElementById('epm-input');if(el)el.focus();},120);
+}
+
+async function guardarProvItemMP(){
+  if(!_epmActual)return;
+  var msg = document.getElementById('epm-msg');
+  var nuevo = (document.getElementById('epm-input').value || '').trim();
+  if (nuevo.length < 2){
+    msg.innerHTML = '<span style="color:#dc2626;">Proveedor invalido (min 2 chars).</span>';
+    return;
+  }
+  if (nuevo === (_epmActual.provActual || '')){
+    msg.innerHTML = '<span style="color:#64748b;">Sin cambios.</span>';
+    return;
+  }
+  msg.innerHTML = '<span style="color:#64748b;">Guardando...</span>';
+  try {
+    var r = await fetch('/api/maestro-mps/' + encodeURIComponent(_epmActual.cod) + '/proveedor', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({proveedor: nuevo})
+    });
+    var d = await r.json();
+    if (r.ok) {
+      msg.innerHTML = '<span style="color:#16a34a;font-weight:700;">&#10003; ' + (d.message || 'Proveedor actualizado') + '</span>';
+      // Actualiza la celda + atributo data-prov para futuras ediciones
+      try {
+        var celda = document.querySelector('.td-prov[data-cod="'+_epmActual.cod+'"]');
+        if (celda) {
+          celda.setAttribute('data-prov', nuevo);
+          var span = celda.firstChild;
+          if (span && span.nodeType === Node.TEXT_NODE) {
+            celda.removeChild(span);
+          } else if (celda.firstElementChild && celda.firstElementChild.tagName === 'SPAN') {
+            celda.removeChild(celda.firstElementChild);
+          }
+          var txt = document.createTextNode(nuevo + ' ');
+          celda.insertBefore(txt, celda.firstChild);
+        }
+      } catch(e){}
+      setTimeout(function(){closeModal('m-edit-prov-mp');}, 900);
+    } else {
+      msg.innerHTML = '<span style="color:#dc2626;">Error: ' + (d.error || r.status) + (d.detail ? ' &mdash; ' + d.detail : '') + '</span>';
+    }
+  } catch(e) {
+    msg.innerHTML = '<span style="color:#dc2626;">Error de red: ' + e.message + '</span>';
+  }
+}
 function _solDetApr(){ gestionarSol('Aprobada'); }
 function _solDetRech(){ gestionarSol('Rechazada'); }
 function _solFillProv(){
@@ -3203,10 +3313,11 @@ async function openSolicitudDetail(num){
       h+='<table id="sol-items-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
       h+='<thead style="background:#1F5F5B;color:#fff;">';
       h+='<tr>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:12%;">CÓDIGO</th>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'30':'42')+'%;">MATERIAL</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:13%;">EN ESTANTERÍA</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:12%;">A PEDIR</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">CÓDIGO</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'24':'32')+'%;">MATERIAL</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">PROVEEDOR</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">EN ESTANTERÍA</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">A PEDIR</th>';
       if(puedeEditarPrecios){
         h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">PRECIO UNIT (g)</th>';
       }
@@ -3257,9 +3368,12 @@ async function openSolicitudDetail(num){
         }
         // precio unitario actual (si ya hay) para pre-poblar el input
         var precioActual = parseFloat(it.precio_unitario||0) || 0;
+        var provActual = it.proveedor || '';
+        var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">— sin asignar —</span>';
         h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
         h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'—')+'</td>';
         h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_mp||'—')+'</td>';
+        h+='<td class="td-prov" data-cod="'+esc(it.codigo_mp||'')+'" data-nom="'+esc(it.nombre_mp||'')+'" data-prov="'+esc(provActual)+'" style="padding:11px 14px;font-size:12px;color:#475569;">'+provHtml+' <button class="btn-edit-prov-mp" title="Cambiar proveedor de esta MP" style="margin-left:4px;padding:2px 6px;font-size:11px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
         h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
         h+='<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(pedir, it.unidad)+'</td>';
         if(puedeEditarPrecios){
@@ -3273,8 +3387,8 @@ async function openSolicitudDetail(num){
         h+='<td style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
         h+='</tr>';
       });
-      // Fila de total
-      var colspanTotal = puedeEditarPrecios ? 2 : 2;
+      // Fila de total — colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
+      var colspanTotal = 3;
       h+='<tr style="background:#f0fdfa;border-top:2px solid #1F5F5B;">';
       h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:#0f766e;text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
       h+='<td style="padding:12px 14px;text-align:right;color:#0f766e;font-size:11px;text-transform:uppercase;font-weight:700;">cantidad total</td>';

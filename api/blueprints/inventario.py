@@ -1291,12 +1291,31 @@ def update_stock_minimo(codigo):
 @bp.route('/api/maestro-mps/<codigo>/proveedor', methods=['PUT'])
 def update_mp_proveedor(codigo):
     """Actualiza el proveedor asignado a una MP en maestro_mps.
-    Sin auth — edicion de catalogo, no accion sensible de inventario.
-    Al guardar, tambien registra el proveedor en proveedores (directorio Compras)."""
+
+    Caso de uso original: edicion del catalogo desde dashboard.
+    Caso de uso 2026-04-27 (CEO): tambien usado per-item desde modal
+    Ver & Gestionar de una solicitud cuando alguna MP esta trocada
+    (asignada al proveedor incorrecto). Por eso ahora deja audit_log.
+
+    Body:
+      proveedor: str
+
+    Si la MP no existe en maestro_mps, la crea (legacy behavior preservado
+    para soportar entradas que solo estaban en movimientos historicos).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
     d = request.json or {}
     proveedor = (d.get('proveedor') or '').strip()
     conn = get_db()
     c = conn.cursor()
+
+    # Snapshot del valor anterior antes del update
+    anterior_row = c.execute(
+        "SELECT proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)
+    ).fetchone()
+    anterior = (anterior_row[0] or '') if anterior_row else None
 
     # 1. Actualizar maestro_mps
     c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?", (proveedor, codigo))
@@ -1332,8 +1351,29 @@ def update_mp_proveedor(codigo):
             except Exception:
                 pass  # Si ya existe por nombre con diferente case, ignorar
 
+    # Audit log si hubo cambio real
+    if anterior is None or anterior != proveedor:
+        try:
+            import json as _json
+            c.execute("""INSERT INTO audit_log
+                         (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                         VALUES (?,?,?,?,?,?,datetime('now'))""",
+                      (user, 'EDITAR_PROVEEDOR_MP', 'maestro_mps', codigo,
+                       _json.dumps({
+                           'codigo_mp': codigo,
+                           'proveedor_anterior': anterior or '',
+                           'proveedor_nuevo': proveedor,
+                           'mp_creada': anterior is None,
+                       }, ensure_ascii=False),
+                       request.remote_addr))
+        except sqlite3.OperationalError:
+            pass
+
     conn.commit()
-    return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
+    return jsonify({
+        'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor,
+        'proveedor_anterior': anterior or '',
+    })
 
 @bp.route('/api/maestro-mps/<codigo>/mee-stock-minimo', methods=['PUT'])
 def update_mee_stock_minimo(codigo):

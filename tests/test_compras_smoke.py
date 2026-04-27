@@ -517,3 +517,80 @@ def test_bulk_regenerar_legacy_aplica_fix(app, db_clean):
     cur.execute("DELETE FROM ordenes_compra WHERE numero_oc='OC-BULK-APPLY'")
     cur.execute("DELETE FROM marketing_influencers WHERE id=9996")
     conn.commit(); conn.close()
+
+
+# ═══ Editar proveedor de UNA MP del catalogo (per-item en solicitudes) ═══════
+
+
+def test_editar_prov_mp_actualiza_y_audit(app, db_clean):
+    """PUT /api/maestro-mps/<cod>/proveedor: maestro_mps actualizado + audit_log.
+
+    El endpoint existia desde antes (usado en dashboard); este test cubre
+    la nueva responsabilidad: dejar registro en audit_log para trazabilidad
+    cuando se usa per-item desde Solicitudes (CEO 2026-04-27).
+    """
+    import sqlite3
+    import os
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MP_PROV_EDIT','test','Test','Agenquimicos', 1)""")
+    conn.commit()
+    conn.close()
+
+    r = c.put("/api/maestro-mps/MP_PROV_EDIT/proveedor",
+              json={"proveedor": "Lyphar Corregido"},
+              headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["proveedor"] == "Lyphar Corregido"
+    assert j["proveedor_anterior"] == "Agenquimicos"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    new_prov = cur.execute(
+        "SELECT proveedor FROM maestro_mps WHERE codigo_mp='MP_PROV_EDIT'"
+    ).fetchone()[0]
+    assert new_prov == "Lyphar Corregido"
+
+    audit = cur.execute(
+        "SELECT usuario, accion FROM audit_log "
+        "WHERE accion='EDITAR_PROVEEDOR_MP' AND registro_id='MP_PROV_EDIT' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert audit is not None
+    assert audit[0] == "sebastian"
+
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_PROV_EDIT'")
+    conn.commit(); conn.close()
+
+
+def test_editar_prov_mp_no_audit_si_sin_cambio(app, db_clean):
+    """Si proveedor nuevo es igual al actual, no se registra audit_log."""
+    import sqlite3
+    import os
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO maestro_mps
+                   (codigo_mp, nombre_inci, nombre_comercial, proveedor, activo)
+                   VALUES ('MP_IDEM','x','X','Lyphar', 1)""")
+    conn.commit()
+    conn.close()
+
+    r = c.put("/api/maestro-mps/MP_IDEM/proveedor",
+              json={"proveedor": "Lyphar"}, headers=csrf_headers())
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    audit_count = cur.execute(
+        "SELECT COUNT(*) FROM audit_log "
+        "WHERE accion='EDITAR_PROVEEDOR_MP' AND registro_id='MP_IDEM'"
+    ).fetchone()[0]
+    assert audit_count == 0, "no debe haber audit log si no hubo cambio"
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_IDEM'")
+    conn.commit(); conn.close()
