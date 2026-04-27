@@ -667,10 +667,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <!-- MODAL: Detalle Solicitud (Catalina) -->
 <div id="m-sol-det" class="ov">
-<div class="mdl mdl-lg">
-  <div class="mh"><h3>&#128203; Solicitud de Compra</h3><button class="mx" onclick="closeModal('m-sol-det')">&times;</button></div>
-  <div class="mb" id="sol-det-body" style="padding:0 4px;"><div style="text-align:center;padding:40px;color:#78716c;">Cargando...</div></div>
-  <div class="mf" id="sol-det-footer">
+<div class="mdl" style="max-width:900px;max-height:92vh;overflow-y:auto;">
+  <div class="mh" style="display:none;"><h3>&#128203; Solicitud de Compra</h3><button class="mx" onclick="closeModal('m-sol-det')">&times;</button></div>
+  <button onclick="closeModal('m-sol-det')" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700;z-index:10;display:flex;align-items:center;justify-content:center;">&times;</button>
+  <div class="mb" id="sol-det-body" style="padding:0;"><div style="text-align:center;padding:60px 40px;color:#78716c;">Cargando...</div></div>
+  <div class="mf" id="sol-det-footer" style="padding:14px 22px;background:#fafaf9;border-top:1px solid #e7e5e4;">
     <button class="btn bo" onclick="closeModal('m-sol-det')">Cerrar</button>
   </div>
 </div>
@@ -2943,11 +2944,23 @@ async function openSolicitudDetail(num){
       h+='<th style="text-align:left;padding:8px 10px;font-weight:700;font-size:10px;letter-spacing:.4px;">PROVEEDOR</th>';
       h+='<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10px;letter-spacing:.4px;">VALOR EST.</th>';
       h+='</tr></thead><tbody>';
+      // Formatea cantidades preservando decimales en péptidos (< 10g):
+      // 0.4g → "0.4 g", 7g → "7 g", 1500g → "1.5 kg"
+      // Antes Math.round() truncaba 0.4 → 0, ocultando las cantidades reales
+      // de péptidos que cuestan caro pero se usan en pequeñas cantidades.
       function fmtCant(g, unidad){
         var n = parseFloat(g||0);
-        if(unidad && unidad !== 'g') return n.toLocaleString('es-CO',{maximumFractionDigits:1}) + ' ' + unidad;
-        if(n >= 1000) return (n/1000).toLocaleString('es-CO',{maximumFractionDigits:1}) + ' kg';
-        return Math.round(n).toLocaleString('es-CO') + ' g';
+        if(unidad && unidad !== 'g') {
+          // unidades distintas a g: 1 decimal si necesario
+          var dec = (n % 1 === 0) ? 0 : 2;
+          return n.toLocaleString('es-CO',{maximumFractionDigits:dec}) + ' ' + unidad;
+        }
+        if(n >= 1000) return (n/1000).toLocaleString('es-CO',{maximumFractionDigits:2}) + ' kg';
+        if(n >= 10) return Math.round(n).toLocaleString('es-CO') + ' g';
+        // Cantidades pequeñas (péptidos): preservar 1-2 decimales
+        if(n >= 1) return n.toLocaleString('es-CO',{maximumFractionDigits:1}) + ' g';
+        if(n > 0) return n.toLocaleString('es-CO',{maximumFractionDigits:2}) + ' g';
+        return '0 g';
       }
       var totalValorEst = 0;
       items.forEach(function(it, idx){
