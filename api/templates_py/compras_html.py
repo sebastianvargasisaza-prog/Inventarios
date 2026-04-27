@@ -114,7 +114,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <div class="tab-nav">
   <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
-  <button class="tn"     data-tab="ocs">&#x1F4CB; &#xD3;rdenes de Compra</button>
   <button class="tn"     data-tab="pagos">&#x1F4B8; Pagos</button>
   <button class="tn"     data-tab="por-pagar">&#x1F4B0; Por Pagar</button>
   <button class="tn"     data-tab="alertas">&#x1F6A8; Alertas</button>
@@ -128,64 +127,20 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <div id="pane-dash" class="pane on">
   <div id="kpi-area" class="kpis"></div>
   <div class="queue-row">
-    <div class="qbox"><div class="qtit">&#x23F3; Para Autorizar</div><div id="q-aut"></div></div>
-    <div class="qbox"><div class="qtit">&#x1F4B8; Para Pagar</div><div id="q-pag"></div></div>
+    <div class="qbox">
+      <div class="qtit">&#x26A1; SOLs esperando aprobaci&#xF3;n</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Solicitudes de compra pendientes de revisi&#xF3;n gerencial</div>
+      <div id="q-aut"></div>
+    </div>
+    <div class="qbox">
+      <div class="qtit">&#x1F4B8; OCs autorizadas &middot; por pagar</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">&#xD3;rdenes aprobadas sin pago ejecutado</div>
+      <div id="q-pag"></div>
+    </div>
   </div>
+  <div id="dash-chart-wrap"></div>
 </div>
 
-<div id="pane-ocs" class="pane">
-  <!-- MP restock alert banner — hidden unless cat=MP or ALL -->
-  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
-      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
-      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
-    </div>
-    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
-  </div>
-  <!-- Banner Programacion — alertas de deficit MP por velocidad Shopify -->
-  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:18px;">&#x1F4E1;</span>
-      <div style="flex:1;">
-        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
-        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n — basado en velocidad Shopify + f&#xF3;rmulas + stock MP</div>
-      </div>
-      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
-      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
-    </div>
-  </div>
-  <!-- CC solicitudes — hidden unless cat=CC or ALL -->
-  <div id="cc-solic-wrap" style="margin-bottom:20px;display:none;">
-    <div style="font-weight:700;font-size:13px;color:#1c1917;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-      <span style="background:#fef3c7;color:#92400e;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;" id="cc-solic-badge">0</span>
-      Solicitudes pendientes de aprobaci&oacute;n
-    </div>
-    <div id="pills-cc-solic" class="pills"></div>
-    <div id="grid-cc-solic" class="grid"></div>
-  </div>
-  <!-- Category filter pills -->
-  <div id="ocs-cat-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-    <button class="ocs-cpill on" data-cat="ALL">&#x1F4CB; Todas</button>
-    <button class="ocs-cpill" data-cat="mp">&#x1F9EA; Mat. Primas</button>
-    <button class="ocs-cpill" data-cat="mee">&#x1F4E6; Empaque</button>
-    <button class="ocs-cpill" data-cat="svc">&#x1F527; Servicios</button>
-    <button class="ocs-cpill" data-cat="adm">&#x1F4CB; Adm</button>
-    <button class="ocs-cpill" data-cat="inf">&#x1F3DB; Infra</button>
-    <button class="ocs-cpill" data-cat="cc">&#x1F4B3; CC</button>
-  </div>
-  <!-- Search + status filter -->
-  <div class="bar">
-    <input type="text" id="q-ocs" placeholder="Buscar OC, proveedor..." oninput="renderOCS()">
-    <select id="s-ocs" onchange="renderOCS()">
-      <option value="">Todos los estados</option>
-      <option>Borrador</option><option>Revisada</option><option>Autorizada</option>
-      <option>Pagada</option><option>Recibida</option>
-    </select>
-  </div>
-  <div id="pills-ocs" class="pills"></div>
-  <div id="grid-ocs" class="grid"></div>
-</div>
 
 <div id="pane-pagos" class="pane">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
@@ -296,17 +251,49 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </div>
 
 <div id="pane-solic" class="pane">
+  <!-- Alertas MP restock -->
+  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
+      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
+      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
+    </div>
+    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+  </div>
+  <!-- Alertas Programacion -->
+  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x1F4E1;</span>
+      <div style="flex:1;">
+        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
+        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n &mdash; velocidad Shopify + f&#xF3;rmulas + stock MP</div>
+      </div>
+      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
+      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
+    </div>
+  </div>
+  <!-- Filtros de categoria -->
+  <div id="solic-cat-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+    <button class="ocs-cpill on" data-scat="ALL" onclick="setSolicCat(this)">&#x1F4CB; Todas</button>
+    <button class="ocs-cpill" data-scat="mp" onclick="setSolicCat(this)">&#x1F9EA; Mat. Primas</button>
+    <button class="ocs-cpill" data-scat="mee" onclick="setSolicCat(this)">&#x1F4E6; Empaque</button>
+    <button class="ocs-cpill" data-scat="svc" onclick="setSolicCat(this)">&#x1F527; Servicios</button>
+    <button class="ocs-cpill" data-scat="adm" onclick="setSolicCat(this)">&#x1F4CB; Adm</button>
+    <button class="ocs-cpill" data-scat="inf" onclick="setSolicCat(this)">&#x1F3DB; Infra</button>
+    <button class="ocs-cpill" data-scat="cc" onclick="setSolicCat(this)">&#x1F4B3; CC</button>
+  </div>
   <div class="bar">
-    <input type="text" id="q-solic" placeholder="Buscar solicitud, solicitante..." oninput="renderSolicitudes()">
+    <input type="text" id="q-solic" placeholder="Buscar SOL, OC, solicitante, proveedor..." oninput="renderSolicitudes()">
     <select id="s-solic" onchange="renderSolicitudes()">
       <option value="">Todos los estados</option>
       <option value="Pendiente">Pendiente</option>
       <option value="Aprobada">Aprobada</option>
+      <option value="Pagada">Pagada</option>
       <option value="Rechazada">Rechazada</option>
     </select>
     <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
-    <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="Descarga PDF ejecutivo con todas las solicitudes pendientes/aprobadas para revisión de Gerencia">&#x1F4C4; Descargar PDF</button>
-    <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Borra solicitudes Pendientes auto-generadas y crea nuevas con los déficits ACTUALES de Programación. No toca solicitudes Aprobadas/Pagadas.">&#x1F504; Regenerar auto</button>
+    <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="PDF ejecutivo">&#x1F4C4; PDF</button>
+    <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Regenerar solicitudes auto">&#x1F504; Regenerar</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -813,14 +800,13 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='influencer') loadInfluencers();
     else if(tab==='consol') loadConsolidado();
-    else if(tab==='ocs'){ renderOCS(); }
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     var fab = document.getElementById('fab-btn');
     if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
-      var cat=tab==='dash'?'':tab==='ocs'?(_ocsCatFilter==='ALL'?'':_ocsCatFilter.toUpperCase()):tab.toUpperCase();
+      var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
     }; }
   });
@@ -869,7 +855,6 @@ async function loadData(){
   }catch(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; }
   renderDash();
   renderMPAlerts();
-  renderOCS();
   // Load Programacion alerts (non-blocking)
   cargarAlertasProgramacion();
 }
@@ -903,8 +888,8 @@ async function generarOCDesdeCompras(btnEl){
     var d = await r.json();
     if(d.ok){
       alert('\u2705 ' + d.mensaje);
-      // Refresh solicitudes list
-      if(typeof renderOCS === 'function') renderOCS();
+      // Refresh dashboard
+      renderDash();
     } else {
       alert('Error: ' + (d.error || 'desconocido'));
     }
@@ -916,34 +901,68 @@ async function generarOCDesdeCompras(btnEl){
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────
-function renderDash(){
-  var _noInfl=function(o){ return (o.categoria||'').indexOf('Influencer')<0; };
-  var autList = OCS.filter(function(o){ return o.estado==='Revisada' && _noInfl(o); });
-  var pagList = OCS.filter(function(o){ return o.estado==='Autorizada' && _noInfl(o); });
-  var recList = OCS.filter(function(o){ return o.estado==='Pagada' && _noInfl(o); });
-  var vAut = autList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
-  var vPag = pagList.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
-  var mes = new Date().toISOString().substring(0,7);
-  var pagMes = OCS.filter(function(o){ return o.estado==='Pagada'&&(o.fecha_pago||o.fecha||'').startsWith(mes); });
-  var vMes = pagMes.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
-  document.getElementById('kpi-area').innerHTML =
-    mkKpi('Por Autorizar', autList.length+' OCs', fmt(vAut), autList.length>0?'w':'')+
-    mkKpi('Por Pagar', pagList.length+' OCs', fmt(vPag), pagList.length>0?'w':'')+
-    mkKpi('Pagado este mes', pagMes.length+' OCs', fmt(vMes), 'g')+
-    mkKpi('Pend. Recepcion', recList.length+' OCs', 'fisicos pagados', '');
-  document.getElementById('q-aut').innerHTML = autList.length
-    ? autList.map(function(o){ return miniCard(o); }).join('')
-    : '<div class="empty">Sin OCs pendientes</div>';
-  document.getElementById('q-pag').innerHTML = pagList.length
-    ? pagList.map(function(o){ return miniCard(o); }).join('')
-    : '<div class="empty">Sin OCs pendientes</div>';
+async function renderDash(){
+  // Ensure SOLIC loaded (covers both regular + CC categories)
+  if(!SOLIC||!SOLIC.length){
+    try{
+      var _r1=await fetch('/api/solicitudes-compra');
+      var _d1=await _r1.json();
+      var _r2=await fetch('/api/solicitudes-compra?categoria=Cuenta+de+Cobro');
+      var _d2=await _r2.json();
+      var _all=(_d1.solicitudes||[]).concat(_d2.solicitudes||[]);
+      var _seen={};
+      SOLIC=_all.filter(function(s){ if(_seen[s.numero]) return false; _seen[s.numero]=1; return true; });
+    }catch(e){ SOLIC=[]; }
+  }
+
+  // KPI data
+  var mes=new Date().toISOString().substring(0,7);
+  var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
+  var ocsPorPagar=OCS.filter(function(o){ return o.estado==='Autorizada'; });
+  var pagMes=OCS.filter(function(o){ return o.estado==='Pagada'&&(o.fecha_pago||o.fecha||'').startsWith(mes); });
+  var vPorPagar=ocsPorPagar.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var vMes=pagMes.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
+  var nDeficit=(_ALERTAS_MP||[]).filter(function(a){ return a.estado==='deficit'; }).length;
+
+  // KPIs
+  document.getElementById('kpi-area').innerHTML=
+    mkKpi('SOLs pendientes',solicPend.length+' solicitudes','Esperando aprobación',solicPend.length>0?'w':'')+
+    mkKpi('OCs por pagar',ocsPorPagar.length+' autorizadas',fmt(vPorPagar),ocsPorPagar.length>0?'w':'')+
+    mkKpi('Pagado este mes',pagMes.length+' OCs',fmt(vMes),'g')+
+    mkKpi('MPs en déficit',nDeficit+' materiales','Stock bajo punto reorden',nDeficit>0?'w':'');
+
+  // Left queue: SOLs pending approval
+  var urgColor={'Alta':'#dc2626','Media':'#f59e0b','Normal':'#64748b'};
+  var stBg={'Pendiente':'#fef3c7','Aprobada':'#d1fae5','Rechazada':'#fee2e2','Pagada':'#e0f2fe'};
+  var stFg={'Pendiente':'#92400e','Aprobada':'#065f46','Rechazada':'#991b1b','Pagada':'#075985'};
+  document.getElementById('q-aut').innerHTML=solicPend.length
+    ? solicPend.slice(0,8).map(function(s){
+        var urg=s.urgencia||'Normal';
+        var urgC=urgColor[urg]||'#78716c';
+        return '<div class="card" style="margin-bottom:8px;">'
+          +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
+          +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.categoria||'-')+'</div></div>'
+          +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
+          +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span>'
+          +(s.observaciones?'<span style="font-size:11px;color:#57534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">'+esc((s.observaciones||'').substring(0,50))+'</span>':'')
+          +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
+          +'<div class="acts"><button class="btn bi bs" onclick="document.querySelector(\'[data-tab=solic]\').click();setTimeout(function(){var el=document.querySelector(\'[data-num=\\\'' +esc(s.numero)+ '\\\']\');if(el)el.scrollIntoView({behavior:\'smooth\'});},400);">Revisar</button></div>'
+          +'</div>';
+      }).join('')
+    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>';
+
+  // Right queue: OCs autorizadas (ready to pay)
+  document.getElementById('q-pag').innerHTML=ocsPorPagar.length
+    ? ocsPorPagar.slice(0,8).map(function(o){ return miniCard(o); }).join('')
+    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin OCs autorizadas ✓</div>';
+
   // Spending chart by category
   var _catLabels=['MP','MEE','SVC','ADM','INF','CC'];
   var _catColors=['#f59e0b','#3b82f6','#8b5cf6','#10b981','#ef4444','#ec4899'];
   var _catTotals=_catLabels.map(function(g){ return OCS.filter(function(o){ return inGroup(o.categoria,g.toLowerCase())&&o.estado==='Pagada'; }).reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0); });
   var _maxV=Math.max.apply(null,_catTotals)||1;
   var _chartHTML='<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px;margin-top:14px;">';
-  _chartHTML+='<div style="font-weight:700;font-size:13px;color:#1c1917;margin-bottom:12px;">&#x1F4CA; Gasto acumulado por categor\u00EDa (OCs Pagadas)</div>';
+  _chartHTML+='<div style="font-weight:700;font-size:13px;color:#1c1917;margin-bottom:12px;">&#x1F4CA; Gasto acumulado por categoría (OCs Pagadas)</div>';
   _chartHTML+='<div style="display:grid;gap:7px;">';
   _catLabels.forEach(function(g,i){
     var pct=_catTotals[i]/_maxV*100;
@@ -1566,7 +1585,7 @@ async function submitOC(){
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc');
     await loadData();
-    renderOCS();
+    renderDash();
     alert(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
   }catch(e){ alert('Error de conexion: '+e); }
 }
@@ -1626,8 +1645,7 @@ async function eliminarOC(oc){
     var at=document.querySelector('.tn.on');
     if(at){
       var _tab=at.getAttribute('data-tab');
-      if(_tab==='ocs') renderOCS();
-      else if(_tab) try{renderCat(_tab);}catch(_){}
+      if(_tab) try{renderCat(_tab);}catch(_){}
     }
     alert('OC '+oc+' eliminada');
   }catch(e){ alert('Error: '+e); }
@@ -1889,7 +1907,7 @@ async function crearOCMP(){
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc-mp');
     await loadData();
-    renderOCS();
+    renderDash();
     alert('OC creada: '+d.numero_oc);
   }catch(e){ alert('Error de conexion: '+e); }
 }
@@ -1973,7 +1991,7 @@ async function crearOCSugerida(){
       else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
     }catch(e){ errores.push(prov+': '+e.message); }
   }
-  await loadData(); renderOCS();
+  await loadData(); renderDash();
   if(errores.length){
     alert('Creadas: '+creadas.join(', ')+'\\nErrores:\\n'+errores.join('\\n'));
   } else {
@@ -2000,7 +2018,7 @@ async function crearOCFila(i){
       if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
       var row=document.getElementById('sugr'+i);
       if(row) row.style.background='#f0fdf4';
-      await loadData(); renderOCS();
+      await loadData(); renderDash();
     } else {
       var msg=(res&&res.error)?res.error:'Error '+r.status;
       if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
@@ -2391,6 +2409,7 @@ async function openOCDetail(num){
 var SOLIC=[];
 var INFLUENCERS=[];
 var CC_SOLIC=[];
+var _SOLIC_CAT_FILTER='ALL';
 function descargarSolicitudesPDF(){
   // Filtra por el estado seleccionado en el dropdown si lo hay; si no, baja
   // Pendientes+Aprobadas (lo más útil para que Gerencia revise lo que falta).
@@ -2421,11 +2440,15 @@ async function regenerarSolicitudesAuto(){
   }
 }
 
-async function loadSolicitudes(){
+async async function loadSolicitudes(){
   try{
-    var r=await fetch('/api/solicitudes-compra');
-    var d=await r.json();
-    SOLIC=d.solicitudes||[];
+    var _results=await Promise.all([
+      fetch('/api/solicitudes-compra').then(function(r){ return r.json(); }),
+      fetch('/api/solicitudes-compra?categoria=Cuenta+de+Cobro').then(function(r){ return r.json(); })
+    ]);
+    var _all=(_results[0].solicitudes||[]).concat(_results[1].solicitudes||[]);
+    var _seen={};
+    SOLIC=_all.filter(function(s){ if(_seen[s.numero]) return false; _seen[s.numero]=1; return true; });
   }catch(e){ SOLIC=[]; }
   renderSolicitudes();
 }
@@ -2778,32 +2801,76 @@ function rechazarInfluencer(oc_num, sol_num){
 function renderSolicitudes(){
   var q=(document.getElementById('q-solic')||{value:''}).value.toLowerCase();
   var st=(document.getElementById('s-solic')||{value:''}).value;
-  var _INTANGIBLE_CATS=['Influencer/Marketing Digital','Cuenta de Cobro'];
+  var cat=_SOLIC_CAT_FILTER||'ALL';
+
+  // Build OC lookup map for inline display
+  var ocMap={};
+  (OCS||[]).forEach(function(o){ ocMap[o.numero_oc]=o; });
+
   var list=SOLIC.filter(function(s){
-    if(_INTANGIBLE_CATS.indexOf(s.categoria)>=0) return false;
+    // Always exclude Influencer/Marketing (has its own tab), unless cat filter is 'inf'
+    if(cat==='ALL'||(cat!=='inf')){
+      if((s.categoria||'').indexOf('Influencer')>=0) return false;
+    }
+    // Category filter
+    if(cat==='ALL'){
+      // show all except influencer (already excluded above)
+    } else if(cat==='cc'){
+      if((s.categoria||'').indexOf('Cuenta de Cobro')<0) return false;
+    } else if(cat==='inf'){
+      if((s.categoria||'').indexOf('Influencer')<0) return false;
+    } else {
+      if(!inGroup(s.categoria,cat)) return false;
+    }
+    // Estado filter
     if(st&&s.estado!==st) return false;
-    if(q&&(s.numero||'').toLowerCase().indexOf(q)<0&&(s.solicitante||'').toLowerCase().indexOf(q)<0&&(s.observaciones||'').toLowerCase().indexOf(q)<0) return false;
+    // Search
+    var oc=ocMap[s.numero_oc];
+    var ocNum=oc?oc.numero_oc:'';
+    if(q&&(s.numero||'').toLowerCase().indexOf(q)<0
+        &&(s.solicitante||'').toLowerCase().indexOf(q)<0
+        &&(s.observaciones||'').toLowerCase().indexOf(q)<0
+        &&ocNum.toLowerCase().indexOf(q)<0) return false;
     return true;
   });
+
   var pend=list.filter(function(s){ return s.estado==='Pendiente'; }).length;
   var apro=list.filter(function(s){ return s.estado==='Aprobada'; }).length;
   var rech=list.filter(function(s){ return s.estado==='Rechazada'; }).length;
+  var paga=list.filter(function(s){ return s.estado==='Pagada'; }).length;
   var pills='<span class="pill">'+list.length+' solicitudes</span>';
   if(pend) pills+='<span class="pill y">Pendiente: '+pend+'</span>';
   if(apro) pills+='<span class="pill g">Aprobada: '+apro+'</span>';
   if(rech) pills+='<span class="pill" style="background:#fee2e2;color:#991b1b;">Rechazada: '+rech+'</span>';
+  if(paga) pills+='<span class="pill" style="background:#e0f2fe;color:#075985;">Pagada: '+paga+'</span>';
   document.getElementById('pills-solic').innerHTML=pills;
-  if(!list.length){ document.getElementById('grid-solic').innerHTML='<div class="empty">No hay solicitudes</div>'; return; }
-  var urgColor={'Normal':'#16a34a','Urgente':'#d97706','Critico':'#dc2626'};
-  var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7','Rechazada':'#fee2e2'};
-  var stFg={'Pendiente':'#92400e','Aprobada':'#166534','Rechazada':'#991b1b'};
+
+  if(!list.length){
+    document.getElementById('grid-solic').innerHTML='<div class="empty">No hay solicitudes'+(cat!=='ALL'?' en esta categoría':'')+'</div>';
+    return;
+  }
+
+  var urgColor={'Normal':'#16a34a','Urgente':'#d97706','Critico':'#dc2626','Alta':'#dc2626','Media':'#d97706'};
+  var stBg={'Pendiente':'#fef3c7','Aprobada':'#dcfce7','Rechazada':'#fee2e2','Pagada':'#e0f2fe'};
+  var stFg={'Pendiente':'#92400e','Aprobada':'#166534','Rechazada':'#991b1b','Pagada':'#075985'};
+
   document.getElementById('grid-solic').innerHTML=list.map(function(s){
     var urg=s.urgencia||'Normal';
     var urgC=urgColor[urg]||'#78716c';
     var stB=stBg[s.estado]||'#f3f4f6';
     var stF=stFg[s.estado]||'#374151';
-    return '<div class="card">'
-      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
+    // OC inline badge
+    var oc=ocMap[s.numero_oc];
+    var ocBadge='';
+    if(oc){
+      var ocStBg={'Revisada':'#fef3c7','Autorizada':'#d1fae5','Pagada':'#e0f2fe','Recibida':'#f3e8ff'}[oc.estado]||'#f3f4f6';
+      var ocStFg={'Revisada':'#92400e','Autorizada':'#065f46','Pagada':'#075985','Recibida':'#6b21a8'}[oc.estado]||'#374151';
+      ocBadge='<span style="font-family:monospace;font-size:10px;background:'+ocStBg+';color:'+ocStFg+';border-radius:4px;padding:1px 6px;margin-left:6px;" title="Orden de Compra vinculada">'+esc(oc.numero_oc)+'</span>';
+    } else if(s.numero_oc){
+      ocBadge='<span style="font-family:monospace;font-size:10px;background:#f3f4f6;color:#9ca3af;border-radius:4px;padding:1px 6px;margin-left:6px;">'+esc(s.numero_oc)+'</span>';
+    }
+    return '<div class="card" data-num="'+esc(s.numero)+'">'
+      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+ocBadge+'</div>'
       +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
       +'<span class="badge" style="background:'+stB+';color:'+stF+';">'+s.estado+'</span></div>'
       +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
@@ -2814,14 +2881,13 @@ function renderSolicitudes(){
       +'</div>';
   }).join('');
 }
-async function loadCCSolicitudes(){
-  try{
-    var r=await fetch('/api/solicitudes-compra?categoria=Cuenta+de+Cobro');
-    var d=await r.json();
-    CC_SOLIC=d.solicitudes||[];
-  }catch(e){ CC_SOLIC=[]; }
-  renderCCSolicitudes();
+function setSolicCat(btn){
+  _SOLIC_CAT_FILTER=(btn&&btn.getAttribute('data-scat'))||'ALL';
+  document.querySelectorAll('.ocs-cpill').forEach(function(b){ b.classList.remove('on'); });
+  if(btn) btn.classList.add('on');
+  renderSolicitudes();
 }
+
 function renderCCSolicitudes(){
   var pend=CC_SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
   var badge=document.getElementById('cc-solic-badge');
