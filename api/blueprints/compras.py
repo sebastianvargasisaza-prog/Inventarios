@@ -1586,7 +1586,33 @@ def regenerar_comprobante_pdf(comp_id):
         'email': '',
     }
 
-    # ── Si datos bancarios vacíos O forzar_obs: parsear OBS del comprobante ──
+    # ── Re-lookup desde marketing_influencers (autoritativo si es influencer) ──
+    # Para Animus/Influencer pagos, los datos en marketing_influencers son
+    # la fuente de verdad: nombre + cédula + banco + cuenta + tipo + ciudad +
+    # email. Antes solo se completaba el email; ahora completamos todo lo
+    # que esté vacío en el beneficiario, usando el nombre como key de match.
+    es_influencer = (empresa or '').lower() == 'animus' or 'influencer' in (empresa or '').lower()
+    if es_influencer or forzar_obs:
+        try:
+            mi = c.execute("""
+                SELECT nombre, cedula_nit, banco, cuenta_bancaria,
+                       tipo_cuenta, ciudad, email
+                FROM marketing_influencers
+                WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?)) LIMIT 1
+            """, (beneficiario['nombre'],)).fetchone()
+            if mi:
+                # Completar campos vacíos (forzar_obs sobrescribe siempre)
+                pairs = [
+                    ('cedula', mi[1]), ('banco', mi[2]), ('cuenta', mi[3]),
+                    ('tipo_cuenta', mi[4]), ('ciudad', mi[5]), ('email', mi[6]),
+                ]
+                for key, val in pairs:
+                    if val and (forzar_obs or not beneficiario.get(key)):
+                        beneficiario[key] = val
+        except Exception:
+            pass
+
+    # ── Si aún faltan datos bancarios O forzar_obs: parsear OBS del comprobante ──
     if forzar_obs or not beneficiario['banco'] or not beneficiario['cuenta']:
         from comprobante_pago import parse_obs_beneficiario
         obs_src = observaciones  # OBS guardado en comprobante
@@ -1606,17 +1632,6 @@ def regenerar_comprobante_pdf(comp_id):
                 beneficiario['cuenta'] = parsed.get('cuenta') or beneficiario['cuenta']
             if forzar_obs or not beneficiario['cedula']:
                 beneficiario['cedula'] = parsed.get('cedula') or beneficiario['cedula']
-
-    # ── Intentar completar email desde marketing_influencers ──
-    try:
-        mi = c.execute(
-            "SELECT email FROM marketing_influencers WHERE nombre=? LIMIT 1",
-            (beneficiario['nombre'],)
-        ).fetchone()
-        if mi and mi[0]:
-            beneficiario['email'] = mi[0]
-    except Exception:
-        pass
 
     # ── Valor: re-leer del comprobante (subtotal ya almacenado) ──
     # Si el subtotal almacenado parece incorrecto (< 10000 para pesos COP),

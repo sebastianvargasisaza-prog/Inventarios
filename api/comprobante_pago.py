@@ -37,6 +37,34 @@ COLOR_BEIGE = (247, 244, 239)
 COLOR_BLANCO = (255, 255, 255)
 COLOR_NEGRO = (0, 0, 0)
 
+# ── Paleta ÁNIMUS Lab (extraída del manual de identidad v1) ─────────────────
+ANIMUS_BLACK = (0, 0, 0)
+ANIMUS_BLACK_DARK = (20, 20, 20)
+ANIMUS_CREAM = (247, 244, 239)
+ANIMUS_OLIVA = (155, 153, 123)
+ANIMUS_TERRACOTA = (224, 186, 168)
+
+
+def _palette(empresa_clave):
+    """Devuelve la paleta de colores según la marca pagadora.
+
+    Animus = negro + cream (manual de identidad v1).
+    Espagiria / HHA = teal (color del logo HHA Group).
+    """
+    if "animus" in (empresa_clave or "").lower():
+        return {
+            "primary":      ANIMUS_BLACK,
+            "primary_dark": ANIMUS_BLACK_DARK,
+            "accent":       ANIMUS_OLIVA,
+            "beige":        ANIMUS_CREAM,
+        }
+    return {
+        "primary":      HHA_TEAL,
+        "primary_dark": HHA_TEAL_DARK,
+        "accent":       HHA_TEAL,
+        "beige":        COLOR_BEIGE,
+    }
+
 # ── Datos empresas pagadoras del grupo HHA ───────────────────────────────────
 # Cada categoría de pago dispatcha a la empresa correcta:
 #   Influencers / Marketing / Cuenta de Cobro → ANIMUS LAB S.A.S.
@@ -183,26 +211,73 @@ def parse_obs_beneficiario(obs_str):
 
 
 def _logo_path(empresa_clave="hha"):
-    """Devuelve path del logo si existe.
+    """Devuelve path del logo si existe, o None si no.
 
-    Busca en orden:
-      1. api/static/logos/<empresa>.png (futuro: hha_group.png, animus_lab.png, espagiria.png)
-      2. api/static/logo_hha.png (logo legacy, default actual)
+    Busca en orden de especificidad. Para Animus NO cae al de HHA — preferimos
+    fallback de texto branded (negro/cream) que es visualmente más coherente
+    con la marca que usar el logo de HHA en un comprobante de Animus.
     """
     base = Path(__file__).parent / "static"
-    candidates = []
-    if empresa_clave == "espagiria":
-        candidates.extend([base / "logos" / "espagiria.png"])
-    elif empresa_clave == "animus":
-        candidates.extend([base / "logos" / "animus_lab.png"])
-    candidates.extend([
-        base / "logos" / "hha_group.png",
-        base / "logo_hha.png",
-    ])
+    k = (empresa_clave or "").lower()
+    if "animus" in k:
+        candidates = [base / "logos" / "animus_lab.png",
+                      base / "logos" / "animus.png"]
+    elif "espagiria" in k:
+        candidates = [base / "logos" / "espagiria.png",
+                      base / "logos" / "hha_group.png",
+                      base / "logo_hha.png"]
+    else:
+        candidates = [base / "logos" / "hha_group.png",
+                      base / "logo_hha.png"]
     for p in candidates:
         if p.exists():
             return str(p)
     return None
+
+
+def _render_logo_or_text(pdf, x, y, w, h, empresa_clave):
+    """Dibuja el logo de la empresa, o un placeholder branded si el PNG falta.
+
+    Para Animus: cuadro cream con texto 'ANIMUS LAB' en negro grueso —
+    coherente con el manual de identidad (negro + crema). Para Espagiria/HHA:
+    cuadro con texto teal. Esto evita que un comprobante de Animus muestre
+    el logo de HHA cuando el archivo aún no se subió a static/logos/.
+    """
+    logo_p = _logo_path(empresa_clave)
+    if logo_p:
+        try:
+            pdf.image(logo_p, x=x, y=y, w=w, h=h)
+            return
+        except Exception:
+            pass
+
+    k = (empresa_clave or "").lower()
+    if "animus" in k:
+        pdf.set_fill_color(*ANIMUS_CREAM)
+        pdf.set_draw_color(*ANIMUS_BLACK)
+        pdf.set_line_width(0.6)
+        pdf.rect(x, y, w, h, "DF")
+        pdf.set_xy(x, y + h / 2 - 5)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(*ANIMUS_BLACK)
+        pdf.cell(w, 5, "ANIMUS", align="C", ln=True)
+        pdf.set_x(x)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*ANIMUS_OLIVA)
+        pdf.cell(w, 4, "L A B", align="C")
+    else:
+        pdf.set_fill_color(*COLOR_BEIGE)
+        pdf.set_draw_color(*HHA_TEAL)
+        pdf.set_line_width(0.5)
+        pdf.rect(x, y, w, h, "DF")
+        pdf.set_xy(x, y + h / 2 - 4)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(*HHA_TEAL)
+        pdf.cell(w, 5, "HHA", align="C", ln=True)
+        pdf.set_x(x)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*HHA_TEAL_DARK)
+        pdf.cell(w, 4, "GROUP", align="C")
 
 
 def generar_comprobante_egreso_pdf(
@@ -252,8 +327,8 @@ def generar_comprobante_egreso_pdf(
     pdf.set_auto_page_break(auto=True, margin=15)
     W = pdf.w - 20  # ancho útil
 
-    logo_p = _logo_path(empresa_clave)
     emp = _empresa(empresa_clave)
+    pal = _palette(empresa_clave)
 
     # ════════════════════════════════════════════════════════════════════
     # ENCABEZADO: Logo izquierda + Datos empresa centro + Box documento derecha
@@ -261,17 +336,15 @@ def generar_comprobante_egreso_pdf(
     HEAD_Y = 12
     HEAD_H = 38
 
-    # Logo izquierda
-    if logo_p:
-        try:
-            pdf.image(logo_p, x=12, y=HEAD_Y, w=32, h=32)
-        except Exception:
-            pass
+    # Logo izquierda — usa el logo correcto de la marca, o fallback texto
+    # branded si el PNG no existe (no muestra HHA en comprobantes Animus).
+    _render_logo_or_text(pdf, x=12, y=HEAD_Y, w=32, h=32,
+                         empresa_clave=empresa_clave)
 
     # Datos empresa centro
     pdf.set_xy(50, HEAD_Y + 1)
     pdf.set_font("Helvetica", "B", 12)
-    pdf.set_text_color(*HHA_TEAL)
+    pdf.set_text_color(*pal["primary"])
     pdf.cell(95, 6, _safe(emp["razon_social"]), ln=True)
 
     pdf.set_x(50)
@@ -292,12 +365,12 @@ def generar_comprobante_egreso_pdf(
     # Box documento derecha (estilo factura)
     box_x, box_y = 148, HEAD_Y
     box_w, box_h = 50, 30
-    pdf.set_draw_color(*HHA_TEAL)
+    pdf.set_draw_color(*pal["primary"])
     pdf.set_line_width(0.5)
     pdf.rect(box_x, box_y, box_w, box_h)
 
     # Banda superior del box
-    pdf.set_fill_color(*HHA_TEAL)
+    pdf.set_fill_color(*pal["primary"])
     pdf.rect(box_x, box_y, box_w, 8, "F")
     pdf.set_xy(box_x, box_y + 1.5)
     pdf.set_font("Helvetica", "B", 9)
@@ -310,7 +383,7 @@ def generar_comprobante_egreso_pdf(
     pdf.set_text_color(*COLOR_TEXT_SOFT)
     pdf.cell(15, 4, "No.")
     pdf.set_font("Helvetica", "B", 9)
-    pdf.set_text_color(*HHA_TEAL_DARK)
+    pdf.set_text_color(*pal["primary_dark"])
     pdf.cell(0, 4, _safe(numero_ce), ln=True)
 
     pdf.set_x(box_x + 2)
@@ -403,7 +476,7 @@ def generar_comprobante_egreso_pdf(
             (22, "PRECIO UNIT", "R"), (14, "DESCUENTO", "R"),
             (22, "VALOR TOTAL", "R"), (8, "IVA%", "C"), (18, "IVA", "R")]
 
-    pdf.set_fill_color(*HHA_TEAL)
+    pdf.set_fill_color(*pal["primary"])
     pdf.set_text_color(*COLOR_BLANCO)
     pdf.set_font("Helvetica", "B", 7)
     for w, name, _ in cols:
@@ -418,7 +491,11 @@ def generar_comprobante_egreso_pdf(
     for i, it in enumerate(items):
         ref = it.get("referencia", "")
         desc = it.get("descripcion", "")
-        cant = it.get("cantidad", 1)
+        cant = it.get("cantidad", 1) or 1
+        # Si cantidad llega 0 (caso típico de servicios donde solo hay valor),
+        # forzar 1 para que el VALOR_TOTAL del renglón coincida con valor_unit.
+        if cant == 0:
+            cant = 1
         um = it.get("um", "UND")
         p_unit = float(it.get("valor_unit", 0) or 0)
         descuento = float(it.get("descuento", 0) or 0)
@@ -429,7 +506,7 @@ def generar_comprobante_egreso_pdf(
 
         # Alternar fill suave
         if i % 2 == 0:
-            pdf.set_fill_color(*COLOR_BEIGE)
+            pdf.set_fill_color(*pal["beige"])
             fill = True
         else:
             pdf.set_fill_color(*COLOR_BLANCO)
@@ -454,14 +531,15 @@ def generar_comprobante_egreso_pdf(
     pdf.set_draw_color(*COLOR_LINE_DARK)
     pdf.set_line_width(0.3)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(1)
 
-    # Cantidad total
+    # Cantidad total — en línea propia, alineada a la derecha, con espacio
+    # claro respecto a la caja de totales que viene después. Antes se
+    # superponía con los headers de la tabla de totales.
+    pdf.ln(2)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(*COLOR_TEXT)
-    pdf.cell(94, 5, _safe(" Cantidad Total:"), align="R")
-    pdf.cell(12, 5, _safe(f"{cantidad_total:,.0f}"), align="C")
-    pdf.ln(2)
+    pdf.cell(0, 5, _safe(f"Cantidad Total: {cantidad_total:,.0f}"), align="R", ln=True)
+    pdf.ln(3)
 
     # ════════════════════════════════════════════════════════════════════
     # CAJA DE TOTALES (estilo factura formal)
@@ -475,7 +553,9 @@ def generar_comprobante_egreso_pdf(
     total = subtotal + iva_total - retenciones
 
     # 6 columnas: TOTAL BASE | DESCUENTOS | SUB-TOTAL | IMPUESTOS | RETENCIONES | TOTAL
-    box_y = pdf.get_y() + 1
+    box_y = pdf.get_y()
+    pdf.set_draw_color(*pal["primary"])
+    pdf.set_line_width(0.4)
     pdf.rect(10, box_y, 190, 14, "D")
     cw = 190 / 6
 
@@ -500,7 +580,7 @@ def generar_comprobante_egreso_pdf(
     ]
     for i, v in enumerate(vals):
         if i == 5:
-            pdf.set_text_color(*HHA_TEAL_DARK)
+            pdf.set_text_color(*pal["primary_dark"])
             pdf.set_font("Helvetica", "B", 10)
         pdf.cell(cw, 7, _safe(v), align="C")
     pdf.ln(8)
@@ -525,16 +605,33 @@ def generar_comprobante_egreso_pdf(
     notas = []
     if observaciones:
         notas.append(observaciones)
+    # Texto legal alineado con DIAN Resolución 000167 de 2021 + Decreto
+    # 1625 de 2016 art. 1.6.1.4.12. Este documento es el "Documento Soporte
+    # en adquisiciones efectuadas a no obligados a facturar" — instrumento
+    # válido para soportar costos/deducciones cuando el proveedor no expide
+    # factura electrónica. Debe contener: denominación, numeración
+    # consecutiva, fecha, datos completos de adquirente y proveedor,
+    # descripción, valor, discriminación de IVA si aplica.
     notas.append(
-        "DOCUMENTO SOPORTE DE PAGO segun ETT art. 1.6.1.4.12 - "
-        "No constituye factura electronica de venta. "
-        f"ACT. ECONOMICA: {emp['actividad_economica']}. "
-        f"TARIFA ICA: {emp['tarifa_ica']}."
+        "DOCUMENTO SOPORTE DE PAGO en adquisiciones efectuadas a sujetos no "
+        "obligados a expedir factura de venta o documento equivalente. "
+        "Expedido conforme a la Resolucion DIAN 000167 de 2021 y al Decreto "
+        "1625 de 2016 (E.T.R.) art. 1.6.1.4.12. NO constituye factura "
+        "electronica de venta."
     )
     notas.append(
-        f"PARA CUALQUIER CONSULTA SOBRE ESTE COMPROBANTE: contactar al area de "
-        f"compras de {emp['nombre_corto']} al correo {emp['email']}. "
-        f"El beneficiario declara haber recibido el pago indicado."
+        f"ADQUIRENTE: {emp['razon_social']} - NIT {emp['nit']} - "
+        f"Actividad economica CIIU {emp['actividad_economica']}. "
+        f"Tarifa ICA {emp['tarifa_ica']}. "
+        f"Numeracion interna autorizada: rango CE-{datetime.now().year}-0001 "
+        f"a CE-{datetime.now().year}-9999."
+    )
+    notas.append(
+        f"El beneficiario declara haber recibido a satisfaccion el valor "
+        f"relacionado en este documento por los conceptos descritos. "
+        f"Para cualquier observacion sobre este comprobante, contactar el "
+        f"area administrativa de {emp['nombre_corto']} al correo "
+        f"{emp['email']}."
     )
     for n in notas:
         pdf.multi_cell(W, 4, _safe(n))
@@ -575,16 +672,25 @@ def generar_comprobante_egreso_pdf(
     pdf.set_y(-22)
     pdf.set_font("Helvetica", "", 6.5)
     pdf.set_text_color(*COLOR_TEXT_SOFT)
+    _anio = fecha_pago.year
     pdf.cell(0, 3,
-             _safe("Autorizacion numeracion interna: rango CE-2026-0001 hasta CE-2026-9999. "
-                   "Vigencia desde: 2026/01/01 hasta: 2026/12/31."),
+             _safe(f"Autorizacion numeracion interna: rango CE-{_anio}-0001 "
+                   f"hasta CE-{_anio}-9999. "
+                   f"Vigencia: {_anio}/01/01 - {_anio}/12/31."),
              align="C", ln=True)
 
+    # Footer: usa el branding correcto según la empresa que firma
     pdf.set_font("Helvetica", "I", 6)
-    pdf.cell(0, 3,
-             _safe("Documento generado el " + datetime.now().strftime("%Y/%m/%d %H:%M") +
-                   " - HHA Group: Transformamos ciencia en cuidado - by ANIMUS x Espagiria"),
-             align="C")
+    if "animus" in (empresa_clave or "").lower():
+        footer_txt = ("Documento generado el " +
+                      datetime.now().strftime("%Y/%m/%d %H:%M") +
+                      " - ANIMUS Lab S.A.S. (HHA Group)")
+    else:
+        footer_txt = ("Documento generado el " +
+                      datetime.now().strftime("%Y/%m/%d %H:%M") +
+                      " - HHA Group: Transformamos ciencia en cuidado - "
+                      "by ANIMUS x Espagiria")
+    pdf.cell(0, 3, _safe(footer_txt), align="C")
 
     # Output bytes
     out = pdf.output()
