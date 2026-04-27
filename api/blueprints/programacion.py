@@ -589,10 +589,25 @@ def _get_mee_stock(conn):
 
 # ─── Stock projection ────────────────────────────────────────────────────────
 
-DIAS_CRITICOS = 20   # umbral de cobertura: menos de esto = rojo
-DIAS_ALERTA   = 40   # buffer: menos de esto = amarillo
+# Umbrales de cobertura (días). Se leen de env si están definidos para
+# permitir ajuste sin redeploy. Default 20/40 = comportamiento histórico.
+def _dias_thresholds():
+    try:
+        c = max(1, int(os.environ.get('DIAS_CRITICOS') or 20))
+        a = max(c + 1, int(os.environ.get('DIAS_ALERTA') or 40))
+        return c, a
+    except (ValueError, TypeError):
+        return 20, 40
 
-def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
+DIAS_CRITICOS, DIAS_ALERTA = _dias_thresholds()
+
+# Lead time por MP (días). Si una MP viene de China, el sistema necesita
+# anticipar la compra ~60 días antes del agotamiento. Para MPs locales,
+# 21 días es razonable (compra → entrega).
+LEAD_TIME_CHINA = int(os.environ.get('LEAD_TIME_CHINA') or 60)
+LEAD_TIME_LOCAL = int(os.environ.get('LEAD_TIME_LOCAL') or 21)
+
+def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mps=None):
     """
     Logica correcta de programacion:
     1. Stock PT real = producido (acondicionamiento) - vendido (Shopify)
@@ -708,21 +723,31 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
         stock_uds = pt_stock.get(prod.upper(), 0)
 
         # Dias de cobertura
+        # CRITICAL fix: si vel_dia=0 Y stock_uds=0, NO marcar 999 (eso hace
+        # cal_ok siempre true y oculta faltantes reales). Mejor None y tratar
+        # explícitamente abajo.
         if vel_dia > 0:
             dias_cob = stock_uds / vel_dia
+            tiene_datos = True
+        elif stock_uds > 0:
+            dias_cob = 999.0   # hay stock pero sin ventas = cobertura indefinida real
+            tiene_datos = True
         else:
-            dias_cob = 999.0   # sin ventas = cobertura indefinida
+            dias_cob = 0.0     # sin stock y sin ventas → cobertura cero, dato dudoso
+            tiene_datos = False
 
         # Produccion en calendario
         prox_prod = next_prod_by_product.get(prod, 'No programado')
 
-        # Validar si la produccion calendario llega antes del dia critico
+        # Validar si la produccion calendario llega antes del dia critico.
+        # Si no hay datos (sin stock ni ventas), no asumir que llega "a tiempo".
         cal_ok = False
-        if prox_prod != 'No programado':
+        if prox_prod != 'No programado' and tiene_datos:
             try:
                 prod_date = __import__('datetime').date.fromisoformat(prox_prod)
                 dias_hasta_prod = (prod_date - today).days
-                cal_ok = dias_hasta_prod <= dias_cob
+                # cal_ok solo si hay velocidad real Y la prod llega antes del agotamiento
+                cal_ok = vel_dia > 0 and dias_hasta_prod <= dias_cob
             except Exception:
                 cal_ok = False
 
@@ -814,12 +839,67 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events):
                               for m in missing_mp[:3])
             if len(missing_mp) > 3:
                 names += " y " + str(len(missing_mp) - 3) + " mas"
+            # Detectar si alguna MP faltante es de China (lead time 60d).
+            # Si sí, escalar a CRITICO (no "alto") porque ya estás tarde.
+            china_set = china_mps or set()
+            mp_china_falta = [m for m in missing_mp
+                              if str(m.get('material_id', '')).strip() in china_set]
+            if mp_china_falta:
+                china_names = ", ".join(m['nombre'] for m in mp_china_falta[:3])
+                all_alerts.append({
+                    'producto': prod,
+                    'nivel': 'critico',
+                    'tipo': 'mp_china_faltante',
+                    'mensaje': (
+                        f"URGENTE — MP de China sin stock: {china_names}. "
+                        f"Lead time {LEAD_TIME_CHINA} días. Comprar HOY o se "
+                        f"detiene la línea."
+                    ),
+                })
             all_alerts.append({
                 'producto': prod,
                 'nivel': 'alto',
                 'tipo': 'mp_faltante',
                 'mensaje': ("Faltan " + n_str + " MPs para producir: " + names),
             })
+
+        # Alertas anticipadas: para MPs que SÍ tienen stock hoy pero el deficit
+        # proyectado va a llegar antes que el lead time del proveedor.
+        # Si una MP de China tiene cobertura proyectada < 60d, ya hay que pedir.
+        if can_produce is not False and vel_dia > 0:
+            china_set = china_mps or set()
+            for m in mp_check:
+                if not m.get('mp_found', True):
+                    continue
+                mid = str(m.get('material_id', '')).strip()
+                avail = m.get('available_g')
+                needed = m.get('needed_g', 0)
+                if avail == '∞' or avail == float('inf') or needed <= 0:
+                    continue
+                # Cuántas producciones futuras puedo cubrir con la MP en stock
+                if needed > 0:
+                    producciones_cubiertas = float(avail or 0) / needed
+                else:
+                    continue
+                # Días hasta agotamiento de ESA MP (asumiendo ritmo de prod actual)
+                # Aproximación: vel_dia uds/día * needed_g/uds = consumo diario MP
+                # Pero como needed_g viene del lote, normalizamos: días = avail / (consumo_diario)
+                consumo_diario_g = (vel_dia * needed) / max(stock_uds or 1, 1) if stock_uds else 0
+                if consumo_diario_g <= 0:
+                    continue
+                dias_mp = float(avail or 0) / consumo_diario_g
+                lead = LEAD_TIME_CHINA if mid in china_set else LEAD_TIME_LOCAL
+                if dias_mp < lead:
+                    all_alerts.append({
+                        'producto': prod,
+                        'nivel': 'alto' if mid in china_set else 'medio',
+                        'tipo': 'mp_anticipada_china' if mid in china_set else 'mp_anticipada',
+                        'mensaje': (
+                            f"PEDIR YA: {m['nombre']} dura ~{int(dias_mp)}d, "
+                            f"lead time proveedor {lead}d "
+                            f"({'China' if mid in china_set else 'local'})."
+                        ),
+                    })
 
         if dias_cob < DIAS_ALERTA and vel_dia > 0 and prox_prod == 'No programado':
             vel_str = str(int(vel_mes))
@@ -993,9 +1073,11 @@ def prog_resumen():
             'formulas_count': 0,
         }), 200
 
-    # 5. Project stock + alerts
+    # 5. Project stock + alerts (pasamos china_mps para alertas anticipadas)
+    china_mps_set = _get_china_mps(conn)
     projection, alerts = _project_stock(
-        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', [])
+        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
+        china_mps=china_mps_set
     )
 
     # 6. AI narrative (non-blocking)
@@ -1437,7 +1519,8 @@ def prog_stock_60d():
     mp_stock = _get_mp_stock(conn)
     formulas = _get_formulas(conn)
     cal = _fetch_calendar_events(days_ahead=90)
-    projection, _ = _project_stock(conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []))
+    china_mps_set = _get_china_mps(conn)
+    projection, _ = _project_stock(conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []), china_mps=china_mps_set)
     return jsonify({'proyeccion': projection, 'generado_en': datetime.now().isoformat()})
 
 
@@ -1450,7 +1533,8 @@ def prog_alertas():
     mp_stock = _get_mp_stock(conn)
     formulas = _get_formulas(conn)
     cal = _fetch_calendar_events(days_ahead=90)
-    _, alerts = _project_stock(conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []))
+    china_mps_set = _get_china_mps(conn)
+    _, alerts = _project_stock(conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []), china_mps=china_mps_set)
     return jsonify({'alertas': alerts, 'n_alertas': len(alerts)})
 
 
@@ -1485,8 +1569,10 @@ def prog_generar_oc():
     if not formulas:
         return jsonify({'error': 'Sin fórmulas cargadas'}), 400
 
+    china_mps_set = _get_china_mps(conn)
     projection, alerts = _project_stock(
-        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', [])
+        conn, vel_data['prod_velocity'], formulas, mp_stock, cal.get('events', []),
+        china_mps=china_mps_set
     )
 
     # Collect all missing MPs across products
