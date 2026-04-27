@@ -1631,6 +1631,42 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         """CREATE INDEX IF NOT EXISTS idx_push_alerts_fecha ON marketing_push_alerts_log(fecha DESC)""",
     ]),
+    (34, "animus: caja menor (Daniela) + inventario ciclico vs Shopify", [
+        # Caja menor: Daniela recibe efectivo de ventas contraentrega y
+        # registra ingresos/egresos del fondo de la tienda. Saldo
+        # acumulado = sum(ingresos) - sum(egresos).
+        """CREATE TABLE IF NOT EXISTS animus_caja_menor (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha           TEXT NOT NULL,
+            tipo            TEXT NOT NULL CHECK(tipo IN ('ingreso','egreso')),
+            concepto        TEXT NOT NULL,
+            monto           REAL NOT NULL,
+            metodo          TEXT DEFAULT 'efectivo',
+            referencia      TEXT DEFAULT '',
+            observaciones   TEXT DEFAULT '',
+            registrado_por  TEXT,
+            fecha_creacion  TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_caja_fecha ON animus_caja_menor(fecha DESC)""",
+        """CREATE INDEX IF NOT EXISTS idx_caja_tipo ON animus_caja_menor(tipo)""",
+        # Inventario ciclico: Daniela cuenta fisico vs lo que dice
+        # Shopify (snapshot al momento del conteo) y registra explicacion
+        # de la diferencia (rotura, devolucion no registrada, robo, etc).
+        """CREATE TABLE IF NOT EXISTS animus_conteos_ciclicos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku                TEXT NOT NULL,
+            producto_nombre    TEXT,
+            fecha_conteo       TEXT NOT NULL,
+            cantidad_shopify   INTEGER DEFAULT 0,
+            cantidad_fisica    INTEGER NOT NULL,
+            diferencia         INTEGER NOT NULL,
+            explicacion        TEXT,
+            registrado_por     TEXT,
+            fecha_creacion     TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_conteo_sku ON animus_conteos_ciclicos(sku)""",
+        """CREATE INDEX IF NOT EXISTS idx_conteo_fecha ON animus_conteos_ciclicos(fecha_conteo DESC)""",
+    ]),
 ]
 
 

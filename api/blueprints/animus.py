@@ -923,10 +923,279 @@ def animus_calendario():
         eventos.append({**ev, "dias_restantes": dias, "pasado": dias < 0})
     return jsonify({"eventos": eventos})
 
-# ── REDIRECT /animus → /marketing ────────────────────────────────────────────
-from flask import redirect as flask_redirect
+# ════════════════════════════════════════════════════════════════════
+# CAJA MENOR (Daniela) — efectivo de ventas contraentrega
+# ════════════════════════════════════════════════════════════════════
+# Daniela recibe efectivo cuando los clientes pagan contraentrega y
+# necesita registrar:
+#   - INGRESOS: pago recibido por orden, devolución de proveedor, etc.
+#   - EGRESOS: gastos del local, compras pequeñas, devoluciones a clientes
+#
+# El saldo acumulado = SUM(ingresos) - SUM(egresos). Muestra:
+#   - KPIs hoy + mes + saldo total
+#   - Lista cronológica con filtros
+#
+# Decisión de modelo: una sola tabla con `tipo` en lugar de dos (ingresos/
+# egresos separadas) — más simple para reportes y el saldo se calcula con
+# CASE en el SELECT.
 
-@bp.route("/animus")
-def animus_redirect():
-    return flask_redirect("/marketing", code=301)
+@bp.route("/api/animus/caja", methods=["GET"])
+def animus_caja_listar():
+    """Lista movimientos de caja menor con KPIs y saldo."""
+    u, err, code = _auth()
+    if err: return err, code
+    desde = (request.args.get("desde") or "").strip()
+    tipo  = (request.args.get("tipo") or "").strip()
+    q     = (request.args.get("q") or "").strip()
+
+    conn = _db(); c = conn.cursor()
+    sql = """
+        SELECT id, fecha, tipo, concepto, monto, metodo, referencia,
+               observaciones, registrado_por, fecha_creacion
+        FROM animus_caja_menor WHERE 1=1
+    """
+    params = []
+    if desde:
+        sql += " AND fecha >= ?"; params.append(desde)
+    if tipo in ("ingreso", "egreso"):
+        sql += " AND tipo = ?"; params.append(tipo)
+    if q:
+        sql += " AND (concepto LIKE ? OR referencia LIKE ? OR observaciones LIKE ?)"
+        ql = f"%{q}%"; params += [ql, ql, ql]
+    sql += " ORDER BY fecha DESC, id DESC LIMIT 500"
+    movs = [dict(r) for r in c.execute(sql, params).fetchall()]
+
+    # KPIs globales (sin filtros) para no confundir
+    from datetime import datetime as _dt
+    hoy = _dt.now().strftime("%Y-%m-%d")
+    mes = _dt.now().strftime("%Y-%m")
+    kpis = c.execute("""
+        SELECT
+          COALESCE(SUM(CASE WHEN tipo='ingreso' THEN monto ELSE -monto END), 0) as saldo_total,
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND fecha=? THEN monto ELSE 0 END), 0) as ingreso_hoy,
+          COALESCE(SUM(CASE WHEN tipo='egreso'  AND fecha=? THEN monto ELSE 0 END), 0) as egreso_hoy,
+          COALESCE(SUM(CASE WHEN tipo='ingreso' AND substr(fecha,1,7)=? THEN monto ELSE 0 END), 0) as ingreso_mes,
+          COALESCE(SUM(CASE WHEN tipo='egreso'  AND substr(fecha,1,7)=? THEN monto ELSE 0 END), 0) as egreso_mes,
+          COUNT(*) as n_total
+        FROM animus_caja_menor
+    """, (hoy, hoy, mes, mes)).fetchone()
+
+    return jsonify({
+        "ok": True,
+        "movimientos": movs,
+        "kpis": dict(kpis) if kpis else {},
+    })
+
+
+@bp.route("/api/animus/caja", methods=["POST"])
+def animus_caja_registrar():
+    """Registra un nuevo movimiento de caja (ingreso o egreso)."""
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    tipo = (d.get("tipo") or "").strip().lower()
+    if tipo not in ("ingreso", "egreso"):
+        return jsonify({"error": "tipo debe ser 'ingreso' o 'egreso'"}), 400
+    concepto = (d.get("concepto") or "").strip()
+    if not concepto:
+        return jsonify({"error": "concepto requerido"}), 400
+    try:
+        monto = float(d.get("monto") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "monto inválido"}), 400
+    if monto <= 0:
+        return jsonify({"error": "monto debe ser > 0"}), 400
+    fecha = (d.get("fecha") or datetime.now().strftime("%Y-%m-%d")).strip()
+    metodo = (d.get("metodo") or "efectivo").strip()
+    referencia = (d.get("referencia") or "").strip()
+    obs = (d.get("observaciones") or "").strip()
+
+    conn = _db()
+    c = conn.cursor()
+    c.execute("""INSERT INTO animus_caja_menor
+        (fecha, tipo, concepto, monto, metodo, referencia, observaciones, registrado_por)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (fecha, tipo, concepto, monto, metodo, referencia, obs, u))
+    conn.commit()
+    return jsonify({"ok": True, "id": c.lastrowid})
+
+
+@bp.route("/api/animus/caja/<int:mov_id>", methods=["DELETE"])
+def animus_caja_eliminar(mov_id):
+    """Elimina un movimiento. ADMIN ONLY — los movimientos son audit trail."""
+    u, err, code = _auth()
+    if err: return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin puede eliminar movimientos de caja"}), 403
+    conn = _db()
+    c = conn.cursor()
+    c.execute("DELETE FROM animus_caja_menor WHERE id=?", (mov_id,))
+    conn.commit()
+    return jsonify({"ok": True, "eliminado": mov_id})
+
+
+# ════════════════════════════════════════════════════════════════════
+# INVENTARIO CÍCLICO — Conteo físico vs Shopify
+# ════════════════════════════════════════════════════════════════════
+# Daniela cuenta físicamente cada producto de la tienda y registra:
+#   - cantidad_shopify: lo que dice Shopify (sync más reciente o ventas)
+#   - cantidad_fisica: lo que ella cuenta
+#   - diferencia: calculada (puede ser negativa = falta, positiva = sobrante)
+#   - explicacion: por qué la diferencia (devolución no registrada,
+#     producto roto, regalo, robo sospechoso, error de carga, etc.)
+#
+# El backend deriva cantidad_shopify de animus_shopify_orders sumando
+# unidades vendidas + un baseline de stock (que en el futuro vendrá de
+# webhook de Shopify inventory). Por ahora: SUM(unidades vendidas en el
+# periodo desde último conteo).
+
+@bp.route("/api/animus/inventario-ciclico/skus", methods=["GET"])
+def animus_inv_ciclico_skus():
+    """Devuelve los SKUs vendidos en Shopify con cantidad acumulada para
+    que Daniela elija cuál contar. Ordenados por último vendido."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    c = conn.cursor()
+    # Extraemos SKUs únicos de animus_shopify_orders.sku_items (JSON).
+    # sku_items es un JSON: [{"sku":"X","qty":1}, ...] — parseamos en Python.
+    rows = c.execute("""
+        SELECT sku_items, unidades_total, creado_en
+        FROM animus_shopify_orders
+        WHERE sku_items IS NOT NULL AND sku_items != ''
+        ORDER BY creado_en DESC
+        LIMIT 500
+    """).fetchall()
+
+    sku_stats = {}  # sku → {n_orders, uds_vendidas, ult_venta}
+    for r in rows:
+        try:
+            items = json.loads(r["sku_items"]) if r["sku_items"] else []
+        except Exception:
+            continue
+        for it in items:
+            sku = (it.get("sku") or "").strip().upper()
+            qty = float(it.get("qty") or 0)
+            if not sku:
+                continue
+            if sku not in sku_stats:
+                sku_stats[sku] = {
+                    "sku": sku,
+                    "n_orders": 0,
+                    "uds_vendidas": 0,
+                    "ultima_venta": r["creado_en"],
+                }
+            sku_stats[sku]["n_orders"] += 1
+            sku_stats[sku]["uds_vendidas"] += qty
+            # ultima_venta: como rows están DESC ya, el primer hit es el más reciente
+            if not sku_stats[sku]["ultima_venta"]:
+                sku_stats[sku]["ultima_venta"] = r["creado_en"]
+
+    # Anexar último conteo si existe
+    for sku in list(sku_stats.keys()):
+        last = c.execute("""
+            SELECT cantidad_fisica, diferencia, fecha_conteo
+            FROM animus_conteos_ciclicos
+            WHERE sku = ? ORDER BY fecha_conteo DESC LIMIT 1
+        """, (sku,)).fetchone()
+        if last:
+            d = dict(last)
+            sku_stats[sku]["ultimo_conteo"] = {
+                "cantidad_fisica": d["cantidad_fisica"],
+                "diferencia": d["diferencia"],
+                "fecha": d["fecha_conteo"],
+            }
+        else:
+            sku_stats[sku]["ultimo_conteo"] = None
+
+    items = sorted(
+        sku_stats.values(),
+        key=lambda x: x.get("ultima_venta") or "",
+        reverse=True,
+    )
+    return jsonify({"ok": True, "skus": items})
+
+
+@bp.route("/api/animus/inventario-ciclico", methods=["GET"])
+def animus_inv_ciclico_listar():
+    """Historial de conteos cíclicos con filtros."""
+    u, err, code = _auth()
+    if err: return err, code
+    sku    = (request.args.get("sku") or "").strip().upper()
+    desde  = (request.args.get("desde") or "").strip()
+
+    conn = _db(); c = conn.cursor()
+    sql = """
+        SELECT id, sku, producto_nombre, fecha_conteo,
+               cantidad_shopify, cantidad_fisica, diferencia,
+               explicacion, registrado_por, fecha_creacion
+        FROM animus_conteos_ciclicos WHERE 1=1
+    """
+    params = []
+    if sku:
+        sql += " AND UPPER(sku) = ?"; params.append(sku)
+    if desde:
+        sql += " AND fecha_conteo >= ?"; params.append(desde)
+    sql += " ORDER BY fecha_conteo DESC, id DESC LIMIT 300"
+    conteos = [dict(r) for r in c.execute(sql, params).fetchall()]
+
+    # KPIs: total con diferencia, SKUs con problemas recurrentes
+    kpis = c.execute("""
+        SELECT
+          COUNT(*) as n_total,
+          COALESCE(SUM(CASE WHEN diferencia != 0 THEN 1 ELSE 0 END), 0) as n_con_dif,
+          COALESCE(SUM(CASE WHEN diferencia < 0 THEN -diferencia ELSE 0 END), 0) as uds_faltantes,
+          COALESCE(SUM(CASE WHEN diferencia > 0 THEN diferencia ELSE 0 END), 0) as uds_sobrantes
+        FROM animus_conteos_ciclicos
+    """).fetchone()
+
+    return jsonify({
+        "ok": True,
+        "conteos": conteos,
+        "kpis": dict(kpis) if kpis else {},
+    })
+
+
+@bp.route("/api/animus/inventario-ciclico", methods=["POST"])
+def animus_inv_ciclico_registrar():
+    """Registra un conteo cíclico. Calcula diferencia automáticamente."""
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    sku = (d.get("sku") or "").strip().upper()
+    if not sku:
+        return jsonify({"error": "sku requerido"}), 400
+    try:
+        cant_shopify = int(d.get("cantidad_shopify") or 0)
+        cant_fisica  = int(d.get("cantidad_fisica") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidades inválidas"}), 400
+    diferencia = cant_fisica - cant_shopify
+    explicacion = (d.get("explicacion") or "").strip()
+    fecha = (d.get("fecha_conteo") or datetime.now().strftime("%Y-%m-%d")).strip()
+    nombre = (d.get("producto_nombre") or "").strip()
+
+    # Si hay diferencia y no hay explicación, advertir pero no bloquear
+    if diferencia != 0 and not explicacion:
+        # Permitimos guardar pero marcamos en respuesta
+        pass
+
+    conn = _db()
+    c = conn.cursor()
+    c.execute("""INSERT INTO animus_conteos_ciclicos
+        (sku, producto_nombre, fecha_conteo, cantidad_shopify, cantidad_fisica,
+         diferencia, explicacion, registrado_por)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (sku, nombre, fecha, cant_shopify, cant_fisica, diferencia, explicacion, u))
+    conn.commit()
+    return jsonify({
+        "ok": True,
+        "id": c.lastrowid,
+        "diferencia": diferencia,
+        "requiere_explicacion": diferencia != 0 and not explicacion,
+    })
+
+
+# ── REDIRECT eliminado: /animus ahora sirve el panel de Caja Menor + ──
+#    Inventario Cíclico (definido en core.py con ANIMUS_HTML).
 

@@ -1,1319 +1,603 @@
+"""ÁNIMUS Lab — Panel administrativo (Caja Menor + Inventario Cíclico).
+
+Reemplaza el panel anterior que duplicaba funcionalidad con marketing
+(productos / clientes / IG / contenido / agentes IA / calendario). Ahora
+está enfocado en lo que Daniela necesita en la tienda:
+
+  1. Caja menor: registrar ingresos (efectivo de ventas contraentrega) +
+     egresos (gastos del local), ver saldo acumulado, KPIs hoy/mes.
+  2. Inventario cíclico: contar físicamente cada producto, comparar con
+     lo vendido en Shopify, registrar diferencias con explicación.
+
+Si en el futuro el user pide volver a tener marketing en /animus, hay que
+crear un redirect de vuelta a /marketing.
+"""
+
 ANIMUS_HTML = r"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ÁNIMUS Lab — Centro de Mando</title>
+<title>ÁNIMUS Lab — Panel Administrativo</title>
 <style>
-:root{
-  --gold:#d4af37;--gold-light:#f0d060;--gold-dark:#a88a1e;
-  --bg:#0a0a0c;--bg2:#111115;--bg3:#18181f;--bg4:#1e1e28;
-  --border:#2a2a35;--border2:#333345;
-  --text:#e8e8f0;--text2:#9999b0;--text3:#666680;
-  --green:#22c55e;--red:#ef4444;--yellow:#f59e0b;--blue:#3b82f6;
-  --pink:#e91e8c;--purple:#8b5cf6;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;font-size:14px;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:#1e293b;}
+::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
 
-/* ── TOPBAR ── */
-.topbar{height:56px;background:linear-gradient(135deg,var(--bg2) 0%,#0d0d14 100%);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100}
-.topbar-logo{display:flex;align-items:center;gap:10px}
-.topbar-logo .icon{width:32px;height:32px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
-.topbar-logo .brand{font-size:18px;font-weight:700;color:var(--gold);letter-spacing:.5px}
-.topbar-logo .sub{font-size:11px;color:var(--text3);letter-spacing:2px;text-transform:uppercase;margin-top:1px}
-.topbar-divider{width:1px;height:24px;background:var(--border2)}
-.topbar-nav{display:flex;gap:4px;flex:1;overflow-x:auto;scrollbar-width:none;min-width:0}
-.tn-btn{padding:5px 10px;border-radius:6px;border:none;background:transparent;color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;transition:.2s;display:flex;align-items:center;gap:4px;white-space:nowrap}
-.tn-btn:hover{background:var(--bg3);color:var(--text)}
-.tn-btn.active{background:linear-gradient(135deg,rgba(212,175,55,.15),rgba(212,175,55,.05));color:var(--gold);border:1px solid rgba(212,175,55,.2)}
-.tn-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
-.topbar-right{display:flex;align-items:center;gap:12px;margin-left:auto}
-.platform-pill{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.5px;border:1px solid}
-.pill-shopify{background:rgba(150,191,75,.1);color:#96bf4b;border-color:rgba(150,191,75,.3)}
-.pill-ghl{background:rgba(59,130,246,.1);color:#60a5fa;border-color:rgba(59,130,246,.3)}
-.pill-ig{background:rgba(233,30,140,.1);color:#f472b6;border-color:rgba(233,30,140,.3)}
-.pill-off{background:rgba(100,100,120,.1);color:var(--text3);border-color:var(--border)}
-.user-chip{padding:4px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;font-size:12px;color:var(--text2)}
-.back-btn{padding:5px 12px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:6px}
-.back-btn:hover{border-color:var(--gold);color:var(--gold)}
+.hdr{background:#1e293b;border-bottom:1px solid #334155;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr-brand{display:flex;align-items:center;gap:10px;}
+.hdr-brand h1{font-size:16px;font-weight:800;color:#fff;}
+.hdr-brand span{font-size:11px;color:#94a3b8;background:#0f172a;padding:2px 8px;border-radius:20px;border:1px solid #334155;}
+.hdr-user{font-size:12px;color:#64748b;}
+.hdr-user strong{color:#e2e8f0;}
+.back-link{font-size:12px;color:#667eea;text-decoration:none;display:flex;align-items:center;gap:4px;}
+.back-link:hover{color:#818cf8;}
 
-/* ── MAIN LAYOUT ── */
-.main{flex:1;padding:24px;max-width:1600px;margin:0 auto;width:100%}
-.section{display:none}
-.section.active{display:block}
+.tabs-bar{background:#1e293b;border-bottom:1px solid #334155;display:flex;overflow-x:auto;padding:0 20px;}
+.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:#64748b;border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
+.tab-btn:hover{color:#e2e8f0;}
+.tab-btn.active{color:#34d399;border-bottom-color:#34d399;}
+.tab-panel{display:none;padding:24px 20px;}
+.tab-panel.active{display:block;}
 
-/* ── KPI GRID ── */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:24px}
-.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:16px;transition:.2s;position:relative;overflow:hidden}
-.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kpi-color,var(--gold))}
-.kpi:hover{border-color:var(--border2);transform:translateY(-1px)}
-.kpi-label{font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:8px}
-.kpi-value{font-size:26px;font-weight:700;color:var(--text);line-height:1}
-.kpi-sub{font-size:11px;color:var(--text2);margin-top:6px}
-.kpi-icon{position:absolute;right:12px;top:12px;font-size:20px;opacity:.3}
+.page-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:4px;}
+.page-sub{font-size:13px;color:#94a3b8;margin-bottom:18px;}
 
-/* ── CARDS ── */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
-.card-title{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-.card-title .badge{padding:2px 8px;border-radius:10px;font-size:10px;background:rgba(212,175,55,.15);color:var(--gold);border:1px solid rgba(212,175,55,.2)}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+.kpi-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;}
+.kpi-card .label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
+.kpi-card .val{font-size:24px;font-weight:800;margin-top:6px;}
+.kpi-card .sub{font-size:11px;color:#94a3b8;margin-top:4px;}
+.kpi-green .val{color:#34d399;}
+.kpi-red .val{color:#ef4444;}
+.kpi-blue .val{color:#60a5fa;}
+.kpi-yellow .val{color:#fbbf24;}
+.kpi-purple .val{color:#a78bfa;}
 
-/* ── GRIDS ── */
-.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr}}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px;margin-bottom:16px;}
+.card-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.card-title{font-size:14px;font-weight:700;color:#e2e8f0;}
 
-/* ── TABLES ── */
-.tbl{width:100%;border-collapse:collapse;font-size:13px}
-.tbl th{padding:8px 12px;text-align:left;font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);border-bottom:1px solid var(--border)}
-.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text)}
-.tbl tr:hover td{background:rgba(255,255,255,.02)}
-.tbl tr:last-child td{border-bottom:none}
+.btn{padding:8px 14px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
+.btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}
+.btn-primary:hover{filter:brightness(1.1);}
+.btn-outline{background:transparent;border:1px solid #475569;color:#cbd5e1;}
+.btn-outline:hover{background:#334155;}
+.btn-danger{background:#7f1d1d;color:#fef2f2;border:1px solid #991b1b;}
+.btn-sm{padding:5px 10px;font-size:11px;}
 
-/* ── BADGES / PILLS ── */
-.badge-ok{background:rgba(34,197,94,.1);color:var(--green);border:1px solid rgba(34,197,94,.2);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-warn{background:rgba(245,158,11,.1);color:var(--yellow);border:1px solid rgba(245,158,11,.2);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-crit{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge-abc-a{background:rgba(212,175,55,.15);color:var(--gold);border:1px solid rgba(212,175,55,.3);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
-.badge-abc-b{background:rgba(59,130,246,.1);color:var(--blue);border:1px solid rgba(59,130,246,.3);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
-.badge-abc-c{background:rgba(100,100,120,.1);color:var(--text3);border:1px solid var(--border);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.input,.select,.textarea{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;font-family:inherit;width:100%;}
+.input:focus,.select:focus,.textarea:focus{outline:none;border-color:#10b981;}
+.textarea{min-height:60px;resize:vertical;}
+.label{display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
 
-/* ── AGENT CARDS ── */
-.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
-.agent-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;transition:.2s;cursor:pointer}
-.agent-card:hover{border-color:var(--gold);background:var(--bg3);transform:translateY(-2px)}
-.agent-card.running{border-color:var(--gold);animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,.3)}50%{box-shadow:0 0 0 8px rgba(212,175,55,0)}}
-.agent-icon{font-size:32px;margin-bottom:12px}
-.agent-name{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
-.agent-desc{font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:16px}
-.agent-btn{width:100%;padding:10px;background:linear-gradient(135deg,rgba(212,175,55,.15),rgba(212,175,55,.05));border:1px solid rgba(212,175,55,.3);border-radius:8px;color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
-.agent-btn:hover{background:rgba(212,175,55,.25);border-color:var(--gold)}
-.agent-result{margin-top:16px;padding:14px;background:var(--bg3);border-radius:8px;font-size:12px;line-height:1.6;color:var(--text2);max-height:300px;overflow-y:auto;display:none}
-.agent-result.visible{display:block}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.form-row.full{grid-template-columns:1fr;}
 
-/* ── CALENDAR ── */
-.cal-events{display:flex;flex-direction:column;gap:8px}
-.cal-event{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg3);border-radius:8px;border-left:3px solid}
-.cal-event-name{font-size:13px;font-weight:600;flex:1}
-.cal-event-date{font-size:11px;color:var(--text2)}
-.cal-event-days{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+table thead th{text-align:left;padding:8px 10px;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #334155;background:#0f172a;}
+table tbody td{padding:8px 10px;color:#e2e8f0;border-bottom:1px solid #1e293b;}
+table tbody tr:hover{background:#0f172a55;}
 
-/* ── PLATFORM SECTION ── */
-.platform-header{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:16px;background:var(--bg3);border-radius:10px;border:1px solid var(--border2)}
-.platform-logo{font-size:28px}
-.platform-name{font-size:16px;font-weight:700}
-.platform-status{margin-left:auto;display:flex;align-items:center;gap:8px}
-.connect-btn{padding:8px 18px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#000;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;transition:.2s}
-.connect-btn:hover{opacity:.85}
-.sync-btn{padding:8px 14px;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer;transition:.2s}
-.sync-btn:hover{border-color:var(--gold);color:var(--gold)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.05em;}
+.badge-green{background:#064e3b;color:#34d399;}
+.badge-red{background:#7f1d1d;color:#fca5a5;}
+.badge-yellow{background:#78350f;color:#fcd34d;}
+.badge-blue{background:#1e3a8a;color:#93c5fd;}
+.badge-gray{background:#1f2937;color:#9ca3af;}
 
-/* ── CONTENT STUDIO ── */
-.studio-panel{display:grid;grid-template-columns:300px 1fr;gap:20px}
-@media(max-width:800px){.studio-panel{grid-template-columns:1fr}}
-.studio-controls{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px}
-.studio-output{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px}
-.form-group{margin-bottom:16px}
-.form-label{display:block;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
-.form-input,.form-select,.form-textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);padding:8px 12px;font-size:13px;outline:none;transition:.2s}
-.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--gold)}
-.form-select option{background:var(--bg3)}
-.form-textarea{resize:vertical;min-height:80px;font-family:inherit}
-.gen-btn{width:100%;padding:12px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:#000;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;transition:.2s;letter-spacing:.5px}
-.gen-btn:hover{opacity:.85}
-.content-output{background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;min-height:200px;white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--text);font-family:'Courier New',monospace}
-.copy-btn{padding:8px 16px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer;margin-top:10px;transition:.2s}
-.copy-btn:hover{border-color:var(--gold);color:var(--gold)}
+.diff-pos{color:#34d399;font-weight:700;}
+.diff-neg{color:#ef4444;font-weight:700;}
+.diff-zero{color:#64748b;}
 
-/* ── CONFIG FORM ── */
-.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:700px){.config-grid{grid-template-columns:1fr}}
-.config-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px}
-.config-card-title{font-size:14px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-.save-cfg-btn{padding:10px 20px;background:var(--gold);color:#000;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:12px;width:100%}
-
-/* ── SPINNERS / STATES ── */
-.loading{display:flex;align-items:center;justify-content:center;padding:40px;color:var(--text3);font-size:13px;gap:8px}
-.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .6s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.empty{text-align:center;padding:40px;color:var(--text3);font-size:13px}
-.empty-icon{font-size:32px;margin-bottom:8px}
-
-/* ── CHART BARS ── */
-.bar-chart{display:flex;flex-direction:column;gap:8px}
-.bar-row{display:flex;align-items:center;gap:10px}
-.bar-label{font-size:12px;color:var(--text2);width:90px;text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar-track{flex:1;height:18px;background:var(--bg3);border-radius:4px;overflow:hidden}
-.bar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:4px;transition:width .6s ease;display:flex;align-items:center;padding:0 6px}
-.bar-val{font-size:11px;font-weight:600;color:#000;white-space:nowrap}
-
-/* ── SECTION HEADER ── */
-.sec-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
-.sec-icon{font-size:28px}
-.sec-title{font-size:22px;font-weight:700;color:var(--text)}
-.sec-sub{font-size:13px;color:var(--text2);margin-top:2px}
-.sec-actions{margin-left:auto;display:flex;gap:8px}
-
-/* ── NOTIFICATION ── */
-#toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:13px;z-index:9999;transform:translateY(80px);opacity:0;transition:.3s;max-width:320px}
-#toast.show{transform:translateY(0);opacity:1}
-#toast.success{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.1)}
-#toast.error{border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1)}
+#js-error-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;}
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast{background:#1e293b;border:1px solid #475569;color:#f1f5f9;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;}
+.toast.success{background:#064e3b;border-color:#10b981;}
+.toast.error{background:#7f1d1d;border-color:#ef4444;}
 </style>
 </head>
+
+<div id="js-error-banner"></div>
+<div id="toast-container"></div>
+<script>
+function showToast(msg, type){
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type||'');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(function(){ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(function(){t.remove();}, 400); }, 3200);
+}
+window.addEventListener('error', function(ev){
+  try{
+    const b = document.getElementById('js-error-banner');
+    if (!b) return;
+    const msg = (ev.message||(ev.error && ev.error.message)||'?') + ' @ ' + (ev.filename||'').split('/').pop() + ':' + (ev.lineno||'?');
+    b.style.display='block';
+    b.innerHTML = '! Error JS: ' + msg.substring(0,280);
+  }catch(e){}
+});
+</script>
+
 <body>
 
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="topbar-logo">
-    <div class="icon">✦</div>
+<div class="hdr">
+  <div class="hdr-brand">
+    <h1>&#127800; ANIMUS Lab</h1>
+    <span>HHA Group &middot; Tienda</span>
+  </div>
+  <div style="display:flex;gap:14px;align-items:center;">
+    <a class="back-link" href="/hub">&larr; Modulos</a>
+    <div class="hdr-user">Usuario: <strong>{usuario}</strong></div>
+  </div>
+</div>
+
+<div class="tabs-bar">
+  <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
+  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Inventario Ciclico</button>
+</div>
+
+<!-- TAB: CAJA MENOR -->
+<div id="tab-caja" class="tab-panel active">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
     <div>
-      <div class="brand">ÁNIMUS Lab</div>
-      <div class="sub">Centro de Mando</div>
+      <div class="page-title">&#128176; Caja Menor</div>
+      <div class="page-sub">Ingresos en efectivo (ventas contraentrega) y egresos del local. Saldo acumulado.</div>
     </div>
-  </div>
-  <div class="topbar-divider"></div>
-  <div class="topbar-nav">
-    <button class="tn-btn active" onclick="showSection('comando')">⚡ Comando</button>
-    <button class="tn-btn" onclick="showSection('mercado')">📢 Mercado</button>
-    <button class="tn-btn" onclick="showSection('productos')">💎 Productos</button>
-    <button class="tn-btn" onclick="showSection('clientes')">👥 Clientes</button>
-    <button class="tn-btn" onclick="showSection('instagram')">📸 Instagram</button>
-    <button class="tn-btn" onclick="showSection('agentes')">🤖 Agentes IA</button>
-    <button class="tn-btn" onclick="showSection('studio')">✍️ Estudio</button>
-    <button class="tn-btn" onclick="showSection('config')">⚙️ Config</button>
-    <button class="tn-btn" onclick="showSection('influencers')">💸 Influencers</button>
-  </div>
-  <div class="topbar-right">
-    <span class="platform-pill pill-shopify" id="pill-shopify">Shopify ●</span>
-    <span class="platform-pill pill-ghl" id="pill-ghl">GHL ●</span>
-    <span class="platform-pill pill-ig" id="pill-ig">Instagram ●</span>
-    <div class="topbar-divider"></div>
-    <span class="user-chip">👤 {usuario}</span>
-    <a class="back-btn" href="/modulos">← Módulos</a>
-  </div>
-</div>
-
-<div class="main">
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 1 — COMANDO GENERAL
-═══════════════════════════════════════════════════════════════ -->
-<div class="section active" id="s-comando">
-  <div class="sec-header">
-    <div class="sec-icon">⚡</div>
-    <div>
-      <div class="sec-title">Comando General</div>
-      <div class="sec-sub" id="cmd-updated">Cargando datos en tiempo real...</div>
-    </div>
-    <div class="sec-actions">
-      <button class="sync-btn" onclick="loadComando()">↻ Actualizar</button>
-    </div>
+    <button class="btn btn-primary" onclick="abrirRegistro('ingreso')">+ Registrar ingreso</button>
   </div>
 
-  <!-- KPIs principales -->
-  <div class="kpi-grid" id="kpi-main">
-    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Liberaciones 30d</div><div class="kpi-value" id="k-lib">—</div><div class="kpi-sub">Unidades PT</div><div class="kpi-icon">📦</div></div>
-    <div class="kpi" style="--kpi-color:var(--gold)"><div class="kpi-label">Revenue Shopify 30d</div><div class="kpi-value" id="k-rev">—</div><div class="kpi-sub" id="k-rev-sub">pedidos</div><div class="kpi-icon">🛍️</div></div>
-    <div class="kpi" style="--kpi-color:var(--blue)"><div class="kpi-label">Contactos GHL</div><div class="kpi-value" id="k-ghl">—</div><div class="kpi-sub" id="k-ghl-sub">pipeline</div><div class="kpi-icon">🎯</div></div>
-    <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Campañas Activas</div><div class="kpi-value" id="k-camp">—</div><div class="kpi-sub" id="k-inf">influencers</div><div class="kpi-icon">📢</div></div>
-    <div class="kpi" style="--kpi-color:var(--purple)"><div class="kpi-label">Avg Likes IG</div><div class="kpi-value" id="k-likes">—</div><div class="kpi-sub" id="k-posts">posts sincronizados</div><div class="kpi-icon">📸</div></div>
-    <div class="kpi" style="--kpi-color:var(--red)"><div class="kpi-label">Alertas Calidad</div><div class="kpi-value" id="k-qa">—</div><div class="kpi-sub">críticas/altas</div><div class="kpi-icon">⚠️</div></div>
-  </div>
+  <div class="kpi-grid" id="caja-kpis"></div>
 
-  <div class="grid-2">
-    <!-- Stock PT -->
-    <div class="card">
-      <div class="card-title">💎 Stock Producto Terminado <span class="badge">ERP Live</span></div>
-      <div id="stock-chart" class="bar-chart"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
-    </div>
-
-    <!-- Calendario cosmético -->
-    <div class="card">
-      <div class="card-title">📅 Calendario Cosmético <span class="badge">Próximos 90d</span></div>
-      <div id="cal-list" class="cal-events"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-  </div>
-
-  <div class="grid-2">
-    <!-- Top SKUs liberados -->
-    <div class="card">
-      <div class="card-title">📈 Top SKUs — Liberaciones 30d</div>
-      <div id="lib-chart" class="bar-chart"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-
-    <!-- Campañas activas -->
-    <div class="card">
-      <div class="card-title">📢 Campañas Activas</div>
-      <div id="cmd-campanas"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 2 — MERCADO
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-mercado">
-  <div class="sec-header">
-    <div class="sec-icon">📢</div>
-    <div><div class="sec-title">Mercado</div><div class="sec-sub">Campañas, influencers y contenido</div></div>
-    <div class="sec-actions">
-      <a href="/marketing" style="text-decoration:none">
-        <button class="connect-btn">Abrir Marketing Completo →</button>
-      </a>
-    </div>
-  </div>
-  <div style="padding:60px;text-align:center;color:var(--text2)">
-    <div style="font-size:48px;margin-bottom:16px">📢</div>
-    <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">Módulo de Marketing</div>
-    <div style="font-size:14px;margin-bottom:24px">El módulo completo de marketing está disponible en su propia sección con campañas, influencers, contenido y analytics.</div>
-    <a href="/marketing"><button class="connect-btn" style="font-size:15px;padding:14px 28px">Ir a Marketing → </button></a>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 3 — PRODUCTOS
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-productos">
-  <div class="sec-header">
-    <div class="sec-icon">💎</div>
-    <div><div class="sec-title">Inteligencia de Producto</div><div class="sec-sub">Matriz SKU, ABC, cobertura y revenue</div></div>
-    <div class="sec-actions"><button class="sync-btn" onclick="loadProductos()">↻ Actualizar</button></div>
-  </div>
   <div class="card">
-    <div class="card-title">Matriz SKU × Rendimiento</div>
-    <div id="prod-table"><div class="loading"><div class="spinner"></div> Analizando SKUs...</div></div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 4 — CLIENTES
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-clientes">
-  <div class="sec-header">
-    <div class="sec-icon">👥</div>
-    <div><div class="sec-title">Inteligencia de Clientes</div><div class="sec-sub">Shopify + GHL CRM</div></div>
-    <div class="sec-actions"><button class="sync-btn" onclick="loadClientes()">↻ Actualizar</button></div>
-  </div>
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-title">🛍️ Top Clientes Shopify</div>
-      <div id="top-shopify"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">🎯 Pipeline GHL</div>
-      <div id="ghl-pipeline"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-  </div>
-  <div class="grid-2">
-    <div class="card">
-      <div class="card-title">📍 Distribución Geográfica</div>
-      <div id="geo-chart" class="bar-chart"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">😴 Clientes Dormidos</div>
-      <div id="dormidos-panel" style="text-align:center;padding:30px"><div class="loading"><div class="spinner"></div></div></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 5 — INSTAGRAM
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-instagram">
-  <div class="sec-header">
-    <div class="sec-icon">📸</div>
-    <div><div class="sec-title">Instagram Analytics</div><div class="sec-sub">Posts, alcance y engagement de ÁNIMUS Lab</div></div>
-    <div class="sec-actions">
-      <button class="sync-btn" onclick="syncPlatform('instagram')">↻ Sincronizar</button>
-    </div>
-  </div>
-  <div id="ig-section"><div class="loading"><div class="spinner"></div> Cargando posts...</div></div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 6 — AGENTES IA
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-agentes">
-  <div class="sec-header">
-    <div class="sec-icon">🤖</div>
-    <div><div class="sec-title">Ejército de Agentes IA</div><div class="sec-sub">10 agentes que analizan datos reales de ERP + Shopify + GHL + Instagram</div></div>
-  </div>
-  <div class="agent-grid">
-    <div class="agent-card" id="card-estacionalidad">
-      <div class="agent-icon">📅</div>
-      <div class="agent-name">Estacionalidad</div>
-      <div class="agent-desc">Cruza campañas programadas con stock actual y el calendario cosmético. Calcula si habrá déficit para Día de la Madre, Black Friday, etc. y cuándo hay que arrancar producción.</div>
-      <button class="agent-btn" onclick="runAgente('estacionalidad')">▶ Analizar Estacionalidad</button>
-      <div class="agent-result" id="res-estacionalidad"></div>
-    </div>
-    <div class="agent-card" id="card-oportunidad">
-      <div class="agent-icon">🔍</div>
-      <div class="agent-name">Oportunidad</div>
-      <div class="agent-desc">Detecta SKUs con alto inventario y baja rotación en ERP y Shopify. Genera lista priorizada de productos que necesitan campaña urgente.</div>
-      <button class="agent-btn" onclick="runAgente('oportunidad')">▶ Buscar Oportunidades</button>
-      <div class="agent-result" id="res-oportunidad"></div>
-    </div>
-    <div class="agent-card" id="card-roi">
-      <div class="agent-icon">💰</div>
-      <div class="agent-name">ROI de Campaña</div>
-      <div class="agent-desc">Calcula el ROI real de cada campaña cruzando presupuesto ejecutado con ventas generadas en ERP y Shopify. Rankea canales por eficiencia.</div>
-      <button class="agent-btn" onclick="runAgente('roi')">▶ Calcular ROI</button>
-      <div class="agent-result" id="res-roi"></div>
-    </div>
-    <div class="agent-card" id="card-tendencias">
-      <div class="agent-icon">📈</div>
-      <div class="agent-name">Tendencias</div>
-      <div class="agent-desc">Compara liberaciones y ventas Shopify de los últimos 90 días vs los 90 anteriores. Detecta momentum por SKU y tendencias del canal online.</div>
-      <button class="agent-btn" onclick="runAgente('tendencias')">▶ Ver Tendencias</button>
-      <div class="agent-result" id="res-tendencias"></div>
-    </div>
-    <div class="agent-card" id="card-brief">
-      <div class="agent-icon">📋</div>
-      <div class="agent-name">Brief de Contenido</div>
-      <div class="agent-desc">Genera briefs de contenido para los top SKUs por volumen. Define canal recomendado, formato, claim principal y ángulo de comunicación.</div>
-      <button class="agent-btn" onclick="runAgente('brief')">▶ Generar Briefs</button>
-      <div class="agent-result" id="res-brief"></div>
-    </div>
-    <div class="agent-card" id="card-pricing">
-      <div class="agent-icon">🏷️</div>
-      <div class="agent-name">Pricing Seguro</div>
-      <div class="agent-desc">Calcula el descuento máximo posible por SKU manteniendo margen ≥40%. Solo propone promos para productos con más de 4 meses de cobertura.</div>
-      <button class="agent-btn" onclick="runAgente('pricing')">▶ Calcular Promos</button>
-      <div class="agent-result" id="res-pricing"></div>
-    </div>
-    <div class="agent-card" id="card-reorden">
-      <div class="agent-icon">🔄</div>
-      <div class="agent-name">Predicción Reórdenes</div>
-      <div class="agent-desc">Analiza el patrón de compra de clientes B2B en Shopify. Predice cuándo hará su próximo pedido y genera alerta de seguimiento proactivo.</div>
-      <button class="agent-btn" onclick="runAgente('reorden')">▶ Predecir Reórdenes</button>
-      <div class="agent-result" id="res-reorden"></div>
-    </div>
-    <div class="agent-card" id="card-canibal">
-      <div class="agent-icon">⚔️</div>
-      <div class="agent-name">Anti-Canibalización</div>
-      <div class="agent-desc">Detecta conflictos entre campañas activas: mismo SKU, mismo canal, fechas solapadas. Sugiere escalonamiento para maximizar impacto de cada campaña.</div>
-      <button class="agent-btn" onclick="runAgente('canibal')">▶ Detectar Conflictos</button>
-      <div class="agent-result" id="res-canibal"></div>
-    </div>
-    <div class="agent-card" id="card-contenido_auto">
-      <div class="agent-icon">✨</div>
-      <div class="agent-name">Contenido Auto</div>
-      <div class="agent-desc">Genera automáticamente caption de Instagram, asunto de email y texto de WhatsApp para los top 3 SKUs del último mes. Listo para copiar y publicar.</div>
-      <button class="agent-btn" onclick="runAgente('contenido_auto')">▶ Auto-Generar</button>
-      <div class="agent-result" id="res-contenido_auto"></div>
-    </div>
-    <div class="agent-card" id="card-alerta_stock">
-      <div class="agent-icon">🚨</div>
-      <div class="agent-name">Alerta Stock</div>
-      <div class="agent-desc">Cruza stock ERP con demanda real de Shopify. Calcula días de cobertura real considerando ambos canales. Alerta crítica si queda menos de 7 días.</div>
-      <button class="agent-btn" onclick="runAgente('alerta_stock')">▶ Revisar Stock</button>
-      <div class="agent-result" id="res-alerta_stock"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 7 — ESTUDIO DE CONTENIDO
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-studio">
-  <div class="sec-header">
-    <div class="sec-icon">✍️</div>
-    <div><div class="sec-title">Estudio de Contenido</div><div class="sec-sub">Generador IA de copy para todos los canales ÁNIMUS Lab</div></div>
-  </div>
-  <div class="studio-panel">
-    <div class="studio-controls">
-      <div class="card-title" style="margin-bottom:20px">⚙️ Configurar</div>
-      <div class="form-group">
-        <label class="form-label">SKU del Producto</label>
-        <input class="form-input" id="st-sku" placeholder="Ej: SERA-VIT-C-30" oninput="this.value=this.value.toUpperCase()">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Tipo de Contenido</label>
-        <select class="form-select" id="st-tipo">
-          <option value="instagram_caption">Instagram Caption</option>
-          <option value="tiktok">TikTok Script</option>
-          <option value="email">Email Marketing</option>
-          <option value="whatsapp">WhatsApp</option>
-          <option value="brief_influencer">Brief para Influencer</option>
+    <div class="card-hdr">
+      <span class="card-title">Movimientos recientes</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="caja-filtro-tipo" class="select" style="width:auto;" onchange="loadCaja()">
+          <option value="">Todos</option>
+          <option value="ingreso">Solo ingresos</option>
+          <option value="egreso">Solo egresos</option>
         </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Tono de Comunicación</label>
-        <select class="form-select" id="st-tono">
-          <option value="premium">Premium / Aspiracional</option>
-          <option value="cercano">Cercano / Conversacional</option>
-          <option value="cientifico">Científico / Técnico</option>
-          <option value="urgente">Urgente / Escasez</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Contexto adicional (opcional)</label>
-        <textarea class="form-textarea" id="st-ctx" placeholder="Ej: Nuevo lanzamiento, promoción 20% off, temporada Día de la Madre..."></textarea>
-      </div>
-      <button class="gen-btn" onclick="generarContenido()">✨ Generar Contenido</button>
-      <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:8px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;letter-spacing:1px;text-transform:uppercase">Últimas Generaciones</div>
-        <div id="historial-list" style="font-size:12px;color:var(--text2)">
-          <div class="loading" style="padding:16px"><div class="spinner"></div></div>
-        </div>
+        <input id="caja-filtro-q" class="input" style="width:200px;" placeholder="Buscar concepto..." oninput="loadCaja()">
+        <button class="btn btn-outline btn-sm" onclick="abrirRegistro('egreso')">+ Egreso</button>
       </div>
     </div>
-    <div class="studio-output">
-      <div class="card-title" style="margin-bottom:20px">📝 Resultado</div>
-      <div id="st-meta" style="margin-bottom:12px;font-size:12px;color:var(--text2)"></div>
-      <div id="st-output" class="content-output">El contenido generado aparecerá aquí.\n\nSelecciona un SKU, tipo de contenido y tono, luego presiona "Generar Contenido".</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="copy-btn" onclick="copiarContenido()">📋 Copiar</button>
-        <button class="copy-btn" onclick="generarContenido()" style="border-color:rgba(212,175,55,.3);color:var(--gold)">🔄 Regenerar</button>
-      </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Fecha</th>
+          <th>Tipo</th>
+          <th>Concepto</th>
+          <th style="text-align:right;">Monto</th>
+          <th>Metodo</th>
+          <th>Ref.</th>
+          <th>Por</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="caja-body"><tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════
-     SECCIÓN 8 — CONFIGURACIÓN
-═══════════════════════════════════════════════════════════════ -->
-<div class="section" id="s-config">
-  <div class="sec-header">
-    <div class="sec-icon">⚙️</div>
-    <div><div class="sec-title">Configuración de Integraciones</div><div class="sec-sub">Conecta Shopify, GHL e Instagram para datos en tiempo real</div></div>
+<!-- TAB: INVENTARIO CICLICO -->
+<div id="tab-inventario" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128230; Inventario Ciclico</div>
+      <div class="page-sub">Conta fisicamente cada producto y compara con lo vendido en Shopify. Si hay diferencia, explicala (rotura, devolucion, etc.).</div>
+    </div>
+    <button class="btn btn-primary" onclick="abrirConteo()">+ Nuevo conteo</button>
   </div>
-  <div class="config-grid">
-    <!-- Shopify -->
-    <div class="config-card">
-      <div class="config-card-title"><span style="font-size:20px">🛍️</span> Shopify</div>
-      <div class="form-group">
-        <label class="form-label">Shop URL</label>
-        <input class="form-input" id="cfg-shopify-shop" placeholder="tu-tienda.myshopify.com">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Access Token</label>
-        <input class="form-input" id="cfg-shopify-token" type="password" placeholder="shpat_xxxxxxxxxxxxxxxx">
-      </div>
-      <button class="save-cfg-btn" onclick="saveCfg('shopify')">💾 Guardar y Sincronizar</button>
-      <div id="cfg-shopify-status" style="margin-top:8px;font-size:12px;color:var(--text2)"></div>
+
+  <div class="kpi-grid" id="inv-kpis"></div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">SKUs vendidos en Shopify (para contar)</span></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>SKU</th>
+          <th style="text-align:right;">Pedidos</th>
+          <th style="text-align:right;">Vendidas (acumulado)</th>
+          <th>Ultima venta</th>
+          <th>Ultimo conteo</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="inv-skus-body"><tr><td colspan="6" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
     </div>
-    <!-- GHL -->
-    <div class="config-card">
-      <div class="config-card-title"><span style="font-size:20px">🎯</span> GoHighLevel (GHL)</div>
-      <div class="form-group">
-        <label class="form-label">API Key</label>
-        <input class="form-input" id="cfg-ghl-key" type="password" placeholder="eyJhbGc...">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Location ID</label>
-        <input class="form-input" id="cfg-ghl-loc" placeholder="xxxxxxxx-xxxx-xxxx">
-      </div>
-      <button class="save-cfg-btn" onclick="saveCfg('ghl')">💾 Guardar y Sincronizar</button>
-      <div id="cfg-ghl-status" style="margin-top:8px;font-size:12px;color:var(--text2)"></div>
-    </div>
-    <!-- Instagram -->
-    <div class="config-card">
-      <div class="config-card-title"><span style="font-size:20px">📸</span> Instagram Business</div>
-      <div class="form-group">
-        <label class="form-label">Access Token (Meta Graph API)</label>
-        <input class="form-input" id="cfg-ig-token" type="password" placeholder="EAABsbCS...">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Instagram User ID</label>
-        <input class="form-input" id="cfg-ig-uid" placeholder="17841400000000000">
-      </div>
-      <button class="save-cfg-btn" onclick="saveCfg('instagram')">💾 Guardar y Sincronizar</button>
-      <div id="cfg-ig-status" style="margin-top:8px;font-size:12px;color:var(--text2)"></div>
-      <div style="margin-top:12px;padding:10px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3);line-height:1.5">
-        💡 Para obtener tu token: Meta Business Suite → Configuración → Instagram → API de Instagram Básica → Generar token
-      </div>
-    </div>
-    <!-- Info -->
-    <div class="config-card">
-      <div class="config-card-title"><span style="font-size:20px">ℹ️</span> Estado de Conexiones</div>
-      <div id="conn-status"><div class="loading"><div class="spinner"></div></div></div>
-      <div style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text3);line-height:1.6">
-        🔒 Tus credenciales se almacenan de forma segura en la base de datos del servidor.<br><br>
-        🔄 La sincronización se activa manualmente. Los datos se guardan localmente para consultas rápidas.<br><br>
-        📊 Una vez conectadas, los agentes IA usan datos de TODAS las plataformas.
-      </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Historial de conteos</span></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Fecha</th>
+          <th>SKU</th>
+          <th>Producto</th>
+          <th style="text-align:right;">Shopify</th>
+          <th style="text-align:right;">Fisico</th>
+          <th style="text-align:right;">Diferencia</th>
+          <th>Explicacion</th>
+          <th>Por</th>
+        </tr></thead>
+        <tbody id="inv-conteos-body"><tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
     </div>
   </div>
 </div>
 
-<div class="section" id="s-influencers">
-  <div class="sec-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-    <div style="display:flex;align-items:center;gap:12px;">
-      <div class="sec-icon">💸</div>
-      <div>
-        <div class="sec-title">Influencers &amp; Colaboraciones</div>
-        <div class="sec-sub">Trazabilidad de pagos, perfiles y métricas por colaborador</div>
+<!-- MODAL: Registro caja menor -->
+<div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 id="modal-caja-title" style="font-size:16px;color:#fff;">Registrar movimiento</h3>
+      <button onclick="cerrarModal('modal-caja')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <input type="hidden" id="caja-tipo">
+    <div class="form-row">
+      <div><div class="label">Fecha</div><input id="caja-fecha" type="date" class="input"></div>
+      <div><div class="label">Monto (COP) *</div><input id="caja-monto" type="number" min="0" step="100" class="input" placeholder="0"></div>
+    </div>
+    <div class="form-row full"><div><div class="label">Concepto *</div><input id="caja-concepto" class="input" placeholder="Ej: Pago contraentrega orden #1234"></div></div>
+    <div class="form-row">
+      <div><div class="label">Metodo</div>
+        <select id="caja-metodo" class="select"><option>efectivo</option><option>transferencia</option><option>tarjeta</option><option>otro</option></select>
       </div>
+      <div><div class="label">Referencia (opcional)</div><input id="caja-referencia" class="input" placeholder="N orden, factura, etc."></div>
     </div>
-    <button onclick="abrirModalNuevoInf()" style="background:linear-gradient(135deg,var(--pink),#a0106a);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;">+ Nuevo influencer</button>
-  </div>
-  <div id="inf-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:20px;"></div>
-  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-    <input id="inf-q" type="text" placeholder="Buscar influencer, nicho..." oninput="renderInfGrid()"
-      style="flex:1;min-width:180px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;">
-    <select id="inf-fil" onchange="renderInfGrid()"
-      style="padding:8px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;">
-      <option value="">Todos</option>
-      <option value="Activo">Activos</option>
-      <option value="Inactivo">Inactivos</option>
-      <option value="Potencial">Potenciales</option>
-    </select>
-  </div>
-  <div id="inf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"></div>
-</div>
-
-<!-- Modal nuevo/editar influencer -->
-<div id="m-inf-edit" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;overflow-y:auto;">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;max-width:560px;margin:40px auto;padding:0;overflow:hidden;">
-    <div style="background:linear-gradient(135deg,#1a0a2e,#2d0a4e);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;">
-      <div style="font-size:16px;font-weight:700;color:var(--text);" id="m-inf-edit-title">✨ Nuevo Influencer</div>
-      <button onclick="cerrarModalInf()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">✕</button>
-    </div>
-    <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Nombre completo *</label>
-        <input id="if-nombre" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Valentina Sierra Bernal"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Red social</label>
-        <select id="if-red" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
-          <option>Instagram</option><option>TikTok</option><option>YouTube</option><option>Ambas</option>
-        </select></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">@usuario</label>
-        <input id="if-usuario" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="@handle"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Nicho</label>
-        <input id="if-nicho" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Skincare, Lifestyle..."></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Seguidores</label>
-        <input id="if-seg" type="number" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="15000"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Engagement rate (%)</label>
-        <input id="if-er" type="number" step="0.1" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="3.5"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Tarifa base (COP)</label>
-        <input id="if-tarifa" type="number" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="500000"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Estado</label>
-        <select id="if-estado" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
-          <option>Activo</option><option>Inactivo</option><option>Potencial</option>
-        </select></div>
-      <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:4px 0;padding-top:12px;">
-        <div style="font-size:12px;font-weight:700;color:var(--pink);margin-bottom:10px;">🏦 Datos bancarios</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Banco</label>
-            <input id="if-banco" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="Bancolombia, Nequi, Daviplata..."></div>
-          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Tipo de cuenta</label>
-            <select id="if-tipo-cta" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;">
-              <option>Ahorros</option><option>Corriente</option><option>Nequi</option><option>Daviplata</option>
-            </select></div>
-          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Número cuenta / Cel</label>
-            <input id="if-cuenta" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="3114902203"></div>
-          <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Cédula / NIT</label>
-            <input id="if-cedula" type="text" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" placeholder="1234567890"></div>
-        </div>
-      </div>
-      <div style="grid-column:1/-1"><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Notas</label>
-        <textarea id="if-notas" rows="2" style="width:100%;margin-top:4px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;resize:vertical;" placeholder="Referencias, notas de colaboración..."></textarea></div>
-    </div>
-    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">
-      <button onclick="cerrarModalInf()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;">Cancelar</button>
-      <button onclick="guardarInfluencer()" style="background:linear-gradient(135deg,var(--pink),#a0106a);color:#fff;border:none;padding:8px 22px;border-radius:7px;font-weight:600;cursor:pointer;font-size:13px;">💾 Guardar</button>
+    <div class="form-row full"><div><div class="label">Observaciones</div><textarea id="caja-obs" class="textarea" placeholder="Notas adicionales..."></textarea></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-caja')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCaja()">Guardar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal solicitar pago -->
-<div id="m-inf-pago" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;overflow-y:auto;">
-  <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:14px;max-width:460px;margin:60px auto;padding:0;overflow:hidden;">
-    <div style="background:linear-gradient(135deg,#0a1f2e,#0a2e1f);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div style="font-size:16px;font-weight:700;color:var(--text);">💸 Solicitar Pago</div>
-        <div id="m-pago-inf-nombre" style="font-size:12px;color:var(--text2);margin-top:2px;"></div>
-      </div>
-      <button onclick="cerrarModalPago()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">✕</button>
+<!-- MODAL: Conteo ciclico -->
+<div id="modal-conteo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:#fff;">&#128230; Nuevo conteo ciclico</h3>
+      <button onclick="cerrarModal('modal-conteo')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
     </div>
-    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Monto (COP) *</label>
-        <input id="pago-monto" type="number" style="width:100%;margin-top:4px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:15px;font-weight:600;"></div>
-      <div><label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Concepto</label>
-        <input id="pago-concepto" type="text" style="width:100%;margin-top:4px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;" value="Pago de contenido / colaboración"></div>
-      <div id="pago-banco-preview" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:1.8;color:var(--text2);"></div>
-      <div style="font-size:11px;color:var(--text3);">💡 Los datos bancarios vienen del perfil. Edita el influencer si están desactualizados.</div>
+    <div class="form-row">
+      <div><div class="label">SKU *</div><input id="conteo-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase;"></div>
+      <div><div class="label">Fecha</div><input id="conteo-fecha" type="date" class="input"></div>
     </div>
-    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">
-      <button onclick="cerrarModalPago()" style="background:var(--bg3);border:1px solid var(--border2);color:var(--text2);padding:8px 18px;border-radius:7px;cursor:pointer;font-size:13px;">Cancelar</button>
-      <button onclick="confirmarPagoInf()" style="background:linear-gradient(135deg,#059669,#065f46);color:#fff;border:none;padding:8px 22px;border-radius:7px;font-weight:600;cursor:pointer;font-size:13px;">✅ Generar solicitud</button>
+    <div class="form-row full"><div><div class="label">Nombre del producto (opcional)</div><input id="conteo-nombre" class="input" placeholder="Ej: Limpiador hidratante 30 g"></div></div>
+    <div class="form-row">
+      <div><div class="label">Cantidad segun Shopify *</div><input id="conteo-shopify" type="number" min="0" class="input" placeholder="0"></div>
+      <div><div class="label">Cantidad fisica (contada) *</div><input id="conteo-fisica" type="number" min="0" class="input" placeholder="0"></div>
+    </div>
+    <div id="conteo-diff-preview" style="display:none;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:10px;"></div>
+    <div class="form-row full"><div><div class="label">Explicacion de la diferencia (si aplica)</div><textarea id="conteo-explicacion" class="textarea" placeholder="Rotura, devolucion no registrada, regalo, robo, error de carga..."></textarea></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-conteo')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarConteo()">Guardar conteo</button>
     </div>
   </div>
 </div>
-
-</div><!-- /main -->
-
-<div id="toast"></div>
 
 <script>
-const BASE = '';
-let cmdData = null;
-
-// ─── NAVIGATION ───────────────────────────────────────────────────────────────
-function showSection(name) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.tn-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('s-' + name).classList.add('active');
-  const btns = document.querySelectorAll('.tn-btn');
-  btns.forEach(b => { if(b.textContent.toLowerCase().includes(name.slice(0,4))) b.classList.add('active'); });
-  if(name === 'comando' && !cmdData) loadComando();
-  if(name === 'productos') loadProductos();
-  if(name === 'clientes') loadClientes();
-  if(name === 'instagram') loadInstagram();
-  if(name === 'influencers') loadInfluencersPanel();
-  if(name === 'config') loadConfig();
-  if(name === 'studio') loadHistorial();
-}
-
-// ─── TOAST ────────────────────────────────────────────────────────────────────
-function toast(msg, type='') {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'show ' + type;
-  clearTimeout(t._to);
-  t._to = setTimeout(() => t.className = '', 3000);
-}
-
-// ─── FORMAT ───────────────────────────────────────────────────────────────────
-const fmt = n => n == null ? '—' : n >= 1e6 ? '$' + (n/1e6).toFixed(1) + 'M' : n >= 1e3 ? '$' + (n/1e3).toFixed(0) + 'k' : '$' + Number(n).toLocaleString();
-const fmtN = n => n == null ? '—' : Number(n).toLocaleString();
-
-// ─── COMANDO ──────────────────────────────────────────────────────────────────
-async function loadComando() {
-  document.getElementById('cmd-updated').textContent = 'Actualizando...';
-  try {
-    const r = await fetch('/api/animus/comando');
-    cmdData = await r.json();
-    const k = cmdData.kpis;
-    document.getElementById('k-lib').textContent = fmtN(k.lib_30d);
-    document.getElementById('k-rev').textContent = fmt(k.shopify_ventas_30d);
-    document.getElementById('k-rev-sub').textContent = (k.shopify_pedidos_30d||0) + ' pedidos · Total: ' + fmt(k.revenue_total);
-    document.getElementById('k-ghl').textContent = fmtN(k.ghl_contactos);
-    document.getElementById('k-ghl-sub').textContent = 'Pipeline: ' + fmt(k.ghl_pipeline_valor);
-    document.getElementById('k-camp').textContent = k.campanas_activas;
-    document.getElementById('k-inf').textContent = (k.influencers_activos||0) + ' influencers activos';
-    document.getElementById('k-likes').textContent = fmtN(k.ig_avg_likes);
-    document.getElementById('k-posts').textContent = (k.ig_total_posts||0) + ' posts';
-    document.getElementById('k-qa').textContent = k.alertas_calidad;
-
-    // Update platform pills
-    const conn = cmdData.connected;
-    [['shopify','shopify'],['ghl','ghl'],['instagram','ig']].forEach(([k,pid]) => {
-      const el = document.getElementById('pill-' + pid);
-      if(!el) return;
-      if(conn[k]) el.className = 'platform-pill pill-' + pid;
-      else el.className = 'platform-pill pill-off';
-    });
-
-    // Stock chart
-    const sc = document.getElementById('stock-chart');
-    if(cmdData.stock_pt && cmdData.stock_pt.length) {
-      const max = Math.max(...cmdData.stock_pt.map(s=>s.stock));
-      sc.innerHTML = cmdData.stock_pt.slice(0,8).map(s => {
-        const pct = max > 0 ? Math.round(s.stock/max*100) : 0;
-        return `<div class="bar-row">
-          <div class="bar-label">${s.sku}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"><span class="bar-val">${fmtN(s.stock)}</span></div></div>
-        </div>`;
-      }).join('');
-    } else { sc.innerHTML = '<div class="empty"><div class="empty-icon">📦</div>Sin stock registrado</div>'; }
-
-    // Lib chart
-    const lc = document.getElementById('lib-chart');
-    if(cmdData.lib_30_top && cmdData.lib_30_top.length) {
-      const max2 = Math.max(...cmdData.lib_30_top.map(s=>s.uds));
-      lc.innerHTML = cmdData.lib_30_top.map(s => {
-        const pct = max2 > 0 ? Math.round(s.uds/max2*100) : 0;
-        return `<div class="bar-row">
-          <div class="bar-label">${s.sku}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"><span class="bar-val">${fmtN(s.uds)}</span></div></div>
-        </div>`;
-      }).join('');
-    } else { lc.innerHTML = '<div class="empty">Sin liberaciones en 30 días</div>'; }
-
-    // Calendar
-    const cl = document.getElementById('cal-list');
-    if(cmdData.calendario && cmdData.calendario.length) {
-      cl.innerHTML = cmdData.calendario.map(ev => {
-        const d = ev.dias_restantes;
-        const pill = d <= 0 ? '<span style="background:rgba(239,68,68,.2);color:#ef4444;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">HOY</span>'
-                   : d <= 14 ? `<span style="background:rgba(245,158,11,.2);color:var(--yellow);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${d}d</span>`
-                   : `<span style="background:rgba(100,100,120,.15);color:var(--text2);padding:2px 8px;border-radius:10px;font-size:11px">${d}d</span>`;
-        return `<div class="cal-event" style="border-color:${ev.color}">
-          <div class="cal-event-name">${ev.evento}</div>
-          <div class="cal-event-date">${ev.fecha}</div>
-          ${pill}
-          <span style="font-size:11px;color:var(--text3)">×${ev.multiplicador}</span>
-        </div>`;
-      }).join('');
-    } else { cl.innerHTML = '<div class="empty">No hay eventos próximos</div>'; }
-
-    // Campañas activas
-    const ca = document.getElementById('cmd-campanas');
-    if(cmdData.campanas_activas && cmdData.campanas_activas.length) {
-      ca.innerHTML = `<table class="tbl"><thead><tr><th>Campaña</th><th>Canal</th><th>Budget</th><th>Ventas</th></tr></thead><tbody>` +
-        cmdData.campanas_activas.map(c => `<tr>
-          <td><strong>${c.nombre}</strong><br><small style="color:var(--text3)">${c.sku_objetivo||''}</small></td>
-          <td>${c.canal||'—'}</td>
-          <td>${fmt(c.presupuesto)}</td>
-          <td style="color:var(--green)">${fmt(c.resultado_ventas)}</td>
-        </tr>`).join('') + '</tbody></table>';
-    } else { ca.innerHTML = '<div class="empty"><div class="empty-icon">📢</div>Sin campañas activas</div>'; }
-
-    document.getElementById('cmd-updated').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-CO');
-  } catch(e) { toast('Error cargando datos: ' + e.message, 'error'); }
-}
-
-// ─── PRODUCTOS ────────────────────────────────────────────────────────────────
-async function loadProductos() {
-  document.getElementById('prod-table').innerHTML = '<div class="loading"><div class="spinner"></div> Analizando SKUs...</div>';
-  try {
-    const d = await fetch('/api/animus/productos').then(r=>r.json());
-    if(!d.skus || !d.skus.length) {
-      document.getElementById('prod-table').innerHTML = '<div class="empty"><div class="empty-icon">💎</div>Sin datos de SKUs</div>';
-      return;
-    }
-    document.getElementById('prod-table').innerHTML = `
-      <table class="tbl">
-        <thead><tr><th>SKU</th><th>Clase</th><th>Stock</th><th>Rotación/Mes</th><th>Cobertura</th><th>Revenue 30d</th><th>Shopify 30d</th><th>Precio</th><th>Estado</th></tr></thead>
-        <tbody>` + d.skus.map(s => `<tr>
-          <td><strong>${s.sku}</strong></td>
-          <td><span class="badge-abc-${s.clase_abc.toLowerCase()}">${s.clase_abc}</span></td>
-          <td>${fmtN(s.stock)}</td>
-          <td>${s.rotacion_mes} uds</td>
-          <td style="color:${s.meses_cobertura<=3?'var(--green)':s.meses_cobertura<=6?'var(--yellow)':'var(--red)'}">${s.meses_cobertura === 99 ? '∞' : s.meses_cobertura + ' meses'}</td>
-          <td style="color:var(--gold)">${fmt(s.revenue_30d)}</td>
-          <td>${s.shopify_uds_30d} uds</td>
-          <td>$${Number(s.precio||0).toLocaleString()}</td>
-          <td><span class="${s.estado==='ok'?'badge-ok':s.estado==='alerta'?'badge-warn':'badge-crit'}">${s.estado}</span></td>
-        </tr>`).join('') + '</tbody></table>';
-  } catch(e) { document.getElementById('prod-table').innerHTML = '<div class="empty">Error cargando productos</div>'; }
-}
-
-// ─── CLIENTES ─────────────────────────────────────────────────────────────────
-async function loadClientes() {
-  try {
-    const d = await fetch('/api/animus/clientes').then(r=>r.json());
-    // Top Shopify
-    const ts = document.getElementById('top-shopify');
-    ts.innerHTML = d.top_shopify && d.top_shopify.length
-      ? `<table class="tbl"><thead><tr><th>Email</th><th>Pedidos</th><th>Revenue</th><th>Último</th></tr></thead><tbody>` +
-        d.top_shopify.map(c=>`<tr><td>${c.email}</td><td>${c.pedidos}</td><td style="color:var(--gold)">${fmt(c.revenue)}</td><td>${(c.ultimo_pedido||'').slice(0,10)}</td></tr>`).join('') +
-        '</tbody></table>'
-      : '<div class="empty"><div class="empty-icon">🛍️</div>Sincroniza Shopify para ver clientes</div>';
-
-    // GHL Pipeline
-    const gp = document.getElementById('ghl-pipeline');
-    gp.innerHTML = d.pipeline_ghl && d.pipeline_ghl.length
-      ? `<table class="tbl"><thead><tr><th>Etapa</th><th>Contactos</th><th>Valor</th></tr></thead><tbody>` +
-        d.pipeline_ghl.map(p=>`<tr><td>${p.etapa||'Sin etapa'}</td><td>${p.contactos}</td><td style="color:var(--blue)">${fmt(p.valor)}</td></tr>`).join('') +
-        '</tbody></table>'
-      : '<div class="empty"><div class="empty-icon">🎯</div>Conecta GHL para ver pipeline</div>';
-
-    // Geo
-    const gc = document.getElementById('geo-chart');
-    if(d.geo && d.geo.length) {
-      const maxR = Math.max(...d.geo.map(g=>g.revenue));
-      gc.innerHTML = d.geo.map(g => {
-        const pct = maxR > 0 ? Math.round(g.revenue/maxR*100) : 0;
-        return `<div class="bar-row"><div class="bar-label">${g.ciudad}</div>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%"><span class="bar-val">${g.pedidos}p</span></div></div></div>`;
-      }).join('');
-    } else { gc.innerHTML = '<div class="empty">Sin datos geográficos</div>'; }
-
-    // Dormidos
-    document.getElementById('dormidos-panel').innerHTML = `
-      <div style="font-size:48px;margin-bottom:8px">😴</div>
-      <div style="font-size:32px;font-weight:700;color:var(--yellow)">${d.clientes_dormidos}</div>
-      <div style="color:var(--text2);margin-top:8px">clientes sin comprar en 60+ días</div>
-      <div style="margin-top:16px;font-size:12px;color:var(--text3)">Usa el Agente Reórdenes para identificar los más urgentes y activar campaña de reactivación.</div>`;
-  } catch(e) { toast('Error clientes: '+e.message,'error'); }
-}
-
-// ─── INSTAGRAM ────────────────────────────────────────────────────────────────
-async function loadInstagram() {
-  document.getElementById('ig-section').innerHTML = '<div class="loading"><div class="spinner"></div> Cargando...</div>';
-  try {
-    const d = await fetch('/api/animus/instagram').then(r=>r.json());
-    const s = d.stats || {};
-    let html = `<div class="kpi-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:20px">
-      <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Posts</div><div class="kpi-value">${s.total||0}</div></div>
-      <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Avg Likes</div><div class="kpi-value">${Math.round(s.avg_likes||0)}</div></div>
-      <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Avg Coment.</div><div class="kpi-value">${Math.round(s.avg_comentarios||0)}</div></div>
-      <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Total Likes</div><div class="kpi-value">${fmtN(s.total_likes||0)}</div></div>
-      <div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Alcance Total</div><div class="kpi-value">${fmtN(s.total_alcance||0)}</div></div>
-    </div>`;
-    if(d.posts && d.posts.length) {
-      html += `<div class="grid-2"><div class="card"><div class="card-title">📸 Posts Recientes</div>
-        <table class="tbl"><thead><tr><th>Fecha</th><th>Tipo</th><th>Likes</th><th>Comentarios</th><th>Link</th></tr></thead><tbody>` +
-        d.posts.slice(0,10).map(p=>`<tr>
-          <td>${(p.publicado_en||'').slice(0,10)}</td>
-          <td>${p.tipo||''}</td>
-          <td style="color:var(--pink)">${fmtN(p.likes)}</td>
-          <td>${fmtN(p.comentarios)}</td>
-          <td>${p.url_permalink?`<a href="${p.url_permalink}" target="_blank" style="color:var(--gold)">Ver</a>`:'—'}</td>
-        </tr>`).join('') + '</tbody></table></div>';
-      html += `<div class="card"><div class="card-title">🏆 Top Posts por Engagement</div>
-        <table class="tbl"><thead><tr><th>Post</th><th>Likes</th><th>Coment.</th><th>Guardados</th></tr></thead><tbody>` +
-        (d.top_posts||[]).map(p=>`<tr>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(p.descripcion||'Sin descripción').slice(0,60)}...</td>
-          <td style="color:var(--pink)">${fmtN(p.likes)}</td><td>${fmtN(p.comentarios)}</td><td>${fmtN(p.guardados)}</td>
-        </tr>`).join('') + '</tbody></table></div></div>';
-    } else {
-      html += `<div class="empty" style="padding:60px"><div class="empty-icon">📸</div>
-        <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px">Conecta Instagram para ver tus métricas</div>
-        <div style="font-size:13px;margin-bottom:20px">Ve a Configuración y agrega tu Access Token de Meta Graph API</div>
-        <button class="connect-btn" onclick="showSection('config')">⚙️ Ir a Configuración</button></div>`;
-    }
-    document.getElementById('ig-section').innerHTML = html;
-  } catch(e) { document.getElementById('ig-section').innerHTML = '<div class="empty">Error cargando Instagram</div>'; }
-}
-
-// ─── AGENTES ──────────────────────────────────────────────────────────────────
-async function runAgente(agente) {
-  const card = document.getElementById('card-' + agente);
-  const res  = document.getElementById('res-' + agente);
-  const btn  = card.querySelector('.agent-btn');
-  card.classList.add('running');
-  btn.disabled = true; btn.textContent = '⏳ Analizando...';
-  res.className = 'agent-result visible';
-  res.innerHTML = '<div class="loading" style="padding:12px"><div class="spinner"></div> Ejecutando agente...</div>';
-  try {
-    const d = await fetch('/api/animus/agentes/' + agente, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-    res.innerHTML = formatAgentResult(agente, d);
-    toast('Agente ' + agente + ' completado ✓', 'success');
-  } catch(e) {
-    res.innerHTML = '<div style="color:var(--red)">Error: ' + e.message + '</div>';
-  }
-  card.classList.remove('running');
-  btn.disabled = false;
-  btn.textContent = '▶ ' + btn.textContent.replace('⏳ Analizando...','Ejecutar de nuevo');
-  if(!btn.textContent.includes('▶')) btn.textContent = '▶ Ejecutar de nuevo';
-}
-
-function formatAgentResult(agente, d) {
-  if(d.error) return `<div style="color:var(--red)">⚠️ ${d.error}</div>`;
-  let html = '';
-  if(d.titulo) html += `<div style="font-weight:700;color:var(--gold);margin-bottom:8px">${d.titulo}</div>`;
-  if(d.resumen) html += `<div style="margin-bottom:10px;color:var(--text)">${d.resumen}</div>`;
-
-  if(agente === 'estacionalidad' && d.alertas) {
-    html += d.alertas.slice(0,8).map(a => `<div style="padding:8px;border-left:3px solid ${a.color||'var(--gold)'};margin-bottom:6px;background:rgba(255,255,255,.03);border-radius:0 6px 6px 0">
-      <div style="font-weight:600;font-size:12px">${a.evento} · ${a.sku} · <span class="${a.estado==='ok'?'badge-ok':a.estado==='advertencia'?'badge-warn':'badge-crit'}">${a.estado}</span></div>
-      <div style="font-size:11px;color:var(--text2);margin-top:3px">Stock: ${a.stock_actual} uds → Demanda proyectada: ${a.demanda_proyectada} uds · Déficit: ${a.deficit}</div>
-      ${a.deadline_produccion?`<div style="font-size:11px;color:var(--yellow)">⚡ Arrancar producción antes del ${a.deadline_produccion}</div>`:''}
-    </div>`).join('');
-  } else if(agente === 'oportunidad' && d.recomendaciones) {
-    html += d.recomendaciones.slice(0,5).map(r => `<div style="padding:8px;background:rgba(255,255,255,.03);border-radius:6px;margin-bottom:6px">
-      <div style="font-weight:600;font-size:12px;color:var(--gold)">${r.sku} — Score: ${'★'.repeat(r.score)}</div>
-      <div style="font-size:11px;color:var(--text2)">Stock: ${r.stock} · Rotación: ${r.rotacion_mes}/mes · ${r.razones.join(' · ')}</div>
-      <div style="font-size:11px;color:var(--text);margin-top:3px">${r.accion}</div>
-    </div>`).join('');
-  } else if(agente === 'roi' && d.campanas) {
-    html += d.campanas.length
-      ? d.campanas.slice(0,6).map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-          <span style="font-size:12px">${c.nombre}</span>
-          <span style="font-size:12px;color:${c.roi_pct>=0?'var(--green)':'var(--red)'}">ROI ${c.roi_pct}%</span>
-        </div>`).join('')
-      : '<div style="font-size:12px;color:var(--text2)">Sin campañas con gasto registrado aún</div>';
-  } else if(agente === 'tendencias' && d.tendencias_erp) {
-    html += d.tendencias_erp.slice(0,6).map(t=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:12px">${t.sku}</span>
-      <span style="font-size:12px;color:${t.cambio_pct>0?'var(--green)':'var(--red)'}">${t.cambio_pct>0?'▲':'▼'} ${Math.abs(t.cambio_pct)}%</span>
-    </div>`).join('');
-  } else if(agente === 'brief' && d.briefs) {
-    html += d.briefs.map(b=>`<div style="padding:8px;background:rgba(255,255,255,.03);border-radius:6px;margin-bottom:6px">
-      <div style="font-weight:600;font-size:12px;color:var(--gold)">${b.sku}</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:3px">${b.brief}</div>
-    </div>`).join('');
-  } else if(agente === 'pricing' && d.propuestas) {
-    html += d.propuestas.length
-      ? d.propuestas.slice(0,5).map(p=>`<div style="padding:8px;background:rgba(255,255,255,.03);border-radius:6px;margin-bottom:6px">
-          <div style="font-weight:600;font-size:12px;color:var(--gold)">${p.sku} — ${p.max_descuento_pct}% OFF → $${Number(p.precio_promo).toLocaleString()}</div>
-          <div style="font-size:11px;color:var(--text2)">${p.razon}</div>
-        </div>`).join('')
-      : '<div style="font-size:12px;color:var(--text2)">Sin SKUs que requieran promoción actualmente</div>';
-  } else if(agente === 'reorden' && d.predicciones) {
-    html += d.predicciones.length
-      ? d.predicciones.slice(0,5).map(p=>`<div style="padding:8px;background:rgba(255,255,255,.03);border-radius:6px;margin-bottom:6px">
-          <div style="font-weight:600;font-size:12px">${p.email}</div>
-          <div style="font-size:11px;color:var(--text2)">Próximo reorden: ${p.proximo_reorden_estimado} · Ticket prom: ${fmt(p.ticket_promedio)}</div>
-          <div style="font-size:11px;color:var(--yellow)">⏱ ${p.urgencia}</div>
-        </div>`).join('')
-      : '<div style="font-size:12px;color:var(--text2)">Sincroniza Shopify para ver predicciones de reórdenes</div>';
-  } else if(agente === 'canibal' && d.conflictos) {
-    html += d.conflictos.length
-      ? d.conflictos.map(c=>`<div style="padding:8px;background:rgba(239,68,68,.05);border-left:3px solid var(--red);border-radius:0 6px 6px 0;margin-bottom:6px">
-          <div style="font-weight:600;font-size:12px;color:var(--red)">${c.conflicto}: "${c.campana_a}" vs "${c.campana_b}"</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:3px">${c.recomendacion}</div>
-        </div>`).join('')
-      : '<div style="font-size:12px;color:var(--green)">✓ Sin conflictos detectados entre campañas activas</div>';
-  } else if(agente === 'contenido_auto' && d.piezas) {
-    html += d.piezas.map(p=>`<div style="padding:10px;background:rgba(255,255,255,.03);border-radius:6px;margin-bottom:8px">
-      <div style="font-weight:600;font-size:12px;color:var(--gold);margin-bottom:4px">${p.sku}</div>
-      <div style="font-size:11px;color:var(--text2);white-space:pre-line">${p.caption_instagram.slice(0,200)}...</div>
-    </div>`).join('');
-  } else if(agente === 'alerta_stock' && d.alertas) {
-    html += d.alertas.length
-      ? d.alertas.map(a=>`<div style="padding:8px;border-left:3px solid ${a.nivel==='critico'?'var(--red)':'var(--yellow)'};background:rgba(255,255,255,.03);border-radius:0 6px 6px 0;margin-bottom:6px">
-          <div style="font-weight:600;font-size:12px">${a.sku} — <span class="${a.nivel==='critico'?'badge-crit':'badge-warn'}">${a.nivel}</span></div>
-          <div style="font-size:11px;color:var(--text2)">${a.accion}</div>
-        </div>`).join('')
-      : '<div style="font-size:12px;color:var(--green)">✓ Todos los SKUs con cobertura suficiente</div>';
-  } else {
-    html += `<pre style="font-size:11px;white-space:pre-wrap;overflow:auto;max-height:200px">${JSON.stringify(d,null,2)}</pre>`;
-  }
-
-  // Análisis IA — siempre al final si está disponible
-  if(d.analisis_ia) {
-    html += `<div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:10px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-        <span style="font-size:16px">🤖</span>
-        <span style="font-size:11px;font-weight:700;color:var(--gold);letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
-      </div>
-      <div style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-line">${d.analisis_ia}</div>
-    </div>`;
-  }
-  return html;
-}
-
-// ─── GENERADOR DE CONTENIDO ───────────────────────────────────────────────────
-async function generarContenido() {
-  const sku = document.getElementById('st-sku').value.trim();
-  const tipo = document.getElementById('st-tipo').value;
-  const tono = document.getElementById('st-tono').value;
-  const ctx  = document.getElementById('st-ctx').value.trim();
-  if(!sku) { toast('Ingresa un SKU', 'error'); return; }
-  document.getElementById('st-output').textContent = '⏳ Generando contenido...';
-  document.getElementById('st-meta').textContent = '';
-  try {
-    const d = await fetch('/api/animus/contenido/generar', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({sku, tipo, tono, contexto: ctx})
-    }).then(r=>r.json());
-    if(d.error) { document.getElementById('st-output').textContent = 'Error: ' + d.error; return; }
-    document.getElementById('st-output').textContent = d.contenido;
-    document.getElementById('st-meta').innerHTML = `<span style="color:var(--gold)">✦ ${d.nombre_producto}</span> · Tipo: ${tipo} · Tono: ${tono} · Stock: ${d.stock_disponible} uds`;
-    loadHistorial();
-    toast('Contenido generado ✓','success');
-  } catch(e) { document.getElementById('st-output').textContent = 'Error: ' + e.message; }
-}
-
-function copiarContenido() {
-  const txt = document.getElementById('st-output').textContent;
-  navigator.clipboard.writeText(txt).then(()=>toast('Copiado al portapapeles ✓','success'));
-}
-
-async function loadHistorial() {
-  try {
-    const d = await fetch('/api/animus/contenido/historial').then(r=>r.json());
-    const el = document.getElementById('historial-list');
-    el.innerHTML = d.length
-      ? d.slice(0,6).map(h=>`<div style="padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="cargarContenidoId(${h.id})">
-          <div style="font-weight:600;color:var(--text)">${h.sku} — ${h.tipo}</div>
-          <div style="color:var(--text3);font-size:10px">${h.tono} · ${(h.creado_en||'').slice(0,16)}</div>
-        </div>`).join('')
-      : '<div style="color:var(--text3)">Sin generaciones previas</div>';
-  } catch(e) {}
-}
-
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-async function saveCfg(platform) {
-  const statusEl = document.getElementById('cfg-' + platform + '-status');
-  statusEl.textContent = 'Guardando...';
-  let data = {};
-  if(platform === 'shopify') {
-    data = {shopify_shop: document.getElementById('cfg-shopify-shop').value.trim(), shopify_token: document.getElementById('cfg-shopify-token').value.trim()};
-  } else if(platform === 'ghl') {
-    data = {ghl_api_key: document.getElementById('cfg-ghl-key').value.trim(), ghl_location_id: document.getElementById('cfg-ghl-loc').value.trim()};
-  } else if(platform === 'instagram') {
-    data = {instagram_token: document.getElementById('cfg-ig-token').value.trim(), instagram_user_id: document.getElementById('cfg-ig-uid').value.trim()};
-  }
-  try {
-    await fetch('/api/animus/config', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    statusEl.style.color='var(--green)'; statusEl.textContent = '✓ Guardado. Sincronizando...';
-    const sr = await fetch('/api/animus/sync/' + platform, {method:'POST'}).then(r=>r.json());
-    if(sr.error) { statusEl.style.color='var(--red)'; statusEl.textContent = '⚠ Error sync: ' + sr.error; }
-    else { statusEl.textContent = `✓ Sincronizado: ${sr.synced} registros importados`; loadConfig(); }
-  } catch(e) { statusEl.style.color='var(--red)'; statusEl.textContent = 'Error: ' + e.message; }
-}
-
-async function syncPlatform(platform) {
-  toast('Sincronizando ' + platform + '...', '');
-  try {
-    const d = await fetch('/api/animus/sync/' + platform, {method:'POST'}).then(r=>r.json());
-    if(d.error) toast('Error: ' + d.error, 'error');
-    else { toast(`${platform} sincronizado: ${d.synced} registros ✓`, 'success'); loadInstagram(); }
-  } catch(e) { toast('Error: '+e.message,'error'); }
-}
-
-async function loadConfig() {
-  try {
-    const d = await fetch('/api/animus/config').then(r=>r.json());
-    const conn = d.connected || {};
-    document.getElementById('conn-status').innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px">
-          <span style="font-size:18px">🛍️</span>
-          <div style="flex:1"><div style="font-weight:600;font-size:13px">Shopify</div><div style="font-size:11px;color:var(--text2)">${conn.shopify?'Conectado':'Sin configurar'}</div></div>
-          <span style="color:${conn.shopify?'var(--green)':'var(--text3)'}">●</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px">
-          <span style="font-size:18px">🎯</span>
-          <div style="flex:1"><div style="font-weight:600;font-size:13px">GoHighLevel</div><div style="font-size:11px;color:var(--text2)">${conn.ghl?'Conectado':'Sin configurar'}</div></div>
-          <span style="color:${conn.ghl?'var(--green)':'var(--text3)'}">●</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px">
-          <span style="font-size:18px">📸</span>
-          <div style="flex:1"><div style="font-weight:600;font-size:13px">Instagram</div><div style="font-size:11px;color:var(--text2)">${conn.instagram?'Conectado':'Sin configurar'}</div></div>
-          <span style="color:${conn.instagram?'var(--green)':'var(--text3)'}">●</span>
-        </div>
-      </div>`;
-  } catch(e) {}
-}
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
-loadComando();
-
-// ═══════════════════════════════════════════════════════════════
-// INFLUENCERS PANEL
-// ═══════════════════════════════════════════════════════════════
-let INF_DATA = [];
-let INF_EDIT_ID = null;
-let INF_PAGO_ID  = null;
-
-function fmCOP(v){ return '$' + Number(v||0).toLocaleString('es-CO'); }
-function fmK(n){ n=Number(n||0); return n>=1000000 ? (n/1000000).toFixed(1)+'M' : n>=1000 ? (n/1000).toFixed(1)+'K' : String(n); }
-function infInitials(nombre){ return (nombre||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
-function infAvatarColor(nombre){
-  const colors=['#e91e8c','#8b5cf6','#3b82f6','#059669','#f59e0b','#ef4444','#06b6d4'];
-  let h=0; for(let c of (nombre||'')) h=(h*31+c.charCodeAt(0))%colors.length;
-  return colors[h];
-}
-
-async function loadInfluencersPanel(){
-  document.getElementById('inf-grid').innerHTML = '<div style="color:var(--text2);padding:30px;text-align:center;"><div class="spinner"></div> Cargando...</div>';
-  try{
-    const r = await fetch('/api/marketing/influencers-panel');
-    const d = await r.json();
-    INF_DATA = d.influencers || [];
-    renderInfKpis(d.kpis || {});
-    renderInfGrid();
-  } catch(e){
-    document.getElementById('inf-grid').innerHTML = '<div style="color:var(--red);padding:20px;">Error cargando panel: ' + e.message + '</div>';
-  }
-}
-
-function renderInfKpis(k){
-  const el = document.getElementById('inf-kpis');
-  if(!el) return;
-  el.innerHTML =
-    '<div class="kpi" style="--kpi-color:var(--pink)"><div class="kpi-label">Activos</div><div class="kpi-value">' + (k.activos||0) + '</div><div class="kpi-sub">de ' + (k.total||0) + ' en catálogo</div><div class="kpi-icon">💸</div></div>'
-   +'<div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">Pagado este mes</div><div class="kpi-value">' + fmCOP(k.pagado_mes) + '</div><div class="kpi-sub">transferencias</div><div class="kpi-icon">✅</div></div>'
-   +'<div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">Por pagar</div><div class="kpi-value">' + fmCOP(k.pendiente_total) + '</div><div class="kpi-sub">solicitudes activas</div><div class="kpi-icon">⏳</div></div>';
-}
-
-function renderInfGrid(){
-  const q   = (document.getElementById('inf-q')||{value:''}).value.toLowerCase();
-  const fil = (document.getElementById('inf-fil')||{value:''}).value;
-  const gel = document.getElementById('inf-grid');
-  if(!gel) return;
-
-  let list = INF_DATA.filter(i=>{
-    if(fil && i.estado !== fil) return false;
-    if(q && !((i.nombre||'')+(i.usuario_red||'')+(i.nicho||'')).toLowerCase().includes(q)) return false;
-    return true;
+// Tabs
+const _loaded = {};
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.tab === name);
   });
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});
+  const panel = document.getElementById('tab-' + name);
+  if (panel) panel.classList.add('active');
+  if (!_loaded[name]) { _loaded[name] = true; loadTab(name); }
+}
+function loadTab(name){
+  if (name === 'caja') loadCaja();
+  else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
+}
 
-  if(!list.length){
-    gel.innerHTML = '<div style="color:var(--text2);padding:40px;text-align:center;grid-column:1/-1;">Sin resultados. <a href="#" onclick="abrirModalNuevoInf();return false;" style="color:var(--pink);">Agrega el primero →</a></div>';
-    return;
+function fmtCOP(n){
+  if (n == null) return '$ 0';
+  return '$ ' + Number(n).toLocaleString('es-CO', {maximumFractionDigits:0});
+}
+function fmtFecha(s){
+  if (!s) return '-';
+  return s.slice(0, 10);
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function abrirModal(id){ const m=document.getElementById(id); if(m) m.style.display='flex'; }
+function cerrarModal(id){ const m=document.getElementById(id); if(m) m.style.display='none'; }
+
+// Caja Menor
+async function loadCaja(){
+  const tipo = document.getElementById('caja-filtro-tipo').value;
+  const q    = document.getElementById('caja-filtro-q').value.trim();
+  const qs = [];
+  if (tipo) qs.push('tipo=' + encodeURIComponent(tipo));
+  if (q)    qs.push('q=' + encodeURIComponent(q));
+  const url = '/api/animus/caja' + (qs.length ? '?' + qs.join('&') : '');
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    renderCajaKPIs(d.kpis||{});
+    renderCajaMovs(d.movimientos||[]);
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
   }
+}
 
-  const estadoBadge = {
-    'Activo':   {bg:'rgba(34,197,94,.15)',  fg:'#22c55e', txt:'● Activo'},
-    'Inactivo': {bg:'rgba(239,68,68,.12)',  fg:'#ef4444', txt:'● Inactivo'},
-    'Potencial':{bg:'rgba(245,158,11,.12)', fg:'#f59e0b', txt:'◌ Potencial'}
-  };
-
-  gel.innerHTML = list.map(inf => {
-    const col   = infAvatarColor(inf.nombre);
-    const ini   = infInitials(inf.nombre);
-    const badge = estadoBadge[inf.estado] || {bg:'var(--bg3)',fg:'var(--text2)',txt:inf.estado};
-    const hasPend = inf.tiene_pendiente;
-    const niche   = inf.nicho || '—';
-    const seg     = fmK(inf.seguidores);
-    const er      = inf.engagement_rate ? inf.engagement_rate.toFixed(1)+'%' : '—';
-    const totalPag= fmCOP(inf.total_pagado);
-    const nPagos  = inf.pagos_count || 0;
-    const pendMonto= inf.total_pendiente > 0 ? fmCOP(inf.total_pendiente) : null;
-
-    const bankOk = inf.banco || inf.cuenta_bancaria;
-
-    return `<div style="background:var(--bg2);border:1px solid ${hasPend?'rgba(245,158,11,.4)':col+'33'};border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:.2s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
-      <!-- Header -->
-      <div style="background:linear-gradient(135deg,${col}22,${col}08);padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);">
-        <div style="width:44px;height:44px;border-radius:50%;background:${col};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">${ini}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${inf.nombre}</div>
-          <div style="font-size:12px;color:var(--text2);">${inf.usuario_red ? '@'+inf.usuario_red : ''} <span style="color:var(--text3);">${inf.red_social||'IG'}</span></div>
-        </div>
-        <span style="background:${badge.bg};color:${badge.fg};padding:3px 9px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap;">${badge.txt}</span>
-      </div>
-      <!-- Stats -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid var(--border);">
-        <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Nicho</div>
-          <div style="font-size:12px;font-weight:600;color:var(--pink);">${niche}</div>
-        </div>
-        <div style="padding:10px;text-align:center;border-right:1px solid var(--border);">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">Seguidores</div>
-          <div style="font-size:13px;font-weight:700;">${seg}</div>
-        </div>
-        <div style="padding:10px;text-align:center;">
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">ER</div>
-          <div style="font-size:13px;font-weight:700;color:var(--green);">${er}</div>
-        </div>
-      </div>
-      <!-- Pagos -->
-      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-        <div>
-          <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;">Total pagado</div>
-          <div style="font-size:15px;font-weight:700;color:var(--green);">${totalPag}</div>
-          <div style="font-size:11px;color:var(--text3);">${nPagos} ${nPagos===1?'pago':'pagos'} realizados</div>
-        </div>
-        ${pendMonto ? `<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 12px;text-align:center;">
-          <div style="font-size:10px;color:#f59e0b;font-weight:600;text-transform:uppercase;">Pendiente</div>
-          <div style="font-size:13px;font-weight:700;color:#f59e0b;">${pendMonto}</div>
-        </div>` : ''}
-      </div>
-      <!-- Actions -->
-      <div style="padding:12px 16px;display:flex;gap:8px;">
-        <button onclick="abrirModalPago(${inf.id})" ${bankOk?'':'title="Agrega datos bancarios primero"'} style="flex:1;background:${bankOk?'linear-gradient(135deg,#059669,#065f46)':'var(--bg3)'};color:${bankOk?'#fff':'var(--text3)'};border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">
-          💸 Solicitar pago
-        </button>
-        <button onclick="abrirModalEditInf(${inf.id})" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;">✏️ Editar</button>
-      </div>
-      ${!bankOk ? '<div style="padding:4px 16px 10px;font-size:10px;color:#f59e0b;">⚠️ Sin datos bancarios — edita el perfil para habilitar pagos</div>' : ''}
-    </div>`;
+function renderCajaKPIs(k){
+  const saldo = k.saldo_total || 0;
+  const cards = [
+    { label: 'Saldo total caja', val: fmtCOP(saldo),
+      color: saldo >= 0 ? 'kpi-green' : 'kpi-red',
+      sub: (k.n_total||0) + ' movimientos registrados' },
+    { label: 'Ingresos hoy', val: fmtCOP(k.ingreso_hoy||0), color:'kpi-green', sub: '' },
+    { label: 'Egresos hoy', val: fmtCOP(k.egreso_hoy||0), color:'kpi-red', sub: '' },
+    { label: 'Ingresos del mes', val: fmtCOP(k.ingreso_mes||0), color:'kpi-blue', sub: '' },
+    { label: 'Egresos del mes', val: fmtCOP(k.egreso_mes||0), color:'kpi-yellow', sub: '' },
+  ];
+  document.getElementById('caja-kpis').innerHTML = cards.map(function(c){
+    return '<div class="kpi-card '+c.color+'">' +
+      '<div class="label">'+c.label+'</div>' +
+      '<div class="val">'+c.val+'</div>' +
+      (c.sub ? '<div class="sub">'+c.sub+'</div>' : '') +
+    '</div>';
   }).join('');
 }
 
-// ── Modales ───────────────────────────────────────────────────────────────────
-function abrirModalNuevoInf(){
-  INF_EDIT_ID = null;
-  document.getElementById('m-inf-edit-title').textContent = '✨ Nuevo Influencer';
-  ['nombre','red','usuario','nicho','er','notas','banco','cuenta','cedula'].forEach(id=>{
-    const el = document.getElementById('if-'+id);
-    if(el) el.value = '';
+function renderCajaMovs(rows){
+  const body = document.getElementById('caja-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos registrados.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(m){
+    const tipoBadge = m.tipo === 'ingreso'
+      ? '<span class="badge badge-green">+ Ingreso</span>'
+      : '<span class="badge badge-red">- Egreso</span>';
+    const monto = m.tipo === 'ingreso'
+      ? '<span class="diff-pos">+' + fmtCOP(m.monto) + '</span>'
+      : '<span class="diff-neg">-' + fmtCOP(m.monto) + '</span>';
+    return '<tr>' +
+      '<td>'+fmtFecha(m.fecha)+'</td>' +
+      '<td>'+tipoBadge+'</td>' +
+      '<td>'+esc(m.concepto||'')+'</td>' +
+      '<td style="text-align:right;font-weight:700;">'+monto+'</td>' +
+      '<td><span class="badge badge-gray">'+esc(m.metodo||'efectivo')+'</span></td>' +
+      '<td style="font-size:11px;color:#94a3b8;">'+esc(m.referencia||'-')+'</td>' +
+      '<td style="font-size:11px;color:#64748b;">'+esc(m.registrado_por||'-')+'</td>' +
+      '<td><button class="btn btn-outline btn-sm" onclick="eliminarCaja('+m.id+')" title="Eliminar">x</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function abrirRegistro(tipo){
+  document.getElementById('caja-tipo').value = tipo;
+  document.getElementById('modal-caja-title').textContent =
+    tipo === 'ingreso' ? '+ Registrar ingreso' : '- Registrar egreso';
+  document.getElementById('caja-fecha').value = new Date().toISOString().slice(0,10);
+  ['monto','concepto','referencia','obs'].forEach(function(f){
+    const el = document.getElementById('caja-'+f);
+    if (el) el.value = '';
   });
-  document.getElementById('if-seg').value = '';
-  document.getElementById('if-tarifa').value = '';
-  document.getElementById('if-estado').value = 'Activo';
-  document.getElementById('if-tipo-cta').value = 'Ahorros';
-  document.getElementById('m-inf-edit').style.display = 'flex';
+  document.getElementById('caja-metodo').value = 'efectivo';
+  abrirModal('modal-caja');
 }
 
-function abrirModalEditInf(iid){
-  const inf = INF_DATA.find(i=>i.id===iid);
-  if(!inf) return;
-  INF_EDIT_ID = iid;
-  document.getElementById('m-inf-edit-title').textContent = '✏️ Editar — ' + inf.nombre;
-  document.getElementById('if-nombre').value  = inf.nombre || '';
-  document.getElementById('if-red').value     = inf.red_social || 'Instagram';
-  document.getElementById('if-usuario').value = inf.usuario_red || '';
-  document.getElementById('if-nicho').value   = inf.nicho || '';
-  document.getElementById('if-seg').value     = inf.seguidores || '';
-  document.getElementById('if-er').value      = inf.engagement_rate || '';
-  document.getElementById('if-tarifa').value  = inf.tarifa || '';
-  document.getElementById('if-estado').value  = inf.estado || 'Activo';
-  document.getElementById('if-notas').value   = inf.notas || '';
-  document.getElementById('if-banco').value   = inf.banco || '';
-  document.getElementById('if-tipo-cta').value= inf.tipo_cuenta || 'Ahorros';
-  document.getElementById('if-cuenta').value  = inf.cuenta_bancaria || '';
-  document.getElementById('if-cedula').value  = inf.cedula_nit || '';
-  document.getElementById('m-inf-edit').style.display = 'flex';
-}
-
-function cerrarModalInf(){ document.getElementById('m-inf-edit').style.display = 'none'; }
-function cerrarModalPago(){ document.getElementById('m-inf-pago').style.display = 'none'; INF_PAGO_ID = null; }
-
-async function guardarInfluencer(){
-  const nombre = document.getElementById('if-nombre').value.trim();
-  if(!nombre){ alert('El nombre es requerido'); return; }
-  const payload = {
-    nombre,
-    red_social:      document.getElementById('if-red').value,
-    usuario_red:     document.getElementById('if-usuario').value.replace(/^@/,'').trim(),
-    nicho:           document.getElementById('if-nicho').value.trim(),
-    seguidores:      parseInt(document.getElementById('if-seg').value)||0,
-    engagement_rate: parseFloat(document.getElementById('if-er').value)||0,
-    tarifa:          parseFloat(document.getElementById('if-tarifa').value)||0,
-    estado:          document.getElementById('if-estado').value,
-    notas:           document.getElementById('if-notas').value.trim(),
-    banco:           document.getElementById('if-banco').value.trim(),
-    tipo_cuenta:     document.getElementById('if-tipo-cta').value,
-    cuenta_bancaria: document.getElementById('if-cuenta').value.trim(),
-    cedula_nit:      document.getElementById('if-cedula').value.trim(),
+async function guardarCaja(){
+  const body = {
+    tipo: document.getElementById('caja-tipo').value,
+    fecha: document.getElementById('caja-fecha').value,
+    monto: parseFloat(document.getElementById('caja-monto').value || 0),
+    concepto: document.getElementById('caja-concepto').value.trim(),
+    metodo: document.getElementById('caja-metodo').value,
+    referencia: document.getElementById('caja-referencia').value.trim(),
+    observaciones: document.getElementById('caja-obs').value.trim(),
   };
-  try{
-    let url, method;
-    if(INF_EDIT_ID){
-      url = '/api/marketing/influencers/' + INF_EDIT_ID + '/banco';
-      method = 'PUT';
-    } else {
-      url = '/api/marketing/influencers';
-      method = 'POST';
-    }
-    const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-    const d = await r.json();
-    if(d.ok || d.id){
-      cerrarModalInf();
-      loadInfluencersPanel();
-    } else { alert('Error: ' + (d.error||'desconocido')); }
-  } catch(e){ alert('Error de red: ' + e.message); }
-}
-
-function abrirModalPago(iid){
-  const inf = INF_DATA.find(i=>i.id===iid);
-  if(!inf) return;
-  INF_PAGO_ID = iid;
-  document.getElementById('m-pago-inf-nombre').textContent = inf.nombre;
-  document.getElementById('pago-monto').value = inf.tarifa || '';
-  document.getElementById('pago-concepto').value = 'Pago de contenido / colaboración';
-  // Preview bank info
-  let prev = '';
-  if(inf.nombre)           prev += '<b>Beneficiario:</b> ' + inf.nombre + '<br>';
-  if(inf.banco)            prev += '<b>Banco:</b> ' + inf.banco + ' (' + (inf.tipo_cuenta||'Ahorros') + ')<br>';
-  if(inf.cuenta_bancaria)  prev += '<b>Cuenta/Cel:</b> ' + inf.cuenta_bancaria + '<br>';
-  if(inf.cedula_nit)       prev += '<b>Cédula/NIT:</b> ' + inf.cedula_nit + '<br>';
-  if(!prev) prev = '<span style="color:var(--yellow);">⚠️ Sin datos bancarios — edita el perfil primero.</span>';
-  document.getElementById('pago-banco-preview').innerHTML = prev;
-  document.getElementById('m-inf-pago').style.display = 'flex';
-}
-
-async function confirmarPagoInf(){
-  if(!INF_PAGO_ID) return;
-  const monto = parseFloat(document.getElementById('pago-monto').value);
-  if(!monto || monto <= 0){ alert('El monto debe ser mayor a 0'); return; }
-  const concepto = document.getElementById('pago-concepto').value.trim();
-  try{
-    const r = await fetch('/api/marketing/influencers/' + INF_PAGO_ID + '/solicitar-pago', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({monto, concepto})
+  if (!body.monto || body.monto <= 0) { showToast('Monto debe ser mayor a 0', 'error'); return; }
+  if (!body.concepto) { showToast('Concepto requerido', 'error'); return; }
+  try {
+    const r = await fetch('/api/animus/caja', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
     });
     const d = await r.json();
-    if(d.ok){
-      cerrarModalPago();
-      alert('✅ Solicitud ' + d.numero + ' generada.\nOC: ' + d.oc + '\nMonto: $' + Number(d.monto).toLocaleString('es-CO') + '\n\nLa solicitud ya está visible en Compras → Influencers.');
-      loadInfluencersPanel();
-    } else { alert('Error: ' + (d.error||'desconocido')); }
-  } catch(e){ alert('Error de red: ' + e.message); }
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Movimiento registrado', 'success');
+    cerrarModal('modal-caja');
+    loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
 }
+
+async function eliminarCaja(id){
+  if (!confirm('Eliminar este movimiento? Solo admin puede.')) return;
+  try {
+    const r = await fetch('/api/animus/caja/' + id, { method:'DELETE' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Eliminado', 'success');
+    loadCaja();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+// Inventario Ciclico
+let _SKUS_CACHE = [];
+
+async function loadInvSkus(){
+  try {
+    const r = await fetch('/api/animus/inventario-ciclico/skus');
+    const d = await r.json();
+    if (!d.ok) { showToast('Error skus: ' + (d.error||'?'), 'error'); return; }
+    _SKUS_CACHE = d.skus || [];
+    const body = document.getElementById('inv-skus-body');
+    if (!_SKUS_CACHE.length) {
+      body.innerHTML = '<tr><td colspan="6" style="color:#64748b;text-align:center;padding:24px;">Sin SKUs vendidos en Shopify aun. Sincroniza Shopify desde marketing primero.</td></tr>';
+      return;
+    }
+    body.innerHTML = _SKUS_CACHE.map(function(s){
+      const ult = s.ultimo_conteo;
+      let ultStr = '<span style="color:#64748b;">Nunca contado</span>';
+      if (ult) {
+        const diffStr = ult.diferencia === 0 ? '<span class="diff-zero">0</span>'
+          : (ult.diferencia > 0 ? '<span class="diff-pos">+'+ult.diferencia+'</span>'
+                                : '<span class="diff-neg">'+ult.diferencia+'</span>');
+        ultStr = '<span style="font-size:11px;color:#94a3b8;">'+fmtFecha(ult.fecha)+': fisico '+ult.cantidad_fisica+' &middot; dif '+diffStr+'</span>';
+      }
+      const skuEsc = esc(s.sku).replace(/'/g,'’');
+      return '<tr>' +
+        '<td style="font-family:monospace;font-weight:700;">'+esc(s.sku)+'</td>' +
+        '<td style="text-align:right;">'+s.n_orders+'</td>' +
+        '<td style="text-align:right;font-weight:700;color:#60a5fa;">'+s.uds_vendidas+'</td>' +
+        '<td style="font-size:11px;color:#94a3b8;">'+fmtFecha(s.ultima_venta)+'</td>' +
+        '<td>'+ultStr+'</td>' +
+        '<td><button class="btn btn-primary btn-sm" data-sku="'+esc(s.sku)+'" data-uds="'+s.uds_vendidas+'" onclick="abrirConteoSkuFromBtn(this)">Contar</button></td>' +
+      '</tr>';
+    }).join('');
+  } catch(e) {
+    showToast('Error skus: ' + e.message, 'error');
+  }
+}
+
+async function loadInvConteos(){
+  try {
+    const r = await fetch('/api/animus/inventario-ciclico');
+    const d = await r.json();
+    if (!d.ok) { showToast('Error conteos: ' + (d.error||'?'), 'error'); return; }
+    renderInvKpis(d.kpis||{});
+    const body = document.getElementById('inv-conteos-body');
+    if (!d.conteos.length) {
+      body.innerHTML = '<tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Sin conteos registrados aun.</td></tr>';
+      return;
+    }
+    body.innerHTML = d.conteos.map(function(co){
+      const dif = co.diferencia;
+      const difStr = dif === 0 ? '<span class="diff-zero">0</span>'
+        : (dif > 0 ? '<span class="diff-pos">+'+dif+'</span>' : '<span class="diff-neg">'+dif+'</span>');
+      return '<tr>' +
+        '<td>'+fmtFecha(co.fecha_conteo)+'</td>' +
+        '<td style="font-family:monospace;font-weight:700;">'+esc(co.sku)+'</td>' +
+        '<td>'+esc(co.producto_nombre||'-')+'</td>' +
+        '<td style="text-align:right;color:#60a5fa;">'+co.cantidad_shopify+'</td>' +
+        '<td style="text-align:right;font-weight:700;">'+co.cantidad_fisica+'</td>' +
+        '<td style="text-align:right;font-weight:700;">'+difStr+'</td>' +
+        '<td style="font-size:11px;color:#cbd5e1;max-width:240px;">'+esc(co.explicacion||'')+'</td>' +
+        '<td style="font-size:11px;color:#64748b;">'+esc(co.registrado_por||'')+'</td>' +
+      '</tr>';
+    }).join('');
+  } catch(e) {
+    showToast('Error conteos: ' + e.message, 'error');
+  }
+}
+
+function renderInvKpis(k){
+  const cards = [
+    { label:'Conteos totales', val: k.n_total||0, color:'kpi-blue', sub:'' },
+    { label:'Conteos con diferencia', val: k.n_con_dif||0, color:'kpi-yellow', sub:'' },
+    { label:'Unidades faltantes', val: k.uds_faltantes||0, color:'kpi-red', sub:'Acumulado' },
+    { label:'Unidades sobrantes', val: k.uds_sobrantes||0, color:'kpi-green', sub:'Acumulado' },
+  ];
+  document.getElementById('inv-kpis').innerHTML = cards.map(function(c){
+    return '<div class="kpi-card '+c.color+'">' +
+      '<div class="label">'+c.label+'</div>' +
+      '<div class="val">'+c.val+'</div>' +
+      (c.sub ? '<div class="sub">'+c.sub+'</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function abrirConteo(){
+  ['sku','nombre','shopify','fisica','explicacion'].forEach(function(f){
+    const el = document.getElementById('conteo-'+f);
+    if (el) el.value = '';
+  });
+  document.getElementById('conteo-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('conteo-diff-preview').style.display='none';
+  // Wire up live preview de diferencia
+  const fisica = document.getElementById('conteo-fisica');
+  fisica.oninput = actualizarPreviewDiff;
+  abrirModal('modal-conteo');
+}
+
+function abrirConteoSkuFromBtn(btn){
+  const sku = btn.getAttribute('data-sku');
+  const uds = parseInt(btn.getAttribute('data-uds')||0);
+  abrirConteo();
+  document.getElementById('conteo-sku').value = sku;
+  document.getElementById('conteo-shopify').value = uds;
+  setTimeout(function(){ document.getElementById('conteo-fisica').focus(); }, 100);
+}
+
+function actualizarPreviewDiff(){
+  const sh = parseInt(document.getElementById('conteo-shopify').value || 0);
+  const fi = parseInt(document.getElementById('conteo-fisica').value || 0);
+  const dif = fi - sh;
+  const prev = document.getElementById('conteo-diff-preview');
+  if (isNaN(fi) || document.getElementById('conteo-fisica').value === '') {
+    prev.style.display = 'none';
+    return;
+  }
+  prev.style.display = 'block';
+  if (dif === 0) {
+    prev.style.background = '#064e3b'; prev.style.color = '#34d399';
+    prev.textContent = 'OK: cuadra perfecto - 0 unidades de diferencia';
+  } else if (dif < 0) {
+    prev.style.background = '#7f1d1d'; prev.style.color = '#fca5a5';
+    prev.textContent = 'FALTAN ' + Math.abs(dif) + ' unidades. Explica la diferencia abajo.';
+  } else {
+    prev.style.background = '#78350f'; prev.style.color = '#fcd34d';
+    prev.textContent = 'SOBRAN ' + dif + ' unidades. Explica la diferencia abajo.';
+  }
+}
+
+async function guardarConteo(){
+  const sku = document.getElementById('conteo-sku').value.trim().toUpperCase();
+  if (!sku) { showToast('SKU requerido', 'error'); return; }
+  const sh = parseInt(document.getElementById('conteo-shopify').value || 0);
+  const fi = parseInt(document.getElementById('conteo-fisica').value || 0);
+  if (isNaN(fi)) { showToast('Cantidad fisica requerida', 'error'); return; }
+  const explicacion = document.getElementById('conteo-explicacion').value.trim();
+  const dif = fi - sh;
+  if (dif !== 0 && !explicacion) {
+    if (!confirm('Hay diferencia de '+dif+' unidades sin explicacion. Guardar igual?')) return;
+  }
+  const body = {
+    sku: sku,
+    producto_nombre: document.getElementById('conteo-nombre').value.trim(),
+    fecha_conteo: document.getElementById('conteo-fecha').value,
+    cantidad_shopify: sh,
+    cantidad_fisica: fi,
+    explicacion: explicacion,
+  };
+  try {
+    const r = await fetch('/api/animus/inventario-ciclico', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
+    showToast('Conteo registrado - diferencia ' + d.diferencia, 'success');
+    cerrarModal('modal-conteo');
+    loadInvSkus();
+    loadInvConteos();
+  } catch(e) {
+    showToast('Error de red: ' + e.message, 'error');
+  }
+}
+
+// Init
+loadCaja();
 </script>
 </body>
 </html>"""
