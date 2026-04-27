@@ -99,6 +99,79 @@ def _check_monto_limit(usuario, monto):
         }), 403
     return None, None
 
+def _is_animus_payment(c, numero_oc=None, beneficiario_nombre=None,
+                       observaciones=None, categoria=None):
+    """Determina si un pago debe atribuirse a ANIMUS LAB S.A.S.
+
+    Empresa pagadora del grupo HHA:
+      - Influencers, marketing digital, cuenta de cobro → ANIMUS LAB
+      - Mercancía, MPs, planta, servicios técnicos     → ESPAGIRIA
+
+    Detección multi-señal — cualquiera prende Animus, así soporta CEs
+    legacy (creados antes del dispatch) y casos donde la categoría está
+    vacía o mal poblada:
+
+      1. categoria contiene 'influencer' / 'marketing' / 'cuenta de cobro'
+      2. existe un row en pagos_influencers para el numero_oc
+      3. solicitudes_compra.influencer_id NOT NULL para el numero_oc
+      4. beneficiario_nombre matchea un row de marketing_influencers
+      5. observaciones contienen la palabra 'influencer'
+
+    Cualquier excepción de SQL (tabla legacy faltante en deploy viejo) se
+    silencia y se evalúa la siguiente señal — la falta de tabla nunca
+    debe romper la generación del PDF.
+    """
+    # Señal 1: keyword en categoría
+    cat_low = (categoria or '').lower()
+    if ('influencer' in cat_low
+            or 'marketing' in cat_low
+            or 'cuenta de cobro' in cat_low):
+        return True
+
+    # Señal 2: pago_influencers row
+    if numero_oc:
+        try:
+            row = c.execute(
+                "SELECT 1 FROM pagos_influencers WHERE numero_oc=? LIMIT 1",
+                (numero_oc,)
+            ).fetchone()
+            if row:
+                return True
+        except sqlite3.OperationalError:
+            pass
+
+        # Señal 3: solicitudes_compra.influencer_id
+        try:
+            row = c.execute(
+                "SELECT influencer_id FROM solicitudes_compra "
+                "WHERE numero_oc=? AND influencer_id IS NOT NULL LIMIT 1",
+                (numero_oc,)
+            ).fetchone()
+            if row and row[0]:
+                return True
+        except sqlite3.OperationalError:
+            pass
+
+    # Señal 4: beneficiario en marketing_influencers
+    if beneficiario_nombre:
+        try:
+            row = c.execute(
+                "SELECT 1 FROM marketing_influencers "
+                "WHERE LOWER(TRIM(nombre)) = LOWER(TRIM(?)) LIMIT 1",
+                (beneficiario_nombre,)
+            ).fetchone()
+            if row:
+                return True
+        except sqlite3.OperationalError:
+            pass
+
+    # Señal 5: observaciones contienen 'influencer'
+    if observaciones and 'influencer' in (observaciones or '').lower():
+        return True
+
+    return False
+
+
 def _notificar_solicitante_email(dest_email, asunto, body_html):
     """Envia email al solicitante de forma no-bloqueante.
     Nunca lanza excepcion — falla silenciosamente con log.
@@ -1563,11 +1636,25 @@ def pagar_oc(numero_oc):
                     "OBS fallback para beneficiario falló: %s", _e_obs
                 )
 
-        # Empresa pagadora según categoría:
+        # Empresa pagadora — detección multi-señal (ver _is_animus_payment).
         #   Influencer/Marketing/Cuenta de Cobro → ANIMUS LAB S.A.S.
-        #   Resto (mercancía, MPs, planta, etc.)  → ESPAGIRIA LABORATORIO S.A.S.
-        cat_low = (categoria or '').lower()
-        if 'influencer' in cat_low or 'marketing' in cat_low or 'cuenta de cobro' in cat_low:
+        #   Resto (mercancía, MPs, planta, etc.) → ESPAGIRIA LABORATORIO S.A.S.
+        obs_for_dispatch = None
+        try:
+            obs_row = cur.execute(
+                "SELECT observaciones FROM solicitudes_compra "
+                "WHERE numero_oc=? LIMIT 1", (numero_oc,)
+            ).fetchone()
+            if obs_row:
+                obs_for_dispatch = obs_row[0]
+        except sqlite3.OperationalError:
+            pass
+        if _is_animus_payment(
+            cur, numero_oc=numero_oc,
+            beneficiario_nombre=beneficiario.get('nombre', ''),
+            observaciones=obs_for_dispatch,
+            categoria=categoria,
+        ):
             empresa_pagadora = 'Animus'
         else:
             empresa_pagadora = 'Espagiria'
@@ -1737,16 +1824,23 @@ def regenerar_comprobante_pdf(comp_id):
     d = request.get_json(silent=True) or {}
     forzar_obs = d.get('forzar_obs', False)
 
-    # ── Empresa: usa la del body, sino re-deriva de la OC ──
+    # ── Empresa: usa la del body, sino re-deriva multi-señal ──
+    # _is_animus_payment cubre CEs legacy donde 'empresa_db' quedó en
+    # 'Espagiria' por default histórico aunque era pago de influencer.
     if 'empresa' in d:
         empresa = d['empresa']
     else:
         oc_row = c.execute(
-            "SELECT categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+            "SELECT categoria FROM ordenes_compra WHERE numero_oc=?",
+            (numero_oc,)
         ).fetchone()
         cat = (oc_row[0] if oc_row else '') or ''
-        cat_low = cat.lower()
-        if 'influencer' in cat_low or 'marketing' in cat_low or 'cuenta de cobro' in cat_low:
+        if _is_animus_payment(
+            c, numero_oc=numero_oc,
+            beneficiario_nombre=ben_nombre,
+            observaciones=observaciones,
+            categoria=cat,
+        ):
             empresa = 'Animus'
         else:
             empresa = empresa_db or 'Espagiria'

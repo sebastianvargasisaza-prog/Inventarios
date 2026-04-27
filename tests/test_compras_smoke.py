@@ -248,3 +248,135 @@ def test_solicitudes_pdf_renders(app, db_clean):
     assert "attachment" in cd and "solicitudes_compra_" in cd, (
         f"Content-Disposition mal formado: {cd}"
     )
+
+
+def test_is_animus_payment_multi_signal(app, db_clean):
+    """_is_animus_payment debe identificar pagos a influencer por múltiples
+    señales — categoría, pagos_influencers, solicitudes_compra.influencer_id,
+    nombre en marketing_influencers, y la palabra 'influencer' en obs.
+
+    Regresión: CE-2026-0007 salía como Espagiria aunque era pago a influencer
+    porque solo se miraba 'categoria'. Ahora 5 señales en OR.
+    """
+    import sqlite3
+    import os
+    import sys
+
+    api_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api"
+    )
+    if api_dir not in sys.path:
+        sys.path.insert(0, api_dir)
+    from blueprints.compras import _is_animus_payment
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    c = conn.cursor()
+
+    # Señal 1: categoría
+    assert _is_animus_payment(c, categoria="Influencer/Marketing Digital") is True
+    assert _is_animus_payment(c, categoria="Cuenta de Cobro") is True
+    assert _is_animus_payment(c, categoria="Marketing Digital") is True
+    assert _is_animus_payment(c, categoria="Mercancía") is False
+
+    # Señal 5: observaciones
+    assert _is_animus_payment(
+        c, categoria="", observaciones="Pago influencer Ana Sofia"
+    ) is True
+    assert _is_animus_payment(
+        c, categoria="", observaciones="Compra de MPs"
+    ) is False
+
+    # Señal 4: nombre en marketing_influencers
+    try:
+        c.execute("""INSERT OR IGNORE INTO marketing_influencers
+                     (id, nombre, instagram, estado)
+                     VALUES (9999, 'Ana Sofia Test', '@anasofia', 'Activa')""")
+        conn.commit()
+        assert _is_animus_payment(
+            c, beneficiario_nombre="Ana Sofia Test", categoria=""
+        ) is True
+        assert _is_animus_payment(
+            c, beneficiario_nombre="ANA SOFIA TEST  ", categoria=""
+        ) is True  # trim + case insensitive
+        assert _is_animus_payment(
+            c, beneficiario_nombre="Proveedor Random S.A.S.", categoria=""
+        ) is False
+    finally:
+        c.execute("DELETE FROM marketing_influencers WHERE id=9999")
+        conn.commit()
+
+    # Señal 2 + 3: requieren OC con tabla pagos_influencers — caso negativo basta
+    assert _is_animus_payment(
+        c, numero_oc="OC-INEXISTENTE-9999", categoria=""
+    ) is False
+
+    conn.close()
+
+
+def test_comprobante_regenerar_dispatch_animus_legacy(app, db_clean):
+    """CE legacy con empresa='Espagiria' en DB pero el beneficiario es un
+    influencer registrado → al regenerar debe re-derivar 'Animus'.
+
+    Esta es la regresión exacta que reportó el CEO con CE-2026-0007.
+    """
+    import sqlite3
+    import os
+
+    c = _login(app)
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+
+    # Insertar 1 influencer en marketing_influencers
+    cur.execute("""INSERT OR IGNORE INTO marketing_influencers
+                   (id, nombre, instagram, estado, banco, cuenta_bancaria,
+                    tipo_cuenta, ciudad, cedula_nit, email)
+                   VALUES (9998, 'Influencer Legacy', '@inflegacy', 'Activa',
+                           'BANCOLOMBIA', '1234567890', 'Ahorros',
+                           'Cali', '111222333', '')""")
+
+    # Insertar OC sin categoría 'influencer' (el bug original) y CE legacy
+    # con empresa='Espagiria' hardcoded.
+    cur.execute("""INSERT INTO ordenes_compra
+                   (numero_oc, fecha, estado, proveedor, categoria, valor_total)
+                   VALUES (?,?,?,?,?,?)""",
+                ("OC-TEST-LEGACY", "2026-04-27", "Pagada",
+                 "Influencer Legacy", "", 530000))
+    cur.execute("""INSERT INTO comprobantes_pago
+                   (numero_ce, anio, numero_oc, beneficiario_nombre, subtotal,
+                    total_pagado, medio_pago, observaciones, pagado_por, empresa,
+                    pdf_archivo, fecha_emision, iva_pct,
+                    retefuente_pct, retica_pct)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("CE-TEST-LEGACY-7", 2026, "OC-TEST-LEGACY", "Influencer Legacy",
+                 530000, 530000, "Transferencia", "Pago influencer mensual",
+                 "sebastian", "Espagiria", "", "2026-04-27T18:07:00",
+                 0, 0, 0))
+    conn.commit()
+    comp_id = cur.execute(
+        "SELECT id FROM comprobantes_pago WHERE numero_ce='CE-TEST-LEGACY-7'"
+    ).fetchone()[0]
+
+    # Regenerar SIN pasar empresa en body — debe re-derivar a 'Animus'
+    r = c.post(f"/api/comprobantes-pago/{comp_id}/regenerar",
+               json={}, headers=csrf_headers())
+    assert r.status_code == 200, (
+        f"Regenerar falló: {r.status_code} — {r.data[:200]!r}"
+    )
+    j = r.get_json()
+    assert j.get("ok") is True, f"Body inesperado: {j}"
+
+    # Verificar que la columna empresa ahora dice 'Animus'
+    new_empresa = cur.execute(
+        "SELECT empresa FROM comprobantes_pago WHERE id=?", (comp_id,)
+    ).fetchone()[0]
+    assert (new_empresa or '').lower() == 'animus', (
+        f"Tras regenerar, empresa debería ser Animus pero es: {new_empresa!r}"
+    )
+
+    # Cleanup
+    cur.execute("DELETE FROM comprobantes_pago WHERE id=?", (comp_id,))
+    cur.execute("DELETE FROM ordenes_compra WHERE numero_oc='OC-TEST-LEGACY'")
+    cur.execute("DELETE FROM marketing_influencers WHERE id=9998")
+    conn.commit()
+    conn.close()
