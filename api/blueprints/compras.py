@@ -790,15 +790,41 @@ def get_solicitud_estado(numero):
     # solicitud muestre 'Tienes X, faltan Y' y el contexto financiero.
     for it in items:
         cod = (it.get('codigo_mp') or '').strip()
-        if not cod:
+        nombre = (it.get('nombre_mp') or '').strip()
+        it['stock_actual_g'] = 0
+        if not cod and not nombre:
             continue
+        # Estrategia de búsqueda escalonada:
+        # 1. material_id exacto con código
+        # 2. material_nombre LIKE con nombre (caso-insensitive)
+        # Si la primera tiene resultado, no probamos la segunda.
+        stock_total = 0
         try:
-            r = c.execute("""SELECT
-                COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
-                FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
-            it['stock_actual_g'] = float(r[0] or 0) if r else 0
+            if cod:
+                r = c.execute("""SELECT
+                    COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0),
+                    COUNT(*)
+                    FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
+                if r and r[1] > 0:  # hubo movimientos con ese código
+                    stock_total = float(r[0] or 0)
+                elif nombre:
+                    # Fallback: buscar por nombre exacto upper
+                    r2 = c.execute("""SELECT
+                        COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+                        FROM movimientos
+                        WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
+                        (nombre,)).fetchone()
+                    stock_total = float(r2[0] or 0) if r2 else 0
+            elif nombre:
+                r = c.execute("""SELECT
+                    COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+                    FROM movimientos
+                    WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
+                    (nombre,)).fetchone()
+                stock_total = float(r[0] or 0) if r else 0
+            it['stock_actual_g'] = max(0, stock_total)  # nunca negativo en display
         except sqlite3.OperationalError:
-            it['stock_actual_g'] = 0
+            pass
         try:
             r = c.execute("""SELECT COALESCE(proveedor,''),
                                     COALESCE(precio_referencia,0)
