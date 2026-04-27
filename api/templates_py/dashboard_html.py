@@ -1158,6 +1158,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
+  <!-- Warnings de integridad (alias collisions, calendar fail, velocidad pobre, fórmulas incompletas) -->
+  <div id="prog-warnings" style="display:none"></div>
+
   <!-- Narrative IA -->
   <div id="prog-ia-box" style="background:linear-gradient(135deg,#0f2d1f,#1a4a7a);border-radius:10px;padding:18px;margin-bottom:20px;display:none">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -4134,6 +4137,29 @@ function _renderProgramacion(d){
     iaBox.style.display = 'block';
     iaText.textContent = d.narrativa_ia;
     if(iaStatus) iaStatus.textContent = 'Actualizado';
+  }
+  // Warnings de integridad de datos (alias collisions, calendar fail, velocidad pobre, fórmulas incompletas)
+  var warnBox = document.getElementById('prog-warnings');
+  if(warnBox){
+    var ws = (d.warnings_datos || []);
+    if(!ws.length){
+      warnBox.style.display = 'none';
+      warnBox.innerHTML = '';
+    } else {
+      warnBox.style.display = 'block';
+      warnBox.innerHTML = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:14px;">'
+        + '<div style="font-weight:700;color:#856404;margin-bottom:8px;font-size:13px;">⚠️ ' + ws.length + ' advertencia(s) de integridad de datos</div>'
+        + ws.map(function(w){
+            var color = w.severidad === 'alta' ? '#c00' : (w.severidad === 'media' ? '#856404' : '#666');
+            var prods = w.productos ? '<div style="font-size:11px;color:#555;margin-top:3px;">Productos: ' + w.productos.slice(0,5).join(', ') + (w.productos.length > 5 ? ', +' + (w.productos.length-5) + ' más' : '') + '</div>' : '';
+            return '<div style="font-size:12px;color:'+color+';padding:6px 0;border-top:1px dashed #e0d8a8;">'
+              + '<strong>['+w.tipo+']</strong> ' + w.mensaje
+              + (w.accion ? '<div style="font-size:11px;color:#666;font-style:italic;margin-top:2px;">→ ' + w.accion + '</div>' : '')
+              + prods
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
   }
   // Render projection table
   var tbody = document.getElementById('prog-tbody');

@@ -150,7 +150,6 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         ('SUERO HIDRATANTE AH 1.5%', 90000.0, 90.0),
         ('SUERO ILUMINADOR AHA+AH.', 1000.0, 1.0),
         ('SUERO ILUMINADOR TRX', 90000.0, 90.0),
-        ('SUERO ILUMINADOR TRX', 30000.0, 30.0),
         ('SUERO MULTIPEPTIDOS', 35000.0, 35.0),
         ('SUERO DE NIACINAMIDA 5% FORMULA NUEVA', 120000.0, 120.0),
         ('Suero RETINAL +', 60000.0, 60.0),

@@ -801,7 +801,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
         except ValueError:
             return None
 
-    _today_str = str(__import__('datetime').date.today())
+    _today_str = str(date.today())
 
     for ev in calendar_events:
         titulo  = ev.get('titulo', '')
@@ -825,7 +825,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
                         next_prod_kg_by_product[prod_name] = kg_ev
                 break
 
-    today = __import__('datetime').date.today()
+    today = date.today()
 
     projection = []
     all_alerts = []
@@ -861,7 +861,7 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
         cal_ok = False
         if prox_prod != 'No programado' and tiene_datos:
             try:
-                prod_date = __import__('datetime').date.fromisoformat(prox_prod)
+                prod_date = date.fromisoformat(prox_prod)
                 dias_hasta_prod = (prod_date - today).days
                 # cal_ok solo si hay velocidad real Y la prod llega antes del agotamiento
                 cal_ok = vel_dia > 0 and dias_hasta_prod <= dias_cob
