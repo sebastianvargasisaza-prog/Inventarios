@@ -1570,6 +1570,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             ultimo  INTEGER NOT NULL DEFAULT 0
         )""",
     ]),
+    (31, "marketing_influencers: ciudad + instagram + tipo (usados por sync Excel)", [
+        # Estas columnas las usa el script de sync_influencers_excel y el
+        # importador de pagos. Si no existen, los SELECT con LEFT JOIN tiran
+        # OperationalError 'no such column' y se rompe /compras Influencers.
+        """ALTER TABLE marketing_influencers ADD COLUMN ciudad TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN instagram TEXT DEFAULT ''""",
+        """ALTER TABLE marketing_influencers ADD COLUMN tipo TEXT DEFAULT ''""",
+    ]),
 ]
 
 

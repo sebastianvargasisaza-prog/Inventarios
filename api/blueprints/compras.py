@@ -562,7 +562,11 @@ def handle_solicitudes_compra():
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
     filtro_empresa = request.args.get('empresa', '')
-    sql = """
+    # SELECT con LEFT JOIN a marketing_influencers para enriquecer con datos
+    # bancarios. Las columnas ciudad/instagram las garantiza la migración 31.
+    # Si por alguna razón no existen (esquema pre-migración 31), caemos al
+    # SELECT sin esas columnas en el except más abajo.
+    sql_with_extras = """
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
                sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
@@ -579,6 +583,24 @@ def handle_solicitudes_compra():
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
         LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
         WHERE 1=1"""
+    sql_minimal = """
+        SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
+               sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
+               sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
+               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(mi.nombre, '')           as inf_nombre,
+               COALESCE(mi.banco, '')            as inf_banco,
+               COALESCE(mi.cuenta_bancaria, '')  as inf_cuenta,
+               COALESCE(mi.tipo_cuenta, '')      as inf_tipo_cuenta,
+               COALESCE(mi.cedula_nit, '')       as inf_cedula,
+               COALESCE(mi.email, '')            as inf_email,
+               '' as inf_ciudad,
+               '' as inf_instagram
+        FROM solicitudes_compra sc
+        LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
+        LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
+        WHERE 1=1"""
+    sql = sql_with_extras
     params = []
     if filtro_estado: sql += " AND sc.estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND sc.empresa=?"; params.append(filtro_empresa)
@@ -609,7 +631,50 @@ def handle_solicitudes_compra():
         )
     else:
         sql += " ORDER BY sc.fecha DESC LIMIT 200"
-    c.execute(sql, params)
+    try:
+        c.execute(sql, params)
+    except sqlite3.OperationalError as _e:
+        # Fallback: si las columnas ciudad/instagram no existen aún (DB sin
+        # migración 31 aplicada), usar versión minimal del SELECT.
+        if 'no such column' in str(_e).lower() and sql.startswith(sql_with_extras.split('WHERE')[0][:50]):
+            # Reaplicar reemplazos de la rama Influencer si correspondía
+            sql_fb = sql_minimal
+            if filtro_categoria == 'Influencer/Marketing Digital':
+                sql_fb = sql_fb.replace(
+                    "FROM solicitudes_compra sc",
+                    "FROM solicitudes_compra sc LEFT JOIN pagos_influencers pi ON pi.numero_oc = sc.numero_oc"
+                )
+            for cond in [
+                ("estado", filtro_estado), ("empresa", filtro_empresa),
+                ("categoria", filtro_categoria),
+            ]:
+                pass  # los WHEREs y ORDER BY ya están aplicados via sql_with_extras
+            # Reconstruir condiciones
+            sql_fb_full = sql_fb
+            params_fb = []
+            if filtro_estado:
+                sql_fb_full += " AND sc.estado=?"; params_fb.append(filtro_estado)
+            if filtro_empresa:
+                sql_fb_full += " AND sc.empresa=?"; params_fb.append(filtro_empresa)
+            if filtro_categoria:
+                sql_fb_full += " AND sc.categoria=?"; params_fb.append(filtro_categoria)
+            else:
+                sql_fb_full += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+            if filtro_categoria == 'Influencer/Marketing Digital':
+                sql_fb_full += (
+                    " ORDER BY CASE sc.estado WHEN 'Aprobada' THEN 0 "
+                    "WHEN 'Pendiente' THEN 1 WHEN 'Pagada' THEN 2 ELSE 3 END, "
+                    "COALESCE(NULLIF(sc.fecha_requerida,''), sc.fecha) ASC, "
+                    "sc.numero ASC LIMIT 300"
+                )
+            else:
+                sql_fb_full += " ORDER BY sc.fecha DESC LIMIT 200"
+            __import__('logging').getLogger('compras').warning(
+                "SELECT con extras falló (%s) — fallback a sql_minimal", _e
+            )
+            c.execute(sql_fb_full, params_fb)
+        else:
+            raise
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor',
                 'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram']
     rows_sol = []
