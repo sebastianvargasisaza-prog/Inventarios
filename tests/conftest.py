@@ -102,15 +102,62 @@ def admin_client(app):
     return c
 
 
+@pytest.fixture(autouse=True)
+def _disable_async_backup_trigger():
+    """Anula trigger_backup_async durante tests.
+
+    Hay un hook periodico (cada 50 requests) que lanza backup en thread
+    daemon. Si ese thread sigue corriendo cuando termina el test, el
+    _local_lock queda atorado y test_backup_now_admin falla.
+
+    En tests dejamos que do_backup directo siga funcionando (algunos
+    tests lo prueban) pero el trigger asincrono se desactiva — los
+    backups async son ruido en test.
+    """
+    try:
+        import backup as _backup_mod
+        original = _backup_mod.trigger_backup_async
+        _backup_mod.trigger_backup_async = lambda triggered_by="auto": None
+    except Exception:
+        original = None
+    yield
+    try:
+        if original is not None:
+            _backup_mod.trigger_backup_async = original
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def db_clean(app):
     """Limpia tablas que algunos tests modifican (rate_limit, users_passwords).
 
     Aplica entre tests para no contaminarnos. La DB en sí persiste durante la
     sesión para no recrear el schema 26 veces.
+
+    Tambien libera _local_lock de backup.py: hay un hook periodico que
+    lanza backup async en thread daemon; si el thread no termina antes
+    del siguiente test, deja el lock adquirido y test_backup_now_admin
+    falla con 'another backup running in this worker'.
     """
     import sqlite3
     yield
+    try:
+        from backup import _local_lock
+        # Esperar hasta 1s a que termine el backup async (si lo hay)
+        import time
+        for _ in range(20):
+            if not _local_lock.locked():
+                break
+            time.sleep(0.05)
+        # Si aún sigue locked, forzar release (test isolation)
+        try:
+            while _local_lock.locked():
+                _local_lock.release()
+        except RuntimeError:
+            pass
+    except Exception:
+        pass
     try:
         conn = sqlite3.connect(os.environ["DB_PATH"])
         conn.execute("DELETE FROM rate_limit")

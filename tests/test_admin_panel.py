@@ -466,6 +466,7 @@ def test_inventario_reset_preview_muestra_plan(admin_client, db_clean):
     cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP%'")
     conn.commit()
     conn.close()
+    _cleanup_backup_log()
 
 
 def test_inventario_reset_aplicar_requiere_token(admin_client, db_clean):
@@ -483,6 +484,58 @@ def test_inventario_reset_aplicar_token_incorrecto(admin_client, db_clean):
                                 "confirmacion": "TOKEN_RANDOM"},
                           content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+def _mock_backup_reciente():
+    """Simula un backup hecho hace 1 hora con status='ok' para que el
+    endpoint reset NO intente crear uno nuevo automaticamente (eso
+    contaminaria el slot de backup_log y haria fallar tests posteriores
+    de /api/admin/backup-now)."""
+    import sqlite3
+    import os
+    from datetime import datetime, timedelta
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    ts = (datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute(
+        "INSERT INTO backup_log (started_at, completed_at, status, "
+        "file_path, triggered_by) VALUES (?, ?, 'ok', '/tmp/mock.db.gz', 'test_mock')",
+        (ts, ts)
+    )
+    conn.commit()
+    conn.close()
+
+
+def _cleanup_backup_log():
+    """Limpia backup_log + espera a que cualquier backup async termine.
+
+    El admin app tiene un hook _maybe_trigger_backup que cada N requests
+    evalua si lanzar backup_worker (thread daemon). Si nuestros tests
+    disparan ese thread y termina despues del test, el _local_lock de
+    backup.py queda adquirido y el siguiente test_backup_now_admin
+    falla con 'another backup running in this worker'.
+
+    Cleanup: forzamos liberar el lock + borrar backup_log.
+    """
+    import sqlite3
+    import os
+    try:
+        # Forzar liberacion del lock (defensive — si el thread async aun corre)
+        from backup import _local_lock
+        try:
+            while _local_lock.locked():
+                _local_lock.release()
+        except RuntimeError:
+            pass
+    except Exception:
+        pass
+    try:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM backup_log")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
@@ -543,3 +596,53 @@ def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
     cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP%'")
     conn.commit()
     conn.close()
+    _cleanup_backup_log()
+
+
+def test_inventario_reset_regenera_lotes_huerfanos(admin_client, db_clean):
+    """Si una salida produccion apunta a lote NO en Excel verde, regenera
+    Entrada virtual para que cierre en 0 (no en negativo)."""
+    import sqlite3
+    import os
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, observaciones) "
+                "VALUES ('MP_HUERFANO','MH','LOTE-FANTASMA',150,'Salida',"
+                "'2026-04-20','luis','FEFO:PROD-X:T x 1kg')")
+    conn.commit()
+    conn.close()
+
+    TOKEN = "BORRAR_INVENTARIO_Y_CARGAR_EXCEL_2026_04_27"
+    buf = _build_excel_verde_test()
+    r = admin_client.post("/api/admin/inventario-reset-aplicar",
+                          data={"file": (buf, "test.xlsx"),
+                                "confirmacion": TOKEN},
+                          content_type="multipart/form-data")
+    assert r.status_code == 200, f"body: {r.data[:400]!r}"
+    j = r.get_json()
+    assert j["resumen"]["huerfanos_regenerados"] == 1, f"resumen: {j['resumen']}"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    saldo = cur.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos WHERE material_id='MP_HUERFANO' AND lote='LOTE-FANTASMA'"
+    ).fetchone()[0]
+    assert saldo == 0, f"Lote huerfano debe cerrar en 0, no en {saldo}"
+
+    entrada_huer = cur.execute(
+        "SELECT cantidad, observaciones, estado_lote FROM movimientos "
+        "WHERE material_id='MP_HUERFANO' AND lote='LOTE-FANTASMA' AND tipo='Entrada'"
+    ).fetchone()
+    assert entrada_huer is not None
+    assert entrada_huer[0] == 150.0
+    obs_lower = (entrada_huer[1] or "").lower()
+    assert "regenerada" in obs_lower or "huerfano" in obs_lower or "consumido" in obs_lower
+    assert entrada_huer[2] == "AGOTADO"
+
+    cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP%'")
+    conn.commit()
+    conn.close()
+    _cleanup_backup_log()

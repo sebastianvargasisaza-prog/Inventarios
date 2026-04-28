@@ -671,16 +671,21 @@ def admin_import_mps_nombres_excel():
     })
 
 
-def _parse_excel_verde(file_storage):
-    """Parsea Excel del conteo fisico, retorna solo filas verdes.
+def _parse_excel_verde(file_storage, incluir_no_verde=False):
+    """Parsea Excel del conteo fisico.
 
-    Devuelve: (excel_verde dict, total_g, rows_no_verde_count, errores_list)
+    Por default retorna solo filas verdes (FF92D050). Si incluir_no_verde
+    es True, tambien retorna las filas rojas/blancas en un dict aparte
+    `excel_no_verde` — esto sirve para regenerar lotes que las
+    producciones consumieron pero que ya no estan fisicamente (Catalina
+    los marco NO presente porque se acabaron en produccion).
+
+    Devuelve: (excel_verde, total_g, rows_no_verde_count, errores)
+        Si incluir_no_verde=True: (excel_verde, total_g, excel_no_verde, errores)
+
     excel_verde[(cod, lote)] = {codigo_mp, lote, inci, nombre_comercial,
                                 proveedor, estanteria, posicion,
                                 fecha_vencimiento, cantidad_g}
-
-    Compartido entre audit / preview / aplicar para mantener una sola
-    fuente de verdad sobre como interpretamos el Excel.
     """
     from openpyxl import load_workbook
 
@@ -733,21 +738,42 @@ def _parse_excel_verde(file_storage):
             col_idx['venc'] = col
 
     if 'codigo' not in col_idx or 'lote' not in col_idx or 'cant_conteo' not in col_idx:
+        if incluir_no_verde:
+            return None, 0, {}, [f'Excel sin columnas requeridas: {list(col_idx.keys())}']
         return None, 0, 0, [f'Excel sin columnas requeridas: {list(col_idx.keys())}']
 
     excel_verde = {}
+    excel_no_verde = {}
     total_g = 0.0
     rows_no_verde = 0
+
+    def _row_to_dict(r, cod, lote, cant_g):
+        """Construye el dict info estandar para una fila."""
+        venc = ws.cell(row=r, column=col_idx['venc']).value if 'venc' in col_idx else None
+        if hasattr(venc, 'isoformat'):
+            venc = venc.isoformat()[:10]
+        else:
+            venc = str(venc)[:10] if venc else ''
+        return {
+            'codigo_mp': cod, 'lote': lote,
+            'inci': str(ws.cell(row=r, column=col_idx['inci']).value or '') if 'inci' in col_idx else '',
+            'nombre_comercial': str(ws.cell(row=r, column=col_idx['comercial']).value or '') if 'comercial' in col_idx else '',
+            'proveedor': str(ws.cell(row=r, column=col_idx['proveedor']).value or '') if 'proveedor' in col_idx else '',
+            'estanteria': str(ws.cell(row=r, column=col_idx['estanteria']).value or '') if 'estanteria' in col_idx else '',
+            'posicion': str(ws.cell(row=r, column=col_idx['posicion']).value or '') if 'posicion' in col_idx else '',
+            'fecha_vencimiento': venc,
+            'cantidad_g': cant_g,
+        }
 
     for r in range(header_row + 1, ws.max_row + 1):
         cell_codigo = ws.cell(row=r, column=col_idx['codigo'])
         cell_color = (cell_codigo.fill.fgColor.rgb
                       if cell_codigo.fill.fgColor.type == 'rgb' else None)
-        if cell_color != GREEN:
-            rows_no_verde += 1
-            continue
+        is_verde = (cell_color == GREEN)
         cod = cell_codigo.value
         if not cod:
+            if not is_verde:
+                rows_no_verde += 1
             continue
         cod = str(cod).strip()
         lote_raw = ws.cell(row=r, column=col_idx['lote']).value
@@ -757,29 +783,26 @@ def _parse_excel_verde(file_storage):
             cant = float(cant_raw or 0)
         except (TypeError, ValueError):
             cant = 0.0
-        venc = ws.cell(row=r, column=col_idx['venc']).value if 'venc' in col_idx else None
-        if hasattr(venc, 'isoformat'):
-            venc = venc.isoformat()[:10]
-        else:
-            venc = str(venc)[:10] if venc else ''
 
         key = (cod, lote)
-        if key in excel_verde:
-            # Lote duplicado en Excel verde — sumar (raro pero defensivo)
-            excel_verde[key]['cantidad_g'] += cant
-        else:
-            excel_verde[key] = {
-                'codigo_mp': cod, 'lote': lote,
-                'inci': str(ws.cell(row=r, column=col_idx['inci']).value or '') if 'inci' in col_idx else '',
-                'nombre_comercial': str(ws.cell(row=r, column=col_idx['comercial']).value or '') if 'comercial' in col_idx else '',
-                'proveedor': str(ws.cell(row=r, column=col_idx['proveedor']).value or '') if 'proveedor' in col_idx else '',
-                'estanteria': str(ws.cell(row=r, column=col_idx['estanteria']).value or '') if 'estanteria' in col_idx else '',
-                'posicion': str(ws.cell(row=r, column=col_idx['posicion']).value or '') if 'posicion' in col_idx else '',
-                'fecha_vencimiento': venc,
-                'cantidad_g': cant,
-            }
-        total_g += cant
+        info = _row_to_dict(r, cod, lote, cant)
 
+        if is_verde:
+            if key in excel_verde:
+                excel_verde[key]['cantidad_g'] += cant
+            else:
+                excel_verde[key] = info
+            total_g += cant
+        else:
+            rows_no_verde += 1
+            if incluir_no_verde:
+                if key in excel_no_verde:
+                    excel_no_verde[key]['cantidad_g'] += cant
+                else:
+                    excel_no_verde[key] = info
+
+    if incluir_no_verde:
+        return excel_verde, total_g, excel_no_verde, errors
     return excel_verde, total_g, rows_no_verde, errors
 
 
@@ -1206,7 +1229,7 @@ def admin_inventario_reset_preview():
     if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
         return jsonify({'error': 'Archivo debe ser .xlsx'}), 400
 
-    excel_verde, excel_total_g, rows_no_verde, errs = _parse_excel_verde(f)
+    excel_verde, excel_total_g, excel_no_verde, errs = _parse_excel_verde(f, incluir_no_verde=True)
     if excel_verde is None:
         return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
 
@@ -1226,21 +1249,43 @@ def admin_inventario_reset_preview():
     entradas_oc_g = sum(float(r['cantidad'] or 0) for r in entradas_oc)
     salidas_prod_g = sum(float(r['cantidad'] or 0) for r in salidas_prod)
 
-    # Validar: lotes que las salidas de produccion consumieron, ¿estan en Excel verde?
+    # Lotes huérfanos: consumidos por produccion pero NO en Excel verde
     excel_keys = set(excel_verde.keys())
-    salidas_lotes_no_verde = []
+    huerfanos_consumo = {}  # (cod,lote) -> sum_salidas_g
     for s in salidas_prod:
         cod = s['material_id']
         lote = s['lote'] or ''
         if (cod, lote) not in excel_keys:
-            salidas_lotes_no_verde.append({
-                'fecha': str(s['fecha'])[:10],
-                'codigo_mp': cod, 'lote': lote,
-                'cantidad_g': round(float(s['cantidad'] or 0), 1),
-                'observaciones': s['observaciones'],
-            })
+            k = (cod, lote)
+            huerfanos_consumo[k] = huerfanos_consumo.get(k, 0) + float(s['cantidad'] or 0)
 
-    stock_post_g = excel_total_g + entradas_oc_g - salidas_prod_g
+    # Para cada huerfano: la entrada virtual usa Excel completo si esta, sino fallback = sum_salidas
+    huerfanos_detalle = []
+    huerfanos_total_g = 0.0
+    for k, consumido in huerfanos_consumo.items():
+        cod, lote = k
+        en_excel_completo = excel_no_verde.get(k)
+        if en_excel_completo and en_excel_completo['cantidad_g'] > 0:
+            cant_entrada = en_excel_completo['cantidad_g']
+            origen = 'excel_no_verde'
+        else:
+            cant_entrada = consumido  # fallback: para cerrar en 0
+            origen = 'fallback_sum_salidas'
+        huerfanos_detalle.append({
+            'codigo_mp': cod, 'lote': lote,
+            'cantidad_consumida_g': round(consumido, 1),
+            'cantidad_entrada_virtual_g': round(cant_entrada, 1),
+            'origen': origen,
+        })
+        huerfanos_total_g += cant_entrada
+
+    salidas_lotes_no_verde = [
+        {'codigo_mp': k[0], 'lote': k[1],
+         'cantidad_g': round(v, 1)}
+        for k, v in huerfanos_consumo.items()
+    ]
+
+    stock_post_g = excel_total_g + entradas_oc_g + huerfanos_total_g - salidas_prod_g
 
     # Sample top lotes a crear (mas grandes)
     top_excel = sorted(
@@ -1279,16 +1324,26 @@ def admin_inventario_reset_preview():
                     'observaciones': r['observaciones'],
                 } for r in salidas_prod[:20]],
             },
-            'rows_no_verde_excluidas': rows_no_verde,
+            'rows_no_verde_excluidas': len(excel_no_verde),
+            'huerfanos_a_regenerar': {
+                'count': len(huerfanos_detalle),
+                'total_g_entradas_virtuales': round(huerfanos_total_g, 1),
+                'sample': huerfanos_detalle[:30],
+                'nota': ('Lotes que las producciones consumieron pero que '
+                         'Catalina marco NO presentes. Se regeneraran como '
+                         'Entrada virtual del Excel (no-verde) o fallback = '
+                         'sum_salidas, para que la salida los lleve a 0 sin '
+                         'dejar stock negativo. Trazabilidad de produccion '
+                         'preservada.'),
+            },
         },
         'alertas': {
             'salidas_a_lotes_no_verde': salidas_lotes_no_verde[:30],
             'count_salidas_a_lotes_no_verde': len(salidas_lotes_no_verde),
-            'nota': ('Si > 0: la produccion consumio de un lote que '
-                     'Catalina marco como NO presente. Tras reset el '
-                     'stock de ese lote sera negativo. Hay que decidir: '
-                     '(a) ignorar la salida (no replay), (b) ajustar '
-                     'manualmente despues, o (c) revisar el conteo.'),
+            'nota': ('Estas salidas consumieron lotes ya NO presentes '
+                     'fisicamente. Tras la mejora se regenera Entrada virtual '
+                     'que cierra el lote en 0g (no negativo). Trazabilidad '
+                     'preservada.'),
         },
         'resumen_pre_post': {
             'stock_actual_g': round(stock_total_actual_g, 1),
@@ -1343,7 +1398,7 @@ def admin_inventario_reset_aplicar():
     if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
         return jsonify({'error': 'Archivo debe ser .xlsx'}), 400
 
-    excel_verde, excel_total_g, rows_no_verde, errs = _parse_excel_verde(f)
+    excel_verde, excel_total_g, excel_no_verde, errs = _parse_excel_verde(f, incluir_no_verde=True)
     if excel_verde is None:
         return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
 
@@ -1355,11 +1410,12 @@ def admin_inventario_reset_aplicar():
     backup_reciente = False
     try:
         last = c.execute(
-            "SELECT MAX(timestamp) FROM backup_log"
+            "SELECT MAX(started_at) FROM backup_log WHERE status='ok'"
         ).fetchone()[0]
         if last:
             try:
-                last_dt = _dt.fromisoformat(last.replace('Z', ''))
+                # SQLite datetime('now','utc') devuelve 'YYYY-MM-DD HH:MM:SS'
+                last_dt = _dt.fromisoformat(last.replace(' ', 'T').replace('Z', ''))
                 if (_dt.utcnow() - last_dt) < _td(hours=24):
                     backup_reciente = True
             except Exception:
@@ -1382,6 +1438,33 @@ def admin_inventario_reset_aplicar():
     # Capturar movimientos a preservar
     entradas_oc, salidas_prod = _identify_movimientos_a_preservar(c)
 
+    # Calcular huerfanos a regenerar (lotes consumidos NO en Excel verde)
+    excel_keys = set(excel_verde.keys())
+    huerfanos_consumo = {}
+    for s in salidas_prod:
+        k = (s['material_id'], s['lote'] or '')
+        if k not in excel_keys:
+            huerfanos_consumo[k] = huerfanos_consumo.get(k, 0) + float(s['cantidad'] or 0)
+
+    huerfanos_a_regenerar = []
+    for k, consumido in huerfanos_consumo.items():
+        cod, lote = k
+        en_excel = excel_no_verde.get(k)
+        if en_excel and en_excel['cantidad_g'] > 0:
+            cant = en_excel['cantidad_g']
+            info = en_excel
+        else:
+            cant = consumido  # fallback para cerrar en 0
+            # Buscar nombre/proveedor en cualquier movimiento del lote (los datos
+            # del catalogo maestro_mps son reliables)
+            info = {
+                'codigo_mp': cod, 'lote': lote,
+                'inci': '', 'nombre_comercial': '',
+                'proveedor': '', 'estanteria': '', 'posicion': '',
+                'fecha_vencimiento': '',
+            }
+        huerfanos_a_regenerar.append({**info, 'cantidad_g': cant})
+
     movs_borrados = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
 
     # Audit pre-reset
@@ -1396,6 +1479,7 @@ def admin_inventario_reset_aplicar():
                        'entradas_oc_preservar': len(entradas_oc),
                        'salidas_prod_preservar': len(salidas_prod),
                        'lotes_excel_verde_a_cargar': len(excel_verde),
+                       'lotes_huerfanos_regenerar': len(huerfanos_a_regenerar),
                        'excel_total_g': round(excel_total_g, 1),
                    }, ensure_ascii=False),
                    request.remote_addr))
@@ -1426,6 +1510,28 @@ def admin_inventario_reset_aplicar():
                        info['estanteria'] or '', info['posicion'] or '',
                        info['proveedor'] or '', 'VIGENTE', OPERADOR_RESET))
         n_excel_inserted = len(excel_verde)
+
+        # 2b. Regenerar Entradas virtuales para lotes huerfanos (consumidos
+        # por produccion pero NO presentes fisicamente en el Excel verde).
+        # Esto evita que las salidas dejen stock negativo. Las entradas
+        # virtuales tienen observaciones distintas para auditarse despues.
+        OBS_HUERFANO = 'Lote consumido pre-reset — Entrada regenerada para preservar trazabilidad de produccion'
+        for info in huerfanos_a_regenerar:
+            if info['cantidad_g'] <= 0:
+                continue
+            c.execute("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo, fecha,
+                          observaciones, lote, fecha_vencimiento, estanteria,
+                          posicion, proveedor, estado_lote, operador)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (info['codigo_mp'],
+                       info.get('nombre_comercial') or info.get('inci') or info['codigo_mp'],
+                       float(info['cantidad_g']), 'Entrada', DIA_CERO,
+                       OBS_HUERFANO, info['lote'],
+                       info.get('fecha_vencimiento') or None,
+                       info.get('estanteria') or '', info.get('posicion') or '',
+                       info.get('proveedor') or '', 'AGOTADO', OPERADOR_RESET))
+        n_huerfanos_inserted = len(huerfanos_a_regenerar)
 
         # 3. Re-insertar Entradas con OC legitimas
         for r in entradas_oc:
@@ -1482,6 +1588,7 @@ def admin_inventario_reset_aplicar():
                    _json.dumps({
                        'movs_borrados': movs_borrados,
                        'lotes_excel_cargados': n_excel_inserted,
+                       'huerfanos_regenerados': n_huerfanos_inserted,
                        'entradas_oc_re_insertadas': len(entradas_oc),
                        'salidas_prod_re_insertadas': len(salidas_prod),
                        'movs_post_total': movs_post,
@@ -1499,11 +1606,13 @@ def admin_inventario_reset_aplicar():
         'ok': True,
         'message': (f'Reset aplicado. Borrados {movs_borrados} movimientos, '
                     f'cargadas {n_excel_inserted} Entradas iniciales del Excel '
-                    f'verde, preservadas {len(entradas_oc)} Entradas con OC + '
-                    f'{len(salidas_prod)} Salidas de produccion.'),
+                    f'verde + {n_huerfanos_inserted} Entradas regeneradas '
+                    f'(huerfanos), preservadas {len(entradas_oc)} Entradas '
+                    f'con OC + {len(salidas_prod)} Salidas de produccion.'),
         'resumen': {
             'movs_borrados': movs_borrados,
             'lotes_excel_cargados': n_excel_inserted,
+            'huerfanos_regenerados': n_huerfanos_inserted,
             'entradas_oc_preservadas': len(entradas_oc),
             'salidas_prod_preservadas': len(salidas_prod),
             'movs_post_total': movs_post,
@@ -3100,16 +3209,26 @@ async function previewReset() {
     h += '<div class="kpi"><div class="kpi-l">Δ esperado</div><div class="kpi-v" style="font-size:14px;color:' + (d.resumen_pre_post.delta_g < 0 ? '#fca5a5' : '#34d399') + ';">' + _fmtG(d.resumen_pre_post.delta_g) + '</div></div>';
     h += '</div>';
 
-    if (d.alertas.count_salidas_a_lotes_no_verde > 0) {
-      h += '<div style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:12px;margin-bottom:14px;">';
-      h += '<div style="color:#fbbf24;font-weight:700;margin-bottom:4px;">⚠ ' + d.alertas.count_salidas_a_lotes_no_verde + ' salidas de producción consumieron lotes que NO están en Excel verde</div>';
-      h += '<div style="color:#cbd5e1;font-size:11px;">' + _esc(d.alertas.nota) + '</div>';
-      h += '<div style="color:#94a3b8;font-size:11px;margin-top:6px;">Sample (primeros 30):</div>';
-      h += '<ul style="margin:4px 0 0 18px;color:#cbd5e1;font-size:11px;">';
-      d.alertas.salidas_a_lotes_no_verde.forEach(s => {
-        h += '<li>' + _esc(s.fecha) + ' · ' + _esc(s.codigo_mp) + ' · ' + _esc(s.lote) + ' · ' + _fmtG(s.cantidad_g) + ' (' + _esc(s.observaciones) + ')</li>';
+    const hue = p.huerfanos_a_regenerar || {count:0, total_g_entradas_virtuales:0, sample:[]};
+    if (hue.count > 0) {
+      h += '<div style="background:rgba(99,102,241,.10);border:1px solid rgba(99,102,241,.4);border-radius:8px;padding:12px;margin-bottom:14px;">';
+      h += '<div style="color:#a5b4fc;font-weight:700;margin-bottom:4px;">♻ ' + hue.count + ' lotes huérfanos a regenerar (' + _fmtG(hue.total_g_entradas_virtuales) + ')</div>';
+      h += '<div style="color:#cbd5e1;font-size:12px;margin-bottom:6px;">' + _esc(hue.nota || '') + '</div>';
+      h += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:6px;max-height:240px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead style="background:#1e293b;position:sticky;top:0;"><tr>';
+      ['Código','Lote','Consumido (g)','Entrada virtual (g)','Origen'].forEach(t => {
+        h += '<th style="padding:6px 8px;text-align:left;color:#cbd5e1;">' + t + '</th>';
       });
-      h += '</ul></div>';
+      h += '</tr></thead><tbody>';
+      hue.sample.forEach(o => {
+        h += '<tr style="border-top:1px solid #334155;">';
+        h += '<td style="padding:5px 8px;font-family:monospace;color:#e2e8f0;">' + _esc(o.codigo_mp) + '</td>';
+        h += '<td style="padding:5px 8px;font-family:monospace;color:#94a3b8;">' + _esc(o.lote) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;font-family:monospace;color:#fca5a5;">' + _fmtG(o.cantidad_consumida_g) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;font-family:monospace;color:#34d399;">' + _fmtG(o.cantidad_entrada_virtual_g) + '</td>';
+        h += '<td style="padding:5px 8px;color:#94a3b8;font-size:10px;">' + _esc(o.origen) + '</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div></div>';
     } else {
       h += '<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);border-radius:8px;padding:10px;margin-bottom:14px;color:#34d399;">✓ Todas las salidas de producción consumieron lotes presentes en Excel verde — replay limpio.</div>';
     }
