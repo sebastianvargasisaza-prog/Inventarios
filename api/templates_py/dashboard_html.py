@@ -642,8 +642,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
 
-  </div>
-
   <div id="movimientos" class="tab-content">
     <h2>&#128203; Movimientos de Inventario</h2>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;">
@@ -983,10 +981,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </div>
   <!-- ==================== /TAB EMPAQUE MEE ==================== -->
-
-  </div>
-
-</div>
 
 <div id="envasado" class="tab-content">
 <div style="padding:18px">

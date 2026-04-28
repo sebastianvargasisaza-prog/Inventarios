@@ -2438,20 +2438,57 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
     except Exception as _e:
         return jsonify({'error': f'No pude leer SQL: {_e}'}), 500
 
-    # Verificar que el rango MP00400-MP00500 este libre
+    # Verificar que el rango MP00400-MP00500 este libre, sino renumerar
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     try:
         ocupados = c.execute(
-            "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp >= 'MP00400' AND codigo_mp <= 'MP00500'"
+            "SELECT codigo_mp, nombre_inci, nombre_comercial FROM maestro_mps "
+            "WHERE codigo_mp >= 'MP00400' AND codigo_mp <= 'MP00500' ORDER BY codigo_mp"
         ).fetchall()
         if ocupados:
-            conn.close()
-            return jsonify({
-                'error': 'Hay codigos MP en el rango MP00400-MP00500 ya ocupados.',
-                'ocupados': [r[0] for r in ocupados],
-                'sugerencia': 'Ajustar START_CODE en el script generador y regenerar SQL.',
-            }), 409
+            # Auto-renumerar a un bloque libre. Buscar siguiente rango contiguo libre de 100 codigos.
+            modo = (d.get('modo') or '').strip()
+            if modo != 'auto_renumerar':
+                conn.close()
+                return jsonify({
+                    'error': f'Hay {len(ocupados)} codigos MP en el rango MP00400-MP00500 ya ocupados.',
+                    'ocupados_con_nombres': [
+                        {'codigo': r[0], 'inci': r[1], 'comercial': r[2]} for r in ocupados[:10]
+                    ],
+                    'total_ocupados': len(ocupados),
+                    'sugerencia': 'Reenviar con body { "token": "...", "modo": "auto_renumerar" } para que el endpoint asigne automaticamente un rango MP libre.',
+                }), 409
+
+            # Modo auto_renumerar: busca rango libre y reescribe el SQL en memoria
+            todos = c.execute(
+                "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp GLOB 'MP[0-9]*'"
+            ).fetchall()
+            usados = set()
+            for (cm,) in todos:
+                try:
+                    usados.add(int(cm[2:]))
+                except Exception:
+                    pass
+            # Buscar bloque contiguo de 50 codigos libres comenzando desde 1000
+            new_start = None
+            for base in range(1000, 9000, 50):
+                if not any((base + k) in usados for k in range(50)):
+                    new_start = base
+                    break
+            if new_start is None:
+                conn.close()
+                return jsonify({'error': 'No hay rango contiguo libre de 50 codigos hasta MP09000'}), 500
+
+            # Reescribir codigos MP00400-MP00443 -> MP{new_start..new_start+43}
+            import re as _re
+            def _replace_code(m):
+                old_n = int(m.group(1))
+                if 400 <= old_n <= 443:
+                    new_n = new_start + (old_n - 400)
+                    return 'MP{:05d}'.format(new_n)
+                return m.group(0)
+            sql_text = _re.sub(r"MP(\d{5})", _replace_code, sql_text)
     except sqlite3.OperationalError as _e:
         conn.close()
         return jsonify({'error': f'No pude verificar rango: {_e}'}), 500
@@ -5821,11 +5858,35 @@ async function aplicarBatch20260428() {
   const btn = document.getElementById('btn-aplicar-batch');
   btn.disabled = true; btn.textContent = 'Aplicando 240 cambios...';
   try {
-    const r = await fetch('/api/admin/aplicar-correcciones-formulas-batch-2026-04-28', {
+    let r = await fetch('/api/admin/aplicar-correcciones-formulas-batch-2026-04-28', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({token: token})
     });
-    const d = await r.json();
+    let d = await r.json();
+    if (r.status === 409 && d.total_ocupados) {
+      // Rango ocupado — preguntar si auto-renumerar
+      let nombresPreview = '';
+      if (d.ocupados_con_nombres && d.ocupados_con_nombres.length) {
+        nombresPreview = '\n\nPrimeros ocupados:\n' + d.ocupados_con_nombres.slice(0,5).map(function(o){
+          return '  ' + o.codigo + ' = ' + (o.comercial || o.inci || '?');
+        }).join('\n');
+      }
+      const ok = confirm(
+        'El rango MP00400-MP00500 ya tiene ' + d.total_ocupados + ' codigos ocupados.\n\n' +
+        '¿Renumerar automaticamente al siguiente rango libre (MP01000+) y aplicar?' +
+        nombresPreview
+      );
+      if (!ok) {
+        btn.disabled = false; btn.innerHTML = '&#x2728; Aplicar 240 correcciones';
+        return;
+      }
+      btn.textContent = 'Renumerando y aplicando...';
+      r = await fetch('/api/admin/aplicar-correcciones-formulas-batch-2026-04-28', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({token: token, modo: 'auto_renumerar'})
+      });
+      d = await r.json();
+    }
     btn.disabled = false; btn.innerHTML = '&#x2728; Aplicar 240 correcciones';
     if (!r.ok) {
       let msg = d.error || 'desconocido';
