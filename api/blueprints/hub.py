@@ -291,6 +291,36 @@ def health():
     return jsonify({'status': 'ok', 'message': 'Inventory system running'})
 
 
+@bp.route('/manifest.json')
+def pwa_manifest():
+    """Sirve el manifest PWA desde la raiz (algunos browsers lo requieren).
+    Tambien accesible en /static/manifest.json."""
+    import os as _os
+    base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    path = _os.path.join(base, 'static', 'manifest.json')
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return Response(f.read(), mimetype='application/manifest+json')
+    except Exception:
+        return jsonify({'error': 'manifest no encontrado'}), 404
+
+
+@bp.route('/sw.js')
+def pwa_service_worker():
+    """Sirve service worker desde raiz (scope obliga raiz)."""
+    import os as _os
+    base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    path = _os.path.join(base, 'static', 'sw.js')
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            resp = Response(f.read(), mimetype='application/javascript')
+            resp.headers['Service-Worker-Allowed'] = '/'
+            resp.headers['Cache-Control'] = 'no-cache'
+            return resp
+    except Exception:
+        return Response('', status=404)
+
+
 @bp.route('/tesoreria')
 def tesoreria_page():
     """Tesoreria — UI unificada de Finanzas + Contabilidad.

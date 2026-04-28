@@ -10,44 +10,44 @@ HTML = r"""
 <title>Centro de Operaciones — HHA Group</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0a0e1a; color:#e2e8f0; }
-  .header { background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; border-bottom:1px solid #334155; }
-  .header h1 { margin:0; font-size:1.4em; font-weight:700; background:linear-gradient(90deg,#fbbf24,#f59e0b);-webkit-background-clip:text;background-clip:text;color:transparent; }
-  .header a { color:#94a3b8; font-size:0.85em; text-decoration:none; }
-  .header a:hover { color:#fbbf24; }
-  .live-dot { display:inline-block; width:8px; height:8px; background:#10b981; border-radius:50%; margin-right:6px; animation:pulse 2s infinite; vertical-align:middle; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:#1c1917; }
+  .header { background:linear-gradient(135deg,#0f3a1f 0%,#15803d 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; color:#fff; }
+  .header h1 { margin:0; font-size:1.4em; font-weight:700; color:#fff; }
+  .header a { color:#bbf7d0; font-size:0.85em; text-decoration:none; }
+  .header a:hover { color:#fff; }
+  .live-dot { display:inline-block; width:8px; height:8px; background:#fbbf24; border-radius:50%; margin-right:6px; animation:pulse 2s infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
   .container { max-width:1600px; margin:0 auto; padding:18px; }
   .grid { display:grid; gap:14px; }
   .grid-6 { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
   .grid-2 { grid-template-columns:1fr 1fr; }
-  .card { background:#0f172a; border:1px solid #334155; border-radius:12px; padding:16px; transition:.15s; }
-  .card:hover { border-color:#475569; transform:translateY(-1px); }
-  .card .label { font-size:0.7em; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; margin-bottom:8px; }
-  .card .val { font-size:1.8em; font-weight:800; color:#f1f5f9; line-height:1; }
-  .card .sub { font-size:0.78em; color:#94a3b8; margin-top:6px; }
+  .card { background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:16px; transition:.15s; }
+  .card:hover { border-color:#a8a29e; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+  .card .label { font-size:0.7em; color:#78716c; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; margin-bottom:8px; }
+  .card .val { font-size:1.8em; font-weight:800; color:#1c1917; line-height:1; }
+  .card .sub { font-size:0.78em; color:#a8a29e; margin-top:6px; }
   .card .delta { font-size:0.7em; padding:2px 8px; border-radius:8px; font-weight:700; display:inline-block; }
   .delta-pos { background:#064e3b; color:#34d399; }
   .delta-neg { background:#7f1d1d; color:#fca5a5; }
   .delta-warn { background:#78350f; color:#fcd34d; }
   .delta-neutral { background:#1e3a5f; color:#93c5fd; }
-  .area-title { font-size:0.78em; font-weight:700; color:#fbbf24; text-transform:uppercase; letter-spacing:0.1em; margin:24px 0 8px; padding-bottom:6px; border-bottom:1px solid #334155; }
+  .area-title { font-size:0.78em; font-weight:700; color:#15803d; text-transform:uppercase; letter-spacing:0.1em; margin:24px 0 8px; padding-bottom:6px; border-bottom:1px solid #e7e5e4; display:flex; align-items:center; }
   .area-title-icon { margin-right:8px; }
-  .panel { background:#0f172a; border:1px solid #334155; border-radius:12px; padding:18px; }
-  .panel h3 { margin:0 0 12px; font-size:0.95em; color:#f1f5f9; display:flex; align-items:center; gap:8px; }
+  .panel { background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:18px; }
+  .panel h3 { margin:0 0 12px; font-size:0.95em; color:#1c1917; display:flex; align-items:center; gap:8px; }
   .activity { font-size:0.82em; max-height:280px; overflow-y:auto; }
-  .activity-row { padding:8px 0; border-bottom:1px solid #1e293b; display:flex; gap:10px; align-items:start; }
+  .activity-row { padding:8px 0; border-bottom:1px solid #f5f5f4; display:flex; gap:10px; align-items:start; }
   .activity-row:last-child { border-bottom:none; }
   .activity-icon { font-size:14px; flex-shrink:0; }
   .activity-content { flex:1; min-width:0; }
-  .activity-title { font-weight:600; color:#e2e8f0; font-size:12px; }
-  .activity-detail { font-size:11px; color:#94a3b8; margin-top:2px; }
-  .activity-time { font-size:10px; color:#475569; white-space:nowrap; }
-  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:#1e3a5f; color:#93c5fd; border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
-  .quick-link:hover { background:#1e3a8a; color:#fff; }
-  .empty { color:#475569; font-style:italic; padding:20px; text-align:center; font-size:13px; }
-  .refresh-btn { background:transparent; border:1px solid #334155; color:#94a3b8; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; }
-  .refresh-btn:hover { border-color:#fbbf24; color:#fbbf24; }
+  .activity-title { font-weight:600; color:#1c1917; font-size:12px; }
+  .activity-detail { font-size:11px; color:#78716c; margin-top:2px; }
+  .activity-time { font-size:10px; color:#a8a29e; white-space:nowrap; }
+  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:#dcfce7; color:#15803d; border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
+  .quick-link:hover { background:#bbf7d0; }
+  .empty { color:#a8a29e; font-style:italic; padding:20px; text-align:center; font-size:13px; }
+  .refresh-btn { background:transparent; border:1px solid #d6d3d1; color:#57534e; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; }
+  .refresh-btn:hover { border-color:#15803d; color:#15803d; }
   /* Mobile responsive */
   @media (max-width:768px) {
     .header { padding:12px 14px; flex-wrap:wrap; gap:8px; }
