@@ -1767,6 +1767,75 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
         """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
     ]),
+    (42, "produccion_checklist: pre-flight checklist por produccion programada (MPs + envases + etiquetas + serigrafia/tampografia)", [
+        # Master de plantillas: cada producto puede tener items default
+        # configurables. Si un producto no tiene plantilla, usa la generica.
+        """CREATE TABLE IF NOT EXISTS checklist_plantillas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre   TEXT,
+            item_tipo         TEXT NOT NULL CHECK(item_tipo IN
+                ('mp','envase_primario','envase_secundario','tapa',
+                 'etiqueta_frontal','etiqueta_posterior','etiqueta_lateral',
+                 'serigrafia','tampografia','caja_exterior','instructivo',
+                 'estuche','sello','otro')),
+            descripcion       TEXT NOT NULL,
+            proveedor_default TEXT DEFAULT '',
+            dias_anticipacion INTEGER DEFAULT 30,
+            obligatorio       INTEGER DEFAULT 1,
+            orden             INTEGER DEFAULT 0,
+            creado_por        TEXT,
+            fecha_creacion    TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_checklist_plant_prod ON checklist_plantillas(producto_nombre)""",
+
+        # Items concretos del checklist por cada produccion programada.
+        # Se generan automaticamente cuando una produccion entra al calendario.
+        """CREATE TABLE IF NOT EXISTS produccion_checklist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produccion_id      INTEGER,
+            produccion_ref     TEXT,
+            producto_nombre    TEXT NOT NULL,
+            fecha_planeada     TEXT NOT NULL,
+            cantidad_kg        REAL DEFAULT 0,
+            item_tipo          TEXT NOT NULL,
+            descripcion        TEXT NOT NULL,
+            cantidad_requerida REAL DEFAULT 0,
+            unidad             TEXT DEFAULT 'g',
+            codigo_mp          TEXT DEFAULT '',
+            stock_actual       REAL DEFAULT 0,
+            deficit            REAL DEFAULT 0,
+            estado             TEXT DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','verificado_ok','solicitado',
+                                 'en_transito','recibido','listo','no_aplica')),
+            proveedor          TEXT DEFAULT '',
+            solicitud_numero   TEXT DEFAULT '',
+            oc_numero          TEXT DEFAULT '',
+            fecha_solicitud    TEXT,
+            fecha_eta          TEXT,
+            fecha_recibido     TEXT,
+            responsable        TEXT DEFAULT '',
+            observaciones      TEXT DEFAULT '',
+            dias_anticipacion  INTEGER DEFAULT 30,
+            actualizado_at     TEXT DEFAULT (datetime('now')),
+            actualizado_por    TEXT,
+            fecha_creacion     TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_pchk_produccion ON produccion_checklist(produccion_id, item_tipo)""",
+        """CREATE INDEX IF NOT EXISTS idx_pchk_fecha ON produccion_checklist(fecha_planeada, estado)""",
+        """CREATE INDEX IF NOT EXISTS idx_pchk_estado ON produccion_checklist(estado)""",
+
+        # Plantilla generica default — si producto no tiene plantilla propia
+        # se usan estos items basicos.
+        """INSERT INTO checklist_plantillas (producto_nombre, item_tipo, descripcion, dias_anticipacion, orden, obligatorio) VALUES
+            ('', 'envase_primario',  'Envase primario (frasco/contenedor)', 30, 1, 1),
+            ('', 'tapa',              'Tapa o sistema dosificador',          30, 2, 1),
+            ('', 'etiqueta_frontal',  'Etiqueta frontal',                    25, 3, 1),
+            ('', 'etiqueta_posterior','Etiqueta posterior con info legal',   25, 4, 1),
+            ('', 'caja_exterior',     'Caja exterior individual',            20, 5, 0),
+            ('', 'serigrafia',        'Serigrafia en envase si aplica',      30, 6, 0),
+            ('', 'tampografia',       'Tampografia en tapa si aplica',       30, 7, 0)
+        """,
+    ]),
     (41, "animus_conteos_ciclicos: flag aplicado + movimiento_id_ajuste para Gap 8 (cierre conteo Daniela)", [
         """ALTER TABLE animus_conteos_ciclicos ADD COLUMN aplicado INTEGER DEFAULT 0""",
         """ALTER TABLE animus_conteos_ciclicos ADD COLUMN movimiento_id_ajuste INTEGER""",

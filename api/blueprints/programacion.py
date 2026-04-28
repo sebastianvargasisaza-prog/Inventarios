@@ -3629,3 +3629,618 @@ def planificacion_checklist_verificacion():
         as_attachment=True,
         download_name=fname,
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  CHECKLIST PRE-PRODUCCION
+#  Sistema que para cada produccion programada genera lista de items a
+#  verificar con anticipacion: MPs, envases, tapas, etiquetas, serigrafia,
+#  tampografia. Conecta con compras: si falta algo, genera SOL automatica.
+# ═════════════════════════════════════════════════════════════════════════
+
+ITEMS_CHECKLIST_DEFAULT = [
+    ('envase_primario',  'Envase primario (frasco/contenedor)', 30, 1),
+    ('tapa',             'Tapa o sistema dosificador',          30, 2),
+    ('etiqueta_frontal', 'Etiqueta frontal',                    25, 3),
+    ('etiqueta_posterior','Etiqueta posterior con info legal',  25, 4),
+    ('caja_exterior',    'Caja exterior individual',            20, 5),
+    ('serigrafia',       'Serigrafia en envase si aplica',      30, 6),
+    ('tampografia',      'Tampografia en tapa si aplica',       30, 7),
+]
+
+
+def _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=None):
+    """Calcula disponibilidad real de un MP considerando TODAS las
+    producciones programadas hasta fecha_horizonte.
+
+    Returns dict con:
+      - stock_actual: gramos en bodega ahora (sumando movimientos)
+      - en_transito: gramos en OCs activas no recibidas todavia
+                     (Aprobada/Autorizada/Pagada categoria MP)
+      - demanda_total_horizonte: gramos requeridos para TODAS las
+                                 producciones programadas hasta fecha
+      - solicitado_pendiente: gramos en SOLs activas (no convertidas a OC)
+      - disponibilidad_neta: stock + en_transito - demanda
+                             (si negativo, hay que solicitar)
+
+    Esto resuelve la queja de Sebastian: el checklist NO debe ver una
+    produccion en aislado, sino TODAS las del horizonte. Si la suma de
+    demanda excede stock+transito, hay que pedir HOY aunque sea para
+    una produccion de dentro de un mes.
+    """
+    if not codigo_mp:
+        return {'stock_actual': 0, 'en_transito': 0,
+                'demanda_total_horizonte': 0,
+                'solicitado_pendiente': 0,
+                'disponibilidad_neta': 0}
+    out = {}
+    # 1) Stock actual
+    try:
+        row = c.execute("""
+            SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +') THEN cantidad
+                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                                     ELSE 0 END), 0)
+            FROM movimientos WHERE material_id=?
+        """, (codigo_mp,)).fetchone()
+        out['stock_actual'] = float(row[0] or 0)
+    except Exception:
+        out['stock_actual'] = 0.0
+
+    # 2) En transito: OCs en estados activos no Recibida/Pagada
+    # Sumamos cantidad_g de items de OCs en Borrador/Pendiente/Revisada/
+    # Aprobada/Autorizada/Parcial. Pagada significa que se pago pero la
+    # mercancia puede no haber llegado todavia, asi que tambien suma.
+    try:
+        row = c.execute("""
+            SELECT COALESCE(SUM(i.cantidad_g - COALESCE(i.cantidad_recibida_g,0)), 0)
+            FROM ordenes_compra_items i
+            JOIN ordenes_compra oc ON oc.numero_oc = i.numero_oc
+            WHERE i.codigo_mp = ?
+              AND oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada',
+                                'Autorizada','Parcial','Pagada')
+        """, (codigo_mp,)).fetchone()
+        out['en_transito'] = float(row[0] or 0)
+    except Exception:
+        out['en_transito'] = 0.0
+
+    # 3) En SOL pendientes (aun no convertidas a OC)
+    try:
+        row = c.execute("""
+            SELECT COALESCE(SUM(si.cantidad_g), 0)
+            FROM solicitudes_compra_items si
+            JOIN solicitudes_compra s ON s.numero = si.numero
+            WHERE si.codigo_mp = ?
+              AND s.estado IN ('Pendiente','En revision','Aprobada')
+              AND COALESCE(s.numero_oc, '') = ''
+        """, (codigo_mp,)).fetchone()
+        out['solicitado_pendiente'] = float(row[0] or 0)
+    except Exception:
+        out['solicitado_pendiente'] = 0.0
+
+    # 4) Demanda total del horizonte: sumar de TODAS las producciones
+    # programadas hasta fecha_horizonte cuyo formula_items incluya este MP.
+    try:
+        params = [codigo_mp]
+        sql = """
+            SELECT COALESCE(SUM(
+                (fi.porcentaje / 100.0)
+                * COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0)
+                * 1000.0
+            ), 0) as demanda_g
+            FROM produccion_programada pp
+            JOIN formula_items fi ON fi.producto_nombre = pp.producto_nombre
+            WHERE fi.material_id = ?
+              AND pp.estado != 'Cancelada'
+              AND pp.fecha_planeada >= date('now','-1 day')
+        """
+        if fecha_horizonte:
+            sql += " AND pp.fecha_planeada <= ?"
+            params.append(fecha_horizonte)
+        row = c.execute(sql, params).fetchone()
+        out['demanda_total_horizonte'] = float(row[0] or 0)
+    except Exception:
+        out['demanda_total_horizonte'] = 0.0
+
+    # 5) Disponibilidad neta = stock + transito + solicitado - demanda
+    # solicitado_pendiente todavia no es seguro pero suma como cobertura tentativa.
+    out['disponibilidad_neta'] = (
+        out['stock_actual']
+        + out['en_transito']
+        + out['solicitado_pendiente']
+        - out['demanda_total_horizonte']
+    )
+    return out
+
+
+def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_planeada,
+                                   cantidad_kg, generar_mps=True, usuario='sistema'):
+    """Genera items de checklist para una produccion.
+
+    Si generar_mps=True, lee la formula del producto y crea 1 item por cada
+    MP con la cantidad requerida + analisis de disponibilidad CONSIDERANDO
+    TODAS las producciones del horizonte (decision Sebastian 2026-04-28).
+
+    Tambien crea items default de envases/etiquetas/etc segun plantilla.
+
+    Idempotente: si ya hay items para esta produccion_id, no duplica.
+    """
+    # Verificar si ya hay items
+    existing = c.execute(
+        "SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=?",
+        (produccion_id,)
+    ).fetchone()[0]
+    if existing > 0:
+        return 0  # ya tiene checklist
+
+    items_creados = 0
+
+    # 1) MPs desde la formula con calculo de disponibilidad agregada
+    if generar_mps:
+        try:
+            mps = c.execute("""
+                SELECT material_id, material_nombre, porcentaje, cantidad_g_por_lote
+                FROM formula_items
+                WHERE producto_nombre = ?
+            """, (producto_nombre,)).fetchall()
+            for mp in mps:
+                codigo_mp = mp[0] or ''
+                nombre_mp = mp[1] or ''
+                porcentaje = float(mp[2] or 0)
+                # Cantidad requerida SOLO para esta produccion individual
+                cant_req_g = (porcentaje / 100.0) * (cantidad_kg or 0) * 1000.0
+
+                # Disponibilidad agregada considerando TODO el horizonte
+                # hasta la fecha de esta produccion (inclusive)
+                disp = _calcular_disponibilidad_mp(c, codigo_mp,
+                                                    fecha_horizonte=fecha_planeada)
+
+                # Determinar estado segun disponibilidad NETA del horizonte
+                if disp['disponibilidad_neta'] >= 0 and disp['en_transito'] == 0 and disp['solicitado_pendiente'] == 0:
+                    # Stock cubre la demanda total
+                    estado = 'verificado_ok'
+                elif disp['en_transito'] > 0 and disp['disponibilidad_neta'] >= 0:
+                    # Hay material en transito que cubre o complementa
+                    estado = 'en_transito'
+                elif disp['solicitado_pendiente'] > 0 and disp['disponibilidad_neta'] >= 0:
+                    # Hay SOL pendiente que cubre
+                    estado = 'solicitado'
+                else:
+                    # Falta material: debe solicitarse HOY
+                    estado = 'pendiente'
+
+                # Deficit = lo que aun falta cubrir
+                deficit = max(0, -disp['disponibilidad_neta'])
+
+                obs_extra = (
+                    f"Stock: {disp['stock_actual']:.0f}g "
+                    f"+ Transito: {disp['en_transito']:.0f}g "
+                    f"+ Solicitado: {disp['solicitado_pendiente']:.0f}g "
+                    f"- Demanda total horizonte: {disp['demanda_total_horizonte']:.0f}g "
+                    f"= Neta: {disp['disponibilidad_neta']:.0f}g"
+                )
+
+                c.execute("""INSERT INTO produccion_checklist
+                    (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                     item_tipo, descripcion, cantidad_requerida, unidad, codigo_mp,
+                     stock_actual, deficit, estado, dias_anticipacion,
+                     observaciones, actualizado_por)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                     'mp', nombre_mp, cant_req_g, 'g', codigo_mp,
+                     disp['stock_actual'], deficit, estado, 30,
+                     obs_extra, usuario))
+                items_creados += 1
+        except Exception:
+            pass
+
+    # 2) Envases / etiquetas / decoracion (plantilla del producto o default)
+    try:
+        # Buscar plantilla especifica del producto
+        plantilla = c.execute("""
+            SELECT item_tipo, descripcion, dias_anticipacion, orden, proveedor_default, obligatorio
+            FROM checklist_plantillas
+            WHERE producto_nombre=? OR producto_nombre=''
+            ORDER BY CASE WHEN producto_nombre=? THEN 0 ELSE 1 END, orden
+        """, (producto_nombre, producto_nombre)).fetchall()
+
+        # Deduplicar: prioritar la del producto sobre la generica
+        seen = set()
+        items_a_crear = []
+        for row in plantilla:
+            tipo = row[0]
+            if tipo in seen:
+                continue
+            seen.add(tipo)
+            items_a_crear.append(row)
+
+        for row in items_a_crear:
+            tipo, desc, dias, orden, prov, obligatorio = row
+            if not obligatorio:
+                continue  # solo crear los obligatorios automaticamente
+            c.execute("""INSERT INTO produccion_checklist
+                (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                 item_tipo, descripcion, estado, proveedor, dias_anticipacion,
+                 actualizado_por)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
+                 tipo, desc, 'pendiente', prov or '', dias or 30, usuario))
+            items_creados += 1
+    except Exception:
+        pass
+
+    return items_creados
+
+
+@bp.route('/api/programacion/checklist/generar/<int:produccion_id>', methods=['POST'])
+def checklist_generar(produccion_id):
+    """Genera o regenera checklist para una produccion programada.
+
+    Body opcional: {forzar: true} para regenerar borrando items existentes.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+
+    # Obtener datos de la produccion programada
+    prod = c.execute("""
+        SELECT id, producto_nombre, fecha_planeada, cantidad_kg, batch_size_kg
+        FROM produccion_programada WHERE id=?
+    """, (produccion_id,)).fetchone()
+    if not prod:
+        return jsonify({'error': 'Produccion no encontrada'}), 404
+    cant = float(prod[3] or prod[4] or 0)
+
+    if d.get('forzar'):
+        c.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (produccion_id,))
+
+    items = _generar_checklist_produccion(
+        c, produccion_id, prod[1], prod[2], cant,
+        generar_mps=True,
+        usuario=session.get('compras_user', 'sistema'))
+    conn.commit()
+    return jsonify({'ok': True, 'items_creados': items})
+
+
+@bp.route('/api/programacion/checklist/<int:produccion_id>', methods=['GET'])
+def checklist_get(produccion_id):
+    """Devuelve el checklist completo de una produccion con totales por estado."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, item_tipo, descripcion, cantidad_requerida, unidad, codigo_mp,
+               stock_actual, deficit, estado, proveedor, solicitud_numero,
+               oc_numero, fecha_solicitud, fecha_eta, fecha_recibido,
+               responsable, observaciones, dias_anticipacion, actualizado_at,
+               producto_nombre, fecha_planeada
+        FROM produccion_checklist
+        WHERE produccion_id=?
+        ORDER BY
+          CASE item_tipo WHEN 'mp' THEN 1
+                         WHEN 'envase_primario' THEN 2
+                         WHEN 'tapa' THEN 3
+                         WHEN 'etiqueta_frontal' THEN 4
+                         WHEN 'etiqueta_posterior' THEN 5
+                         WHEN 'caja_exterior' THEN 6
+                         WHEN 'serigrafia' THEN 7
+                         WHEN 'tampografia' THEN 8
+                         ELSE 9 END,
+          descripcion ASC
+    """, (produccion_id,)).fetchall()
+    cols = [x[0] for x in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+
+    # Totales por estado
+    totales = {'pendiente': 0, 'verificado_ok': 0, 'solicitado': 0,
+               'en_transito': 0, 'recibido': 0, 'listo': 0, 'no_aplica': 0}
+    for it in items:
+        totales[it['estado']] = totales.get(it['estado'], 0) + 1
+
+    total_items = len(items)
+    completados = totales['verificado_ok'] + totales['recibido'] + totales['listo']
+    porcentaje = round((completados / total_items * 100), 1) if total_items > 0 else 0
+
+    return jsonify({
+        'items': items,
+        'totales_por_estado': totales,
+        'total_items': total_items,
+        'completados': completados,
+        'porcentaje_listo': porcentaje,
+    })
+
+
+@bp.route('/api/programacion/checklist/items/<int:item_id>', methods=['PATCH'])
+def checklist_item_update(item_id):
+    """Actualiza estado/proveedor/observaciones/etc de un item."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    fields = ['estado', 'proveedor', 'observaciones', 'responsable',
+              'fecha_eta', 'fecha_recibido', 'fecha_solicitud',
+              'solicitud_numero', 'oc_numero', 'cantidad_requerida']
+    sets = []
+    vals = []
+    for f in fields:
+        if f in d:
+            sets.append(f'{f}=?')
+            vals.append(d[f])
+    if not sets:
+        return jsonify({'error': 'Nada que actualizar'}), 400
+    sets.append("actualizado_at=datetime('now')")
+    sets.append("actualizado_por=?")
+    vals.append(session.get('compras_user', 'sistema'))
+    vals.append(item_id)
+    conn = get_db(); c = conn.cursor()
+    c.execute(f"UPDATE produccion_checklist SET {', '.join(sets)} WHERE id=?", vals)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/programacion/checklist/items/<int:item_id>/solicitar', methods=['POST'])
+def checklist_item_solicitar(item_id):
+    """Genera una SOL automatica para este item si requiere compra.
+
+    Crea solicitud_compra con datos del item + actualiza estado a 'solicitado'.
+    Si el item ya tiene solicitud_numero, no crea nueva.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    item = c.execute("""SELECT * FROM produccion_checklist WHERE id=?""", (item_id,)).fetchone()
+    if not item:
+        return jsonify({'error': 'Item no encontrado'}), 404
+    item_dict = dict(zip([x[0] for x in c.description], item))
+
+    if item_dict.get('solicitud_numero'):
+        return jsonify({'ok': True, 'ya_solicitado': True,
+                        'solicitud_numero': item_dict['solicitud_numero']})
+
+    # Generar numero SOL
+    from datetime import datetime as _dt
+    year = _dt.now().year
+    last = c.execute(
+        "SELECT numero FROM solicitudes_compra WHERE numero LIKE ? ORDER BY numero DESC LIMIT 1",
+        (f'SOL-{year}-%',)
+    ).fetchone()
+    seq = 1
+    if last:
+        try: seq = int(last[0].split('-')[-1]) + 1
+        except: seq = 1
+    sol_num = f'SOL-{year}-{seq:04d}'
+
+    # Determinar categoria segun tipo
+    cat_map = {
+        'mp': 'Materia Prima',
+        'envase_primario': 'Material de Empaque',
+        'envase_secundario': 'Material de Empaque',
+        'tapa': 'Material de Empaque',
+        'etiqueta_frontal': 'Material de Empaque',
+        'etiqueta_posterior': 'Material de Empaque',
+        'etiqueta_lateral': 'Material de Empaque',
+        'caja_exterior': 'Material de Empaque',
+        'serigrafia': 'Servicios',
+        'tampografia': 'Servicios',
+        'instructivo': 'Material de Empaque',
+        'estuche': 'Material de Empaque',
+    }
+    categoria = cat_map.get(item_dict.get('item_tipo'), 'Material de Empaque')
+
+    descripcion = (
+        f"[Checklist Produccion] {item_dict.get('descripcion','')}"
+        f" para {item_dict.get('producto_nombre','')}"
+        f" (lote programado {item_dict.get('fecha_planeada','')})"
+    )
+    if item_dict.get('cantidad_requerida') and item_dict.get('item_tipo') == 'mp':
+        descripcion += f" | Cantidad: {item_dict['cantidad_requerida']:.0f} {item_dict.get('unidad','g')}"
+
+    user = session.get('compras_user', 'sistema')
+    user_email = ''
+    try:
+        from config import USER_EMAILS as _UE
+        user_email = _UE.get(user, '')
+    except Exception:
+        pass
+
+    c.execute("""INSERT INTO solicitudes_compra
+        (numero, fecha, estado, solicitante, email_solicitante, urgencia,
+         observaciones, area, empresa, categoria, tipo)
+        VALUES (?,date('now'),'Pendiente',?,?,?,?,?,?,?,?)""",
+        (sol_num, user, user_email, 'Alta', descripcion,
+         'Produccion', 'Espagiria', categoria,
+         'Servicio' if categoria == 'Servicios' else 'Material'))
+
+    # Si es MP con codigo + cantidad: tambien insertar el item
+    try:
+        if item_dict.get('codigo_mp') and item_dict.get('cantidad_requerida'):
+            c.execute("""INSERT INTO solicitudes_compra_items
+                (numero, codigo_mp, nombre_mp, cantidad_g, justificacion)
+                VALUES (?,?,?,?,?)""",
+                (sol_num, item_dict['codigo_mp'],
+                 item_dict.get('descripcion',''),
+                 float(item_dict['cantidad_requerida']),
+                 'Generado desde checklist pre-produccion'))
+    except Exception:
+        pass
+
+    # Actualizar item del checklist
+    c.execute("""UPDATE produccion_checklist
+                 SET estado='solicitado', solicitud_numero=?,
+                     fecha_solicitud=date('now'),
+                     actualizado_at=datetime('now'), actualizado_por=?
+                 WHERE id=?""",
+              (sol_num, user, item_id))
+    conn.commit()
+    return jsonify({'ok': True, 'solicitud_numero': sol_num,
+                    'mensaje': f'Solicitud {sol_num} creada para {item_dict.get("descripcion","")}'})
+
+
+@bp.route('/api/programacion/checklist/resumen-calendario')
+def checklist_resumen_calendario():
+    """Vista panoramica: para cada produccion programada en proximos N dias,
+    devuelve % de completitud del checklist + dias faltantes + items criticos
+    pendientes.
+
+    Usado por Planta + Gerencia para ver de un vistazo que producciones
+    estan en riesgo.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    horizonte = int(request.args.get('dias', 60))
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
+                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg,
+                   pp.estado as estado_prod,
+                   (julianday(pp.fecha_planeada) - julianday('now')) as dias_faltan,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id) as total_items,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
+                       AND estado IN ('verificado_ok','recibido','listo')) as completados,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
+                       AND estado='pendiente') as pendientes,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
+                       AND estado='solicitado') as solicitados
+            FROM produccion_programada pp
+            WHERE pp.estado != 'Cancelada'
+              AND pp.fecha_planeada >= date('now','-30 day')
+              AND pp.fecha_planeada <= date('now','+' || ? || ' day')
+            ORDER BY pp.fecha_planeada ASC
+        """, (horizonte,)).fetchall()
+        cols = [x[0] for x in c.description]
+        out = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            total = d['total_items'] or 0
+            comp = d['completados'] or 0
+            d['porcentaje'] = round(comp / total * 100, 1) if total > 0 else 0
+            d['semaforo'] = (
+                'verde'    if d['porcentaje'] >= 90 else
+                'amarillo' if d['porcentaje'] >= 50 else
+                'rojo'
+            )
+            d['dias_faltan'] = int(d['dias_faltan']) if d['dias_faltan'] is not None else 0
+            out.append(d)
+        return jsonify({'producciones': out, 'horizonte_dias': horizonte})
+    except Exception as e:
+        return jsonify({'error': str(e), 'producciones': []})
+
+
+@bp.route('/api/programacion/disponibilidad-mp/<path:codigo_mp>')
+def disponibilidad_mp_endpoint(codigo_mp):
+    """Panorama completo de disponibilidad de un MP:
+       stock + en_transito + solicitado - demanda_horizonte = neta.
+    Querystring: ?dias=60 (default)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    dias = int(request.args.get('dias', 60))
+    fecha_h = (datetime.now() + timedelta(days=dias)).strftime('%Y-%m-%d')
+    conn = get_db(); c = conn.cursor()
+    disp = _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=fecha_h)
+    # Detalle de OCs en transito + SOLs pendientes
+    try:
+        ocs = c.execute("""
+            SELECT oc.numero_oc, oc.estado, oc.proveedor,
+                   (i.cantidad_g - COALESCE(i.cantidad_recibida_g,0)) as faltante_g,
+                   oc.fecha_entrega_est
+            FROM ordenes_compra_items i
+            JOIN ordenes_compra oc ON oc.numero_oc=i.numero_oc
+            WHERE i.codigo_mp=?
+              AND oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada',
+                                'Autorizada','Parcial','Pagada')
+              AND (i.cantidad_g - COALESCE(i.cantidad_recibida_g,0)) > 0
+            ORDER BY oc.fecha DESC
+        """, (codigo_mp,)).fetchall()
+        disp['ocs_en_transito'] = [
+            {'numero_oc': r[0], 'estado': r[1], 'proveedor': r[2],
+             'cantidad_g': r[3], 'eta': r[4]} for r in ocs
+        ]
+    except Exception:
+        disp['ocs_en_transito'] = []
+
+    try:
+        sols = c.execute("""
+            SELECT s.numero, s.estado, s.fecha, si.cantidad_g, si.justificacion
+            FROM solicitudes_compra_items si
+            JOIN solicitudes_compra s ON s.numero=si.numero
+            WHERE si.codigo_mp=?
+              AND s.estado IN ('Pendiente','En revision','Aprobada')
+              AND COALESCE(s.numero_oc,'')=''
+            ORDER BY s.fecha DESC
+        """, (codigo_mp,)).fetchall()
+        disp['solicitudes_pendientes'] = [
+            {'numero': r[0], 'estado': r[1], 'fecha': r[2],
+             'cantidad_g': r[3], 'justificacion': r[4]} for r in sols
+        ]
+    except Exception:
+        disp['solicitudes_pendientes'] = []
+
+    # Producciones que demandan este MP
+    try:
+        prods = c.execute("""
+            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
+                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg,
+                   fi.porcentaje,
+                   ROUND((fi.porcentaje/100.0) * COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) * 1000.0) as req_g
+            FROM produccion_programada pp
+            JOIN formula_items fi ON fi.producto_nombre=pp.producto_nombre
+            WHERE fi.material_id=?
+              AND pp.estado != 'Cancelada'
+              AND pp.fecha_planeada >= date('now','-1 day')
+              AND pp.fecha_planeada <= ?
+            ORDER BY pp.fecha_planeada ASC
+        """, (codigo_mp, fecha_h)).fetchall()
+        disp['producciones_que_lo_usan'] = [
+            {'produccion_id': r[0], 'producto': r[1], 'fecha': r[2],
+             'kg': r[3], 'porcentaje': r[4], 'requerido_g': r[5]}
+            for r in prods
+        ]
+    except Exception:
+        disp['producciones_que_lo_usan'] = []
+
+    disp['codigo_mp'] = codigo_mp
+    disp['horizonte_dias'] = dias
+    disp['fecha_horizonte'] = fecha_h
+    return jsonify(disp)
+
+
+@bp.route('/api/programacion/checklist/backfill', methods=['POST'])
+def checklist_backfill():
+    """Genera checklists para producciones de los ultimos 30 dias en
+    adelante que aun no tienen items creados.
+
+    Solo admin. Idempotente.
+    """
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
+                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg
+            FROM produccion_programada pp
+            WHERE pp.estado != 'Cancelada'
+              AND pp.fecha_planeada >= date('now','-30 day')
+              AND NOT EXISTS (SELECT 1 FROM produccion_checklist
+                              WHERE produccion_id=pp.id)
+        """).fetchall()
+        total_creados = 0
+        producciones_procesadas = 0
+        for r in rows:
+            items = _generar_checklist_produccion(
+                c, r[0], r[1], r[2], float(r[3] or 0),
+                generar_mps=True,
+                usuario=session.get('compras_user', 'sistema'))
+            total_creados += items
+            producciones_procesadas += 1
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'producciones_procesadas': producciones_procesadas,
+            'items_creados': total_creados,
+            'mensaje': f'{producciones_procesadas} producciones recibieron checklist '
+                       f'({total_creados} items totales)'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
