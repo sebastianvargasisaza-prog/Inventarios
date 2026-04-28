@@ -1229,6 +1229,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#128301; Planificación Estratégica
     </button>
+    <button id="prog-tab-checklist" onclick="switchProgTab('checklist')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#9989; Checklist Pre-Producción
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -4744,6 +4748,228 @@ function _renderProgramacion(d){
     <div id="plan-error" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;color:#856404"></div>
   </div><!-- /ptab-plan -->
 
+  <!-- ── Tab: Checklist Pre-Producción ────────────────────────────────── -->
+  <div id="ptab-checklist" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#15803d">&#9989; Checklist Pre-Producción</h2>
+        <p style="color:#666;font-size:13px;margin:0">Para cada producción programada: ¿hay materias primas, envases, etiquetas, serigrafía? · Considera demanda agregada de TODO el horizonte</p>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:#666;font-weight:600">Horizonte:</span>
+        <button id="ck-h-30"  onclick="cargarChecklistResumen(30)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#15803d">30 días</button>
+        <button id="ck-h-60"  onclick="cargarChecklistResumen(60)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#15803d;color:#fff">60 días</button>
+        <button id="ck-h-90"  onclick="cargarChecklistResumen(90)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#15803d">90 días</button>
+        <button onclick="ckBackfill()" style="padding:6px 12px;background:#a16207;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Genera checklists para producciones sin items">🔄 Generar faltantes</button>
+      </div>
+    </div>
+
+    <div id="ck-resumen-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px"></div>
+
+    <div id="ck-loading" style="display:none;text-align:center;padding:40px;color:#15803d;font-weight:600">Cargando producciones programadas...</div>
+    <div id="ck-empty" style="display:none;text-align:center;padding:40px;color:#888;font-style:italic">Sin producciones programadas en el horizonte</div>
+
+    <div id="ck-producciones-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+    <!-- Modal detalle de un checklist -->
+    <div id="ck-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#fff;border-radius:12px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+        <div id="ck-modal-header" style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px;border-bottom:2px solid #e7e5e4;padding-bottom:14px">
+          <div>
+            <h3 id="ck-modal-titulo" style="margin:0;color:#1c1917"></h3>
+            <div id="ck-modal-sub" style="font-size:12px;color:#78716c;margin-top:4px"></div>
+          </div>
+          <button onclick="document.getElementById('ck-modal').style.display='none'" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:18px">×</button>
+        </div>
+        <div id="ck-modal-progress" style="margin-bottom:14px"></div>
+        <div id="ck-modal-items"></div>
+      </div>
+    </div>
+  </div><!-- /ptab-checklist -->
+
+<script>
+async function cargarChecklistResumen(dias){
+  if(dias){
+    document.querySelectorAll('[id^=ck-h-]').forEach(b=>{
+      var match = b.id.match(/ck-h-(\\d+)/);
+      if(match){
+        var d = parseInt(match[1]);
+        b.style.background = d===dias?'#15803d':'#fff';
+        b.style.color      = d===dias?'#fff':'#15803d';
+      }
+    });
+  }
+  dias = dias || 60;
+  document.getElementById('ck-loading').style.display='block';
+  document.getElementById('ck-empty').style.display='none';
+  document.getElementById('ck-producciones-list').innerHTML='';
+  document.getElementById('ck-resumen-cards').innerHTML='';
+  try {
+    var r = await fetch('/api/programacion/checklist/resumen-calendario?dias='+dias);
+    var d = await r.json();
+    document.getElementById('ck-loading').style.display='none';
+    var prods = d.producciones || [];
+    if(!prods.length){
+      document.getElementById('ck-empty').style.display='block';
+      return;
+    }
+    // Cards de resumen
+    var verde = prods.filter(p=>p.semaforo==='verde').length;
+    var amar = prods.filter(p=>p.semaforo==='amarillo').length;
+    var rojo = prods.filter(p=>p.semaforo==='rojo').length;
+    var sinChecklist = prods.filter(p=>p.total_items===0).length;
+    document.getElementById('ck-resumen-cards').innerHTML =
+      cardKpi('Producciones', prods.length, '#1c1917', '') +
+      cardKpi('🟢 Verde', verde, '#15803d', '>=90% listo') +
+      cardKpi('🟡 Amarillo', amar, '#f59e0b', '50-89%') +
+      cardKpi('🔴 Rojo', rojo, '#dc2626', '<50%') +
+      cardKpi('Sin checklist', sinChecklist, '#78716c', 'click "Generar"');
+    // Lista de producciones
+    document.getElementById('ck-producciones-list').innerHTML = prods.map(rowProduccion).join('');
+  } catch(e){
+    document.getElementById('ck-loading').style.display='none';
+    document.getElementById('ck-empty').textContent='Error: '+e.message;
+    document.getElementById('ck-empty').style.display='block';
+  }
+}
+
+function cardKpi(label, val, color, sub){
+  return '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px;text-align:center">' +
+    '<div style="font-size:10px;color:#78716c;text-transform:uppercase;letter-spacing:0.5px;font-weight:700">'+label+'</div>' +
+    '<div style="font-size:1.6em;font-weight:800;color:'+color+';margin:4px 0">'+val+'</div>' +
+    (sub?'<div style="font-size:10px;color:#a8a29e">'+sub+'</div>':'') +
+    '</div>';
+}
+
+function rowProduccion(p){
+  var color = p.semaforo==='verde' ? '#15803d' : p.semaforo==='amarillo' ? '#f59e0b' : '#dc2626';
+  var diasTxt = p.dias_faltan>=0 ? p.dias_faltan+' días' : 'hace '+Math.abs(p.dias_faltan)+'d';
+  var diasColor = p.dias_faltan<0 ? '#dc2626' : p.dias_faltan<=7 ? '#f59e0b' : '#15803d';
+  var pct = p.porcentaje || 0;
+  var noChecklist = (p.total_items||0)===0;
+  return '<div style="background:#fff;border:1px solid #e7e5e4;border-left:4px solid '+color+';border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="abrirChecklistDetalle('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')">' +
+    '<div>' +
+      '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+'</div>' +
+      '<div style="font-size:11px;color:#78716c;margin-top:2px">' + (p.kg||0).toLocaleString('es-CO')+' kg · ' + p.fecha_planeada + '</div>' +
+    '</div>' +
+    '<div style="text-align:center;min-width:80px"><div style="font-weight:800;color:'+diasColor+';font-size:1.1em">'+diasTxt+'</div><div style="font-size:10px;color:#78716c">para producir</div></div>' +
+    '<div style="min-width:140px">' +
+      (noChecklist
+        ? '<button onclick="event.stopPropagation();ckGenerar('+p.id+')" style="background:#a16207;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Generar checklist</button>'
+        : '<div style="background:#f5f5f4;border-radius:8px;padding:6px 10px;text-align:center"><div style="font-weight:700;color:'+color+'">'+pct+'%</div><div style="font-size:10px;color:#78716c">'+(p.completados||0)+' de '+(p.total_items||0)+' OK</div></div>') +
+    '</div>' +
+    '<div style="font-size:11px;color:#78716c;text-align:right;min-width:100px">' +
+      (p.pendientes>0 ? '🔴 '+p.pendientes+' pendientes<br>':'') +
+      (p.solicitados>0 ? '🟡 '+p.solicitados+' solicitados<br>':'') +
+      (noChecklist?'':'<span style="color:#15803d">Click para detalle →</span>') +
+    '</div>' +
+  '</div>';
+}
+
+async function ckGenerar(produccionId){
+  try {
+    var r = await fetch('/api/programacion/checklist/generar/'+produccionId, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+    _toast('Checklist generado: '+d.items_creados+' items', 1);
+    cargarChecklistResumen();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function ckBackfill(){
+  if(!confirm('Generar checklists para TODAS las producciones programadas que no tienen?')) return;
+  try {
+    var r = await fetch('/api/programacion/checklist/backfill', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+    _toast(d.mensaje, 1);
+    cargarChecklistResumen();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function abrirChecklistDetalle(produccionId, producto){
+  document.getElementById('ck-modal').style.display='flex';
+  document.getElementById('ck-modal-titulo').textContent = '📋 ' + producto;
+  document.getElementById('ck-modal-items').innerHTML = '<div style="text-align:center;padding:40px;color:#78716c">Cargando...</div>';
+  try {
+    var r = await fetch('/api/programacion/checklist/'+produccionId);
+    var d = await r.json();
+    if(!r.ok){ document.getElementById('ck-modal-items').innerHTML='Error: '+(d.error||''); return; }
+    var prim = (d.items||[])[0]||{};
+    document.getElementById('ck-modal-sub').textContent = (prim.cantidad_kg||0).toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-');
+    var pct = d.porcentaje_listo||0;
+    var color = pct>=90?'#15803d':pct>=50?'#f59e0b':'#dc2626';
+    document.getElementById('ck-modal-progress').innerHTML =
+      '<div style="background:#f5f5f4;border-radius:8px;padding:14px;display:grid;grid-template-columns:repeat(7,1fr);gap:10px;font-size:11px">' +
+      '<div><div style="color:#15803d;font-weight:800;font-size:1.4em">'+pct+'%</div><div style="color:#78716c">Listo</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.verificado_ok||0)+'</div><div style="color:#15803d">✅ Verificado</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.recibido||0)+'</div><div style="color:#15803d">📦 Recibido</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.en_transito||0)+'</div><div style="color:#1e40af">🚚 Tránsito</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.solicitado||0)+'</div><div style="color:#a16207">⏳ Solicitado</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em;color:#dc2626">'+(d.totales_por_estado.pendiente||0)+'</div><div style="color:#dc2626">🔴 Pendiente</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.no_aplica||0)+'</div><div style="color:#78716c">— N/A</div></div>' +
+      '</div>';
+    var items = d.items || [];
+    if(!items.length){ document.getElementById('ck-modal-items').innerHTML='<div style="text-align:center;padding:40px;color:#78716c">Sin items en este checklist</div>'; return; }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<thead><tr style="background:#fafaf9;color:#78716c;font-size:11px;text-transform:uppercase">' +
+      '<th style="padding:8px 10px;text-align:left">Item</th>' +
+      '<th style="padding:8px 10px;text-align:right">Requerido</th>' +
+      '<th style="padding:8px 10px;text-align:left">Estado / Proveedor</th>' +
+      '<th style="padding:8px 10px;text-align:right">Acciones</th>' +
+      '</tr></thead><tbody>';
+    items.forEach(function(it){
+      var icon = {mp:'⚗️',envase_primario:'🧴',tapa:'🔘',etiqueta_frontal:'🏷️',etiqueta_posterior:'🏷️',caja_exterior:'📦',serigrafia:'🎨',tampografia:'🎨',instructivo:'📄'}[it.item_tipo]||'•';
+      var stCfg = {pendiente:['🔴 Pendiente','#dc2626'],verificado_ok:['✅ Verificado','#15803d'],solicitado:['⏳ Solicitado','#a16207'],en_transito:['🚚 En tránsito','#1e40af'],recibido:['📦 Recibido','#15803d'],listo:['✓ Listo','#15803d'],no_aplica:['— N/A','#78716c']}[it.estado]||['?','#78716c'];
+      var cantTxt = it.cantidad_requerida ? (Math.round(it.cantidad_requerida).toLocaleString('es-CO')+' '+(it.unidad||'g')) : '—';
+      var refLink = it.solicitud_numero ? '<div style="font-size:10px;color:#a16207;margin-top:2px">'+_escHTML(it.solicitud_numero)+'</div>' : (it.oc_numero ? '<div style="font-size:10px;color:#1e40af;margin-top:2px">'+_escHTML(it.oc_numero)+'</div>' : '');
+      var canSolicitar = (it.estado==='pendiente') && !it.solicitud_numero;
+      var canMarcar = ['pendiente','solicitado','en_transito'].indexOf(it.estado)>=0;
+      var acciones = '';
+      if(canSolicitar) acciones += '<button onclick="ckSolicitar('+it.id+')" style="background:#a16207;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Solicitar</button>';
+      if(canMarcar) acciones += '<button onclick="ckMarcar('+it.id+',&quot;recibido&quot;)" style="background:#15803d;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Recibido</button>';
+      acciones += '<button onclick="ckMarcar('+it.id+',&quot;no_aplica&quot;)" style="background:#78716c;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">N/A</button>';
+      var obs = it.observaciones ? '<div style="font-size:10px;color:#78716c;margin-top:3px;font-family:monospace">'+_escHTML(it.observaciones)+'</div>' : '';
+      html += '<tr style="border-bottom:1px solid #f5f5f4">' +
+        '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+obs+'</td>' +
+        '<td style="padding:10px;text-align:right;font-family:monospace">'+cantTxt+'</td>' +
+        '<td style="padding:10px"><span style="color:'+stCfg[1]+';font-weight:700">'+stCfg[0]+'</span>'+(it.proveedor?'<div style="font-size:10px;color:#78716c">'+_escHTML(it.proveedor)+'</div>':'')+refLink+'</td>' +
+        '<td style="padding:10px;text-align:right;white-space:nowrap">'+acciones+'</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('ck-modal-items').innerHTML = html;
+  } catch(e){ document.getElementById('ck-modal-items').innerHTML='Error: '+e.message; }
+}
+
+async function ckSolicitar(itemId){
+  if(!confirm('Generar solicitud de compra para este item?')) return;
+  try {
+    var r = await fetch('/api/programacion/checklist/items/'+itemId+'/solicitar', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+    _toast(d.mensaje||'Solicitud creada', 1);
+    // Recargar el modal — buscar produccionId del item
+    var modalTitle = document.getElementById('ck-modal-titulo').textContent;
+    cargarChecklistResumen();
+    document.getElementById('ck-modal').style.display='none';
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function ckMarcar(itemId, estado){
+  try {
+    var r = await fetch('/api/programacion/checklist/items/'+itemId, {
+      method:'PATCH',headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({estado: estado, fecha_recibido: estado==='recibido'? new Date().toISOString().slice(0,10) : null})
+    });
+    if(!r.ok){ alert('Error'); return; }
+    _toast('Item actualizado', 1);
+    cargarChecklistResumen();
+    document.getElementById('ck-modal').style.display='none';
+  } catch(e){ alert('Error: '+e.message); }
+}
+</script>
+
   <!-- ── Modal: Programar Producción ────────────────────────────────────── -->
   <div id="modal-programar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
     <div style="background:#fff;border-radius:12px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
@@ -4802,18 +5028,26 @@ function _renderProgramacion(d){
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   function switchProgTab(tab){
     try {
-      var el_c = document.getElementById('ptab-centro');
-      var el_p = document.getElementById('ptab-plan');
+      var el_c  = document.getElementById('ptab-centro');
+      var el_p  = document.getElementById('ptab-plan');
+      var el_ck = document.getElementById('ptab-checklist');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display = tab==='centro' ? 'block' : 'none';
       el_p.style.display = tab==='plan'   ? 'block' : 'none';
-      var bc = document.getElementById('prog-tab-centro');
-      var bp = document.getElementById('prog-tab-plan');
-      if(bc){ bc.style.background = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color = tab==='centro' ? '#fff' : '#1a4a7a'; }
-      if(bp){ bp.style.background = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color = tab==='plan'   ? '#fff' : '#1a4a7a'; }
+      if(el_ck) el_ck.style.display = tab==='checklist' ? 'block' : 'none';
+      var bc  = document.getElementById('prog-tab-centro');
+      var bp  = document.getElementById('prog-tab-plan');
+      var bck = document.getElementById('prog-tab-checklist');
+      if(bc) { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
+      if(bp) { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
+      if(bck){ bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
+      }
+      if(tab==='checklist'){
+        if(el_ck) el_ck.scrollIntoView({behavior:'smooth', block:'start'});
+        cargarChecklistResumen();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
