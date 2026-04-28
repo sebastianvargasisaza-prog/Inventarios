@@ -2397,6 +2397,149 @@ def admin_eliminar_formulas_obsoletas():
     })
 
 
+@bp.route("/api/admin/aplicar-correcciones-formulas-batch-2026-04-28", methods=["POST"])
+def admin_aplicar_correcciones_formulas_batch_20260428():
+    """Aplica el batch de correcciones de formulas+catalogo decidido el 2026-04-28
+    con Sebastian + Alejandro. Lee y ejecuta el archivo SQL versionado en
+    scripts/migraciones/correcciones_formulas_2026_04_28.sql.
+
+    Body:
+      token: 'APLICAR_CORRECCIONES_2026_04_28'
+
+    Operaciones (240 cambios totales):
+      - 44 INSERT nuevos MPs (codigos MP00400+)
+      - 1  UPDATE Azeclair MP00284 -> activo=0
+      - 1  UPDATE INCI oficial AOS 40 (MP00212)
+      - 207 UPDATE formula_items (correcciones huerfanos + typos)
+      - 33 DELETE formula_items (aguas internas infinitas)
+
+    Backup automatico antes de tocar.
+    Una sola pulsacion de boton — el SQL es idempotente con INSERT OR IGNORE
+    y los UPDATE/DELETE son seguros de re-ejecutar.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    if d.get('token', '').strip() != 'APLICAR_CORRECCIONES_2026_04_28':
+        return jsonify({'error': 'Token incorrecto. Debe ser exactamente: APLICAR_CORRECCIONES_2026_04_28'}), 403
+
+    # Localizar archivo SQL
+    import os as _os
+    repo_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    sql_path = _os.path.join(repo_root, 'scripts', 'migraciones', 'correcciones_formulas_2026_04_28.sql')
+    if not _os.path.exists(sql_path):
+        return jsonify({'error': f'Archivo SQL no encontrado: {sql_path}'}), 500
+
+    try:
+        with open(sql_path, 'r', encoding='utf-8') as f:
+            sql_text = f.read()
+    except Exception as _e:
+        return jsonify({'error': f'No pude leer SQL: {_e}'}), 500
+
+    # Verificar que el rango MP00400-MP00500 este libre
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        ocupados = c.execute(
+            "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp >= 'MP00400' AND codigo_mp <= 'MP00500'"
+        ).fetchall()
+        if ocupados:
+            conn.close()
+            return jsonify({
+                'error': 'Hay codigos MP en el rango MP00400-MP00500 ya ocupados.',
+                'ocupados': [r[0] for r in ocupados],
+                'sugerencia': 'Ajustar START_CODE en el script generador y regenerar SQL.',
+            }), 409
+    except sqlite3.OperationalError as _e:
+        conn.close()
+        return jsonify({'error': f'No pude verificar rango: {_e}'}), 500
+
+    # Backup completo de DB antes de tocar
+    try:
+        do_backup(triggered_by='pre_aplicar_correcciones_2026_04_28')
+    except Exception as _e:
+        conn.close()
+        return jsonify({'error': f'Backup pre-aplicacion fallo: {_e}'}), 500
+
+    # Snapshot conteos antes
+    try:
+        n_formulas_antes = c.execute('SELECT COUNT(*) FROM formula_items').fetchone()[0]
+        n_mps_antes = c.execute('SELECT COUNT(*) FROM maestro_mps').fetchone()[0]
+    except Exception:
+        n_formulas_antes = n_mps_antes = -1
+
+    # Ejecutar SQL completo en una sola pasada (executescript permite multiples statements)
+    try:
+        # NOTA: el SQL trae su propio BEGIN TRANSACTION/COMMIT, executescript respeta eso
+        c.executescript(sql_text)
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        conn.close()
+        return jsonify({'error': f'Aplicacion del SQL fallo: {_e}'}), 500
+
+    # Snapshot despues
+    try:
+        n_formulas_desp = c.execute('SELECT COUNT(*) FROM formula_items').fetchone()[0]
+        n_mps_desp = c.execute('SELECT COUNT(*) FROM maestro_mps').fetchone()[0]
+        n_nuevos_mps = c.execute(
+            "SELECT COUNT(*) FROM maestro_mps WHERE codigo_mp >= 'MP00400' AND codigo_mp <= 'MP00500'"
+        ).fetchone()[0]
+        azeclair_inactivo = c.execute(
+            "SELECT activo FROM maestro_mps WHERE codigo_mp='MP00284'"
+        ).fetchone()
+        azeclair_inactivo = azeclair_inactivo[0] if azeclair_inactivo else None
+    except Exception:
+        n_formulas_desp = n_mps_desp = n_nuevos_mps = -1
+        azeclair_inactivo = None
+
+    # Audit log
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'APLICAR_CORRECCIONES_FORMULAS_BATCH_20260428', 'multi', '_BULK_',
+             _json.dumps({
+                 'sql_file': 'scripts/migraciones/correcciones_formulas_2026_04_28.sql',
+                 'formula_items_antes': n_formulas_antes,
+                 'formula_items_despues': n_formulas_desp,
+                 'maestro_mps_antes': n_mps_antes,
+                 'maestro_mps_despues': n_mps_desp,
+                 'mps_nuevos_creados': n_nuevos_mps,
+                 'azeclair_marcado_inactivo': azeclair_inactivo == 0,
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'mensaje': 'Correcciones aplicadas en transaccion atomica con backup previo.',
+        'antes': {
+            'formula_items': n_formulas_antes,
+            'maestro_mps': n_mps_antes,
+        },
+        'despues': {
+            'formula_items': n_formulas_desp,
+            'maestro_mps': n_mps_desp,
+            'mps_nuevos_creados': n_nuevos_mps,
+            'azeclair_inactivo': azeclair_inactivo == 0,
+        },
+        'cambios_netos': {
+            'formula_items_diff': n_formulas_desp - n_formulas_antes,
+            'maestro_mps_diff': n_mps_desp - n_mps_antes,
+        },
+    })
+
+
 @bp.route("/api/admin/sembrar-maestro-desde-excel", methods=["POST"])
 def admin_sembrar_maestro_desde_excel():
     """Asegura que TODOS los códigos del Excel (verdes + no-verdes) existan
@@ -4564,6 +4707,24 @@ tr:hover td{background:#263348;}
       </div>
     </div>
 
+    <div style="margin-top:14px;padding:14px;background:#0f3a1f;border:2px solid #16a34a;border-radius:8px;">
+      <div style="font-weight:700;color:#86efac;margin-bottom:6px;">&#x2705; Aplicar batch de correcciones validado por Sebasti&aacute;n + Alejandro (2026-04-28)</div>
+      <div style="font-size:12px;color:#bbf7d0;margin-bottom:10px;">
+        Aplica de una sola pulsaci&oacute;n los <strong>240 cambios</strong> consensuados:
+        <ul style="margin:6px 0 6px 20px;font-size:11px;">
+          <li>44 MPs nuevos creados (HPR, RR, p&eacute;ptidos premium, dimethicone, soda c&aacute;ustica, etc.)</li>
+          <li>Azeclair (MP00284) marcado <code>activo=0</code> · INCI oficial actualizado en AOS 40</li>
+          <li>207 <code>formula_items</code> corregidos (typos, mapeos a Vit C / Carbopol / Plantaren / etc.)</li>
+          <li>33 filas de Agua Desionizada eliminadas (agua interna infinita)</li>
+        </ul>
+        <strong>Backup autom&aacute;tico previo</strong> (full DB + tablas <code>*_backup_20260428</code>). Ejecuci&oacute;n at&oacute;mica en transacci&oacute;n.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="diagf-token-batch20260428" placeholder="Token: APLICAR_CORRECCIONES_2026_04_28" style="background:#0f172a;color:#e2e8f0;border:1px solid #86efac;border-radius:6px;padding:7px 10px;font-size:12px;width:340px;">
+        <button class="btn" style="background:#16a34a;color:#fff;font-weight:700;" onclick="aplicarBatch20260428()" id="btn-aplicar-batch">&#x2728; Aplicar 240 correcciones</button>
+      </div>
+    </div>
+
     <div style="margin-top:14px;padding:14px;background:#3f0f0f;border:2px solid #dc2626;border-radius:8px;">
       <div style="font-weight:700;color:#fca5a5;margin-bottom:6px;">&#x21A9; Revertir &uacute;ltima correcci&oacute;n de f&oacute;rmulas (deshacer)</div>
       <div style="font-size:12px;color:#fecaca;margin-bottom:10px;">
@@ -5642,6 +5803,49 @@ function exportarDiagFormCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = 'diagnostico_formulas_' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
+}
+
+async function aplicarBatch20260428() {
+  const token = (document.getElementById('diagf-token-batch20260428').value || '').trim();
+  if (token !== 'APLICAR_CORRECCIONES_2026_04_28') {
+    toast('Token incorrecto. Debe ser exactamente: APLICAR_CORRECCIONES_2026_04_28', 'warn');
+    return;
+  }
+  if (!confirm('Aplicar batch de 240 correcciones validadas (2026-04-28)?\n\n' +
+               '- 44 MPs nuevos en catalogo\n' +
+               '- Azeclair MP00284 marcado activo=0\n' +
+               '- INCI oficial actualizado AOS 40\n' +
+               '- 207 formula_items corregidos\n' +
+               '- 33 filas de Agua Desionizada eliminadas\n\n' +
+               'Backup automatico previo. Transaccion atomica. Reversible.')) return;
+  const btn = document.getElementById('btn-aplicar-batch');
+  btn.disabled = true; btn.textContent = 'Aplicando 240 cambios...';
+  try {
+    const r = await fetch('/api/admin/aplicar-correcciones-formulas-batch-2026-04-28', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: token})
+    });
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x2728; Aplicar 240 correcciones';
+    if (!r.ok) {
+      let msg = d.error || 'desconocido';
+      if (d.ocupados && d.ocupados.length) {
+        msg += '\nOcupados: ' + d.ocupados.join(', ');
+      }
+      toast('Error: ' + _esc(msg), 'warn');
+      return;
+    }
+    const resumen = 'OK. ' +
+      'MPs nuevos: ' + d.despues.mps_nuevos_creados + ' · ' +
+      'formula_items diff: ' + d.cambios_netos.formula_items_diff + ' · ' +
+      'maestro_mps diff: ' + d.cambios_netos.maestro_mps_diff;
+    toast(resumen, 'ok');
+    document.getElementById('diagf-token-batch20260428').value = '';
+    cargarDiagnosticoFormulas();
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x2728; Aplicar 240 correcciones';
+    toast('Error: ' + e.message, 'warn');
+  }
 }
 
 async function revertirFormulas() {
