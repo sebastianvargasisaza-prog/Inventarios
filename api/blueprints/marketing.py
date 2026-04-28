@@ -9,7 +9,7 @@ import json
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
 
-from config import DB_PATH, ADMIN_USERS, MARKETING_USERS
+from config import DB_PATH, ADMIN_USERS, MARKETING_USERS, USER_EMAILS
 from database import get_db
 
 bp = Blueprint("marketing", __name__)
@@ -2711,8 +2711,14 @@ def mkt_influencers_panel():
         sql = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
         influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
 
-        # AUTO-BACKFILL: si la OC ya está Pagada pero la fila quedó como
-        # 'Pendiente' por un sync fallido, corregir aquí. Idempotente.
+        # AUTO-BACKFILL: corregir filas mal-marcadas como 'Pendiente'.
+        # Reglas:
+        #   1. OC asociada en estado 'Pagada'/'Recibida'/'Parcial' (>=80% pagado)
+        #      → la fila debe estar 'Pagada' (sync con realidad).
+        #   2. OC asociada 'Rechazada'/'Cancelada' → eliminar la fila para que el
+        #      influencer no aparezca con badge naranja por solicitudes muertas.
+        #   3. Fila historica con fecha_publicacion en el pasado y SIN OC valida
+        #      → marcar 'Pagada' (es historico, ya ocurrio).
         try:
             c.execute("""
                 UPDATE pagos_influencers
@@ -2720,8 +2726,27 @@ def mkt_influencers_panel():
                 WHERE estado='Pendiente'
                   AND numero_oc IN (
                     SELECT numero_oc FROM ordenes_compra
-                    WHERE estado='Pagada'
+                    WHERE estado IN ('Pagada','Recibida','Parcial')
                   )
+            """)
+            c.execute("""
+                DELETE FROM pagos_influencers
+                WHERE estado='Pendiente'
+                  AND numero_oc IN (
+                    SELECT numero_oc FROM ordenes_compra
+                    WHERE estado IN ('Rechazada','Cancelada')
+                  )
+            """)
+            # Historicos sin OC valida y con fecha_publicacion pasada -> Pagada
+            c.execute("""
+                UPDATE pagos_influencers
+                SET estado='Pagada'
+                WHERE estado='Pendiente'
+                  AND COALESCE(fecha_publicacion,'') != ''
+                  AND fecha_publicacion < date('now','-7 day')
+                  AND (numero_oc IS NULL OR numero_oc='' OR numero_oc NOT IN (
+                    SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Aprobada','Autorizada','Revisada','Borrador')
+                  ))
             """)
             if c.rowcount:
                 conn.commit()
@@ -3221,14 +3246,20 @@ def mkt_solicitar_pago_influencer(iid):
         obs_parts.append(f"VALOR: ${monto:,.0f}")
         observaciones = " | ".join(obs_parts)
 
+        # Solicitante = usuario que invoca (jefferson, etc.) — NO el nombre del influencer
+        # Asi el flujo de aprobar/rechazar puede notificar al solicitante real por email.
+        solicitante_user = (u or '').lower().strip() or 'jefferson'
+        email_sol = USER_EMAILS.get(solicitante_user, '') or USER_EMAILS.get('jefferson', '')
+        # Beneficiario (nombre del influencer) va en observaciones para no perder visibilidad
         c.execute("""
             INSERT INTO solicitudes_compra
-            (numero, fecha, estado, solicitante, urgencia, observaciones,
+            (numero, fecha, estado, solicitante, email_solicitante, urgencia, observaciones,
              area, empresa, categoria, tipo, valor, influencer_id)
-            VALUES (?,date('now'),'Aprobada',?,?,?,?,?,?,?,?,?)
+            VALUES (?,date('now'),'Aprobada',?,?,?,?,?,?,?,?,?,?)
         """, (
             numero,
-            inf["nombre"],
+            solicitante_user,
+            email_sol,
             "Normal",
             observaciones,
             "Marketing",

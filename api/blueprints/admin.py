@@ -4073,9 +4073,12 @@ def admin_import_pagos_influencers_excel():
             except sqlite3.OperationalError:
                 pass
             try:
+                # Import historico: el contenido YA se publico y el pago YA ocurrio.
+                # Por eso entra como 'Pagada' (no 'Pendiente'). De lo contrario, queda
+                # eternamente marcado como pendiente aunque ya se haya transferido.
                 c.execute("""INSERT INTO pagos_influencers
                     (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc, fecha_publicacion)
-                    VALUES (?, ?, ?, datetime('now'), 'Pendiente', ?, ?, ?)""",
+                    VALUES (?, ?, ?, datetime('now'), 'Pagada', ?, ?, ?)""",
                     (plan['influencer_id'], plan['nombre'], plan['valor'],
                      plan['concepto'][:200], num_oc, plan['fecha_publicacion'] or ''))
             except sqlite3.OperationalError:
