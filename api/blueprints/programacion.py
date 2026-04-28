@@ -3719,22 +3719,22 @@ def _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=None):
 
     # 4) Demanda total del horizonte: sumar de TODAS las producciones
     # programadas hasta fecha_horizonte cuyo formula_items incluya este MP.
+    # produccion_programada tiene cols: producto, fecha_programada, lotes
+    # cantidad_g real = fi.cantidad_g_por_lote * pp.lotes
     try:
         params = [codigo_mp]
         sql = """
             SELECT COALESCE(SUM(
-                (fi.porcentaje / 100.0)
-                * COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0)
-                * 1000.0
+                COALESCE(fi.cantidad_g_por_lote, 0) * COALESCE(pp.lotes, 1)
             ), 0) as demanda_g
             FROM produccion_programada pp
-            JOIN formula_items fi ON fi.producto_nombre = pp.producto_nombre
+            JOIN formula_items fi ON fi.producto_nombre = pp.producto
             WHERE fi.material_id = ?
-              AND pp.estado != 'Cancelada'
-              AND pp.fecha_planeada >= date('now','-1 day')
+              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now','-1 day')
         """
         if fecha_horizonte:
-            sql += " AND pp.fecha_planeada <= ?"
+            sql += " AND pp.fecha_programada <= ?"
             params.append(fecha_horizonte)
         row = c.execute(sql, params).fetchone()
         out['demanda_total_horizonte'] = float(row[0] or 0)
@@ -3883,13 +3883,20 @@ def checklist_generar(produccion_id):
     conn = get_db(); c = conn.cursor()
 
     # Obtener datos de la produccion programada
+    # produccion_programada tiene: producto, fecha_programada, lotes
+    # kg total = lotes * formula_headers.lote_size_kg
     prod = c.execute("""
-        SELECT id, producto_nombre, fecha_planeada, cantidad_kg, batch_size_kg
-        FROM produccion_programada WHERE id=?
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               COALESCE(fh.lote_size_kg, 0) as lote_kg
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+        WHERE pp.id=?
     """, (produccion_id,)).fetchone()
     if not prod:
         return jsonify({'error': 'Produccion no encontrada'}), 404
-    cant = float(prod[3] or prod[4] or 0)
+    lotes = int(prod[3] or 1)
+    lote_kg = float(prod[4] or 0)
+    cant = lotes * lote_kg
 
     if d.get('forzar'):
         c.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (produccion_id,))
@@ -4090,10 +4097,12 @@ def checklist_resumen_calendario():
     conn = get_db(); c = conn.cursor()
     try:
         rows = c.execute("""
-            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
-                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg,
-                   pp.estado as estado_prod,
-                   (julianday(pp.fecha_planeada) - julianday('now')) as dias_faltan,
+            SELECT pp.id,
+                   pp.producto                                       as producto_nombre,
+                   pp.fecha_programada                               as fecha_planeada,
+                   COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg,0) as kg,
+                   pp.estado                                         as estado_prod,
+                   (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id) as total_items,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
                        AND estado IN ('verificado_ok','recibido','listo')) as completados,
@@ -4102,10 +4111,11 @@ def checklist_resumen_calendario():
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
                        AND estado='solicitado') as solicitados
             FROM produccion_programada pp
-            WHERE pp.estado != 'Cancelada'
-              AND pp.fecha_planeada >= date('now','-30 day')
-              AND pp.fecha_planeada <= date('now','+' || ? || ' day')
-            ORDER BY pp.fecha_planeada ASC
+            LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now','-30 day')
+              AND pp.fecha_programada <= date('now','+' || ? || ' day')
+            ORDER BY pp.fecha_programada ASC
         """, (horizonte,)).fetchall()
         cols = [x[0] for x in c.description]
         out = []
@@ -4179,17 +4189,20 @@ def disponibilidad_mp_endpoint(codigo_mp):
     # Producciones que demandan este MP
     try:
         prods = c.execute("""
-            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
-                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg,
+            SELECT pp.id,
+                   pp.producto                                          as producto_nombre,
+                   pp.fecha_programada                                  as fecha_planeada,
+                   COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0) as kg,
                    fi.porcentaje,
-                   ROUND((fi.porcentaje/100.0) * COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) * 1000.0) as req_g
+                   ROUND(COALESCE(fi.cantidad_g_por_lote,0) * COALESCE(pp.lotes, 1)) as req_g
             FROM produccion_programada pp
-            JOIN formula_items fi ON fi.producto_nombre=pp.producto_nombre
-            WHERE fi.material_id=?
-              AND pp.estado != 'Cancelada'
-              AND pp.fecha_planeada >= date('now','-1 day')
-              AND pp.fecha_planeada <= ?
-            ORDER BY pp.fecha_planeada ASC
+            JOIN formula_items fi ON fi.producto_nombre = pp.producto
+            LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+            WHERE fi.material_id = ?
+              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now','-1 day')
+              AND pp.fecha_programada <= ?
+            ORDER BY pp.fecha_programada ASC
         """, (codigo_mp, fecha_h)).fetchall()
         disp['producciones_que_lo_usan'] = [
             {'produccion_id': r[0], 'producto': r[1], 'fecha': r[2],
@@ -4217,11 +4230,14 @@ def checklist_backfill():
     conn = get_db(); c = conn.cursor()
     try:
         rows = c.execute("""
-            SELECT pp.id, pp.producto_nombre, pp.fecha_planeada,
-                   COALESCE(pp.cantidad_kg, pp.batch_size_kg, 0) as kg
+            SELECT pp.id,
+                   pp.producto                                          as producto_nombre,
+                   pp.fecha_programada                                  as fecha_planeada,
+                   COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0) as kg
             FROM produccion_programada pp
-            WHERE pp.estado != 'Cancelada'
-              AND pp.fecha_planeada >= date('now','-30 day')
+            LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now','-30 day')
               AND NOT EXISTS (SELECT 1 FROM produccion_checklist
                               WHERE produccion_id=pp.id)
         """).fetchall()

@@ -731,8 +731,9 @@ def centro_operaciones_data():
         """).fetchone()
         prods_proximos = c.execute("""
             SELECT COUNT(*) FROM produccion_programada
-            WHERE estado='Programada' AND fecha_planeada >= date('now')
-              AND fecha_planeada <= date('now','+30 day')
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+              AND fecha_programada >= date('now')
+              AND fecha_programada <= date('now','+30 day')
         """).fetchone()
         out['produccion'] = {
             'lotes_mes': prods_mes[0] if prods_mes else 0,

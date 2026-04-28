@@ -13,7 +13,9 @@ LOGIN_HTML = """<!DOCTYPE html>
 <meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:#e2e8f0;}

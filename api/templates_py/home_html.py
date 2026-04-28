@@ -13,7 +13,9 @@ HOME_HTML = """<!DOCTYPE html>
 <meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-height:100vh;}
