@@ -223,21 +223,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
 
 
-  <!-- INDICADORES EJECUTIVOS -->
-  <div class="section-title" style="margin-top:32px;">📊 Indicadores Ejecutivos — Tiempo Real</div>
+  <!-- INDICADORES EJECUTIVOS — solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
+  <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:#7ACFCC;text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:#fbbf24;text-decoration:none;">→ Para hoy: ir a HOY</a></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
-    <div class="panel">
-      <div class="panel-title">💰 Ingresos del mes (real)</div>
-      <div id="gx-ingresos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
-    </div>
-    <div class="panel">
-      <div class="panel-title">📥 Cuentas por cobrar (AR)</div>
-      <div id="gx-ar"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
-    </div>
-    <div class="panel">
-      <div class="panel-title">📤 Cuentas por pagar (AP)</div>
-      <div id="gx-ap"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
-    </div>
     <div class="panel">
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
       <div id="gx-maquila"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>

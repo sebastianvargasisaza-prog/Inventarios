@@ -70,8 +70,8 @@ HTML = r"""
 <body>
   <div class="header">
     <div>
-      <h1><span class="live-dot"></span>Centro de Operaciones</h1>
-      <div style="font-size:11px;color:#64748b;margin-top:3px;">Vista ejecutiva en tiempo real · refresh cada 60 seg</div>
+      <h1><span class="live-dot"></span>HOY · qué pasa ahora</h1>
+      <div style="font-size:11px;color:#64748b;margin-top:3px;">Tiempo real operativo · refresh cada 60 seg · para mes/YTD ver <a href="/gerencia" style="color:#22d3ee">Gerencia</a> · para P&L y caja ver <a href="/financiero" style="color:#34d399">Financiero</a></div>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
       <button class="refresh-btn" onclick="cargar(true)" title="Refresh ahora">↻</button>
@@ -81,12 +81,12 @@ HTML = r"""
 
   <div class="container">
 
-    <!-- ÁREA: CAJA -->
-    <div class="area-title"><span class="area-title-icon">💰</span>Caja del día</div>
+    <!-- ÁREA: CAJA HOY (solo del día — el mes vive en Financiero) -->
+    <div class="area-title"><span class="area-title-icon">💰</span>Caja del día <a class="quick-link" href="/financiero" style="margin-left:auto;">Ver mes en Financiero →</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">—</div><div class="sub" id="caja-ing-mes-sub"></div></div>
-      <div class="card"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">—</div><div class="sub" id="caja-egr-mes-sub"></div></div>
-      <div class="card"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">—</div><div class="sub" id="caja-neto-mes-sub"></div></div>
+      <div class="card"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">—</div><div class="sub" style="color:#64748b">solo hoy</div></div>
+      <div class="card"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">—</div><div class="sub" style="color:#64748b">solo hoy</div></div>
+      <div class="card"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">—</div><div class="sub" style="color:#64748b">ing − egr del día</div></div>
     </div>
 
     <!-- ÁREA: PRODUCCIÓN + INVENTARIO -->
@@ -116,10 +116,25 @@ HTML = r"""
       <div class="card"><div class="label">Influencers a pagar</div><div class="val" id="mkt-toca">—</div><div class="sub">ciclo cumplido</div></div>
     </div>
 
-    <!-- ÁREA: EQUIPO -->
-    <div class="area-title"><span class="area-title-icon">👥</span>Equipo <a class="quick-link" href="/comunicacion">Comunicación</a></div>
+    <!-- ÁREA: DIRECCIÓN TÉCNICA -->
+    <div class="area-title"><span class="area-title-icon">🔧</span>Dirección Técnica <a class="quick-link" href="/tecnica">Ver módulo</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Tareas vencidas</div><div class="val" style="color:#fca5a5" id="t-venc">—</div><div class="sub">todas las áreas</div></div>
+      <div class="card"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">—</div><div class="sub">activas en producción</div></div>
+      <div class="card"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">—</div><div class="sub">vigentes</div></div>
+      <div class="card"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">—</div><div class="sub">SOPs por revisar</div></div>
+    </div>
+
+    <!-- ÁREA: PERSONAS / RRHH -->
+    <div class="area-title"><span class="area-title-icon">👤</span>Personas <a class="quick-link" href="/rrhh">RRHH</a></div>
+    <div class="grid grid-6">
+      <div class="card"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">—</div><div class="sub">en planilla</div></div>
+      <div class="card"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">—</div><div class="sub">por aprobar</div></div>
+    </div>
+
+    <!-- ÁREA: EQUIPO / COMUNICACIÓN -->
+    <div class="area-title"><span class="area-title-icon">💬</span>Comunicación <a class="quick-link" href="/comunicacion">Compromisos &amp; Chat</a></div>
+    <div class="grid grid-6">
+      <div class="card"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">—</div><div class="sub">todas las áreas</div></div>
       <div class="card"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">—</div><div class="sub">en mi bandeja</div></div>
       <div class="card"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">—</div><div class="sub">requieren acción</div></div>
       <div class="card"><div class="label">Campañas activas</div><div class="val" id="camp">—</div><div class="sub">marketing</div></div>
@@ -155,7 +170,7 @@ async function cargar(forzado) {
     const d = await fetch('/api/centro/operaciones').then(r=>r.json());
     if(d.error) return;
 
-    // CAJA
+    // CAJA — solo HOY (el mes vive en /financiero)
     const c = d.caja || {};
     document.getElementById('caja-ing-hoy').textContent = fmtM(c.ingresos_hoy);
     document.getElementById('caja-egr-hoy').textContent = fmtM(c.egresos_hoy);
@@ -163,9 +178,6 @@ async function cargar(forzado) {
     const eN = document.getElementById('caja-neto-hoy');
     eN.textContent = (neto>=0?'+':'')+fmtM(Math.abs(neto));
     eN.style.color = neto>=0 ? '#34d399' : '#fca5a5';
-    document.getElementById('caja-ing-mes-sub').textContent = 'Mes: '+fmtM(c.ingresos_mes);
-    document.getElementById('caja-egr-mes-sub').textContent = 'Mes: '+fmtM(c.egresos_mes);
-    document.getElementById('caja-neto-mes-sub').textContent = 'Mes: '+(c.neto_mes>=0?'+':'')+fmtM(Math.abs(c.neto_mes||0));
 
     // PRODUCCION
     const p = d.produccion || {};
@@ -205,6 +217,17 @@ async function cargar(forzado) {
     document.getElementById('msg-sin').textContent = fmtN(eq.mensajes_sin_leer);
     document.getElementById('quejas').textContent = fmtN(eq.quejas_alta_critica);
     document.getElementById('ncs').textContent = fmtN(eq.ncs_abiertas);
+
+    // DIRECCIÓN TÉCNICA
+    const tc = d.tecnica || {};
+    document.getElementById('t-formulas').textContent = fmtN(tc.formulas_vigentes);
+    document.getElementById('t-invima').textContent = fmtN(tc.invima_vigentes);
+    document.getElementById('t-sgd').textContent = fmtN(tc.sgd_vencen_30d);
+
+    // RRHH
+    const rh = d.rrhh || {};
+    document.getElementById('rrhh-act').textContent = fmtN(rh.empleados_activos);
+    document.getElementById('rrhh-aus').textContent = fmtN(rh.ausencias_pendientes);
 
     // ACTIVIDAD
     const act = d.actividad_reciente || [];

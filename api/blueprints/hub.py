@@ -284,6 +284,23 @@ def health():
     return jsonify({'status': 'ok', 'message': 'Inventory system running'})
 
 
+@bp.route('/tesoreria')
+def tesoreria_page():
+    """Tesoreria — UI unificada de Finanzas + Contabilidad.
+    Decision Sebastian 2026-04-28: 'que esa fusion la podamos llamar
+    tesoreria, suena lindo'.
+    Las URLs viejas /financiero y /contabilidad siguen funcionando.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/tesoreria')
+    u = session.get('compras_user', '')
+    # Acceso: ADMIN_USERS + CONTADORA_USERS (Mayra, Catalina)
+    if u not in ADMIN_USERS and u not in CONTADORA_USERS:
+        return jsonify({'error': 'Sin acceso a Tesoreria'}), 403
+    from templates_py.tesoreria_html import HTML
+    return Response(HTML, mimetype='text/html')
+
+
 # ─── CENTRO DE NOTIFICACIONES UNIFICADO ────────────────────────────────────
 
 @bp.route('/api/notificaciones/centro')
@@ -606,11 +623,20 @@ def centro_notificaciones():
     })
 
 
-@bp.route('/centro')
+@bp.route('/hoy')
+@bp.route('/centro')  # alias legacy — sigue funcionando para no romper bookmarks
 def centro_operaciones_page():
-    """Pagina del Centro de Operaciones — vista ejecutiva CEO."""
+    """Pagina /hoy — vista ejecutiva del DIA (tiempo real operativo).
+
+    Renombrado de /centro a /hoy para hacer explicito el rol:
+    - /hoy        = que pasa AHORA (caja hoy, ventas hoy, tareas vencidas)
+    - /financiero = transaccional + P&L + Working Capital + Runway (Mayra)
+    - /gerencia   = metas YTD estrategicas, alertas cronicas, churn, SGSST
+
+    /centro sigue funcionando como alias para no romper accesos guardados.
+    """
     if 'compras_user' not in session:
-        return redirect('/login?next=/centro')
+        return redirect('/login?next=/hoy')
     u = session.get('compras_user', '')
     if u not in ADMIN_USERS:
         return jsonify({'error': 'Solo admins'}), 403
@@ -816,6 +842,28 @@ def centro_operaciones_data():
         }
     except Exception:
         out['marketing'] = {}
+
+    # ─── DIRECCION TECNICA ──────────────────────────────────────────────
+    try:
+        out['tecnica'] = {
+            'formulas_vigentes': c.execute("SELECT COUNT(*) FROM formulas_maestras WHERE estado='Vigente'").fetchone()[0] or 0,
+            'invima_vigentes':   c.execute("SELECT COUNT(*) FROM registros_invima WHERE estado='Vigente'").fetchone()[0] or 0,
+            'sgd_vencen_30d':    c.execute("""SELECT COUNT(*) FROM documentos_sgd
+                                             WHERE estado='Vigente'
+                                               AND COALESCE(fecha_proxima_revision,'') != ''
+                                               AND fecha_proxima_revision <= date('now','+30 day')""").fetchone()[0] or 0,
+        }
+    except Exception:
+        out['tecnica'] = {}
+
+    # ─── RRHH ────────────────────────────────────────────────────────────
+    try:
+        out['rrhh'] = {
+            'empleados_activos': c.execute("SELECT COUNT(*) FROM empleados WHERE estado='Activo'").fetchone()[0] or 0,
+            'ausencias_pendientes': c.execute("SELECT COUNT(*) FROM ausencias WHERE estado='Pendiente'").fetchone()[0] or 0,
+        }
+    except Exception:
+        out['rrhh'] = {}
 
     # ─── ACTIVIDAD ULTIMA HORA ───────────────────────────────────────────
     try:
