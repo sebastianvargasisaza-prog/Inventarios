@@ -1778,33 +1778,44 @@ def admin_diagnosticar_formulas():
         candidatos = []
         for m in maestro:
             score = 0
+            len_form = len(palabras_form)
+            len_cat = len(m['palabras_clave'])
 
             # Score 100: match exacto normalizado
             if nombre_norm and nombre_norm in m['nombres_norm']:
                 score = 100
 
-            # Score 95: match exacto por palabras clave (sin stopwords) — orden ignorado
-            if score < 95 and palabras_form and m['palabras_clave']:
-                if palabras_form == m['palabras_clave']:
-                    score = 95
+            # Score 95: palabras clave idénticas (sin stopwords)
+            elif palabras_form and m['palabras_clave'] and palabras_form == m['palabras_clave']:
+                score = 95
 
-            # Score 90: todas las palabras de formula están en el catalogo
-            if score < 90 and palabras_form and m['palabras_clave']:
+            elif palabras_form and m['palabras_clave']:
                 comunes = palabras_form & m['palabras_clave']
-                if comunes == palabras_form and len(palabras_form) >= 1:
-                    score = 90
+                len_comunes = len(comunes)
 
-            # Score 75: al menos 70% de las palabras de la formula coinciden
-            if score < 75 and palabras_form and m['palabras_clave']:
-                comunes = palabras_form & m['palabras_clave']
-                if len(comunes) >= max(1, int(len(palabras_form) * 0.7)) and len(comunes) >= 2:
-                    score = 75
+                # Score 90: todas palabras formula en catalogo, y catalogo no es mucho mayor
+                if comunes == palabras_form and len_form >= 1:
+                    if len_cat <= len_form + 1:
+                        score = 92
+                    elif len_cat <= len_form * 2:
+                        score = 88
+                    else:
+                        score = 80
 
-            # Score 60: al menos 50% de las palabras (mínimo 1)
-            if score < 60 and palabras_form and m['palabras_clave']:
-                comunes = palabras_form & m['palabras_clave']
-                if len(comunes) >= max(1, int(len(palabras_form) * 0.5)) and len(comunes) >= 1:
-                    score = 60
+                # Score 85: todas palabras catalogo en formula (catalogo más corto)
+                elif comunes == m['palabras_clave'] and len_cat >= 1:
+                    if len_form <= len_cat + 1:
+                        score = 85
+                    else:
+                        score = 75
+
+                # Score 70: al menos 70% de palabras en común (de las de formula)
+                elif len_comunes >= max(2, int(len_form * 0.7)):
+                    score = 70
+
+                # Score 55: al menos 50% de palabras en común
+                elif len_comunes >= max(1, int(len_form * 0.5)) and len_comunes >= 1:
+                    score = 55
 
             if score > 0:
                 candidatos.append({
@@ -1814,20 +1825,28 @@ def admin_diagnosticar_formulas():
                     'score': score,
                 })
 
-        # Ordenar y reducir: solo top 5, y si hay match exacto (>=95), filtrar bajos
+        # Ordenar y filtrar
         candidatos.sort(key=lambda x: -x['score'])
-        if candidatos and candidatos[0]['score'] >= 95:
-            # Filtrar candidatos con score >= 90 (evita ruido de matches débiles)
-            candidatos = [c for c in candidatos if c['score'] >= 90]
+        # Si hay match alto (>=85), descartar matches débiles para reducir ruido
+        if candidatos and candidatos[0]['score'] >= 85:
+            min_threshold = max(70, candidatos[0]['score'] - 20)
+            candidatos = [c for c in candidatos if c['score'] >= min_threshold]
         candidatos = candidatos[:5]
 
-        # Auto-corregible: hay candidato con score >= 90 (alta confianza)
-        # Y NO hay otros candidatos del mismo score que generen ambigüedad
+        # Auto-corregible: top score >= 85 con clara dominancia sobre el segundo
         auto_corregible = False
-        if candidatos and candidatos[0]['score'] >= 90:
+        if candidatos:
             top_score = candidatos[0]['score']
-            misma_score = [c for c in candidatos if c['score'] == top_score]
-            if len(misma_score) == 1:
+            second_score = candidatos[1]['score'] if len(candidatos) > 1 else 0
+            delta = top_score - second_score
+            # Auto si: score perfecto Y único, O score alto + delta significativo
+            if top_score == 100 and len([c for c in candidatos if c['score'] == 100]) == 1:
+                auto_corregible = True
+            elif top_score >= 95 and delta >= 5:
+                auto_corregible = True
+            elif top_score >= 88 and delta >= 8:
+                auto_corregible = True
+            elif top_score >= 85 and delta >= 15:
                 auto_corregible = True
 
         # Determinar problema
