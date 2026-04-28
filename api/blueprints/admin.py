@@ -1685,6 +1685,286 @@ def admin_inventario_reset_aplicar():
     })
 
 
+@bp.route("/api/admin/diagnosticar-formulas", methods=["GET"])
+def admin_diagnosticar_formulas():
+    """Detecta items en formula_items con material_id que NO existe en
+    maestro_mps o cuyo nombre no coincide. Sugiere correccion buscando
+    por nombre similar en el catalogo real.
+
+    Para cada item con problema retorna:
+      producto, material_id_actual, material_nombre,
+      problema (huerfano|mismatch_nombre),
+      candidato_sugerido: {codigo, nombre, score}
+
+    Solo admins. SIN escritura.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import re as _re
+    import unicodedata as _ud
+
+    def _norm(s):
+        if not s: return ''
+        s = _ud.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode().upper().strip()
+        s = _re.sub(r'\s+', ' ', s)
+        return s
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Cargar catalogo maestro: codigo -> normalized name set
+    # (normalizamos comercial + inci para mejor match)
+    maestro = []
+    try:
+        rows = c.execute("""SELECT codigo_mp, COALESCE(nombre_comercial,''),
+                                   COALESCE(nombre_inci,'')
+                            FROM maestro_mps WHERE activo=1""").fetchall()
+        for r in rows:
+            cod = r[0]
+            nombres_norm = set(filter(None, [_norm(r[1]), _norm(r[2])]))
+            maestro.append({'codigo': cod, 'nombres_norm': nombres_norm,
+                            'nombre_comercial': r[1], 'nombre_inci': r[2]})
+    except sqlite3.OperationalError:
+        return jsonify({'error': 'maestro_mps no disponible'}), 500
+
+    catalogo_codigos = {m['codigo'] for m in maestro}
+
+    # Cargar formula_items
+    try:
+        rows = c.execute(
+            "SELECT id, producto_nombre, material_id, material_nombre, "
+            "       cantidad_g_por_lote "
+            "FROM formula_items "
+            "ORDER BY producto_nombre, material_nombre"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return jsonify({'error': 'formula_items no disponible'}), 500
+
+    problemas = []
+    by_codigo_count = {}  # nombre del catalogo coincidente
+    for r in rows:
+        item_id = r[0]
+        producto = r[1]
+        mid = r[2]
+        nombre_formula = r[3] or ''
+        cant_lote = float(r[4] or 0)
+        nombre_norm = _norm(nombre_formula)
+
+        # Es huerfano?
+        es_huerfano = mid not in catalogo_codigos
+
+        # Buscar candidatos en catalogo por nombre normalizado
+        candidatos = []
+        for m in maestro:
+            if not m['nombres_norm']: continue
+            # Match exacto normalizado
+            if nombre_norm in m['nombres_norm']:
+                candidatos.append({
+                    'codigo': m['codigo'],
+                    'nombre_comercial': m['nombre_comercial'],
+                    'nombre_inci': m['nombre_inci'],
+                    'score': 100,  # exacto
+                })
+            else:
+                # Match parcial (subset palabras)
+                palabras_form = set(nombre_norm.split())
+                for nm in m['nombres_norm']:
+                    palabras_cat = set(nm.split())
+                    if palabras_form and palabras_cat:
+                        comunes = palabras_form & palabras_cat
+                        # Si todas las palabras de la formula estan en el catalogo
+                        if comunes == palabras_form and len(comunes) >= 2:
+                            candidatos.append({
+                                'codigo': m['codigo'],
+                                'nombre_comercial': m['nombre_comercial'],
+                                'nombre_inci': m['nombre_inci'],
+                                'score': 80,
+                            })
+                            break
+                        elif comunes and len(comunes) >= max(1, len(palabras_form) * 0.7):
+                            candidatos.append({
+                                'codigo': m['codigo'],
+                                'nombre_comercial': m['nombre_comercial'],
+                                'nombre_inci': m['nombre_inci'],
+                                'score': 50,
+                            })
+                            break
+        candidatos.sort(key=lambda x: -x['score'])
+        candidatos = candidatos[:5]  # top 5
+
+        # Determinar problema
+        problema = None
+        if es_huerfano:
+            problema = 'huerfano'
+        else:
+            # No huerfano — verificar si nombre concuerda
+            cat_match = next((m for m in maestro if m['codigo'] == mid), None)
+            if cat_match:
+                nombre_cat_norm = cat_match['nombres_norm']
+                if nombre_norm and nombre_cat_norm and nombre_norm not in nombre_cat_norm:
+                    # Verificar si hay overlap de palabras al menos
+                    palabras_form = set(nombre_norm.split())
+                    palabras_cat = set()
+                    for nm in nombre_cat_norm:
+                        palabras_cat.update(nm.split())
+                    if palabras_form and palabras_cat:
+                        comunes = palabras_form & palabras_cat
+                        if not comunes or len(comunes) < max(1, len(palabras_form) * 0.5):
+                            problema = 'mismatch_nombre'
+
+        if problema:
+            problemas.append({
+                'formula_item_id': item_id,
+                'producto': producto,
+                'material_id_actual': mid,
+                'material_nombre_formula': nombre_formula,
+                'cantidad_g_por_lote': cant_lote,
+                'problema': problema,
+                'candidatos_sugeridos': candidatos,
+                'mejor_candidato': candidatos[0] if candidatos else None,
+            })
+
+    # Stats
+    stats = {
+        'total_formula_items': len(rows),
+        'total_problemas': len(problemas),
+        'huerfanos': sum(1 for p in problemas if p['problema'] == 'huerfano'),
+        'mismatch_nombre': sum(1 for p in problemas if p['problema'] == 'mismatch_nombre'),
+        'auto_corregibles': sum(1 for p in problemas
+                                if p.get('mejor_candidato')
+                                and p['mejor_candidato']['score'] >= 100),
+        'requieren_revision': sum(1 for p in problemas
+                                  if not p.get('mejor_candidato')
+                                  or p['mejor_candidato']['score'] < 100),
+    }
+
+    # Agrupar por producto
+    by_producto = {}
+    for p in problemas:
+        prod = p['producto']
+        by_producto.setdefault(prod, []).append(p)
+    productos_afectados = sorted(
+        [{'producto': k, 'count': len(v)} for k, v in by_producto.items()],
+        key=lambda x: -x['count'],
+    )
+
+    conn.close()
+    return jsonify({
+        'stats': stats,
+        'problemas': problemas,
+        'productos_afectados': productos_afectados,
+    })
+
+
+@bp.route("/api/admin/corregir-formulas", methods=["POST"])
+def admin_corregir_formulas():
+    """Aplica correcciones de material_id a formula_items.
+
+    Body:
+      token: 'CORREGIR_FORMULAS_2026'
+      correcciones: list de {formula_item_id, nuevo_material_id, nuevo_material_nombre}
+        Si nuevo_material_nombre es null, se usa el nombre actual de la formula.
+
+    Backup previo + audit log.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    if d.get('token', '').strip() != 'CORREGIR_FORMULAS_2026':
+        return jsonify({'error': 'Token incorrecto'}), 403
+    correcciones = d.get('correcciones') or []
+    if not correcciones:
+        return jsonify({'error': 'Sin correcciones'}), 400
+
+    # Backup previo
+    try:
+        do_backup(triggered_by='pre_corregir_formulas')
+    except Exception as e:
+        return jsonify({'error': f'Backup fallo: {str(e)[:200]}'}), 500
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    aplicados = []
+    errores = []
+    for corr in correcciones:
+        try:
+            fid = int(corr.get('formula_item_id'))
+            nuevo_mid = (corr.get('nuevo_material_id') or '').strip()
+            nuevo_nombre = corr.get('nuevo_material_nombre')
+            if not nuevo_mid:
+                errores.append({'formula_item_id': fid, 'error': 'sin nuevo_material_id'})
+                continue
+            # Capturar valores previos para audit
+            row = c.execute(
+                "SELECT producto_nombre, material_id, material_nombre "
+                "FROM formula_items WHERE id=?", (fid,)
+            ).fetchone()
+            if not row:
+                errores.append({'formula_item_id': fid, 'error': 'no encontrado'})
+                continue
+            previo = {
+                'producto': row[0],
+                'material_id_previo': row[1],
+                'material_nombre_previo': row[2],
+            }
+            if nuevo_nombre:
+                c.execute(
+                    "UPDATE formula_items SET material_id=?, material_nombre=? "
+                    "WHERE id=?",
+                    (nuevo_mid, nuevo_nombre, fid),
+                )
+            else:
+                c.execute(
+                    "UPDATE formula_items SET material_id=? WHERE id=?",
+                    (nuevo_mid, fid),
+                )
+            aplicados.append({
+                **previo,
+                'material_id_nuevo': nuevo_mid,
+                'material_nombre_nuevo': nuevo_nombre or row[2],
+            })
+        except Exception as _e:
+            errores.append({'formula_item_id': corr.get('formula_item_id'),
+                            'error': str(_e)[:200]})
+
+    conn.commit()
+
+    # Audit
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'CORREGIR_FORMULAS', 'formula_items', '_BULK_',
+             _json.dumps({
+                 'count': len(aplicados),
+                 'errores': len(errores),
+                 'correcciones_sample': aplicados[:30],
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'count_aplicados': len(aplicados),
+        'count_errores': len(errores),
+        'aplicados': aplicados[:50],
+        'errores': errores[:30],
+        'mensaje': f'{len(aplicados)} fórmulas corregidas. Backup previo creado.',
+    })
+
+
 @bp.route("/api/admin/sembrar-maestro-desde-excel", methods=["POST"])
 def admin_sembrar_maestro_desde_excel():
     """Asegura que TODOS los códigos del Excel (verdes + no-verdes) existan
@@ -3559,6 +3839,7 @@ tr:hover td{background:#263348;}
   <button class="tab" data-tab="mps" onclick="switchTab('mps')">&#x1F9EA; Cat&aacute;logo MPs</button>
   <button class="tab" data-tab="audit-inv" onclick="switchTab('audit-inv')">&#x1F50D; Auditar Inventario</button>
   <button class="tab" data-tab="audit-min" onclick="switchTab('audit-min')">&#x1F4CA; Auditar M&iacute;nimos</button>
+  <button class="tab" data-tab="diag-form" onclick="switchTab('diag-form')">&#x1F9EA; Diagn&oacute;stico F&oacute;rmulas</button>
 </div>
 
 <div class="main">
@@ -3823,6 +4104,49 @@ tr:hover td{background:#263348;}
     </div>
 
     <div id="audit-inv-result" style="margin-top:18px;"></div>
+  </div>
+</div>
+
+<!-- ─── TAB DIAGNOSTICO FORMULAS ─── -->
+<div id="tab-diag-form" class="tab-panel">
+  <div class="card">
+    <h2>&#x1F9EA; Diagn&oacute;stico de F&oacute;rmulas</h2>
+    <div class="section-sub">
+      Detecta items en <code>formula_items</code> que apuntan a <strong>material_id</strong> hu&eacute;rfano (no en <code>maestro_mps</code>) o cuyo nombre no coincide con el cat&aacute;logo. Sugiere correcci&oacute;n autom&aacute;tica buscando por nombre similar.
+      <br><br>
+      Importante: si las f&oacute;rmulas apuntan a c&oacute;digos legacy o err&oacute;neos, la <strong>Vista por producci&oacute;n</strong> y los <strong>cálculos de stock</strong> dan resultados incorrectos. Usa esto para sincronizar.
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn" onclick="cargarDiagnosticoFormulas()" id="btn-diag-form">&#x1F50D; Ejecutar diagn&oacute;stico</button>
+      <button class="btn btn-outline" onclick="exportarDiagFormCSV()">&#x1F4C4; Exportar CSV</button>
+    </div>
+
+    <div id="diag-form-stats" style="margin-top:18px;display:none;">
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-l">Total &iacute;tems</div><div class="kpi-v" id="diagf-total">-</div></div>
+        <div class="kpi" style="border-left:3px solid #fbbf24;"><div class="kpi-l">Con problemas</div><div class="kpi-v" id="diagf-problemas" style="color:#fbbf24;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #dc2626;"><div class="kpi-l">Hu&eacute;rfanos</div><div class="kpi-v" id="diagf-huerf" style="color:#dc2626;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #f59e0b;"><div class="kpi-l">Mismatch nombre</div><div class="kpi-v" id="diagf-misn" style="color:#f59e0b;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #22c55e;"><div class="kpi-l">Auto-corregibles</div><div class="kpi-v" id="diagf-auto" style="color:#22c55e;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #6366f1;"><div class="kpi-l">Requieren revisi&oacute;n</div><div class="kpi-v" id="diagf-rev" style="color:#6366f1;">-</div></div>
+      </div>
+    </div>
+
+    <div id="diag-form-aplicar-box" style="display:none;margin-top:14px;padding:14px;background:#1e293b;border:1px solid #475569;border-radius:8px;">
+      <div style="font-weight:700;color:#fbbf24;margin-bottom:6px;">&#x26A0; Aplicar correcciones</div>
+      <div style="font-size:12px;color:#cbd5e1;margin-bottom:10px;">
+        Solo se aplican las marcadas (auto-corregibles vienen marcadas por default). Backup autom&aacute;tico previo + audit log.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="seleccionarSoloAuto()">Solo auto-corregibles</button>
+        <button class="btn btn-outline" onclick="seleccionarTodos()">Seleccionar todos</button>
+        <button class="btn btn-outline" onclick="deseleccionarTodos()">Deseleccionar</button>
+        <input id="diagf-token" placeholder="Token: CORREGIR_FORMULAS_2026" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:7px 10px;font-size:12px;width:280px;">
+        <button class="btn" style="background:#dc2626;color:#fff;" onclick="aplicarCorreccionFormulas()" id="btn-aplicar-form">&#x1F4A5; Aplicar correcciones</button>
+      </div>
+    </div>
+
+    <div id="diag-form-result" style="margin-top:14px;"></div>
   </div>
 </div>
 
@@ -4735,6 +5059,169 @@ async function enviarTestEmail() {
     }
   } catch(e) {
     out.innerHTML = '<div style="color:#f87171;padding:14px;">Error de red: ' + (e.message || e) + '</div>';
+  }
+}
+
+// ── DIAGNOSTICO DE FORMULAS ──────────────────────────────────────────────────
+let _DIAG_FORM_DATA = null;
+
+async function cargarDiagnosticoFormulas() {
+  const out = document.getElementById('diag-form-result');
+  const btn = document.getElementById('btn-diag-form');
+  btn.disabled = true; btn.textContent = 'Analizando...';
+  out.innerHTML = '<div style="color:#94a3b8;">Comparando formula_items vs maestro_mps...</div>';
+  document.getElementById('diag-form-stats').style.display = 'none';
+  document.getElementById('diag-form-aplicar-box').style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/diagnosticar-formulas');
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x1F50D; Ejecutar diagn&oacute;stico';
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    _DIAG_FORM_DATA = d;
+
+    // Stats
+    document.getElementById('diag-form-stats').style.display = 'block';
+    document.getElementById('diagf-total').textContent = d.stats.total_formula_items;
+    document.getElementById('diagf-problemas').textContent = d.stats.total_problemas;
+    document.getElementById('diagf-huerf').textContent = d.stats.huerfanos;
+    document.getElementById('diagf-misn').textContent = d.stats.mismatch_nombre;
+    document.getElementById('diagf-auto').textContent = d.stats.auto_corregibles;
+    document.getElementById('diagf-rev').textContent = d.stats.requieren_revision;
+
+    if (d.stats.total_problemas === 0) {
+      out.innerHTML = '<div style="background:rgba(34,197,94,.15);border:1px solid #22c55e;border-radius:8px;padding:14px;color:#34d399;">✓ Sin problemas detectados. Todas las fórmulas apuntan correctamente al catálogo.</div>';
+      return;
+    }
+    document.getElementById('diag-form-aplicar-box').style.display = 'block';
+
+    // Render tabla — agrupada por producto
+    let h = '<h4 style="color:#a5b4fc;margin-top:14px;">Items con problemas (' + d.stats.total_problemas + ' de ' + d.stats.total_formula_items + ')</h4>';
+    h += '<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">';
+    h += 'Marcadas verdes = auto-corregibles (1 candidato exacto). Sin candidato = requieren revisión manual.';
+    h += '</div>';
+    h += '<div style="overflow-x:auto;"><table id="diag-form-tabla"><thead><tr>';
+    h += '<th><input type="checkbox" id="diagf-check-all" onchange="_toggleDiagFCheckAll(this)"></th>';
+    h += '<th>Producto</th>';
+    h += '<th>Material en fórmula</th>';
+    h += '<th>Código actual</th>';
+    h += '<th>Problema</th>';
+    h += '<th>Sugerencia</th>';
+    h += '</tr></thead><tbody>';
+    d.problemas.forEach((p, idx) => {
+      const auto = p.mejor_candidato && p.mejor_candidato.score >= 100;
+      const sinCandidato = !p.mejor_candidato;
+      const bgColor = sinCandidato ? 'rgba(220,38,38,.10)' : (auto ? 'rgba(34,197,94,.08)' : 'rgba(245,158,11,.08)');
+      const probColor = p.problema === 'huerfano' ? '#dc2626' : '#f59e0b';
+      h += '<tr style="background:' + bgColor + ';">';
+      h += '<td><input type="checkbox" class="diagf-row-check" data-idx="' + idx + '"' + (auto ? ' checked' : '') + '></td>';
+      h += '<td style="font-size:11px;color:#cbd5e1;">' + _esc(p.producto) + '</td>';
+      h += '<td><div style="font-weight:600;">' + _esc(p.material_nombre_formula) + '</div><div style="font-size:10px;color:#94a3b8;">' + _fmtG(p.cantidad_g_por_lote) + ' x lote</div></td>';
+      h += '<td style="font-family:monospace;font-size:11px;color:#94a3b8;">' + _esc(p.material_id_actual) + '</td>';
+      h += '<td><span style="background:' + probColor + '22;color:' + probColor + ';border:1px solid ' + probColor + ';border-radius:8px;padding:2px 6px;font-size:10px;font-weight:700;">' + _esc(p.problema.toUpperCase()) + '</span></td>';
+      if (sinCandidato) {
+        h += '<td style="font-size:11px;color:#fca5a5;">⚠ Sin candidato — revisar manualmente</td>';
+      } else {
+        const cand = p.mejor_candidato;
+        const scoreColor = cand.score >= 100 ? '#22c55e' : (cand.score >= 80 ? '#fbbf24' : '#f59e0b');
+        h += '<td>';
+        h += '<div style="font-family:monospace;font-size:11px;color:#e2e8f0;">→ ' + _esc(cand.codigo) + '</div>';
+        h += '<div style="font-size:10px;color:#cbd5e1;">' + _esc(cand.nombre_comercial || cand.nombre_inci) + '</div>';
+        h += '<div style="font-size:10px;color:' + scoreColor + ';">match score: ' + cand.score + '%</div>';
+        h += '</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    out.innerHTML = h;
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x1F50D; Ejecutar diagn&oacute;stico';
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+function _toggleDiagFCheckAll(el) {
+  document.querySelectorAll('.diagf-row-check').forEach(c => c.checked = el.checked);
+}
+
+function seleccionarSoloAuto() {
+  if (!_DIAG_FORM_DATA) return;
+  document.querySelectorAll('.diagf-row-check').forEach(c => {
+    const idx = parseInt(c.dataset.idx);
+    const p = _DIAG_FORM_DATA.problemas[idx];
+    c.checked = !!(p.mejor_candidato && p.mejor_candidato.score >= 100);
+  });
+}
+
+function seleccionarTodos() {
+  document.querySelectorAll('.diagf-row-check').forEach(c => {
+    const idx = parseInt(c.dataset.idx);
+    const p = _DIAG_FORM_DATA.problemas[idx];
+    c.checked = !!p.mejor_candidato;  // solo los que tienen candidato
+  });
+}
+
+function deseleccionarTodos() {
+  document.querySelectorAll('.diagf-row-check').forEach(c => c.checked = false);
+}
+
+function exportarDiagFormCSV() {
+  if (!_DIAG_FORM_DATA) { toast('Primero ejecuta diagnóstico', 'warn'); return; }
+  const rows = [['Producto','MaterialNombre','CodigoActual','Problema','CodigoSugerido','NombreSugerido','Score']];
+  _DIAG_FORM_DATA.problemas.forEach(p => {
+    const cand = p.mejor_candidato || {};
+    rows.push([p.producto, p.material_nombre_formula, p.material_id_actual, p.problema,
+               cand.codigo||'', cand.nombre_comercial||'', cand.score||0]);
+  });
+  const csv = rows.map(r => r.map(c => '"' + String(c==null?'':c).replace(/"/g,'""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'diagnostico_formulas_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+async function aplicarCorreccionFormulas() {
+  if (!_DIAG_FORM_DATA) return;
+  const token = (document.getElementById('diagf-token').value || '').trim();
+  if (token !== 'CORREGIR_FORMULAS_2026') {
+    toast('Token incorrecto. Debe ser exactamente: CORREGIR_FORMULAS_2026', 'warn');
+    return;
+  }
+  // Recoger seleccionados
+  const correcciones = [];
+  document.querySelectorAll('.diagf-row-check').forEach(c => {
+    if (!c.checked) return;
+    const idx = parseInt(c.dataset.idx);
+    const p = _DIAG_FORM_DATA.problemas[idx];
+    if (!p.mejor_candidato) return;
+    correcciones.push({
+      formula_item_id: p.formula_item_id,
+      nuevo_material_id: p.mejor_candidato.codigo,
+      nuevo_material_nombre: p.mejor_candidato.nombre_comercial || p.mejor_candidato.nombre_inci,
+    });
+  });
+  if (!correcciones.length) {
+    toast('Selecciona al menos una corrección', 'warn');
+    return;
+  }
+  if (!confirm('Aplicar ' + correcciones.length + ' correcciones a formula_items? Backup automático previo.')) return;
+
+  const btn = document.getElementById('btn-aplicar-form');
+  btn.disabled = true; btn.textContent = 'Aplicando...';
+  try {
+    const r = await fetch('/api/admin/corregir-formulas', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: token, correcciones: correcciones})
+    });
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x1F4A5; Aplicar correcciones';
+    if (!r.ok) { toast('Error: ' + _esc(d.error||'desconocido'), 'warn'); return; }
+    toast(d.mensaje || (d.count_aplicados + ' correcciones aplicadas'), 'ok');
+    document.getElementById('diagf-token').value = '';
+    cargarDiagnosticoFormulas();  // recargar para ver el delta
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x1F4A5; Aplicar correcciones';
+    toast('Error: ' + e.message, 'warn');
   }
 }
 
