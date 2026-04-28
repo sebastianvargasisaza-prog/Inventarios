@@ -1705,18 +1705,33 @@ def admin_diagnosticar_formulas():
     import re as _re
     import unicodedata as _ud
 
+    # Palabras que se ignoran al comparar (genericas / sufijos de proveedor)
+    _STOPWORDS = {
+        'LYPHAR', 'YTBIO', 'LIQUIDO', 'POLVO', 'SOLUCION', 'AL', 'EN',
+        'KD', 'KDA', 'DE', 'LA', 'EL', 'LOS', 'LAS', 'POR', 'PARA',
+        'GRADO', 'COSMETICO', 'COSMETICA', 'COSMETICO', 'NF', 'USP',
+    }
+
     def _norm(s):
+        """Normaliza: ascii, uppercase, sin parentesis, espacios consolidados."""
         if not s: return ''
         s = _ud.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode().upper().strip()
-        s = _re.sub(r'\s+', ' ', s)
+        # Eliminar parentesis y su contenido (ej. "(LYPHAR)", "(LIQUIDO)")
+        s = _re.sub(r'\([^)]*\)', '', s)
+        # Reemplazar guiones, comas, puntos con espacios
+        s = _re.sub(r'[\-_,.;:/]', ' ', s)
+        s = _re.sub(r'\s+', ' ', s).strip()
         return s
+
+    def _palabras_clave(s):
+        """Set de palabras significativas (sin stopwords)."""
+        return set(p for p in _norm(s).split() if p and p not in _STOPWORDS)
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    # Cargar catalogo maestro: codigo -> normalized name set
-    # (normalizamos comercial + inci para mejor match)
+    # Cargar catalogo maestro
     maestro = []
     try:
         rows = c.execute("""SELECT codigo_mp, COALESCE(nombre_comercial,''),
@@ -1725,7 +1740,11 @@ def admin_diagnosticar_formulas():
         for r in rows:
             cod = r[0]
             nombres_norm = set(filter(None, [_norm(r[1]), _norm(r[2])]))
+            palabras = set()
+            for nm in [r[1], r[2]]:
+                palabras.update(_palabras_clave(nm))
             maestro.append({'codigo': cod, 'nombres_norm': nombres_norm,
+                            'palabras_clave': palabras,
                             'nombre_comercial': r[1], 'nombre_inci': r[2]})
     except sqlite3.OperationalError:
         return jsonify({'error': 'maestro_mps no disponible'}), 500
@@ -1744,7 +1763,6 @@ def admin_diagnosticar_formulas():
         return jsonify({'error': 'formula_items no disponible'}), 500
 
     problemas = []
-    by_codigo_count = {}  # nombre del catalogo coincidente
     for r in rows:
         item_id = r[0]
         producto = r[1]
@@ -1752,70 +1770,84 @@ def admin_diagnosticar_formulas():
         nombre_formula = r[3] or ''
         cant_lote = float(r[4] or 0)
         nombre_norm = _norm(nombre_formula)
+        palabras_form = _palabras_clave(nombre_formula)
 
-        # Es huerfano?
         es_huerfano = mid not in catalogo_codigos
 
-        # Buscar candidatos en catalogo por nombre normalizado
+        # Buscar candidatos
         candidatos = []
         for m in maestro:
-            if not m['nombres_norm']: continue
-            # Match exacto normalizado
-            if nombre_norm in m['nombres_norm']:
+            score = 0
+
+            # Score 100: match exacto normalizado
+            if nombre_norm and nombre_norm in m['nombres_norm']:
+                score = 100
+
+            # Score 95: match exacto por palabras clave (sin stopwords) — orden ignorado
+            if score < 95 and palabras_form and m['palabras_clave']:
+                if palabras_form == m['palabras_clave']:
+                    score = 95
+
+            # Score 90: todas las palabras de formula están en el catalogo
+            if score < 90 and palabras_form and m['palabras_clave']:
+                comunes = palabras_form & m['palabras_clave']
+                if comunes == palabras_form and len(palabras_form) >= 1:
+                    score = 90
+
+            # Score 75: al menos 70% de las palabras de la formula coinciden
+            if score < 75 and palabras_form and m['palabras_clave']:
+                comunes = palabras_form & m['palabras_clave']
+                if len(comunes) >= max(1, int(len(palabras_form) * 0.7)) and len(comunes) >= 2:
+                    score = 75
+
+            # Score 60: al menos 50% de las palabras (mínimo 1)
+            if score < 60 and palabras_form and m['palabras_clave']:
+                comunes = palabras_form & m['palabras_clave']
+                if len(comunes) >= max(1, int(len(palabras_form) * 0.5)) and len(comunes) >= 1:
+                    score = 60
+
+            if score > 0:
                 candidatos.append({
                     'codigo': m['codigo'],
                     'nombre_comercial': m['nombre_comercial'],
                     'nombre_inci': m['nombre_inci'],
-                    'score': 100,  # exacto
+                    'score': score,
                 })
-            else:
-                # Match parcial (subset palabras)
-                palabras_form = set(nombre_norm.split())
-                for nm in m['nombres_norm']:
-                    palabras_cat = set(nm.split())
-                    if palabras_form and palabras_cat:
-                        comunes = palabras_form & palabras_cat
-                        # Si todas las palabras de la formula estan en el catalogo
-                        if comunes == palabras_form and len(comunes) >= 2:
-                            candidatos.append({
-                                'codigo': m['codigo'],
-                                'nombre_comercial': m['nombre_comercial'],
-                                'nombre_inci': m['nombre_inci'],
-                                'score': 80,
-                            })
-                            break
-                        elif comunes and len(comunes) >= max(1, len(palabras_form) * 0.7):
-                            candidatos.append({
-                                'codigo': m['codigo'],
-                                'nombre_comercial': m['nombre_comercial'],
-                                'nombre_inci': m['nombre_inci'],
-                                'score': 50,
-                            })
-                            break
+
+        # Ordenar y reducir: solo top 5, y si hay match exacto (>=95), filtrar bajos
         candidatos.sort(key=lambda x: -x['score'])
-        candidatos = candidatos[:5]  # top 5
+        if candidatos and candidatos[0]['score'] >= 95:
+            # Filtrar candidatos con score >= 90 (evita ruido de matches débiles)
+            candidatos = [c for c in candidatos if c['score'] >= 90]
+        candidatos = candidatos[:5]
+
+        # Auto-corregible: hay candidato con score >= 90 (alta confianza)
+        # Y NO hay otros candidatos del mismo score que generen ambigüedad
+        auto_corregible = False
+        if candidatos and candidatos[0]['score'] >= 90:
+            top_score = candidatos[0]['score']
+            misma_score = [c for c in candidatos if c['score'] == top_score]
+            if len(misma_score) == 1:
+                auto_corregible = True
 
         # Determinar problema
         problema = None
         if es_huerfano:
             problema = 'huerfano'
         else:
-            # No huerfano — verificar si nombre concuerda
             cat_match = next((m for m in maestro if m['codigo'] == mid), None)
-            if cat_match:
-                nombre_cat_norm = cat_match['nombres_norm']
-                if nombre_norm and nombre_cat_norm and nombre_norm not in nombre_cat_norm:
-                    # Verificar si hay overlap de palabras al menos
-                    palabras_form = set(nombre_norm.split())
-                    palabras_cat = set()
-                    for nm in nombre_cat_norm:
-                        palabras_cat.update(nm.split())
-                    if palabras_form and palabras_cat:
-                        comunes = palabras_form & palabras_cat
-                        if not comunes or len(comunes) < max(1, len(palabras_form) * 0.5):
-                            problema = 'mismatch_nombre'
+            if cat_match and palabras_form and cat_match['palabras_clave']:
+                comunes = palabras_form & cat_match['palabras_clave']
+                # Mismatch si menos del 50% de palabras coinciden
+                if len(comunes) < max(1, int(len(palabras_form) * 0.5)):
+                    problema = 'mismatch_nombre'
 
         if problema:
+            mejor = candidatos[0] if candidatos else None
+            # Marcar como auto si cumple criterio
+            if mejor and auto_corregible:
+                mejor = dict(mejor)
+                mejor['auto'] = True
             problemas.append({
                 'formula_item_id': item_id,
                 'producto': producto,
@@ -1824,7 +1856,8 @@ def admin_diagnosticar_formulas():
                 'cantidad_g_por_lote': cant_lote,
                 'problema': problema,
                 'candidatos_sugeridos': candidatos,
-                'mejor_candidato': candidatos[0] if candidatos else None,
+                'mejor_candidato': mejor,
+                'auto_corregible': auto_corregible,
             })
 
     # Stats
@@ -1833,12 +1866,12 @@ def admin_diagnosticar_formulas():
         'total_problemas': len(problemas),
         'huerfanos': sum(1 for p in problemas if p['problema'] == 'huerfano'),
         'mismatch_nombre': sum(1 for p in problemas if p['problema'] == 'mismatch_nombre'),
-        'auto_corregibles': sum(1 for p in problemas
-                                if p.get('mejor_candidato')
-                                and p['mejor_candidato']['score'] >= 100),
+        'auto_corregibles': sum(1 for p in problemas if p.get('auto_corregible')),
         'requieren_revision': sum(1 for p in problemas
-                                  if not p.get('mejor_candidato')
-                                  or p['mejor_candidato']['score'] < 100),
+                                  if not p.get('mejor_candidato')),
+        'con_sugerencia_baja': sum(1 for p in problemas
+                                   if p.get('mejor_candidato')
+                                   and not p.get('auto_corregible')),
     }
 
     # Agrupar por producto
@@ -5108,7 +5141,7 @@ async function cargarDiagnosticoFormulas() {
     h += '<th>Sugerencia</th>';
     h += '</tr></thead><tbody>';
     d.problemas.forEach((p, idx) => {
-      const auto = p.mejor_candidato && p.mejor_candidato.score >= 100;
+      const auto = !!p.auto_corregible;
       const sinCandidato = !p.mejor_candidato;
       const bgColor = sinCandidato ? 'rgba(220,38,38,.10)' : (auto ? 'rgba(34,197,94,.08)' : 'rgba(245,158,11,.08)');
       const probColor = p.problema === 'huerfano' ? '#dc2626' : '#f59e0b';
@@ -5148,7 +5181,7 @@ function seleccionarSoloAuto() {
   document.querySelectorAll('.diagf-row-check').forEach(c => {
     const idx = parseInt(c.dataset.idx);
     const p = _DIAG_FORM_DATA.problemas[idx];
-    c.checked = !!(p.mejor_candidato && p.mejor_candidato.score >= 100);
+    c.checked = !!p.auto_corregible;
   });
 }
 
