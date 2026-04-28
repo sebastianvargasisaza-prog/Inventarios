@@ -1710,7 +1710,40 @@ def admin_diagnosticar_formulas():
         'LYPHAR', 'YTBIO', 'LIQUIDO', 'POLVO', 'SOLUCION', 'AL', 'EN',
         'KD', 'KDA', 'DE', 'LA', 'EL', 'LOS', 'LAS', 'POR', 'PARA',
         'GRADO', 'COSMETICO', 'COSMETICA', 'COSMETICO', 'NF', 'USP',
+        'INCHEMICAL', 'AGENQUIMICOS', 'BASF', 'IMCD',
     }
+
+    # Sinonimos español-inglés (lower-norm)
+    _SINONIMOS = {
+        'GLICERINA': {'GLYCERIN', 'GLYCEROL'},
+        'GLYCERIN': {'GLICERINA', 'GLYCEROL'},
+        'UREA': {'CARBAMIDE'},
+        'PROPILENGLICOL': {'PROPYLENE GLYCOL', 'PG'},
+        'POLIETILENGLICOL': {'POLYETHYLENE GLYCOL', 'PEG'},
+        'ACIDO': {'ACID'},
+        'ACID': {'ACIDO'},
+        'AGUA': {'WATER', 'AQUA'},
+        'WATER': {'AGUA', 'AQUA'},
+        'ALCOHOL': {'ETHANOL'},
+        'ETANOL': {'ETHANOL', 'ALCOHOL'},
+        'ETHANOL': {'ETANOL', 'ALCOHOL'},
+        'BENZOATO': {'BENZOATE'},
+        'BENZOATE': {'BENZOATO'},
+        'SORBATO': {'SORBATE'},
+        'SORBATE': {'SORBATO'},
+        'POTASIO': {'POTASSIUM'},
+        'POTASSIUM': {'POTASIO'},
+        'SODIO': {'SODIUM'},
+        'SODIUM': {'SODIO'},
+    }
+
+    def _expandir_sinonimos(palabras):
+        """Devuelve set ampliado con sinonimos conocidos."""
+        ampliado = set(palabras)
+        for p in palabras:
+            if p in _SINONIMOS:
+                ampliado.update(_SINONIMOS[p])
+        return ampliado
 
     def _norm(s):
         """Normaliza: ascii, uppercase, sin parentesis, espacios consolidados."""
@@ -1774,12 +1807,16 @@ def admin_diagnosticar_formulas():
 
         es_huerfano = mid not in catalogo_codigos
 
+        # Expandir palabras con sinónimos (formula + catálogo)
+        palabras_form_exp = _expandir_sinonimos(palabras_form)
+
         # Buscar candidatos
         candidatos = []
         for m in maestro:
             score = 0
             len_form = len(palabras_form)
             len_cat = len(m['palabras_clave'])
+            cat_palabras_exp = _expandir_sinonimos(m['palabras_clave'])
 
             # Score 100: match exacto normalizado
             if nombre_norm and nombre_norm in m['nombres_norm']:
@@ -1790,10 +1827,13 @@ def admin_diagnosticar_formulas():
                 score = 95
 
             elif palabras_form and m['palabras_clave']:
+                # Match con sinonimos
                 comunes = palabras_form & m['palabras_clave']
+                comunes_exp = palabras_form_exp & cat_palabras_exp
                 len_comunes = len(comunes)
+                len_comunes_exp = len(comunes_exp)
 
-                # Score 90: todas palabras formula en catalogo, y catalogo no es mucho mayor
+                # Score 90: todas palabras formula en catalogo (directo)
                 if comunes == palabras_form and len_form >= 1:
                     if len_cat <= len_form + 1:
                         score = 92
@@ -1809,13 +1849,36 @@ def admin_diagnosticar_formulas():
                     else:
                         score = 75
 
-                # Score 70: al menos 70% de palabras en común (de las de formula)
+                # Score 80: match con sinonimos — todas palabras formula tienen equivalente
+                elif len_comunes_exp >= len_form and len_form >= 1:
+                    score = 80
+
+                # Score 70: al menos 70% de palabras en común
                 elif len_comunes >= max(2, int(len_form * 0.7)):
                     score = 70
+
+                # Score 65: al menos 70% con sinonimos
+                elif len_comunes_exp >= max(2, int(len_form * 0.7)):
+                    score = 65
 
                 # Score 55: al menos 50% de palabras en común
                 elif len_comunes >= max(1, int(len_form * 0.5)) and len_comunes >= 1:
                     score = 55
+
+            # Bonus: substring match — cada palabra de formula está como prefijo
+            # de alguna palabra del catalogo (ej. 'GLIC' ⊂ 'GLICERINA')
+            if score < 70 and palabras_form and m['palabras_clave']:
+                substring_matches = 0
+                for pf in palabras_form:
+                    if len(pf) >= 4:
+                        for pc in m['palabras_clave']:
+                            if pc.startswith(pf) or pf.startswith(pc):
+                                substring_matches += 1
+                                break
+                if substring_matches == len(palabras_form) and len_form >= 1:
+                    score = max(score, 75)
+                elif substring_matches >= max(1, int(len_form * 0.7)):
+                    score = max(score, 65)
 
             if score > 0:
                 candidatos.append({
@@ -1833,20 +1896,22 @@ def admin_diagnosticar_formulas():
             candidatos = [c for c in candidatos if c['score'] >= min_threshold]
         candidatos = candidatos[:5]
 
-        # Auto-corregible: top score >= 85 con clara dominancia sobre el segundo
+        # Auto-corregible: top score >= 75 con clara dominancia sobre el segundo
         auto_corregible = False
         if candidatos:
             top_score = candidatos[0]['score']
             second_score = candidatos[1]['score'] if len(candidatos) > 1 else 0
             delta = top_score - second_score
-            # Auto si: score perfecto Y único, O score alto + delta significativo
+            # Reglas escaladas — score más alto requiere menos delta
             if top_score == 100 and len([c for c in candidatos if c['score'] == 100]) == 1:
                 auto_corregible = True
             elif top_score >= 95 and delta >= 5:
                 auto_corregible = True
             elif top_score >= 88 and delta >= 8:
                 auto_corregible = True
-            elif top_score >= 85 and delta >= 15:
+            elif top_score >= 80 and delta >= 10:
+                auto_corregible = True
+            elif top_score >= 75 and delta >= 15:
                 auto_corregible = True
 
         # Determinar problema
@@ -2014,6 +2079,85 @@ def admin_corregir_formulas():
         'aplicados': aplicados[:50],
         'errores': errores[:30],
         'mensaje': f'{len(aplicados)} fórmulas corregidas. Backup previo creado.',
+    })
+
+
+@bp.route("/api/admin/eliminar-formulas-obsoletas", methods=["POST"])
+def admin_eliminar_formulas_obsoletas():
+    """Elimina items en formula_items que apuntan a material_id huerfano
+    Y sin candidato similar en maestro_mps. Probablemente son ingredientes
+    descontinuados o productos obsoletos.
+
+    Body:
+      token: 'ELIMINAR_FORMULAS_OBSOLETAS_2026'
+      formula_item_ids: lista de IDs a eliminar (del diagnostico previo)
+
+    Backup previo + audit log.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    if d.get('token', '').strip() != 'ELIMINAR_FORMULAS_OBSOLETAS_2026':
+        return jsonify({'error': 'Token incorrecto'}), 403
+    ids = d.get('formula_item_ids') or []
+    if not ids:
+        return jsonify({'error': 'Sin IDs a eliminar'}), 400
+
+    # Backup previo
+    try:
+        do_backup(triggered_by='pre_eliminar_formulas_obsoletas')
+    except Exception as e:
+        return jsonify({'error': f'Backup fallo: {str(e)[:200]}'}), 500
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    eliminados = []
+    for fid in ids:
+        try:
+            row = c.execute(
+                "SELECT producto_nombre, material_id, material_nombre "
+                "FROM formula_items WHERE id=?", (fid,)
+            ).fetchone()
+            if not row:
+                continue
+            c.execute("DELETE FROM formula_items WHERE id=?", (fid,))
+            eliminados.append({
+                'formula_item_id': fid,
+                'producto': row[0],
+                'material_id': row[1],
+                'material_nombre': row[2],
+            })
+        except Exception:
+            continue
+    conn.commit()
+
+    # Audit
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'ELIMINAR_FORMULAS_OBSOLETAS', 'formula_items', '_BULK_',
+             _json.dumps({
+                 'count': len(eliminados),
+                 'eliminados_sample': eliminados[:30],
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'count_eliminados': len(eliminados),
+        'eliminados': eliminados[:50],
+        'mensaje': f'{len(eliminados)} items obsoletos eliminados de formula_items.',
     })
 
 
@@ -4198,6 +4342,18 @@ tr:hover td{background:#263348;}
       </div>
     </div>
 
+    <div id="diag-form-obsoletas-box" style="display:none;margin-top:14px;padding:14px;background:#1e1b3b;border:1px solid #6366f1;border-radius:8px;">
+      <div style="font-weight:700;color:#a5b4fc;margin-bottom:6px;">&#x1F5D1; Eliminar f&oacute;rmulas obsoletas (sin candidato)</div>
+      <div style="font-size:12px;color:#cbd5e1;margin-bottom:10px;">
+        Los <strong>hu&eacute;rfanos sin candidato</strong> son items en <code>formula_items</code> cuyo <code>material_id</code> NO existe en cat&aacute;logo Y no encontramos similar por nombre. Probablemente son ingredientes descontinuados o productos obsoletos. Eliminarlos NO afecta producciones actuales (esos productos no se pueden producir hasta que la f&oacute;rmula se reescriba).
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span id="diagf-sin-cand-count" style="color:#fca5a5;font-weight:700;font-size:13px;">- huérfanos sin candidato</span>
+        <input id="diagf-token-eliminar" placeholder="Token: ELIMINAR_FORMULAS_OBSOLETAS_2026" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:7px 10px;font-size:12px;width:340px;">
+        <button class="btn" style="background:#7c3aed;color:#fff;" onclick="eliminarFormulasObsoletas()" id="btn-eliminar-obs">&#x1F5D1; Eliminar obsoletas</button>
+      </div>
+    </div>
+
     <div id="diag-form-result" style="margin-top:14px;"></div>
   </div>
 </div>
@@ -5146,6 +5302,15 @@ async function cargarDiagnosticoFormulas() {
     }
     document.getElementById('diag-form-aplicar-box').style.display = 'block';
 
+    // Obsoletas (sin candidato)
+    const sinCand = d.problemas.filter(p => !p.mejor_candidato);
+    if (sinCand.length > 0) {
+      document.getElementById('diag-form-obsoletas-box').style.display = 'block';
+      document.getElementById('diagf-sin-cand-count').textContent = sinCand.length + ' items sin candidato (probablemente obsoletos)';
+    } else {
+      document.getElementById('diag-form-obsoletas-box').style.display = 'none';
+    }
+
     // Render tabla — agrupada por producto
     let h = '<h4 style="color:#a5b4fc;margin-top:14px;">Items con problemas (' + d.stats.total_problemas + ' de ' + d.stats.total_formula_items + ')</h4>';
     h += '<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">';
@@ -5230,6 +5395,38 @@ function exportarDiagFormCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = 'diagnostico_formulas_' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
+}
+
+async function eliminarFormulasObsoletas() {
+  if (!_DIAG_FORM_DATA) return;
+  const token = (document.getElementById('diagf-token-eliminar').value || '').trim();
+  if (token !== 'ELIMINAR_FORMULAS_OBSOLETAS_2026') {
+    toast('Token incorrecto. Debe ser exactamente: ELIMINAR_FORMULAS_OBSOLETAS_2026', 'warn');
+    return;
+  }
+  const ids = _DIAG_FORM_DATA.problemas
+    .filter(p => !p.mejor_candidato)
+    .map(p => p.formula_item_id);
+  if (!ids.length) { toast('No hay items sin candidato para eliminar', 'warn'); return; }
+  if (!confirm('Eliminar ' + ids.length + ' items obsoletos de formula_items? Backup automático previo.')) return;
+
+  const btn = document.getElementById('btn-eliminar-obs');
+  btn.disabled = true; btn.textContent = 'Eliminando...';
+  try {
+    const r = await fetch('/api/admin/eliminar-formulas-obsoletas', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: token, formula_item_ids: ids})
+    });
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x1F5D1; Eliminar obsoletas';
+    if (!r.ok) { toast('Error: ' + _esc(d.error||'desconocido'), 'warn'); return; }
+    toast(d.mensaje || (d.count_eliminados + ' items eliminados'), 'ok');
+    document.getElementById('diagf-token-eliminar').value = '';
+    cargarDiagnosticoFormulas();
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x1F5D1; Eliminar obsoletas';
+    toast('Error: ' + e.message, 'warn');
+  }
 }
 
 async function aplicarCorreccionFormulas() {
