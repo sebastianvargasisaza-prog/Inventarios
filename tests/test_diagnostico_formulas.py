@@ -90,6 +90,55 @@ def test_corregir_formulas_requiere_token(app, db_clean):
     assert r.status_code == 403
 
 
+def test_diagnostico_detecta_sinonimo_inci(app, db_clean):
+    """Formula con nombre español matchea catalogo con nombre INCI ingles."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    # Catálogo con nombre INCI inglés
+    cur.execute(
+        "INSERT OR REPLACE INTO maestro_mps "
+        "(codigo_mp, nombre_inci, nombre_comercial, activo) VALUES (?,?,?,?)",
+        ("MP_INCI_TEST", "ALLANTOIN", "Alantoína", 1),
+    )
+    # Fórmula con nombre español
+    cur.execute(
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+        "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+        ("PROD_INCI_TEST", "MPALANTOSO01", "ALANTOINA", 0.5, 50.0),
+    )
+    conn.commit()
+    conn.close()
+
+    r = c.get("/api/admin/diagnosticar-formulas")
+    assert r.status_code == 200
+    d = r.get_json()
+    items = [p for p in d["problemas"]
+             if p["material_id_actual"] == "MPALANTOSO01"]
+    assert len(items) >= 1
+    item = items[0]
+    # Debe encontrar candidato MP_INCI_TEST por sinónimo ALANTOINA<->ALLANTOIN
+    assert item["mejor_candidato"] is not None
+    assert item["mejor_candidato"]["codigo"] == "MP_INCI_TEST"
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD_INCI_TEST'")
+    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_INCI_TEST'")
+    conn.commit()
+    conn.close()
+
+
+def test_eliminar_formulas_obsoletas_requiere_token(app, db_clean):
+    c = _login(app)
+    r = c.post(
+        "/api/admin/eliminar-formulas-obsoletas",
+        json={"token": "MAL", "formula_item_ids": [1]},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 403
+
+
 def test_corregir_formulas_aplica_cambio(app, db_clean):
     c = _login(app)
     conn = sqlite3.connect(os.environ["DB_PATH"])
