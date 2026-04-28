@@ -2753,21 +2753,38 @@ def mkt_influencers_panel():
         except Exception:
             pass
 
-        # 2. Todos los pagos desde pagos_influencers — estado derivado de oc.estado
+        # 2. Pagos desde pagos_influencers con estado calculado segun realidad
+        # Logica clara y determinista (decision Sebastian 2026-04-28):
+        #   - 'Pagada'    → OC efectivamente pagada (Pagada/Recibida/Parcial)
+        #                   o historico explicito sin OC vinculada
+        #   - 'Pendiente' → SOLO si hay solicitud activa reciente (<90 dias)
+        #                   en estado Aprobada/Autorizada/Revisada/Borrador
+        #   - NULL        → ignorar (no afecta badge ni totales)
         try:
             pago_rows = c.execute("""
                 SELECT pi.id, pi.influencer_id, pi.influencer_nombre,
                        pi.valor, pi.fecha,
                        CASE
-                         WHEN COALESCE(oc.estado,'') = 'Pagada' THEN 'Pagada'
-                         ELSE pi.estado
+                         WHEN COALESCE(oc.estado,'') IN ('Pagada','Recibida','Parcial')
+                           THEN 'Pagada'
+                         WHEN COALESCE(oc.estado,'') IN ('Rechazada','Cancelada')
+                           THEN NULL
+                         WHEN COALESCE(oc.estado,'') = '' AND pi.estado = 'Pagada'
+                           THEN 'Pagada'
+                         WHEN COALESCE(oc.estado,'') = ''
+                           THEN NULL
+                         WHEN oc.estado IN ('Aprobada','Autorizada','Revisada','Borrador')
+                              AND oc.fecha >= date('now','-90 day')
+                           THEN 'Pendiente'
+                         ELSE NULL
                        END as estado,
                        pi.concepto, pi.numero_oc
                 FROM pagos_influencers pi
                 LEFT JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
                 ORDER BY pi.fecha DESC
             """).fetchall()
-            pago_list = [dict(r) for r in pago_rows]
+            # Filtrar filas con estado=None (no aplican)
+            pago_list = [dict(r) for r in pago_rows if r['estado'] is not None]
         except Exception:
             pago_list = []
 

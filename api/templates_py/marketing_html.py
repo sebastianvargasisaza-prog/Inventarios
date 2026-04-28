@@ -1896,11 +1896,14 @@ async function loadInfluencers() {
       : '<span style="color:#475569;">Sin datos</span>';
     let estadoBadge;
     if(r.tiene_pendiente) {
+      // Solicitud activa esperando pago (Jefferson la creo y aun no se transfirio)
       estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u23f3 Pendiente</span>';
     } else if(r.pagos_count>0) {
+      // Tiene al menos un pago confirmado (OC pagada)
       estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u2713 Al d\u00eda</span>';
     } else {
-      estadoBadge = '<span style="background:#1e293b;color:#64748b;padding:2px 8px;border-radius:12px;font-size:11px;">Sin pagos</span>';
+      // Sin actividad relevante: no badge (decision Sebastian 2026-04-28)
+      estadoBadge = '';
     }
     const ne = (r.nombre||'').replace(/'/g,"\\'");
     const be = (r.banco||'').replace(/'/g,"\\'");
