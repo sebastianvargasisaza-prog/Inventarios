@@ -1065,7 +1065,12 @@ function fullCard(o,grp){
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
   var _effGrp=grp==='ocs'?(Object.keys(CMAP).find(function(k){return inGroup(o.categoria,k);})||'svc'):grp;
   if(o.estado==='Pagada'&&!ES_C&&(_effGrp==='mp'||_effGrp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
-  if(o.estado==='Borrador') btns+='<button class="btn bi bs" data-act="edit" data-oc="'+esc(o.numero_oc)+'">&#9998; Editar</button>';
+  // Botón Editar disponible en TODOS los estados editables (decision Catalina 2026-04-28).
+  // Borrador/Pendiente/Revisada/Aprobada/Autorizada → edicion completa.
+  // Recibida/Parcial → edicion limitada (observaciones, fecha entrega).
+  // Pagada → solo agregar nota al historial. Cancelada/Rechazada → bloqueado.
+  var EDITABLES = ['Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial','Pagada'];
+  if(EDITABLES.indexOf(o.estado) >= 0) btns+='<button class="btn bi bs" data-act="edit" data-oc="'+esc(o.numero_oc)+'">&#9998; Editar</button>';
   if(o.estado==='Borrador'||o.estado==='Rechazada') btns+='<button class="btn br bs" data-act="del" data-oc="'+esc(o.numero_oc)+'">&#128465; Eliminar</button>';
   // Para OCs Autorizadas, hacer EXTRA prominente quien recibe el pago.
   // Catalina pidio ver al beneficiario sin entrar a detalle.

@@ -407,11 +407,57 @@ def handle_ordenes_compra():
         c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
                   (numero_oc, datetime.now().isoformat(), 'Borrador', d['proveedor'],
                    d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est',''), categoria))
+
+        # ── FIX Catalina: auto-persistir proveedor en tabla proveedores
+        # Antes el proveedor solo quedaba como string en ordenes_compra.proveedor.
+        # Cuando creaba la siguiente OC tenia que volver a escribir todo.
+        # Ahora si el proveedor no existe, se crea con datos basicos (Catalina
+        # puede enriquecerlo despues en /compras → Proveedores). Si ya existe,
+        # solo se hace upsert de campos no-vacios para no pisar datos buenos.
+        try:
+            existe = c.execute(
+                "SELECT id FROM proveedores WHERE nombre=? AND activo=1",
+                (d['proveedor'],)
+            ).fetchone()
+            if not existe:
+                c.execute("""INSERT INTO proveedores
+                             (nombre, categoria, condiciones_pago, activo, fecha_creacion)
+                             VALUES (?,?,?,1,?)""",
+                          (d['proveedor'], categoria, '30 dias',
+                           datetime.now().isoformat()))
+        except Exception:
+            pass
+
+        # ── FIX Catalina: persistir precios en precios_mp_historico
+        # para que la proxima vez que cree OC con el mismo MP, el precio
+        # aparezca como sugerencia en autocomplete.
         for it in (d.get('items') or []):
-            subtotal = round((it.get('cantidad_g',0)) * (it.get('precio_unitario',0)), 2)
+            cantidad_g = float(it.get('cantidad_g', 0))
+            precio_u = float(it.get('precio_unitario', 0))
+            subtotal = round(cantidad_g * precio_u, 2)
+            codigo = it.get('codigo_mp', '')
+            nombre = it.get('nombre_mp', '')
             c.execute("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
-                      (numero_oc, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                       it.get('cantidad_g',0), it.get('precio_unitario',0), subtotal))
+                      (numero_oc, codigo, nombre, cantidad_g, precio_u, subtotal))
+            # Persistir en historico de precios + actualizar referencia en maestro
+            if codigo and precio_u > 0:
+                try:
+                    c.execute("""INSERT OR IGNORE INTO precios_mp_historico
+                                 (codigo_mp, nombre_mp, precio_unitario, proveedor,
+                                  fecha, numero_oc, cantidad_g)
+                                 VALUES (?,?,?,?,?,?,?)""",
+                              (codigo, nombre, precio_u, d['proveedor'],
+                               datetime.now().isoformat()[:10], numero_oc, cantidad_g))
+                except Exception:
+                    pass
+                try:
+                    c.execute("""UPDATE maestro_mps
+                                 SET precio_referencia=?, proveedor=COALESCE(NULLIF(proveedor,''),?)
+                                 WHERE codigo_mp=?""",
+                              (precio_u, d['proveedor'], codigo))
+                except Exception:
+                    pass
+
         valor_total_calc = sum(
             round((it.get('cantidad_g',0))*(it.get('precio_unitario',0)),2)
             for it in (d.get('items') or [])
@@ -489,7 +535,22 @@ def handle_oc_detalle(numero_oc):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/editar', methods=['PATCH'])
 def editar_oc(numero_oc):
-    """Edita una OC en estado Borrador: reemplaza items y actualiza campos."""
+    """Edita una OC. Permisos por estado (decision Sebastian + Catalina 2026-04-28):
+
+      - Borrador / Pendiente / Revisada / Aprobada / Autorizada:
+          edicion COMPLETA (proveedor, categoria, observaciones, fechas, items)
+      - Recibida / Parcial:
+          solo observaciones + observaciones_recepcion + fecha_entrega_est
+          (NO items, NO proveedor — la mercancia ya llego, no se cambia)
+      - Pagada:
+          solo observaciones (auditable)
+      - Cancelada / Rechazada:
+          bloqueado (la OC esta muerta)
+
+    Esto resuelve la queja real de Catalina: una vez la OC pasaba de Borrador
+    quedaba congelada y no podia ajustar ni el precio si el proveedor cambiaba
+    despues.
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
@@ -497,34 +558,178 @@ def editar_oc(numero_oc):
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
-    if row[0] != 'Borrador':
-        return jsonify({'error': f'Solo se pueden editar OCs en Borrador (estado actual: {row[0]})'}), 400
+    estado = row[0] or 'Borrador'
+
+    # Bloqueos absolutos
+    if estado in ('Cancelada', 'Rechazada'):
+        return jsonify({
+            'error': f'OC en estado {estado} no se puede editar. '
+                     f'Crea una nueva OC en su lugar.'
+        }), 400
+
     d = request.json or {}
-    if not d.get('proveedor'):
-        return jsonify({'error': 'Proveedor requerido'}), 400
-    con_iva = 1 if d.get('con_iva') else 0
-    valor_sin_iva = float(d.get('valor_sin_iva', 0))
-    c.execute("""
-        UPDATE ordenes_compra SET
-            proveedor=?, categoria=?, observaciones=?,
-            fecha_entrega_est=?, con_iva=?, valor_sin_iva=?
-        WHERE numero_oc=?""",
-        (d['proveedor'], d.get('categoria', 'MP'), d.get('observaciones', ''),
-         d.get('fecha_entrega_est', ''), con_iva, valor_sin_iva, numero_oc))
-    # Reemplazar items completo
-    c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
-    valor_total = 0.0
-    for it in (d.get('items') or []):
-        subtotal = round(float(it.get('cantidad_g', 0)) * float(it.get('precio_unitario', 0)), 2)
-        c.execute('INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)',
-                  (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
-                   float(it.get('cantidad_g', 0)), float(it.get('precio_unitario', 0)), subtotal))
-        valor_total += subtotal
+    EDITABLE_FULL = {'Borrador', 'Pendiente', 'Revisada', 'Aprobada', 'Autorizada'}
+    EDITABLE_LIMITED = {'Recibida', 'Parcial'}
+    EDITABLE_OBS_ONLY = {'Pagada'}
+
+    # ─── Edicion completa ────────────────────────────────────────────────
+    if estado in EDITABLE_FULL:
+        if not d.get('proveedor'):
+            return jsonify({'error': 'Proveedor requerido'}), 400
+        con_iva = 1 if d.get('con_iva') else 0
+        valor_sin_iva = float(d.get('valor_sin_iva', 0))
+        c.execute("""
+            UPDATE ordenes_compra SET
+                proveedor=?, categoria=?, observaciones=?,
+                fecha_entrega_est=?, con_iva=?, valor_sin_iva=?
+            WHERE numero_oc=?""",
+            (d['proveedor'], d.get('categoria', 'MP'), d.get('observaciones', ''),
+             d.get('fecha_entrega_est', ''), con_iva, valor_sin_iva, numero_oc))
+        # Si vinieron items, reemplazar completo
+        if 'items' in d:
+            c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
+            valor_total = 0.0
+            for it in (d.get('items') or []):
+                subtotal = round(float(it.get('cantidad_g', 0)) * float(it.get('precio_unitario', 0)), 2)
+                c.execute('INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)',
+                          (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
+                           float(it.get('cantidad_g', 0)), float(it.get('precio_unitario', 0)), subtotal))
+                valor_total += subtotal
+            if con_iva:
+                valor_total = round(valor_total * 1.19, 2)
+            c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
+        conn.commit()
+        return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) actualizada'})
+
+    # ─── Edicion limitada (Recibida/Parcial): solo metadata sin tocar mercancia ─
+    if estado in EDITABLE_LIMITED:
+        sets, params = [], []
+        for f in ('observaciones', 'observaciones_recepcion', 'fecha_entrega_est'):
+            if f in d:
+                sets.append(f'{f}=?'); params.append(d[f])
+        if not sets:
+            return jsonify({'error': f'En estado {estado} solo se puede editar observaciones / fecha_entrega_est'}), 400
+        params.append(numero_oc)
+        c.execute(f'UPDATE ordenes_compra SET {", ".join(sets)} WHERE numero_oc=?', params)
+        conn.commit()
+        return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) — campos limitados actualizados',
+                        'campos_actualizados': [s.split('=')[0] for s in sets]})
+
+    # ─── Edicion mínima (Pagada): solo observaciones para audit trail ─────
+    if estado in EDITABLE_OBS_ONLY:
+        if 'observaciones' not in d:
+            return jsonify({'error': 'En estado Pagada solo se permite editar observaciones'}), 400
+        # Append en lugar de sobreescribir (audit trail)
+        nueva_obs = (d.get('observaciones') or '').strip()
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M')
+        usuario = session.get('compras_user', '')
+        nota = f'\n[{ts} {usuario}] {nueva_obs}'
+        c.execute("""UPDATE ordenes_compra
+                     SET observaciones = COALESCE(observaciones,'') || ?
+                     WHERE numero_oc=?""", (nota, numero_oc))
+        conn.commit()
+        return jsonify({'ok': True, 'message': f'Nota agregada al historial de OC {numero_oc}'})
+
+    return jsonify({'error': f'Estado {estado} no soportado para edicion'}), 400
+
+
+@bp.route('/api/ordenes-compra/<numero_oc>/items', methods=['POST'])
+def agregar_item_oc(numero_oc):
+    """Agrega un item a una OC existente sin tener que recrearla.
+
+    Body: {codigo_mp, nombre_mp, cantidad_g, precio_unitario}
+
+    Permitido en estados: Borrador, Pendiente, Revisada, Aprobada, Autorizada.
+    Bloqueado en Recibida/Pagada/Cancelada/Rechazada.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute('SELECT estado, con_iva FROM ordenes_compra WHERE numero_oc=?',
+                    (numero_oc,)).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    estado, con_iva = row[0], row[1]
+    if estado not in ('Borrador', 'Pendiente', 'Revisada', 'Aprobada', 'Autorizada'):
+        return jsonify({'error': f'No se pueden agregar items en estado {estado}'}), 400
+    d = request.json or {}
+    nombre_mp = (d.get('nombre_mp') or '').strip()
+    if not nombre_mp:
+        return jsonify({'error': 'nombre_mp requerido'}), 400
+    cantidad_g = float(d.get('cantidad_g', 0))
+    precio = float(d.get('precio_unitario', 0))
+    subtotal = round(cantidad_g * precio, 2)
+    c.execute("""INSERT INTO ordenes_compra_items
+                 (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
+                 VALUES (?,?,?,?,?,?)""",
+              (numero_oc, d.get('codigo_mp', ''), nombre_mp, cantidad_g, precio, subtotal))
+    item_id = c.lastrowid
+    # Recalcular total OC
+    suma = c.execute("SELECT COALESCE(SUM(subtotal),0) FROM ordenes_compra_items WHERE numero_oc=?",
+                     (numero_oc,)).fetchone()[0]
     if con_iva:
-        valor_total = round(valor_total * 1.19, 2)
-    c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
+        suma = round(suma * 1.19, 2)
+    c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (suma, numero_oc))
     conn.commit()
-    return jsonify({'ok': True, 'message': f'OC {numero_oc} actualizada', 'valor_total': valor_total})
+    return jsonify({'ok': True, 'item_id': item_id, 'valor_total': suma})
+
+
+@bp.route('/api/ordenes-compra/<numero_oc>/items/<int:item_id>', methods=['PATCH', 'DELETE'])
+def modificar_item_oc(numero_oc, item_id):
+    """PATCH: actualiza precio/cantidad/nombre de un item.
+    DELETE: elimina un item.
+
+    Estados permitidos: Borrador, Pendiente, Revisada, Aprobada, Autorizada.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute('SELECT estado, con_iva FROM ordenes_compra WHERE numero_oc=?',
+                    (numero_oc,)).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    estado, con_iva = row[0], row[1]
+    if estado not in ('Borrador', 'Pendiente', 'Revisada', 'Aprobada', 'Autorizada'):
+        return jsonify({'error': f'No se pueden modificar items en estado {estado}'}), 400
+
+    if request.method == 'DELETE':
+        c.execute('DELETE FROM ordenes_compra_items WHERE id=? AND numero_oc=?',
+                  (item_id, numero_oc))
+        if c.rowcount == 0:
+            return jsonify({'error': 'Item no encontrado'}), 404
+    else:
+        d = request.json or {}
+        sets, params = [], []
+        if 'codigo_mp' in d:
+            sets.append('codigo_mp=?'); params.append(d['codigo_mp'])
+        if 'nombre_mp' in d:
+            sets.append('nombre_mp=?'); params.append(d['nombre_mp'])
+        if 'cantidad_g' in d or 'precio_unitario' in d:
+            # Recalcular subtotal con valores actualizados
+            cur_row = c.execute("""SELECT cantidad_g, precio_unitario
+                                   FROM ordenes_compra_items
+                                   WHERE id=? AND numero_oc=?""",
+                                (item_id, numero_oc)).fetchone()
+            if not cur_row:
+                return jsonify({'error': 'Item no encontrado'}), 404
+            cant = float(d.get('cantidad_g', cur_row[0] or 0))
+            prec = float(d.get('precio_unitario', cur_row[1] or 0))
+            sets += ['cantidad_g=?', 'precio_unitario=?', 'subtotal=?']
+            params += [cant, prec, round(cant * prec, 2)]
+        if not sets:
+            return jsonify({'error': 'Nada que actualizar'}), 400
+        params += [item_id, numero_oc]
+        c.execute(f"""UPDATE ordenes_compra_items SET {', '.join(sets)}
+                      WHERE id=? AND numero_oc=?""", params)
+
+    # Recalcular total OC
+    suma = c.execute("SELECT COALESCE(SUM(subtotal),0) FROM ordenes_compra_items WHERE numero_oc=?",
+                     (numero_oc,)).fetchone()[0]
+    if con_iva:
+        suma = round(suma * 1.19, 2)
+    c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (suma, numero_oc))
+    conn.commit()
+    return jsonify({'ok': True, 'valor_total': suma})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/proveedor', methods=['PATCH'])
 def confirmar_proveedor_oc(numero_oc):
@@ -702,6 +907,72 @@ def actualizar_precios_items_oc(numero_oc):
     })
 
 
+@bp.route('/api/compras/sugerir-mp/<path:codigo_mp>')
+def sugerir_mp(codigo_mp):
+    """Devuelve datos sugeridos para autocompletar un MP en una OC.
+    Resuelve la queja de Catalina: 'pongo precios y proveedor y no quedan
+    guardados — siempre me los vuelve a pedir'.
+
+    Devuelve:
+      - nombre_mp (de maestro_mps)
+      - precio_referencia (ultimo precio en maestro_mps)
+      - precio_ultimo (de precios_mp_historico, mas reciente)
+      - proveedor_ultimo (de precios_mp_historico, mas reciente)
+      - top_proveedores: lista de proveedores que han vendido este MP
+        ordenados por uso (top 5) con su precio promedio
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    out = {'codigo_mp': codigo_mp}
+    try:
+        mp = c.execute("""SELECT nombre_inci, nombre_comercial, proveedor,
+                                COALESCE(precio_referencia,0)
+                         FROM maestro_mps WHERE codigo_mp=?""", (codigo_mp,)).fetchone()
+        if mp:
+            out['nombre_inci'] = mp[0]
+            out['nombre_comercial'] = mp[1]
+            out['proveedor_default'] = mp[2]
+            out['precio_referencia'] = mp[3]
+    except Exception:
+        pass
+
+    try:
+        # Ultimo precio en historial
+        ult = c.execute("""SELECT precio_unitario, proveedor, fecha, numero_oc
+                          FROM precios_mp_historico
+                          WHERE codigo_mp=?
+                          ORDER BY fecha DESC, id DESC LIMIT 1""",
+                       (codigo_mp,)).fetchone()
+        if ult:
+            out['precio_ultimo'] = ult[0]
+            out['proveedor_ultimo'] = ult[1]
+            out['fecha_ultimo'] = ult[2]
+            out['oc_ultima'] = ult[3]
+    except Exception:
+        pass
+
+    try:
+        # Top proveedores por uso historico (ultimas 50 compras del MP)
+        rows = c.execute("""
+            SELECT proveedor, COUNT(*) as veces, AVG(precio_unitario) as precio_avg
+            FROM precios_mp_historico
+            WHERE codigo_mp=? AND COALESCE(proveedor,'') != ''
+            GROUP BY proveedor
+            ORDER BY veces DESC, precio_avg ASC
+            LIMIT 5
+        """, (codigo_mp,)).fetchall()
+        out['top_proveedores'] = [
+            {'proveedor': r[0], 'veces_usado': r[1], 'precio_promedio': round(r[2] or 0, 2)}
+            for r in rows
+        ]
+    except Exception:
+        out['top_proveedores'] = []
+
+    return jsonify(out)
+
+
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
     conn = get_db(); c = conn.cursor()
@@ -751,16 +1022,70 @@ def handle_proveedor(nombre):
     fields = ['contacto','email','telefono','nit','direccion',
               'banco','tipo_cuenta','num_cuenta','concepto_compra',
               'condiciones_pago','categoria']
+
+    # Renombrar proveedor con propagacion automatica a OCs/historico.
+    # Antes Catalina debia darlo de baja y crear uno nuevo, perdiendo
+    # historial. Ahora si viene 'nombre' nuevo distinto al actual,
+    # se actualiza en proveedores + en TODAS las tablas que lo referencian
+    # por nombre (ordenes_compra, solicitudes_compra, precios_mp_historico,
+    # cotizaciones, pedidos como cliente cuando aplique).
+    nuevo_nombre = (d.get('nombre') or '').strip()
+    rename_propagado = {}
+    if nuevo_nombre and nuevo_nombre != nombre:
+        # Verificar que no exista ya un proveedor activo con ese nombre
+        existe = c.execute(
+            "SELECT 1 FROM proveedores WHERE nombre=? AND activo=1",
+            (nuevo_nombre,)
+        ).fetchone()
+        if existe:
+            return jsonify({
+                'error': f"Ya existe otro proveedor activo con el nombre '{nuevo_nombre}'"
+            }), 409
+        # Hacer el rename en transaccion
+        c.execute("UPDATE proveedores SET nombre=? WHERE nombre=? AND activo=1",
+                  (nuevo_nombre, nombre))
+        if c.rowcount == 0:
+            return jsonify({'error': 'Proveedor no encontrado'}), 404
+        # Propagar a tablas referentes
+        propagar = [
+            ('ordenes_compra',     'proveedor'),
+            ('solicitudes_compra', 'proveedor_sugerido'),
+            ('precios_mp_historico', 'proveedor'),
+        ]
+        for tabla, col in propagar:
+            try:
+                c.execute(f"UPDATE {tabla} SET {col}=? WHERE {col}=?",
+                          (nuevo_nombre, nombre))
+                rename_propagado[tabla] = c.rowcount
+            except Exception:
+                pass
+        # cotizaciones (3 columnas de proveedor)
+        try:
+            for col in ('proveedor_a', 'proveedor_b', 'proveedor_c'):
+                c.execute(f"UPDATE cotizaciones SET {col}=? WHERE {col}=?",
+                          (nuevo_nombre, nombre))
+            rename_propagado['cotizaciones'] = 'OK'
+        except Exception:
+            pass
+        # Despues del rename, las queries deben usar el nuevo nombre
+        nombre = nuevo_nombre
+
     sets = [f"{f}=?" for f in fields if f in d]
     vals = [d[f] for f in fields if f in d]
-    if not sets:
+    if not sets and not rename_propagado:
         return jsonify({'error': 'No hay campos para actualizar'}), 400
-    vals.append(nombre)
-    c.execute(f"UPDATE proveedores SET {', '.join(sets)} WHERE nombre=? AND activo=1", vals)
-    if c.rowcount == 0:
-        return jsonify({'error': 'Proveedor no encontrado'}), 404
+
+    if sets:
+        vals.append(nombre)
+        c.execute(f"UPDATE proveedores SET {', '.join(sets)} WHERE nombre=? AND activo=1", vals)
+        if c.rowcount == 0:
+            return jsonify({'error': 'Proveedor no encontrado'}), 404
     conn.commit()
-    return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' actualizado"})
+    msg = f"Proveedor actualizado"
+    if rename_propagado:
+        msg += f" — nombre cambiado a '{nuevo_nombre}', propagado en: {rename_propagado}"
+    return jsonify({'ok': True, 'message': msg, 'rename_propagado': rename_propagado,
+                    'nombre_actual': nombre})
 
 @bp.route('/api/proveedores-compras/<path:nombre>/ficha')
 def proveedor_ficha_360(nombre):
