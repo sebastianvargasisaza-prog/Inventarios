@@ -198,6 +198,73 @@ def financiero_importar_ocs():
     conn.commit()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
+@bp.route('/api/financiero/pnl-por-empresa')
+def pnl_por_empresa():
+    """P&L separado por empresa del holding (HHA / Espagiria / Animus).
+
+    Antes el P&L principal sumaba todo. Ahora desglosado para que Sebastian
+    vea la salud de cada negocio del holding individualmente. #17 cerrado.
+    """
+    if 'compras_user' not in session or session.get('compras_user','') not in (ADMIN_USERS | CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
+    desde = request.args.get('desde', date.today().replace(day=1).isoformat())
+    hasta = request.args.get('hasta', date.today().isoformat())
+
+    conn = get_db(); c = conn.cursor()
+    empresas = ['HHA', 'ESPAGIRIA', 'ANIMUS']
+    out = {}
+    total_ingresos = total_egresos = 0.0
+    for emp in empresas:
+        try:
+            ing = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
+                              WHERE empresa=? AND fecha BETWEEN ? AND ?""",
+                            (emp, desde, hasta)).fetchone()[0] or 0
+            egr = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_egresos
+                              WHERE empresa=? AND fecha BETWEEN ? AND ?""",
+                            (emp, desde, hasta)).fetchone()[0] or 0
+
+            # Desglose ingresos por categoria
+            ing_breakdown = {}
+            for row in c.execute("""SELECT categoria, COALESCE(SUM(monto),0)
+                                    FROM flujo_ingresos
+                                    WHERE empresa=? AND fecha BETWEEN ? AND ?
+                                    GROUP BY categoria""", (emp, desde, hasta)).fetchall():
+                ing_breakdown[row[0] or 'Sin categoria'] = row[1]
+
+            # Desglose egresos por categoria
+            egr_breakdown = {}
+            for row in c.execute("""SELECT categoria, COALESCE(SUM(monto),0)
+                                    FROM flujo_egresos
+                                    WHERE empresa=? AND fecha BETWEEN ? AND ?
+                                    GROUP BY categoria""", (emp, desde, hasta)).fetchall():
+                egr_breakdown[row[0] or 'Sin categoria'] = row[1]
+
+            ebitda = ing - egr
+            margen = round((ebitda / ing * 100), 1) if ing > 0 else None
+            out[emp] = {
+                'ingresos': ing,
+                'egresos': egr,
+                'ebitda': ebitda,
+                'margen_pct': margen,
+                'ingresos_por_categoria': ing_breakdown,
+                'egresos_por_categoria': egr_breakdown,
+            }
+            total_ingresos += ing
+            total_egresos += egr
+        except Exception:
+            out[emp] = {'ingresos': 0, 'egresos': 0, 'ebitda': 0, 'margen_pct': None}
+
+    out['TOTAL_HOLDING'] = {
+        'ingresos': total_ingresos,
+        'egresos': total_egresos,
+        'ebitda': total_ingresos - total_egresos,
+        'margen_pct': round(((total_ingresos - total_egresos) / total_ingresos * 100), 1)
+                      if total_ingresos > 0 else None,
+    }
+    out['_periodo'] = {'desde': desde, 'hasta': hasta}
+    return jsonify(out)
+
+
 @bp.route('/api/financiero/sync-shopify-ingresos', methods=['POST'])
 def financiero_sync_shopify():
     """Sincroniza pedidos de Shopify NO marcados como flujo_synced
