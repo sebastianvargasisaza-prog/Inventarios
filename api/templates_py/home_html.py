@@ -4,6 +4,8 @@ HOME_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Cortex Labs · Portal HHA Group</title>
+<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <meta name="application-name" content="Cortex Labs">
 <meta name="apple-mobile-web-app-title" content="Cortex Labs">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,9 +15,9 @@ HOME_HTML = """<!DOCTYPE html>
 <meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
-<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex2">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=cortex2">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=cortex2">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex3">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=cortex3">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=cortex3">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-height:100vh;}
@@ -43,7 +45,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 <body>
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:16px;">
-    <img src="/static/icons/icon-192.png?v=cortex2" alt="Cortex Labs"
+    <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs"
          style="width:54px;height:54px;border-radius:12px;box-shadow:0 6px 20px rgba(167,139,250,0.35);flex-shrink:0;">
     <div>
       <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">

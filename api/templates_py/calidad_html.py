@@ -4,6 +4,8 @@ CALIDAD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Calidad BPM Ã¢ÂÂ Espagiria</title>
+<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
@@ -106,11 +108,23 @@ textarea{resize:vertical;min-height:70px;}
 </style>
 </head>
 <body>
-<div class="topbar">
-  <span class="logo">ESPAGIRIA</span>
-  <span class="badge">CALIDAD BPM</span>
-  <a href="/modulos">&#x1F4F1; M&#xF3;dulos</a>
-</div>
+<header class="cx-mod-header cx-fade-in">
+  <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="cx-mod-header__logo">
+  <div>
+    <div class="cx-mod-header__title">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M9 3h6M10 3v6.5L4 19a2 2 0 001.7 3h12.6a2 2 0 001.7-3l-6-9.5V3"/><path d="M6 14h12"/></svg>
+      Calidad BPM
+    </div>
+    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; Espagiria &middot; cuarentena, NCs &amp; CAPA</div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+    </button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
   <div class="tab" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>

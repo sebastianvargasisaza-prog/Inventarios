@@ -3,6 +3,8 @@ CONTABILIDAD_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Contabilidad | HHA Group</title>
+<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e8e8e8;min-height:100vh}

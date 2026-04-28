@@ -4,6 +4,8 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Compras HHA</title>
+<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-size:14px;}
@@ -107,11 +109,23 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </style>
 </head>
 <body>
-<div class="topbar">
-  <h1>&#x1F6D2; Compras HHA</h1>
-  <span style="font-size:13px;color:#a8a29e;">&#x1F464; {usuario}</span>&nbsp;&nbsp;
-  <a href="/modulos" style="font-weight:700;">&#x1F4F1; M&#xF3;dulos</a>
-</div>
+<header class="cx-mod-header cx-fade-in">
+  <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="cx-mod-header__logo">
+  <div>
+    <div class="cx-mod-header__title">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 3h2l3 13h12l3-9H6"/></svg>
+      Compras
+    </div>
+    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; OCs, proveedores &amp; pagos &middot; <span style="color:#a8a29e">{usuario}</span></div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+    </button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="tab-nav">
   <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>

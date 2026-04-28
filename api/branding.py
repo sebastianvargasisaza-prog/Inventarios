@@ -164,6 +164,88 @@ def list_icons() -> list:
     return sorted(_SVG_ICONS.keys())
 
 
+# ===================== Header de modulo unificado =====================
+
+def module_header(modulo: str, subtitulo: str = "",
+                  icon_name: str = None,
+                  back_url: str = "/modulos",
+                  with_dark_toggle: bool = True) -> str:
+    """Devuelve el HTML completo de un header de modulo Cortex Labs.
+
+    Args:
+        modulo: nombre del modulo (ej "Planta", "Compras", "Calidad")
+        subtitulo: descripcion (ej "stock · lotes · trazabilidad")
+        icon_name: clave de icono (ver list_icons()). Si None, usa el logo Cortex.
+        back_url: a donde lleva el boton "Modulos"
+        with_dark_toggle: incluye boton de toggle dark mode
+
+    Genera estructura:
+        <header class="cx-mod-header">
+          <img logo />
+          <div>
+            <div title>Modulo</div>
+            <div sub>by HHA Group · subtitulo</div>
+          </div>
+          <nav>
+            [icono volver] Módulos
+            [icono dark mode]
+          </nav>
+        </header>
+    """
+    logo_html = (
+        f'<img src="/static/icons/icon-192.png?v=cortex3" '
+        f'alt="{PRODUCT_NAME}" class="cx-mod-header__logo">'
+    )
+
+    # Icono opcional al lado del nombre del modulo (en violeta)
+    icon_inline = ""
+    if icon_name:
+        icon_inline = (
+            f'<span style="display:inline-flex;vertical-align:middle;color:#6d28d9;'
+            f'margin-right:8px;">{icon(icon_name, size=22)}</span>'
+        )
+
+    nav_buttons = (
+        f'<a href="{back_url}" class="cx-btn cx-btn-ghost cx-btn-sm" '
+        f'title="Volver a Modulos">{icon("modulos", size=14)} Modulos</a>'
+    )
+    if with_dark_toggle:
+        nav_buttons += (
+            f'<button class="cx-theme-toggle" onclick="cxToggleTheme()" '
+            f'title="Modo claro/oscuro" id="cx-theme-btn">'
+            f'<span id="cx-theme-icon">{icon("config", size=18)}</span>'
+            f'</button>'
+        )
+
+    return (
+        f'<header class="cx-mod-header">'
+        f'{logo_html}'
+        f'<div>'
+        f'<div class="cx-mod-header__title">{icon_inline}{modulo}</div>'
+        f'<div class="cx-mod-header__sub">'
+        f'<strong>Cortex Labs</strong> &middot; by HHA Group'
+        + (f' &middot; {subtitulo}' if subtitulo else '')
+        + f'</div>'
+        f'</div>'
+        f'<div class="cx-mod-header__nav">{nav_buttons}</div>'
+        f'</header>'
+    )
+
+
+def dark_mode_script() -> str:
+    """Script JS minimo para toggle de dark mode (persistente en localStorage)."""
+    return '''<script>
+function cxToggleTheme(){
+  var html = document.documentElement;
+  var current = html.getAttribute("data-theme");
+  var next = current === "dark" ? "light" : "dark";
+  if (next === "dark") html.setAttribute("data-theme","dark");
+  else html.removeAttribute("data-theme");
+  try { localStorage.setItem("cx-theme", next); } catch(e){}
+}
+</script>'''
+
+
 def context_dict() -> dict:
     """Diccionario para inyectar en templates Jinja-like si se necesitara."""
     return {
