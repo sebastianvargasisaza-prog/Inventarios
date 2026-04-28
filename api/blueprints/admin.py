@@ -3145,6 +3145,7 @@ tr:hover td{background:#263348;}
       <input type="file" id="audit-inv-file" accept=".xlsx,.xlsm" style="padding:6px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#e2e8f0;">
       <button class="btn" onclick="auditarInvVsExcel()">&#x1F4CA; Generar reporte</button>
       <button class="btn btn-outline" onclick="diagnosticoEntradas()" title="Antes de borrar nada, ver QUIEN cargo QUE — detecta doble carga vs recepciones manuales legitimas">&#x1F50E; Diagn&oacute;stico de entradas</button>
+      <button class="btn btn-outline" onclick="quePuedoProducir()" title="Para cada producto, indica si las MPs alcanzan + shopping list de faltantes" style="border-color:#fbbf24;color:#fbbf24;">&#x1F3ED; Qu&eacute; puedo producir</button>
     </div>
 
     <div style="margin-top:24px;padding:16px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.4);border-radius:10px;">
@@ -3508,6 +3509,91 @@ async function healthCheckPostReset() {
       });
       h += '</ul>';
     }
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function quePuedoProducir() {
+  const out = document.getElementById('audit-inv-result');
+  out.innerHTML = '<div style="color:#94a3b8;">Calculando para cada producto...</div>';
+  try {
+    const r = await fetch('/api/programacion/que-puedo-producir');
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    const s = d.resumen;
+    let h = '<h3 style="color:#fbbf24;margin-top:0;">🏭 Qu&eacute; puedo producir HOY</h3>';
+
+    h += '<div style="font-size:11px;color:#64748b;margin-bottom:10px;">';
+    h += 'Fuente: <code>' + _esc(d.fuente_datos.kardex) + '</code> · ';
+    h += '<code>' + _esc(d.fuente_datos.formulas) + '</code> · ';
+    h += '<code>' + _esc(d.fuente_datos.proveedor_canonico) + '</code>';
+    h += '</div>';
+
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi"><div class="kpi-l">Productos total</div><div class="kpi-v">' + s.productos_totales + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(16,185,129,.12);"><div class="kpi-l" style="color:#34d399;">✓ Pueden producir</div><div class="kpi-v">' + s.productos_pueden_producir + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(239,68,68,.12);"><div class="kpi-l" style="color:#fca5a5;">✗ Con faltantes</div><div class="kpi-v">' + s.productos_con_faltantes + '</div></div>';
+    h += '</div>';
+
+    // Shopping list por proveedor (lo más útil)
+    if (d.shopping_list_por_proveedor.length > 0) {
+      h += '<h3 style="color:#a5b4fc;margin-top:18px;">🛒 Shopping list por proveedor</h3>';
+      h += '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Lo que hay que pedir AHORA para no quedar en cero. Ordenado por kg total.</div>';
+      d.shopping_list_por_proveedor.forEach(prov => {
+        h += '<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:10px;">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">';
+        h += '<div style="font-weight:700;color:#a5b4fc;font-size:14px;">' + _esc(prov.proveedor) + '</div>';
+        h += '<div style="color:#cbd5e1;font-size:12px;">' + prov.count_mps + ' MPs · <strong>' + _fmtG(prov.total_g_a_pedir) + '</strong> total</div>';
+        h += '</div>';
+        h += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="text-align:left;color:#94a3b8;padding:4px 6px;">Código</th><th style="text-align:left;color:#94a3b8;padding:4px 6px;">MP</th><th style="text-align:right;color:#94a3b8;padding:4px 6px;">Pedir mín</th><th style="text-align:left;color:#94a3b8;padding:4px 6px;">Para</th></tr></thead><tbody>';
+        prov.mps.forEach(m => {
+          h += '<tr style="border-top:1px solid #1e293b;">';
+          h += '<td style="padding:5px 6px;font-family:monospace;color:#e2e8f0;">' + _esc(m.codigo_mp) + '</td>';
+          h += '<td style="padding:5px 6px;color:#e2e8f0;">' + _esc(m.nombre) + '</td>';
+          h += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:#fca5a5;">' + _fmtG(m.falta_g) + '</td>';
+          h += '<td style="padding:5px 6px;color:#94a3b8;font-size:11px;">' + _esc(m.productos_afectados.join(', ')) + '</td>';
+          h += '</tr>';
+        });
+        h += '</tbody></table></div>';
+      });
+    } else {
+      h += '<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);border-radius:8px;padding:12px;color:#34d399;">✓ Cero faltantes — todas las MPs alcanzan para producir cada producto en cantidad estándar.</div>';
+    }
+
+    // Detalle por producto (expandible)
+    h += '<h3 style="color:#cbd5e1;margin-top:18px;">📋 Detalle por producto</h3>';
+    h += '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Click en un producto para ver evidencia (lotes disponibles).</div>';
+    d.productos.forEach((p, idx) => {
+      const okColor = p.puede_producir ? '#34d399' : '#fca5a5';
+      const ico = p.puede_producir ? '✓' : '✗';
+      h += '<details style="margin-bottom:6px;background:#0f172a;border:1px solid #334155;border-radius:6px;">';
+      h += '<summary style="padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">';
+      h += '<span style="color:' + okColor + ';"><strong>' + ico + ' ' + _esc(p.producto) + '</strong> · lote ' + p.cantidad_kg_evaluada + ' kg</span>';
+      h += '<span style="color:#94a3b8;font-size:11px;">' + p.mps_ok + '/' + p.mps_total + ' MPs ok' + (p.mps_faltantes > 0 ? ' · falta ' + _fmtG(p.falta_total_g) : '') + '</span>';
+      h += '</summary>';
+      h += '<div style="padding:8px 12px;border-top:1px solid #1e293b;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="color:#94a3b8;"><th style="text-align:left;padding:4px;">MP</th><th style="text-align:right;padding:4px;">Req</th><th style="text-align:right;padding:4px;">Stock</th><th style="text-align:right;padding:4px;">Falta</th><th style="text-align:left;padding:4px;">Lotes (evidencia)</th></tr></thead><tbody>';
+      p.mps_status.forEach(m => {
+        const rowColor = m.ok ? '#cbd5e1' : '#fca5a5';
+        h += '<tr style="border-top:1px solid #1e293b;color:' + rowColor + ';">';
+        h += '<td style="padding:4px;"><code style="font-size:10px;color:#94a3b8;">' + _esc(m.codigo_mp) + '</code> ' + _esc(m.nombre) + '</td>';
+        h += '<td style="padding:4px;text-align:right;font-family:monospace;">' + _fmtG(m.requerido_g) + '</td>';
+        h += '<td style="padding:4px;text-align:right;font-family:monospace;">' + _fmtG(m.stock_actual_g) + '</td>';
+        h += '<td style="padding:4px;text-align:right;font-family:monospace;color:' + (m.falta_g > 0 ? '#fca5a5' : '#64748b') + ';">' + (m.falta_g > 0 ? _fmtG(m.falta_g) : '—') + '</td>';
+        h += '<td style="padding:4px;font-size:10px;color:#94a3b8;">';
+        if (m.lotes_disponibles.length === 0) {
+          h += '<em>sin lotes</em>';
+        } else {
+          h += m.lotes_disponibles.map(l => _esc(l.lote || '(s/lote)') + ': ' + _fmtG(l.cantidad_g)).join(' · ');
+        }
+        h += '</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+      h += '</details>';
+    });
 
     out.innerHTML = h;
   } catch(e) {

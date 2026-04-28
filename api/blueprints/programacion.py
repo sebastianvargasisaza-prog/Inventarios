@@ -1522,6 +1522,222 @@ def prog_diagnostico_alias():
 
 
 
+@bp.route('/api/programacion/que-puedo-producir', methods=['GET'])
+def prog_que_puedo_producir():
+    """Para cada producto con formula, evalua si las MPs alcanzan para
+    producir 1 lote estandar y devuelve faltantes detallados + shopping
+    list por proveedor.
+
+    Verificacion paso a paso (auditable):
+      1. SOURCE: SELECT material_id, SUM(...) FROM movimientos
+         (mismo query que el dashboard usa — kardex actual)
+      2. FORMULA: SELECT FROM formula_items WHERE producto=?
+         (los gramos requeridos por lote vienen de cantidad_g_por_lote)
+      3. MATCH: para cada MP requerida, busca su stock por codigo_mp
+         O por nombre (fallback) — incluye los lotes individuales como
+         evidencia
+      4. PROVEEDOR: cae al canonico de maestro_mps
+
+    Cada MP en la respuesta trae:
+      - requerido_g (de formula)
+      - stock_actual_g (de kardex)
+      - lotes_disponibles[]: evidencia auditable
+      - falta_g (negativo => sobra; positivo => falta esa cantidad)
+      - ok: true si stock >= requerido
+
+    Producto.puede_producir = todas las MPs ok.
+    Si falla, shopping_list agrupa por proveedor lo que hay que comprar.
+
+    Query params:
+      cantidad_kg_override: int (opcional) — simular un lote distinto
+                            al estandar de la formula
+      solo_faltantes: 1 — devuelve solo productos que NO se pueden producir
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+
+    conn = get_db()
+    c = conn.cursor()
+
+    cantidad_kg_override = request.args.get('cantidad_kg_override', '').strip()
+    try:
+        cantidad_kg_override = float(cantidad_kg_override) if cantidad_kg_override else None
+    except ValueError:
+        cantidad_kg_override = None
+    solo_faltantes = request.args.get('solo_faltantes', '0') in ('1', 'true', 'True')
+
+    # Step 1: stock por material_id (canonical)
+    mp_stock = _get_mp_stock(conn)
+
+    # Step 2: lotes individuales por material_id (evidencia auditable)
+    lotes_por_mp = {}
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,''),
+                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as neto,
+                   MAX(fecha_vencimiento), MAX(proveedor)
+            FROM movimientos
+            WHERE material_id IS NOT NULL AND material_id != ''
+            GROUP BY material_id, lote
+            HAVING neto > 0
+            ORDER BY material_id, fecha_vencimiento ASC
+        """).fetchall()
+        for r in rows:
+            mid = (r[0] or '').strip()
+            lotes_por_mp.setdefault(mid, []).append({
+                'lote': r[1] or '',
+                'cantidad_g': round(float(r[2] or 0), 1),
+                'fecha_venc': str(r[3])[:10] if r[3] else '',
+                'proveedor': r[4] or '',
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # Step 3: catalogo proveedor canonico
+    cat_proveedor = {}
+    try:
+        for r in c.execute(
+            "SELECT codigo_mp, COALESCE(proveedor,''), COALESCE(nombre_comercial,'') "
+            "FROM maestro_mps"
+        ).fetchall():
+            cat_proveedor[r[0]] = {'proveedor': r[1], 'nombre': r[2]}
+    except sqlite3.OperationalError:
+        pass
+
+    # Step 4: formulas
+    formulas = _get_formulas(conn)
+
+    productos = []
+    for nombre_prod, info in formulas.items():
+        items = info.get('items', [])
+        if not items:
+            continue
+        lote_size_kg = info.get('lote_size_kg') or 0
+        cantidad_kg = cantidad_kg_override if cantidad_kg_override else lote_size_kg
+        if cantidad_kg <= 0:
+            continue
+
+        factor = cantidad_kg / lote_size_kg if lote_size_kg > 0 else 1
+        mps_status = []
+        falta_total_g = 0.0
+        n_ok = 0
+        n_falta = 0
+
+        for it in items:
+            mid = (it.get('material_id') or '').strip()
+            req_g_estandar = float(it.get('cantidad_g_por_lote') or 0)
+            req_g = round(req_g_estandar * factor, 2)
+
+            # Stock por id; fallback a nombre si no existe id
+            stock_g = mp_stock.get(mid, 0.0)
+            if not mid:
+                # Buscar por nombre canonical via mp_stock dict (which also indexes by name)
+                stock_g = mp_stock.get((it.get('material_nombre') or '').upper().strip(), 0.0)
+
+            falta_g = round(req_g - stock_g, 2)
+            ok = stock_g >= req_g
+
+            if ok:
+                n_ok += 1
+            else:
+                n_falta += 1
+                if falta_g > 0:
+                    falta_total_g += falta_g
+
+            cat_info = cat_proveedor.get(mid, {})
+            mps_status.append({
+                'codigo_mp': mid,
+                'nombre': cat_info.get('nombre') or it.get('material_nombre') or mid,
+                'requerido_g': req_g,
+                'stock_actual_g': round(stock_g, 1),
+                'falta_g': falta_g if falta_g > 0 else 0,
+                'sobra_g': abs(falta_g) if falta_g < 0 else 0,
+                'ok': ok,
+                'lotes_disponibles': lotes_por_mp.get(mid, [])[:5],
+                'proveedor_canonico': cat_info.get('proveedor', ''),
+            })
+
+        puede_producir = (n_falta == 0)
+
+        if solo_faltantes and puede_producir:
+            continue
+
+        productos.append({
+            'producto': nombre_prod,
+            'lote_size_kg': lote_size_kg,
+            'cantidad_kg_evaluada': cantidad_kg,
+            'puede_producir': puede_producir,
+            'mps_total': len(items),
+            'mps_ok': n_ok,
+            'mps_faltantes': n_falta,
+            'falta_total_g': round(falta_total_g, 1),
+            'mps_status': sorted(mps_status, key=lambda m: (m['ok'], -m['falta_g'])),
+        })
+
+    # Step 5: shopping list por proveedor
+    shopping = {}
+    for prod in productos:
+        for m in prod['mps_status']:
+            if not m['ok'] and m['falta_g'] > 0:
+                prov = m['proveedor_canonico'] or '(sin proveedor)'
+                bucket = shopping.setdefault(prov, {})
+                k = m['codigo_mp']
+                if k in bucket:
+                    bucket[k]['falta_g'] = max(bucket[k]['falta_g'], m['falta_g'])
+                    bucket[k]['productos_afectados'].add(prod['producto'])
+                else:
+                    bucket[k] = {
+                        'codigo_mp': k, 'nombre': m['nombre'],
+                        'falta_g': m['falta_g'],
+                        'productos_afectados': {prod['producto']},
+                    }
+    shopping_list = []
+    for prov, mps in sorted(shopping.items()):
+        items_list = []
+        total_g = 0.0
+        for k, item in mps.items():
+            items_list.append({
+                'codigo_mp': item['codigo_mp'],
+                'nombre': item['nombre'],
+                'falta_g': round(item['falta_g'], 1),
+                'productos_afectados': sorted(item['productos_afectados']),
+            })
+            total_g += item['falta_g']
+        items_list.sort(key=lambda x: -x['falta_g'])
+        shopping_list.append({
+            'proveedor': prov,
+            'count_mps': len(items_list),
+            'total_g_a_pedir': round(total_g, 1),
+            'mps': items_list,
+        })
+    shopping_list.sort(key=lambda s: -s['total_g_a_pedir'])
+
+    productos.sort(key=lambda p: (p['puede_producir'], -p['falta_total_g']))
+
+    # KPIs resumen
+    n_total = len(productos)
+    n_pueden = sum(1 for p in productos if p['puede_producir'])
+    n_no_pueden = n_total - n_pueden
+
+    return jsonify({
+        'ok': True,
+        'fecha': __import__('datetime').date.today().isoformat(),
+        'fuente_datos': {
+            'kardex': '/api/movimientos (SUM signed por material_id)',
+            'formulas': 'formula_items.cantidad_g_por_lote escalado a cantidad_kg',
+            'proveedor_canonico': 'maestro_mps.proveedor',
+        },
+        'resumen': {
+            'productos_totales': n_total,
+            'productos_pueden_producir': n_pueden,
+            'productos_con_faltantes': n_no_pueden,
+            'cantidad_kg_override_usada': cantidad_kg_override,
+        },
+        'productos': productos,
+        'shopping_list_por_proveedor': shopping_list,
+    })
+
+
 @bp.route('/api/programacion/registrar-stock', methods=['POST'])
 def prog_registrar_stock():
     """Registra stock inicial de PT directamente en stock_pt."""
