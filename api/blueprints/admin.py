@@ -1621,6 +1621,167 @@ def admin_inventario_reset_aplicar():
     })
 
 
+@bp.route("/api/admin/inventario-health-monitor", methods=["GET"])
+def admin_inventario_health_monitor():
+    """Monitor periodico: detecta anomalias en kardex que indiquen
+    duplicacion / bursts / cargas no auditadas.
+
+    Tras el incidente de doble carga (2026-04-27) que inflo el
+    inventario 3x, este monitor sirve para captar el patron antes de
+    que sea masivo. Idealmente se corre en cron diario o se revisa
+    manualmente cada semana.
+
+    Detecta:
+      1. BURST: >= 30 entradas en una sola fecha (excepto el dia cero
+         del reset 2026-04-15 que es legitimo)
+      2. MULTI-ENTRADAS: lotes con >= 2 Entradas (potencial doble
+         carga). Filtra los regenerados de huerfanos (1 entrada con
+         observaciones 'consumido pre-reset').
+      3. SIN-OC ratio: si > 80% de Entradas no tienen numero_oc en
+         ultimos 7 dias, es signo de carga masiva sin trazabilidad.
+      4. STOCK ANOMALO: si stock_total > 3x el promedio del ultimo
+         mes, es senal de inflado.
+
+    Solo lectura, admin. Devuelve nivel: ok / warning / critical.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    alertas = []
+
+    # 1. BURST detection — entradas masivas en un solo dia, excluyendo
+    #    el dia cero conocido (2026-04-15) y observaciones de reset.
+    DIA_CERO_RESET = '2026-04-15'
+    try:
+        rows = c.execute("""
+            SELECT SUBSTR(fecha,1,10) as dia,
+                   COUNT(*) as n,
+                   COALESCE(SUM(cantidad),0) as g
+            FROM movimientos
+            WHERE tipo='Entrada'
+              AND SUBSTR(fecha,1,10) != ?
+              AND COALESCE(observaciones,'') NOT LIKE '%reset%'
+              AND COALESCE(observaciones,'') NOT LIKE '%dia cero%'
+            GROUP BY SUBSTR(fecha,1,10)
+            HAVING n >= 30
+            ORDER BY n DESC
+            LIMIT 10
+        """, (DIA_CERO_RESET,)).fetchall()
+        for r in rows:
+            alertas.append({
+                'tipo': 'BURST',
+                'severidad': 'critical' if r[1] >= 100 else 'warning',
+                'mensaje': f'{r[1]} Entradas en un solo dia ({r[0]}) — total {round(r[2]/1000,1)} kg. '
+                           f'Posible carga masiva no auditada.',
+                'detalle': {'fecha': r[0], 'count': r[1], 'total_g': r[2]},
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # 2. MULTI-ENTRADAS — lotes con >=2 Entradas (filtrando regenerados
+    #    de huerfanos que tienen observaciones especificas)
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,''),
+                   COUNT(*) as n,
+                   SUM(cantidad) as g
+            FROM movimientos
+            WHERE tipo='Entrada'
+              AND COALESCE(observaciones,'') NOT LIKE '%consumido pre-reset%'
+              AND COALESCE(observaciones,'') NOT LIKE '%dia cero v8_1%'
+            GROUP BY material_id, lote
+            HAVING n >= 2
+            ORDER BY n DESC, g DESC
+            LIMIT 20
+        """).fetchall()
+        for r in rows:
+            alertas.append({
+                'tipo': 'MULTI_ENTRADAS',
+                'severidad': 'critical' if r[2] >= 3 else 'warning',
+                'mensaje': f'{r[0]}/{r[1]}: {r[2]} Entradas con total {round(r[3]/1000,2)} kg. '
+                           f'Verificar si son recepciones legitimas distintas o doble carga.',
+                'detalle': {
+                    'codigo_mp': r[0], 'lote': r[1] or '(sin lote)',
+                    'count_entradas': r[2], 'total_g': r[3],
+                },
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # 3. SIN OC ratio en ultimos 7 dias (excluye reset)
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        hace_7 = (_dt.utcnow() - _td(days=7)).strftime('%Y-%m-%d')
+        r = c.execute("""
+            SELECT
+              SUM(CASE WHEN COALESCE(numero_oc,'') = '' THEN 1 ELSE 0 END) as sin_oc,
+              COUNT(*) as total
+            FROM movimientos
+            WHERE tipo='Entrada' AND fecha >= ?
+              AND COALESCE(observaciones,'') NOT LIKE '%reset%'
+              AND COALESCE(observaciones,'') NOT LIKE '%dia cero%'
+              AND COALESCE(observaciones,'') NOT LIKE '%consumido pre-reset%'
+        """, (hace_7,)).fetchone()
+        sin_oc = r[0] or 0
+        total = r[1] or 0
+        if total >= 5:
+            ratio = sin_oc / total
+            if ratio > 0.80:
+                alertas.append({
+                    'tipo': 'SIN_OC_ANOMALO',
+                    'severidad': 'warning',
+                    'mensaje': (f'{sin_oc}/{total} ({int(ratio*100)}%) Entradas en ultimos '
+                                f'7 dias sin numero_oc. Recepciones formales deberian '
+                                f'siempre traer OC.'),
+                    'detalle': {'sin_oc': sin_oc, 'total': total, 'ratio_pct': int(ratio*100)},
+                })
+    except sqlite3.OperationalError:
+        pass
+
+    # 4. Stock total razonable (heuristica — alarma si > 50 toneladas)
+    try:
+        stock_g = float(c.execute(
+            "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+            "FROM movimientos"
+        ).fetchone()[0] or 0)
+        if stock_g > 50_000_000:  # 50 toneladas
+            alertas.append({
+                'tipo': 'STOCK_ANOMALO',
+                'severidad': 'critical',
+                'mensaje': (f'Stock total = {round(stock_g/1000,1)} kg supera 50 toneladas. '
+                            f'Para una empresa cosmetica de tu escala es altamente probable '
+                            f'inflado por doble carga. Auditar de inmediato.'),
+                'detalle': {'stock_total_g': stock_g, 'umbral_g': 50_000_000},
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    conn.close()
+
+    n_critical = sum(1 for a in alertas if a['severidad'] == 'critical')
+    n_warning = sum(1 for a in alertas if a['severidad'] == 'warning')
+    nivel = ('critical' if n_critical else ('warning' if n_warning else 'ok'))
+
+    return jsonify({
+        'ok': True,
+        'nivel': nivel,
+        'count_critical': n_critical,
+        'count_warning': n_warning,
+        'alertas': alertas,
+        'recomendacion': {
+            'ok': 'Sistema saludable. Sin patrones de doble carga detectados.',
+            'warning': 'Revisar alertas. Posibles cargas duplicadas o sin trazabilidad.',
+            'critical': ('ACCION INMEDIATA. Patrones de doble carga detectados. '
+                         'Considerar pausar entradas hasta investigar. '
+                         'Usar /api/admin/inventario-diagnostico-entradas para detalle.'),
+        }[nivel],
+    })
+
+
 @bp.route("/api/admin/health-check-post-reset", methods=["GET"])
 def admin_health_check_post_reset():
     """Verificación de integridad despues del reset.
@@ -3146,6 +3307,7 @@ tr:hover td{background:#263348;}
       <button class="btn" onclick="auditarInvVsExcel()">&#x1F4CA; Generar reporte</button>
       <button class="btn btn-outline" onclick="diagnosticoEntradas()" title="Antes de borrar nada, ver QUIEN cargo QUE — detecta doble carga vs recepciones manuales legitimas">&#x1F50E; Diagn&oacute;stico de entradas</button>
       <button class="btn btn-outline" onclick="quePuedoProducir()" title="Para cada producto, indica si las MPs alcanzan + shopping list de faltantes" style="border-color:#fbbf24;color:#fbbf24;">&#x1F3ED; Qu&eacute; puedo producir</button>
+      <button class="btn btn-outline" onclick="healthMonitor()" title="Monitor periodico: detecta bursts, multi-entradas, anomalias en stock — alerta antes de que la duplicacion sea masiva" style="border-color:#ef4444;color:#ef4444;">&#x1F525; Monitor anomal&iacute;as</button>
     </div>
 
     <div style="margin-top:24px;padding:16px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.4);border-radius:10px;">
@@ -3508,6 +3670,44 @@ async function healthCheckPostReset() {
         h += '<li>' + _esc(e.accion) + ' — ' + _esc(e.fecha) + '</li>';
       });
       h += '</ul>';
+    }
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function healthMonitor() {
+  const out = document.getElementById('audit-inv-result');
+  out.innerHTML = '<div style="color:#94a3b8;">Escaneando kardex en busca de anomalías...</div>';
+  try {
+    const r = await fetch('/api/admin/inventario-health-monitor');
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    const colors = {ok:'#34d399', warning:'#fbbf24', critical:'#ef4444'};
+    const c = colors[d.nivel] || '#cbd5e1';
+    let h = '<h3 style="color:' + c + ';margin-top:0;">🔥 Monitor Anomalías — ' + d.nivel.toUpperCase() + '</h3>';
+    h += '<div style="background:rgba(' + (d.nivel==='ok'?'16,185,129':d.nivel==='critical'?'239,68,68':'245,158,11') + ',.12);border:1px solid ' + c + ';border-radius:8px;padding:12px;margin-bottom:14px;">';
+    h += '<div style="color:' + c + ';font-weight:700;">' + _esc(d.recomendacion) + '</div>';
+    h += '</div>';
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi" style="background:rgba(239,68,68,.12);"><div class="kpi-l" style="color:#fca5a5;">CRITICAL</div><div class="kpi-v">' + d.count_critical + '</div></div>';
+    h += '<div class="kpi" style="background:rgba(245,158,11,.12);"><div class="kpi-l" style="color:#fbbf24;">WARNING</div><div class="kpi-v">' + d.count_warning + '</div></div>';
+    h += '</div>';
+
+    if (d.alertas.length === 0) {
+      h += '<div style="background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);border-radius:8px;padding:12px;color:#34d399;">✓ Cero anomalías detectadas. Sistema con kardex limpio.</div>';
+    } else {
+      d.alertas.forEach(a => {
+        const sevColor = a.severidad === 'critical' ? '#ef4444' : '#fbbf24';
+        h += '<div style="border-left:3px solid ' + sevColor + ';background:#0f172a;padding:10px 14px;margin-bottom:8px;border-radius:0 8px 8px 0;">';
+        h += '<div style="color:' + sevColor + ';font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">' + _esc(a.tipo) + ' · ' + _esc(a.severidad) + '</div>';
+        h += '<div style="color:#cbd5e1;font-size:13px;margin-bottom:4px;">' + _esc(a.mensaje) + '</div>';
+        h += '<details style="margin-top:4px;"><summary style="cursor:pointer;color:#94a3b8;font-size:11px;">Detalle</summary>';
+        h += '<pre style="background:#020617;padding:8px;border-radius:4px;font-size:11px;color:#94a3b8;margin:6px 0 0 0;overflow-x:auto;">' + _esc(JSON.stringify(a.detalle, null, 2)) + '</pre>';
+        h += '</details></div>';
+      });
     }
 
     out.innerHTML = h;

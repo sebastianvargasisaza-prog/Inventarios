@@ -599,6 +599,84 @@ def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
     _cleanup_backup_log()
 
 
+def test_health_monitor_solo_admin(app, db_clean):
+    c = app.test_client()
+    r = c.post("/login", data={"username": "luis", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    r = c.get("/api/admin/inventario-health-monitor")
+    assert r.status_code == 403
+
+
+def test_health_monitor_sistema_limpio(admin_client, db_clean):
+    """Sistema limpio (sin entradas raras) → nivel ok."""
+    r = admin_client.get("/api/admin/inventario-health-monitor")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["nivel"] == "ok"
+    assert j["count_critical"] == 0
+    assert len(j["alertas"]) == 0
+
+
+def test_health_monitor_detecta_burst(admin_client, db_clean):
+    """30+ entradas en un solo día (no día cero) → alerta BURST."""
+    import sqlite3
+    import os
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    # Insertar 35 entradas en un mismo día NO cero
+    for i in range(35):
+        cur.execute("INSERT INTO movimientos (material_id, material_nombre, "
+                    "lote, cantidad, tipo, fecha, operador) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (f'MP_BURST_{i:02d}', f'Burst {i}', f'L{i:03d}',
+                     1000.0, 'Entrada', '2026-04-20T10:00:00', 'unknown'))
+    conn.commit()
+    conn.close()
+
+    r = admin_client.get("/api/admin/inventario-health-monitor")
+    assert r.status_code == 200
+    j = r.get_json()
+    burst_alerts = [a for a in j["alertas"] if a["tipo"] == "BURST"]
+    assert len(burst_alerts) >= 1, f"BURST no detectado: {j}"
+    assert j["nivel"] in ("warning", "critical")
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id LIKE 'MP_BURST%'")
+    conn.commit()
+    conn.close()
+
+
+def test_health_monitor_detecta_multi_entradas(admin_client, db_clean):
+    """Lote con 2 Entradas (sin marker reset) → alerta MULTI_ENTRADAS."""
+    import sqlite3
+    import os
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, "
+                "lote, cantidad, tipo, fecha, operador) "
+                "VALUES ('MP_MULTI','M','LOTE-MULTI',500,'Entrada',"
+                "'2026-04-22','user1')")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, "
+                "lote, cantidad, tipo, fecha, operador) "
+                "VALUES ('MP_MULTI','M','LOTE-MULTI',500,'Entrada',"
+                "'2026-04-23','user2')")
+    conn.commit()
+    conn.close()
+
+    r = admin_client.get("/api/admin/inventario-health-monitor")
+    j = r.get_json()
+    multi = [a for a in j["alertas"] if a["tipo"] == "MULTI_ENTRADAS"]
+    assert len(multi) >= 1, f"MULTI_ENTRADAS no detectado: {j}"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos WHERE material_id='MP_MULTI'")
+    conn.commit()
+    conn.close()
+
+
 def test_inventario_reset_regenera_lotes_huerfanos(admin_client, db_clean):
     """Si una salida produccion apunta a lote NO en Excel verde, regenera
     Entrada virtual para que cierre en 0 (no en negativo)."""

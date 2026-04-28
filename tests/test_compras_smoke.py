@@ -568,6 +568,107 @@ def test_editar_prov_mp_actualiza_y_audit(app, db_clean):
     conn.commit(); conn.close()
 
 
+def test_integracion_planta_compras_ciclo_completo(app, db_clean):
+    """Verifica que el flujo cross-modulo planta <-> compras sigue
+    integrado tras los cambios recientes (reset, huerfanos, etc.).
+
+    Ciclo:
+      1. Crear solicitud desde planta (POST /api/solicitudes-compra)
+      2. Verificar que aparece en lista de compras (GET /api/solicitudes-compra)
+      3. Editar proveedor de un MP via maestro_mps (Compras -> Planta sync)
+      4. Verificar que el datalist de proveedores incluye el nuevo
+         (compartido via /api/proveedores-unicos)
+      5. Eliminar un lote desde planta con motivo (audit log queda)
+      6. Verificar que audit_log capturo la accion
+    """
+    import sqlite3
+    import os
+    c = _login(app)
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO maestro_mps "
+                "(codigo_mp, nombre_inci, nombre_comercial, proveedor, activo) "
+                "VALUES ('MP_INTEG_T','test','Integration Test','OldProv', 1)")
+    cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
+                "cantidad, tipo, fecha, operador, proveedor) "
+                "VALUES ('MP_INTEG_T','Integration Test','LOTE-INT', 1000, "
+                "'Entrada', '2026-04-15', 'sistema', 'OldProv')")
+    conn.commit()
+    conn.close()
+
+    # 1. Crear solicitud desde planta (mismo endpoint que /planta usa)
+    payload = {
+        "solicitante": "luz",
+        "urgencia": "Alta",
+        "observaciones": "Faltan MPs urgentes para producción próxima",
+        "empresa": "Espagiria",
+        "categoria": "Materia Prima",
+        "tipo": "Compra",
+        "area": "Produccion",
+        "items": [{
+            "codigo_mp": "MP_INTEG_T",
+            "nombre_mp": "Integration Test",
+            "cantidad_g": 5000, "unidad": "g",
+            "justificacion": "Stock bajo mínimo",
+        }],
+    }
+    r = c.post("/api/solicitudes-compra", json=payload, headers=csrf_headers())
+    assert r.status_code == 201, f"Crear solicitud falló: {r.status_code}"
+    numero_sol = r.get_json()["numero"]
+
+    # 2. Verificar que aparece en lista (lo que ve compras)
+    r = c.get("/api/solicitudes-compra")
+    assert r.status_code == 200
+    body = r.get_json()
+    sols = body if isinstance(body, list) else body.get("items", body.get("solicitudes", []))
+    numeros = [s.get("numero") for s in sols]
+    assert numero_sol in numeros, f"Solicitud no aparece en lista compras: {numeros[:5]}"
+
+    # 3. Editar proveedor del MP via endpoint compartido
+    r = c.put("/api/maestro-mps/MP_INTEG_T/proveedor",
+              json={"proveedor": "NewProvCanonical"},
+              headers=csrf_headers())
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["proveedor"] == "NewProvCanonical"
+    assert j["proveedor_anterior"] == "OldProv"
+
+    # 4. Datalist /api/proveedores-unicos debe incluir el nuevo proveedor
+    r = c.get("/api/proveedores-unicos")
+    assert r.status_code == 200
+    provs = r.get_json()["proveedores"]
+    assert "NewProvCanonical" in provs, (
+        f"Proveedor nuevo no aparece en datalist (planta y compras lo "
+        f"comparten): {provs[:10]}"
+    )
+
+    # 5. Eliminar lote con motivo (planta)
+    r = c.delete("/api/lotes/MP_INTEG_T/LOTE-INT",
+                 json={"motivo": "Test de integracion — borrar lote prueba"},
+                 headers=csrf_headers())
+    assert r.status_code == 200, f"Eliminar lote falló: {r.data[:200]!r}"
+
+    # 6. Audit log debe haber capturado el ELIMINAR_LOTE + EDITAR_PROVEEDOR_MP
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.cursor()
+    accs = cur.execute(
+        "SELECT accion FROM audit_log WHERE registro_id='MP_INTEG_T' OR "
+        "registro_id='MP_INTEG_T/LOTE-INT' ORDER BY id DESC LIMIT 5"
+    ).fetchall()
+    actions = {a[0] for a in accs}
+    assert "EDITAR_PROVEEDOR_MP" in actions, f"Falta EDITAR_PROVEEDOR_MP: {actions}"
+    assert "ELIMINAR_LOTE" in actions, f"Falta ELIMINAR_LOTE: {actions}"
+
+    # Cleanup
+    cur.execute("DELETE FROM solicitudes_compra_items WHERE numero=?", (numero_sol,))
+    cur.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero_sol,))
+    cur.execute("DELETE FROM movimientos WHERE material_id='MP_INTEG_T'")
+    cur.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_INTEG_T'")
+    conn.commit()
+    conn.close()
+
+
 def test_editar_prov_mp_no_audit_si_sin_cambio(app, db_clean):
     """Si proveedor nuevo es igual al actual, no se registra audit_log."""
     import sqlite3
