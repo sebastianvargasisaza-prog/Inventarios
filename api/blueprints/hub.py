@@ -275,9 +275,16 @@ def migrar_compromisos_a_tareas():
 
 @bp.route('/compromisos')
 def compromisos_page():
+    """DEPRECATED — redirige a /comunicacion (tareas RACI son el reemplazo).
+
+    Decision Sebastian 2026-04-28: el modulo /compromisos es legacy. La
+    funcionalidad real esta en /comunicacion con RACI, chat, actas y
+    quejas IA. Mantenemos esta ruta solo para no romper bookmarks
+    pero redirige.
+    """
     if 'compras_user' not in session:
-        return redirect('/login?next=/compromisos')
-    return Response(COMPROMISOS_HTML, mimetype='text/html')
+        return redirect('/login?next=/comunicacion')
+    return redirect('/comunicacion')
 
 @bp.route('/api/health')
 def health():
