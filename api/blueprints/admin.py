@@ -2181,6 +2181,143 @@ def admin_corregir_formulas():
     })
 
 
+@bp.route("/api/admin/revertir-formulas-desde-backup", methods=["POST"])
+def admin_revertir_formulas_desde_backup():
+    """Revierte formula_items al estado guardado en el backup mas reciente
+    con triggered_by='pre_corregir_formulas'. Quirurgico: solo reemplaza
+    formula_items, NO toca movimientos / catalogo / OCs.
+
+    Body:
+      token: 'REVERTIR_FORMULAS_2026'
+
+    Caso de uso: el usuario aplico correcciones y se dio cuenta que
+    algunas eran incorrectas. Este endpoint deshace los cambios usando
+    el backup automatico pre-aplicacion.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    if d.get('token', '').strip() != 'REVERTIR_FORMULAS_2026':
+        return jsonify({'error': 'Token incorrecto'}), 403
+
+    # Encontrar backup mas reciente pre-corregir o pre-eliminar formulas
+    import gzip, os as _os, tempfile
+    bk_db_path = None
+    bk_info = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        row = c.execute("""
+            SELECT file_path, started_at, triggered_by FROM backup_log
+            WHERE status='ok' AND (triggered_by LIKE 'pre_corregir_formulas%'
+                                   OR triggered_by LIKE 'pre_eliminar_formulas%')
+            ORDER BY started_at DESC LIMIT 1
+        """).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'No encontre backup pre-correccion. Imposible revertir.'}), 404
+        bk_db_path, bk_started, bk_trigger = row
+        bk_info = {'file': bk_db_path, 'started_at': bk_started, 'triggered_by': bk_trigger}
+    except sqlite3.OperationalError as _e:
+        return jsonify({'error': f'No pude leer backup_log: {_e}'}), 500
+
+    if not _os.path.exists(bk_db_path):
+        return jsonify({'error': f'Archivo backup no existe: {bk_db_path}',
+                        'backup_info': bk_info}), 404
+
+    # Descomprimir backup a tmp
+    try:
+        if bk_db_path.endswith('.gz'):
+            tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            with gzip.open(bk_db_path, 'rb') as gz_in, open(tmp_path, 'wb') as out:
+                while True:
+                    chunk = gz_in.read(64 * 1024)
+                    if not chunk: break
+                    out.write(chunk)
+        else:
+            tmp_path = bk_db_path
+    except Exception as _e:
+        return jsonify({'error': f'No pude descomprimir backup: {_e}',
+                        'backup_info': bk_info}), 500
+
+    # Leer formula_items del backup
+    try:
+        bk = sqlite3.connect(tmp_path)
+        bk_rows = bk.execute(
+            "SELECT id, producto_nombre, material_id, material_nombre, "
+            "       porcentaje, cantidad_g_por_lote "
+            "FROM formula_items"
+        ).fetchall()
+        bk.close()
+    except Exception as _e:
+        return jsonify({'error': f'No pude leer formula_items del backup: {_e}',
+                        'backup_info': bk_info}), 500
+    finally:
+        if tmp_path != bk_db_path and _os.path.exists(tmp_path):
+            try: _os.remove(tmp_path)
+            except Exception: pass
+
+    # Crear backup adicional ANTES de revertir (por si acaso)
+    try:
+        do_backup(triggered_by='pre_revertir_formulas')
+    except Exception:
+        pass
+
+    # Reemplazar formula_items en BD actual con el del backup
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        actuales = c.execute("SELECT COUNT(*) FROM formula_items").fetchone()[0]
+        c.execute("DELETE FROM formula_items")
+        for r in bk_rows:
+            c.execute(
+                """INSERT INTO formula_items
+                   (id, producto_nombre, material_id, material_nombre,
+                    porcentaje, cantidad_g_por_lote)
+                   VALUES (?,?,?,?,?,?)""",
+                r,
+            )
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': f'Reversion fallo: {_e}'}), 500
+
+    # Audit
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'REVERTIR_FORMULAS_DESDE_BACKUP', 'formula_items', '_BULK_',
+             _json.dumps({
+                 'backup': bk_info,
+                 'items_actuales_eliminados': actuales,
+                 'items_restaurados_del_backup': len(bk_rows),
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'mensaje': (f'formula_items revertido al estado del backup '
+                    f'{bk_info.get("started_at")}. Eliminados {actuales} '
+                    f'items actuales, restaurados {len(bk_rows)} del backup.'),
+        'items_eliminados': actuales,
+        'items_restaurados': len(bk_rows),
+        'backup_usado': bk_info,
+    })
+
+
 @bp.route("/api/admin/eliminar-formulas-obsoletas", methods=["POST"])
 def admin_eliminar_formulas_obsoletas():
     """Elimina items en formula_items que apuntan a material_id huerfano
@@ -4427,6 +4564,17 @@ tr:hover td{background:#263348;}
       </div>
     </div>
 
+    <div style="margin-top:14px;padding:14px;background:#3f0f0f;border:2px solid #dc2626;border-radius:8px;">
+      <div style="font-weight:700;color:#fca5a5;margin-bottom:6px;">&#x21A9; Revertir &uacute;ltima correcci&oacute;n de f&oacute;rmulas (deshacer)</div>
+      <div style="font-size:12px;color:#fecaca;margin-bottom:10px;">
+        Si aplicaste correcciones y te diste cuenta que estaban mal, este bot&oacute;n restaura <code>formula_items</code> al estado del backup autom&aacute;tico que se cre&oacute; antes de aplicar. NO toca movimientos / cat&aacute;logo / OCs.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="diagf-token-revertir" placeholder="Token: REVERTIR_FORMULAS_2026" style="background:#0f172a;color:#e2e8f0;border:1px solid #fca5a5;border-radius:6px;padding:7px 10px;font-size:12px;width:280px;">
+        <button class="btn" style="background:#991b1b;color:#fff;" onclick="revertirFormulas()" id="btn-revertir-form">&#x21A9; Revertir desde backup</button>
+      </div>
+    </div>
+
     <div id="diag-form-aplicar-box" style="display:none;margin-top:14px;padding:14px;background:#1e293b;border:1px solid #475569;border-radius:8px;">
       <div style="font-weight:700;color:#fbbf24;margin-bottom:6px;">&#x26A0; Aplicar correcciones</div>
       <div style="font-size:12px;color:#cbd5e1;margin-bottom:10px;">
@@ -5494,6 +5642,35 @@ function exportarDiagFormCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = 'diagnostico_formulas_' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
+}
+
+async function revertirFormulas() {
+  const token = (document.getElementById('diagf-token-revertir').value || '').trim();
+  if (token !== 'REVERTIR_FORMULAS_2026') {
+    toast('Token incorrecto. Debe ser exactamente: REVERTIR_FORMULAS_2026', 'warn');
+    return;
+  }
+  if (!confirm('REVERTIR las correcciones de fórmulas al estado anterior?\n\nEsto reemplaza formula_items con la versión del backup automático más reciente. NO afecta movimientos, catálogo, OCs.\n\nProceder?')) return;
+  const btn = document.getElementById('btn-revertir-form');
+  btn.disabled = true; btn.textContent = 'Revirtiendo...';
+  try {
+    const r = await fetch('/api/admin/revertir-formulas-desde-backup', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: token})
+    });
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x21A9; Revertir desde backup';
+    if (!r.ok) {
+      toast('Error: ' + _esc(d.error||'desconocido'), 'warn');
+      return;
+    }
+    toast(d.mensaje, 'ok');
+    document.getElementById('diagf-token-revertir').value = '';
+    cargarDiagnosticoFormulas();
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x21A9; Revertir desde backup';
+    toast('Error: ' + e.message, 'warn');
+  }
 }
 
 async function eliminarFormulasObsoletas() {
