@@ -269,3 +269,297 @@ def resumen_cronograma():
         })
     return jsonify({'dias': dias, 'total_tareas': total_tareas})
 
+
+# ═════════════════════════════════════════════════════════════════════════
+#   CALIDAD AVANZADA: CoA · Especificaciones MP · Estabilidades · CAPA
+# ═════════════════════════════════════════════════════════════════════════
+
+# ─── ESPECIFICACIONES MP ────────────────────────────────────────────────────
+
+@bp.route('/api/calidad/especificaciones', methods=['GET','POST'])
+def especificaciones_list():
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('codigo_mp') or not d.get('parametro'):
+            return jsonify({'error':'codigo_mp y parametro requeridos'}), 400
+        try:
+            c.execute("""INSERT INTO especificaciones_mp
+                (codigo_mp, parametro, unidad, valor_min, valor_max, metodo_ensayo,
+                 obligatorio, tipo, farmacopea_ref, creado_por)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (d['codigo_mp'], d['parametro'], d.get('unidad',''),
+                 d.get('valor_min'), d.get('valor_max'), d.get('metodo_ensayo',''),
+                 1 if d.get('obligatorio', True) else 0,
+                 d.get('tipo','fisicoquimico'), d.get('farmacopea_ref',''),
+                 session.get('compras_user','sistema')))
+            conn.commit()
+            return jsonify({'ok':True, 'id':c.lastrowid}), 201
+        except sqlite3.IntegrityError:
+            return jsonify({'error':'Ya existe especificacion para ese MP+parametro'}), 409
+    # GET — filtro por codigo_mp opcional
+    codigo = request.args.get('codigo_mp','').strip()
+    if codigo:
+        c.execute("""SELECT * FROM especificaciones_mp WHERE codigo_mp=?
+                     ORDER BY parametro""", (codigo,))
+    else:
+        c.execute("""SELECT * FROM especificaciones_mp
+                     ORDER BY codigo_mp, parametro LIMIT 500""")
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
+
+
+@bp.route('/api/calidad/especificaciones/<int:eid>', methods=['PATCH','DELETE'])
+def especificacion_update(eid):
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("DELETE FROM especificaciones_mp WHERE id=?", (eid,))
+        conn.commit()
+        return jsonify({'ok':True})
+    d = request.json or {}
+    fields = ['unidad','valor_min','valor_max','metodo_ensayo','obligatorio',
+              'tipo','farmacopea_ref']
+    sets = ', '.join(f+'=?' for f in fields if f in d)
+    vals = [d[f] for f in fields if f in d]
+    if not sets: return jsonify({'error':'Nada que actualizar'}), 400
+    vals.append(eid)
+    c.execute(f"UPDATE especificaciones_mp SET {sets} WHERE id=?", vals)
+    conn.commit()
+    return jsonify({'ok':True})
+
+
+# ─── CoA RESULTADOS ─────────────────────────────────────────────────────────
+
+@bp.route('/api/calidad/coa', methods=['GET','POST'])
+def coa_list():
+    """Registra resultados de analisis CoA por lote.
+    Auto-valida contra especificaciones_mp si existen y marca conforme=0
+    si esta fuera de spec.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.json or {}
+        for k in ('lote','codigo_mp','parametro','valor_obtenido'):
+            if not d.get(k):
+                return jsonify({'error':f'{k} requerido'}), 400
+
+        # Buscar especificacion para auto-validacion
+        spec = c.execute("""SELECT valor_min, valor_max, unidad, metodo_ensayo
+                            FROM especificaciones_mp
+                            WHERE codigo_mp=? AND parametro=?""",
+                         (d['codigo_mp'], d['parametro'])).fetchone()
+        valor_min_spec = spec[0] if spec else d.get('valor_min_spec')
+        valor_max_spec = spec[1] if spec else d.get('valor_max_spec')
+        unidad = (spec[2] if spec else d.get('unidad','')) or d.get('unidad','')
+        metodo = (spec[3] if spec else d.get('metodo_ensayo','')) or d.get('metodo_ensayo','')
+
+        # Auto-validar conformidad: si valor_obtenido es numerico y hay specs
+        conforme = 1
+        try:
+            val_num = float(str(d['valor_obtenido']).replace(',','.').strip())
+            if valor_min_spec is not None and val_num < float(valor_min_spec):
+                conforme = 0
+            if valor_max_spec is not None and val_num > float(valor_max_spec):
+                conforme = 0
+        except (ValueError, TypeError):
+            # Valor no-numerico (ej: "Conforme", "Cumple") — no auto-validar
+            if d.get('conforme') is not None:
+                conforme = 1 if d.get('conforme') else 0
+
+        decision = 'Aprobado' if conforme else 'Rechazado'
+        if d.get('decision'):
+            decision = d['decision']
+
+        c.execute("""INSERT INTO coa_resultados
+            (lote, codigo_mp, material_nombre, parametro, unidad,
+             valor_obtenido, valor_min_spec, valor_max_spec, conforme,
+             metodo_ensayo, analista, fecha_analisis, equipo_id,
+             observaciones, decision)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (d['lote'], d['codigo_mp'], d.get('material_nombre',''),
+             d['parametro'], unidad, d['valor_obtenido'],
+             valor_min_spec, valor_max_spec, conforme, metodo,
+             d.get('analista', session.get('compras_user','')),
+             d.get('fecha_analisis'),
+             d.get('equipo_id'), d.get('observaciones',''), decision))
+        conn.commit()
+
+        # Si NO conforme y no hay NC abierta para este lote+parametro, crear auto
+        if not conforme:
+            try:
+                c.execute("""INSERT INTO no_conformidades
+                             (fecha,tipo,descripcion,area,responsable,lote,
+                              codigo_mp,impacto,accion_correctiva,estado,creado_por)
+                             VALUES (date('now'),'Insumo',?,?,?,?,?,?,?,'Abierta',?)""",
+                          (f'CoA fuera de spec: {d["parametro"]}={d["valor_obtenido"]} '
+                           f'(spec {valor_min_spec}-{valor_max_spec})',
+                           'Calidad', 'Jefe CC', d['lote'], d['codigo_mp'],
+                           'Alto', 'Cuarentena lote, evaluar disposicion',
+                           session.get('compras_user','sistema')))
+                conn.commit()
+            except Exception:
+                pass
+
+        return jsonify({'ok':True, 'id':c.lastrowid, 'conforme':conforme,
+                        'decision':decision}), 201
+
+    # GET — filtros
+    lote = request.args.get('lote','').strip()
+    codigo_mp = request.args.get('codigo_mp','').strip()
+    where, params = [], []
+    if lote: where.append('lote=?'); params.append(lote)
+    if codigo_mp: where.append('codigo_mp=?'); params.append(codigo_mp)
+    sql = "SELECT * FROM coa_resultados"
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_analisis DESC, id DESC LIMIT 500'
+    c.execute(sql, params)
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
+
+
+@bp.route('/api/calidad/coa/lote/<path:lote>')
+def coa_por_lote(lote):
+    """Devuelve CoA completo de un lote agrupado por parametro con verdict global."""
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""SELECT parametro, unidad, valor_obtenido, valor_min_spec,
+                               valor_max_spec, conforme, metodo_ensayo, analista,
+                               fecha_analisis, decision
+                        FROM coa_resultados
+                        WHERE lote=? ORDER BY fecha_analisis DESC""",
+                     (lote,)).fetchall()
+    cols = [x[0] for x in c.description]
+    parametros = [dict(zip(cols,r)) for r in rows]
+    n_total = len(parametros)
+    n_conformes = sum(1 for p in parametros if p['conforme'])
+    verdict = 'Aprobado' if n_total > 0 and n_conformes == n_total else \
+              ('Rechazado' if n_total > 0 else 'Sin analizar')
+    return jsonify({
+        'lote': lote,
+        'parametros': parametros,
+        'n_parametros': n_total,
+        'n_conformes': n_conformes,
+        'verdict': verdict,
+    })
+
+
+# ─── ESTABILIDADES ──────────────────────────────────────────────────────────
+
+@bp.route('/api/calidad/estabilidades', methods=['GET','POST'])
+def estabilidades_list():
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        for k in ('producto','lote_piloto','condicion','tiempo_dias','fecha_inicio'):
+            if not d.get(k):
+                return jsonify({'error':f'{k} requerido'}), 400
+        c.execute("""INSERT INTO estabilidades
+            (producto, lote_piloto, condicion, tiempo_dias, tiempo_etiqueta,
+             fecha_inicio, fecha_evaluacion, parametros_json, conforme,
+             observaciones, analista, estado)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (d['producto'], d['lote_piloto'], d['condicion'],
+             int(d['tiempo_dias']), d.get('tiempo_etiqueta',''),
+             d['fecha_inicio'], d.get('fecha_evaluacion'),
+             d.get('parametros_json','{}'), 1 if d.get('conforme', True) else 0,
+             d.get('observaciones',''),
+             d.get('analista', session.get('compras_user','')),
+             d.get('estado','Programado')))
+        conn.commit()
+        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+    producto = request.args.get('producto','').strip()
+    lote = request.args.get('lote','').strip()
+    where, params = [], []
+    if producto: where.append('producto=?'); params.append(producto)
+    if lote: where.append('lote_piloto=?'); params.append(lote)
+    sql = 'SELECT * FROM estabilidades'
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_inicio DESC, tiempo_dias ASC LIMIT 300'
+    c.execute(sql, params)
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
+
+
+# ─── CAPA acciones (workflow real para no_conformidades) ────────────────────
+
+@bp.route('/api/calidad/capa', methods=['GET','POST'])
+def capa_list():
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        for k in ('nc_id','tipo','descripcion'):
+            if not d.get(k):
+                return jsonify({'error':f'{k} requerido'}), 400
+        if d['tipo'] not in ('correctiva','preventiva','contencion'):
+            return jsonify({'error':'tipo debe ser correctiva/preventiva/contencion'}), 400
+        c.execute("""INSERT INTO capa_acciones
+            (nc_id, tipo, descripcion, responsable, fecha_compromiso, estado)
+            VALUES (?,?,?,?,?,?)""",
+            (int(d['nc_id']), d['tipo'], d['descripcion'],
+             d.get('responsable',''), d.get('fecha_compromiso'),
+             d.get('estado','Pendiente')))
+        conn.commit()
+        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+    nc_id = request.args.get('nc_id','').strip()
+    if nc_id:
+        c.execute("SELECT * FROM capa_acciones WHERE nc_id=? ORDER BY id ASC", (nc_id,))
+    else:
+        c.execute("SELECT * FROM capa_acciones ORDER BY creado_en DESC LIMIT 200")
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
+
+
+@bp.route('/api/calidad/capa/<int:cid>', methods=['PATCH'])
+def capa_update(cid):
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    fields = ['descripcion','responsable','fecha_compromiso','fecha_ejecucion',
+              'evidencia_url','efectiva','verificada_por','fecha_verificacion','estado']
+    sets = ', '.join(f+'=?' for f in fields if f in d)
+    vals = [d[f] for f in fields if f in d]
+    if not sets: return jsonify({'error':'Nada que actualizar'}), 400
+    # Si pasa a Verificada, registrar fecha
+    if d.get('estado') == 'Verificada' and 'fecha_verificacion' not in d:
+        sets += ', fecha_verificacion=date(\'now\')'
+    vals.append(cid)
+    c.execute(f"UPDATE capa_acciones SET {sets} WHERE id=?", vals)
+    conn.commit()
+    return jsonify({'ok':True})
+
+
+# ─── AUDITORIAS ─────────────────────────────────────────────────────────────
+
+@bp.route('/api/calidad/auditorias', methods=['GET','POST'])
+def auditorias_list():
+    if 'compras_user' not in session:
+        return jsonify({'error':'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        if not d.get('tipo') or not d.get('ente_auditado'):
+            return jsonify({'error':'tipo y ente_auditado requeridos'}), 400
+        c.execute("""INSERT INTO auditorias
+            (tipo, ente_auditado, fecha_planeada, auditor, alcance, estado)
+            VALUES (?,?,?,?,?,?)""",
+            (d['tipo'], d['ente_auditado'], d.get('fecha_planeada'),
+             d.get('auditor', session.get('compras_user','')),
+             d.get('alcance',''), d.get('estado','Planeada')))
+        conn.commit()
+        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+    c.execute("SELECT * FROM auditorias ORDER BY fecha_planeada DESC LIMIT 100")
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols,r)) for r in c.fetchall()])

@@ -1767,6 +1767,104 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
         """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
     ]),
+    (39, "calidad: tablas avanzadas — coa_resultados, especificaciones_mp, estabilidades, capa_acciones", [
+        # Especificaciones MP: limites por parametro para validar CoA
+        """CREATE TABLE IF NOT EXISTS especificaciones_mp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_mp        TEXT NOT NULL,
+            parametro        TEXT NOT NULL,
+            unidad           TEXT DEFAULT '',
+            valor_min        REAL,
+            valor_max        REAL,
+            metodo_ensayo    TEXT DEFAULT '',
+            obligatorio      INTEGER DEFAULT 1,
+            tipo             TEXT DEFAULT 'fisicoquimico',
+            farmacopea_ref   TEXT DEFAULT '',
+            creado_por       TEXT,
+            fecha_creacion   TEXT DEFAULT (datetime('now')),
+            UNIQUE(codigo_mp, parametro)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_espec_mp ON especificaciones_mp(codigo_mp)""",
+
+        # CoA resultados: por lote ingresado, parametro analizado, resultado
+        """CREATE TABLE IF NOT EXISTS coa_resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lote             TEXT NOT NULL,
+            codigo_mp        TEXT NOT NULL,
+            material_nombre  TEXT,
+            parametro        TEXT NOT NULL,
+            unidad           TEXT DEFAULT '',
+            valor_obtenido   TEXT NOT NULL,
+            valor_min_spec   REAL,
+            valor_max_spec   REAL,
+            conforme         INTEGER DEFAULT 1,
+            metodo_ensayo    TEXT DEFAULT '',
+            analista         TEXT,
+            fecha_analisis   TEXT DEFAULT (date('now')),
+            equipo_id        INTEGER,
+            observaciones    TEXT DEFAULT '',
+            decision         TEXT DEFAULT 'Aprobado',
+            creado_en        TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_coa_lote ON coa_resultados(lote)""",
+        """CREATE INDEX IF NOT EXISTS idx_coa_mp ON coa_resultados(codigo_mp)""",
+        """CREATE INDEX IF NOT EXISTS idx_coa_conforme ON coa_resultados(conforme)""",
+
+        # Estabilidades: estudios T0/T1/T3/T6/T12 con condiciones
+        """CREATE TABLE IF NOT EXISTS estabilidades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto         TEXT NOT NULL,
+            lote_piloto      TEXT NOT NULL,
+            condicion        TEXT NOT NULL,
+            tiempo_dias      INTEGER NOT NULL,
+            tiempo_etiqueta  TEXT,
+            fecha_inicio     TEXT NOT NULL,
+            fecha_evaluacion TEXT,
+            parametros_json  TEXT DEFAULT '{}',
+            conforme         INTEGER DEFAULT 1,
+            observaciones    TEXT DEFAULT '',
+            analista         TEXT,
+            estado           TEXT DEFAULT 'Programado'
+                CHECK(estado IN ('Programado','Iniciado','En curso','Concluido','Suspendido')),
+            creado_en        TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_estab_producto ON estabilidades(producto, lote_piloto)""",
+
+        # CAPA workflow real para no_conformidades
+        """CREATE TABLE IF NOT EXISTS capa_acciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nc_id            INTEGER NOT NULL,
+            tipo             TEXT NOT NULL CHECK(tipo IN ('correctiva','preventiva','contencion')),
+            descripcion      TEXT NOT NULL,
+            responsable      TEXT,
+            fecha_compromiso TEXT,
+            fecha_ejecucion  TEXT,
+            evidencia_url    TEXT DEFAULT '',
+            efectiva         INTEGER,
+            verificada_por   TEXT,
+            fecha_verificacion TEXT,
+            estado           TEXT DEFAULT 'Pendiente'
+                CHECK(estado IN ('Pendiente','EnEjecucion','Ejecutada','Verificada','Cerrada','NoEfectiva')),
+            creado_en        TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_capa_nc ON capa_acciones(nc_id)""",
+
+        # Auditorias internas + a proveedores
+        """CREATE TABLE IF NOT EXISTS auditorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo             TEXT NOT NULL CHECK(tipo IN ('Interna','Externa','Proveedor','Cliente')),
+            ente_auditado    TEXT NOT NULL,
+            fecha_planeada   TEXT,
+            fecha_ejecutada  TEXT,
+            auditor          TEXT,
+            alcance          TEXT DEFAULT '',
+            hallazgos_count  INTEGER DEFAULT 0,
+            no_conformes    INTEGER DEFAULT 0,
+            estado           TEXT DEFAULT 'Planeada',
+            informe_url      TEXT DEFAULT '',
+            creado_en        TEXT DEFAULT (datetime('now'))
+        )""",
+    ]),
     (38, "tecnica documentos_sgd: campos de revision periodica + vinculo con producciones", [
         # documentos_sgd ya tiene fecha_revision; agregamos:
         # frecuencia_revision_meses (cada cuantos meses se revisa el SOP)
