@@ -6535,3 +6535,291 @@ def admin_panel():
         return Response("<h1>403</h1><p>Solo admins.</p><a href='/hub'>Volver</a>",
                         status=403, mimetype="text/html")
     return Response(_ADMIN_HTML, mimetype="text/html")
+
+
+# ─── Auditoria de lotes / movimientos recientes ────────────────────────────────
+
+@bp.route("/api/admin/auditoria-lotes", methods=["GET"])
+def admin_auditoria_lotes():
+    """Reporta integridad de lotes y movimientos recientes.
+
+    Querystring:
+      ?dias=2  → ventana hacia atras (default 2 dias = hoy + ayer)
+
+    Devuelve JSON con:
+      - total_lotes_activos: count de lotes con stock > 0
+      - lotes_creados_recientes: lotes vistos por primera vez en ventana
+      - movimientos_recientes: lista de Entradas/Salidas/Ajustes en ventana
+      - duplicados_sospechosos: mismo (lote + material) en mas de 1 entrada
+      - resumen_por_usuario: quien creo cuantos movs hoy
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    dias = int(request.args.get("dias", 2))
+    fecha_corte = f"-{dias} day"
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    out = {"ventana_dias": dias}
+
+    # 1) Total de lotes activos (con stock > 0)
+    try:
+        rows = c.execute("""
+            SELECT material_id, lote,
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +') THEN cantidad
+                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                                     ELSE 0 END), 0) as stock
+            FROM movimientos
+            WHERE COALESCE(lote,'') != ''
+            GROUP BY material_id, lote
+            HAVING stock > 0
+        """).fetchall()
+        out["total_lotes_activos"] = len(rows)
+    except Exception as e:
+        out["total_lotes_activos_error"] = str(e)
+
+    # 2) Lotes nuevos en la ventana (primera entrada vista en esos dias)
+    try:
+        nuevos = c.execute(f"""
+            SELECT m.material_id, m.material_nombre, m.lote, m.proveedor,
+                   m.cantidad, m.fecha, m.operador,
+                   MIN(m.id) as primera_id
+            FROM movimientos m
+            WHERE COALESCE(m.lote,'') != ''
+              AND m.tipo = 'Entrada'
+              AND m.fecha >= date('now', '{fecha_corte}')
+              AND NOT EXISTS (
+                  SELECT 1 FROM movimientos m2
+                  WHERE m2.material_id = m.material_id
+                    AND m2.lote = m.lote
+                    AND m2.id < m.id
+              )
+            GROUP BY m.material_id, m.lote
+            ORDER BY m.fecha DESC, m.id DESC
+            LIMIT 200
+        """).fetchall()
+        out["lotes_creados_recientes"] = [dict(r) for r in nuevos]
+        out["lotes_creados_count"] = len(nuevos)
+    except Exception as e:
+        out["lotes_creados_recientes_error"] = str(e)
+        out["lotes_creados_recientes"] = []
+
+    # 3) Movimientos recientes (todos los tipos)
+    try:
+        movs = c.execute(f"""
+            SELECT id, material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, proveedor, operador, observaciones
+            FROM movimientos
+            WHERE fecha >= date('now', '{fecha_corte}')
+            ORDER BY id DESC
+            LIMIT 500
+        """).fetchall()
+        out["movimientos_recientes"] = [dict(r) for r in movs]
+        out["movimientos_count"] = len(movs)
+    except Exception as e:
+        out["movimientos_recientes_error"] = str(e)
+
+    # 4) Duplicados sospechosos: mismo (lote + material + cantidad + fecha)
+    #    aparece en 2 o mas filas en la ventana
+    try:
+        dups = c.execute(f"""
+            SELECT material_id, material_nombre, lote, cantidad, tipo,
+                   COUNT(*) as veces, MIN(id) as primera, MAX(id) as ultima,
+                   GROUP_CONCAT(operador, ' / ') as operadores
+            FROM movimientos
+            WHERE COALESCE(lote,'') != ''
+              AND fecha >= date('now', '{fecha_corte}')
+            GROUP BY material_id, lote, cantidad, tipo, fecha
+            HAVING COUNT(*) > 1
+            ORDER BY veces DESC, ultima DESC
+        """).fetchall()
+        out["duplicados_sospechosos"] = [dict(r) for r in dups]
+        out["duplicados_count"] = len(dups)
+    except Exception as e:
+        out["duplicados_error"] = str(e)
+        out["duplicados_sospechosos"] = []
+
+    # 5) Resumen por usuario hoy
+    try:
+        usr = c.execute("""
+            SELECT COALESCE(operador,'(sin operador)') as operador,
+                   tipo,
+                   COUNT(*) as movs,
+                   COUNT(DISTINCT lote) as lotes_distintos
+            FROM movimientos
+            WHERE fecha = date('now')
+            GROUP BY operador, tipo
+            ORDER BY movs DESC
+        """).fetchall()
+        out["resumen_hoy_por_usuario"] = [dict(r) for r in usr]
+    except Exception as e:
+        out["resumen_hoy_por_usuario_error"] = str(e)
+
+    # 6) Comparativa: ¿cuantos lotes activos teniamos hace N dias?
+    #    Reconstruye stock al cierre de hace N dias y cuenta los > 0.
+    try:
+        rows_pasado = c.execute(f"""
+            SELECT material_id, lote,
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +') THEN cantidad
+                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                                     ELSE 0 END), 0) as stock
+            FROM movimientos
+            WHERE COALESCE(lote,'') != ''
+              AND fecha < date('now', '{fecha_corte}')
+            GROUP BY material_id, lote
+            HAVING stock > 0
+        """).fetchall()
+        out["lotes_activos_antes_de_ventana"] = len(rows_pasado)
+        out["delta_lotes"] = out["total_lotes_activos"] - len(rows_pasado)
+    except Exception as e:
+        out["delta_lotes_error"] = str(e)
+
+    conn.close()
+    return jsonify(out)
+
+
+@bp.route("/api/admin/auditoria-lotes/html", methods=["GET"])
+def admin_auditoria_lotes_html():
+    """Vista HTML legible del reporte de auditoria de lotes."""
+    u, err, code = _require_admin()
+    if err:
+        return Response("<h1>Solo admins</h1>", status=code or 403,
+                        mimetype="text/html")
+
+    dias = int(request.args.get("dias", 2))
+    html = """<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Auditoria Lotes — Cortex Labs</title>
+<style>
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f4;color:#1c1917;
+     padding:24px;max-width:1400px;margin:0 auto;}
+h1{color:#6d28d9;border-bottom:2px solid #c4b5fd;padding-bottom:8px;}
+h2{color:#7c3aed;margin-top:30px;}
+.kpi{display:inline-block;background:#fff;border:1px solid #e7e5e4;border-radius:8px;
+     padding:16px 24px;margin:8px 8px 8px 0;min-width:180px;}
+.kpi b{display:block;font-size:24px;color:#15803d;}
+.kpi.warn b{color:#dc2626;}
+.kpi.neutral b{color:#1c1917;}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e7e5e4;
+      border-radius:8px;overflow:hidden;margin-top:12px;font-size:13px;}
+th{background:#f5f3ff;text-align:left;padding:10px;color:#4c1d95;font-weight:700;}
+td{padding:8px 10px;border-top:1px solid #f5f5f4;}
+tr:hover{background:#fafaf9;}
+.tipo-Entrada{color:#15803d;font-weight:600;}
+.tipo-Salida{color:#dc2626;font-weight:600;}
+.tipo-Ajuste{color:#a16207;font-weight:600;}
+.alert{background:#fef2f2;border:2px solid #dc2626;border-radius:8px;padding:14px;
+       margin:14px 0;color:#991b1b;}
+.ok{background:#f0fdf4;border:1px solid #15803d;border-radius:6px;padding:10px;
+    margin:10px 0;color:#14532d;}
+.fmt-cant{text-align:right;font-family:Consolas,monospace;}
+.toolbar{margin:14px 0;}
+.toolbar a{display:inline-block;padding:6px 14px;background:#fff;border:1px solid #c4b5fd;
+           border-radius:6px;color:#6d28d9;text-decoration:none;font-size:12px;
+           margin-right:8px;}
+.toolbar a:hover{background:#f5f3ff;}
+</style></head><body>
+<h1>&#x1F50D; Auditoria de Lotes y Movimientos</h1>
+<div class="toolbar">
+  <a href="?dias=1">Hoy solo</a>
+  <a href="?dias=2">Hoy + ayer</a>
+  <a href="?dias=7">Ultima semana</a>
+  <a href="?dias=30">Ultimo mes</a>
+  <a href="/api/admin/auditoria-lotes?dias=""" + str(dias) + """" target="_blank">Ver JSON crudo</a>
+</div>
+<div id="resumen" style="margin:20px 0;"></div>
+<div id="cuerpo">Cargando...</div>
+<script>
+async function cargar(){
+  var r = await fetch('/api/admin/auditoria-lotes?dias=""" + str(dias) + """');
+  var d = await r.json();
+
+  // KPIs
+  var html = '<h2>Resumen</h2>';
+  html += '<div class="kpi neutral"><span>Lotes activos AHORA</span><b>' + d.total_lotes_activos + '</b></div>';
+  html += '<div class="kpi neutral"><span>Lotes activos hace ' + d.ventana_dias + 'd</span><b>' + (d.lotes_activos_antes_de_ventana||0) + '</b></div>';
+  var deltaCls = (d.delta_lotes||0) > 0 ? 'warn' : 'neutral';
+  var deltaSign = (d.delta_lotes||0) > 0 ? '+' : '';
+  html += '<div class="kpi ' + deltaCls + '"><span>Delta lotes</span><b>' + deltaSign + (d.delta_lotes||0) + '</b></div>';
+  html += '<div class="kpi neutral"><span>Movimientos en ventana</span><b>' + (d.movimientos_count||0) + '</b></div>';
+  html += '<div class="kpi neutral"><span>Lotes nuevos en ventana</span><b>' + (d.lotes_creados_count||0) + '</b></div>';
+  var dupCls = (d.duplicados_count||0) > 0 ? 'warn' : 'neutral';
+  html += '<div class="kpi ' + dupCls + '"><span>Duplicados sospechosos</span><b>' + (d.duplicados_count||0) + '</b></div>';
+  document.getElementById('resumen').innerHTML = html;
+
+  // Cuerpo
+  var c = '';
+
+  // Duplicados (alerta si hay)
+  if((d.duplicados_count||0) > 0){
+    c += '<div class="alert"><b>&#x26A0; ' + d.duplicados_count + ' grupos de movimientos posiblemente duplicados</b><br>';
+    c += 'Mismo lote + material + cantidad + tipo + fecha repetidos. Revisa si son legitimos o un bug.</div>';
+    c += '<table><thead><tr><th>Material</th><th>Lote</th><th>Cantidad</th><th>Tipo</th><th>Veces</th><th>IDs</th><th>Operadores</th></tr></thead><tbody>';
+    (d.duplicados_sospechosos||[]).forEach(function(x){
+      c += '<tr><td>' + (x.material_id||'') + '<br><small style="color:#78716c">' + (x.material_nombre||'') + '</small></td>';
+      c += '<td><b>' + (x.lote||'') + '</b></td>';
+      c += '<td class="fmt-cant">' + (x.cantidad||0).toLocaleString('es-CO') + ' g</td>';
+      c += '<td class="tipo-' + (x.tipo||'') + '">' + (x.tipo||'') + '</td>';
+      c += '<td><b style="color:#dc2626">' + x.veces + '</b></td>';
+      c += '<td>' + x.primera + ' a ' + x.ultima + '</td>';
+      c += '<td>' + (x.operadores||'') + '</td></tr>';
+    });
+    c += '</tbody></table>';
+  } else {
+    c += '<div class="ok">&#x2705; No hay movimientos duplicados sospechosos en la ventana.</div>';
+  }
+
+  // Lotes creados recientes
+  c += '<h2>Lotes creados en los ultimos ' + d.ventana_dias + ' dias (' + (d.lotes_creados_count||0) + ')</h2>';
+  if((d.lotes_creados_count||0) === 0){
+    c += '<p style="color:#78716c">Ninguno.</p>';
+  } else {
+    c += '<table><thead><tr><th>Fecha</th><th>Material</th><th>Lote</th><th>Cantidad</th><th>Proveedor</th><th>Operador</th></tr></thead><tbody>';
+    (d.lotes_creados_recientes||[]).forEach(function(x){
+      c += '<tr><td>' + (x.fecha||'') + '</td>';
+      c += '<td>' + (x.material_id||'') + '<br><small style="color:#78716c">' + (x.material_nombre||'') + '</small></td>';
+      c += '<td><b>' + (x.lote||'') + '</b></td>';
+      c += '<td class="fmt-cant">' + (x.cantidad||0).toLocaleString('es-CO') + ' g</td>';
+      c += '<td>' + (x.proveedor||'') + '</td>';
+      c += '<td>' + (x.operador||'') + '</td></tr>';
+    });
+    c += '</tbody></table>';
+  }
+
+  // Resumen por usuario hoy
+  c += '<h2>Movimientos hoy por usuario</h2>';
+  if(!(d.resumen_hoy_por_usuario||[]).length){
+    c += '<p style="color:#78716c">Sin movimientos hoy.</p>';
+  } else {
+    c += '<table><thead><tr><th>Usuario</th><th>Tipo</th><th>Movs</th><th>Lotes distintos</th></tr></thead><tbody>';
+    d.resumen_hoy_por_usuario.forEach(function(x){
+      c += '<tr><td><b>' + x.operador + '</b></td>';
+      c += '<td class="tipo-' + (x.tipo||'') + '">' + (x.tipo||'') + '</td>';
+      c += '<td>' + x.movs + '</td>';
+      c += '<td>' + x.lotes_distintos + '</td></tr>';
+    });
+    c += '</tbody></table>';
+  }
+
+  // Movimientos recientes (ultimos 50)
+  c += '<h2>Ultimos movimientos (top 50)</h2>';
+  c += '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Material</th><th>Lote</th><th>Cantidad</th><th>Operador</th><th>Observaciones</th></tr></thead><tbody>';
+  (d.movimientos_recientes||[]).slice(0, 50).forEach(function(x){
+    c += '<tr><td>' + (x.fecha||'') + '</td>';
+    c += '<td class="tipo-' + (x.tipo||'').split(' ')[0] + '">' + (x.tipo||'') + '</td>';
+    c += '<td>' + (x.material_id||'') + '<br><small style="color:#78716c">' + (x.material_nombre||'') + '</small></td>';
+    c += '<td><b>' + (x.lote||'') + '</b></td>';
+    c += '<td class="fmt-cant">' + (x.cantidad||0).toLocaleString('es-CO') + ' g</td>';
+    c += '<td>' + (x.operador||'') + '</td>';
+    c += '<td><small>' + (x.observaciones||'').substring(0,80) + '</small></td></tr>';
+  });
+  c += '</tbody></table>';
+
+  document.getElementById('cuerpo').innerHTML = c;
+}
+cargar();
+</script>
+</body></html>"""
+    return Response(html, mimetype="text/html")

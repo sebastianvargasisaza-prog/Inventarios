@@ -42,12 +42,16 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 </head>
 <body>
 <div class="hdr">
-  <div>
-    <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
-      <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
-      <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid #6d28d9;padding:2px 7px;border-radius:4px;">v1.0</span>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <img src="/static/icons/icon-192.png" alt="Cortex Labs"
+         style="width:54px;height:54px;border-radius:12px;box-shadow:0 6px 20px rgba(167,139,250,0.35);flex-shrink:0;">
+    <div>
+      <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
+        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+        <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid #6d28d9;padding:2px 7px;border-radius:4px;">v1.0</span>
+      </div>
+      <div class="hdr-sub">by <strong style="color:#fff">HHA Group</strong> &middot; Espagiria &middot; ANIMUS Lab</div>
     </div>
-    <div class="hdr-sub">by <strong style="color:#fff">HHA Group</strong> &middot; Espagiria &middot; ANIMUS Lab</div>
   </div>
   <div class="hdr-right">
     <div style="font-style:italic;color:#cbd5e1;">El cerebro operativo de tu laboratorio</div>

@@ -86,12 +86,16 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 </head>
 <body>
 <div class="header">
-  <div>
-    <div class="header-logo" style="display:flex;align-items:baseline;gap:8px;">
-      <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
-      <span style="font-size:10px;color:#a78bfa;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:2px 6px;border-radius:4px;">v1.0</span>
+  <div style="display:flex;align-items:center;gap:14px;">
+    <img src="/static/icons/icon-192.png" alt="Cortex Labs"
+         style="width:46px;height:46px;border-radius:10px;box-shadow:0 4px 14px rgba(167,139,250,0.3);flex-shrink:0;">
+    <div>
+      <div class="header-logo" style="display:flex;align-items:baseline;gap:8px;">
+        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+        <span style="font-size:10px;color:#a78bfa;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:2px 6px;border-radius:4px;">v1.0</span>
+      </div>
+      <div class="header-sub">by <strong style="color:#cbd5e1">HHA Group</strong> &nbsp;·&nbsp; Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
     </div>
-    <div class="header-sub">by <strong style="color:#cbd5e1">HHA Group</strong> &nbsp;·&nbsp; Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
   </div>
   <div class="header-right">
     <strong id="fecha-hoy"></strong>

@@ -21,7 +21,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:#e2e8f0;}
 .card{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(167,139,250,0.2);border-radius:20px;padding:48px 40px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(109,40,217,0.15);}
 .logo{text-align:center;margin-bottom:36px;}
-.brand-mark{display:inline-block;width:64px;height:64px;background:linear-gradient(135deg,#a78bfa 0%,#6d28d9 100%);border-radius:16px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;font-size:30px;box-shadow:0 8px 24px rgba(109,40,217,0.4);}
+.brand-mark{display:inline-block;width:80px;height:80px;border-radius:18px;margin-bottom:18px;box-shadow:0 12px 36px rgba(109,40,217,0.45);}
 .brand-name{font-size:30px;font-weight:800;letter-spacing:-0.8px;background:linear-gradient(135deg,#c4b5fd,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px;}
 .brand-tag{color:#a78bfa;font-size:12px;font-style:italic;margin-bottom:14px;}
 .brand-by{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;}
@@ -48,7 +48,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
 <body>
 <div class="card">
   <div class="logo">
-    <div class="brand-mark">&#x1F9E0;</div>
+    <img src="/static/icons/icon-192.png" alt="Cortex Labs" class="brand-mark">
     <div class="brand-name">Cortex Labs</div>
     <div class="brand-tag">El cerebro operativo de tu laboratorio</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>
