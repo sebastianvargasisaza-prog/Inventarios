@@ -2241,13 +2241,25 @@ def get_pagos():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); cur = conn.cursor()
+    # Antes: solo devolvia valor_total (total de la OC). En pagos parciales
+    # el frontend mostraba el total entero, no lo realmente pagado. Ahora
+    # agregamos:
+    #   - monto: SUMA real de pagos en pagos_oc (source-of-truth)
+    #   - saldo_pendiente: valor_total - monto (lo que falta pagar)
+    #   - estado actual (Pagada / Parcial) para badge UX
     cur.execute("""
-        SELECT numero_oc, proveedor, categoria, valor_total,
-               medio_pago, fecha_pago, pagado_por,
-               CASE WHEN comprobante_imagen != '' AND comprobante_imagen IS NOT NULL THEN 1 ELSE 0 END as tiene_comprobante
-        FROM ordenes_compra
-        WHERE estado IN ('Pagada','Parcial')
-        ORDER BY fecha_pago DESC
+        SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total,
+               oc.medio_pago, oc.fecha_pago, oc.pagado_por, oc.estado,
+               oc.observaciones,
+               CASE WHEN oc.comprobante_imagen != '' AND oc.comprobante_imagen IS NOT NULL
+                    THEN 1 ELSE 0 END as tiene_comprobante,
+               COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0) as monto,
+               oc.valor_total -
+                 COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0)
+                 as saldo_pendiente
+        FROM ordenes_compra oc
+        WHERE oc.estado IN ('Pagada','Parcial')
+        ORDER BY oc.fecha_pago DESC
         LIMIT 500
     """)
     cols = [d[0] for d in cur.description]
@@ -2321,12 +2333,39 @@ def get_por_pagar():
         for row in cur.fetchall()
     ]
 
-    todos = fisicas + servicios
+    # FIX Catalina: OCs en proceso (no llegan aun a "pagar" porque no han
+    # sido autorizadas o recibidas) tambien deben verse aqui para seguimiento.
+    # Antes quedaban invisibles entre que se creaban y se autorizaban.
+    # Excluimos:
+    #   - OCs ya capturadas en bloque 'servicios' arriba (Aprobada/Autorizada
+    #     con categoria de pago directo)
+    #   - OCs de Influencer/Marketing Digital — esas viven en /marketing
+    cur.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
+               oc.estado, oc.observaciones, oc.fecha as fecha_recepcion,
+               COALESCE(p.condiciones_pago, '') as condiciones_pago,
+               oc.creado_por
+        FROM ordenes_compra oc
+        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
+        WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada')
+          AND NOT (oc.estado IN ('Aprobada','Autorizada')
+                   AND oc.categoria IN ({0}))
+          AND oc.categoria NOT IN ('Influencer/Marketing Digital')
+        ORDER BY oc.fecha DESC
+    """.format(','.join('?' for _ in CATEGORIAS_PAGO_DIRECTO)), CATEGORIAS_PAGO_DIRECTO)
+    cols = [d[0] for d in cur.description]
+    en_proceso = [
+        {**dict(zip(cols, row)), 'pago_directo': False, 'tipo': 'En proceso'}
+        for row in cur.fetchall()
+    ]
+
+    todos = fisicas + servicios + en_proceso
     todos.sort(key=lambda x: x.get('fecha_recepcion') or x.get('fecha') or '', reverse=True)
 
     total_valor = sum(item.get('valor_total', 0) or 0 for item in todos)
     total_servicios = sum(item['valor_total'] or 0 for item in servicios)
     total_fisicas = sum(item['valor_total'] or 0 for item in fisicas)
+    total_proceso = sum(item['valor_total'] or 0 for item in en_proceso)
 
     return jsonify({
         'items': todos,
@@ -2340,6 +2379,10 @@ def get_por_pagar():
             'mercancia_recibida': {
                 'count': len(fisicas),
                 'valor': round(total_fisicas, 2),
+            },
+            'en_proceso': {
+                'count': len(en_proceso),
+                'valor': round(total_proceso, 2),
             },
         }
     })

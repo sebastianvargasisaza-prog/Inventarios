@@ -35,7 +35,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:7px;}
 .card:hover{border-color:#a8a29e;}
 .ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
-.cnum{font-weight:700;font-size:13px;} .cprov{font-size:12px;color:#57534e;margin-top:1px;}
+.cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;}
+.cprov-label{font-size:9px;color:#a8a29e;text-transform:uppercase;letter-spacing:0.05em;display:block;}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
 .b-bor{background:#f3f4f6;color:#6b7280;} .b-rev{background:#fef3c7;color:#92400e;}
 .b-aut{background:#dbeafe;color:#1e40af;} .b-pag{background:#dcfce7;color:#166534;}
@@ -1066,10 +1067,15 @@ function fullCard(o,grp){
   if(o.estado==='Pagada'&&!ES_C&&(_effGrp==='mp'||_effGrp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
   if(o.estado==='Borrador') btns+='<button class="btn bi bs" data-act="edit" data-oc="'+esc(o.numero_oc)+'">&#9998; Editar</button>';
   if(o.estado==='Borrador'||o.estado==='Rechazada') btns+='<button class="btn br bs" data-act="del" data-oc="'+esc(o.numero_oc)+'">&#128465; Eliminar</button>';
+  // Para OCs Autorizadas, hacer EXTRA prominente quien recibe el pago.
+  // Catalina pidio ver al beneficiario sin entrar a detalle.
+  var provLabel = (o.estado==='Autorizada' || o.estado==='Aprobada')
+    ? '<span class="cprov-label">Pagar a:</span>'
+    : '';
   return '<div class="card">'+
-    '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
+    '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div>'+provLabel+'<div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
     '<div class="cmeta"><span>&#x1F4C5; '+fdate(o.fecha)+'</span>'+(o.fecha_entrega_est?'<span>&#x23F0; '+fdate(o.fecha_entrega_est)+'</span>':'')+'<span>'+o.num_items+' item(s)</span></div>'+
-    (o.observaciones?'<div class="cobs">'+esc((o.observaciones||'').substring(0,90))+'</div>':'')+
+    (o.observaciones?'<div class="cobs" title="'+esc(o.observaciones||'')+'">&#128172; '+esc((o.observaciones||'').substring(0,120))+(o.observaciones.length>120?'...':'')+'</div>':'')+
     '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
     (btns?'<div class="acts">'+btns+'</div>':'')+'</div>';
 }

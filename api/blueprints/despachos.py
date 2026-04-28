@@ -73,15 +73,37 @@ def recepcion_seguimiento():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
+    # Recepcion debe ver TODAS las OCs activas — incluyendo Borrador/Revisada/
+    # Aprobada/Pendiente — para que Catalina les pueda hacer seguimiento desde
+    # que se crean hasta que llegan. Antes solo veia desde 'Autorizada' lo que
+    # generaba que las OCs nuevas creadas desde solicitud (estado='Revisada')
+    # quedaran invisibles en recepcion. Categoria-filter sigue excluyendo
+    # servicios/CC/influencers (no requieren recepcion fisica de mercancia).
     c.execute(
         'SELECT numero_oc, fecha, estado, proveedor, categoria, '
         'COALESCE(valor_total,0), COALESCE(fecha_recepcion,""), '
-        'COALESCE(observaciones_recepcion,""), COALESCE(tiene_discrepancias,0), '
+        'COALESCE(observaciones,"") || '
+        '  CASE WHEN COALESCE(observaciones_recepcion,"") != "" '
+        '       THEN " | RECEP: " || observaciones_recepcion ELSE "" END, '
+        'COALESCE(tiene_discrepancias,0), '
         'COALESCE(fecha_pago,""), COALESCE(fecha_autorizacion,""), '
         'COALESCE(recibido_por,"") '
-        "FROM ordenes_compra WHERE estado IN ('Autorizada','Recibida','Pagada','Parcial') "
+        "FROM ordenes_compra WHERE estado IN "
+        "('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial','Pagada') "
         "AND categoria NOT IN ('SVC','CC','Influencer/Marketing Digital') "
-        'ORDER BY fecha DESC LIMIT 200')
+        'ORDER BY '
+        # Priorizar las que aun no se reciben para que aparezcan arriba
+        "  CASE estado "
+        "    WHEN 'Borrador'   THEN 1 "
+        "    WHEN 'Pendiente'  THEN 2 "
+        "    WHEN 'Revisada'   THEN 3 "
+        "    WHEN 'Aprobada'   THEN 4 "
+        "    WHEN 'Autorizada' THEN 5 "
+        "    WHEN 'Recibida'   THEN 6 "
+        "    WHEN 'Parcial'    THEN 7 "
+        "    ELSE 8 END, "
+        '  fecha DESC '
+        'LIMIT 300')
     rows = c.fetchall()
     return jsonify([
         {'numero_oc': r[0], 'fecha': r[1], 'estado': r[2], 'proveedor': r[3],
