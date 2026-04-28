@@ -321,6 +321,7 @@ if __name__ == '__main__':
         ('DOCUMENTO_ALEJANDRO_FACTURACION.md','DOCUMENTO_ALEJANDRO_FACTURACION.docx',RGBColor(0xB4, 0x53, 0x09)),  # ambar oscuro
         ('GAP_ENTERPRISE_VS_ODOO_SAP.md',     'GAP_ENTERPRISE_VS_ODOO_SAP.docx',     RGBColor(0xC0, 0x37, 0x44)),  # rojo carmesi
         ('ROADMAP_MOVIL_NATIVO.md',           'ROADMAP_MOVIL_NATIVO.docx',           RGBColor(0x16, 0xA3, 0x4A)),  # verde
+        ('ROADMAP_ESTETICA_CORTEX.md',        'ROADMAP_ESTETICA_CORTEX.docx',        RGBColor(0x6D, 0x28, 0xD9)),  # violeta
     ]
     for src, dst, color in targets:
         src_path = base / src

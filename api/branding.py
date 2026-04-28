@@ -101,6 +101,69 @@ def meta_tags_html() -> str:
     )
 
 
+# ===================== Iconos SVG (Heroicons line-style) =====================
+# Reutilizables en cualquier template para tener consistencia visual.
+# Uso: branding.icon('planta', size=32, color='#6d28d9')
+
+_SVG_ICONS = {
+    'hoy':         '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/>',
+    'gerencia':    '<path d="M3 9l9-6 9 6"/><path d="M5 21V11M19 21V11M9 21v-8M15 21v-8M2 21h20"/>',
+    'planta':      '<path d="M21 7.5l-9-5-9 5 9 5z"/><path d="M3 7.5v9l9 5 9-5v-9M12 12.5v9"/>',
+    'calidad':     '<path d="M9 3h6M10 3v6.5L4 19a2 2 0 001.7 3h12.6a2 2 0 001.7-3l-6-9.5V3"/><path d="M6 14h12"/>',
+    'tecnica':     '<path d="M14.7 6.3a4 4 0 005.7-5.7L18 3l-2-1-1-2-2.6 2.6a4 4 0 005.3 5.4z"/><path d="M14 9 4 19l3 3 10-10"/>',
+    'compras':     '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 3h2l3 13h12l3-9H6"/>',
+    'solicitudes': '<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6M9 9h2"/>',
+    'clientes':    '<path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/>',
+    'marketing':   '<path d="M3 11v3a1 1 0 001 1h2.5l8 5V5l-8 5H4a1 1 0 00-1 1z"/><path d="M19 12a4 4 0 000-5.7"/>',
+    'animus':      '<path d="M12 3l1.9 5.4L19 10l-5.1 1.6L12 17l-1.9-5.4L5 10l5.1-1.6L12 3z"/><path d="M19 17l.6 1.7L21 19l-1.4.3L19 21l-.6-1.7L17 19l1.4-.3z"/>',
+    'espagiria':   '<path d="M12 21V8M12 8c-3 0-6-2-6-5 3 0 6 2 6 5z"/><path d="M12 8c3 0 6-2 6-5-3 0-6 2-6 5zM8 14c-2 0-4-1-4-3 2 0 4 1 4 3zM16 14c2 0 4-1 4-3-2 0-4 1-4 3z"/>',
+    'tesoreria':   '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>',
+    'rrhh':        '<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/>',
+    'compromisos': '<path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/>',
+    'recepcion':   '<path d="M14 18V6a2 2 0 00-2-2H4a2 2 0 00-2 2v11a1 1 0 001 1h2"/><path d="M15 18h-3M22 18h-2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M14 9h3l3 4v5h-2"/>',
+    'maquila':     '<path d="M9 3v6L4 18a2 2 0 001.7 3h12.6a2 2 0 001.7-3l-5-9V3"/><path d="M9 3h6"/>',
+    'dashboard':   '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+    'bodega':      '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/>',
+    'produccion':  '<path d="M2 22h20M4 22V8l5 3V8l5 3V8l6 4v10"/>',
+    'programacion':'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    'modulos':     '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+    'volver':      '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+    'logout':      '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>',
+    'config':      '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H22a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
+    'campana':     '<path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
+    'lupa':        '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+}
+
+
+def icon(name: str, size: int = 24, color: str = "currentColor",
+         stroke_width: float = 1.6, css_class: str = "cx-ico") -> str:
+    """Devuelve un <svg>...</svg> inline con el icono pedido.
+
+    Si name no existe, retorna un placeholder de cuadrado.
+
+    Args:
+        name: clave del icono (ver _SVG_ICONS)
+        size: tamanio en px (width=height)
+        color: color del trazo (ej '#6d28d9' o 'currentColor')
+        stroke_width: grosor del trazo
+        css_class: clase CSS para el SVG
+    """
+    paths = _SVG_ICONS.get(name)
+    if not paths:
+        paths = '<rect x="4" y="4" width="16" height="16" rx="2"/>'
+    return (
+        f'<svg viewBox="0 0 24 24" width="{size}" height="{size}" '
+        f'fill="none" stroke="{color}" stroke-width="{stroke_width}" '
+        f'stroke-linecap="round" stroke-linejoin="round" class="{css_class}">'
+        f'{paths}</svg>'
+    )
+
+
+def list_icons() -> list:
+    """Lista los iconos disponibles."""
+    return sorted(_SVG_ICONS.keys())
+
+
 def context_dict() -> dict:
     """Diccionario para inyectar en templates Jinja-like si se necesitara."""
     return {
