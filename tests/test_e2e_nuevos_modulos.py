@@ -336,3 +336,52 @@ def test_sync_shopify_solo_admin(app, db_clean):
     luz = _login_as(app, 'luz')
     r = luz.post('/api/financiero/sync-shopify-ingresos', json={})
     assert r.status_code == 401
+
+
+# ─── CENTRO DE NOTIFICACIONES ──────────────────────────────────────────────
+
+def test_centro_notificaciones_estructura(app, db_clean):
+    c = _login_as(app, 'sebastian')
+    r = c.get('/api/notificaciones/centro')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert 'alertas' in d
+    assert 'total' in d
+    assert 'por_severidad' in d
+    assert all(k in d['por_severidad'] for k in ['alta', 'media', 'info'])
+
+
+def test_centro_notificaciones_count(app, db_clean):
+    c = _login_as(app, 'sebastian')
+    r = c.get('/api/notificaciones/count')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert 'count' in d
+    assert isinstance(d['count'], int)
+
+
+def test_centro_notificaciones_no_autenticado(app, db_clean):
+    c = app.test_client()  # sin login
+    r = c.get('/api/notificaciones/count')
+    # El endpoint puede devolver 200 con count=0 o 401/302 dependiendo del middleware
+    if r.status_code == 200:
+        d = r.get_json() or {}
+        assert d.get('count', 0) == 0
+    else:
+        assert r.status_code in (401, 302)
+
+
+def test_centro_notificaciones_detecta_tarea_vencida(app, db_clean):
+    """Crea una tarea vencida asignada a luz y verifica que aparece en su centro."""
+    sb = _login_as(app, 'sebastian')
+    sb.post('/api/comunicacion/tareas', json={
+        'titulo': 'Tarea TEST vencida',
+        'fecha_compromiso': '2025-01-01',  # ya pasada
+        'raci': [{'usuario': 'luz', 'rol': 'R'}],
+    })
+    luz = _login_as(app, 'luz')
+    r = luz.get('/api/notificaciones/centro')
+    d = r.get_json()
+    titulos = ' '.join(a['titulo'] for a in d['alertas'])
+    assert 'TEST vencida' in titulos
+    assert d['por_severidad']['alta'] >= 1

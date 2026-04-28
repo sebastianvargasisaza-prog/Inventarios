@@ -38,7 +38,31 @@ HTML = r"""
   .badge.estado-hecha { background:#064e3b; color:#34d399; }
   .empty { color:#64748b; font-style:italic; padding:20px; text-align:center; }
   .grid-2 { grid-template-columns:1fr 1fr; }
+
+  /* ─── MOBILE RESPONSIVE ─── */
   @media (max-width:900px) { .grid-2 { grid-template-columns:1fr; } }
+  @media (max-width:768px) {
+    .header { padding:14px 16px; flex-wrap:wrap; gap:8px; }
+    .header h1 { font-size:1.15em; }
+    .container { padding:14px; }
+    .grid-4 { grid-template-columns:repeat(2,1fr); gap:10px; }
+    .card { padding:12px; }
+    .card .val { font-size:1.4em; }
+    .card h3 { font-size:0.7em; }
+    .section-title { font-size:0.95em; margin:18px 0 10px; }
+    /* Tablas → cards apilados */
+    table thead { display:none; }
+    table, table tbody, table tr, table td { display:block; width:100%; }
+    table tr { background:#0f172a; border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #334155; }
+    table td { border-bottom:none; padding:4px 0; font-size:12px; }
+    table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
+    .alert { padding:10px 12px; font-size:12px; }
+    .alert .title { font-size:13px; }
+  }
+  @media (max-width:480px) {
+    .grid-4 { grid-template-columns:1fr; }
+    .container { padding:10px; }
+  }
 </style>
 </head>
 <body>

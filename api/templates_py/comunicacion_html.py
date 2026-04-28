@@ -57,6 +57,45 @@ HTML = r"""
   .modal{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999}
   .modal-body{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
   .modal-body h2{margin:0 0 14px;font-size:1.1em}
+
+  /* ─── MOBILE RESPONSIVE ─── */
+  @media (max-width:900px) { .grid-2 { grid-template-columns:1fr; } }
+  @media (max-width:768px) {
+    .header { padding:14px 16px; flex-wrap:wrap; gap:8px; }
+    .header h1 { font-size:1.15em; }
+    .container { padding:12px; }
+    .grid-4 { grid-template-columns:repeat(2,1fr); gap:10px; }
+    .card { padding:12px; }
+    .card .val { font-size:1.4em; }
+    .card h3 { font-size:0.7em; }
+    .tabs { gap:4px; padding-bottom:6px; overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; }
+    .tab { padding:6px 12px; font-size:12px; white-space:nowrap; flex-shrink:0; }
+    .panel { padding:14px; }
+    /* Tablas → cards apilados */
+    table thead { display:none; }
+    table, table tbody, table tr, table td { display:block; width:100%; }
+    table tr { background:#0f172a; border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #334155; }
+    table td { border-bottom:none; padding:4px 0; font-size:12px; }
+    table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
+    /* Modales 95% en mobile */
+    .modal-body { padding:18px; width:95vw; }
+    .modal-body h2 { font-size:1em; }
+    /* Mensajes de chat más compactos */
+    .mensaje { padding:8px 10px; }
+    .mensaje .header-msg { flex-wrap:wrap; gap:4px; }
+    /* Botones full-width en mobile */
+    .btn { padding:10px 14px; font-size:13px; }
+    /* RACI badges más pequeños */
+    .raci { font-size:9px; }
+    /* Inputs ocupan ancho completo */
+    input, textarea, select { font-size:14px; }
+  }
+  @media (max-width:480px) {
+    .grid-4 { grid-template-columns:1fr; }
+    .container { padding:8px; }
+    .tabs { margin-bottom:12px; }
+    .tab { font-size:11px; padding:5px 10px; }
+  }
 </style>
 </head>
 <body>
