@@ -1249,6 +1249,15 @@ def admin_inventario_reset_preview():
     entradas_oc_g = sum(float(r['cantidad'] or 0) for r in entradas_oc)
     salidas_prod_g = sum(float(r['cantidad'] or 0) for r in salidas_prod)
 
+    # ── Salidas post-día-cero por lote (para fix de cantidad inicial) ──
+    # Bug previo: el Excel verde tiene la cantidad ACTUAL (post-producciones),
+    # pero al cargar como Entrada del día cero, después se aplicaban las salidas
+    # otra vez → negativo. Fix: cantidad_dia_cero = excel_actual + salidas_post.
+    salidas_post_por_lote = {}
+    for s in salidas_prod:
+        k = (s['material_id'], s['lote'] or '')
+        salidas_post_por_lote[k] = salidas_post_por_lote.get(k, 0) + float(s['cantidad'] or 0)
+
     # Lotes huérfanos: consumidos por produccion pero NO en Excel verde
     excel_keys = set(excel_verde.keys())
     huerfanos_consumo = {}  # (cod,lote) -> sum_salidas_g
@@ -1266,8 +1275,9 @@ def admin_inventario_reset_preview():
         cod, lote = k
         en_excel_completo = excel_no_verde.get(k)
         if en_excel_completo and en_excel_completo['cantidad_g'] > 0:
-            cant_entrada = en_excel_completo['cantidad_g']
-            origen = 'excel_no_verde'
+            # Aún siendo no-verde, tiene cantidad — sumar salidas para no negativo
+            cant_entrada = en_excel_completo['cantidad_g'] + consumido
+            origen = 'excel_no_verde+salidas'
         else:
             cant_entrada = consumido  # fallback: para cerrar en 0
             origen = 'fallback_sum_salidas'
@@ -1285,7 +1295,27 @@ def admin_inventario_reset_preview():
         for k, v in huerfanos_consumo.items()
     ]
 
-    stock_post_g = excel_total_g + entradas_oc_g + huerfanos_total_g - salidas_prod_g
+    # Cantidad inicial total (con compensacion FEFO) = excel_verde + salidas_de_esos_lotes
+    excel_inicial_total_g = 0.0
+    lotes_compensados = []  # lotes verdes que tendrán cantidad_inicial > excel
+    for k, info in excel_verde.items():
+        salidas_post = salidas_post_por_lote.get(k, 0)
+        cant_inicial = float(info['cantidad_g']) + salidas_post
+        excel_inicial_total_g += cant_inicial
+        if salidas_post > 0:
+            lotes_compensados.append({
+                'codigo_mp': k[0], 'lote': k[1],
+                'cantidad_excel_actual_g': round(float(info['cantidad_g']), 1),
+                'salidas_post_dia_cero_g': round(salidas_post, 1),
+                'cantidad_inicial_dia_cero_g': round(cant_inicial, 1),
+            })
+    lotes_compensados.sort(key=lambda x: -x['salidas_post_dia_cero_g'])
+
+    # Stock post = lo del Excel actual (sin compensacion) + OC nuevas + huerfanos - salidas
+    # = (excel_inicial - salidas_de_lotes_verdes) + entradas_oc + huerfanos_total - salidas_huerfanos
+    # Como huerfanos_total ya equivale a las salidas que les corresponden, queda:
+    # stock_post = excel_total_g (la cantidad ACTUAL del excel) + entradas_oc_g + 0 (huerfanos cierran en 0)
+    stock_post_g = excel_total_g + entradas_oc_g
 
     # Sample top lotes a crear (mas grandes)
     top_excel = sorted(
@@ -1301,8 +1331,16 @@ def admin_inventario_reset_preview():
             'movimientos_a_borrar': movs_actuales,
             'entradas_iniciales_a_crear': {
                 'count': len(excel_verde),
-                'total_g': round(excel_total_g, 1),
+                'total_g': round(excel_total_g, 1),  # alias back-compat
+                'total_g_excel_actual': round(excel_total_g, 1),
+                'total_g_dia_cero_compensado': round(excel_inicial_total_g, 1),
+                'lotes_compensados_por_salidas_post_count': len(lotes_compensados),
+                'lotes_compensados_sample_top10': lotes_compensados[:10],
                 'sample_top10': top_excel,
+                'nota_fix': ('Cantidad cargada al día cero = excel_actual + '
+                             'salidas_post_día_cero del mismo lote. Esto evita '
+                             'negativos: el FEFO consumirá las salidas y el lote '
+                             'quedará exactamente en lo que el Excel reporta hoy.'),
             },
             'entradas_oc_a_preservar': {
                 'count': len(entradas_oc),
@@ -1438,6 +1476,14 @@ def admin_inventario_reset_aplicar():
     # Capturar movimientos a preservar
     entradas_oc, salidas_prod = _identify_movimientos_a_preservar(c)
 
+    # ── Salidas post-día-cero por lote (fix de cantidad inicial) ──
+    # Cantidad cargada al día cero = excel_actual + salidas_post para que el
+    # FEFO posterior no deje negativos.
+    salidas_post_por_lote = {}
+    for s in salidas_prod:
+        k = (s['material_id'], s['lote'] or '')
+        salidas_post_por_lote[k] = salidas_post_por_lote.get(k, 0) + float(s['cantidad'] or 0)
+
     # Calcular huerfanos a regenerar (lotes consumidos NO en Excel verde)
     excel_keys = set(excel_verde.keys())
     huerfanos_consumo = {}
@@ -1451,12 +1497,11 @@ def admin_inventario_reset_aplicar():
         cod, lote = k
         en_excel = excel_no_verde.get(k)
         if en_excel and en_excel['cantidad_g'] > 0:
-            cant = en_excel['cantidad_g']
+            # No-verde con cantidad: sumar salidas para que cierre con la cant del excel
+            cant = en_excel['cantidad_g'] + consumido
             info = en_excel
         else:
             cant = consumido  # fallback para cerrar en 0
-            # Buscar nombre/proveedor en cualquier movimiento del lote (los datos
-            # del catalogo maestro_mps son reliables)
             info = {
                 'codigo_mp': cod, 'lote': lote,
                 'inci': '', 'nombre_comercial': '',
@@ -1492,24 +1537,37 @@ def admin_inventario_reset_aplicar():
         # 1. DELETE
         c.execute("DELETE FROM movimientos")
 
-        # 2. Cargar 305 Entradas iniciales del Excel verde
+        # 2. Cargar Entradas iniciales del Excel verde (compensadas con salidas post)
         DIA_CERO = '2026-04-15T00:00:00'
         OBS_INICIAL = 'Carga inicial Excel dia cero v8_1 — reset 2026-04-27'
         OPERADOR_RESET = 'reset_2026_04_27'
+        n_excel_inserted = 0
+        n_lotes_compensados = 0
+        total_compensacion_g = 0.0
         for (cod, lote), info in excel_verde.items():
-            if info['cantidad_g'] <= 0:
+            cant_excel = float(info['cantidad_g'] or 0)
+            cant_salidas_post = salidas_post_por_lote.get((cod, lote), 0)
+            cant_inicial = cant_excel + cant_salidas_post  # ← FIX día cero
+            if cant_inicial <= 0:
                 continue
+            obs = OBS_INICIAL
+            if cant_salidas_post > 0:
+                obs = (f'{OBS_INICIAL} | Compensación FEFO: '
+                       f'excel_hoy={int(round(cant_excel))}g + '
+                       f'salidas_post={int(round(cant_salidas_post))}g')
+                n_lotes_compensados += 1
+                total_compensacion_g += cant_salidas_post
             c.execute("""INSERT INTO movimientos
                          (material_id, material_nombre, cantidad, tipo, fecha,
                           observaciones, lote, fecha_vencimiento, estanteria,
                           posicion, proveedor, estado_lote, operador)
                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (cod, info['nombre_comercial'] or info['inci'] or cod,
-                       float(info['cantidad_g']), 'Entrada', DIA_CERO,
-                       OBS_INICIAL, lote, info['fecha_vencimiento'] or None,
+                       cant_inicial, 'Entrada', DIA_CERO,
+                       obs, lote, info['fecha_vencimiento'] or None,
                        info['estanteria'] or '', info['posicion'] or '',
                        info['proveedor'] or '', 'VIGENTE', OPERADOR_RESET))
-        n_excel_inserted = len(excel_verde)
+            n_excel_inserted += 1
 
         # 2b. Regenerar Entradas virtuales para lotes huerfanos (consumidos
         # por produccion pero NO presentes fisicamente en el Excel verde).
@@ -1588,6 +1646,8 @@ def admin_inventario_reset_aplicar():
                    _json.dumps({
                        'movs_borrados': movs_borrados,
                        'lotes_excel_cargados': n_excel_inserted,
+                       'lotes_compensados_fefo': n_lotes_compensados,
+                       'compensacion_total_g': round(total_compensacion_g, 1),
                        'huerfanos_regenerados': n_huerfanos_inserted,
                        'entradas_oc_re_insertadas': len(entradas_oc),
                        'salidas_prod_re_insertadas': len(salidas_prod),
@@ -1606,18 +1666,148 @@ def admin_inventario_reset_aplicar():
         'ok': True,
         'message': (f'Reset aplicado. Borrados {movs_borrados} movimientos, '
                     f'cargadas {n_excel_inserted} Entradas iniciales del Excel '
-                    f'verde + {n_huerfanos_inserted} Entradas regeneradas '
-                    f'(huerfanos), preservadas {len(entradas_oc)} Entradas '
-                    f'con OC + {len(salidas_prod)} Salidas de produccion.'),
+                    f'verde ({n_lotes_compensados} lotes compensados con '
+                    f'+{int(round(total_compensacion_g))} g por salidas post-día-cero) '
+                    f'+ {n_huerfanos_inserted} Entradas regeneradas (huerfanos), '
+                    f'preservadas {len(entradas_oc)} Entradas con OC + '
+                    f'{len(salidas_prod)} Salidas de produccion.'),
         'resumen': {
             'movs_borrados': movs_borrados,
             'lotes_excel_cargados': n_excel_inserted,
+            'lotes_compensados_fefo': n_lotes_compensados,
+            'compensacion_total_g': round(total_compensacion_g, 1),
             'huerfanos_regenerados': n_huerfanos_inserted,
             'entradas_oc_preservadas': len(entradas_oc),
             'salidas_prod_preservadas': len(salidas_prod),
             'movs_post_total': movs_post,
             'stock_post_g': round(stock_post_g, 1),
         },
+    })
+
+
+@bp.route("/api/admin/sembrar-maestro-desde-excel", methods=["POST"])
+def admin_sembrar_maestro_desde_excel():
+    """Asegura que TODOS los códigos del Excel (verdes + no-verdes) existan
+    en maestro_mps. Para los que no existen, inserta una entrada con
+    stock_minimo=0 y los datos disponibles del Excel (nombre, proveedor,
+    estantería). NO crea movimientos — los no-verdes quedan en stock 0
+    naturalmente.
+
+    Justificación: las MPs no-verdes son materias primas que se han usado
+    pero están actualmente agotadas. Necesitan estar en el catálogo para:
+      - Aparecer en fórmulas
+      - Recibirse vía OC cuando llegue reposición
+      - Aparecer en alertas de mínimos cuando se reciban
+
+    Solo admins. SIN tocar `movimientos`.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'Archivo debe ser .xlsx'}), 400
+
+    excel_verde, _, excel_no_verde, errs = _parse_excel_verde(f, incluir_no_verde=True)
+    if excel_verde is None:
+        return jsonify({'error': errs[0] if errs else 'Excel inválido'}), 400
+
+    # Consolidar todos los códigos (verdes + no-verdes), tomando el primer
+    # registro encontrado de cada código (los datos de catálogo son los mismos
+    # entre lotes del mismo MP).
+    todos_por_codigo = {}
+    for (cod, _lote), info in excel_verde.items():
+        if cod not in todos_por_codigo:
+            todos_por_codigo[cod] = info
+    for (cod, _lote), info in excel_no_verde.items():
+        if cod not in todos_por_codigo:
+            todos_por_codigo[cod] = info
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Códigos ya presentes en maestro_mps
+    existentes = {row[0] for row in c.execute(
+        "SELECT codigo_mp FROM maestro_mps"
+    ).fetchall()}
+
+    nuevos = []
+    actualizados_proveedor = []  # opcional: si en maestro está vacío y excel tiene proveedor
+    for cod, info in todos_por_codigo.items():
+        nombre = (info.get('nombre_comercial') or info.get('inci') or cod).strip()
+        inci = (info.get('inci') or '').strip()
+        proveedor = (info.get('proveedor') or '').strip()
+        if cod not in existentes:
+            try:
+                c.execute(
+                    """INSERT INTO maestro_mps
+                       (codigo_mp, nombre_inci, nombre_comercial, proveedor,
+                        stock_minimo, activo)
+                       VALUES (?,?,?,?,?,?)""",
+                    (cod, inci or nombre, nombre, proveedor, 0, 1),
+                )
+                nuevos.append({
+                    'codigo_mp': cod,
+                    'nombre_comercial': nombre,
+                    'proveedor': proveedor,
+                })
+            except sqlite3.IntegrityError:
+                pass
+        else:
+            # MP ya existe — actualizar proveedor si está vacío en maestro
+            if proveedor:
+                try:
+                    cur_prov = c.execute(
+                        "SELECT proveedor FROM maestro_mps WHERE codigo_mp=?",
+                        (cod,),
+                    ).fetchone()
+                    if cur_prov and not (cur_prov[0] or '').strip():
+                        c.execute(
+                            "UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
+                            (proveedor, cod),
+                        )
+                        actualizados_proveedor.append({
+                            'codigo_mp': cod,
+                            'proveedor': proveedor,
+                        })
+                except sqlite3.OperationalError:
+                    pass
+
+    conn.commit()
+
+    # Audit
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'SEMBRAR_MAESTRO_DESDE_EXCEL', 'maestro_mps', '_BULK_',
+             _json.dumps({
+                 'archivo': f.filename,
+                 'nuevos_count': len(nuevos),
+                 'proveedores_actualizados_count': len(actualizados_proveedor),
+                 'codigos_excel_total': len(todos_por_codigo),
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'mensaje': (f'Sembrado: {len(nuevos)} nuevos MPs en catálogo, '
+                    f'{len(actualizados_proveedor)} con proveedor actualizado. '
+                    f'No se modificaron movimientos.'),
+        'nuevos_count': len(nuevos),
+        'nuevos_sample': nuevos[:30],
+        'proveedores_actualizados_count': len(actualizados_proveedor),
+        'proveedores_actualizados_sample': actualizados_proveedor[:30],
     })
 
 
@@ -2242,13 +2432,13 @@ def admin_mps_proveedores_status():
         (r['total'] for r in por_proveedor if r['proveedor'] == '(SIN PROVEEDOR)'), 0
     )
 
-    # Lista detallada de los SIN proveedor
+    # Lista detallada de los SIN proveedor — orden alfabético por nombre
     rows_sin = c.execute("""
         SELECT codigo_mp, nombre_comercial, COALESCE(tipo,'') as tipo
         FROM maestro_mps
         WHERE activo = 1
           AND (proveedor IS NULL OR TRIM(proveedor) = '')
-        ORDER BY codigo_mp LIMIT 200
+        ORDER BY nombre_comercial COLLATE NOCASE LIMIT 200
     """).fetchall()
     sin_proveedor_lista = [
         {'codigo_mp': r['codigo_mp'], 'nombre': r['nombre_comercial'], 'tipo': r['tipo']}
@@ -2338,7 +2528,7 @@ def admin_tipos_mp_stats():
                      FROM maestro_mps
                      WHERE COALESCE(NULLIF(TRIM(tipo_material),''),'(sin tipo)')=?
                        AND activo=1
-                     ORDER BY codigo_mp LIMIT 5""", (r["tipo"],))
+                     ORDER BY nombre_comercial COLLATE NOCASE LIMIT 5""", (r["tipo"],))
         ejemplos[r["tipo"]] = [
             {"codigo": e["codigo_mp"], "nombre": e["nombre_comercial"]}
             for e in c.fetchall()
@@ -3624,6 +3814,7 @@ tr:hover td{background:#263348;}
         <br>Sigue el orden: <strong>1)</strong> Descarga snapshot &rarr; <strong>2)</strong> Preview &rarr; <strong>3)</strong> Aplicar.
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="sembrarMaestroDesdeExcel()" style="border-color:#a5b4fc;color:#a5b4fc;" title="Asegura que TODOS los códigos del Excel (verdes Y no-verdes) estén en maestro_mps. NO toca movimientos. Recomendado correr ANTES del reset.">&#x1F331; 0. Sembrar cat&aacute;logo MPs</button>
         <button class="btn btn-outline" onclick="descargarSnapshotPreReset()" title="Descarga JSON con TODOS los movimientos, producciones, OCs, comprobantes — para poder revertir si algo sale mal">&#x1F4BE; 1. Descargar snapshot pre-reset</button>
         <button class="btn btn-outline" onclick="previewReset()" title="Muestra que va a pasar SIN escribir nada">&#x1F441; 2. Preview reset</button>
         <button class="btn" onclick="aplicarReset()" style="background:#dc2626;color:#fff;" title="Ejecuta el reset. Pide token textual de confirmacion.">&#x1F4A5; 3. APLICAR reset</button>
@@ -3822,6 +4013,43 @@ async function auditarInvVsExcel() {
     out.innerHTML = h;
   } catch(e) {
     out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function sembrarMaestroDesdeExcel() {
+  const fileEl = document.getElementById('audit-inv-file');
+  const out = document.getElementById('audit-inv-result');
+  if (!fileEl.files || !fileEl.files[0]) {
+    out.innerHTML = '<div style="color:#fbbf24;">Selecciona primero el Excel arriba.</div>';
+    return;
+  }
+  out.innerHTML = '<div style="color:#94a3b8;">Sembrando catálogo MPs desde Excel (verdes + no-verdes)...</div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', fileEl.files[0]);
+    const r = await fetch('/api/admin/sembrar-maestro-desde-excel', {method: 'POST', body: fd});
+    const d = await r.json();
+    if (!r.ok) {
+      out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>';
+      return;
+    }
+    let h = '<h3 style="color:#a5b4fc;margin-top:0;">🌱 Catálogo MPs sembrado</h3>';
+    h += '<div style="color:#cbd5e1;font-size:13px;margin-bottom:14px;">' + _esc(d.mensaje) + '</div>';
+    h += '<div class="kpi-row" style="margin-bottom:14px;">';
+    h += '<div class="kpi"><div class="kpi-l">MPs nuevos en catálogo</div><div class="kpi-v" style="color:#a5b4fc;">' + d.nuevos_count + '</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Proveedores actualizados</div><div class="kpi-v" style="color:#34d399;">' + d.proveedores_actualizados_count + '</div></div>';
+    h += '</div>';
+    if (d.nuevos_sample && d.nuevos_sample.length) {
+      h += '<h4 style="color:#a5b4fc;">Nuevos en catálogo (sample primeros 30)</h4>';
+      h += '<table><thead><tr><th>Código</th><th>Nombre</th><th>Proveedor</th></tr></thead><tbody>';
+      d.nuevos_sample.forEach(n => {
+        h += '<tr><td style="font-family:monospace;">' + _esc(n.codigo_mp) + '</td><td>' + _esc(n.nombre_comercial) + '</td><td>' + _esc(n.proveedor||'—') + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
   }
 }
 

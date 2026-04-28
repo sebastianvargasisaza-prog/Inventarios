@@ -543,6 +543,8 @@ def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
     import os
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.cursor()
+    # Limpiar movimientos del DB para test aislado
+    cur.execute("DELETE FROM movimientos")
     cur.execute("INSERT INTO movimientos (material_id, material_nombre, lote, "
                 "cantidad, tipo, fecha, operador) "
                 "VALUES ('MP_DIRTY','D','L1',999,'Entrada','2026-04-15','sistema')")
@@ -571,6 +573,9 @@ def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
     assert j["resumen"]["lotes_excel_cargados"] == 2
     assert j["resumen"]["entradas_oc_preservadas"] == 1
     assert j["resumen"]["salidas_prod_preservadas"] == 1
+    # Compensación FEFO: LOTE-A tiene 1 salida de 300g, debe sumarse al excel
+    assert j["resumen"]["lotes_compensados_fefo"] == 1
+    assert j["resumen"]["compensacion_total_g"] == 300.0
 
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.cursor()
@@ -581,7 +586,9 @@ def test_inventario_reset_aplicar_ejecuta(admin_client, db_clean):
     assert len(rows) == 4, f"Esperado 4 movs, recibido {len(rows)}: {rows}"
     codigos = {r[0] for r in rows}
     assert "MP_DIRTY" not in codigos
-    assert ("MP_RESET_A", "LOTE-A", 2000.0, "Entrada") in rows
+    # FIX FEFO: la entrada inicial = excel (2000) + salidas_post (300) = 2300
+    # Después la salida (300) se aplica → stock final = 2300 - 300 = 2000 = excel ✓
+    assert ("MP_RESET_A", "LOTE-A", 2300.0, "Entrada") in rows
     assert ("MP_RESET_A", "LOTE-A", 300.0, "Salida") in rows
     assert ("MP_RESET_B", "LOTE-B", 500.0, "Entrada") in rows
     assert ("MP_RESET_B", "LOTE-B", 100.0, "Entrada") in rows
@@ -610,6 +617,13 @@ def test_health_monitor_solo_admin(app, db_clean):
 
 def test_health_monitor_sistema_limpio(admin_client, db_clean):
     """Sistema limpio (sin entradas raras) → nivel ok."""
+    import sqlite3
+    import os
+    # Aislar: limpiar movimientos por si tests previos dejaron residuos
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM movimientos")
+    conn.commit()
+    conn.close()
     r = admin_client.get("/api/admin/inventario-health-monitor")
     assert r.status_code == 200
     j = r.get_json()

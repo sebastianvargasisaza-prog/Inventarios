@@ -1253,12 +1253,12 @@ def handle_maestro():
         c.execute("""SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,
                             COALESCE(precio_referencia,0), COALESCE(tipo_material,'MP')
                      FROM maestro_mps WHERE activo=1 AND tipo_material=?
-                     ORDER BY nombre_comercial""", (tipo_filter,))
+                     ORDER BY nombre_comercial COLLATE NOCASE""", (tipo_filter,))
     else:
         c.execute("""SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,
                             COALESCE(precio_referencia,0), COALESCE(tipo_material,'MP')
                      FROM maestro_mps WHERE activo=1
-                     ORDER BY nombre_comercial""")
+                     ORDER BY nombre_comercial COLLATE NOCASE""")
     rows = c.fetchall()
     return jsonify({'mps': [
         {'codigo_mp':r[0], 'nombre_inci':r[1], 'nombre_comercial':r[2],
