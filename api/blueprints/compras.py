@@ -295,7 +295,7 @@ def generar_oc_automatica():
         for it in items:
             eb += str(it['codigo_mp']) + ' - ' + str(it['nombre_mp']) + '\n'
             eb += '  Stock actual: ' + str(int(it['stock_actual'])) + 'g | Minimo: ' + str(int(it['stock_minimo'])) + 'g\n'
-            eb += '  CANTIDAD A PEDIR: ' + str(int(it['cantidad_pedir'])) + ' g = ' + str(round(it['cantidad_pedir']/1000, 2)) + ' kg\n'
+            eb += '  CANTIDAD A PEDIR: ' + f"{int(it['cantidad_pedir']):,}".replace(',', '.') + ' g\n'
             eb += sep + '\n'
         eb += '\nTotal: ' + str(len(items)) + ' items pendientes de compra.\n'
         eb += 'Por favor aprobar y contactar al proveedor.\n'
@@ -2762,14 +2762,13 @@ def solicitudes_pdf_resumen():
     BADGE_URG_BAJA = (180, 180, 180)
 
     def _fmt_cant(g, u='g'):
-        """Preserva decimales para péptidos (<10g) — usado en items y totales."""
+        """Normalizado: SIEMPRE en gramos con separador de miles (acordado con Alejandro).
+        Preserva decimales solo para péptidos (<1g)."""
         n = float(g or 0)
         if u and u != 'g':
             return f'{n:.0f} {u}' if n == int(n) else f'{n:.2f} {u}'
-        if n >= 1000:
-            return f'{n/1000:.2f} kg'
         if n >= 10:
-            return f'{int(round(n))} g'
+            return f'{int(round(n)):,}'.replace(',', '.') + ' g'
         if n >= 1:
             return f'{n:.1f} g'
         if n > 0:

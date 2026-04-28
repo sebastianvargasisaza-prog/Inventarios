@@ -1958,7 +1958,7 @@ var _charts={};
 async function loadDashboard(){
   try{
     var r=await fetch('/api/inventario'), d=await r.json();
-    document.getElementById('stock-total').textContent=((d.stock_total||0)/1000).toFixed(1)+' kg';
+    document.getElementById('stock-total').textContent=Math.round(d.stock_total||0).toLocaleString('es-CO')+' g';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
     document.getElementById('producciones-count').textContent=d.producciones||'0';
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
@@ -3068,7 +3068,7 @@ async function buscarTrazabilidadPT(){
       var p=d.produccion;
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;font-size:0.88em;margin-bottom:12px;">';
       html+='<div><b>Producto:</b> '+(p.producto||'&#8212;')+'</div>';
-      html+='<div><b>Cantidad:</b> '+(p.cantidad_kg?Number(p.cantidad_kg).toFixed(2)+' kg':'&#8212;')+'</div>';
+      html+='<div><b>Cantidad:</b> '+(p.cantidad_kg?Math.round(Number(p.cantidad_kg)*1000).toLocaleString('es-CO')+' g':'&#8212;')+'</div>';
       html+='<div><b>Fecha:</b> '+(p.fecha?p.fecha.substring(0,10):'&#8212;')+'</div>';
       html+='<div><b>Operador:</b> '+(p.operador||'&#8212;')+'</div>';
       html+='</div>';
@@ -3225,7 +3225,7 @@ async function cargarEstanterias(){
     data.forEach(function(e){
       var opt = document.createElement('option');
       opt.value = e.estanteria;
-      opt.textContent = e.estanteria + ' (' + e.total_mps + ' items, ' + (e.stock_total/1000).toFixed(1) + ' kg)';
+      opt.textContent = e.estanteria + ' (' + e.total_mps + ' items, ' + Math.round(e.stock_total||0).toLocaleString('es-CO') + ' g)';
       sel.appendChild(opt);
     });
   }catch(e){}
@@ -4879,8 +4879,10 @@ function _renderProgramacion(d){
   }
 
   function _fmtG(g){
-    if(g>=1000) return (g/1000).toFixed(1)+' kg';
-    return Math.round(g)+' g';
+    // Normalizado: SIEMPRE en gramos con separador de miles (acordado con Alejandro).
+    if(g === null || g === undefined) return '—';
+    var n = Math.round(Number(g) || 0);
+    return n.toLocaleString('es-CO') + ' g';
   }
 
   function _renderPlanificacion(d){
@@ -5211,8 +5213,7 @@ function _renderProgramacion(d){
       // Resumen de MPs principales para que el card de solicitudes muestre
       // exactamente qué se está pidiendo, no solo el conteo.
       var mpsResumen = mps.slice(0, 5).map(function(mp){
-        var kg = (mp.deficit_g/1000);
-        return mp.nombre + ' (' + (kg >= 1 ? kg.toFixed(1)+'kg' : Math.ceil(mp.deficit_g)+'g') + ')';
+        return mp.nombre + ' (' + Math.ceil(mp.deficit_g).toLocaleString('es-CO') + ' g)';
       }).join(', ');
       if(mps.length > 5) mpsResumen += ' +' + (mps.length-5) + ' más';
       var payload = {

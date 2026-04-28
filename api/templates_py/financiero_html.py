@@ -759,7 +759,7 @@ async function buscarTrazabilidadPT(){
       var p=d.produccion;
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;font-size:0.88em;margin-bottom:12px;">';
       html+='<div><b>Producto:</b> '+(p.producto||'&#8212;')+'</div>';
-      html+='<div><b>Cantidad:</b> '+(p.cantidad_kg?Number(p.cantidad_kg).toFixed(2)+' kg':'&#8212;')+'</div>';
+      html+='<div><b>Cantidad:</b> '+(p.cantidad_kg?Math.round(Number(p.cantidad_kg)*1000).toLocaleString('es-CO')+' g':'&#8212;')+'</div>';
       html+='<div><b>Fecha:</b> '+(p.fecha?p.fecha.substring(0,10):'&#8212;')+'</div>';
       html+='<div><b>Operador:</b> '+(p.operador||'&#8212;')+'</div>';
       html+='</div>';
@@ -850,7 +850,7 @@ async function cargarEstanterias(){
     data.forEach(function(e){
       var opt = document.createElement('option');
       opt.value = e.estanteria;
-      opt.textContent = e.estanteria + ' (' + e.total_mps + ' MPs, ' + (e.stock_total/1000).toFixed(1) + ' kg)';
+      opt.textContent = e.estanteria + ' (' + e.total_mps + ' MPs, ' + Math.round(e.stock_total||0).toLocaleString('es-CO') + ' g)';
       sel.appendChild(opt);
     });
   }catch(e){}

@@ -348,7 +348,7 @@ async function loadKPIs(){
     // Espagiria KPIs
     var mpsBajos=e.mps_bajo_minimo||0;
     document.getElementById('val-mps-bajos').textContent=mpsBajos;
-    document.getElementById('sub-deficit').textContent='Déficit: '+((e.deficit_total_kg||0).toFixed(1))+' kg';
+    document.getElementById('sub-deficit').textContent='Déficit: '+Math.round((e.deficit_total_kg||0)*1000).toLocaleString('es-CO')+' g';
     setKPIColor('kpi-mps-bajos','val-mps-bajos',mpsBajos>5?'rojo':(mpsBajos>0?'amarillo':'verde'));
 
     var meeBajos=e.mee_bajo_minimo||0;

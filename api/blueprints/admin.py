@@ -1675,8 +1675,9 @@ def admin_inventario_health_monitor():
             alertas.append({
                 'tipo': 'BURST',
                 'severidad': 'critical' if r[1] >= 100 else 'warning',
-                'mensaje': f'{r[1]} Entradas en un solo dia ({r[0]}) — total {round(r[2]/1000,1)} kg. '
-                           f'Posible carga masiva no auditada.',
+                'mensaje': (f'{r[1]} Entradas en un solo dia ({r[0]}) — total '
+                            f'{int(round(r[2])):,} g. '.replace(',', '.') +
+                            'Posible carga masiva no auditada.'),
                 'detalle': {'fecha': r[0], 'count': r[1], 'total_g': r[2]},
             })
     except sqlite3.OperationalError:
@@ -1702,8 +1703,9 @@ def admin_inventario_health_monitor():
             alertas.append({
                 'tipo': 'MULTI_ENTRADAS',
                 'severidad': 'critical' if r[2] >= 3 else 'warning',
-                'mensaje': f'{r[0]}/{r[1]}: {r[2]} Entradas con total {round(r[3]/1000,2)} kg. '
-                           f'Verificar si son recepciones legitimas distintas o doble carga.',
+                'mensaje': (f'{r[0]}/{r[1]}: {r[2]} Entradas con total '
+                            f'{int(round(r[3])):,} g. '.replace(',', '.') +
+                            'Verificar si son recepciones legitimas distintas o doble carga.'),
                 'detalle': {
                     'codigo_mp': r[0], 'lote': r[1] or '(sin lote)',
                     'count_entradas': r[2], 'total_g': r[3],
@@ -1752,9 +1754,10 @@ def admin_inventario_health_monitor():
             alertas.append({
                 'tipo': 'STOCK_ANOMALO',
                 'severidad': 'critical',
-                'mensaje': (f'Stock total = {round(stock_g/1000,1)} kg supera 50 toneladas. '
-                            f'Para una empresa cosmetica de tu escala es altamente probable '
-                            f'inflado por doble carga. Auditar de inmediato.'),
+                'mensaje': (f'Stock total = {int(round(stock_g)):,} g'.replace(',', '.') +
+                            ' supera 50 toneladas. '
+                            'Para una empresa cosmetica de tu escala es altamente probable '
+                            'inflado por doble carga. Auditar de inmediato.'),
                 'detalle': {'stock_total_g': stock_g, 'umbral_g': 50_000_000},
             })
     except sqlite3.OperationalError:
@@ -2992,6 +2995,309 @@ def admin_import_pagos_influencers_excel():
     })
 
 
+# ─── Auditoría de Mínimos ─────────────────────────────────────────────────────
+
+
+@bp.route("/api/admin/auditar-minimos", methods=["GET"])
+def auditar_minimos():
+    """Auditoría no-destructiva de stock_minimo de maestro_mps.
+
+    Para cada MP: muestra mínimo actual vs recomendado calculado por
+    metodología consumo × (lead_time + buffer) según origen del proveedor.
+
+    Query params:
+      proyeccion_dias: int (30-180, default 90) — horizonte para proyectar
+        consumo desde el calendario × fórmulas.
+
+    Estados:
+      OK: ratio actual/recomendado entre 0.75 y 1.50
+      SUB_PROTEGIDO: actual < recomendado × 0.75
+      SOBRE_PROTEGIDO: actual > recomendado × 1.50
+      SIN_MINIMO_CONFIGURADO: stock_minimo = 0 con consumo > 0
+      SIN_USO: sin consumo proyectado en horizonte
+      SIN_USO_CON_MIN: sin consumo pero tiene mínimo configurado
+
+    Lead times por origen:
+      china: 60d lead + 30d buffer = 90d
+      colombia/local: 7d lead + 14d buffer = 21d
+      desconocido (con proveedor): 7d + 14d = 21d
+      desconocido (sin proveedor): 14d + 14d = 28d
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    from database import get_db as _get_db
+    from flask import current_app
+
+    try:
+        horizonte_proyeccion_dias = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
+    except ValueError:
+        horizonte_proyeccion_dias = 90
+
+    # 1. Cargar planificacion estratégica para el horizonte
+    try:
+        from blueprints.programacion import planificacion_estrategica as _plan
+    except ImportError:
+        from api.blueprints.programacion import planificacion_estrategica as _plan
+    with current_app.test_request_context(
+        f'/api/programacion/planificacion?dias={horizonte_proyeccion_dias}'
+    ):
+        plan_resp = _plan()
+    plan_data = plan_resp.get_json() or {}
+
+    # Consumo proyectado por MP en horizonte
+    consumo_por_mp = {}
+    for mp in (plan_data.get('mps_deficit') or []) + (plan_data.get('mps_ok') or []):
+        consumo_por_mp[mp['material_id']] = {
+            'total_g_horizonte': float(mp.get('total_g') or 0),
+            'origen': mp.get('origen', 'desconocido'),
+            'productos': mp.get('productos', []) or [],
+        }
+
+    # 2. Cargar maestro_mps activos
+    conn = _get_db()
+    try:
+        rows = conn.execute("""
+            SELECT m.codigo_mp, m.nombre_inci, m.nombre_comercial, m.proveedor,
+                   COALESCE(m.stock_minimo, 0), COALESCE(m.tipo_material, 'MP'),
+                   COALESCE(s.stock_actual, 0)
+            FROM maestro_mps m
+            LEFT JOIN (
+                SELECT material_id,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                FROM movimientos GROUP BY material_id
+            ) s ON m.codigo_mp = s.material_id
+            WHERE m.activo = 1
+            ORDER BY m.codigo_mp
+        """).fetchall()
+    except sqlite3.OperationalError:
+        # Schema legacy sin tipo_material — fallback
+        rows = conn.execute("""
+            SELECT m.codigo_mp, m.nombre_inci, m.nombre_comercial, m.proveedor,
+                   COALESCE(m.stock_minimo, 0), 'MP',
+                   COALESCE(s.stock_actual, 0)
+            FROM maestro_mps m
+            LEFT JOIN (
+                SELECT material_id,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                FROM movimientos GROUP BY material_id
+            ) s ON m.codigo_mp = s.material_id
+            WHERE m.activo = 1
+            ORDER BY m.codigo_mp
+        """).fetchall()
+
+    auditoria = []
+    for r in rows:
+        codigo, nombre_inci, nombre_com, proveedor, stock_min_actual, tipo_mat, stock_actual = r
+        nombre = nombre_com or nombre_inci or codigo
+        proveedor = (proveedor or '').strip()
+        stock_min_actual = float(stock_min_actual or 0)
+        stock_actual = float(stock_actual or 0)
+
+        proy = consumo_por_mp.get(codigo)
+        consumo_horizonte_g = proy['total_g_horizonte'] if proy else 0.0
+        origen = proy['origen'] if proy else 'desconocido'
+        productos = proy['productos'] if proy else []
+        consumo_diario_g = consumo_horizonte_g / horizonte_proyeccion_dias if horizonte_proyeccion_dias > 0 else 0
+        consumo_mensual_g = consumo_diario_g * 30
+
+        # Lead time + buffer por origen
+        if origen == 'china':
+            lead_time, buffer = 60, 30
+        elif origen == 'colombia':
+            lead_time, buffer = 7, 14
+        else:
+            if proveedor:
+                lead_time, buffer = 7, 14
+            else:
+                lead_time, buffer = 14, 14
+        dias_buffer = lead_time + buffer
+
+        # Recomendado
+        if consumo_diario_g <= 0:
+            minimo_recomendado = 0.0
+            estado = 'SIN_USO_CON_MIN' if stock_min_actual > 0 else 'SIN_USO'
+            razonamiento = f'Sin uso proyectado en próximos {horizonte_proyeccion_dias} días'
+        else:
+            minimo_recomendado = consumo_diario_g * dias_buffer
+            # Piso para peptides de baja rotación
+            if consumo_diario_g < 0.5:
+                minimo_recomendado = max(minimo_recomendado, 50)
+
+            if stock_min_actual == 0:
+                estado = 'SIN_MINIMO_CONFIGURADO'
+                razonamiento = (
+                    f'Sin mínimo configurado · Recomendado {int(round(minimo_recomendado))} g '
+                    f'({lead_time}d lead + {buffer}d buffer × {round(consumo_diario_g, 2)} g/día)'
+                )
+            else:
+                ratio = stock_min_actual / minimo_recomendado if minimo_recomendado > 0 else 1.0
+                cobertura_dias_actual = stock_min_actual / consumo_diario_g if consumo_diario_g > 0 else 0
+                if ratio < 0.75:
+                    estado = 'SUB_PROTEGIDO'
+                    razonamiento = (
+                        f'Mínimo cubre solo ~{round(cobertura_dias_actual, 1)} días '
+                        f'(necesita ~{dias_buffer} días para origen {origen})'
+                    )
+                elif ratio > 1.5:
+                    estado = 'SOBRE_PROTEGIDO'
+                    razonamiento = (
+                        f'Mínimo cubre ~{round(cobertura_dias_actual, 1)} días '
+                        f'(suficiente con ~{dias_buffer} días para {origen})'
+                    )
+                else:
+                    estado = 'OK'
+                    razonamiento = f'Mínimo cubre ~{round(cobertura_dias_actual, 1)} días — apropiado'
+
+        auditoria.append({
+            'codigo_mp': codigo,
+            'nombre': nombre,
+            'proveedor': proveedor,
+            'origen': origen,
+            'tipo_material': tipo_mat,
+            'stock_actual_g': round(stock_actual, 1),
+            'stock_minimo_actual_g': round(stock_min_actual, 1),
+            'consumo_horizonte_g': round(consumo_horizonte_g, 1),
+            'consumo_diario_g': round(consumo_diario_g, 3),
+            'consumo_mensual_g': round(consumo_mensual_g, 1),
+            'lead_time_dias': lead_time,
+            'buffer_dias': buffer,
+            'dias_cobertura_total': dias_buffer,
+            'minimo_recomendado_g': round(minimo_recomendado, 1),
+            'estado': estado,
+            'razonamiento': razonamiento,
+            'productos': productos,
+        })
+
+    # Stats
+    stats = {
+        'total': len(auditoria),
+        'ok': sum(1 for a in auditoria if a['estado'] == 'OK'),
+        'sub_protegido': sum(1 for a in auditoria if a['estado'] == 'SUB_PROTEGIDO'),
+        'sobre_protegido': sum(1 for a in auditoria if a['estado'] == 'SOBRE_PROTEGIDO'),
+        'sin_minimo': sum(1 for a in auditoria if a['estado'] == 'SIN_MINIMO_CONFIGURADO'),
+        'sin_uso': sum(1 for a in auditoria if a['estado'].startswith('SIN_USO')),
+    }
+
+    return jsonify({
+        'horizonte_proyeccion_dias': horizonte_proyeccion_dias,
+        'stats': stats,
+        'auditoria': auditoria,
+        'metodologia': {
+            'formula': 'minimo_recomendado = consumo_diario × (lead_time + buffer)',
+            'piso_peptides': 'min 50g si consumo < 0.5 g/día',
+            'lead_times': {
+                'china': '60d lead + 30d buffer = 90d',
+                'colombia/local': '7d lead + 14d buffer = 21d',
+                'desconocido_sin_proveedor': '14d + 14d = 28d',
+            },
+        },
+    })
+
+
+@bp.route("/api/admin/aplicar-minimos", methods=["POST"])
+def aplicar_minimos():
+    """Aplica el recálculo de stock_minimo basado en /auditar-minimos.
+
+    Requiere:
+      - Token textual exacto: 'APLICAR_MINIMOS_RECALCULADOS_2026'
+      - Backup automático previo
+      - Audit log del cambio
+
+    Body:
+      token: str (obligatorio)
+      proyeccion_dias: int (default 90)
+      solo_estados: list[str] (default los 3: SUB_PROTEGIDO, SOBRE_PROTEGIDO,
+                    SIN_MINIMO_CONFIGURADO)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    if d.get('token', '').strip() != 'APLICAR_MINIMOS_RECALCULADOS_2026':
+        return jsonify({'error': 'Token incorrecto'}), 403
+
+    try:
+        horizonte = max(30, min(int(d.get('proyeccion_dias', 90)), 180))
+    except ValueError:
+        horizonte = 90
+
+    solo_estados = d.get('solo_estados') or [
+        'SUB_PROTEGIDO', 'SOBRE_PROTEGIDO', 'SIN_MINIMO_CONFIGURADO'
+    ]
+
+    # Backup previo
+    try:
+        do_backup(triggered_by='pre_minimos_recalc')
+    except Exception as e:
+        return jsonify({'error': f'Backup falló: {str(e)[:200]}'}), 500
+
+    # Reusar la lógica de auditoría
+    from flask import current_app
+    with current_app.test_request_context(
+        f'/api/admin/auditar-minimos?proyeccion_dias={horizonte}'
+    ):
+        audit_resp = auditar_minimos()
+    audit_data = audit_resp.get_json() or {}
+
+    from database import get_db as _get_db
+    conn = _get_db()
+    c = conn.cursor()
+
+    cambios = []
+    for item in (audit_data.get('auditoria') or []):
+        if item['estado'] not in solo_estados:
+            continue
+        if item['estado'].startswith('SIN_USO'):
+            continue  # No tocar — el usuario puede tener motivo
+        codigo = item['codigo_mp']
+        nuevo = float(item['minimo_recomendado_g'])
+        previo = float(item['stock_minimo_actual_g'])
+        try:
+            c.execute(
+                "UPDATE maestro_mps SET stock_minimo = ? WHERE codigo_mp = ?",
+                (nuevo, codigo),
+            )
+            cambios.append({
+                'codigo_mp': codigo,
+                'nombre': item['nombre'],
+                'previo_g': round(previo, 1),
+                'nuevo_g': round(nuevo, 1),
+                'estado_previo': item['estado'],
+            })
+        except Exception:
+            continue
+    conn.commit()
+
+    # Audit log
+    try:
+        import json as _json
+        c.execute(
+            """INSERT INTO audit_log
+               (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now'))""",
+            (u, 'APLICAR_MINIMOS_RECALCULADOS', 'maestro_mps', '_BULK_',
+             _json.dumps({
+                 'count': len(cambios),
+                 'horizonte_proyeccion_dias': horizonte,
+                 'estados_aplicados': solo_estados,
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'count_cambios': len(cambios),
+        'cambios': cambios[:50],
+        'mensaje': f'{len(cambios)} mínimos actualizados. Backup previo creado.',
+    })
+
+
 # ─── Panel HTML ───────────────────────────────────────────────────────────────
 
 _ADMIN_HTML = r"""<!DOCTYPE html>
@@ -3062,6 +3368,7 @@ tr:hover td{background:#263348;}
   <button class="tab" data-tab="banco" onclick="switchTab('banco')">&#x1F4B3; Banco Influencers</button>
   <button class="tab" data-tab="mps" onclick="switchTab('mps')">&#x1F9EA; Cat&aacute;logo MPs</button>
   <button class="tab" data-tab="audit-inv" onclick="switchTab('audit-inv')">&#x1F50D; Auditar Inventario</button>
+  <button class="tab" data-tab="audit-min" onclick="switchTab('audit-min')">&#x1F4CA; Auditar M&iacute;nimos</button>
 </div>
 
 <div class="main">
@@ -3328,6 +3635,55 @@ tr:hover td{background:#263348;}
   </div>
 </div>
 
+<!-- ─── TAB AUDITAR MINIMOS ─── -->
+<div id="tab-audit-min" class="tab-panel">
+  <div class="card">
+    <h2>&#x1F4CA; Auditar M&iacute;nimos de Materias Primas</h2>
+    <div class="section-sub">
+      Compara <strong>stock_minimo</strong> actual vs lo recomendado por consumo proyectado.
+      M&eacute;todo: <code>min&iacute;mo = consumo_diario &times; (lead_time + buffer)</code> seg&uacute;n origen del proveedor:
+      China 90 d&iacute;as, Colombia/local 21 d&iacute;as. Piso 50 g para p&eacute;ptidos de baja rotaci&oacute;n.
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:13px;color:#cbd5e1;">Horizonte de proyecci&oacute;n:</label>
+      <select id="audmin-proy" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:13px;">
+        <option value="60">60 d&iacute;as</option>
+        <option value="90" selected>90 d&iacute;as (recomendado)</option>
+        <option value="120">120 d&iacute;as</option>
+        <option value="180">180 d&iacute;as</option>
+      </select>
+      <button class="btn" onclick="cargarAuditarMinimos()" id="btn-aud-min">&#x1F50D; Auditar (vista previa)</button>
+      <button class="btn btn-outline" onclick="exportarAuditMinCSV()">&#x1F4C4; Exportar CSV</button>
+    </div>
+
+    <div id="audmin-stats" style="margin-top:18px;display:none;">
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-l">Total MPs</div><div class="kpi-v" id="audmin-total">-</div></div>
+        <div class="kpi" style="border-left:3px solid #22c55e;"><div class="kpi-l">OK</div><div class="kpi-v" id="audmin-ok" style="color:#22c55e;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #dc2626;"><div class="kpi-l">Sub-protegidos</div><div class="kpi-v" id="audmin-sub" style="color:#dc2626;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #f59e0b;"><div class="kpi-l">Sobre-protegidos</div><div class="kpi-v" id="audmin-sobre" style="color:#f59e0b;">-</div></div>
+        <div class="kpi" style="border-left:3px solid #6366f1;"><div class="kpi-l">Sin m&iacute;nimo</div><div class="kpi-v" id="audmin-vacio" style="color:#6366f1;">-</div></div>
+        <div class="kpi"><div class="kpi-l">Sin uso</div><div class="kpi-v" id="audmin-uso" style="color:#94a3b8;">-</div></div>
+      </div>
+    </div>
+
+    <div id="audmin-aplicar-box" style="display:none;margin-top:18px;padding:14px;background:#1e293b;border:1px solid #475569;border-radius:8px;">
+      <div style="font-weight:700;margin-bottom:6px;color:#fbbf24;">&#x26A0; Aplicar recálculo</div>
+      <div style="font-size:12px;color:#cbd5e1;margin-bottom:10px;">
+        Esto actualiza <code>stock_minimo</code> en <code>maestro_mps</code> para los MPs marcados como
+        <strong>SUB_PROTEGIDO</strong>, <strong>SOBRE_PROTEGIDO</strong> y <strong>SIN_MINIMO_CONFIGURADO</strong>.
+        Crea backup autom&aacute;tico previo y registra en audit log. NO toca MPs sin uso proyectado.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="audmin-token" placeholder="Token: APLICAR_MINIMOS_RECALCULADOS_2026" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:7px 10px;font-size:12px;width:340px;">
+        <button class="btn" style="background:#dc2626;color:#fff;" onclick="aplicarRecalculoMinimos()" id="btn-aplicar-min">&#x1F4A5; Aplicar recálculo</button>
+      </div>
+    </div>
+
+    <div id="audmin-result" style="margin-top:18px;"></div>
+  </div>
+</div>
+
 </div>
 
 <div id="toast"></div>
@@ -3378,9 +3734,9 @@ function toast(msg, kind) {
 // ── BACKUPS ───────────────────────────────────────────────────────────────────
 // ── Auditar inventario contra Excel día cero ─────────────────────────────────
 function _fmtG(n) {
+  // Normalizado: SIEMPRE en gramos con separador de miles (acordado con Alejandro).
   if (n == null) return '—';
-  if (Math.abs(n) >= 1000) return (n/1000).toLocaleString('es-CO',{maximumFractionDigits:2}) + ' kg';
-  return Math.round(n).toLocaleString('es-CO') + ' g';
+  return Math.round(Number(n) || 0).toLocaleString('es-CO') + ' g';
 }
 function _esc(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 async function auditarInvVsExcel() {
@@ -4123,6 +4479,165 @@ async function enviarTestEmail() {
     }
   } catch(e) {
     out.innerHTML = '<div style="color:#f87171;padding:14px;">Error de red: ' + (e.message || e) + '</div>';
+  }
+}
+
+// ── AUDITAR MINIMOS DE MPs ────────────────────────────────────────────────────
+let _AUD_MIN_DATA = null;
+
+async function cargarAuditarMinimos() {
+  const proy = document.getElementById('audmin-proy').value;
+  const out = document.getElementById('audmin-result');
+  const btn = document.getElementById('btn-aud-min');
+  btn.disabled = true; btn.textContent = 'Calculando...';
+  out.innerHTML = '<div style="color:#94a3b8;">Proyectando consumo y comparando con mínimos actuales...</div>';
+  document.getElementById('audmin-stats').style.display = 'none';
+  document.getElementById('audmin-aplicar-box').style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/auditar-minimos?proyeccion_dias=' + encodeURIComponent(proy));
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x1F50D; Auditar (vista previa)';
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    _AUD_MIN_DATA = d;
+
+    // Stats
+    document.getElementById('audmin-stats').style.display = 'block';
+    document.getElementById('audmin-total').textContent = d.stats.total;
+    document.getElementById('audmin-ok').textContent = d.stats.ok;
+    document.getElementById('audmin-sub').textContent = d.stats.sub_protegido;
+    document.getElementById('audmin-sobre').textContent = d.stats.sobre_protegido;
+    document.getElementById('audmin-vacio').textContent = d.stats.sin_minimo;
+    document.getElementById('audmin-uso').textContent = d.stats.sin_uso;
+
+    // Mostrar bloque aplicar si hay algo que aplicar
+    const totalAplicable = d.stats.sub_protegido + d.stats.sobre_protegido + d.stats.sin_minimo;
+    document.getElementById('audmin-aplicar-box').style.display = totalAplicable > 0 ? 'block' : 'none';
+
+    // Render tabla
+    let h = '<h4 style="color:#a5b4fc;margin-top:14px;">Detalle por MP — ' + d.stats.total + ' materias primas</h4>';
+    h += '<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">' +
+         'Métodología: <code>' + _esc(d.metodologia.formula) + '</code>. ' +
+         'China: 90d. Local: 21d. Sin proveedor: 28d. Piso 50g para péptidos.' +
+         '</div>';
+    h += '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;">';
+    h += '<span style="color:#cbd5e1;">Filtrar:</span>';
+    ['todos', 'OK', 'SUB_PROTEGIDO', 'SOBRE_PROTEGIDO', 'SIN_MINIMO_CONFIGURADO', 'SIN_USO'].forEach(function(f){
+      h += '<button class="btn btn-outline" style="padding:3px 10px;font-size:11px;" onclick="_filtrarAudMin(\'' + f + '\')">' + f + '</button>';
+    });
+    h += '<input type="text" id="audmin-search" oninput="_filtrarAudMin()" placeholder="Buscar nombre/código..." style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:4px 8px;font-size:11px;width:180px;">';
+    h += '</div>';
+    h += '<div style="overflow-x:auto;"><table id="audmin-tabla"><thead><tr>';
+    h += '<th>Estado</th><th>Material</th><th>Proveedor</th><th>Origen</th>';
+    h += '<th style="text-align:right;">Consumo/día</th>';
+    h += '<th style="text-align:right;">Mínimo actual</th>';
+    h += '<th style="text-align:right;">Recomendado</th>';
+    h += '<th>Cobertura</th>';
+    h += '<th>Razonamiento</th>';
+    h += '</tr></thead><tbody id="audmin-tbody"></tbody></table></div>';
+    out.innerHTML = h;
+    _filtrarAudMin('todos');
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x1F50D; Auditar (vista previa)';
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
+  }
+}
+
+function _filtrarAudMin(estado) {
+  if (!_AUD_MIN_DATA) return;
+  if (estado) window._audMinFiltro = estado;
+  const filtro = window._audMinFiltro || 'todos';
+  const search = (document.getElementById('audmin-search')||{}).value || '';
+  const sLower = search.trim().toLowerCase();
+  const items = _AUD_MIN_DATA.auditoria.filter(function(a){
+    if (filtro === 'SIN_USO') {
+      if (!a.estado.startsWith('SIN_USO')) return false;
+    } else if (filtro !== 'todos' && a.estado !== filtro) {
+      return false;
+    }
+    if (sLower) {
+      const txt = (a.nombre + ' ' + a.codigo_mp + ' ' + (a.proveedor||'')).toLowerCase();
+      if (txt.indexOf(sLower) === -1) return false;
+    }
+    return true;
+  });
+  // Orden: SUB_PROTEGIDO > SIN_MINIMO_CONFIGURADO > SOBRE_PROTEGIDO > OK > SIN_USO
+  const orden = {SUB_PROTEGIDO:0, SIN_MINIMO_CONFIGURADO:1, SOBRE_PROTEGIDO:2, OK:3, SIN_USO_CON_MIN:4, SIN_USO:5};
+  items.sort(function(a, b){
+    const oa = orden[a.estado] !== undefined ? orden[a.estado] : 9;
+    const ob = orden[b.estado] !== undefined ? orden[b.estado] : 9;
+    if (oa !== ob) return oa - ob;
+    return (b.consumo_diario_g || 0) - (a.consumo_diario_g || 0);
+  });
+  const colors = {
+    OK: '#22c55e',
+    SUB_PROTEGIDO: '#dc2626',
+    SOBRE_PROTEGIDO: '#f59e0b',
+    SIN_MINIMO_CONFIGURADO: '#6366f1',
+    SIN_USO: '#94a3b8',
+    SIN_USO_CON_MIN: '#94a3b8',
+  };
+  let h = '';
+  items.forEach(function(a){
+    const col = colors[a.estado] || '#cbd5e1';
+    const cobertura = a.consumo_diario_g > 0
+      ? Math.round(a.stock_minimo_actual_g / a.consumo_diario_g) + 'd'
+      : '—';
+    h += '<tr>';
+    h += '<td><span style="background:' + col + '22;color:' + col + ';border:1px solid ' + col + ';border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;">' + _esc(a.estado.replace('_', ' ')) + '</span></td>';
+    h += '<td><div style="font-weight:600;font-size:12px;">' + _esc(a.nombre) + '</div><div style="font-size:10px;color:#64748b;font-family:monospace;">' + _esc(a.codigo_mp) + '</div></td>';
+    h += '<td style="font-size:11px;color:#cbd5e1;">' + _esc(a.proveedor || '—') + '</td>';
+    h += '<td style="font-size:11px;color:#94a3b8;">' + _esc(a.origen) + '</td>';
+    h += '<td style="text-align:right;font-size:11px;">' + _fmtG(a.consumo_diario_g) + '</td>';
+    h += '<td style="text-align:right;font-size:12px;">' + _fmtG(a.stock_minimo_actual_g) + '</td>';
+    h += '<td style="text-align:right;font-size:12px;font-weight:700;color:' + col + ';">' + _fmtG(a.minimo_recomendado_g) + '</td>';
+    h += '<td style="font-size:11px;color:#94a3b8;">' + cobertura + '</td>';
+    h += '<td style="font-size:11px;color:#cbd5e1;max-width:280px;">' + _esc(a.razonamiento) + '</td>';
+    h += '</tr>';
+  });
+  if (!h) h = '<tr><td colspan="9" style="text-align:center;color:#64748b;padding:20px;">Sin coincidencias</td></tr>';
+  document.getElementById('audmin-tbody').innerHTML = h;
+}
+
+function exportarAuditMinCSV() {
+  if (!_AUD_MIN_DATA) { toast('Primero ejecuta auditoría', 'warn'); return; }
+  const rows = [['Codigo','Nombre','Proveedor','Origen','ConsumoDiario_g','ConsumoMensual_g','StockMinimoActual_g','MinimoRecomendado_g','LeadTime_d','Buffer_d','Estado','Razonamiento']];
+  _AUD_MIN_DATA.auditoria.forEach(function(a){
+    rows.push([a.codigo_mp, a.nombre, a.proveedor, a.origen, a.consumo_diario_g, a.consumo_mensual_g, a.stock_minimo_actual_g, a.minimo_recomendado_g, a.lead_time_dias, a.buffer_dias, a.estado, a.razonamiento]);
+  });
+  const csv = rows.map(function(r){return r.map(function(c){return '"' + String(c==null?'':c).replace(/"/g,'""') + '"';}).join(',');}).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'auditoria_minimos_mps_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+async function aplicarRecalculoMinimos() {
+  const token = (document.getElementById('audmin-token').value || '').trim();
+  if (token !== 'APLICAR_MINIMOS_RECALCULADOS_2026') {
+    toast('Token incorrecto. Debe ser exactamente: APLICAR_MINIMOS_RECALCULADOS_2026', 'warn');
+    return;
+  }
+  if (!confirm('Esto va a actualizar stock_minimo en maestro_mps para los MPs marcados como SUB/SOBRE/SIN_MINIMO. Crea backup automático previo. ¿Continuar?')) return;
+  const proy = document.getElementById('audmin-proy').value;
+  const btn = document.getElementById('btn-aplicar-min');
+  btn.disabled = true; btn.textContent = 'Aplicando...';
+  try {
+    const r = await fetch('/api/admin/aplicar-minimos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: token, proyeccion_dias: parseInt(proy)})
+    });
+    const d = await r.json();
+    btn.disabled = false; btn.innerHTML = '&#x1F4A5; Aplicar recálculo';
+    if (!r.ok) { toast('Error: ' + _esc(d.error||'desconocido'), 'warn'); return; }
+    toast(d.mensaje || (d.count_cambios + ' mínimos actualizados'), 'ok');
+    document.getElementById('audmin-token').value = '';
+    // Recargar auditoría
+    cargarAuditarMinimos();
+  } catch(e) {
+    btn.disabled = false; btn.innerHTML = '&#x1F4A5; Aplicar recálculo';
+    toast('Error: ' + e.message, 'warn');
   }
 }
 

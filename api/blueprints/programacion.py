@@ -2306,9 +2306,7 @@ def prog_regenerar_oc():
 
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
             mps_resumen = ', '.join([
-                (it['nombre'][:25] + ' (' +
-                 (f"{it['deficit_g']/1000:.1f}kg" if it['deficit_g'] >= 1000 else f"{int(it['deficit_g'])}g") +
-                 ')')
+                (it['nombre'][:25] + f" ({int(it['deficit_g']):,} g)".replace(',', '.'))
                 for it in mps_resumen_items
             ])
             if len(items) > 5:
@@ -2473,9 +2471,7 @@ def prog_generar_oc():
             # Resumen de MPs principales para observaciones (legibilidad)
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
             mps_resumen = ', '.join([
-                (it['nombre'][:25] + ' (' +
-                 (f"{it['deficit_g']/1000:.1f}kg" if it['deficit_g'] >= 1000 else f"{int(it['deficit_g'])}g") +
-                 ')')
+                (it['nombre'][:25] + f" ({int(it['deficit_g']):,} g)".replace(',', '.'))
                 for it in mps_resumen_items
             ])
             if len(items) > 5:
@@ -3247,8 +3243,7 @@ def planificacion_estrategica():
         bulk_msg = ''
         if n_meses >= 2:
             bulk_opp = True
-            _qty = (f'{round(data["total_g"]/1000, 2)} kg'
-                    if data['total_g'] >= 100 else f'{round(data["total_g"], 1)} g')
+            _qty = f'{int(round(data["total_g"])):,} g'.replace(',', '.')
             if is_china:
                 bulk_msg = f'Importar {_qty} en un solo pedido desde proveedor internacional — ahorro estimado 15-25% en flete'
             else:
@@ -3375,9 +3370,7 @@ def planificacion_solicitar_bulk():
             obs = (f'Auto-generada Planificación Estratégica {dias} días — '
                    f'Proveedor: {prov} · {len(mps)} MPs · ' +
                    ', '.join([
-                       f'{m["nombre"]} ({round(m["deficit_g"]/1000, 1)}kg)'
-                       if m['deficit_g'] >= 1000
-                       else f'{m["nombre"]} ({round(m["deficit_g"], 1)}g)'
+                       f'{m["nombre"]} ({int(round(m["deficit_g"])):,} g)'.replace(',', '.')
                        for m in mps[:5]
                    ]) +
                    (f' +{len(mps)-5} más' if len(mps) > 5 else ''))[:1500]
@@ -3529,7 +3522,7 @@ def planificacion_checklist_verificacion():
         ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
         ws.cell(row=1, column=1).fill = title_fill
         ws.cell(row=1, column=1).alignment = Alignment(horizontal='left', vertical='center')
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=7)
         ws.row_dimensions[1].height = 24
 
         # Subtitulo
@@ -3539,7 +3532,7 @@ def planificacion_checklist_verificacion():
         ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='666666')
         ws.cell(row=2, column=1).fill = warn_fill
         ws.cell(row=2, column=1).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=7)
         ws.row_dimensions[2].height = 30
 
         # Nota: hint sobre duplicados
@@ -3547,13 +3540,13 @@ def planificacion_checklist_verificacion():
                 value='OJO: Si un material no esta bajo el codigo indicado, busca por NOMBRE — puede estar bajo codigo distinto. Anota lo que encuentres en "Notas".')
         ws.cell(row=3, column=1).font = Font(size=9, color='856404')
         ws.cell(row=3, column=1).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=8)
+        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=7)
         ws.row_dimensions[3].height = 20
 
-        # Headers
+        # Headers — todo en gramos (acordado con Alejandro)
         headers = [
             'Material', 'Codigo', 'Proveedor',
-            'Necesario (g)', 'Necesario (kg)',
+            'Necesario (g)',
             'Para producto(s)',
             'En bodega? (S/N)', 'Cantidad real (g)',
         ]
@@ -3573,8 +3566,7 @@ def planificacion_checklist_verificacion():
                     mp.get('nombre', ''),
                     mp.get('material_id', ''),
                     mp.get('proveedor', '') or '(Sin asignar)',
-                    round(nec_g, 1),
-                    round(nec_g / 1000.0, 3),
+                    int(round(nec_g)),
                     ', '.join(mp.get('productos', []) or []),
                     '',  # asistente marca S/N
                     '',  # cantidad real
@@ -3583,23 +3575,25 @@ def planificacion_checklist_verificacion():
                     cell = ws.cell(row=idx, column=j, value=v)
                     cell.border = border
                     cell.alignment = Alignment(
-                        horizontal='right' if j in (4, 5) else ('center' if j == 7 else 'left'),
-                        vertical='center', wrap_text=(j == 6),
+                        horizontal='right' if j == 4 else ('center' if j == 6 else 'left'),
+                        vertical='center', wrap_text=(j == 5),
                     )
+                    if j == 4:  # cantidad necesaria con separador de miles
+                        cell.number_format = '#,##0'
                     if (idx - 6) % 2 == 1:
                         cell.fill = alt_fill
                     if j == 2:  # codigo monoespaciado
                         cell.font = Font(name='Consolas', size=9)
                 # Resaltar columnas de verificacion
+                ws.cell(row=idx, column=6).fill = warn_fill
                 ws.cell(row=idx, column=7).fill = warn_fill
-                ws.cell(row=idx, column=8).fill = warn_fill
         else:
             ws.cell(row=6, column=1, value='Sin MPs en stock cero para este horizonte')
             ws.cell(row=6, column=1).font = Font(italic=True, color='888888')
-            ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=8)
+            ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=7)
 
         # Anchos columnas
-        widths = [30, 16, 18, 13, 13, 42, 16, 16]
+        widths = [30, 16, 18, 14, 42, 16, 16]
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
 

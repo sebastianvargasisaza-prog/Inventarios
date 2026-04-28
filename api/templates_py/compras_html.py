@@ -1804,16 +1804,15 @@ function renderMPAlerts(){
   var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
   var n_china = _ALERTAS_MP.filter(function(a){ return a.es_china; }).length;
   banner.style.display='block';
-  var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) — Faltante total: '+Math.round(total_def/1000)+'kg';
+  var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) — Faltante total: '+Math.round(total_def).toLocaleString('es-CO')+' g';
   if(n_china > 0) resumen += ' · ⚠ '+n_china+' de China (lead 60d)';
   text.textContent=resumen;
   list.innerHTML=_ALERTAS_MP.slice(0,8).map(function(a){
     var col = a.es_china ? '#b91c1c' : '#d97706';
     var deficit_g = Math.round(a.deficit||0);
-    var deficit_str = deficit_g >= 1000 ? (deficit_g/1000).toFixed(1)+'kg' : deficit_g+'g';
+    var deficit_str = deficit_g.toLocaleString('es-CO')+' g';
     var stock_str = a.stock_actual === Infinity ? '∞' :
-                    Math.round(a.stock_actual||0) >= 1000 ? (a.stock_actual/1000).toFixed(1)+'kg' :
-                    Math.round(a.stock_actual||0)+'g';
+                    Math.round(a.stock_actual||0).toLocaleString('es-CO')+' g';
     var prov_str = a.proveedor ? ' · '+a.proveedor : '';
     var china_mark = a.es_china ? '🇨🇳 ' : '';
     return '<span style="background:#fff;border:1px solid '+col+';color:'+col
@@ -3334,9 +3333,8 @@ async function openSolicitudDetail(num){
           var dec = (n % 1 === 0) ? 0 : 2;
           return n.toLocaleString('es-CO',{maximumFractionDigits:dec}) + ' ' + unidad;
         }
-        if(n >= 1000) return (n/1000).toLocaleString('es-CO',{maximumFractionDigits:2}) + ' kg';
+        // Normalizado: SIEMPRE gramos con separador de miles (acordado con Alejandro).
         if(n >= 10) return Math.round(n).toLocaleString('es-CO') + ' g';
-        // Cantidades pequeñas (péptidos): preservar 1-2 decimales
         if(n >= 1) return n.toLocaleString('es-CO',{maximumFractionDigits:1}) + ' g';
         if(n > 0) return n.toLocaleString('es-CO',{maximumFractionDigits:2}) + ' g';
         return '0 g';
@@ -3553,9 +3551,7 @@ function renderConsolCard(p, idx){
   var contenidoHtml;
   if(p.items && p.items.length > 0){
     var rows = p.items.map(function(it){
-      var cant = it.cantidad_total_g >= 1000
-        ? (it.cantidad_total_g/1000).toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'
-        : it.cantidad_total_g.toLocaleString('es-CO',{maximumFractionDigits:0})+' g';
+      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       var sub = it.subtotal_total > 0
         ? '$'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})
         : '—';
@@ -3650,9 +3646,7 @@ async function copiarPedido(idx){
   lines.push('');
   if(p.items && p.items.length > 0){
     p.items.forEach(function(it){
-      var cant = it.cantidad_total_g >= 1000
-        ? (it.cantidad_total_g/1000).toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'
-        : it.cantidad_total_g.toLocaleString('es-CO',{maximumFractionDigits:0})+' g';
+      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       var sub = it.subtotal_total > 0
         ? '  ($'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})+')'
         : '';
@@ -3710,9 +3704,7 @@ function imprimirPedido(idx){
   var detalleRows = '';
   if(p.items && p.items.length > 0){
     p.items.forEach(function(it){
-      var cant = it.cantidad_total_g >= 1000
-        ? (it.cantidad_total_g/1000).toLocaleString('es-CO',{maximumFractionDigits:2})+' kg'
-        : it.cantidad_total_g.toLocaleString('es-CO',{maximumFractionDigits:0})+' g';
+      var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       detalleRows += '<tr>'
         +'<td>'+escConH(it.codigo_mp||'')+'</td>'
         +'<td>'+escConH(it.nombre_mp)+'</td>'
