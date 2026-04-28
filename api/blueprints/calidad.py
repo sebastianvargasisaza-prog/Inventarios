@@ -125,7 +125,7 @@ def handle_no_conformidades():
                   (d.get('tipo','Proceso'), desc,
                    d.get('area',''), d.get('responsable',''),
                    d.get('lote',''), d.get('codigo_mp',''),
-                   d.get('impacto','Baj`'), d.get('accion_correctiva',''),
+                   d.get('impacto','Bajo'), d.get('accion_correctiva',''),
                    session.get('compras_user','')))
         conn.commit(); new_id = c.lastrowid
         return jsonify({'id': new_id}), 201
@@ -238,7 +238,7 @@ def completar_tarea_cron():
         c.execute("""INSERT INTO no_conformidades
                      (fecha,tipo,descripcion,area,responsable,impacto,
                       accion_correctiva,estado,creado_por)
-                     VALUES (date('now'),'Proceso',?z,
+                     VALUES (date('now'),'Proceso',?,
                      'Calidad','Jefe CC','Alto',
                      ?,'Abierta',?)""",
                   ('OOS detectado en cronograma: ' + nombre_tarea,
