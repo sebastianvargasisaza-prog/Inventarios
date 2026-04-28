@@ -444,9 +444,9 @@ def rrhh_nomina_pagar(periodo):
     # corre /pagar dos veces el mismo periodo, no se duplica el egreso.
     egresos_creados = 0
     try:
-        # Total bruto + recargos del periodo (lo que efectivamente sale)
+        # Total neto pagado del periodo (schema real: salario_neto)
         total_bruto_row = c.execute("""
-            SELECT COALESCE(SUM(total_devengado),0),
+            SELECT COALESCE(SUM(salario_neto),0),
                    COUNT(DISTINCT empleado_id)
             FROM nomina_registros WHERE periodo=?
         """, (periodo,)).fetchone()

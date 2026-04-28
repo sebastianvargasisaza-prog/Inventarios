@@ -171,10 +171,11 @@ def api_maquila_facturar(oid):
     # diferenciar de facturas de venta de productos terminados ('FV')
     numero = _next_numero(conn, empresa_emisora, tipo='FM')
 
-    # Datos base de la factura
+    # Datos base de la factura (schema real: precio_lote es el valor a facturar)
     cliente_nombre = orden.get('cliente_nombre') or orden.get('proveedor') or 'Sin cliente'
     cliente_nit = orden.get('cliente_nit') or ''
-    valor_servicio = float(orden.get('valor_total') or 0)
+    valor_servicio = float(orden.get('precio_lote')
+                            or orden.get('valor_total') or 0)
     iva_pct = float(d.get('iva_pct', 19))
     descuento = float(d.get('descuento', 0))
     base_iva = valor_servicio - descuento
@@ -195,15 +196,17 @@ def api_maquila_facturar(oid):
           iva_pct, iva_valor, total, 'Emitida', notas,
           session.get('compras_user', 'sistema')))
 
-    # Item unico: servicio de maquila
+    # Item unico: servicio de maquila (schema real: producto/lote_kg)
     try:
+        producto_desc = (orden.get('producto') or orden.get('producto_tipo')
+                         or 'producto cosmetico')
+        kg = orden.get('lote_kg') or orden.get('batch_size_kg') or 0
         c.execute("""
             INSERT INTO facturas_items
             (numero_factura, sku, descripcion, cantidad, precio_unitario, subtotal)
             VALUES (?,?,?,?,?,?)
         """, (numero, f'MAQ-{oid}',
-              f"Maquila: {orden.get('producto_tipo') or 'producto cosmetico'} "
-              f"({orden.get('batch_size_kg', 0)} kg)",
+              f"Maquila: {producto_desc} ({kg} kg)",
               1, valor_servicio, valor_servicio))
     except sqlite3.OperationalError:
         pass  # tabla items puede no existir en instancias muy viejas

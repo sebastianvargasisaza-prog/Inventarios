@@ -380,21 +380,93 @@ def documentos_list():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
-        c.execute("""INSERT INTO documentos_sgd
-                     (tipo,codigo,nombre,version,fecha_emision,fecha_revision,responsable,estado,url_documento,notas)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                  (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
-                   d.get('version', '1.0'),
-                   d.get('fecha_emision', datetime.now().strftime('%Y-%m-%d')),
-                   d.get('fecha_revision', ''), d.get('responsable', ''),
-                   d.get('estado', 'Vigente'), d.get('url_documento', ''), d.get('notas', '')))
+        # Calcular fecha_proxima_revision si no viene explicita
+        from datetime import datetime as _dt, timedelta as _td
+        fecha_emision = d.get('fecha_emision', _dt.now().strftime('%Y-%m-%d'))
+        frecuencia = int(d.get('frecuencia_revision_meses', 12))
+        fecha_proxima = d.get('fecha_proxima_revision', '')
+        if not fecha_proxima and fecha_emision:
+            try:
+                em = _dt.strptime(fecha_emision[:10], '%Y-%m-%d')
+                fecha_proxima = (em + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
+            except Exception:
+                pass
+        try:
+            c.execute("""INSERT INTO documentos_sgd
+                         (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
+                          responsable,estado,url_documento,notas,
+                          frecuencia_revision_meses,fecha_proxima_revision,
+                          responsable_revision)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
+                       d.get('version', '1.0'), fecha_emision,
+                       d.get('fecha_revision', ''), d.get('responsable', ''),
+                       d.get('estado', 'Vigente'), d.get('url_documento', ''),
+                       d.get('notas', ''), frecuencia, fecha_proxima,
+                       d.get('responsable_revision', d.get('responsable',''))))
+        except sqlite3.OperationalError:
+            # Fallback para instalaciones donde la migracion 38 aun no corrio
+            c.execute("""INSERT INTO documentos_sgd
+                         (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
+                          responsable,estado,url_documento,notas)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                      (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
+                       d.get('version', '1.0'), fecha_emision,
+                       d.get('fecha_revision', ''), d.get('responsable', ''),
+                       d.get('estado', 'Vigente'), d.get('url_documento', ''),
+                       d.get('notas', '')))
         conn.commit()
         did = c.lastrowid
-        return jsonify({'ok': True, 'id': did})
+        return jsonify({'ok': True, 'id': did, 'fecha_proxima_revision': fecha_proxima})
     c.execute("SELECT * FROM documentos_sgd ORDER BY tipo, codigo")
     cols = [x[0] for x in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     return jsonify(rows)
+
+
+@bp.route('/api/tecnica/documentos/proximos-vencimientos')
+def documentos_vencimientos():
+    """Lista SGDs que requieren revision en los proximos 60 dias.
+    Vinculado al centro de notificaciones."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT id, tipo, codigo, nombre, version, fecha_proxima_revision,
+                   responsable_revision, frecuencia_revision_meses,
+                   julianday(fecha_proxima_revision) - julianday('now') as dias_restantes
+            FROM documentos_sgd
+            WHERE estado='Vigente'
+              AND COALESCE(fecha_proxima_revision,'') != ''
+              AND fecha_proxima_revision <= date('now','+60 day')
+            ORDER BY fecha_proxima_revision ASC
+        """).fetchall()
+    except sqlite3.OperationalError:
+        return jsonify({'documentos': [], 'mensaje': 'Migracion #38 pendiente'})
+    cols = [x[0] for x in c.description]
+    return jsonify({'documentos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/tecnica/documentos/<int:did>/marcar-revisado', methods=['POST'])
+def documento_revisado(did):
+    """Marca un SGD como revisado HOY y reprograma la proxima revision."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import datetime as _dt, timedelta as _td
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT frecuencia_revision_meses FROM documentos_sgd WHERE id=?",
+                    (did,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Documento no encontrado'}), 404
+    frecuencia = row[0] or 12
+    hoy = _dt.now().strftime('%Y-%m-%d')
+    proxima = (_dt.now() + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
+    c.execute("""UPDATE documentos_sgd
+                 SET fecha_revision=?, fecha_proxima_revision=?
+                 WHERE id=?""", (hoy, proxima, did))
+    conn.commit()
+    return jsonify({'ok': True, 'fecha_revision': hoy, 'fecha_proxima_revision': proxima})
 
 @bp.route('/api/tecnica/documentos/<int:did>', methods=['PATCH', 'DELETE'])
 def documento_update(did):

@@ -1767,6 +1767,23 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
         """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
     ]),
+    (38, "tecnica documentos_sgd: campos de revision periodica + vinculo con producciones", [
+        # documentos_sgd ya tiene fecha_revision; agregamos:
+        # frecuencia_revision_meses (cada cuantos meses se revisa el SOP)
+        # fecha_proxima_revision (calculada)
+        # responsable_revision (quien revisa)
+        """ALTER TABLE documentos_sgd ADD COLUMN frecuencia_revision_meses INTEGER DEFAULT 12""",
+        """ALTER TABLE documentos_sgd ADD COLUMN fecha_proxima_revision TEXT DEFAULT ''""",
+        """ALTER TABLE documentos_sgd ADD COLUMN responsable_revision TEXT DEFAULT ''""",
+        # producciones puede referenciar SOP usado para trazabilidad BPM
+        """ALTER TABLE producciones ADD COLUMN sop_referencia TEXT DEFAULT ''""",
+        """ALTER TABLE producciones ADD COLUMN sop_version TEXT DEFAULT ''""",
+        # Backfill: para SGDs sin fecha_proxima, calcularla desde fecha_emision + 12 meses
+        """UPDATE documentos_sgd
+            SET fecha_proxima_revision = date(fecha_emision, '+12 months')
+            WHERE COALESCE(fecha_proxima_revision,'') = ''
+              AND COALESCE(fecha_emision,'') != ''""",
+    ]),
 ]
 
 

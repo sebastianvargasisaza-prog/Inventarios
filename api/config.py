@@ -100,6 +100,31 @@ USER_EMAILS = {
     "daniela":    os.environ.get("EMAIL_DANIELA",    ""),
     "sebastian":  os.environ.get("EMAIL_SEBASTIAN",  "sebastianvargasisaza@gmail.com"),
     "alejandro":  os.environ.get("EMAIL_ALEJANDRO",  ""),
+    "miguel":     os.environ.get("EMAIL_MIGUEL",     ""),
+    "felipe":     os.environ.get("EMAIL_FELIPE",     ""),
+    "valentina":  os.environ.get("EMAIL_VALENTINA",  ""),
+    "mayra":      os.environ.get("EMAIL_MAYRA",      ""),
+    "evelin":     os.environ.get("EMAIL_EVELIN",     ""),
+    "gisseth":    os.environ.get("EMAIL_GISSETH",    ""),
+    "laura":      os.environ.get("EMAIL_LAURA",      ""),
+}
+
+# Mapeo area -> usuarios responsables. Usado por modulo Comunicacion para
+# permitir asignacion masiva a un area completa (todas las personas que
+# operan ese dominio reciben la tarea/notificacion).
+AREA_USERS = {
+    "Produccion":     ["evelin", "luz", "alejandro"],
+    "Calidad":        ["laura", "gisseth", "alejandro"],
+    "Tecnica":        ["hernando", "miguel", "alejandro"],
+    "Compras":        ["catalina", "mayra", "alejandro"],
+    "Marketing":      ["jefferson", "felipe", "daniela"],
+    "Comercial":      ["daniela", "valentina", "luz"],
+    "Gerencia":       ["sebastian", "alejandro", "luz"],
+    "RRHH":           ["mayra", "alejandro"],
+    "Financiero":     ["mayra", "catalina", "sebastian", "alejandro"],
+    "Contabilidad":   ["mayra", "catalina"],
+    "Animus":         ["daniela", "alejandro"],
+    "Espagiria":      ["luz", "alejandro"],
 }
 
 

@@ -192,6 +192,87 @@ def update_compromiso(cid):
     conn.commit()
     return jsonify({'ok':True})
 
+@bp.route('/api/compromisos/migrar-a-tareas', methods=['POST'])
+def migrar_compromisos_a_tareas():
+    """Migra compromisos pendientes a tareas_internas (Comunicacion).
+
+    Decision Sebastian: el modulo /compromisos esta deprecado, todo va a
+    /comunicacion (tareas con RACI). Este endpoint copia los compromisos
+    activos a tareas_internas con origen='compromisos_legacy', preservando
+    el responsable original como rol 'R' en RACI.
+
+    Idempotente: detecta tareas ya migradas via origen+origen_ref para
+    no duplicar.
+
+    Solo admin.
+    """
+    u = session.get('compras_user', '')
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+    conn = get_db(); c = conn.cursor()
+
+    # Solo migrar los activos (no los Completados / Cancelados)
+    pendientes = c.execute("""
+        SELECT id, descripcion, responsable, area, fecha_limite,
+               estado, prioridad, origen, empresa, fecha_creacion
+        FROM compromisos
+        WHERE estado NOT IN ('Completado', 'Cancelado', 'Cerrado')
+        ORDER BY id ASC
+    """).fetchall()
+
+    migrados = 0
+    skipped = 0
+    for r in pendientes:
+        cid = r[0]
+        # Idempotencia: si ya existe tarea con origen_ref=str(cid), skip
+        ya = c.execute("""SELECT 1 FROM tareas_internas
+                          WHERE origen='compromisos_legacy' AND origen_ref=?
+                          LIMIT 1""", (str(cid),)).fetchone()
+        if ya:
+            skipped += 1
+            continue
+        # Mapeo prioridad legacy -> tareas
+        prio = (r[6] or 'Media').strip()
+        if prio in ('Critico', 'Critica'): prio = 'Alta'
+        elif prio in ('Normal', 'Media'): prio = 'Media'
+        elif prio not in ('Alta', 'Baja'): prio = 'Media'
+        c.execute("""INSERT INTO tareas_internas
+                     (titulo, descripcion, estado, prioridad, area, origen,
+                      origen_ref, fecha_compromiso, fecha_creacion, creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                  ((r[1] or 'Compromiso')[:200],   # titulo (descripcion truncada)
+                   r[1] or '',                     # descripcion completa
+                   'Asignada',                     # estado
+                   prio,                           # prioridad mapeada
+                   r[3] or '',                     # area
+                   'compromisos_legacy',           # origen
+                   str(cid),                       # origen_ref
+                   r[4] or None,                   # fecha_compromiso
+                   r[9] or '',                     # fecha_creacion
+                   u))
+        new_tid = c.lastrowid
+        # Si tenia responsable, asignar como R
+        responsable = (r[2] or '').strip().lower()
+        if responsable:
+            try:
+                c.execute("""INSERT OR IGNORE INTO tareas_raci
+                             (tarea_id, usuario, rol, asignado_por)
+                             VALUES (?,?,?,?)""",
+                          (new_tid, responsable, 'R', u))
+            except Exception:
+                pass
+        migrados += 1
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'migrados': migrados,
+        'ya_migrados_skipped': skipped,
+        'mensaje': f'{migrados} compromisos copiados a Tareas (Comunicación). '
+                   f'{skipped} ya estaban migrados.',
+    })
+
+
 @bp.route('/compromisos')
 def compromisos_page():
     if 'compras_user' not in session:
@@ -460,6 +541,31 @@ def centro_notificaciones():
                 'detalle': f'Sin avance hace {int(r["dias"])} días — resp: {r["resp"] or "-"}',
                 'link': '/comunicacion',
                 'accion': 'Escalar o reasignar',
+            })
+    except Exception:
+        pass
+
+    # ── Tecnica: SGDs (SOPs) que requieren revision en <30 dias ──
+    try:
+        for r in c.execute("""
+            SELECT id, codigo, nombre, fecha_proxima_revision, responsable_revision,
+                   julianday(fecha_proxima_revision) - julianday('now') as dias
+            FROM documentos_sgd
+            WHERE estado='Vigente'
+              AND COALESCE(fecha_proxima_revision,'') != ''
+              AND fecha_proxima_revision <= date('now','+30 day')
+            ORDER BY fecha_proxima_revision ASC LIMIT 10
+        """).fetchall():
+            dias = int(r['dias']) if r['dias'] is not None else 0
+            sev = 'alta' if dias <= 0 else ('media' if dias <= 14 else 'info')
+            alertas.append({
+                'severidad': sev,
+                'modulo': 'tecnica',
+                'icono': '📜',
+                'titulo': f'SGD {"VENCIDO" if dias <= 0 else "vence pronto"}: {r["codigo"]}',
+                'detalle': f'{r["nombre"]} — revisión en {dias} días — resp: {r["responsable_revision"] or "-"}',
+                'link': '/tecnica',
+                'accion': 'Revisar y marcar revisado',
             })
     except Exception:
         pass
