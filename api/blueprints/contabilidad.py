@@ -449,22 +449,60 @@ def cont_factura_pago(numero):
     if not f:
         return jsonify({'error': 'Factura no encontrada'}), 404
 
+    fecha_pago = data.get('fecha') or date.today().isoformat()
+    medio = data.get('medio', 'Transferencia')
+    referencia = data.get('referencia', '')
     conn.execute("""
         INSERT INTO facturas_pagos(numero_factura, fecha, monto, medio, referencia, registrado_por)
         VALUES(?,?,?,?,?,?)
-    """, (numero, date.today().isoformat(), monto,
-          data.get('medio', 'Transferencia'),
-          data.get('referencia', ''), _user()))
+    """, (numero, fecha_pago, monto, medio, referencia, _user()))
 
     # Actualizar estado si está totalmente pagada
     total_pagado = conn.execute(
         "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
     ).fetchone()[0]
-    if total_pagado >= dict(f)['total']:
-        conn.execute("UPDATE facturas SET estado='Pagada' WHERE numero=?", (numero,))
+    f_total = dict(f)['total']
+    nuevo_estado = 'Pagada' if total_pagado >= f_total else 'Parcial'
+    conn.execute("UPDATE facturas SET estado=? WHERE numero=?", (nuevo_estado, numero))
+
+    # ── Gap 5 cerrado: cobranza → flujo_ingresos automático ──
+    # Cada vez que se registra un pago de factura, espejarlo en flujo_ingresos
+    # con referencia FAC-{numero}-{seq}. Idempotente por (referencia).
+    # Esto cierra el ciclo cobranza para que el dashboard de gerencia y P&L
+    # de financiero reflejen el cobro real (antes solo veían pedido emitido,
+    # no el pago efectivo).
+    try:
+        f_dict = dict(f)
+        cliente = (f_dict.get('cliente_nombre') or f_dict.get('proveedor') or '').strip()
+        empresa_emisora = (f_dict.get('empresa') or 'ANIMUS').upper()
+        # Calcular sequence de pagos para esa factura
+        seq = conn.execute(
+            "SELECT COUNT(*) FROM facturas_pagos WHERE numero_factura=?",
+            (numero,)
+        ).fetchone()[0]
+        ref_flujo = f'FAC-{numero}-PAGO-{seq}'
+        # Idempotencia: si ya existe el ingreso con esa referencia, skip
+        ya_existe = conn.execute(
+            "SELECT id FROM flujo_ingresos WHERE referencia=?",
+            (ref_flujo,)
+        ).fetchone()
+        if not ya_existe:
+            periodo = (fecha_pago or date.today().isoformat())[:7]
+            concepto = f'Cobro factura {numero}' + (f' — {cliente[:40]}' if cliente else '')
+            conn.execute("""
+                INSERT INTO flujo_ingresos
+                (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por)
+                VALUES (?,?,?,?,?,?,?,?,?)
+            """, (fecha_pago, empresa_emisora, concepto, 'Cobranza B2B',
+                  monto, periodo, 'factura_pago_auto', ref_flujo, 'sistema_sync'))
+    except Exception:
+        # No bloquear el pago si el espejo falla (mejor pago registrado sin
+        # flujo que pago caído por error en flujo).
+        pass
+
     conn.commit()
 
-    return jsonify({'ok': True, 'total_pagado': total_pagado})
+    return jsonify({'ok': True, 'total_pagado': total_pagado, 'estado': nuevo_estado})
 
 
 @bp.route('/api/contabilidad/facturas/<numero>/anular', methods=['PATCH'])

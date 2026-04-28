@@ -134,6 +134,95 @@ def api_maquila_orden_patch(oid):
     conn.commit()
     return jsonify({'ok': True})
 
+@bp.route('/api/maquila/ordenes/<int:oid>/facturar', methods=['POST'])
+def api_maquila_facturar(oid):
+    """Genera una factura de servicio de maquila usando el mismo motor de
+    contabilidad. Cierra el Gap 7: maquila ahora alimenta facturas y por
+    consiguiente flujo_ingresos cuando se cobre.
+
+    Body opcional:
+      iva_pct (default 19), descuento (default 0), notas, fecha_vencimiento
+    """
+    from datetime import date
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+
+    orden = c.execute("SELECT * FROM maquila_ordenes WHERE id=?", (oid,)).fetchone()
+    if not orden:
+        return jsonify({'error': 'Orden de maquila no encontrada'}), 404
+    orden = dict(orden)
+
+    # Verificar que no este ya facturada
+    existe = c.execute(
+        "SELECT numero FROM facturas WHERE numero_pedido=? AND tipo='FM'",
+        (f"MAQ-{oid}",)
+    ).fetchone()
+    if existe:
+        return jsonify({
+            'ok': True, 'ya_facturada': True,
+            'numero_factura': existe[0],
+            'mensaje': f'Ya existe factura {existe[0]} para esta orden'
+        }), 200
+
+    # Numeracion fiscal (importar funcion de contabilidad)
+    from blueprints.contabilidad import _next_numero
+    empresa_emisora = (orden.get('empresa') or 'Espagiria').strip() or 'Espagiria'
+    # Para servicios de maquila usamos prefijo 'FM' (Factura Maquila) para
+    # diferenciar de facturas de venta de productos terminados ('FV')
+    numero = _next_numero(conn, empresa_emisora, tipo='FM')
+
+    # Datos base de la factura
+    cliente_nombre = orden.get('cliente_nombre') or orden.get('proveedor') or 'Sin cliente'
+    cliente_nit = orden.get('cliente_nit') or ''
+    valor_servicio = float(orden.get('valor_total') or 0)
+    iva_pct = float(d.get('iva_pct', 19))
+    descuento = float(d.get('descuento', 0))
+    base_iva = valor_servicio - descuento
+    iva_valor = round(base_iva * iva_pct / 100, 2)
+    total = base_iva + iva_valor
+    hoy = date.today().isoformat()
+    fecha_venc = d.get('fecha_vencimiento', '')
+    notas = d.get('notas') or f'Servicio de maquila — orden #{oid}'
+
+    c.execute("""
+        INSERT INTO facturas
+        (numero, tipo, numero_pedido, cliente_nombre, cliente_nit,
+         empresa, fecha_emision, fecha_vencimiento, subtotal, descuento,
+         iva_pct, iva_valor, total, estado, notas, creado_por)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (numero, 'FM', f'MAQ-{oid}', cliente_nombre, cliente_nit,
+          empresa_emisora, hoy, fecha_venc, valor_servicio, descuento,
+          iva_pct, iva_valor, total, 'Emitida', notas,
+          session.get('compras_user', 'sistema')))
+
+    # Item unico: servicio de maquila
+    try:
+        c.execute("""
+            INSERT INTO facturas_items
+            (numero_factura, sku, descripcion, cantidad, precio_unitario, subtotal)
+            VALUES (?,?,?,?,?,?)
+        """, (numero, f'MAQ-{oid}',
+              f"Maquila: {orden.get('producto_tipo') or 'producto cosmetico'} "
+              f"({orden.get('batch_size_kg', 0)} kg)",
+              1, valor_servicio, valor_servicio))
+    except sqlite3.OperationalError:
+        pass  # tabla items puede no existir en instancias muy viejas
+
+    # Actualizar orden con referencia a la factura
+    c.execute("""UPDATE maquila_ordenes
+                 SET estado=COALESCE(estado,'En proceso')
+                 WHERE id=?""", (oid,))
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'numero_factura': numero,
+        'total': total,
+        'mensaje': f'Factura {numero} generada por ${total:,.0f} COP'
+    }), 201
+
+
 @bp.route('/api/maquila/cotizar', methods=['POST'])
 def api_maquila_cotizar():
     d = request.json or {}

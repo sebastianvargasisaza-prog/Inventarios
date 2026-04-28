@@ -500,6 +500,243 @@ def centro_notificaciones():
     })
 
 
+@bp.route('/centro')
+def centro_operaciones_page():
+    """Pagina del Centro de Operaciones — vista ejecutiva CEO."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/centro')
+    u = session.get('compras_user', '')
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+    from templates_py.centro_operaciones_html import HTML
+    return Response(HTML.replace('{usuario}', u), mimetype='text/html')
+
+
+@bp.route('/api/centro/operaciones')
+def centro_operaciones_data():
+    """Dashboard ejecutivo unificado — TODO lo que el CEO necesita ver de un
+    vistazo en lugar de entrar a 8 modulos. Combina:
+      • Caja: ingresos/egresos del dia + saldo acumulado mes
+      • Produccion: lotes en curso, MPs criticos, alertas calidad
+      • Comercial: ventas Shopify hoy/mes, pedidos B2B activos, AR/AP aging
+      • Pagos: OCs por pagar + facturas con saldo + nomina pendiente
+      • Equipo: tareas vencidas todas las areas, mensajes admin, quejas IA
+      • Marketing: campanas activas, influencers a pagar, ROI mes
+    Solo admins (sebastian + alejandro).
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    out = {'generado_en': datetime.now().isoformat()}
+
+    # ─── CAJA / FINANZAS ─────────────────────────────────────────────────
+    try:
+        hoy = datetime.now().strftime('%Y-%m-%d')
+        mes = datetime.now().strftime('%Y-%m')
+        ing_hoy = c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE fecha=?", (hoy,)).fetchone()[0]
+        egr_hoy = c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE fecha=?", (hoy,)).fetchone()[0]
+        ing_mes = c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE periodo=?", (mes,)).fetchone()[0]
+        egr_mes = c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo=?", (mes,)).fetchone()[0]
+        out['caja'] = {
+            'ingresos_hoy':  ing_hoy or 0,
+            'egresos_hoy':   egr_hoy or 0,
+            'neto_hoy':      (ing_hoy or 0) - (egr_hoy or 0),
+            'ingresos_mes':  ing_mes or 0,
+            'egresos_mes':   egr_mes or 0,
+            'neto_mes':      (ing_mes or 0) - (egr_mes or 0),
+        }
+    except Exception:
+        out['caja'] = {}
+
+    # ─── PRODUCCION ──────────────────────────────────────────────────────
+    try:
+        prods_mes = c.execute("""
+            SELECT COUNT(*) as lotes, COALESCE(SUM(cantidad),0) as kg
+            FROM producciones
+            WHERE strftime('%Y-%m',fecha)=strftime('%Y-%m','now')
+              AND estado != 'Cancelada'
+        """).fetchone()
+        prods_proximos = c.execute("""
+            SELECT COUNT(*) FROM produccion_programada
+            WHERE estado='Programada' AND fecha_planeada >= date('now')
+              AND fecha_planeada <= date('now','+30 day')
+        """).fetchone()
+        out['produccion'] = {
+            'lotes_mes': prods_mes[0] if prods_mes else 0,
+            'kg_mes': float(prods_mes[1]) if prods_mes else 0,
+            'programados_30d': prods_proximos[0] if prods_proximos else 0,
+        }
+    except Exception:
+        out['produccion'] = {}
+
+    # ─── INVENTARIO ──────────────────────────────────────────────────────
+    try:
+        n_cero = c.execute("""
+            SELECT COUNT(*) FROM (
+                SELECT m.codigo_mp,
+                       COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
+                                         WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
+                                         ELSE 0 END),0) as stock
+                FROM maestro_mps m
+                LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
+                WHERE m.activo=1 AND m.stock_minimo>0
+                GROUP BY m.codigo_mp HAVING stock<=0
+            )
+        """).fetchone()[0]
+        n_bajo = c.execute("""
+            SELECT COUNT(*) FROM (
+                SELECT m.codigo_mp, m.stock_minimo,
+                       COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
+                                         WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
+                                         ELSE 0 END),0) as stock
+                FROM maestro_mps m
+                LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
+                WHERE m.activo=1 AND m.stock_minimo>0
+                GROUP BY m.codigo_mp
+                HAVING stock<m.stock_minimo AND stock>0
+            )
+        """).fetchone()[0]
+        venc7 = c.execute("""SELECT COUNT(*) FROM movimientos
+                             WHERE tipo='Entrada' AND fecha_vencimiento BETWEEN
+                                   date('now') AND date('now','+7 day')""").fetchone()[0]
+        out['inventario'] = {
+            'mps_cero': n_cero, 'mps_bajo': n_bajo, 'lotes_vencen_7d': venc7,
+        }
+    except Exception:
+        out['inventario'] = {}
+
+    # ─── COMERCIAL: SHOPIFY + PEDIDOS B2B ────────────────────────────────
+    try:
+        sh_hoy = c.execute("""SELECT COUNT(*), COALESCE(SUM(total),0)
+                              FROM animus_shopify_orders WHERE creado_en LIKE ?
+                           """, (hoy + '%',)).fetchone()
+        sh_mes = c.execute("""SELECT COUNT(*), COALESCE(SUM(total),0)
+                              FROM animus_shopify_orders WHERE creado_en LIKE ?
+                           """, (mes + '%',)).fetchone()
+        n_pedidos_b2b = c.execute("""SELECT COUNT(*) FROM pedidos
+                                     WHERE estado IN ('Pendiente','En produccion','Listo')
+                                  """).fetchone()[0]
+        out['comercial'] = {
+            'shopify_hoy_count': sh_hoy[0] if sh_hoy else 0,
+            'shopify_hoy_total': sh_hoy[1] if sh_hoy else 0,
+            'shopify_mes_count': sh_mes[0] if sh_mes else 0,
+            'shopify_mes_total': sh_mes[1] if sh_mes else 0,
+            'pedidos_b2b_activos': n_pedidos_b2b,
+        }
+    except Exception:
+        out['comercial'] = {}
+
+    # ─── PAGOS: OCs + facturas + nomina ──────────────────────────────────
+    try:
+        oc_pendientes = c.execute("""
+            SELECT COUNT(*), COALESCE(SUM(valor_total),0)
+            FROM ordenes_compra
+            WHERE estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial')
+        """).fetchone()
+        facturas_saldo = c.execute("""
+            SELECT COUNT(*), COALESCE(SUM(total - COALESCE(
+                (SELECT SUM(monto) FROM facturas_pagos WHERE numero_factura=facturas.numero_factura),0
+            )),0) as saldo
+            FROM facturas
+            WHERE estado IN ('Emitida','Parcial')
+        """).fetchone()
+        out['pagos'] = {
+            'ocs_pendientes_count': oc_pendientes[0] if oc_pendientes else 0,
+            'ocs_pendientes_valor': oc_pendientes[1] if oc_pendientes else 0,
+            'facturas_pendientes_count': facturas_saldo[0] if facturas_saldo else 0,
+            'facturas_saldo_total':      facturas_saldo[1] if facturas_saldo else 0,
+        }
+    except Exception:
+        out['pagos'] = {}
+
+    # ─── EQUIPO ──────────────────────────────────────────────────────────
+    try:
+        tareas_venc_total = c.execute("""
+            SELECT COUNT(*) FROM tareas_internas
+            WHERE estado NOT IN ('Hecha','Cancelada')
+              AND fecha_compromiso IS NOT NULL
+              AND fecha_compromiso < date('now')
+        """).fetchone()[0]
+        msg_admin = c.execute("""SELECT COUNT(*) FROM mensajes_internos
+                                 WHERE a_usuario=? AND leido_at IS NULL""",
+                              (u,)).fetchone()[0]
+        quejas_alta = c.execute("""SELECT COUNT(*) FROM quejas_internas
+                                   WHERE estado IN ('Pendiente','Analizada','Escalada')
+                                     AND severidad_ia IN ('Alta','Critica')""").fetchone()[0]
+        ncs = c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'").fetchone()[0]
+        out['equipo'] = {
+            'tareas_vencidas_total': tareas_venc_total,
+            'mensajes_sin_leer': msg_admin,
+            'quejas_alta_critica': quejas_alta,
+            'ncs_abiertas': ncs,
+        }
+    except Exception:
+        out['equipo'] = {}
+
+    # ─── MARKETING ───────────────────────────────────────────────────────
+    try:
+        camp_act = c.execute("""SELECT COUNT(*) FROM marketing_campanas
+                                WHERE estado='Activa'""").fetchone()[0]
+        # Influencers que tocan pagar (cumplio ciclo, sin solicitud)
+        toca_pagar = 0
+        try:
+            rows = c.execute("""
+                SELECT mi.id, mi.ciclo_pago, MAX(p.fecha) as ultimo
+                FROM marketing_influencers mi
+                LEFT JOIN pagos_influencers p ON p.influencer_id=mi.id AND p.estado='Pagada'
+                WHERE mi.estado='Activo' AND mi.ciclo_pago IN ('Mensual','Bimensual','Trimestral')
+                GROUP BY mi.id HAVING ultimo IS NOT NULL
+            """).fetchall()
+            for r in rows:
+                ciclo = {'Mensual':30,'Bimensual':60,'Trimestral':90}.get(r['ciclo_pago'],30)
+                try:
+                    fult = datetime.strptime((r['ultimo'] or '')[:10], '%Y-%m-%d')
+                    if (datetime.now() - fult).days >= ciclo:
+                        pend = c.execute("""SELECT 1 FROM pagos_influencers
+                                            WHERE influencer_id=? AND estado='Pendiente'
+                                            LIMIT 1""", (r['id'],)).fetchone()
+                        if not pend: toca_pagar += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        out['marketing'] = {
+            'campanas_activas': camp_act,
+            'influencers_toca_pagar': toca_pagar,
+        }
+    except Exception:
+        out['marketing'] = {}
+
+    # ─── ACTIVIDAD ULTIMA HORA ───────────────────────────────────────────
+    try:
+        actividad = []
+        # Movimientos
+        for r in c.execute("""SELECT 'movimiento' as tipo, fecha, material_nombre as titulo, tipo as detalle
+                              FROM movimientos WHERE fecha >= datetime('now','-1 hour')
+                              ORDER BY fecha DESC LIMIT 5""").fetchall():
+            actividad.append(dict(r))
+        # OCs nuevas
+        for r in c.execute("""SELECT 'oc' as tipo, fecha, numero_oc as titulo, proveedor as detalle
+                              FROM ordenes_compra WHERE fecha >= datetime('now','-1 hour')
+                              ORDER BY fecha DESC LIMIT 5""").fetchall():
+            actividad.append(dict(r))
+        # Tareas creadas
+        for r in c.execute("""SELECT 'tarea' as tipo, fecha_creacion as fecha, titulo, area as detalle
+                              FROM tareas_internas WHERE fecha_creacion >= datetime('now','-1 hour')
+                              ORDER BY fecha_creacion DESC LIMIT 5""").fetchall():
+            actividad.append(dict(r))
+        actividad.sort(key=lambda x: x.get('fecha','') or '', reverse=True)
+        out['actividad_reciente'] = actividad[:15]
+    except Exception:
+        out['actividad_reciente'] = []
+
+    return jsonify(out)
+
+
 @bp.route('/api/notificaciones/count')
 def centro_count():
     """Contador rapido para mostrar badge en la campana sin recalcular todo.

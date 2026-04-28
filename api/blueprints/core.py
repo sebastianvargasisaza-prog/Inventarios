@@ -134,8 +134,12 @@ def modulos():
         return redirect('/login?next=/modulos')
     from templates_py.modulos_html import MODULOS_HTML
     from blueprints.marketing import MARKETING_USERS
+    from config import ADMIN_USERS as _ADMS
     usuario = session.get('compras_user', '')
-    html = MODULOS_HTML.replace('{usuario}', usuario)
+    es_admin = 'true' if usuario in _ADMS else 'false'
+    html = (MODULOS_HTML
+            .replace('{usuario}', usuario)
+            .replace('{usuario_es_admin}', es_admin))
     # Ocultar tarjeta ANIMUS Lab para usuarios sin acceso a Marketing
     if usuario not in MARKETING_USERS:
         import re

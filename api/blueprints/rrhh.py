@@ -436,8 +436,50 @@ def rrhh_nomina_pagar(periodo):
         return jsonify({"error": "La nómina debe estar aprobada antes de marcar como pagada"}), 400
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     c.execute("UPDATE nomina_registros SET estado='Pagada',pagado_por=?,pagado_en=? WHERE periodo=?", (u, ts, periodo))
-    pagados = c.rowcount; conn.commit()
-    return jsonify({"ok": True, "periodo": periodo, "pagados": pagados, "por": u, "fecha": ts})
+    pagados = c.rowcount
+
+    # ── Gap 4 cerrado: nomina → flujo_egresos automatico ──
+    # Cada vez que se marca un periodo de nomina como Pagada, espejarlo en
+    # flujo_egresos. Idempotente por (referencia=NOM-{periodo}). Si Sebastian
+    # corre /pagar dos veces el mismo periodo, no se duplica el egreso.
+    egresos_creados = 0
+    try:
+        # Total bruto + recargos del periodo (lo que efectivamente sale)
+        total_bruto_row = c.execute("""
+            SELECT COALESCE(SUM(total_devengado),0),
+                   COUNT(DISTINCT empleado_id)
+            FROM nomina_registros WHERE periodo=?
+        """, (periodo,)).fetchone()
+        total_devengado = float(total_bruto_row[0] or 0)
+        n_empleados = total_bruto_row[1] or 0
+
+        if total_devengado > 0:
+            ref = f'NOM-{periodo}'
+            ya = c.execute("SELECT id FROM flujo_egresos WHERE referencia=?", (ref,)).fetchone()
+            if not ya:
+                fecha = datetime.now().strftime('%Y-%m-%d')
+                # Periodo en flujo se interpreta como YYYY-MM. Si el periodo
+                # de nomina viene como 2026-04 lo usamos directo; si viene
+                # con dia tomamos los primeros 7 chars
+                periodo_flujo = (periodo or fecha)[:7]
+                concepto = f'Nomina {periodo} ({n_empleados} empleados)'
+                c.execute("""
+                    INSERT INTO flujo_egresos
+                    (fecha, empresa, concepto, categoria, monto, periodo,
+                     fuente, referencia, creado_por)
+                    VALUES (?,?,?,?,?,?,?,?,?)
+                """, (fecha, 'ESPAGIRIA', concepto, 'Nomina',
+                      total_devengado, periodo_flujo,
+                      'nomina_auto', ref, u or 'sistema_sync'))
+                egresos_creados = 1
+    except Exception:
+        # No bloquear el flujo de pago si el espejo falla
+        pass
+
+    conn.commit()
+    return jsonify({"ok": True, "periodo": periodo, "pagados": pagados,
+                    "por": u, "fecha": ts,
+                    "egresos_flujo_creados": egresos_creados})
 
 @bp.route("/api/rrhh/nomina/importar-excel", methods=["POST"])
 def rrhh_nomina_importar():
