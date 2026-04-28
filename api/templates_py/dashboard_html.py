@@ -1288,7 +1288,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <!-- Tabla de proyección por producto -->
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:20px">
     <div style="background:#1a4a7a;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
-      📦 Proyección de Stock — 60 días por producto
+      📦 Proyección de Stock — Faltante a 15 / 30 / 60 días por producto
     </div>
     <div id="prog-tabla-wrap" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -1297,16 +1297,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             <th style="padding:10px;text-align:left;border-bottom:1px solid #eee">Producto / SKU</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Stock (uds)</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Venta/mes</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Dias Cobertura</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Produccion</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Días Cobertura</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee;background:#fef3c7;color:#92400e">Falta 15d</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee;background:#fed7aa;color:#9a3412">Falta 30d</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee;background:#fecaca;color:#7f1d1d">Falta 60d</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Prox. Producción</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Calendario</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Materias Primas</th>
             <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Estado</th>
-            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Accion</th>
+            <th style="padding:10px;text-align:center;border-bottom:1px solid #eee">Acción</th>
           </tr>
         </thead>
         <tbody id="prog-tbody">
-          <tr><td colspan="7" style="text-align:center;padding:30px;color:#aaa;font-style:italic">
+          <tr><td colspan="11" style="text-align:center;padding:30px;color:#aaa;font-style:italic">
             Haz clic en "Actualizar" para cargar la proyección
           </td></tr>
         </tbody>
@@ -4583,11 +4586,27 @@ function _renderProgramacion(d){
       } else {
         progLabel = '📅 ' + p.prox_produccion; progBtnColor = '#198754';
       }
+      // Faltantes por horizonte: 0 = OK (verde), >0 = se queda corto (rojo)
+      var f15 = p.faltante_uds_15d || 0;
+      var f30 = p.faltante_uds_30d || 0;
+      var f60 = p.faltante_uds_60d || 0;
+      var f15Cell = f15 > 0
+        ? '<span style="color:#dc2626;font-weight:700">'+f15+' uds</span>'
+        : '<span style="color:#16a34a">✓</span>';
+      var f30Cell = f30 > 0
+        ? '<span style="color:#dc2626;font-weight:700">'+f30+' uds</span>'
+        : '<span style="color:#16a34a">✓</span>';
+      var f60Cell = f60 > 0
+        ? '<span style="color:#dc2626;font-weight:700">'+f60+' uds</span>'
+        : '<span style="color:#16a34a">✓</span>';
       return '<tr style="border-bottom:1px solid #eee">' +
         '<td style="padding:9px;font-weight:600">'+p.producto+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.stock_actual+'</td>' +
         '<td style="padding:9px;text-align:center">'+p.vel_mes+'</td>' +
         '<td style="padding:9px;text-align:center;font-weight:700;color:'+diasColor+'">'+diasStr+'</td>' +
+        '<td style="padding:9px;text-align:center;background:#fffbeb">'+f15Cell+'</td>' +
+        '<td style="padding:9px;text-align:center;background:#fff7ed">'+f30Cell+'</td>' +
+        '<td style="padding:9px;text-align:center;background:#fef2f2">'+f60Cell+'</td>' +
         '<td style="padding:9px;text-align:center">' +
           '<button data-prod="' + p.producto + '" onclick="abrirModalProgramar(this.dataset.prod)" style="background:'+progBtnColor+';color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap">'+progLabel+'</button>' +
         '</td>' +

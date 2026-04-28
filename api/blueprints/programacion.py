@@ -1235,6 +1235,19 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
                 'mensaje': ("Vende " + vel_str + " uds/mes y no tiene produccion en calendario"),
             })
 
+        # Proyecciones de unidades faltantes para cubrir N dias
+        # vel_dia = unidades vendidas/dia. necesarias_Nd = ceil(vel_dia * N).
+        # faltante_Nd = max(0, necesarias_Nd - stock_uds)
+        import math as _math
+        def _faltante_uds(N):
+            if vel_dia <= 0:
+                return 0
+            necesarias = _math.ceil(vel_dia * N)
+            return max(0, necesarias - stock_uds)
+        faltante_15d = _faltante_uds(15)
+        faltante_30d = _faltante_uds(30)
+        faltante_60d = _faltante_uds(60)
+
         projection.append({
             'producto': prod,
             'lote_kg': lote_kg,
@@ -1242,6 +1255,9 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
             'vel_dia': round(vel_dia, 2),
             'stock_actual': stock_uds,
             'dias_cobertura': round(dias_cob, 0) if dias_cob < 999 else None,
+            'faltante_uds_15d': faltante_15d,
+            'faltante_uds_30d': faltante_30d,
+            'faltante_uds_60d': faltante_60d,
             'prox_produccion': prox_prod,
             'prox_prod_pasada': bool(next_prod_by_product.get(prod + '__past')),
             'cal_ok': cal_ok,
