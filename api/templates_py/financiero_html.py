@@ -221,6 +221,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button class="btn" onclick="guardarConfig()" style="margin-top:16px;">Guardar cambios</button>
     <div id="config-msg" style="margin-top:10px;"></div>
   </div>
+  <div class="card" style="border:1px solid rgba(34,211,238,0.3);">
+    <div class="section-title" style="color:#22d3ee;">🛍️ Sync automático Shopify → Ingresos</div>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:12px;">Importa los pedidos pagados de Shopify como ingresos en el flujo financiero. Idempotente: cada pedido solo se importa una vez (marcado <code>flujo_synced=1</code>).</p>
+    <div id="shopify-sync-status" style="background:#0f172a;padding:12px;border-radius:8px;margin-bottom:12px;font-size:0.85em;color:#94a3b8;">Cargando estado...</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost" onclick="syncShopifyDryRun()" style="border-color:#22d3ee;color:#22d3ee;">👁️ Previsualizar</button>
+      <button class="btn btn-ghost" onclick="syncShopifyEjecutar()" style="background:#0e7490;color:#fff;border-color:#0e7490;">✨ Sincronizar ahora</button>
+    </div>
+    <div id="shopify-sync-msg" style="margin-top:10px;font-size:0.88em;"></div>
+  </div>
   <div class="card">
     <div class="section-title">📤 Importar desde OCs (egresos automáticos)</div>
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Importa las órdenes de compra recibidas como egresos de MPs automáticamente.</p>
@@ -547,6 +557,66 @@ async function importarOCs(){
   document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok)loadEgresos();
 }
+
+// ─── Shopify sync ────────────────────────────────────────────────────────
+async function loadShopifyStatus(){
+  try {
+    var r = await fetch('/api/financiero/sync-shopify-status');
+    var d = await r.json();
+    if (!r.ok) {
+      document.getElementById('shopify-sync-status').innerHTML =
+        '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>';
+      return;
+    }
+    var fmt = function(n) { return (n||0).toLocaleString('es-CO'); };
+    document.getElementById('shopify-sync-status').innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' +
+        '<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Pendientes de sync</div>' +
+          '<div style="font-size:1.4em;font-weight:700;color:#fbbf24;">' + d.pendientes_count + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.pendientes_total) + ' COP</div></div>' +
+        '<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Ya sincronizados</div>' +
+          '<div style="font-size:1.4em;font-weight:700;color:#34d399;">' + d.sincronizados_count + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.sincronizados_total) + ' COP — ult: ' + (d.ultimo_sync_fecha||'nunca') + '</div></div>' +
+      '</div>';
+  } catch(e) {
+    document.getElementById('shopify-sync-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function syncShopifyDryRun() {
+  var msg = document.getElementById('shopify-sync-msg');
+  msg.innerHTML = '<span style="color:#94a3b8;">Calculando...</span>';
+  var r = await fetch('/api/financiero/sync-shopify-ingresos', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({dry_run: true, solo_pagados: true})
+  });
+  var d = await r.json();
+  if (!r.ok) { msg.innerHTML = '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>'; return; }
+  msg.innerHTML = '<span style="color:#22d3ee;">📋 Se importarían ' + d.pendientes +
+    ' pedidos por $' + (d.total_a_importar||0).toLocaleString('es-CO') + ' COP. ' +
+    'Click "Sincronizar ahora" para ejecutar.</span>';
+}
+
+async function syncShopifyEjecutar() {
+  var confirmMsg = 'Sincronizar pedidos Shopify pagados a flujo_ingresos? Idempotente: re-ejecutable sin duplicar. Solo importa orders no marcadas como sincronizadas.';
+  if (!confirm(confirmMsg)) return;
+  var msg = document.getElementById('shopify-sync-msg');
+  var btnDis = document.querySelectorAll('#shopify-sync-status ~ div button');
+  btnDis.forEach(function(b){b.disabled=true;});
+  msg.innerHTML = '<span style="color:#94a3b8;">Sincronizando...</span>';
+  var r = await fetch('/api/financiero/sync-shopify-ingresos', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({solo_pagados: true})
+  });
+  var d = await r.json();
+  btnDis.forEach(function(b){b.disabled=false;});
+  if (!r.ok) { msg.innerHTML = '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>'; return; }
+  msg.innerHTML = '<span style="color:#34d399;">✓ ' + d.mensaje + '</span>';
+  loadShopifyStatus(); loadIngresos();
+}
+
+// Cargar estado al abrir tab
+document.addEventListener('DOMContentLoaded', function(){ setTimeout(loadShopifyStatus, 500); });
 
 async function loadPreciosMayorista(){
   try{

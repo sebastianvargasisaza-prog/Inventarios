@@ -198,6 +198,144 @@ def financiero_importar_ocs():
     conn.commit()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
+@bp.route('/api/financiero/sync-shopify-ingresos', methods=['POST'])
+def financiero_sync_shopify():
+    """Sincroniza pedidos de Shopify NO marcados como flujo_synced
+    insertando filas en flujo_ingresos y marcando la orden con
+    flujo_synced=1 + flujo_ingreso_id (idempotente y reversible).
+
+    Body opcional:
+      - solo_pagados: bool (default True) — solo importa orders con
+        estado_pago='paid'/'pagado'. Evita registrar reservas o
+        ordenes cancelados.
+      - desde_fecha: 'YYYY-MM-DD' (opcional) — limita el rango.
+      - dry_run: bool (default False) — solo cuenta, no escribe.
+    """
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    solo_pagados = d.get('solo_pagados', True)
+    desde_fecha = (d.get('desde_fecha') or '').strip()
+    dry_run = bool(d.get('dry_run', False))
+
+    conn = get_db(); c = conn.cursor()
+
+    # Verificar que la columna flujo_synced existe (migracion 37)
+    try:
+        c.execute("SELECT flujo_synced FROM animus_shopify_orders LIMIT 1")
+    except sqlite3.OperationalError:
+        return jsonify({
+            'error': 'Migracion #37 no aplicada — columna flujo_synced no existe. '
+                     'Reinicia la app para aplicar migraciones pendientes.',
+        }), 500
+
+    where = ['(flujo_synced=0 OR flujo_synced IS NULL)']
+    params = []
+    if solo_pagados:
+        where.append("LOWER(COALESCE(estado_pago,'')) IN ('paid','pagado','complete','captured','partially_paid')")
+    if desde_fecha:
+        where.append("creado_en >= ?")
+        params.append(desde_fecha)
+
+    sql = f"""SELECT id, shopify_id, nombre, total, moneda, creado_en, ciudad
+              FROM animus_shopify_orders
+              WHERE {' AND '.join(where)}
+              ORDER BY creado_en"""
+    pendientes = c.execute(sql, params).fetchall()
+    if not pendientes:
+        return jsonify({'ok': True, 'pendientes': 0, 'importadas': 0,
+                        'mensaje': 'No hay pedidos Shopify pendientes de sincronizar'})
+
+    if dry_run:
+        return jsonify({
+            'ok': True, 'dry_run': True,
+            'pendientes': len(pendientes),
+            'total_a_importar': sum(float(r['total'] or 0) for r in pendientes),
+            'mensaje': f'{len(pendientes)} pedidos serian importados (dry_run no escribe)',
+        })
+
+    importadas = 0
+    total_importado = 0.0
+    for row in pendientes:
+        order_id = row['id']
+        shopify_id = row['shopify_id'] or ''
+        total = float(row['total'] or 0)
+        if total <= 0:
+            continue
+        fecha = (row['creado_en'] or datetime.now().isoformat())[:10]
+        periodo = fecha[:7]
+        nombre = row['nombre'] or ''
+        ciudad = row['ciudad'] or ''
+        concepto = f'Shopify {shopify_id}' + (f' — {nombre[:40]}' if nombre else '')
+        ref = f'SHOPIFY-{shopify_id}' if shopify_id else f'SHOPIFY-{order_id}'
+
+        # Idempotencia adicional: si ya existe ingreso con esa referencia, skip + marcar
+        existente = c.execute(
+            "SELECT id FROM flujo_ingresos WHERE referencia=?",
+            (ref,)
+        ).fetchone()
+        if existente:
+            ing_id = existente[0] if not isinstance(existente, dict) else existente['id']
+            c.execute(
+                "UPDATE animus_shopify_orders SET flujo_synced=1, flujo_ingreso_id=? WHERE id=?",
+                (ing_id, order_id)
+            )
+            continue
+
+        c.execute("""INSERT INTO flujo_ingresos
+                     (fecha, empresa, concepto, categoria, monto, periodo,
+                      fuente, referencia, creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?)""",
+                  (fecha, 'ANIMUS', concepto, 'Ventas Shopify',
+                   total, periodo, 'shopify_auto', ref, 'sistema_sync'))
+        ing_id = c.lastrowid
+        c.execute(
+            "UPDATE animus_shopify_orders SET flujo_synced=1, flujo_ingreso_id=? WHERE id=?",
+            (ing_id, order_id)
+        )
+        importadas += 1
+        total_importado += total
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'pendientes': len(pendientes),
+        'importadas': importadas,
+        'total_importado': total_importado,
+        'mensaje': f'{importadas} pedidos Shopify sincronizados a flujo_ingresos. '
+                   f'Total: ${total_importado:,.0f} COP',
+    })
+
+
+@bp.route('/api/financiero/sync-shopify-status', methods=['GET'])
+def financiero_sync_shopify_status():
+    """Estado del sync: cuantos pedidos pendientes hay sin sincronizar."""
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        pend = c.execute("""SELECT COUNT(*) as n, COALESCE(SUM(total),0) as total
+                            FROM animus_shopify_orders
+                            WHERE (flujo_synced=0 OR flujo_synced IS NULL)
+                              AND LOWER(COALESCE(estado_pago,'')) IN
+                                  ('paid','pagado','complete','captured','partially_paid')
+                         """).fetchone()
+        synced = c.execute("""SELECT COUNT(*) as n, COALESCE(SUM(total),0) as total
+                              FROM animus_shopify_orders WHERE flujo_synced=1
+                           """).fetchone()
+        ultimo_sync = c.execute("""SELECT MAX(fecha) FROM flujo_ingresos
+                                   WHERE fuente='shopify_auto'""").fetchone()
+        return jsonify({
+            'pendientes_count': pend['n'] if pend else 0,
+            'pendientes_total': pend['total'] if pend else 0,
+            'sincronizados_count': synced['n'] if synced else 0,
+            'sincronizados_total': synced['total'] if synced else 0,
+            'ultimo_sync_fecha': ultimo_sync[0] if ultimo_sync else None,
+        })
+    except sqlite3.OperationalError as e:
+        return jsonify({'error': f'Tabla no migrada: {e}'}), 500
+
+
 @bp.route('/api/financiero/limpiar-flujo', methods=['POST'])
 def financiero_limpiar_flujo():
     """Elimina todos los registros de flujo_egresos y flujo_ingresos.

@@ -238,8 +238,81 @@ function loadFormulas() {
     var tb = document.getElementById('tb-formulas');
     if (!data.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">Sin formulas registradas</td></tr>'; return; }
     tb.innerHTML = data.map(function(r) {
-      return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td><span class="badge-azul">' + r.tipo + '</span></td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_version||'-') + '</td><td>' + (r.creado_por||'-') + '</td><td><button class="btn btn-danger btn-sm" onclick="eliminarFormula(' + r.id + ')">Eliminar</button></td></tr>';
+      var acciones = '<button class="btn btn-secondary btn-sm" onclick="verHistorialFormula(' + r.id + ', \'' + (r.codigo||'').replace(/'/g,'\\\'')+ '\')" title="Ver historial">&#128214; Historial</button> ' +
+                     '<button class="btn btn-danger btn-sm" onclick="eliminarFormula(' + r.id + ')">Eliminar</button>';
+      return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td><span class="badge-azul">' + r.tipo + '</span></td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_version||'-') + '</td><td>' + (r.creado_por||'-') + '</td><td>' + acciones + '</td></tr>';
     }).join('');
+  });
+}
+
+// ── Versionado: ver historial y restaurar ─────────────────────────────────
+function verHistorialFormula(fid, codigo) {
+  fetch('/api/tecnica/formulas/' + fid + '/versiones').then(function(r){return r.json();}).then(function(versiones) {
+    var modal = document.getElementById('modal-historial');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modal-historial';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
+      modal.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:780px;max-width:95vw;max-height:90vh;overflow-y:auto;color:#e2e8f0;"><div id="modal-historial-body"></div></div>';
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+    }
+    var body = document.getElementById('modal-historial-body');
+    if (!versiones || !versiones.length) {
+      body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
+        '<div style="color:#64748b;font-style:italic;padding:24px;text-align:center;">Sin cambios registrados todavia. El primer snapshot se crea al editar la formula.</div>' +
+        '<div style="text-align:right;margin-top:16px"><button class="btn btn-secondary" onclick="document.getElementById(\'modal-historial\').remove()">Cerrar</button></div>';
+      return;
+    }
+    var rows = versiones.map(function(v) {
+      return '<tr style="border-bottom:1px solid #334155;">' +
+        '<td style="padding:10px;font-weight:700;color:#fbbf24;">v' + v.version_num + '</td>' +
+        '<td style="padding:10px;font-size:12px;">' + (v.fecha_creacion||'-').substring(0,16) + '</td>' +
+        '<td style="padding:10px;font-size:12px;color:#a5f3fc;">' + (v.creado_por||'-') + '</td>' +
+        '<td style="padding:10px;font-size:12px;">' + (v.motivo_cambio||'<em style="color:#64748b">sin motivo</em>') + '</td>' +
+        '<td style="padding:10px;text-align:right;white-space:nowrap;">' +
+          '<button class="btn btn-secondary btn-sm" onclick="verSnapshot(' + fid + ',' + v.id + ')" title="Ver detalle">&#128065; Ver</button> ' +
+          '<button class="btn btn-warning btn-sm" style="background:#a16207;color:#fff;" onclick="restaurarFormula(' + fid + ',' + v.id + ',' + v.version_num + ')" title="Restaurar a esta version">&#8617; Restaurar</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+    body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
+      '<div style="font-size:12px;color:#64748b;margin-bottom:14px;">Snapshots tomados automaticamente antes de cada cambio. Click "Restaurar" para revertir (admins only). El restore tambien se snapshot, asi puedes deshacer el deshacer.</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;font-size:11px;">' +
+      '<th style="padding:10px;text-align:left;">Version</th><th style="padding:10px;text-align:left;">Fecha</th><th style="padding:10px;text-align:left;">Por</th><th style="padding:10px;text-align:left;">Motivo</th><th style="padding:10px;text-align:right;">Acciones</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div style="text-align:right;margin-top:16px"><button class="btn btn-secondary" onclick="document.getElementById(\'modal-historial\').remove()">Cerrar</button></div>';
+  });
+}
+
+function verSnapshot(fid, vid) {
+  fetch('/api/tecnica/formulas/' + fid + '/versiones/' + vid).then(function(r){return r.json();}).then(function(d) {
+    if (d.error) { alert('Error: ' + d.error); return; }
+    var snap = d.snapshot || {};
+    var lineas = Object.keys(snap).filter(function(k){return k!=='_componentes';}).map(function(k){
+      return '<tr><td style="padding:6px 12px;color:#94a3b8;font-size:12px;">' + k + '</td>' +
+             '<td style="padding:6px 12px;font-size:12px;color:#e2e8f0;">' + (snap[k]==null?'<em style="color:#64748b">null</em>':String(snap[k]).substring(0,200)) + '</td></tr>';
+    }).join('');
+    var html = '<h2 style="margin-top:0">&#128203; Snapshot v' + d.version_num + '</h2>' +
+      '<div style="font-size:11px;color:#64748b;margin-bottom:10px;">Tomado el ' + (d.fecha_creacion||'-') + ' por ' + (d.creado_por||'-') + ' — motivo: ' + (d.motivo_cambio||'(no especificado)') + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;background:#0f172a;border-radius:8px;overflow:hidden;">' + lineas + '</table>' +
+      '<div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="this.parentNode.parentNode.parentNode.parentNode.remove()">Cerrar</button></div>';
+    var m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10000;';
+    m.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:22px;width:680px;max-width:95vw;max-height:85vh;overflow-y:auto;color:#e2e8f0;">' + html + '</div>';
+    m.addEventListener('click', function(e){ if(e.target===m) m.remove(); });
+    document.body.appendChild(m);
+  });
+}
+
+function restaurarFormula(fid, vid, vnum) {
+  var msg = 'Restaurar formula a la version v' + vnum + '? El estado actual se guardara como snapshot adicional, asi puedes revertir el restore si te arrepientes. Solo admins pueden hacer esto.';
+  if (!confirm(msg)) return;
+  fetch('/api/tecnica/formulas/' + fid + '/restaurar/' + vid, {method:'POST'}).then(function(r){return r.json();}).then(function(d) {
+    if (d.error) { alert('Error: ' + d.error); return; }
+    alert('Formula restaurada a v' + d.restaurado_a_version);
+    var m = document.getElementById('modal-historial'); if (m) m.remove();
+    loadFormulas();
   });
 }
 function registrarFormula() {

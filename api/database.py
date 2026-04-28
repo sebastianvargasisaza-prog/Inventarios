@@ -1762,6 +1762,11 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         """CREATE INDEX IF NOT EXISTS idx_quejas_estado ON quejas_internas(estado, fecha DESC)""",
     ]),
+    (37, "shopify_orders: flag flujo_synced para sync automatico de ingresos a flujo_ingresos", [
+        """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_synced INTEGER DEFAULT 0""",
+        """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
+        """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
+    ]),
 ]
 
 
