@@ -1767,6 +1767,10 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
         """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
     ]),
+    (41, "animus_conteos_ciclicos: flag aplicado + movimiento_id_ajuste para Gap 8 (cierre conteo Daniela)", [
+        """ALTER TABLE animus_conteos_ciclicos ADD COLUMN aplicado INTEGER DEFAULT 0""",
+        """ALTER TABLE animus_conteos_ciclicos ADD COLUMN movimiento_id_ajuste INTEGER""",
+    ]),
     (39, "calidad: tablas avanzadas — coa_resultados, especificaciones_mp, estabilidades, capa_acciones", [
         # Especificaciones MP: limites por parametro para validar CoA
         """CREATE TABLE IF NOT EXISTS especificaciones_mp (

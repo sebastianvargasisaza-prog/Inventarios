@@ -898,6 +898,147 @@ def centro_operaciones_data():
     return jsonify(out)
 
 
+@bp.route('/api/reporte/semanal-ceo')
+def reporte_semanal_ceo():
+    """Reporte semanal para el CEO — JSON con todo lo que cierra la semana.
+
+    Diseñado para enviar via email cada lunes 8am o consultar bajo demanda.
+    Cubre: caja semana, ventas Shopify, OCs creadas, NCs, tareas completadas,
+    influencers pagados, alertas pendientes.
+    """
+    u = session.get('compras_user', '')
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    out = {
+        'periodo': {
+            'desde': (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'),
+            'hasta': datetime.now().strftime('%Y-%m-%d'),
+        },
+    }
+
+    try:
+        ing = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
+                           WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+        egr = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_egresos
+                           WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+        out['caja_semana'] = {'ingresos': ing, 'egresos': egr, 'neto': ing - egr}
+    except Exception:
+        out['caja_semana'] = {}
+
+    try:
+        sh = c.execute("""SELECT COUNT(*), COALESCE(SUM(total),0)
+                          FROM animus_shopify_orders
+                          WHERE creado_en >= datetime('now','-7 day')""").fetchone()
+        out['shopify_semana'] = {'pedidos': sh[0] if sh else 0,
+                                 'total': sh[1] if sh else 0}
+    except Exception:
+        out['shopify_semana'] = {}
+
+    try:
+        out['ocs_creadas'] = c.execute("""SELECT COUNT(*) FROM ordenes_compra
+                                         WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+        out['ocs_pagadas'] = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor_total),0)
+                                          FROM ordenes_compra
+                                          WHERE fecha_pago >= date('now','-7 day')""").fetchone()
+        out['ocs_pagadas'] = {'count': out['ocs_pagadas'][0] if out['ocs_pagadas'] else 0,
+                              'valor': out['ocs_pagadas'][1] if out['ocs_pagadas'] else 0}
+    except Exception:
+        out['ocs_creadas'] = 0
+        out['ocs_pagadas'] = {}
+
+    try:
+        out['ncs_nuevas'] = c.execute("""SELECT COUNT(*) FROM no_conformidades
+                                         WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+        out['ncs_cerradas'] = c.execute("""SELECT COUNT(*) FROM no_conformidades
+                                           WHERE fecha_cierre >= date('now','-7 day')""").fetchone()[0]
+    except Exception:
+        out['ncs_nuevas'] = 0
+        out['ncs_cerradas'] = 0
+
+    try:
+        out['producciones_semana'] = c.execute("""SELECT COUNT(*), COALESCE(SUM(cantidad),0)
+                                                  FROM producciones
+                                                  WHERE fecha >= date('now','-7 day')""").fetchone()
+        out['producciones_semana'] = {'lotes': out['producciones_semana'][0],
+                                      'kg': out['producciones_semana'][1]/1000.0}
+    except Exception:
+        out['producciones_semana'] = {}
+
+    try:
+        out['tareas_completadas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
+                                                 WHERE fecha_completada >= date('now','-7 day')""").fetchone()[0]
+        out['tareas_creadas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
+                                             WHERE fecha_creacion >= date('now','-7 day')""").fetchone()[0]
+        out['tareas_vencidas_pendientes'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
+                                                         WHERE estado NOT IN ('Hecha','Cancelada')
+                                                           AND fecha_compromiso < date('now')""").fetchone()[0]
+    except Exception:
+        out['tareas_completadas'] = out['tareas_creadas'] = out['tareas_vencidas_pendientes'] = 0
+
+    try:
+        inf_pagados = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor),0)
+                                   FROM pagos_influencers
+                                   WHERE fecha >= date('now','-7 day')
+                                     AND estado='Pagada'""").fetchone()
+        out['influencers_pagados'] = {'count': inf_pagados[0] if inf_pagados else 0,
+                                      'total': inf_pagados[1] if inf_pagados else 0}
+    except Exception:
+        out['influencers_pagados'] = {}
+
+    return jsonify(out)
+
+
+@bp.route('/api/marketing/roi-campanas')
+def roi_marketing_campanas():
+    """ROI por campaña activa: spend vs revenue atribuible.
+
+    Cruza marketing_campanas.presupuesto con ventas Shopify cuyas
+    discount_codes corresponden a influencers de la campaña.
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT mc.id, mc.nombre, mc.estado,
+                   COALESCE(mc.presupuesto, 0) as presupuesto,
+                   mc.fecha_inicio, mc.fecha_fin,
+                   (SELECT COUNT(DISTINCT influencer_id)
+                    FROM marketing_campana_influencer
+                    WHERE campana_id=mc.id) as n_influencers,
+                   (SELECT COALESCE(SUM(valor),0)
+                    FROM pagos_influencers pi
+                    JOIN marketing_campana_influencer ci
+                      ON ci.influencer_id=pi.influencer_id
+                    WHERE ci.campana_id=mc.id AND pi.estado='Pagada') as spend_real,
+                   (SELECT COALESCE(SUM(so.total),0)
+                    FROM animus_shopify_orders so
+                    JOIN marketing_influencers mi
+                      ON mi.discount_code != ''
+                         AND so.discount_codes LIKE '%'||mi.discount_code||'%'
+                    JOIN marketing_campana_influencer ci ON ci.influencer_id=mi.id
+                    WHERE ci.campana_id=mc.id) as revenue_atribuido
+            FROM marketing_campanas mc
+            ORDER BY mc.fecha_inicio DESC
+            LIMIT 50
+        """).fetchall()
+        cols = [x[0] for x in c.description]
+        campanas = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            spend = d.get('spend_real', 0) or d.get('presupuesto', 0)
+            rev = d.get('revenue_atribuido', 0) or 0
+            d['roi_pct'] = round(((rev - spend) / spend * 100), 1) if spend > 0 else None
+            d['roas'] = round(rev / spend, 2) if spend > 0 else None
+            campanas.append(d)
+        return jsonify({'campanas': campanas})
+    except Exception as e:
+        return jsonify({'error': str(e), 'campanas': []})
+
+
 @bp.route('/api/notificaciones/count')
 def centro_count():
     """Contador rapido para mostrar badge en la campana sin recalcular todo.

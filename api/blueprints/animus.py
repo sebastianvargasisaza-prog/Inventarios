@@ -1196,6 +1196,92 @@ def animus_inv_ciclico_registrar():
     })
 
 
+@bp.route("/api/animus/conteos/<int:conteo_id>/aplicar-ajuste", methods=["POST"])
+def aplicar_ajuste_conteo(conteo_id):
+    """Cierra el ciclo del conteo: aplica el ajuste a stock real (Gap 8).
+
+    Cuando Daniela registra un conteo Animus que tiene diferencia con Shopify,
+    la diferencia queda anotada pero el stock NO se ajusta. Este endpoint
+    crea el movimiento correspondiente para sincronizar el stock fisico
+    con la realidad contada.
+
+    Body opcional: {operador: 'daniela', tipo_ajuste: 'inventario_ciclico'}
+
+    Idempotente: marca el conteo con flag aplicado=1 + movimiento_id para
+    no duplicar.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+
+    conn = _db()
+    c = conn.cursor()
+
+    conteo = c.execute("""
+        SELECT id, sku, producto_nombre, cantidad_shopify, cantidad_fisica,
+               diferencia, explicacion, aplicado, movimiento_id_ajuste
+        FROM animus_conteos_ciclicos WHERE id=?
+    """, (conteo_id,)).fetchone()
+    if not conteo:
+        return jsonify({"error": "Conteo no encontrado"}), 404
+    conteo_d = dict(conteo)
+
+    if conteo_d.get("aplicado"):
+        return jsonify({
+            "ok": True, "ya_aplicado": True,
+            "movimiento_id": conteo_d.get("movimiento_id_ajuste"),
+            "mensaje": "Conteo ya tenia ajuste aplicado",
+        })
+
+    diferencia = conteo_d["diferencia"] or 0
+    if diferencia == 0:
+        # Marcar aplicado pero sin movimiento
+        c.execute("UPDATE animus_conteos_ciclicos SET aplicado=1 WHERE id=?",
+                  (conteo_id,))
+        conn.commit()
+        return jsonify({"ok": True, "diferencia_cero": True,
+                        "mensaje": "Conteo coincide con Shopify, no requiere ajuste"})
+
+    if diferencia != 0 and not conteo_d.get("explicacion"):
+        return jsonify({
+            "error": "Diferencia != 0 requiere explicacion antes de aplicar ajuste",
+        }), 400
+
+    # Crear movimiento ajuste
+    sku = conteo_d["sku"]
+    producto = conteo_d["producto_nombre"] or sku
+    explicacion = conteo_d.get("explicacion", '')
+    cantidad_abs = abs(diferencia)
+    # Si fisica > shopify: ajuste positivo (encontramos mas stock)
+    # Si fisica < shopify: ajuste negativo (faltante)
+    tipo_mov = 'Ajuste +' if diferencia > 0 else 'Ajuste -'
+
+    try:
+        c.execute("""INSERT INTO movimientos
+            (material_id, material_nombre, tipo, cantidad, fecha,
+             observaciones, operador, estado_lote)
+            VALUES (?,?,?,?,date('now'),?,?,'OK')""",
+            (sku, producto, tipo_mov, cantidad_abs,
+             f'Ajuste conteo ciclico Animus #{conteo_id}: {explicacion}',
+             u or 'sistema_animus'))
+        mov_id = c.lastrowid
+
+        c.execute("""UPDATE animus_conteos_ciclicos
+                     SET aplicado=1, movimiento_id_ajuste=?
+                     WHERE id=?""", (mov_id, conteo_id))
+        conn.commit()
+        return jsonify({
+            "ok": True,
+            "movimiento_id": mov_id,
+            "tipo_movimiento": tipo_mov,
+            "cantidad": cantidad_abs,
+            "mensaje": f'Ajuste aplicado: {tipo_mov} {cantidad_abs} unidades de {sku}',
+        })
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({"error": f"Error aplicando ajuste: {_e}"}), 500
+
+
 # ── REDIRECT eliminado: /animus ahora sirve el panel de Caja Menor + ──
 #    Inventario Cíclico (definido en core.py con ANIMUS_HTML).
 
