@@ -928,6 +928,98 @@ def centro_operaciones_data():
     return jsonify(out)
 
 
+@bp.route('/api/ia/analizar-semana', methods=['POST'])
+def ia_analizar_semana():
+    """IA agente CEO: analiza el reporte semanal con Claude y devuelve
+    insights, decisiones sugeridas y riesgos.
+
+    Pre-requisito: env var ANTHROPIC_API_KEY configurada en Render.
+    """
+    u = session.get('compras_user', '')
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+
+    # Reusar el reporte semanal como contexto
+    import json as _json
+    import urllib.request as _urlreq
+    import os as _os
+
+    api_key = _os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        # Intentar leer de animus_config
+        try:
+            conn_cfg = get_db()
+            row = conn_cfg.execute("SELECT valor FROM animus_config WHERE clave='anthropic_api_key'").fetchone()
+            if row:
+                api_key = row[0]
+        except Exception:
+            pass
+
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY no configurada'}), 500
+
+    # Datos: recolectar reporte semanal inline
+    conn = get_db(); c = conn.cursor()
+    datos = {}
+    try:
+        datos['caja_semana_neta'] = c.execute("""
+            SELECT (SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE fecha >= date('now','-7 day'))
+                 - (SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE fecha >= date('now','-7 day'))
+        """).fetchone()[0]
+        datos['ocs_creadas'] = c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE fecha >= date('now','-7 day')").fetchone()[0]
+        datos['shopify_pedidos'] = c.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE creado_en >= datetime('now','-7 day')").fetchone()[0]
+        datos['ncs_abiertas'] = c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'").fetchone()[0]
+        datos['tareas_vencidas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
+                                                WHERE estado NOT IN ('Hecha','Cancelada')
+                                                  AND fecha_compromiso < date('now')""").fetchone()[0]
+        datos['mps_cero'] = c.execute("""SELECT COUNT(*) FROM (
+            SELECT m.codigo_mp, COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
+                                                  WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad ELSE 0 END),0) as stock
+            FROM maestro_mps m LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp
+            WHERE m.activo=1 AND m.stock_minimo>0 GROUP BY m.codigo_mp HAVING stock<=0)""").fetchone()[0]
+    except Exception as _e:
+        datos['error_recoleccion'] = str(_e)
+
+    prompt = (
+        "Eres CFO+COO virtual de HHA Group (holding cosmetico colombiano: "
+        "Espagiria manufactura + ANIMUS Lab marca DTC). Analiza la semana "
+        "y devuelve en formato JSON con estas claves:\n"
+        '{"diagnostico": "1 parrafo objetivo de como va la empresa esta semana",\n'
+        ' "alertas_criticas": ["lista de 2-4 cosas que requieren accion inmediata"],\n'
+        ' "decisiones_sugeridas": ["lista de 3-5 acciones especificas para el CEO esta semana"],\n'
+        ' "metricas_destacadas": "1-2 lineas sobre KPIs clave",\n'
+        ' "calificacion_semana": "Excelente|Buena|Regular|Mala|Critica"}\n\n'
+        "Datos:\n" + _json.dumps(datos, ensure_ascii=False, indent=2)
+    )
+
+    payload = _json.dumps({
+        'model': 'claude-haiku-4-5-20251001',
+        'max_tokens': 600,
+        'messages': [{'role': 'user', 'content': prompt}]
+    }).encode('utf-8')
+
+    try:
+        req = _urlreq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=payload,
+            headers={'x-api-key': api_key,
+                     'anthropic-version': '2023-06-01',
+                     'content-type': 'application/json'},
+            method='POST')
+        with _urlreq.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+            text = data['content'][0]['text']
+            # Extraer JSON de la respuesta
+            import re as _re
+            m = _re.search(r'\{[\s\S]+\}', text)
+            if m:
+                analisis = _json.loads(m.group(0))
+                return jsonify({'ok': True, 'datos': datos, 'analisis': analisis})
+            return jsonify({'ok': True, 'datos': datos, 'analisis_raw': text})
+    except Exception as e:
+        return jsonify({'error': f'IA no disponible: {e}', 'datos': datos}), 500
+
+
 @bp.route('/api/reporte/semanal-ceo')
 def reporte_semanal_ceo():
     """Reporte semanal para el CEO — JSON con todo lo que cierra la semana.

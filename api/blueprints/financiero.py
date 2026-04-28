@@ -198,6 +198,56 @@ def financiero_importar_ocs():
     conn.commit()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
+@bp.route('/api/financiero/conciliacion-bancaria/preview', methods=['POST'])
+def conciliacion_preview():
+    """Conciliacion bancaria: recibe lineas del extracto bancario,
+    intenta hacer match contra flujo_ingresos/egresos por monto+fecha.
+
+    Body: {extracto_lineas: [{fecha, monto, descripcion, tipo: 'C'|'D'}]}
+
+    Devuelve: cada linea con su match sugerido (si lo encuentra) +
+    confidence score. NO escribe nada — es preview.
+    """
+    if 'compras_user' not in session or session.get('compras_user','') not in (ADMIN_USERS | CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    lineas = d.get('extracto_lineas', [])
+    conn = get_db(); c = conn.cursor()
+    resultados = []
+    for L in lineas:
+        fecha = L.get('fecha', '')[:10]
+        monto = abs(float(L.get('monto', 0)))
+        tipo = (L.get('tipo','') or '').upper()
+        desc = (L.get('descripcion','') or '').strip()
+        if not fecha or monto == 0:
+            resultados.append({'linea': L, 'match': None, 'razon': 'falta fecha o monto'})
+            continue
+        # Buscar en ingresos/egresos cercanos en fecha (+/- 3 dias) y monto exacto
+        tabla = 'flujo_ingresos' if tipo == 'C' else 'flujo_egresos'
+        match = c.execute(f"""
+            SELECT id, fecha, concepto, monto, referencia, fuente,
+                   ABS(julianday(fecha) - julianday(?)) as dias_diff
+            FROM {tabla}
+            WHERE ABS(monto - ?) < 0.01
+              AND ABS(julianday(fecha) - julianday(?)) <= 3
+            ORDER BY dias_diff ASC LIMIT 1
+        """, (fecha, monto, fecha)).fetchone()
+        if match:
+            cols = ['id','fecha','concepto','monto','referencia','fuente','dias_diff']
+            resultados.append({
+                'linea': L,
+                'match': dict(zip(cols, match)),
+                'tabla': tabla,
+                'confidence': 'alta' if match[6] == 0 else ('media' if match[6] <= 1 else 'baja'),
+            })
+        else:
+            resultados.append({'linea': L, 'match': None,
+                               'razon': 'sin coincidencia en fecha+monto'})
+    return jsonify({'resultados': resultados,
+                    'lineas_total': len(lineas),
+                    'matched': sum(1 for r in resultados if r['match'])})
+
+
 @bp.route('/api/financiero/pnl-por-empresa')
 def pnl_por_empresa():
     """P&L separado por empresa del holding (HHA / Espagiria / Animus).
