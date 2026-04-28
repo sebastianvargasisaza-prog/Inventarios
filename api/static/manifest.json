@@ -1,12 +1,14 @@
 {
-  "name": "HHA Group · Sistema Operativo",
-  "short_name": "HHA Group",
-  "description": "Sistema integral del holding HHA Group: Espagiria + ÁNIMUS Lab",
+  "name": "Cortex Labs · Sistema Operativo de Laboratorio",
+  "short_name": "Cortex Labs",
+  "description": "El cerebro operativo de tu laboratorio. Desarrollado por HHA Group para Espagiria & ÁNIMUS Lab.",
+  "id": "co.hhagroup.cortexlabs",
   "start_url": "/modulos",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "any",
-  "theme_color": "#15803d",
+  "theme_color": "#6d28d9",
   "background_color": "#f5f4f0",
   "icons": [
     {
@@ -28,28 +30,38 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["business", "productivity"],
+  "categories": ["business", "productivity", "medical"],
   "lang": "es-CO",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "screenshots": [],
   "shortcuts": [
     {
       "name": "HOY",
       "short_name": "HOY",
-      "description": "Vista del día",
+      "description": "Vista del día — alertas, tareas, KPIs",
       "url": "/hoy",
       "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
     },
     {
       "name": "Compras",
       "short_name": "Compras",
-      "description": "Gestión de OCs",
+      "description": "Solicitudes, OCs, recepciones",
       "url": "/compras",
       "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
     },
     {
       "name": "Tesorería",
       "short_name": "Tesorería",
-      "description": "Caja, P&L, facturas",
+      "description": "Caja, P&L, conciliación bancaria",
       "url": "/tesoreria",
+      "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Programación",
+      "short_name": "Programación",
+      "description": "Producción + checklist pre-producción",
+      "url": "/programacion",
       "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
     }
   ]

@@ -3,7 +3,15 @@ HUB_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>HHA Group — Panel Central</title>
+<title>Cortex Labs · Panel Central</title>
+<meta name="application-name" content="Cortex Labs">
+<meta name="apple-mobile-web-app-title" content="Cortex Labs">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6d28d9">
+<meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="author" content="HHA Group">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
@@ -79,8 +87,11 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 <body>
 <div class="header">
   <div>
-    <div class="header-logo">HHA Group</div>
-    <div class="header-sub">Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
+    <div class="header-logo" style="display:flex;align-items:baseline;gap:8px;">
+      <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+      <span style="font-size:10px;color:#a78bfa;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:2px 6px;border-radius:4px;">v1.0</span>
+    </div>
+    <div class="header-sub">by <strong style="color:#cbd5e1">HHA Group</strong> &nbsp;·&nbsp; Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
   </div>
   <div class="header-right">
     <strong id="fecha-hoy"></strong>
@@ -369,5 +380,16 @@ function updateModuleBadges(alRes, r){
 loadAll();
 setInterval(loadAll, 60000);
 </script>
+
+<footer style="padding:18px 20px;border-top:1px solid #334155;margin-top:24px;text-align:center;font-size:11px;color:#64748b;background:#0f172a;">
+  <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">
+    <span style="font-weight:700;background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.3px;font-size:13px;">Cortex Labs</span>
+    <span style="font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:1px 5px;border-radius:3px;">v1.0</span>
+  </div>
+  <div style="margin-top:6px;font-style:italic;color:#94a3b8;">El cerebro operativo de tu laboratorio</div>
+  <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;font-size:10px;">Desarrollado por <strong style="color:#cbd5e1">HHA Group</strong></div>
+  <div style="margin-top:6px;color:#475569;font-size:10px;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+</footer>
+
 </body>
 </html>"""

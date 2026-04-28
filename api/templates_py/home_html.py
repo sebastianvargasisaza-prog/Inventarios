@@ -3,7 +3,17 @@ HOME_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>HHA Group</title>
+<title>Cortex Labs · Portal HHA Group</title>
+<meta name="application-name" content="Cortex Labs">
+<meta name="apple-mobile-web-app-title" content="Cortex Labs">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6d28d9">
+<meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="author" content="HHA Group">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-height:100vh;}
@@ -29,7 +39,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 </style>
 </head>
 <body>
-<div class="hdr"><div><div class="hdr-logo">HHA Group</div><div class="hdr-sub">Espagiria &middot; ANIMUS Lab</div></div><div class="hdr-right">Sistema de Gestion Interna</div></div>
+<div class="hdr">
+  <div>
+    <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
+      <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+      <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid #6d28d9;padding:2px 7px;border-radius:4px;">v1.0</span>
+    </div>
+    <div class="hdr-sub">by <strong style="color:#fff">HHA Group</strong> &middot; Espagiria &middot; ANIMUS Lab</div>
+  </div>
+  <div class="hdr-right">
+    <div style="font-style:italic;color:#cbd5e1;">El cerebro operativo de tu laboratorio</div>
+    <div style="font-size:10px;color:#78716c;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por HHA Group</div>
+  </div>
+</div>
 <div class="wrap">
   <div class="greeting">&#128075; Bienvenido</div>
   <div class="greeting-sub">Selecciona el modulo al que deseas acceder.</div>
@@ -58,5 +80,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
   </div>
   <div class="note">Los modulos oscuros requieren <a href="/login">iniciar sesion como CEO</a></div>
 </div>
+<footer style="padding:24px 20px;border-top:1px solid #e7e5e4;margin-top:40px;text-align:center;font-size:11px;color:#a8a29e;background:#fafaf9;">
+  <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">Cortex Labs</div>
+  <div style="margin-top:4px;font-style:italic;">El cerebro operativo de tu laboratorio</div>
+  <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:#1c1917">HHA Group</strong></div>
+  <div style="margin-top:6px;color:#d6d3d1;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+</footer>
 </body>
 </html>"""
