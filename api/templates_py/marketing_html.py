@@ -899,6 +899,24 @@ window.addEventListener('unhandledrejection', function(ev) {
       </div>
     </div>
     <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Frecuencia con la que se le paga</label>
+          <select id="inf-ciclo-pago" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;width:100%;">
+            <option value="Mensual">Mensual (cada 30 días)</option>
+            <option value="Bimensual">Bimensual (cada 60 días)</option>
+            <option value="Trimestral">Trimestral (cada 90 días)</option>
+            <option value="Único">Único (no recurrente)</option>
+            <option value="Sin ciclo">Sin ciclo definido</option>
+          </select>
+          <div style="font-size:10px;color:#64748b;margin-top:4px;">
+            Cuando se cumple el ciclo y no hay solicitud activa, el panel muestra <span style="color:#fde047;">⏰ Toca pagar</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
       <div style="font-size:11px;font-weight:700;color:#34d399;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
       <div class="form-row full">
         <div class="form-group">
@@ -1898,6 +1916,10 @@ async function loadInfluencers() {
     if(r.tiene_pendiente) {
       // Solicitud activa esperando pago (Jefferson la creo y aun no se transfirio)
       estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u23f3 Pendiente</span>';
+    } else if(r.toca_pagar) {
+      // Ciclo de pago vencido y no hay solicitud activa todavia \u2192 recordatorio a Jefferson
+      const dias = r.dias_desde_ultimo_pago || 0;
+      estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Hace '+dias+' dias del ultimo pago. Ciclo: '+r.ciclo_pago+'">\u23f0 Toca pagar</span>';
     } else if(r.pagos_count>0) {
       // Tiene al menos un pago confirmado (OC pagada)
       estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u2713 Al d\u00eda</span>';
@@ -1964,6 +1986,8 @@ async function editInfluencer(id) {
   document.getElementById('inf-cedula').value=r.cedula_nit||'';
   const dcEl = document.getElementById('inf-discount-code');
   if(dcEl) dcEl.value = r.discount_code || '';
+  const ccEl = document.getElementById('inf-ciclo-pago');
+  if(ccEl) ccEl.value = r.ciclo_pago || 'Mensual';
   document.getElementById('modal-influencer').classList.add('open');
 }
 
@@ -1985,7 +2009,8 @@ async function saveInfluencer() {
     tipo_cuenta: document.getElementById('inf-tipo-cta').value,
     cuenta_bancaria: document.getElementById('inf-cuenta').value.trim(),
     cedula_nit: document.getElementById('inf-cedula').value.trim(),
-    discount_code: (document.getElementById('inf-discount-code')||{value:''}).value.trim().toUpperCase()
+    discount_code: (document.getElementById('inf-discount-code')||{value:''}).value.trim().toUpperCase(),
+    ciclo_pago: (document.getElementById('inf-ciclo-pago')||{value:'Mensual'}).value
   };
   if(!body.nombre) { showAlert('inf-alert','El nombre es obligatorio','error'); return; }
   const url = id ? `/api/marketing/influencers/${id}` : '/api/marketing/influencers';

@@ -1667,6 +1667,9 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """CREATE INDEX IF NOT EXISTS idx_conteo_sku ON animus_conteos_ciclicos(sku)""",
         """CREATE INDEX IF NOT EXISTS idx_conteo_fecha ON animus_conteos_ciclicos(fecha_conteo DESC)""",
     ]),
+    (35, "marketing_influencers: ciclo_pago (Mensual/Bimensual/Trimestral/Unico) para alerta automatica 'Toca pagar'", [
+        """ALTER TABLE marketing_influencers ADD COLUMN ciclo_pago TEXT DEFAULT 'Mensual'""",
+    ]),
 ]
 
 

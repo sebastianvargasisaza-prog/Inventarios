@@ -917,8 +917,8 @@ def mkt_influencers():
                 (nombre, red_social, usuario_red, seguidores, engagement_rate,
                  nicho, tarifa, estado, email, telefono, notas,
                  banco, cuenta_bancaria, tipo_cuenta, cedula_nit, ciudad,
-                 discount_code)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 discount_code, ciclo_pago)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 d["nombre"], d.get("red_social", "Instagram"), d.get("usuario_red", ""),
                 d.get("seguidores", 0), d.get("engagement_rate", 0),
@@ -926,7 +926,7 @@ def mkt_influencers():
                 d.get("email", ""), d.get("telefono", ""), d.get("notas", ""),
                 d.get("banco", ""), d.get("cuenta_bancaria", ""),
                 d.get("tipo_cuenta", ""), d.get("cedula_nit", ""),
-                d.get("ciudad", ""), dc,
+                d.get("ciudad", ""), dc, d.get("ciclo_pago", "Mensual"),
             ))
         except sqlite3.OperationalError:
             # Fallback para instalaciones MUY viejas donde algun ALTER no
@@ -974,7 +974,8 @@ def mkt_influencer_detail(iid):
             d = request.get_json() or {}
             campos = ["nombre", "red_social", "usuario_red", "seguidores", "engagement_rate",
                       "nicho", "tarifa", "estado", "email", "telefono", "notas",
-                      "discount_code"]
+                      "discount_code", "ciclo_pago",
+                      "banco", "cuenta_bancaria", "tipo_cuenta", "cedula_nit"]
             updates = {k: d[k] for k in campos if k in d}
             # Normalizar discount_code: uppercase, sin espacios, prefijo ANIMUS_ opcional
             if "discount_code" in updates:
@@ -2862,6 +2863,29 @@ def mkt_influencers_panel():
             inf["pagado_mes_actual"] = sum(p["valor"] or 0 for p in mes_pagos)
             inf["ultimo_pago"]       = pagadas[0]["fecha"] if pagadas else None
             inf["tiene_pendiente"]   = len(pendientes) > 0
+
+            # Calcular alerta "toca pagar" segun ciclo de pago configurado
+            ciclo = (inf.get("ciclo_pago") or "Mensual").strip()
+            ciclo_dias_map = {"Mensual": 30, "Bimensual": 60, "Trimestral": 90,
+                              "Unico": 99999, "Único": 99999, "Sin ciclo": 99999}
+            dias_ciclo = ciclo_dias_map.get(ciclo, 30)
+            toca_pagar = False
+            dias_desde = None
+            proximo_pago = None
+            if inf["ultimo_pago"] and not inf["tiene_pendiente"] and dias_ciclo < 99999:
+                try:
+                    from datetime import datetime as _dt, timedelta as _td
+                    fecha_ult = _dt.strptime(inf["ultimo_pago"][:10], "%Y-%m-%d")
+                    fecha_prox = fecha_ult + _td(days=dias_ciclo)
+                    dias_desde = (_dt.now() - fecha_ult).days
+                    proximo_pago = fecha_prox.strftime("%Y-%m-%d")
+                    toca_pagar = dias_desde >= dias_ciclo
+                except Exception:
+                    pass
+            inf["toca_pagar"]            = toca_pagar
+            inf["dias_desde_ultimo_pago"] = dias_desde
+            inf["proximo_pago_estimado"] = proximo_pago
+
             result.append(inf)
 
         # 4. KPIs
