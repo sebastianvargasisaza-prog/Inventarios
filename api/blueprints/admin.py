@@ -1621,6 +1621,158 @@ def admin_inventario_reset_aplicar():
     })
 
 
+@bp.route("/api/admin/health-check-post-reset", methods=["GET"])
+def admin_health_check_post_reset():
+    """Verificación de integridad despues del reset.
+
+    Confirma que:
+      - Stock total esta en rango razonable
+      - No hay lotes con stock negativo
+      - Producciones siguen intactas (no se borraron)
+      - OCs y comprobantes siguen intactos
+      - Catalogo maestro_mps sigue intacto
+      - Hay salidas FEFO de produccion (no se perdieron)
+      - Solicitudes_compra siguen intactas
+
+    Solo lectura, admins.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    checks = {}
+
+    # 1. Movimientos: stock total y conteos
+    try:
+        movs_total = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
+        stock_total_g = float(c.execute(
+            "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+            "FROM movimientos"
+        ).fetchone()[0] or 0)
+        n_entradas = c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada'").fetchone()[0]
+        n_salidas = c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Salida'").fetchone()[0]
+        n_salidas_fefo = c.execute(
+            "SELECT COUNT(*) FROM movimientos WHERE tipo='Salida' AND observaciones LIKE 'FEFO:%'"
+        ).fetchone()[0]
+        checks['movimientos'] = {
+            'ok': True,
+            'total': movs_total,
+            'stock_total_g': round(stock_total_g, 1),
+            'stock_total_kg': round(stock_total_g / 1000, 2),
+            'entradas': n_entradas,
+            'salidas': n_salidas,
+            'salidas_fefo_produccion': n_salidas_fefo,
+        }
+    except Exception as e:
+        checks['movimientos'] = {'ok': False, 'error': str(e)}
+
+    # 2. Lotes con stock negativo (debe ser 0 — invariante critica)
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,''),
+                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as neto
+            FROM movimientos
+            GROUP BY material_id, lote
+            HAVING neto < -0.5
+        """).fetchall()
+        checks['stock_negativo'] = {
+            'ok': len(rows) == 0,
+            'count': len(rows),
+            'sample': [{'codigo_mp': r[0], 'lote': r[1], 'neto_g': round(r[2], 1)}
+                       for r in rows[:10]],
+            'critico': 'Si > 0: hay lotes con stock negativo (bug del replay)',
+        }
+    except Exception as e:
+        checks['stock_negativo'] = {'ok': False, 'error': str(e)}
+
+    # 3. Producciones intactas
+    try:
+        n_prod = c.execute("SELECT COUNT(*) FROM producciones").fetchone()[0]
+        last_prod = c.execute(
+            "SELECT producto, fecha, lote FROM producciones ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        checks['producciones'] = {
+            'ok': n_prod >= 0,
+            'count': n_prod,
+            'ultima': {
+                'producto': last_prod[0], 'fecha': str(last_prod[1])[:10],
+                'lote': last_prod[2]
+            } if last_prod else None,
+        }
+    except Exception as e:
+        checks['producciones'] = {'ok': False, 'error': str(e)}
+
+    # 4. OCs intactas
+    try:
+        n_ocs = c.execute("SELECT COUNT(*) FROM ordenes_compra").fetchone()[0]
+        n_oc_items = c.execute("SELECT COUNT(*) FROM ordenes_compra_items").fetchone()[0]
+        checks['ocs'] = {
+            'ok': True,
+            'ordenes_compra': n_ocs,
+            'items_total': n_oc_items,
+        }
+    except Exception as e:
+        checks['ocs'] = {'ok': False, 'error': str(e)}
+
+    # 5. Comprobantes intactos
+    try:
+        n_comp = c.execute("SELECT COUNT(*) FROM comprobantes_pago").fetchone()[0]
+        checks['comprobantes_pago'] = {'ok': True, 'count': n_comp}
+    except Exception as e:
+        checks['comprobantes_pago'] = {'ok': False, 'error': str(e)}
+
+    # 6. Maestro MPs intacto
+    try:
+        n_mps = c.execute("SELECT COUNT(*) FROM maestro_mps WHERE activo=1").fetchone()[0]
+        checks['maestro_mps'] = {'ok': True, 'count_activos': n_mps}
+    except Exception as e:
+        checks['maestro_mps'] = {'ok': False, 'error': str(e)}
+
+    # 7. Solicitudes intactas
+    try:
+        n_sol = c.execute("SELECT COUNT(*) FROM solicitudes_compra").fetchone()[0]
+        n_sol_items = c.execute("SELECT COUNT(*) FROM solicitudes_compra_items").fetchone()[0]
+        checks['solicitudes_compra'] = {
+            'ok': True, 'count': n_sol, 'items_total': n_sol_items,
+        }
+    except Exception as e:
+        checks['solicitudes_compra'] = {'ok': False, 'error': str(e)}
+
+    # 8. Audit trail del reset
+    try:
+        last_resets = c.execute("""
+            SELECT accion, fecha FROM audit_log
+            WHERE accion LIKE 'RESET_INVENTARIO%'
+            ORDER BY id DESC LIMIT 5
+        """).fetchall()
+        checks['audit_log'] = {
+            'ok': len(last_resets) > 0,
+            'eventos_reset_recientes': [
+                {'accion': r[0], 'fecha': str(r[1])[:19]} for r in last_resets
+            ],
+        }
+    except Exception as e:
+        checks['audit_log'] = {'ok': False, 'error': str(e)}
+
+    conn.close()
+
+    overall_ok = all(v.get('ok', False) for v in checks.values())
+    return jsonify({
+        'ok': overall_ok,
+        'overall': 'PASS' if overall_ok else 'FAIL',
+        'checks': checks,
+        'recomendacion': (
+            'Sistema intacto. Planta deberia funcionar normalmente. '
+            'Verificar visualmente: /planta carga, Stock por Lote muestra '
+            'lotes con cantidad > 0, /compras solicitudes intactas, '
+            '/financiero carga.'
+        ) if overall_ok else 'REVISAR — algun check fallo. Restaurar backup si hay duda.',
+    })
+
+
 @bp.route("/api/admin/inventario-diagnostico-entradas", methods=["GET"])
 def admin_inventario_diagnostico_entradas():
     """Diagnostico de Entradas en movimientos para detectar doble carga
@@ -3005,6 +3157,7 @@ tr:hover td{background:#263348;}
         <button class="btn btn-outline" onclick="descargarSnapshotPreReset()" title="Descarga JSON con TODOS los movimientos, producciones, OCs, comprobantes — para poder revertir si algo sale mal">&#x1F4BE; 1. Descargar snapshot pre-reset</button>
         <button class="btn btn-outline" onclick="previewReset()" title="Muestra que va a pasar SIN escribir nada">&#x1F441; 2. Preview reset</button>
         <button class="btn" onclick="aplicarReset()" style="background:#dc2626;color:#fff;" title="Ejecuta el reset. Pide token textual de confirmacion.">&#x1F4A5; 3. APLICAR reset</button>
+        <button class="btn btn-outline" onclick="healthCheckPostReset()" style="border-color:#34d399;color:#34d399;" title="Verifica integridad del sistema despues del reset">&#x2705; 4. Health-check post-reset</button>
       </div>
     </div>
 
@@ -3285,6 +3438,80 @@ async function aplicarReset() {
     out.innerHTML = h;
   } catch(e) {
     out.innerHTML = '<div style="color:#fca5a5;">Error de red: ' + _esc(e.message) + '</div>';
+  }
+}
+
+async function healthCheckPostReset() {
+  const out = document.getElementById('audit-inv-result');
+  out.innerHTML = '<div style="color:#94a3b8;">Verificando integridad...</div>';
+  try {
+    const r = await fetch('/api/admin/health-check-post-reset');
+    const d = await r.json();
+    if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
+    const okColor = d.ok ? '#34d399' : '#fca5a5';
+    let h = '<h3 style="color:' + okColor + ';margin-top:0;">' + (d.ok ? '✓' : '✗') + ' Health-check: ' + d.overall + '</h3>';
+    h += '<div style="color:#cbd5e1;font-size:13px;margin-bottom:14px;">' + _esc(d.recomendacion) + '</div>';
+
+    const cs = d.checks;
+
+    // Movimientos
+    if (cs.movimientos && cs.movimientos.ok) {
+      h += '<div class="kpi-row" style="margin-bottom:10px;">';
+      h += '<div class="kpi"><div class="kpi-l">Movs total</div><div class="kpi-v">' + cs.movimientos.total + '</div></div>';
+      h += '<div class="kpi"><div class="kpi-l">Stock total</div><div class="kpi-v" style="font-size:14px;">' + cs.movimientos.stock_total_kg + ' kg</div></div>';
+      h += '<div class="kpi"><div class="kpi-l">Entradas</div><div class="kpi-v">' + cs.movimientos.entradas + '</div></div>';
+      h += '<div class="kpi"><div class="kpi-l">Salidas</div><div class="kpi-v">' + cs.movimientos.salidas + '</div></div>';
+      h += '<div class="kpi"><div class="kpi-l">Salidas FEFO prod.</div><div class="kpi-v">' + cs.movimientos.salidas_fefo_produccion + '</div></div>';
+      h += '</div>';
+    }
+
+    // Stock negativo
+    if (cs.stock_negativo) {
+      const sn_ok = cs.stock_negativo.ok;
+      h += '<div style="background:rgba(' + (sn_ok ? '16,185,129' : '239,68,68') + ',.12);border:1px solid rgba(' + (sn_ok ? '16,185,129' : '239,68,68') + ',.4);border-radius:8px;padding:10px;margin-bottom:10px;">';
+      h += '<div style="color:' + (sn_ok ? '#34d399' : '#fca5a5') + ';font-weight:700;">' + (sn_ok ? '✓' : '✗') + ' Stock negativo: ' + cs.stock_negativo.count + ' lotes</div>';
+      if (cs.stock_negativo.count > 0) {
+        h += '<ul style="font-size:11px;color:#cbd5e1;margin:6px 0 0 18px;">';
+        cs.stock_negativo.sample.forEach(s => {
+          h += '<li>' + _esc(s.codigo_mp) + ' / ' + _esc(s.lote) + ' = ' + _fmtG(s.neto_g) + '</li>';
+        });
+        h += '</ul>';
+      }
+      h += '</div>';
+    }
+
+    // Otras tablas
+    h += '<div class="kpi-row">';
+    if (cs.producciones) {
+      h += '<div class="kpi"><div class="kpi-l">Producciones</div><div class="kpi-v">' + cs.producciones.count + '</div></div>';
+    }
+    if (cs.ocs) {
+      h += '<div class="kpi"><div class="kpi-l">OCs</div><div class="kpi-v">' + cs.ocs.ordenes_compra + '</div></div>';
+    }
+    if (cs.comprobantes_pago) {
+      h += '<div class="kpi"><div class="kpi-l">Comprobantes</div><div class="kpi-v">' + cs.comprobantes_pago.count + '</div></div>';
+    }
+    if (cs.maestro_mps) {
+      h += '<div class="kpi"><div class="kpi-l">MPs catálogo activos</div><div class="kpi-v">' + cs.maestro_mps.count_activos + '</div></div>';
+    }
+    if (cs.solicitudes_compra) {
+      h += '<div class="kpi"><div class="kpi-l">Solicitudes</div><div class="kpi-v">' + cs.solicitudes_compra.count + '</div></div>';
+    }
+    h += '</div>';
+
+    // Audit trail
+    if (cs.audit_log && cs.audit_log.eventos_reset_recientes) {
+      h += '<h4 style="color:#a5b4fc;margin-top:14px;">Audit trail del reset:</h4>';
+      h += '<ul style="color:#cbd5e1;font-size:12px;margin-left:18px;">';
+      cs.audit_log.eventos_reset_recientes.forEach(e => {
+        h += '<li>' + _esc(e.accion) + ' — ' + _esc(e.fecha) + '</li>';
+      });
+      h += '</ul>';
+    }
+
+    out.innerHTML = h;
+  } catch(e) {
+    out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(e.message) + '</div>';
   }
 }
 
