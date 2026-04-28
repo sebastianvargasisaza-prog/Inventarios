@@ -148,15 +148,50 @@ def formulas_list():
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
     return jsonify(rows)
 
+def _snapshot_formula(c, formula_id, motivo, usuario):
+    """Toma snapshot de la formula ANTES de modificar/eliminar.
+    Asigna numero de version incremental por formula_id."""
+    import json as _json
+    try:
+        row = c.execute("SELECT * FROM formulas_maestras WHERE id=?", (formula_id,)).fetchone()
+        if not row:
+            return
+        snap = dict(row)
+        # Tambien snapshot componentes si existen (tabla futura formula_componentes)
+        try:
+            comp_rows = c.execute(
+                "SELECT * FROM formula_componentes WHERE formula_id=?", (formula_id,)
+            ).fetchall()
+            snap["_componentes"] = [dict(r) for r in comp_rows]
+        except sqlite3.OperationalError:
+            pass
+        last = c.execute(
+            "SELECT MAX(version_num) FROM formulas_versiones WHERE formula_id=?",
+            (formula_id,)
+        ).fetchone()
+        ver_num = (last[0] or 0) + 1
+        c.execute("""INSERT INTO formulas_versiones
+                     (formula_id, version_num, snapshot_json, motivo_cambio, creado_por)
+                     VALUES (?,?,?,?,?)""",
+                  (formula_id, ver_num, _json.dumps(snap, ensure_ascii=False, default=str),
+                   motivo, usuario))
+    except Exception:
+        # No bloquear el update por fallo de snapshot
+        pass
+
+
 @bp.route('/api/tecnica/formulas/<int:fid>', methods=['PATCH', 'DELETE'])
 def formula_update(fid):
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
     c = conn.cursor()
+    usuario = session.get('compras_user', 'sistema')
     if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
+        if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
+        # Snapshot antes de eliminar
+        _snapshot_formula(c, fid, 'Eliminacion', usuario)
         c.execute("DELETE FROM formulas_maestras WHERE id=?", (fid,))
         conn.commit()
         return jsonify({'ok': True})
@@ -165,9 +200,85 @@ def formula_update(fid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
     if sets:
+        # Snapshot ANTES del UPDATE
+        motivo = d.get('motivo_cambio') or 'Modificacion'
+        _snapshot_formula(c, fid, motivo, usuario)
         c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
         conn.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/tecnica/formulas/<int:fid>/versiones', methods=['GET'])
+def formula_versiones(fid):
+    """Lista historial de versiones de una formula."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, version_num, motivo_cambio, creado_por, fecha_creacion
+        FROM formulas_versiones
+        WHERE formula_id = ?
+        ORDER BY version_num DESC
+    """, (fid,)).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols, r)) for r in rows])
+
+
+@bp.route('/api/tecnica/formulas/<int:fid>/versiones/<int:vid>', methods=['GET'])
+def formula_version_detalle(fid, vid):
+    """Devuelve snapshot completo de una version especifica."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    import json as _json
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute("""
+        SELECT id, formula_id, version_num, snapshot_json, motivo_cambio, creado_por, fecha_creacion
+        FROM formulas_versiones
+        WHERE formula_id=? AND id=?
+    """, (fid, vid)).fetchone()
+    if not row:
+        return jsonify({'error': 'Version no encontrada'}), 404
+    out = dict(row)
+    try:
+        out['snapshot'] = _json.loads(out.pop('snapshot_json'))
+    except Exception:
+        out['snapshot'] = {}
+        out.pop('snapshot_json', None)
+    return jsonify(out)
+
+
+@bp.route('/api/tecnica/formulas/<int:fid>/restaurar/<int:vid>', methods=['POST'])
+def formula_restaurar(fid, vid):
+    """Restaura una formula a una version anterior. Toma snapshot del estado
+    actual antes de restaurar (asi el restore tambien es reversible)."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', 'sistema')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo administradores'}), 403
+    import json as _json
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute("""SELECT snapshot_json, version_num FROM formulas_versiones
+                       WHERE formula_id=? AND id=?""", (fid, vid)).fetchone()
+    if not row:
+        return jsonify({'error': 'Version no encontrada'}), 404
+    try:
+        snap = _json.loads(row[0])
+    except Exception:
+        return jsonify({'error': 'Snapshot corrupto'}), 500
+    # Snapshot del estado actual antes de pisar
+    _snapshot_formula(c, fid, f'Pre-restore desde v{row[1]}', usuario)
+    # Restaurar campos editables de la formula
+    campos_rest = ['nombre', 'version', 'tipo', 'estado', 'fecha_version', 'descripcion']
+    sets = ', '.join(f + '=?' for f in campos_rest if f in snap)
+    vals = [snap[f] for f in campos_rest if f in snap] + [fid]
+    if sets:
+        c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
+        conn.commit()
+    return jsonify({'ok': True, 'restaurado_a_version': row[1]})
 
 # ── Fichas Técnicas ────────────────────────────────────────────────────────
 @bp.route('/api/tecnica/fichas', methods=['GET', 'POST'])

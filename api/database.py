@@ -1670,6 +1670,98 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (35, "marketing_influencers: ciclo_pago (Mensual/Bimensual/Trimestral/Unico) para alerta automatica 'Toca pagar'", [
         """ALTER TABLE marketing_influencers ADD COLUMN ciclo_pago TEXT DEFAULT 'Mensual'""",
     ]),
+    (36, "tecnica: versionado historico de formulas + tablas comunicacion (tareas RACI, chat, actas, quejas)", [
+        # Versionado de formulas: snapshot completo en cada cambio
+        """CREATE TABLE IF NOT EXISTS formulas_versiones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            formula_id      INTEGER NOT NULL,
+            version_num     INTEGER NOT NULL,
+            snapshot_json   TEXT NOT NULL,
+            motivo_cambio   TEXT DEFAULT '',
+            creado_por      TEXT,
+            fecha_creacion  TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_form_ver_id ON formulas_versiones(formula_id, version_num DESC)""",
+
+        # Sistema de comunicacion interna - tareas con RACI
+        """CREATE TABLE IF NOT EXISTS tareas_internas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo            TEXT NOT NULL,
+            descripcion       TEXT DEFAULT '',
+            estado            TEXT DEFAULT 'Asignada' CHECK(estado IN ('Asignada','EnProceso','Bloqueada','Hecha','Cancelada')),
+            prioridad         TEXT DEFAULT 'Media' CHECK(prioridad IN ('Alta','Media','Baja')),
+            area              TEXT DEFAULT '',
+            origen            TEXT DEFAULT 'manual',
+            origen_ref        TEXT DEFAULT '',
+            fecha_compromiso  TEXT,
+            fecha_creacion    TEXT DEFAULT (datetime('now')),
+            fecha_completada  TEXT,
+            creado_por        TEXT,
+            reincidente_de_id INTEGER,
+            notas_avance      TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_tareas_estado ON tareas_internas(estado, fecha_compromiso)""",
+        """CREATE INDEX IF NOT EXISTS idx_tareas_origen ON tareas_internas(origen, origen_ref)""",
+
+        # Tabla RACI: relacion N:M entre tareas y usuarios con rol
+        """CREATE TABLE IF NOT EXISTS tareas_raci (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tarea_id        INTEGER NOT NULL,
+            usuario         TEXT NOT NULL,
+            rol             TEXT NOT NULL CHECK(rol IN ('R','A','C','I')),
+            asignado_por    TEXT,
+            fecha_asignacion TEXT DEFAULT (datetime('now')),
+            UNIQUE(tarea_id, usuario, rol)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_raci_usuario ON tareas_raci(usuario, rol)""",
+        """CREATE INDEX IF NOT EXISTS idx_raci_tarea ON tareas_raci(tarea_id)""",
+
+        # Chat interno entre usuarios
+        """CREATE TABLE IF NOT EXISTS mensajes_internos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            de_usuario          TEXT NOT NULL,
+            a_usuario           TEXT NOT NULL,
+            asunto              TEXT DEFAULT '',
+            mensaje             TEXT NOT NULL,
+            fecha               TEXT DEFAULT (datetime('now')),
+            leido_at            TEXT,
+            relacionado_tarea_id INTEGER
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_msj_a ON mensajes_internos(a_usuario, leido_at)""",
+        """CREATE INDEX IF NOT EXISTS idx_msj_de ON mensajes_internos(de_usuario, fecha DESC)""",
+
+        # Actas de comites semanales (parser Gemini)
+        """CREATE TABLE IF NOT EXISTS comites_actas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha               TEXT NOT NULL,
+            plataforma          TEXT DEFAULT 'Google Meet',
+            titulo              TEXT DEFAULT 'Comite Semanal Espagiria',
+            asistentes_json     TEXT DEFAULT '[]',
+            transcripcion       TEXT DEFAULT '',
+            transcripcion_url   TEXT DEFAULT '',
+            parseada            INTEGER DEFAULT 0,
+            tareas_creadas      INTEGER DEFAULT 0,
+            registrado_por      TEXT,
+            fecha_creacion      TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_actas_fecha ON comites_actas(fecha DESC)""",
+
+        # Quejas / problemas reportados (input para chat IA secundario)
+        """CREATE TABLE IF NOT EXISTS quejas_internas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            de_usuario          TEXT NOT NULL,
+            contexto            TEXT NOT NULL,
+            severidad_ia        TEXT,
+            analisis_ia         TEXT,
+            accion_sugerida_ia  TEXT,
+            escalada_a          TEXT,
+            estado              TEXT DEFAULT 'Pendiente' CHECK(estado IN ('Pendiente','Analizada','Escalada','Resuelta','Descartada')),
+            fecha               TEXT DEFAULT (datetime('now')),
+            fecha_resolucion    TEXT,
+            resolucion          TEXT
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_quejas_estado ON quejas_internas(estado, fecha DESC)""",
+    ]),
 ]
 
 

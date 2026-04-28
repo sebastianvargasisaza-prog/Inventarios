@@ -171,6 +171,8 @@ from blueprints.calidad import bp as calidad_bp
 from blueprints.tecnica import bp as tecnica_bp
 from blueprints.marketing import bp as marketing_bp
 from blueprints.animus import bp as animus_bp
+from blueprints.espagiria import bp as espagiria_bp
+from blueprints.comunicacion import bp as comunicacion_bp
 from blueprints.contabilidad import bp as contabilidad_bp
 from blueprints.programacion import bp as programacion_bp
 from blueprints.admin import bp as admin_bp
@@ -189,6 +191,8 @@ app.register_blueprint(calidad_bp)
 app.register_blueprint(tecnica_bp)
 app.register_blueprint(marketing_bp)
 app.register_blueprint(animus_bp)
+app.register_blueprint(espagiria_bp)
+app.register_blueprint(comunicacion_bp)
 app.register_blueprint(contabilidad_bp)
 app.register_blueprint(programacion_bp)
 app.register_blueprint(admin_bp)
