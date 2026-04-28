@@ -87,7 +87,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 <body>
 <div class="header">
   <div style="display:flex;align-items:center;gap:14px;">
-    <img src="/static/icons/icon-192.png" alt="Cortex Labs"
+    <img src="/static/icons/icon-192.png?v=cortex2" alt="Cortex Labs"
          style="width:46px;height:46px;border-radius:10px;box-shadow:0 4px 14px rgba(167,139,250,0.3);flex-shrink:0;">
     <div>
       <div class="header-logo" style="display:flex;align-items:baseline;gap:8px;">

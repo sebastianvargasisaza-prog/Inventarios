@@ -3136,20 +3136,38 @@ def planificacion_estrategica():
     mp_needed = {}
 
     # Helper de stock antes del loop para reusarlo en mps_status por-producción
-    def _lookup_stock(mid, nombre):
-        """Busca stock por material_id primero, luego por nombre.
-        Retorna -1 si el MP es ilimitado (producido en sitio: agua, etc.)."""
+    # Ahora con ROLLING STOCK: el stock se va decrementando a medida que las
+    # producciones cronologicamente anteriores consumen MPs.
+    # Bug fix 2026-04-28: antes evaluaba cada produccion contra el stock total,
+    # asi que si dos producciones usaban la misma MP, ambas decian "puede"
+    # aunque entre las dos no alcanzara el stock.
+    def _lookup_stock_key(mid, nombre):
+        """Devuelve la clave del dict mp_stock usada para este MP, o None
+        si no se encuentra. Permite decrementar el stock simulado en la
+        clave correcta despues."""
         if _is_unlimited_mp(nombre):
-            return -1  # sentinel: always available, no purchase needed
-        s = mp_stock.get(mid)
-        if s is not None: return s
-        s = mp_stock.get(mid.upper())
-        if s is not None: return s
-        s = mp_stock.get(nombre.upper())
-        if s is not None: return s
-        s = mp_stock.get(_norm_mp_name(nombre))
-        if s is not None: return s
-        return 0
+            return None  # ilimitado, no decrementar
+        for k in (mid, mid.upper(), nombre.upper(), _norm_mp_name(nombre)):
+            if k in stock_simulado:
+                return k
+        return None
+
+    def _lookup_stock(mid, nombre):
+        """Devuelve stock simulado actual del MP. -1 si es ilimitado."""
+        if _is_unlimited_mp(nombre):
+            return -1
+        k = _lookup_stock_key(mid, nombre)
+        if k is None:
+            return 0
+        return stock_simulado[k]
+
+    # Stock simulado: copia mutable del stock real que se decrementa a
+    # medida que avanzan las producciones cronologicas.
+    stock_simulado = dict(mp_stock)
+
+    # ORDEN CRITICO: las producciones DEBEN evaluarse en orden cronologico
+    # para que el rolling stock tenga sentido.
+    producciones.sort(key=lambda p: (p.get('fecha', ''), p.get('producto', '')))
 
     for prod_ev in producciones:
         prod   = prod_ev['producto']
@@ -3159,11 +3177,14 @@ def planificacion_estrategica():
         lote_kg = formula.get('lote_size_kg', 1)
         factor  = kg_ev / lote_kg if lote_kg > 0 else 1.0
 
-        # Per-producción MP status (asume stock actual disponible solo para
-        # esta producción — útil para "¿mañana puedo producir BHA?")
+        # Per-producción MP status — evalua contra stock_simulado actual.
+        # Si esta produccion alcanza, decrementa stock_simulado para la
+        # siguiente produccion cronologica.
         mps_status = []
         n_alcanza = 0
         n_falta   = 0
+        decrementos_si_alcanza = []  # (key, g_need) para aplicar al final
+
         for item in formula.get('items', []):
             mid    = item['material_id']
             nombre = item['material_nombre']
@@ -3183,10 +3204,12 @@ def planificacion_estrategica():
             if prod not in mp_needed[mid]['productos']:
                 mp_needed[mid]['productos'].append(prod)
 
-            # Status individual para esta producción
+            # Status individual para esta producción usando stock SIMULADO
             stock_g_raw = _lookup_stock(mid, nombre)
+            stock_key   = _lookup_stock_key(mid, nombre)
+
             if stock_g_raw == -1:
-                # Ilimitado (agua, etc.) — siempre alcanza
+                # Ilimitado (agua, etc.) — siempre alcanza, no decrementa
                 mps_status.append({
                     'material_id': mid, 'nombre': nombre,
                     'necesario_g': g_need, 'stock_g': -1,
@@ -3203,13 +3226,24 @@ def planificacion_estrategica():
                     'deficit_g': round(max(0, g_need - stock_g_raw), 1),
                     'ilimitado': False,
                 })
-                if alcanza: n_alcanza += 1
-                else:       n_falta   += 1
+                if alcanza:
+                    n_alcanza += 1
+                    if stock_key is not None:
+                        decrementos_si_alcanza.append((stock_key, g_need))
+                else:
+                    n_falta += 1
 
-        prod_ev['mps_status']   = mps_status
+        # Solo decrementar stock_simulado si TODAS las MPs alcanzan
+        # (de lo contrario la produccion no se va a hacer y no se consume nada).
+        puede_producir = (n_falta == 0)
+        if puede_producir:
+            for k, g in decrementos_si_alcanza:
+                stock_simulado[k] = max(0, stock_simulado.get(k, 0) - g)
+
+        prod_ev['mps_status']    = mps_status
         prod_ev['n_mps_alcanza'] = n_alcanza
         prod_ev['n_mps_falta']   = n_falta
-        prod_ev['puede_producir'] = (n_falta == 0)
+        prod_ev['puede_producir'] = puede_producir
 
     # ── 4. Cruzar con stock actual → déficit ────────────────────────────────
 
