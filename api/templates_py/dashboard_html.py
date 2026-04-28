@@ -1356,8 +1356,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
   </div>
-</div>
-</div>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var formulasPin=false;
@@ -4783,6 +4781,9 @@ function _renderProgramacion(d){
       </div>
     </div>
   </div>
+
+</div><!-- /padding wrapper -->
+</div><!-- /programacion -->
 
   <script>
   // ── Programar Producción Modal ───────────────────────────────────────────
