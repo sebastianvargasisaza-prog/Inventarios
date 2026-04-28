@@ -4675,6 +4675,7 @@ function _renderProgramacion(d){
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button onclick="solicitarBloque()" id="btn-solicitar-bloque" style="background:#0d47a1;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px" title="Crea solicitudes en el servidor agrupadas por proveedor (1 solicitud por proveedor)">&#128229; Solicitar en bloque</button>
           <button onclick="solicitarNecesidades()" id="btn-solicitar" style="background:#c0392b;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">&#128722; Solicitar (clásico)</button>
+          <button onclick="descargarChecklistVerificacion()" id="btn-checklist-verif" style="background:#fd7e14;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer" title="Descarga Excel con dos hojas (15 dias y 1 mes) — solo MPs en cero, con casillas para que la asistente marque si estan en bodega">&#128203; Excel para verificar (15d + 1m)</button>
           <button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; CSV</button>
         </div>
       </div>
@@ -5044,6 +5045,34 @@ function _renderProgramacion(d){
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='planificacion_mps_'+_planDias+'d_'+new Date().toISOString().slice(0,10)+'.csv';
     a.click();
+  }
+
+  async function descargarChecklistVerificacion(){
+    var btn=document.getElementById('btn-checklist-verif');
+    if(btn){ btn.disabled=true; btn.textContent='Generando...'; }
+    try{
+      var resp=await fetch('/api/programacion/planificacion/checklist-verificacion?horizontes=15,30');
+      if(!resp.ok){
+        var err=await resp.json().catch(function(){return {error:'error '+resp.status};});
+        _toast('Error: '+(err.error||'desconocido'),0);
+        if(btn){ btn.disabled=false; btn.innerHTML='&#128203; Excel para verificar (15d + 1m)'; }
+        return;
+      }
+      var blob=await resp.blob();
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;
+      a.download='verificar_bodega_15-30d_'+new Date().toISOString().slice(0,10)+'.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      _toast('Excel descargado — listo para mandar a la asistente',1);
+    }catch(e){
+      _toast('Error: '+e.message,0);
+    }finally{
+      if(btn){ btn.disabled=false; btn.innerHTML='&#128203; Excel para verificar (15d + 1m)'; }
+    }
   }
 
   function _toggleProdDetail(idx){

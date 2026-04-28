@@ -127,3 +127,52 @@ def test_solicitar_bulk_dias_invalido_default(app, db_clean):
         headers=csrf_headers(),
     )
     assert r.status_code == 200
+
+
+def test_checklist_verificacion_requiere_auth(app, db_clean):
+    """GET sin login → 401."""
+    c = app.test_client()
+    r = c.get("/api/programacion/planificacion/checklist-verificacion")
+    assert r.status_code == 401
+
+
+def test_checklist_verificacion_default_xlsx(app, db_clean):
+    """Default (15,30) retorna XLSX válido con dos hojas."""
+    c = _login(app)
+    r = c.get("/api/programacion/planificacion/checklist-verificacion")
+    assert r.status_code == 200
+    assert r.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert b"PK" == r.data[:2]  # XLSX es ZIP → magic bytes PK
+    assert "verificar_bodega" in r.headers.get("Content-Disposition", "")
+    # Verificar que tiene 2 hojas
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.data), read_only=False)
+    assert len(wb.sheetnames) == 2
+    assert "15 dias" in wb.sheetnames
+    assert "1 mes" in wb.sheetnames
+
+
+def test_checklist_verificacion_horizontes_custom(app, db_clean):
+    """horizontes=60,90 retorna XLSX con esas dos hojas."""
+    c = _login(app)
+    r = c.get("/api/programacion/planificacion/checklist-verificacion?horizontes=60,90")
+    assert r.status_code == 200
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.data), read_only=False)
+    assert "2 meses" in wb.sheetnames
+    assert "3 meses" in wb.sheetnames
+
+
+def test_checklist_verificacion_horizontes_invalidos_fallback(app, db_clean):
+    """horizontes=abc,xyz → cae a default [15,30]."""
+    c = _login(app)
+    r = c.get("/api/programacion/planificacion/checklist-verificacion?horizontes=abc,xyz")
+    assert r.status_code == 200
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.data), read_only=False)
+    # Debe tener las dos hojas default
+    assert "15 dias" in wb.sheetnames
+    assert "1 mes" in wb.sheetnames

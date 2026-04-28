@@ -3447,3 +3447,191 @@ def planificacion_solicitar_bulk():
             f'(una por proveedor) para horizonte {dias} días.'
         ),
     })
+
+
+@bp.route('/api/programacion/planificacion/checklist-verificacion')
+def planificacion_checklist_verificacion():
+    """Genera XLSX con MPs reportadas en STOCK CERO por horizonte para que
+    la asistente verifique fisicamente en bodega si estan o no.
+
+    Query params:
+      horizontes: csv de dias (default '15,30'). Cada uno es una hoja.
+
+    Cada hoja incluye:
+      - Material, Codigo, Proveedor, Necesario (g/kg), Para Producto(s)
+      - Casillas vacias: 'En bodega? (S/N)', 'Cantidad real (g)', 'Notas'
+      - Solo MPs con stock_g <= 0 (las que parcialmente tienen stock no
+        van — ya sabemos que existen, solo falta cantidad)
+
+    Auth requerida.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+
+    horizontes_param = request.args.get('horizontes', '15,30')
+    horizontes = []
+    for h in horizontes_param.split(','):
+        h = h.strip()
+        if not h: continue
+        try:
+            v = max(1, min(int(h), 365))
+            if v not in horizontes:
+                horizontes.append(v)
+        except ValueError:
+            continue
+    if not horizontes:
+        horizontes = [15, 30]
+
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # quitar hoja por defecto
+
+    from flask import current_app, send_file
+    import io
+
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill   = PatternFill('solid', fgColor='1A4A7A')
+    title_fill    = PatternFill('solid', fgColor='1A4A7A')
+    alt_fill      = PatternFill('solid', fgColor='F8F9FA')
+    warn_fill     = PatternFill('solid', fgColor='FFF3CD')
+
+    total_en_cero = 0
+    for dias in horizontes:
+        with current_app.test_request_context(f'/api/programacion/planificacion?dias={dias}'):
+            plan_resp = planificacion_estrategica()
+        plan_data = plan_resp.get_json() or {}
+        deficits = plan_data.get('mps_deficit', []) or []
+        en_cero = [mp for mp in deficits if (mp.get('stock_g') or 0) <= 0]
+        # Ordenar por necesario desc
+        en_cero.sort(key=lambda m: -(m.get('total_g') or 0))
+        total_en_cero += len(en_cero)
+
+        # Etiqueta de hoja: '15 dias' / '1 mes' / '60 dias' etc
+        if dias == 15:    sheet_name = '15 dias'
+        elif dias == 30:  sheet_name = '1 mes'
+        elif dias == 60:  sheet_name = '2 meses'
+        elif dias == 90:  sheet_name = '3 meses'
+        elif dias == 180: sheet_name = '6 meses'
+        elif dias == 365: sheet_name = '1 ano'
+        else:             sheet_name = f'{dias} dias'
+
+        ws = wb.create_sheet(sheet_name)
+
+        # Titulo
+        ws.cell(row=1, column=1, value=f'Lista de verificacion de bodega — Horizonte {sheet_name}')
+        ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
+        ws.cell(row=1, column=1).fill = title_fill
+        ws.cell(row=1, column=1).alignment = Alignment(horizontal='left', vertical='center')
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+        ws.row_dimensions[1].height = 24
+
+        # Subtitulo
+        gen = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ws.cell(row=2, column=1,
+                value=f'Generado: {gen} · {len(en_cero)} MP(s) reportada(s) en STOCK CERO por sistema · Verificar fisicamente en bodega y marcar.')
+        ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='666666')
+        ws.cell(row=2, column=1).fill = warn_fill
+        ws.cell(row=2, column=1).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+        ws.row_dimensions[2].height = 30
+
+        # Nota: hint sobre duplicados
+        ws.cell(row=3, column=1,
+                value='OJO: Si un material no esta bajo el codigo indicado, busca por NOMBRE — puede estar bajo codigo distinto. Anota lo que encuentres en "Notas".')
+        ws.cell(row=3, column=1).font = Font(size=9, color='856404')
+        ws.cell(row=3, column=1).alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=8)
+        ws.row_dimensions[3].height = 20
+
+        # Headers
+        headers = [
+            'Material', 'Codigo', 'Proveedor',
+            'Necesario (g)', 'Necesario (kg)',
+            'Para producto(s)',
+            'En bodega? (S/N)', 'Cantidad real (g)',
+        ]
+        for i, h in enumerate(headers, 1):
+            cell = ws.cell(row=5, column=i, value=h)
+            cell.font = Font(bold=True, color='FFFFFF', size=11)
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            cell.border = border
+        ws.row_dimensions[5].height = 32
+
+        # Filas
+        if en_cero:
+            for idx, mp in enumerate(en_cero, 6):
+                nec_g = float(mp.get('total_g') or 0)
+                values = [
+                    mp.get('nombre', ''),
+                    mp.get('material_id', ''),
+                    mp.get('proveedor', '') or '(Sin asignar)',
+                    round(nec_g, 1),
+                    round(nec_g / 1000.0, 3),
+                    ', '.join(mp.get('productos', []) or []),
+                    '',  # asistente marca S/N
+                    '',  # cantidad real
+                ]
+                for j, v in enumerate(values, 1):
+                    cell = ws.cell(row=idx, column=j, value=v)
+                    cell.border = border
+                    cell.alignment = Alignment(
+                        horizontal='right' if j in (4, 5) else ('center' if j == 7 else 'left'),
+                        vertical='center', wrap_text=(j == 6),
+                    )
+                    if (idx - 6) % 2 == 1:
+                        cell.fill = alt_fill
+                    if j == 2:  # codigo monoespaciado
+                        cell.font = Font(name='Consolas', size=9)
+                # Resaltar columnas de verificacion
+                ws.cell(row=idx, column=7).fill = warn_fill
+                ws.cell(row=idx, column=8).fill = warn_fill
+        else:
+            ws.cell(row=6, column=1, value='Sin MPs en stock cero para este horizonte')
+            ws.cell(row=6, column=1).font = Font(italic=True, color='888888')
+            ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=8)
+
+        # Anchos columnas
+        widths = [30, 16, 18, 13, 13, 42, 16, 16]
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+        # Freeze header
+        ws.freeze_panes = 'A6'
+
+    # Audit
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (session.get('compras_user', '') or 'sistema',
+                   'PLANIFICACION_CHECKLIST_DOWNLOAD',
+                   'planificacion', '_CHECKLIST_',
+                   _json.dumps({'horizontes': horizontes, 'total_en_cero': total_en_cero},
+                               ensure_ascii=False),
+                   request.remote_addr))
+        conn.commit()
+    except Exception:
+        pass
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    fname = f'verificar_bodega_{"-".join(str(h) for h in horizontes)}d_{date.today().isoformat()}.xlsx'
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=fname,
+    )
