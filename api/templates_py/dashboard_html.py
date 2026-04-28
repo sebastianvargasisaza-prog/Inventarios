@@ -4643,11 +4643,14 @@ function _renderProgramacion(d){
         <h2 style="margin:0 0 4px;color:#1a4a7a">&#128301; Planificación Estratégica de Compras</h2>
         <p style="color:#666;font-size:13px;margin:0">Calendario + Fórmulas + Stock — qué comprar, cuándo y en qué volumen</p>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <span style="font-size:12px;color:#666;font-weight:600">Horizonte:</span>
-        <button id="plan-btn-2m" onclick="cargarPlanificacion(2)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff">2 meses</button>
-        <button id="plan-btn-6m" onclick="cargarPlanificacion(6)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">6 meses</button>
-        <button id="plan-btn-12m" onclick="cargarPlanificacion(12)" style="padding:7px 16px;border:2px solid #1a4a7a;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">12 meses</button>
+        <button id="plan-btn-15"  onclick="cargarPlanificacion(15)"  style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">15 días</button>
+        <button id="plan-btn-30"  onclick="cargarPlanificacion(30)"  style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">1 mes</button>
+        <button id="plan-btn-60"  onclick="cargarPlanificacion(60)"  style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff">2 meses</button>
+        <button id="plan-btn-90"  onclick="cargarPlanificacion(90)"  style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">3 meses</button>
+        <button id="plan-btn-180" onclick="cargarPlanificacion(180)" style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">6 meses</button>
+        <button id="plan-btn-365" onclick="cargarPlanificacion(365)" style="padding:6px 12px;border:2px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#1a4a7a">1 año</button>
       </div>
     </div>
 
@@ -4658,10 +4661,22 @@ function _renderProgramacion(d){
       <div id="plan-prods-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
     </div>
 
+    <div id="plan-prods-detail-box" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128269; Vista por producción — ¿qué MP alcanza y cuál no?</h4>
+        <span style="font-size:11px;color:#888">Stock actual evaluado contra cada producción individualmente</span>
+      </div>
+      <div id="plan-prods-detail-list"></div>
+    </div>
+
     <div id="plan-deficit-box" style="display:none;margin-bottom:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
         <h4 style="margin:0;color:#dc3545;font-size:14px">&#128997; MPs en déficit para el período</h4>
-        <div style="display:flex;gap:8px;align-items:center"><button onclick="solicitarNecesidades()" id="btn-solicitar" style="background:#c0392b;color:#fff;border:none;border-radius:5px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">&#128722; Solicitar necesidades</button><button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; CSV</button></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button onclick="solicitarBloque()" id="btn-solicitar-bloque" style="background:#0d47a1;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px" title="Crea solicitudes en el servidor agrupadas por proveedor (1 solicitud por proveedor)">&#128229; Solicitar en bloque</button>
+          <button onclick="solicitarNecesidades()" id="btn-solicitar" style="background:#c0392b;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">&#128722; Solicitar (clásico)</button>
+          <button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; CSV</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -4680,6 +4695,38 @@ function _renderProgramacion(d){
           <tbody id="plan-deficit-tbody"></tbody>
         </table>
       </div>
+    </div>
+
+    <div id="plan-staff-box" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128202; Staff general de Materias Primas — todas en un vistazo</h4>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="plan-staff-filter" oninput="_renderStaffGeneral()" placeholder="Filtrar nombre/código..." style="padding:5px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:180px">
+          <select id="plan-staff-state" onchange="_renderStaffGeneral()" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px">
+            <option value="todos">Todos los estados</option>
+            <option value="deficit">Solo déficit</option>
+            <option value="ok">Solo OK</option>
+          </select>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05)">
+          <thead>
+            <tr style="background:#1a4a7a;color:#fff">
+              <th style="padding:9px 8px;text-align:center">Estado</th>
+              <th style="padding:9px 8px;text-align:left">Material</th>
+              <th style="padding:9px 8px;text-align:left">Proveedor</th>
+              <th style="padding:9px 8px;text-align:right">Necesario horizonte</th>
+              <th style="padding:9px 8px;text-align:right">Stock actual</th>
+              <th style="padding:9px 8px;text-align:right">Déficit</th>
+              <th style="padding:9px 8px;text-align:center">Cobertura</th>
+              <th style="padding:9px 8px;text-align:left">Productos</th>
+            </tr>
+          </thead>
+          <tbody id="plan-staff-tbody"></tbody>
+        </table>
+      </div>
+      <div id="plan-staff-empty" style="display:none;text-align:center;padding:20px;color:#888;font-size:12px">Sin coincidencias</div>
     </div>
 
     <div id="plan-ok-box" style="display:none;background:#d4edda;border-radius:8px;padding:14px;margin-bottom:16px">
@@ -4770,7 +4817,7 @@ function _renderProgramacion(d){
       if(bp){ bp.style.background = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color = tab==='plan'   ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
-        if(!_planLoaded) cargarPlanificacion(2);
+        if(!_planLoaded) cargarPlanificacion(60);
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -4784,18 +4831,18 @@ function _renderProgramacion(d){
 
   var _planLoaded = false;
   var _planData   = null;
-  var _planMeses  = 2;
+  var _planDias   = 60;
 
-  function _setPlanHorizonBtn(m){
-    [2,6,12].forEach(function(n){
-      var b=document.getElementById('plan-btn-'+n+'m');
-      if(b){ b.style.background=m===n?'#1a4a7a':'#fff'; b.style.color=m===n?'#fff':'#1a4a7a'; }
+  function _setPlanHorizonBtn(d){
+    [15,30,60,90,180,365].forEach(function(n){
+      var b=document.getElementById('plan-btn-'+n);
+      if(b){ b.style.background=d===n?'#1a4a7a':'#fff'; b.style.color=d===n?'#fff':'#1a4a7a'; }
     });
   }
 
-  async function cargarPlanificacion(meses){
-    _planMeses=meses;
-    _setPlanHorizonBtn(meses);
+  async function cargarPlanificacion(dias){
+    _planDias=dias;
+    _setPlanHorizonBtn(dias);
     document.getElementById('plan-empty').style.display='none';
     document.getElementById('plan-loading').style.display='block';
     document.getElementById('plan-error').style.display='none';
@@ -4804,8 +4851,10 @@ function _renderProgramacion(d){
     document.getElementById('plan-ok-box').style.display='none';
     document.getElementById('plan-bulk-box').style.display='none';
     document.getElementById('plan-prods-box').style.display='none';
+    var staffBox=document.getElementById('plan-staff-box'); if(staffBox) staffBox.style.display='none';
+    var prodsDetailBox=document.getElementById('plan-prods-detail-box'); if(prodsDetailBox) prodsDetailBox.style.display='none';
     try{
-      var r=await fetch('/api/programacion/planificacion?meses='+meses);
+      var r=await fetch('/api/programacion/planificacion?dias='+dias);
       var d=await r.json();
       document.getElementById('plan-loading').style.display='none';
       if(d.cal_error){
@@ -4834,7 +4883,9 @@ function _renderProgramacion(d){
   }
 
   function _renderPlanificacion(d){
-    var meses=d.meses||_planMeses;
+    var meses=d.meses||2;
+    var dias =d.dias ||_planDias;
+    var horizonteLabel = d.horizonte_label || (dias+' días');
 
     // Cards resumen
     var cards=[
@@ -4866,6 +4917,60 @@ function _renderProgramacion(d){
       });
       document.getElementById('plan-prods-list').innerHTML=html||'Sin producciones identificadas en el calendario';
     }
+
+    // Vista por producción: cada producción con su MP status
+    if(d.producciones && d.producciones.length){
+      document.getElementById('plan-prods-detail-box').style.display='block';
+      var detailHtml=d.producciones.map(function(p, idx){
+        var statusBadge = p.puede_producir
+          ? '<span style="background:#d4edda;color:#155724;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700">&#10003; Puede producir</span>'
+          : '<span style="background:#f8d7da;color:#721c24;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700">&#9888; Faltan '+p.n_mps_falta+' MP(s)</span>';
+        var fechaStr = p.fecha || '';
+        var producerHeader = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer" onclick="_toggleProdDetail('+idx+')">'
+          +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+          +'<span id="plan-prod-arrow-'+idx+'" style="color:#1a4a7a;font-size:12px">&#9654;</span>'
+          +'<strong style="font-size:13px;color:#1a4a7a">'+p.producto+'</strong>'
+          +'<span style="font-size:11px;color:#666">'+fechaStr+' &middot; '+p.kg+' kg</span>'
+          +'</div>'+statusBadge+'</div>';
+        var alcanzanList = (p.mps_status||[]).filter(function(m){return m.alcanza;});
+        var faltanList   = (p.mps_status||[]).filter(function(m){return !m.alcanza;});
+        var faltanHtml=faltanList.map(function(m){
+          var stockTxt = m.ilimitado ? '∞ (producido en sitio)' : _fmtG(m.stock_g);
+          return '<tr style="background:#fff5f5;border-bottom:1px solid #fadcdc">'
+            +'<td style="padding:6px 8px;font-size:11px"><span style="color:#dc3545">&#9888;</span> '+m.nombre+'<span style="color:#aaa;font-size:10px;margin-left:4px;font-family:monospace">'+m.material_id+'</span></td>'
+            +'<td style="padding:6px 8px;font-size:11px;text-align:right">'+_fmtG(m.necesario_g)+'</td>'
+            +'<td style="padding:6px 8px;font-size:11px;text-align:right;color:#dc3545">'+stockTxt+'</td>'
+            +'<td style="padding:6px 8px;font-size:11px;text-align:right;font-weight:700;color:#dc3545">'+_fmtG(m.deficit_g)+'</td>'
+            +'</tr>';
+        }).join('');
+        var alcanzanHtml=alcanzanList.map(function(m){
+          var stockTxt = m.ilimitado ? '∞' : _fmtG(m.stock_g);
+          return '<tr style="border-bottom:1px solid #eee">'
+            +'<td style="padding:5px 8px;font-size:11px"><span style="color:#28a745">&#10003;</span> '+m.nombre+'<span style="color:#aaa;font-size:10px;margin-left:4px;font-family:monospace">'+m.material_id+'</span></td>'
+            +'<td style="padding:5px 8px;font-size:11px;text-align:right">'+_fmtG(m.necesario_g)+'</td>'
+            +'<td style="padding:5px 8px;font-size:11px;text-align:right;color:#28a745">'+stockTxt+'</td>'
+            +'<td style="padding:5px 8px;font-size:11px;text-align:right;color:#aaa">—</td>'
+            +'</tr>';
+        }).join('');
+        var detailBody=''
+          +'<div id="plan-prod-detail-'+idx+'" style="display:none;margin-top:10px;background:#fafbfc;border-radius:6px;padding:10px;border:1px solid #e8eaed">'
+          + (faltanHtml ? '<div style="font-size:11px;font-weight:700;color:#dc3545;margin-bottom:4px">&#128997; Faltantes ('+faltanList.length+')</div>'
+              +'<table style="width:100%;border-collapse:collapse;margin-bottom:10px"><thead><tr style="background:#fceaea;color:#721c24"><th style="padding:5px 8px;text-align:left;font-size:11px">MP</th><th style="padding:5px 8px;text-align:right;font-size:11px">Necesario</th><th style="padding:5px 8px;text-align:right;font-size:11px">Stock</th><th style="padding:5px 8px;text-align:right;font-size:11px">Falta</th></tr></thead><tbody>'+faltanHtml+'</tbody></table>'
+              : '')
+          + (alcanzanHtml ? '<div style="font-size:11px;font-weight:700;color:#155724;margin-bottom:4px">&#10003; MPs suficientes ('+alcanzanList.length+')</div>'
+              +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#e8f5e9;color:#155724"><th style="padding:5px 8px;text-align:left;font-size:11px">MP</th><th style="padding:5px 8px;text-align:right;font-size:11px">Necesario</th><th style="padding:5px 8px;text-align:right;font-size:11px">Stock</th><th style="padding:5px 8px;text-align:right;font-size:11px">—</th></tr></thead><tbody>'+alcanzanHtml+'</tbody></table>'
+              : '')
+          +'</div>';
+        var bgColor = p.puede_producir ? '#fff' : '#fff8f8';
+        var brColor = p.puede_producir ? '#28a745' : '#dc3545';
+        return '<div style="background:'+bgColor+';border:1px solid #e0e0e0;border-left:4px solid '+brColor+';border-radius:6px;padding:10px 14px;margin-bottom:8px">'
+          +producerHeader+detailBody+'</div>';
+      }).join('');
+      document.getElementById('plan-prods-detail-list').innerHTML=detailHtml;
+    }
+
+    // Staff general de MPs (todos los MPs con su estado)
+    _renderStaffGeneral();
 
     // Tabla de déficit
     if(d.mps_deficit&&d.mps_deficit.length){
@@ -4937,8 +5042,108 @@ function _renderProgramacion(d){
     var csv=rows.map(function(r){return r.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');}).join('\\n');
     var blob=new Blob([csv],{type:'text/csv'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download='planificacion_mps_'+_planMeses+'m_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.download='planificacion_mps_'+_planDias+'d_'+new Date().toISOString().slice(0,10)+'.csv';
     a.click();
+  }
+
+  function _toggleProdDetail(idx){
+    var box=document.getElementById('plan-prod-detail-'+idx);
+    var arr=document.getElementById('plan-prod-arrow-'+idx);
+    if(!box) return;
+    var open = box.style.display==='block';
+    box.style.display = open ? 'none' : 'block';
+    if(arr) arr.innerHTML = open ? '&#9654;' : '&#9660;';
+  }
+
+  function _renderStaffGeneral(){
+    if(!_planData) return;
+    var deficit = (_planData.mps_deficit||[]).map(function(mp){return Object.assign({}, mp, {_estado:'deficit'});});
+    var ok      = (_planData.mps_ok     ||[]).map(function(mp){return Object.assign({}, mp, {_estado:'ok'});});
+    var todos   = deficit.concat(ok);
+    if(!todos.length){
+      document.getElementById('plan-staff-box').style.display='none';
+      return;
+    }
+    document.getElementById('plan-staff-box').style.display='block';
+    var fEl=document.getElementById('plan-staff-filter');
+    var sEl=document.getElementById('plan-staff-state');
+    var filtro=(fEl&&fEl.value||'').trim().toLowerCase();
+    var estadoF=(sEl&&sEl.value||'todos');
+    var visibles = todos.filter(function(mp){
+      if(estadoF==='deficit' && mp._estado!=='deficit') return false;
+      if(estadoF==='ok'      && mp._estado!=='ok')      return false;
+      if(filtro){
+        var t=(mp.nombre+' '+mp.material_id+' '+(mp.proveedor||'')).toLowerCase();
+        if(t.indexOf(filtro)===-1) return false;
+      }
+      return true;
+    });
+    // Ordenar: déficit primero, luego por nombre
+    visibles.sort(function(a,b){
+      if(a._estado!==b._estado) return a._estado==='deficit' ? -1 : 1;
+      return (a.nombre||'').localeCompare(b.nombre||'');
+    });
+    if(!visibles.length){
+      document.getElementById('plan-staff-tbody').innerHTML='';
+      document.getElementById('plan-staff-empty').style.display='block';
+      return;
+    }
+    document.getElementById('plan-staff-empty').style.display='none';
+    var rows=visibles.map(function(mp){
+      var pct=mp.cobertura_pct||0;
+      var pctColor=pct<30?'#dc3545':pct<70?'#fd7e14':'#28a745';
+      var estadoBadge = mp._estado==='deficit'
+        ? '<span style="background:#f8d7da;color:#721c24;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">DÉFICIT</span>'
+        : '<span style="background:#d4edda;color:#155724;border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700">OK</span>';
+      var rowBg = mp._estado==='deficit' ? '#fff8f8' : '#fff';
+      return '<tr style="background:'+rowBg+';border-bottom:1px solid #eee">'
+        +'<td style="padding:7px 8px;text-align:center">'+estadoBadge+'</td>'
+        +'<td style="padding:7px 8px"><div style="font-weight:600;font-size:12px">'+mp.nombre+'</div><div style="font-size:10px;color:#888;font-family:monospace">'+mp.material_id+'</div></td>'
+        +'<td style="padding:7px 8px;font-size:11px;color:#555">'+(mp.proveedor||'<em style="color:#bbb">Sin asignar</em>')+'</td>'
+        +'<td style="padding:7px 8px;text-align:right;font-size:12px">'+_fmtG(mp.total_g)+'</td>'
+        +'<td style="padding:7px 8px;text-align:right;font-size:12px;color:'+(mp.stock_g<mp.total_g?'#dc3545':'#28a745')+'">'+_fmtG(mp.stock_g)+'</td>'
+        +'<td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:'+(mp.deficit_g>0?'700':'400')+';color:'+(mp.deficit_g>0?'#dc3545':'#aaa')+'">'+(mp.deficit_g>0?_fmtG(mp.deficit_g):'—')+'</td>'
+        +'<td style="padding:7px 8px;text-align:center"><div style="display:inline-block;background:#f0f0f0;border-radius:10px;overflow:hidden;width:60px;height:8px"><div style="background:'+pctColor+';width:'+pct+'%;height:100%"></div></div><div style="font-size:10px;color:'+pctColor+';font-weight:700">'+pct+'%</div></td>'
+        +'<td style="padding:7px 8px;font-size:10px;color:#666;max-width:140px">'+(mp.productos||[]).slice(0,3).join(', ')+((mp.productos||[]).length>3?' +'+((mp.productos||[]).length-3):'')+'</td>'
+        +'</tr>';
+    }).join('');
+    document.getElementById('plan-staff-tbody').innerHTML=rows;
+  }
+
+  async function solicitarBloque(){
+    if(!_planData||!_planData.mps_deficit||!_planData.mps_deficit.length){
+      _toast('No hay MPs en déficit para el período actual',0); return;
+    }
+    var nDef=_planData.mps_deficit.length;
+    var label=_planData.horizonte_label||(_planDias+' días');
+    if(!confirm('¿Crear solicitudes de compra agrupadas por proveedor para '+nDef+' MPs en déficit ('+label+')?\\n\\nSe creará 1 solicitud por proveedor con todos sus MPs faltantes. Esto queda registrado en audit log.')) return;
+    var btn=document.getElementById('btn-solicitar-bloque');
+    if(btn){ btn.disabled=true; btn.textContent='Creando...'; }
+    try{
+      var resp=await fetch('/api/programacion/planificacion/solicitar-bulk',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({dias:_planDias, urgencia:'Normal'})
+      });
+      var data=await resp.json();
+      if(btn){ btn.disabled=false; btn.innerHTML='&#128229; Solicitar en bloque'; }
+      if(!resp.ok || data.error){
+        _toast('Error: '+(data.error||'desconocido'),0);
+        return;
+      }
+      var n=data.count_solicitudes||0;
+      var nE=data.count_errores||0;
+      var msg = n+' solicitud(es) creadas';
+      if(data.solicitudes_creadas && data.solicitudes_creadas.length){
+        var nums=data.solicitudes_creadas.map(function(s){return s.numero;}).join(', ');
+        msg += ' ('+nums+')';
+      }
+      if(nE) msg += ' · '+nE+' errores';
+      _toast(msg, n>0?1:0);
+    }catch(e){
+      if(btn){ btn.disabled=false; btn.innerHTML='&#128229; Solicitar en bloque'; }
+      _toast('Error: '+e.message, 0);
+    }
   }
 
   async function solicitarNecesidades(){
@@ -4970,7 +5175,7 @@ function _renderProgramacion(d){
           nombre_mp: mp.nombre||'',
           cantidad_g: deficit_g,
           unidad: 'g',
-          justificacion: 'Planificación '+_planMeses+'m — Para producir: '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +'+(mp.productos.length-3)+' más':''),
+          justificacion: 'Planificación '+_planDias+'d — Para producir: '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +'+(mp.productos.length-3)+' más':''),
           valor_estimado: 0
         };
       });
@@ -4984,7 +5189,7 @@ function _renderProgramacion(d){
       var payload = {
         solicitante: 'sebastian',
         urgencia: 'Normal',
-        observaciones: 'Planificación Estratégica '+_planMeses+'m · Proveedor: '+prov+' · '+mps.length+' MPs · '+mpsResumen,
+        observaciones: 'Planificación Estratégica '+_planDias+'d · Proveedor: '+prov+' · '+mps.length+' MPs · '+mpsResumen,
         area: 'Produccion',
         empresa: 'Espagiria',
         categoria: 'Materia Prima',

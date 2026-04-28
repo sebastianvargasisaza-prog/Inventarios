@@ -2984,8 +2984,19 @@ def planificacion_estrategica():
     import datetime as _dt
     import re as _re
 
-    meses = min(int(request.args.get('meses', 2)), 12)
-    days_ahead = meses * 31  # margen extra para cubrir mes completo
+    # Aceptar ?dias=N (15/30/60/90/180/365) o ?meses=N (back-compat).
+    # dias prevalece si esta presente.
+    dias_param = request.args.get('dias')
+    if dias_param:
+        try:
+            dias = max(1, min(int(dias_param), 365))
+        except ValueError:
+            dias = 60
+        meses = max(1, dias // 31 + (1 if dias % 31 else 0))
+    else:
+        meses = min(int(request.args.get('meses', 2)), 12)
+        dias = meses * 31
+    days_ahead = dias  # cutoff exacto basado en dias del horizonte
 
     conn = get_db()
 
@@ -3128,6 +3139,22 @@ def planificacion_estrategica():
     # mp_needed: {material_id: {nombre, total_g, meses: set(), prods: list}}
     mp_needed = {}
 
+    # Helper de stock antes del loop para reusarlo en mps_status por-producción
+    def _lookup_stock(mid, nombre):
+        """Busca stock por material_id primero, luego por nombre.
+        Retorna -1 si el MP es ilimitado (producido en sitio: agua, etc.)."""
+        if _is_unlimited_mp(nombre):
+            return -1  # sentinel: always available, no purchase needed
+        s = mp_stock.get(mid)
+        if s is not None: return s
+        s = mp_stock.get(mid.upper())
+        if s is not None: return s
+        s = mp_stock.get(nombre.upper())
+        if s is not None: return s
+        s = mp_stock.get(_norm_mp_name(nombre))
+        if s is not None: return s
+        return 0
+
     for prod_ev in producciones:
         prod   = prod_ev['producto']
         kg_ev  = prod_ev['kg']
@@ -3136,6 +3163,11 @@ def planificacion_estrategica():
         lote_kg = formula.get('lote_size_kg', 1)
         factor  = kg_ev / lote_kg if lote_kg > 0 else 1.0
 
+        # Per-producción MP status (asume stock actual disponible solo para
+        # esta producción — útil para "¿mañana puedo producir BHA?")
+        mps_status = []
+        n_alcanza = 0
+        n_falta   = 0
         for item in formula.get('items', []):
             mid    = item['material_id']
             nombre = item['material_nombre']
@@ -3155,21 +3187,35 @@ def planificacion_estrategica():
             if prod not in mp_needed[mid]['productos']:
                 mp_needed[mid]['productos'].append(prod)
 
+            # Status individual para esta producción
+            stock_g_raw = _lookup_stock(mid, nombre)
+            if stock_g_raw == -1:
+                # Ilimitado (agua, etc.) — siempre alcanza
+                mps_status.append({
+                    'material_id': mid, 'nombre': nombre,
+                    'necesario_g': g_need, 'stock_g': -1,
+                    'alcanza': True, 'deficit_g': 0,
+                    'ilimitado': True,
+                })
+                n_alcanza += 1
+            else:
+                alcanza = stock_g_raw >= g_need
+                mps_status.append({
+                    'material_id': mid, 'nombre': nombre,
+                    'necesario_g': g_need, 'stock_g': round(stock_g_raw, 1),
+                    'alcanza': alcanza,
+                    'deficit_g': round(max(0, g_need - stock_g_raw), 1),
+                    'ilimitado': False,
+                })
+                if alcanza: n_alcanza += 1
+                else:       n_falta   += 1
+
+        prod_ev['mps_status']   = mps_status
+        prod_ev['n_mps_alcanza'] = n_alcanza
+        prod_ev['n_mps_falta']   = n_falta
+        prod_ev['puede_producir'] = (n_falta == 0)
+
     # ── 4. Cruzar con stock actual → déficit ────────────────────────────────
-    def _lookup_stock(mid, nombre):
-        """Busca stock por material_id primero, luego por nombre.
-        Retorna -1 si el MP es ilimitado (producido en sitio: agua, etc.)."""
-        if _is_unlimited_mp(nombre):
-            return -1  # sentinel: always available, no purchase needed
-        s = mp_stock.get(mid)
-        if s is not None: return s
-        s = mp_stock.get(mid.upper())
-        if s is not None: return s
-        s = mp_stock.get(nombre.upper())
-        if s is not None: return s
-        s = mp_stock.get(_norm_mp_name(nombre))
-        if s is not None: return s
-        return 0
 
     resultado = []
     for mid, data in mp_needed.items():
@@ -3235,15 +3281,169 @@ def planificacion_estrategica():
     bulk_opps     = [r for r in resultado if r['bulk_opp'] and r['deficit_g'] > 0]
     meses_unicos  = sorted(set(p['mes'] for p in producciones))
 
+    horizonte_label = (f'{dias} días' if dias <= 90 else
+                       f'{round(dias/30)} meses' if dias < 365 else '1 año')
+
     return jsonify({
         'meses':           meses,
+        'dias':            dias,
+        'horizonte_label': horizonte_label,
         'producciones':    producciones,
         'meses_unicos':    meses_unicos,
         'total_prods':     total_prods,
         'total_mps':       total_mps,
         'mps_deficit':     mps_deficit,
+        'mps_ok':          mps_ok,           # staff general view
         'mps_ok_count':    len(mps_ok),
         'bulk_opps':       bulk_opps,
         'cal_error':       cal.get('error'),
         'generado_en':     _dt.datetime.now().isoformat(),
+    })
+
+
+@bp.route('/api/programacion/planificacion/solicitar-bulk', methods=['POST'])
+def planificacion_solicitar_bulk():
+    """Crea solicitudes_compra agrupadas por proveedor para los MPs en
+    deficit del horizonte indicado.
+
+    Una solicitud por proveedor con todos sus MPs faltantes. Texto
+    auto-generado deja claro que fue creada por planificacion bulk.
+
+    Body:
+      dias: int (15/30/60/90/180/365)
+      urgencia: 'Alta'|'Normal'|'Baja' (default 'Normal')
+
+    Reusa la logica del GET planificacion para no duplicar matemathics.
+
+    Solo autenticado (cualquier user puede crear solicitud — es flujo
+    operativo). Audit log captura accion.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '') or 'sistema'
+
+    d = request.json or {}
+    try:
+        dias = max(1, min(int(d.get('dias', 60)), 365))
+    except ValueError:
+        dias = 60
+    urgencia = (d.get('urgencia') or 'Normal').strip()
+    if urgencia not in ('Alta', 'Normal', 'Baja'):
+        urgencia = 'Normal'
+
+    # Llamar el endpoint de planificacion via test_request_context — pero
+    # mejor reusar la logica directa para no enredar.
+    from flask import current_app
+    with current_app.test_request_context(f'/api/programacion/planificacion?dias={dias}'):
+        plan_resp = planificacion_estrategica()
+    plan_data = plan_resp.get_json()
+    if not plan_data:
+        return jsonify({'error': 'No pude obtener planificacion'}), 500
+
+    deficits = plan_data.get('mps_deficit', []) or []
+    if not deficits:
+        return jsonify({
+            'ok': True,
+            'mensaje': 'Sin déficits — no hay nada que pedir.',
+            'solicitudes_creadas': [],
+        })
+
+    # Agrupar por proveedor canónico (el de maestro_mps)
+    por_proveedor = {}
+    for mp in deficits:
+        prov = (mp.get('proveedor') or '(SIN PROVEEDOR)').strip() or '(SIN PROVEEDOR)'
+        por_proveedor.setdefault(prov, []).append(mp)
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import datetime as _dt
+
+    solicitudes_creadas = []
+    errores = []
+    for prov, mps in por_proveedor.items():
+        try:
+            # Generar numero
+            year = _dt.now().strftime('%Y')
+            row = c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
+                "FROM solicitudes_compra WHERE numero LIKE ?",
+                (f'SOL-{year}-%',)
+            ).fetchone()
+            num = (row[0] or 0) + 1
+            numero = f'SOL-{year}-{num:04d}'
+
+            obs = (f'Auto-generada Planificación Estratégica {dias} días — '
+                   f'Proveedor: {prov} · {len(mps)} MPs · ' +
+                   ', '.join([
+                       f'{m["nombre"]} ({round(m["deficit_g"]/1000, 1)}kg)'
+                       if m['deficit_g'] >= 1000
+                       else f'{m["nombre"]} ({round(m["deficit_g"], 1)}g)'
+                       for m in mps[:5]
+                   ]) +
+                   (f' +{len(mps)-5} más' if len(mps) > 5 else ''))[:1500]
+
+            c.execute(
+                """INSERT INTO solicitudes_compra
+                   (numero, fecha, estado, solicitante, urgencia, observaciones,
+                    area, empresa, categoria, tipo)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (numero, _dt.now().isoformat(), 'Pendiente', user, urgencia,
+                 obs, 'Produccion', 'Espagiria', 'Materia Prima', 'Compra')
+            )
+            for mp in mps:
+                c.execute(
+                    """INSERT INTO solicitudes_compra_items
+                       (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                        justificacion, valor_estimado)
+                       VALUES (?,?,?,?,?,?,?)""",
+                    (numero, mp.get('material_id', ''), mp.get('nombre', ''),
+                     float(mp.get('deficit_g', 0)), 'g',
+                     f'Déficit horizonte {dias}d (Planificación Estratégica)',
+                     0)
+                )
+            conn.commit()
+            solicitudes_creadas.append({
+                'numero': numero,
+                'proveedor': prov,
+                'count_mps': len(mps),
+                'total_g': round(sum(m.get('deficit_g', 0) for m in mps), 1),
+            })
+        except Exception as _e:
+            try: conn.rollback()
+            except Exception: pass
+            errores.append({'proveedor': prov, 'error': str(_e)})
+            continue
+
+    # Audit
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (user, 'PLANIFICACION_BULK_REQUEST', 'solicitudes_compra',
+                   '_BULK_',
+                   _json.dumps({
+                       'dias': dias, 'urgencia': urgencia,
+                       'count_solicitudes': len(solicitudes_creadas),
+                       'count_errores': len(errores),
+                       'total_g_pedido': round(sum(
+                           s['total_g'] for s in solicitudes_creadas
+                       ), 1),
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'horizonte_dias': dias,
+        'count_solicitudes': len(solicitudes_creadas),
+        'count_errores': len(errores),
+        'solicitudes_creadas': solicitudes_creadas,
+        'errores': errores,
+        'mensaje': (
+            f'{len(solicitudes_creadas)} solicitudes creadas '
+            f'(una por proveedor) para horizonte {dias} días.'
+        ),
     })
