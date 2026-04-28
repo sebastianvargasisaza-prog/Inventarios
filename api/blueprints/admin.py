@@ -4109,6 +4109,34 @@ async function previewReset() {
     h += '<div class="kpi"><div class="kpi-l">Δ esperado</div><div class="kpi-v" style="font-size:14px;color:' + (d.resumen_pre_post.delta_g < 0 ? '#fca5a5' : '#34d399') + ';">' + _fmtG(d.resumen_pre_post.delta_g) + '</div></div>';
     h += '</div>';
 
+    // ── Bloque NUEVO: lotes compensados FEFO (fix del bug día cero) ──
+    const compCount = p.entradas_iniciales_a_crear.lotes_compensados_por_salidas_post_count || 0;
+    const compSample = p.entradas_iniciales_a_crear.lotes_compensados_sample_top10 || [];
+    if (compCount > 0) {
+      h += '<div style="background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.4);border-radius:8px;padding:12px;margin-bottom:14px;">';
+      h += '<div style="color:#34d399;font-weight:700;margin-bottom:4px;">🛡️ ' + compCount + ' lotes verdes con compensación FEFO (no quedarán negativos)</div>';
+      h += '<div style="color:#cbd5e1;font-size:12px;margin-bottom:8px;">Estos lotes están en el Excel verde Y tienen salidas de producción. Cantidad inicial al día cero = excel_actual + salidas_post, para que el FEFO los lleve exactamente al valor reportado HOY sin pasarse a negativo.</div>';
+      h += '<div style="overflow-x:auto;background:#0f172a;border:1px solid #334155;border-radius:6px;max-height:280px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead style="background:#1e293b;position:sticky;top:0;"><tr>';
+      ['Código','Lote','Excel HOY (g)','Salidas post (g)','→ Cantidad día cero (g)'].forEach(t => {
+        h += '<th style="padding:6px 8px;text-align:left;color:#cbd5e1;">' + t + '</th>';
+      });
+      h += '</tr></thead><tbody>';
+      compSample.forEach(o => {
+        h += '<tr style="border-top:1px solid #334155;">';
+        h += '<td style="padding:5px 8px;font-family:monospace;color:#e2e8f0;">' + _esc(o.codigo_mp) + '</td>';
+        h += '<td style="padding:5px 8px;font-family:monospace;color:#94a3b8;">' + _esc(o.lote) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;font-family:monospace;color:#cbd5e1;">' + _fmtG(o.cantidad_excel_actual_g) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;font-family:monospace;color:#fbbf24;">+' + _fmtG(o.salidas_post_dia_cero_g) + '</td>';
+        h += '<td style="padding:5px 8px;text-align:right;font-family:monospace;color:#34d399;font-weight:700;">' + _fmtG(o.cantidad_inicial_dia_cero_g) + '</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+      h += '<div style="color:#94a3b8;font-size:10px;margin-top:6px;">Top 10 mostrados de ' + compCount + ' lotes compensados.</div>';
+      h += '</div>';
+    } else {
+      h += '<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:8px 12px;margin-bottom:14px;color:#34d399;font-size:12px;">✓ Sin lotes que requieran compensación FEFO — todas las salidas son a lotes huérfanos o no hay salidas previas.</div>';
+    }
+
     const hue = p.huerfanos_a_regenerar || {count:0, total_g_entradas_virtuales:0, sample:[]};
     if (hue.count > 0) {
       h += '<div style="background:rgba(99,102,241,.10);border:1px solid rgba(99,102,241,.4);border-radius:8px;padding:12px;margin-bottom:14px;">';
