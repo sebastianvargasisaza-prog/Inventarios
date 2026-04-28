@@ -2438,39 +2438,91 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
     except Exception as _e:
         return jsonify({'error': f'No pude leer SQL: {_e}'}), 500
 
-    # Verificar que el rango MP00400-MP00500 este libre, sino renumerar
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
+    # Parsear los INSERTs del SQL para saber que MPs queremos crear (codigo_planeado, inci, comercial)
+    import re as _re
+    plan_inserts = []  # [(codigo_planeado, inci, comercial, tipo)]
+    for m in _re.finditer(
+        r"INSERT OR IGNORE INTO maestro_mps[^V]+VALUES\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*,\s*'([^']+)'",
+        sql_text):
+        plan_inserts.append((m.group(1), m.group(2), m.group(3), m.group(4)))
+
     try:
+        # 1) Detectar duplicados por nombre_inci YA EXISTENTE en catalogo
+        existentes_por_inci = {}
+        for codigo_p, inci, comercial, tipo in plan_inserts:
+            row = c.execute(
+                "SELECT codigo_mp, nombre_inci, nombre_comercial FROM maestro_mps "
+                "WHERE LOWER(TRIM(nombre_inci)) = LOWER(TRIM(?)) LIMIT 1",
+                (inci,)
+            ).fetchone()
+            if row:
+                existentes_por_inci[codigo_p] = {
+                    'codigo_planeado': codigo_p,
+                    'inci_planeado': inci,
+                    'codigo_existente': row[0],
+                    'inci_existente': row[1],
+                    'comercial_existente': row[2],
+                }
+
+        # 2) Verificar rango MP00400-MP00500 ocupado
         ocupados = c.execute(
             "SELECT codigo_mp, nombre_inci, nombre_comercial FROM maestro_mps "
             "WHERE codigo_mp >= 'MP00400' AND codigo_mp <= 'MP00500' ORDER BY codigo_mp"
         ).fetchall()
-        if ocupados:
-            # Auto-renumerar a un bloque libre. Buscar siguiente rango contiguo libre de 100 codigos.
-            modo = (d.get('modo') or '').strip()
-            if modo != 'auto_renumerar':
-                conn.close()
-                return jsonify({
-                    'error': f'Hay {len(ocupados)} codigos MP en el rango MP00400-MP00500 ya ocupados.',
-                    'ocupados_con_nombres': [
-                        {'codigo': r[0], 'inci': r[1], 'comercial': r[2]} for r in ocupados[:10]
-                    ],
-                    'total_ocupados': len(ocupados),
-                    'sugerencia': 'Reenviar con body { "token": "...", "modo": "auto_renumerar" } para que el endpoint asigne automaticamente un rango MP libre.',
-                }), 409
 
-            # Modo auto_renumerar: busca rango libre y reescribe el SQL en memoria
+        modo = (d.get('modo') or '').strip()
+
+        # === Si hay duplicados por INCI, exigir decision explicita ===
+        if existentes_por_inci and modo not in ('mapear_duplicados', 'auto_renumerar'):
+            conn.close()
+            return jsonify({
+                'error': f'Hay {len(existentes_por_inci)} INCI(s) que ya existen en el catalogo con OTRO codigo_mp. Crearlos duplicaria entradas.',
+                'duplicados_inci': list(existentes_por_inci.values()),
+                'total_duplicados_inci': len(existentes_por_inci),
+                'ocupados_rango_mp00400': [
+                    {'codigo': r[0], 'inci': r[1], 'comercial': r[2]} for r in ocupados
+                ],
+                'opciones': {
+                    'mapear_duplicados': 'Reenviar con modo="mapear_duplicados" — los UPDATEs apuntaran a los codigos existentes, no se crearan duplicados',
+                    'auto_renumerar': 'Reenviar con modo="auto_renumerar" — duplica las entradas en otro codigo_mp libre (NO RECOMENDADO si los INCIs son iguales)',
+                },
+            }), 409
+
+        # === Si no hay duplicados pero el rango esta ocupado, ofrecer auto_renumerar ===
+        if ocupados and not existentes_por_inci and modo != 'auto_renumerar':
+            conn.close()
+            return jsonify({
+                'error': f'Hay {len(ocupados)} codigos MP en el rango MP00400-MP00500 ocupados (con OTROS INCIs, no los mios).',
+                'ocupados_con_nombres': [
+                    {'codigo': r[0], 'inci': r[1], 'comercial': r[2]} for r in ocupados
+                ],
+                'total_ocupados': len(ocupados),
+                'sugerencia': 'Sin duplicados de INCI detectados — auto_renumerar seguro. Reenviar con modo="auto_renumerar".',
+            }), 409
+
+        # === modo=mapear_duplicados: skip INSERT de duplicados, reescribir UPDATEs ===
+        if modo == 'mapear_duplicados' and existentes_por_inci:
+            # Borrar las lineas INSERT de los duplicados (se vuelven no-op)
+            # Y reescribir referencias codigo_planeado -> codigo_existente en UPDATEs
+            for cp, info in existentes_por_inci.items():
+                ce = info['codigo_existente']
+                # Reemplazar codigo_planeado por codigo_existente en TODO el SQL
+                sql_text = sql_text.replace("'" + cp + "'", "'" + ce + "'")
+            # Tras el replace, los INSERTs duplicados son INSERT OR IGNORE de codigos existentes
+            # — el OR IGNORE los hace no-op. Perfecto, no queda accion residual.
+
+        # === modo=auto_renumerar: buscar rango libre y renumerar ===
+        if modo == 'auto_renumerar':
             todos = c.execute(
                 "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp GLOB 'MP[0-9]*'"
             ).fetchall()
             usados = set()
             for (cm,) in todos:
-                try:
-                    usados.add(int(cm[2:]))
-                except Exception:
-                    pass
-            # Buscar bloque contiguo de 50 codigos libres comenzando desde 1000
+                try: usados.add(int(cm[2:]))
+                except Exception: pass
             new_start = None
             for base in range(1000, 9000, 50):
                 if not any((base + k) in usados for k in range(50)):
@@ -2480,8 +2532,6 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
                 conn.close()
                 return jsonify({'error': 'No hay rango contiguo libre de 50 codigos hasta MP09000'}), 500
 
-            # Reescribir codigos MP00400-MP00443 -> MP{new_start..new_start+43}
-            import re as _re
             def _replace_code(m):
                 old_n = int(m.group(1))
                 if 400 <= old_n <= 443:
@@ -2489,6 +2539,7 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
                     return 'MP{:05d}'.format(new_n)
                 return m.group(0)
             sql_text = _re.sub(r"MP(\d{5})", _replace_code, sql_text)
+
     except sqlite3.OperationalError as _e:
         conn.close()
         return jsonify({'error': f'No pude verificar rango: {_e}'}), 500
@@ -5863,8 +5914,35 @@ async function aplicarBatch20260428() {
       body: JSON.stringify({token: token})
     });
     let d = await r.json();
-    if (r.status === 409 && d.total_ocupados) {
-      // Rango ocupado — preguntar si auto-renumerar
+
+    // Caso 1: hay duplicados por INCI -> recomendar mapear_duplicados
+    if (r.status === 409 && d.total_duplicados_inci) {
+      const dups = d.duplicados_inci || [];
+      const preview = dups.slice(0,8).map(function(o){
+        return '  ' + o.inci_planeado + ' ya existe como ' + o.codigo_existente +
+               (o.codigo_existente !== o.codigo_planeado ? ' (planeado: ' + o.codigo_planeado + ')' : '');
+      }).join('\n');
+      const ok = confirm(
+        'Detecte ' + d.total_duplicados_inci + ' INCI(s) que YA EXISTEN en el catalogo con otro codigo.\n\n' +
+        'Si creo MPs nuevos, quedan duplicados. Si MAPEO, los formula_items apuntaran a los codigos existentes (sin crear entradas extra).\n\n' +
+        'Duplicados detectados:\n' + preview +
+        (dups.length > 8 ? '\n  ... +' + (dups.length-8) + ' mas' : '') +
+        '\n\n¿Aplicar en modo MAPEAR_DUPLICADOS (recomendado, sin crear duplicados)?'
+      );
+      if (!ok) {
+        btn.disabled = false; btn.innerHTML = '&#x2728; Aplicar 240 correcciones';
+        toast('Cancelado. Revisa los duplicados antes de continuar.', 'warn');
+        return;
+      }
+      btn.textContent = 'Mapeando a codigos existentes...';
+      r = await fetch('/api/admin/aplicar-correcciones-formulas-batch-2026-04-28', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({token: token, modo: 'mapear_duplicados'})
+      });
+      d = await r.json();
+    }
+    // Caso 2: rango ocupado pero SIN duplicados de INCI -> auto_renumerar seguro
+    else if (r.status === 409 && d.total_ocupados) {
       let nombresPreview = '';
       if (d.ocupados_con_nombres && d.ocupados_con_nombres.length) {
         nombresPreview = '\n\nPrimeros ocupados:\n' + d.ocupados_con_nombres.slice(0,5).map(function(o){
@@ -5872,8 +5950,8 @@ async function aplicarBatch20260428() {
         }).join('\n');
       }
       const ok = confirm(
-        'El rango MP00400-MP00500 ya tiene ' + d.total_ocupados + ' codigos ocupados.\n\n' +
-        '¿Renumerar automaticamente al siguiente rango libre (MP01000+) y aplicar?' +
+        'El rango MP00400-MP00500 tiene ' + d.total_ocupados + ' codigos ocupados, pero ninguno colisiona por INCI con los mios.\n\n' +
+        '¿Renumerar al siguiente bloque libre (MP01000+) y aplicar?' +
         nombresPreview
       );
       if (!ok) {
