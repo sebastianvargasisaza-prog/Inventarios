@@ -12,7 +12,7 @@ HOME_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · El primer rayo de claridad sobre tus datos · Desarrollado por HHA Group">
+<meta name="description" content="EOS · Todo el holding, al frente · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -61,7 +61,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
     </div>
   </div>
   <div class="hdr-right">
-    <div style="font-style:italic;color:#cbd5e1;">El primer rayo de claridad sobre tus datos</div>
+    <div style="font-style:italic;color:#cbd5e1;">Todo el holding, al frente</div>
     <div style="font-size:10px;color:#78716c;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por HHA Group</div>
   </div>
 </div>
@@ -95,7 +95,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 </div>
 <footer style="padding:24px 20px;border-top:1px solid #e7e5e4;margin-top:40px;text-align:center;font-size:11px;color:#a8a29e;background:#fafaf9;">
   <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">EOS</div>
-  <div style="margin-top:4px;font-style:italic;">El primer rayo de claridad sobre tus datos</div>
+  <div style="margin-top:4px;font-style:italic;">Todo el holding, al frente</div>
   <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:#1c1917">HHA Group</strong></div>
   <div style="margin-top:6px;color:#d6d3d1;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
 </footer>

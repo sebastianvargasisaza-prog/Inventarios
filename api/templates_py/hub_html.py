@@ -12,7 +12,7 @@ HUB_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · El primer rayo de claridad sobre tus datos · Desarrollado por HHA Group">
+<meta name="description" content="EOS · Todo el holding, al frente · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -397,7 +397,7 @@ setInterval(loadAll, 60000);
     <span style="font-weight:700;background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.3px;font-size:13px;">EOS</span>
     <span style="font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:1px 5px;border-radius:3px;">v1.0</span>
   </div>
-  <div style="margin-top:6px;font-style:italic;color:#94a3b8;">El primer rayo de claridad sobre tus datos</div>
+  <div style="margin-top:6px;font-style:italic;color:#94a3b8;">Todo el holding, al frente</div>
   <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;font-size:10px;">Desarrollado por <strong style="color:#cbd5e1">HHA Group</strong></div>
   <div style="margin-top:6px;color:#475569;font-size:10px;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
 </footer>

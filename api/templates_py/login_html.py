@@ -12,7 +12,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · El primer rayo de claridad sobre tus datos · Desarrollado por HHA Group">
+<meta name="description" content="EOS · Todo el holding, al frente · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -58,7 +58,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
       </svg>
     </span>
     <div class="brand-name">EOS</div>
-    <div class="brand-tag">El primer rayo de claridad sobre tus datos</div>
+    <div class="brand-tag">Todo el holding, al frente</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>
   </div>
   {error}
@@ -67,7 +67,6 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
     <div class="fg"><label>Contraseña</label><input type="password" name="password" placeholder="••••••••" required autocomplete="current-password"></div>
     <button type="submit" class="btn">Ingresar →</button>
   </form>
-  <div class="users-hint">Usuarios: Sebastian · Alejandro · Catalina · Luz · Mayra</div>
   <div class="back"><a href="/">← Volver al portal</a></div>
 </div>
 <footer class="app-footer">

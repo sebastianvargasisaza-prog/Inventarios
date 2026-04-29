@@ -4116,19 +4116,152 @@ def checklist_item_solicitar(item_id):
                     'mensaje': f'Solicitud {sol_num} creada para {item_dict.get("descripcion","")}'})
 
 
+def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
+    """Sincroniza eventos de Google Calendar a la tabla produccion_programada.
+
+    Idempotente: usa (producto, fecha_programada) como key para evitar
+    duplicados. Marca origen='calendar' para distinguir de manuales.
+
+    Sebastian (28-abr-2026): el checklist Pre-Produccion lee de
+    produccion_programada, pero los eventos viven en el calendario
+    animuslb.com. Antes habia que duplicar manualmente. Ahora se
+    auto-sincroniza al cargar el checklist.
+
+    Returns: count de filas insertadas en esta corrida.
+    """
+    import datetime as _dt
+    import re as _re
+    try:
+        cal = _fetch_calendar_events(days_ahead=days_ahead)
+    except Exception:
+        return 0
+    events = cal.get('events', [])
+    if not events:
+        return 0
+
+    # Cargar mapa SKU → producto y formulas (para validar y obtener kg/lote)
+    formulas = _get_formulas(conn)
+    sku_to_prod = {}
+    try:
+        for row in conn.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            sku_to_prod[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # Filtrar tokens que NO son SKUs (mismo set que planificacion_estrategica)
+    NOT_SKU = {
+        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+        'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
+    }
+    NON_FAB_KW = {
+        'envasado', 'acondicionamiento', 'micro qc',
+        'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+    }
+
+    def _skus(titulo):
+        tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+        return [t for t in tokens if t not in NOT_SKU]
+
+    def _kg(titulo):
+        m = _re.findall(r'~?(\d+(?:[,.]\d+)*)\s*kg', titulo, _re.IGNORECASE)
+        if not m: return None
+        try: return float(m[-1].replace(',', '.'))
+        except Exception: return None
+
+    today = _dt.date.today()
+    inserted = 0
+    for ev in events:
+        titulo = ev.get('titulo', '')
+        fecha_s = ev.get('fecha', '')
+        if not fecha_s:
+            continue
+        try:
+            fecha = _dt.date.fromisoformat(fecha_s)
+        except ValueError:
+            continue
+        if fecha < today:
+            continue
+        # Saltar eventos que NO son fabricacion (envasado/QC/etc consumen
+        # nada de MPs crudas y no tienen sentido en el checklist).
+        tlow = titulo.lower()
+        if any(kw in tlow for kw in NON_FAB_KW):
+            continue
+        kg_evento = _kg(titulo)
+        for sku in _skus(titulo):
+            prod = sku_to_prod.get(sku)
+            if not prod or prod not in formulas:
+                continue
+            lote_kg = formulas[prod].get('lote_size_kg', 0) or 0
+            lotes = max(1, round((kg_evento or lote_kg) / lote_kg)) if lote_kg > 0 else 1
+            # INSERT idempotente: si ya existe (producto, fecha), no duplicar
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM produccion_programada WHERE producto=? AND fecha_programada=? LIMIT 1",
+                    (prod, fecha_s)
+                ).fetchone()
+                if not exists:
+                    conn.execute(
+                        """INSERT INTO produccion_programada
+                           (producto, fecha_programada, lotes, estado, observaciones)
+                           VALUES (?, ?, ?, 'programado', ?)""",
+                        (prod, fecha_s, lotes,
+                         f'[auto-sync calendar] {titulo[:200]}')
+                    )
+                    inserted += 1
+            except Exception:
+                continue
+            break  # un evento → un producto match
+    if inserted:
+        conn.commit()
+    return inserted
+
+
+@bp.route('/api/programacion/checklist/sync-calendar', methods=['POST'])
+def checklist_sync_calendar_endpoint():
+    """Endpoint manual para forzar sincronizacion calendario → produccion_programada.
+
+    Tambien se llama automaticamente al cargar /resumen-calendario, pero
+    este endpoint permite trigger manual desde la UI con feedback al usuario.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    days = int(request.args.get('dias', 90))
+    conn = get_db()
+    inserted = _sync_calendar_a_produccion_programada(conn, days_ahead=days)
+    return jsonify({
+        'ok': True,
+        'producciones_creadas': inserted,
+        'mensaje': f'{inserted} producciones nuevas importadas del calendario'
+                   if inserted else 'El calendario ya estaba sincronizado'
+    })
+
+
 @bp.route('/api/programacion/checklist/resumen-calendario')
 def checklist_resumen_calendario():
     """Vista panoramica: para cada produccion programada en proximos N dias,
     devuelve % de completitud del checklist + dias faltantes + items criticos
     pendientes.
 
-    Usado por Planta + Gerencia para ver de un vistazo que producciones
-    estan en riesgo.
+    Auto-sincroniza eventos del calendario antes de listar para que las
+    producciones nuevas del calendar aparezcan sin que el usuario tenga que
+    hacer trigger manual. Usado por Planta + Gerencia.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     horizonte = int(request.args.get('dias', 60))
     conn = get_db(); c = conn.cursor()
+
+    # Auto-sync calendario → produccion_programada (idempotente, falla silenciosa)
+    sync_count = 0
+    try:
+        sync_count = _sync_calendar_a_produccion_programada(conn, days_ahead=max(horizonte, 90))
+    except Exception:
+        pass
+
     try:
         rows = c.execute("""
             SELECT pp.id,
@@ -4165,7 +4298,11 @@ def checklist_resumen_calendario():
             )
             d['dias_faltan'] = int(d['dias_faltan']) if d['dias_faltan'] is not None else 0
             out.append(d)
-        return jsonify({'producciones': out, 'horizonte_dias': horizonte})
+        return jsonify({
+            'producciones': out,
+            'horizonte_dias': horizonte,
+            'sync_calendario': {'producciones_nuevas': sync_count},
+        })
     except Exception as e:
         return jsonify({'error': str(e), 'producciones': []})
 

@@ -6,7 +6,7 @@ Para cambiar el nombre del producto, modificar SOLO este archivo.
 
 Producto:  EOS  (diosa griega de la aurora — primer rayo)
 Compania:  HHA Group  (Hermes · Hefesto · Asclepio)
-Tagline:   El primer rayo de claridad sobre tus datos
+Tagline:   Todo el holding, al frente
 
 Renombrado 28-abr-2026: era "Cortex Labs", Alejandro pidio nombre mitologico
 griego (en linea con HHA, Espagiria, ANIMUS, ANIMA, Persefone).
@@ -16,7 +16,7 @@ griego (en linea con HHA, Espagiria, ANIMUS, ANIMA, Persefone).
 
 PRODUCT_NAME       = "EOS"
 PRODUCT_NAME_SHORT = "EOS"
-PRODUCT_TAGLINE    = "El primer rayo de claridad sobre tus datos"
+PRODUCT_TAGLINE    = "Todo el holding, al frente"
 
 # ===================== Compania =====================
 

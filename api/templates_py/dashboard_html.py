@@ -4786,14 +4786,22 @@ function _renderProgramacion(d){
         <button id="ck-h-30"  onclick="cargarChecklistResumen(30)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#15803d">30 días</button>
         <button id="ck-h-60"  onclick="cargarChecklistResumen(60)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#15803d;color:#fff">60 días</button>
         <button id="ck-h-90"  onclick="cargarChecklistResumen(90)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#15803d">90 días</button>
-        <button onclick="ckBackfill()" style="padding:6px 12px;background:#a16207;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Genera checklists para producciones sin items">🔄 Generar faltantes</button>
+        <button onclick="ckSyncCalendario()" style="padding:6px 12px;background:#1e40af;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae las producciones del calendario animuslb.com a la tabla de programadas">📅 Sincronizar calendario</button>
+        <button onclick="ckBackfill()" style="padding:6px 12px;background:#a16207;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Genera checklists (envases, etiquetas, serigrafía) para producciones programadas sin items">🔄 Generar faltantes</button>
       </div>
     </div>
 
     <div id="ck-resumen-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px"></div>
 
     <div id="ck-loading" style="display:none;text-align:center;padding:40px;color:#15803d;font-weight:600">Cargando producciones programadas...</div>
-    <div id="ck-empty" style="display:none;text-align:center;padding:40px;color:#888;font-style:italic">Sin producciones programadas en el horizonte</div>
+    <div id="ck-empty" style="display:none;text-align:center;padding:40px;color:#666;background:#fafaf9;border:1px dashed #d6d3d1;border-radius:10px;">
+      <div style="font-size:36px;margin-bottom:8px">&#x1F5D3;&#xFE0F;</div>
+      <div style="font-weight:700;color:#1c1917;margin-bottom:6px">Sin producciones programadas en el horizonte</div>
+      <div style="font-size:12px;color:#78716c;line-height:1.5;max-width:480px;margin:0 auto 14px">
+        El checklist verifica envases, etiquetas, serigrafía y tampografía de las producciones programadas. Las jala desde el calendario <b>animuslb.com</b> o de las que se programan manualmente.
+      </div>
+      <button onclick="ckSyncCalendario()" style="padding:8px 18px;background:#1e40af;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x1F4C5; Sincronizar desde calendario</button>
+    </div>
 
     <div id="ck-producciones-list" style="display:flex;flex-direction:column;gap:10px"></div>
 
@@ -4909,6 +4917,24 @@ async function ckBackfill(){
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||'')); return; }
     _toast(d.mensaje, 1);
+    cargarChecklistResumen();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+// Sincroniza eventos del Google Calendar (animuslb.com) → produccion_programada.
+// Idempotente: usa (producto, fecha) como key. Auto-llamado al cargar el
+// resumen, pero este boton da trigger manual + feedback visible.
+async function ckSyncCalendario(){
+  try {
+    var r = await fetch('/api/programacion/checklist/sync-calendar?dias=90', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+    _toast(d.mensaje || 'Calendario sincronizado', 1);
+    // Despues del sync, generar checklists faltantes automaticamente para
+    // que las nuevas producciones aparezcan con sus items pre-poblados.
+    if(d.producciones_creadas > 0){
+      try { await fetch('/api/programacion/checklist/backfill', {method:'POST'}); } catch(e){}
+    }
     cargarChecklistResumen();
   } catch(e){ alert('Error: '+e.message); }
 }
