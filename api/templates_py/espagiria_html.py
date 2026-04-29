@@ -6,7 +6,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <title>Espagiria — Panel Asistente Gerencia</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
@@ -68,13 +68,23 @@ HTML = r"""
 </style>
 </head>
 <body>
-  <div class="header">
+  <header class="cx-mod-header cx-fade-in">
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
     <div>
-      <h1>🌿 Espagiria — Panel de Asistente</h1>
-      <div style="font-size:11px;color:#a5f3fc;margin-top:3px;">Vista consolidada para coordinación operativa de planta</div>
+      <div class="cx-mod-header__title">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 21V8M12 8c-3 0-6-2-6-5 3 0 6 2 6 5z"/><path d="M12 8c3 0 6-2 6-5-3 0-6 2-6 5zM8 14c-2 0-4-1-4-3 2 0 4 1 4 3zM16 14c2 0 4-1 4-3-2 0-4 1-4 3z"/></svg>
+        Espagiria — Panel Asistente
+      </div>
+      <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; vista consolidada para coordinación operativa de planta</div>
     </div>
-    <a href="/modulos">← Volver a módulos</a>
-  </div>
+    <div class="cx-mod-header__nav">
+      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+      <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+      </button>
+    </div>
+  </header>
+  <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
   <div class="container">
     <!-- KPIs principales -->

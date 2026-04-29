@@ -4,7 +4,7 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Compras HHA</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -110,7 +110,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="cx-mod-header__logo">
+  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M2 3h2l3 13h12l3-9H6"/></svg>

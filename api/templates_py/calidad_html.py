@@ -4,7 +4,7 @@ CALIDAD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Calidad BPM Ã¢ÂÂ Espagiria</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -109,7 +109,7 @@ textarea{resize:vertical;min-height:70px;}
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="cx-mod-header__logo">
+  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M9 3h6M10 3v6.5L4 19a2 2 0 001.7 3h12.6a2 2 0 001.7-3l-6-9.5V3"/><path d="M6 14h12"/></svg>

@@ -4,7 +4,7 @@ GERENCIA_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Gerencia — HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -73,19 +73,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div class="topbar-left">
-    <a href="/hub" style="color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:600;margin-right:4px;">&#8962; Hub</a>
-    <span class="logo">HHA GROUP</span>
-    <span class="badge-ceo">PANEL GERENCIAL</span>
-    <span class="periodo-badge" id="periodo-label">Cargando...</span>
+<header class="cx-mod-header cx-fade-in">
+  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+  <div>
+    <div class="cx-mod-header__title">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M3 9l9-6 9 6"/><path d="M5 21V11M19 21V11M9 21v-8M15 21v-8M2 21h20"/></svg>
+      Panel Gerencial
+    </div>
+    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; metas YTD · estrategia · KPIs ejecutivos &middot; <span class="periodo-badge" id="periodo-label" style="color:#a8a29e">Cargando...</span></div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px;">
-    <button class="refresh-btn" onclick="loadKPIs()">⟳ Actualizar</button>
-    <span class="ultima-act" id="ultima-actualizacion"></span>
-    <a href="/hub" style="font-size:12px;font-weight:700;color:#e2e8f0;text-decoration:none;border:1px solid rgba(255,255,255,0.25);padding:5px 12px;border-radius:6px;">&#8962; Panel</a>
+  <div class="cx-mod-header__nav">
+    <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="loadKPIs()">&#x21bb; Actualizar</button>
+    <span class="ultima-act" id="ultima-actualizacion" style="font-size:11px;color:#a8a29e;"></span>
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+    </button>
   </div>
-</div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="main">
 

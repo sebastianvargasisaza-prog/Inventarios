@@ -4,7 +4,7 @@ FINANCIERO_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Financiero — HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
@@ -51,15 +51,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </style>
 </head>
 <body>
-<div class="topbar">
-  <a href="/modulos" style="color:#fff;text-decoration:none;font-size:13px;font-weight:700;margin-right:8px;background:rgba(255,255,255,0.15);padding:5px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.3);">&#x1F4F1; M&#xF3;dulos</a>
-  <div class="topbar-title">💰 FINANCIERO — HHA GROUP</div>
-  <div style="display:flex;gap:12px;align-items:center;">
-    <span id="periodo-label" style="font-size:0.85em;opacity:0.85;"></span>
-    <a href="/gerencia">← Gerencia</a>
-    <a href="/">Portal</a>
+<header class="cx-mod-header cx-fade-in">
+  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+  <div>
+    <div class="cx-mod-header__title">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#15803d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>
+      Financiero
+    </div>
+    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; P&amp;L · flujo de caja · capital de trabajo · <span id="periodo-label" style="color:#a8a29e"></span></div>
   </div>
-</div>
+  <div class="cx-mod-header__nav">
+    <a href="/gerencia" class="cx-btn cx-btn-ghost cx-btn-sm" title="Gerencia">Gerencia</a>
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+    </button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
   <div class="tab active" onclick="goTab('dashboard',this)">📊 Dashboard</div>
   <div class="tab" onclick="goTab('ingresos',this)">📈 Ingresos</div>

@@ -4,7 +4,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Cortex Labs · Acceso</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <meta name="application-name" content="Cortex Labs">
 <meta name="apple-mobile-web-app-title" content="Cortex Labs">
@@ -15,9 +15,9 @@ LOGIN_HTML = """<!DOCTYPE html>
 <meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
-<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex3">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=cortex3">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=cortex3">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=cortex4">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=cortex4">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:#e2e8f0;}
@@ -50,7 +50,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
 <body>
 <div class="card">
   <div class="logo">
-    <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="brand-mark">
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="brand-mark">
     <div class="brand-name">Cortex Labs</div>
     <div class="brand-tag">El cerebro operativo de tu laboratorio</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>

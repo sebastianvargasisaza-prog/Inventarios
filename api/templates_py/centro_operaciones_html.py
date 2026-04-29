@@ -8,7 +8,7 @@ HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Centro de Operaciones — HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
@@ -70,16 +70,24 @@ HTML = r"""
 </style>
 </head>
 <body>
-  <div class="header">
+  <header class="cx-mod-header cx-fade-in">
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
     <div>
-      <h1><span class="live-dot"></span>HOY · qué pasa ahora</h1>
-      <div style="font-size:11px;color:#64748b;margin-top:3px;">Tiempo real operativo · refresh cada 60 seg · para mes/YTD ver <a href="/gerencia" style="color:#22d3ee">Gerencia</a> · para P&L y caja ver <a href="/financiero" style="color:#34d399">Financiero</a></div>
+      <div class="cx-mod-header__title">
+        <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
+        HOY · qué pasa ahora
+      </div>
+      <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#15803d">Financiero</a> para P&amp;L</div>
     </div>
-    <div style="display:flex;align-items:center;gap:14px">
-      <button class="refresh-btn" onclick="cargar(true)" title="Refresh ahora">↻</button>
-      <a href="/modulos">← Módulos</a>
+    <div class="cx-mod-header__nav">
+      <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>
+      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+      <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+      </button>
     </div>
-  </div>
+  </header>
+  <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
   <div class="container">
 

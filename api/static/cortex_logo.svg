@@ -1,30 +1,56 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="cxBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#7c3aed"/>
-      <stop offset="100%" stop-color="#2c1366"/>
-    </linearGradient>
-    <radialGradient id="cxHl" cx="50%" cy="20%" r="55%">
-      <stop offset="0%" stop-color="white" stop-opacity="0.20"/>
-      <stop offset="100%" stop-color="white" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="cxGlow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="5"/>
-    </filter>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#cxBg)"/>
-  <rect width="512" height="512" rx="112" fill="url(#cxHl)"/>
-  <path d="M 329.5 413.7 A 174 174 0 1 0 329.5 98.3" stroke="white" stroke-width="44" fill="none" stroke-linecap="round"/>
-  <g>
-    <circle cx="351.7" cy="200" r="22" fill="#fbbf24" opacity="0.45" filter="url(#cxGlow)"/>
-    <circle cx="351.7" cy="256" r="22" fill="#fbbf24" opacity="0.45" filter="url(#cxGlow)"/>
-    <circle cx="351.7" cy="312" r="22" fill="#fbbf24" opacity="0.45" filter="url(#cxGlow)"/>
-    <line x1="351.7" y1="213" x2="351.7" y2="299" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
-    <circle cx="351.7" cy="200" r="13" fill="#fbbf24"/>
-    <circle cx="351.7" cy="256" r="13" fill="#fbbf24"/>
-    <circle cx="351.7" cy="312" r="13" fill="#fbbf24"/>
-    <circle cx="349.2" cy="197.5" r="5" fill="white"/>
-    <circle cx="349.2" cy="253.5" r="5" fill="white"/>
-    <circle cx="349.2" cy="309.5" r="5" fill="white"/>
-  </g>
+<defs>
+<linearGradient id="cxBg" x1="0%" y1="0%" x2="100%" y2="100%">
+  <stop offset="0%" stop-color="#1e1b4b"/>
+  <stop offset="100%" stop-color="#6d28d9"/>
+</linearGradient>
+<radialGradient id="cxTopGlow" cx="50%" cy="10%" r="65%">
+  <stop offset="0%" stop-color="white" stop-opacity="0.20"/>
+  <stop offset="100%" stop-color="white" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="cxBotGlow" cx="50%" cy="100%" r="60%">
+  <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.45"/>
+  <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+</radialGradient>
+<filter id="cxNodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+  <feGaussianBlur stdDeviation="6"/>
+</filter>
+</defs>
+<rect width="512" height="512" rx="112" fill="url(#cxBg)"/>
+<rect width="512" height="512" rx="112" fill="url(#cxBotGlow)"/>
+<rect width="512" height="512" rx="112" fill="url(#cxTopGlow)"/>
+<rect x="2" y="2" width="508" height="508" rx="110" fill="none" stroke="white" stroke-opacity="0.10" stroke-width="1.5"/>
+<line x1="207.4" y1="227.8" x2="256.0" y2="202.2" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="256.0" y1="202.2" x2="304.6" y2="227.8" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="207.4" y1="227.8" x2="199.7" y2="279.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="199.7" y1="279.0" x2="256.0" y2="256.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="256.0" y1="256.0" x2="312.3" y2="279.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="312.3" y1="279.0" x2="304.6" y2="227.8" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="199.7" y1="279.0" x2="256.0" y2="309.8" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="256.0" y1="256.0" x2="256.0" y2="309.8" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="312.3" y1="279.0" x2="256.0" y2="309.8" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="256.0" y1="202.2" x2="256.0" y2="256.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="207.4" y1="227.8" x2="256.0" y2="256.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<line x1="304.6" y1="227.8" x2="256.0" y2="256.0" stroke="#a78bfa" stroke-width="6" stroke-linecap="round"/>
+<circle cx="207.4" cy="227.8" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="256.0" cy="202.2" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="304.6" cy="227.8" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="199.7" cy="279.0" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="256.0" cy="256.0" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="312.3" cy="279.0" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="256.0" cy="309.8" r="34" fill="#c4b5fd" opacity="0.45" filter="url(#cxNodeGlow)"/>
+<circle cx="207.4" cy="227.8" r="22" fill="white"/>
+<circle cx="256.0" cy="202.2" r="22" fill="white"/>
+<circle cx="304.6" cy="227.8" r="22" fill="white"/>
+<circle cx="199.7" cy="279.0" r="22" fill="white"/>
+<circle cx="256.0" cy="256.0" r="22" fill="white"/>
+<circle cx="312.3" cy="279.0" r="22" fill="white"/>
+<circle cx="256.0" cy="309.8" r="22" fill="white"/>
+<circle cx="200.8" cy="221.2" r="9.2" fill="#c4b5fd"/>
+<circle cx="249.4" cy="195.6" r="9.2" fill="#c4b5fd"/>
+<circle cx="298.0" cy="221.2" r="9.2" fill="#c4b5fd"/>
+<circle cx="193.1" cy="272.4" r="9.2" fill="#c4b5fd"/>
+<circle cx="249.4" cy="249.4" r="9.2" fill="#c4b5fd"/>
+<circle cx="305.7" cy="272.4" r="9.2" fill="#c4b5fd"/>
+<circle cx="249.4" cy="303.2" r="9.2" fill="#c4b5fd"/>
 </svg>

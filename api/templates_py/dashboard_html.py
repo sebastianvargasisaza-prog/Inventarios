@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=cortex3">
+<link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -244,7 +244,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div class="container">
   <header class="cx-mod-header cx-fade-in">
-    <img src="/static/icons/icon-192.png?v=cortex3" alt="Cortex Labs" class="cx-mod-header__logo">
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 7.5l-9-5-9 5 9 5z"/><path d="M3 7.5v9l9 5 9-5v-9M12 12.5v9"/></svg>
