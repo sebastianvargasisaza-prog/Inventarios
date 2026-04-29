@@ -5323,6 +5323,7 @@ async function abrirChecklistDetalle(produccionId, producto){
     var d = await r.json();
     if(!r.ok){ document.getElementById('ck-modal-items').innerHTML='Error: '+(d.error||''); return; }
     var prim = (d.items||[])[0]||{};
+    window._ckCurrentMeta = prim;  // guardar contexto para el editor inline (fecha_planeada, cantidad_kg, volumen_unitario_ml)
     document.getElementById('ck-modal-sub').textContent = (prim.cantidad_kg||0).toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-');
 
     // Imagen del producto + acciones (sync Shopify, pegar URL manual)
@@ -5424,18 +5425,24 @@ async function abrirChecklistDetalle(produccionId, producto){
       // Tipos editables (con dropdown MEE)
       var ESEDIT = ['envase_primario','envase_secundario','tapa','etiqueta_frontal','etiqueta_posterior','etiqueta_lateral','caja_exterior','instructivo','otro'];
       var esEditable = ESEDIT.indexOf(it.item_tipo) >= 0;
+      var yaTieneMee = !!it.mee_codigo_asignado;
       var canSolicitar = (it.estado==='pendiente' && !it.solicitud_produccion_id);
       var canMarcar = ['pendiente','solicitado','en_transito'].indexOf(it.estado)>=0;
+      var lblElegir = yaTieneMee ? '✏️ Cambiar' : '✏️ Elegir';
+      var bgElegir = yaTieneMee ? '#64748b' : '#3b82f6';
       var acciones = '';
-      if(esEditable) acciones += '<button onclick="ckAbrirEditor('+it.id+',&quot;'+it.item_tipo+'&quot;,'+(it.cantidad_unidades||0)+')" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">✏️ Elegir</button>';
-      if(canSolicitar) acciones += '<button onclick="ckSolicitarProduccion('+it.id+')" style="background:#a16207;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">📋 Solicitar</button>';
+      if(esEditable) acciones += '<button onclick="ckAbrirEditor('+it.id+',&quot;'+it.item_tipo+'&quot;,'+(it.cantidad_unidades||0)+')" style="background:'+bgElegir+';color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">'+lblElegir+'</button>';
+      if(canSolicitar) acciones += '<button onclick="ckSolicitarProduccion('+it.id+')" style="background:#a16207;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px" title="Enviar a Catalina (cola de compras)">📋 Solicitar</button>';
       if(canMarcar) acciones += '<button onclick="ckMarcar('+it.id+',&quot;recibido&quot;)" style="background:#15803d;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Recibido</button>';
       acciones += '<button onclick="ckMarcar('+it.id+',&quot;no_aplica&quot;)" style="background:#78716c;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">N/A</button>';
       var obs = it.observaciones ? '<div style="font-size:10px;color:#78716c;margin-top:3px;font-family:monospace">'+_escHTML(it.observaciones)+'</div>' : '';
-      var meeLine = it.mee_codigo_asignado ? '<div style="font-size:10px;color:#0f766e;margin-top:2px"><b>MEE:</b> '+_escHTML(it.mee_codigo_asignado)+'</div>' : '';
+      var meeLine = yaTieneMee ? '<div style="font-size:10px;color:#0f766e;margin-top:2px"><b>MEE:</b> '+_escHTML(it.mee_codigo_asignado)+'</div>' : '';
       var decoLine = it.decoracion_tipo ? '<div style="font-size:10px;color:#7c3aed;margin-top:2px"><b>Decoración:</b> '+_escHTML(it.decoracion_tipo)+'</div>' : '';
-      html += '<tr style="border-bottom:1px solid #f5f5f4">' +
-        '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+meeLine+decoLine+obs+'</td>' +
+      // Hint cuando ya hay MEE elegido pero todavía no se envió a Catalina (caso "solo guardar")
+      var hintNoEnviado = (yaTieneMee && it.estado==='pendiente' && !it.solicitud_produccion_id) ?
+        '<div style="font-size:10px;color:#a16207;margin-top:2px;font-style:italic">⚠️ Elegido pero no enviado a Catalina — click 📋 Solicitar</div>' : '';
+      html += '<tr id="ck-row-'+it.id+'" style="border-bottom:1px solid #f5f5f4">' +
+        '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+meeLine+decoLine+obs+hintNoEnviado+'</td>' +
         '<td style="padding:10px;text-align:right;font-family:monospace">'+cantTxt+'</td>' +
         '<td style="padding:10px"><span style="color:'+stCfg[1]+';font-weight:700">'+stCfg[0]+'</span>'+(it.proveedor?'<div style="font-size:10px;color:#78716c">'+_escHTML(it.proveedor)+'</div>':'')+refLink+'</td>' +
         '<td style="padding:10px;text-align:right;white-space:nowrap">'+acciones+'</td>' +
@@ -5498,50 +5505,88 @@ async function ckSolicitar(itemId){
   } catch(e){ alert('Error: '+e.message); }
 }
 
-// Editor de item del checklist: dropdown MEE + cantidad calculada + decoracion
+// Editor inline (panel expandible bajo la fila — NO modal sobre modal):
+// dropdown MEE + cantidad + decoracion + fecha objetivo + observaciones.
+// Al guardar, dispara también solicitud a Catalina (un solo paso).
 async function ckAbrirEditor(itemId, itemTipo, cantUnd){
+  // Cerrar cualquier editor abierto previamente
+  document.querySelectorAll('tr.ck-edit-row').forEach(function(r){ r.remove(); });
+
+  var row = document.getElementById('ck-row-'+itemId);
+  if(!row){ alert('No se encontró la fila del item.'); return; }
+
+  // Loader inicial mientras llegan opciones MEE
+  var loaderHtml = '<tr id="ck-edit-'+itemId+'" class="ck-edit-row"><td colspan="4" style="padding:0">' +
+    '<div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:14px 18px;color:#1e40af;font-size:12px">⏳ Cargando opciones MEE...</div>' +
+    '</td></tr>';
+  row.insertAdjacentHTML('afterend', loaderHtml);
+
   // Cargar opciones MEE para este tipo
   var r = await fetch('/api/checklist/mee-options?tipo='+encodeURIComponent(itemTipo));
   var d = await r.json();
   var options = d.options || [];
-
-  // Modal simple inline
-  var modalHtml =
-    '<div id="ck-editor-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">' +
-    '<div style="background:#fff;border-radius:14px;padding:24px;width:600px;max-width:100%;max-height:90vh;overflow:auto">' +
-    '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">' +
-      '<h3 style="margin:0;color:#1c1917">✏️ Editar item · '+itemTipo+'</h3>' +
-      '<button onclick="document.getElementById(&quot;ck-editor-modal&quot;).remove()" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700;line-height:1">&#10005;</button>' +
-    '</div>' +
-    '<label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Material (de bodega MEE)</label>' +
-    '<input type="text" id="ck-ed-search" placeholder="Buscar..." style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin:6px 0;font-size:13px" oninput="ckEditorFiltrar()">' +
-    '<div id="ck-ed-list" style="max-height:200px;overflow-y:auto;border:1px solid #e7e5e4;border-radius:6px"></div>';
-
-  // Selector decoracion (solo para envases)
-  if(itemTipo==='envase_primario' || itemTipo==='envase_secundario'){
-    modalHtml += '<div style="margin-top:14px"><label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Decoración (opcional)</label>' +
-      '<select id="ck-ed-deco" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:6px;font-size:13px">' +
-        '<option value="">— Sin decoración —</option>' +
-        '<option value="etiqueta_adhesiva">Etiqueta adhesiva</option>' +
-        '<option value="serigrafia">Serigrafía</option>' +
-        '<option value="tampografia">Tampografía</option>' +
-      '</select></div>';
-  }
-
-  modalHtml +=
-    '<div style="margin-top:14px"><label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Cantidad (unidades)</label>' +
-    '<input type="number" id="ck-ed-cant" value="'+(cantUnd||0)+'" min="0" step="1" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:6px;font-size:13px"></div>' +
-    '<div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">' +
-      '<button onclick="document.getElementById(&quot;ck-editor-modal&quot;).remove()" style="background:#fff;border:1px solid #d6d3d1;color:#475569;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>' +
-      '<button onclick="ckGuardarEditor('+itemId+')" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">💾 Guardar</button>' +
-    '</div>' +
-    '</div></div>';
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-  // Render lista
   window._ckEdOptions = options;
   window._ckEdSelected = null;
+  window._ckEdItemId = itemId;
+  window._ckEdItemTipo = itemTipo;
+
+  var prim = window._ckCurrentMeta || {};
+  var fechaDefault = prim.fecha_planeada || '';
+  var soporteDeco = (itemTipo==='envase_primario' || itemTipo==='envase_secundario');
+
+  var deco = soporteDeco ?
+    '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Decoración</label>' +
+    '<select id="ck-ed-deco" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0;font-size:12px">' +
+      '<option value="">— Sin decoración —</option>' +
+      '<option value="etiqueta_adhesiva">Etiqueta adhesiva</option>' +
+      '<option value="serigrafia">Serigrafía</option>' +
+      '<option value="tampografia">Tampografía</option>' +
+    '</select>' : '';
+
+  var editor = '<tr id="ck-edit-'+itemId+'" class="ck-edit-row"><td colspan="4" style="padding:0">' +
+    '<div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:14px 18px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+        '<div style="font-weight:700;color:#1e40af;font-size:13px">✏️ Elegir material · '+itemTipo.replace(/_/g,' ')+'</div>' +
+        '<button onclick="ckCerrarEditor('+itemId+')" style="background:transparent;border:1px solid #cbd5e1;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:#475569;font-weight:700">×</button>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;align-items:start">' +
+        // Col 1: buscador + lista MEE
+        '<div>' +
+          '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Material (bodega MEE)</label>' +
+          '<input type="text" id="ck-ed-search" placeholder="Buscar..." oninput="ckEditorFiltrar()" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0 6px;font-size:12px">' +
+          '<div id="ck-ed-list" style="max-height:160px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;background:#fff"></div>' +
+        '</div>' +
+        // Col 2: cantidad + decoración
+        '<div>' +
+          '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Cantidad (und)</label>' +
+          '<input type="number" id="ck-ed-cant" value="'+(cantUnd||0)+'" min="0" step="1" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0 10px;font-size:12px">' +
+          deco +
+        '</div>' +
+        // Col 3: fecha objetivo + observaciones
+        '<div>' +
+          '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>' +
+          '<input type="date" id="ck-ed-fecha" value="'+_escHTML(fechaDefault)+'" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0 10px;font-size:12px">' +
+          '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Observaciones</label>' +
+          '<textarea id="ck-ed-obs" rows="2" placeholder="Para Catalina (opcional)..." style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0;font-size:12px;font-family:inherit;resize:vertical"></textarea>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid #c7d2fe">' +
+        '<a href="javascript:void(0)" onclick="ckGuardarEditor('+itemId+',false)" style="font-size:11px;color:#475569;text-decoration:underline;cursor:pointer">solo guardar</a>' +
+        '<button onclick="ckCerrarEditor('+itemId+')" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>' +
+        '<button onclick="ckGuardarEditor('+itemId+',true)" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer">💾 Guardar y enviar a Catalina</button>' +
+      '</div>' +
+    '</div></td></tr>';
+
+  // Reemplazar loader con editor real
+  var loader = document.getElementById('ck-edit-'+itemId);
+  if(loader) loader.outerHTML = editor;
   ckEditorFiltrar();
+}
+
+function ckCerrarEditor(itemId){
+  var r = document.getElementById('ck-edit-'+itemId);
+  if(r) r.remove();
+  window._ckEdSelected = null;
 }
 
 function ckEditorFiltrar(){
@@ -5598,20 +5643,49 @@ function ckEdSeleccionar(codigo){
   }
 }
 
-async function ckGuardarEditor(itemId){
+// Guarda la elección + (opcional) dispara solicitud a Catalina en una sola acción.
+// enviarACompras=true → asignar-mee + solicitar-produccion en cadena.
+// enviarACompras=false → solo asignar-mee (preparar sin enviar todavía).
+async function ckGuardarEditor(itemId, enviarACompras){
   var codigo = window._ckEdSelected;
   if(!codigo){ alert('Selecciona un material primero.'); return; }
   var cant = parseFloat(document.getElementById('ck-ed-cant').value||0);
+  if(!(cant > 0)){ alert('Ingresa una cantidad mayor a 0.'); return; }
   var decoEl = document.getElementById('ck-ed-deco');
   var deco = decoEl ? (decoEl.value||'') : '';
+  var fechaEl = document.getElementById('ck-ed-fecha');
+  var fecha = fechaEl ? (fechaEl.value||'') : '';
+  var obsEl = document.getElementById('ck-ed-obs');
+  var obs = obsEl ? (obsEl.value||'').trim() : '';
   try {
-    var r = await fetch('/api/programacion/checklist/items/'+itemId+'/asignar-mee', {
+    // Paso 1: guardar selección de material (asignar-mee)
+    var r1 = await fetch('/api/programacion/checklist/items/'+itemId+'/asignar-mee', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({mee_codigo: codigo, cantidad_unidades: cant, decoracion_tipo: deco})
     });
-    var d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-    document.getElementById('ck-editor-modal').remove();
+    var d1 = await r1.json();
+    if(!r1.ok){ alert('Error al guardar: '+(d1.error||r1.status)); return; }
+
+    // Paso 2 (opcional): enviar a la cola de Catalina
+    if(enviarACompras){
+      var r2 = await fetch('/api/programacion/checklist/items/'+itemId+'/solicitar-produccion', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({fecha_objetivo: fecha, observaciones: obs})
+      });
+      var d2 = await r2.json();
+      if(!r2.ok){
+        alert('Guardado, pero falló envío a Catalina: '+(d2.error||r2.status));
+      } else {
+        var msg = d2.ya_existia
+          ? 'Ya estaba en cola de Catalina (SP-'+d2.solicitud_id+')'
+          : '✓ Enviada a Catalina · SP-'+d2.solicitud_id+' · ver en /compras';
+        _toast(msg, 1);
+      }
+    } else {
+      _toast('✓ Selección guardada (no enviada todavía)', 1);
+    }
+
+    ckCerrarEditor(itemId);
     if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
   } catch(e){ alert('Error: '+e.message); }
 }
