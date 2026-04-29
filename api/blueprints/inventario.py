@@ -299,10 +299,64 @@ def _shopify_creds(conn):
     return rt[0], rs[0]
 
 
+def _normalizar_nombre(s):
+    """Normaliza para fuzzy match: lowercase, sin acentos, sin %  +%, etc."""
+    import unicodedata
+    s = (s or '').strip().lower()
+    s = unicodedata.normalize('NFD', s)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')  # sin acentos
+    # quitar puntuacion + extra spaces
+    import re as _re
+    s = _re.sub(r'[^a-z0-9\s]', ' ', s)
+    s = _re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
+_SHOPIFY_CATALOG_CACHE = {'data': None, 'fetched_at': 0}
+
+
+def _shopify_get_all_products(token, shop, timeout=20):
+    """Lista todos los productos de Shopify (con cache 5 min)."""
+    import time as _t, urllib.request, json as _json
+    now = _t.time()
+    if _SHOPIFY_CATALOG_CACHE['data'] and (now - _SHOPIFY_CATALOG_CACHE['fetched_at']) < 300:
+        return _SHOPIFY_CATALOG_CACHE['data']
+    products = []
+    page_url = f"https://{shop}/admin/api/2024-01/products.json?limit=250"
+    try:
+        for _ in range(10):  # max 10 paginas (~2500 productos)
+            req = urllib.request.Request(
+                page_url,
+                headers={'X-Shopify-Access-Token': token}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = _json.loads(resp.read().decode('utf-8'))
+                link_header = resp.headers.get('Link', '')
+            page_products = data.get('products', [])
+            products.extend(page_products)
+            # Buscar next page en Link header
+            if 'rel="next"' not in link_header:
+                break
+            import re as _re
+            m = _re.search(r'<([^>]+)>;\s*rel="next"', link_header)
+            if not m:
+                break
+            page_url = m.group(1)
+    except Exception:
+        pass
+    _SHOPIFY_CATALOG_CACHE['data'] = products
+    _SHOPIFY_CATALOG_CACHE['fetched_at'] = now
+    return products
+
+
 def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout=10):
     """Sync de UN producto desde Shopify a formula_headers.
 
-    Reutilizable para sync individual o masivo. No requiere session.
+    Estrategia de match (en orden):
+      1. ?title=<nombre> exacto
+      2. Match contra catalogo completo por nombre normalizado (sin acentos)
+      3. Substring contains en titles del catalogo
+
     Devuelve dict {ok, ...} o {error, ...}.
     """
     if not token or not shop:
@@ -311,17 +365,52 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
         return {'error': 'Shopify no configurado'}
     import urllib.request, urllib.parse, json as _json, re as _re
     base = f"https://{shop}/admin/api/2024-01/products.json"
+
+    # Estrategia 1: title exacto
     qs = urllib.parse.urlencode({'title': producto_nombre, 'limit': 5})
     req = urllib.request.Request(
         f"{base}?{qs}",
         headers={'X-Shopify-Access-Token': token}
     )
+    products = []
     try:
         resp = urllib.request.urlopen(req, timeout=timeout)
         data = _json.loads(resp.read().decode('utf-8'))
-    except Exception as e:
-        return {'error': f'Shopify API: {e}'}
-    products = data.get('products', [])
+        products = data.get('products', []) or []
+    except Exception:
+        pass
+
+    # Estrategia 2-3: si no hubo match exacto, traer catalogo completo y matchear
+    matched_strategy = 'exact'
+    if not products:
+        all_products = _shopify_get_all_products(token, shop, timeout=20)
+        target_norm = _normalizar_nombre(producto_nombre)
+        # 2. Normalizado igual
+        for p in all_products:
+            if _normalizar_nombre(p.get('title', '')) == target_norm:
+                products = [p]
+                matched_strategy = 'normalized_eq'
+                break
+        # 3. Substring contains
+        if not products:
+            target_words = set(target_norm.split())
+            best = None; best_score = 0
+            for p in all_products:
+                cand_norm = _normalizar_nombre(p.get('title', ''))
+                cand_words = set(cand_norm.split())
+                if not cand_words:
+                    continue
+                # Jaccard score
+                inter = target_words & cand_words
+                if not inter:
+                    continue
+                score = len(inter) / max(len(target_words), len(cand_words))
+                if score > best_score and score >= 0.5:  # al menos 50% de overlap
+                    best = p; best_score = score
+            if best:
+                products = [best]
+                matched_strategy = f'fuzzy_{best_score:.2f}'
+
     if not products:
         return {'error': f'No encontrado en Shopify: "{producto_nombre}"', 'not_found': True}
 
@@ -505,6 +594,98 @@ def imagen_producto_proxy(producto_nombre):
     # Cache navegador: 1h. Si re-syncamos en BD, el bumpeo de URL cambia el cache key
     resp.headers['Cache-Control'] = 'public, max-age=3600'
     return resp
+
+
+@bp.route('/api/formulas/catalogo', methods=['GET'])
+def formulas_catalogo():
+    """Lista todos los productos de formula_headers con su estado de sync.
+
+    Útil para ver de un vistazo cuáles tienen foto y cuáles no, y forzar
+    sync de los pendientes.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT producto_nombre,
+               COALESCE(imagen_url,''),
+               COALESCE(sku_principal,''),
+               COALESCE(precio_venta,0),
+               COALESCE(shopify_handle,''),
+               COALESCE(shopify_synced_at,'')
+        FROM formula_headers
+        ORDER BY
+          CASE WHEN COALESCE(imagen_url,'')='' THEN 0 ELSE 1 END,
+          producto_nombre
+    """).fetchall()
+    productos = []
+    for r in rows:
+        productos.append({
+            'nombre': r[0],
+            'imagen_url':       r[1],
+            'sku':              r[2],
+            'precio':           float(r[3] or 0),
+            'shopify_handle':   r[4],
+            'sincronizado':     bool(r[5]),
+            'synced_at':        r[5],
+            'tiene_foto':       bool(r[1]),
+        })
+    con_foto = sum(1 for p in productos if p['tiene_foto'])
+    sin_foto = len(productos) - con_foto
+    return jsonify({
+        'productos': productos,
+        'total': len(productos),
+        'con_foto': con_foto,
+        'sin_foto': sin_foto,
+    })
+
+
+@bp.route('/api/formulas/sync-shopify-blocking', methods=['POST'])
+def sync_shopify_blocking():
+    """Sincroniza TODOS los productos pendientes de forma SINCRONA y devuelve
+    el resultado por producto. Usar para 'sync ahora' con feedback inmediato.
+
+    Querystring: ?force=1 para re-sincronizar incluso los ya sincronizados.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    token, shop = _shopify_creds(conn)
+    if not token or not shop:
+        return jsonify({'error': 'Shopify no configurado en animus_config'}), 400
+    force = request.args.get('force', '0') == '1'
+
+    where = "" if force else "WHERE COALESCE(shopify_synced_at,'') = '' OR shopify_synced_at < datetime('now', '-24 hours')"
+    rows = conn.execute(
+        f"SELECT producto_nombre FROM formula_headers {where} LIMIT 200"
+    ).fetchall()
+    resultados = {'ok': [], 'no_encontrados': [], 'errores': []}
+    import time as _t
+    for (prod,) in rows:
+        try:
+            res = _shopify_sync_producto(conn, prod, token, shop, timeout=12)
+        except Exception as e:
+            resultados['errores'].append({'producto': prod, 'error': str(e)})
+            continue
+        if res.get('ok'):
+            resultados['ok'].append({
+                'producto': prod,
+                'imagen': bool(res.get('imagen_url')),
+                'sku': res.get('sku', ''),
+            })
+        elif res.get('not_found'):
+            resultados['no_encontrados'].append(prod)
+        else:
+            resultados['errores'].append({'producto': prod, 'error': res.get('error','')})
+        _t.sleep(0.5)  # throttle Shopify rate limit (~2 req/s)
+    return jsonify({
+        'ok': True,
+        'procesados': len(rows),
+        'sincronizados': len(resultados['ok']),
+        'no_encontrados': len(resultados['no_encontrados']),
+        'errores': len(resultados['errores']),
+        'detalle': resultados,
+    })
 
 
 @bp.route('/api/formulas/sync-shopify-all', methods=['POST'])

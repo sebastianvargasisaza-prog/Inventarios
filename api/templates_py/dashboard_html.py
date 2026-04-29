@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos8">
+<link rel="stylesheet" href="/static/cortex.css?v=eos9">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -4837,6 +4837,19 @@ function _renderProgramacion(d){
 
     <div id="ck-resumen-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px"></div>
 
+    <!-- Catálogo de productos con foto (sync masivo Shopify) -->
+    <details id="catalogo-productos" style="margin-bottom:20px;background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px">
+      <summary style="cursor:pointer;font-weight:700;color:#1c1917;display:flex;align-items:center;gap:10px;list-style:none;flex-wrap:wrap">
+        <span style="font-size:16px">📸 Catálogo de productos</span>
+        <span id="cat-resumen" style="font-size:12px;color:#78716c;font-weight:500">cargando...</span>
+        <span style="flex:1"></span>
+        <button onclick="event.preventDefault();event.stopPropagation();syncShopifyAll()" id="btn-sync-all" style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae fotos + SKU + descripción + precio de Shopify para todos los productos pendientes">🔄 Sincronizar todos</button>
+      </summary>
+      <div id="cat-grid" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
+        <div style="grid-column:1/-1;text-align:center;color:#a8a29e;padding:20px;font-size:12px">Cargando catálogo...</div>
+      </div>
+    </details>
+
     <div id="ck-loading" style="display:none;text-align:center;padding:40px;color:#15803d;font-weight:600">Cargando producciones programadas...</div>
     <div id="ck-empty" style="display:none;text-align:center;padding:40px;color:#666;background:#fafaf9;border:1px dashed #d6d3d1;border-radius:10px;">
       <div style="font-size:36px;margin-bottom:8px">&#x1F5D3;&#xFE0F;</div>
@@ -4867,6 +4880,8 @@ function _renderProgramacion(d){
 
 <script>
 async function cargarChecklistResumen(dias){
+  // Cargar catalogo de productos en paralelo (no bloquea)
+  if(typeof cargarCatalogoProductos==='function') cargarCatalogoProductos();
   if(dias){
     document.querySelectorAll('[id^=ck-h-]').forEach(b=>{
       var match = b.id.match(/ck-h-(\\d+)/);
@@ -4968,6 +4983,91 @@ async function ckBackfill(){
 // Sincroniza eventos del Google Calendar (animuslb.com) → produccion_programada.
 // Idempotente: usa (producto, fecha) como key. Auto-llamado al cargar el
 // resumen, pero este boton da trigger manual + feedback visible.
+// ─── Catálogo de productos con foto (sync masivo Shopify) ────────────
+async function cargarCatalogoProductos(){
+  try {
+    var r = await fetch('/api/formulas/catalogo');
+    var d = await r.json();
+    if(!r.ok){ return; }
+    var resumen = document.getElementById('cat-resumen');
+    if(resumen){
+      resumen.innerHTML = '<b style="color:#15803d">'+d.con_foto+'</b> con foto · '+
+                          '<b style="color:#dc2626">'+d.sin_foto+'</b> sin foto · '+
+                          d.total+' total';
+    }
+    var grid = document.getElementById('cat-grid');
+    if(!grid) return;
+    if(!d.productos || !d.productos.length){
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#a8a29e;padding:20px;font-size:12px">No hay productos en formula_headers</div>';
+      return;
+    }
+    grid.innerHTML = d.productos.map(function(p){
+      var proxyUrl = '/api/imagen-producto/'+encodeURIComponent(p.nombre)+'?t='+Date.now();
+      var fotoHtml;
+      if(p.tiene_foto){
+        fotoHtml = '<img src="'+proxyUrl+'" alt="'+_escHTML(p.nombre)+'" '+
+                   'style="width:100%;height:120px;object-fit:cover;border-radius:6px;background:#f5f5f4" '+
+                   'onerror="this.style.opacity=0.3">';
+      } else {
+        fotoHtml = '<div style="height:120px;background:#fef2f2;border:1px dashed #fca5a5;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#dc2626;font-size:11px;font-weight:600">Sin foto</div>';
+      }
+      var skuLine = p.sku ? '<div style="font-size:10px;color:#0f766e;font-weight:600">'+_escHTML(p.sku)+'</div>' : '';
+      return '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:8px;cursor:pointer" '+
+             'onclick="catProductoClick(&quot;'+_escHTML(p.nombre).replace(/"/g,'&quot;')+'&quot;)" '+
+             'title="Click para gestionar imagen">' +
+        fotoHtml +
+        '<div style="margin-top:6px;font-size:11px;font-weight:700;color:#1c1917;line-height:1.3;min-height:30px">'+_escHTML(p.nombre)+'</div>' +
+        skuLine +
+        '</div>';
+    }).join('');
+  } catch(e){
+    console.error('catalogo:', e);
+  }
+}
+
+async function syncShopifyAll(){
+  var btn = document.getElementById('btn-sync-all');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
+  try {
+    var r = await fetch('/api/formulas/sync-shopify-blocking', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var msg = '✅ '+d.sincronizados+' sincronizados';
+    if(d.no_encontrados) msg += ' · ⚠️ '+d.no_encontrados+' no encontrados en Shopify';
+    if(d.errores) msg += ' · ❌ '+d.errores+' errores';
+    alert(msg);
+    cargarCatalogoProductos();
+  } catch(e){
+    alert('Error de red: '+e.message);
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = '🔄 Sincronizar todos'; }
+  }
+}
+
+async function catProductoClick(nombre){
+  var url = prompt('URL de imagen para "'+nombre+'" (vacío = sync Shopify):', '');
+  if(url===null) return;
+  url = (url||'').trim();
+  if(url){
+    try {
+      var r = await fetch('/api/formulas/'+encodeURIComponent(nombre)+'/imagen', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({imagen_url: url})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    } catch(e){ alert('Error: '+e.message); return; }
+  } else {
+    // Sync Shopify del producto puntual
+    try {
+      var r = await fetch('/api/formulas/'+encodeURIComponent(nombre)+'/imagen-shopify-sync', {method:'POST'});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    } catch(e){ alert('Error: '+e.message); return; }
+  }
+  cargarCatalogoProductos();
+}
+
 async function ckSyncCalendario(){
   try {
     var r = await fetch('/api/programacion/checklist/sync-calendar?dias=90', {method:'POST'});
