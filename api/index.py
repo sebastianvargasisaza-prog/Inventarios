@@ -327,10 +327,24 @@ def _unhandled_exception(e):
         }, ensure_ascii=False))
     except Exception:
         pass
-    return jsonify({
+    # Incluir tipo + traceback en la respuesta SOLO si el usuario es admin
+    # (asi Sebastian/Alejandro pueden diagnosticar 500s sin tener que abrir
+    # los logs de Render). Para usuarios normales, mensaje genérico.
+    user = session.get("compras_user", "")
+    is_admin = user in ADMIN_USERS if 'ADMIN_USERS' in globals() else False
+    payload = {
         "error": "Error interno del servidor",
         "request_id": rid,
-    }), 500
+    }
+    if is_admin:
+        payload["error"] = f"{type(e).__name__}: {str(e)[:500]}"
+        payload["tipo"] = type(e).__name__
+        payload["mensaje"] = str(e)[:500]
+        payload["fase"] = "errorhandler_global"
+        payload["traceback"] = _tb.format_exc()[-2500:]
+        payload["path"] = request.path
+        payload["method"] = request.method
+    return jsonify(payload), 500
 
 
 @app.route('/api/health')
