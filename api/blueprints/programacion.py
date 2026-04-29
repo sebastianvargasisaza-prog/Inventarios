@@ -2066,6 +2066,71 @@ def prog_cancelar_evento(evento_id):
     return jsonify({'ok': True, 'id': evento_id})
 
 
+@bp.route('/api/programacion/produccion-programada/listado', methods=['GET'])
+def listado_produccion_programada():
+    """Lista todas las producciones programadas activas con su origen,
+    para diagnostico de producciones fantasma. Sebastian lo necesita
+    cuando ve algo en el horizonte que no recuerda haber programado."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               pp.estado, COALESCE(pp.origen,'manual') as origen,
+               pp.observaciones,
+               COALESCE(pp.lotes,1) * COALESCE(fh.lote_size_kg,0) as kg
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+        WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+          AND pp.fecha_programada >= date('now','-7 day')
+        ORDER BY pp.fecha_programada ASC, pp.id ASC
+    """).fetchall()
+    cols = [d[0] for d in conn.execute(
+        "SELECT 1 as id, '' as producto, '' as fecha_programada, 1 as lotes,"
+        " '' as estado, '' as origen, '' as observaciones, 0.0 as kg "
+        "WHERE 0"
+    ).description]
+    out = [dict(zip(cols, r)) for r in rows]
+    return jsonify({'producciones': out, 'total': len(out)})
+
+
+@bp.route('/api/programacion/produccion-programada/<int:evento_id>/borrar', methods=['DELETE'])
+def borrar_produccion_programada(evento_id):
+    """Borra una produccion programada (HARD DELETE, no solo cancelar).
+    Solo admin. Usado para limpiar fantasmas que aparecen en el horizonte
+    sin razon (ej. una entrada manual antigua que sobrevivio)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    # Importar lista de admins desde compras (misma fuente de verdad)
+    try:
+        from blueprints.compras import ADMIN_USERS as _ADMIN
+    except Exception:
+        _ADMIN = ('sebastian', 'alejandro')
+    if user not in _ADMIN:
+        return jsonify({'error': 'Solo admin puede borrar'}), 403
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT producto, fecha_programada, COALESCE(origen,'manual') "
+        "FROM produccion_programada WHERE id=?",
+        (evento_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Produccion no encontrada'}), 404
+    # Tambien borrar items de checklist huerfanos asociados
+    try:
+        c.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (evento_id,))
+    except sqlite3.OperationalError:
+        pass
+    c.execute("DELETE FROM produccion_programada WHERE id=?", (evento_id,))
+    conn.commit()
+    return jsonify({
+        'ok': True, 'id': evento_id,
+        'producto': row[0], 'fecha': row[1], 'origen': row[2],
+        'mensaje': f'Produccion {row[0]} ({row[1]}) borrada definitivamente',
+    })
+
+
 @bp.route('/api/programacion/programar/<int:evento_id>/completar', methods=['POST'])
 def prog_completar_evento(evento_id):
     """Mark a production event as completed."""
@@ -4367,8 +4432,54 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
             break  # un evento → un producto match
     if inserted:
         conn.commit()
+
+    # ── Sync BIDIRECCIONAL ─────────────────────────────────────────────
+    # Marcar como 'cancelado' las filas con origen='calendar' cuya
+    # (producto, fecha_programada) YA NO existe en el calendar — es decir,
+    # Sebastian las borro o movio en Google Calendar y aqui quedaron de
+    # huerfanas. Si NO hacemos esto, el horizonte del checklist mostrara
+    # producciones fantasma que ya no estan programadas.
+    # Solo toca origen='calendar' — las manuales (origen NULL/manual) NO
+    # se tocan jamas porque no tienen contraparte en el calendar.
+    archived = 0
+    try:
+        # Set de (producto, fecha) que SI existen actualmente en calendar
+        keys_calendar = set()
+        for ev in events:
+            tlow = ev.get('titulo', '').lower()
+            if any(kw in tlow for kw in NON_FAB_KW):
+                continue
+            fecha_s = ev.get('fecha', '')
+            if not fecha_s:
+                continue
+            for sku in _skus(ev.get('titulo', '')):
+                prod = sku_to_prod.get(sku)
+                if prod and prod in formulas:
+                    keys_calendar.add((prod, fecha_s))
+                    break
+        # Filas activas con origen='calendar' que NO estan en el calendar actual
+        candidatos = conn.execute(
+            "SELECT id, producto, fecha_programada FROM produccion_programada "
+            "WHERE origen='calendar' "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "AND fecha_programada >= date('now','-1 day')"
+        ).fetchall()
+        huerfanos = [r[0] for r in candidatos if (r[1], r[2]) not in keys_calendar]
+        if huerfanos:
+            placeholders = ','.join(['?'] * len(huerfanos))
+            conn.execute(
+                f"UPDATE produccion_programada SET estado='cancelado', "
+                f"observaciones=COALESCE(observaciones,'') || ' [auto-cancelado: ya no esta en calendar]' "
+                f"WHERE id IN ({placeholders})",
+                huerfanos
+            )
+            archived = len(huerfanos)
+            conn.commit()
+    except Exception:
+        archived = 0
+
     # Registrar timestamp del sync (independiente de si hubo nuevas)
-    _record_sync(conn, 'calendar', inserted, error=cal.get('error'))
+    _record_sync(conn, 'calendar', inserted + archived, error=cal.get('error'))
     return inserted
 
 

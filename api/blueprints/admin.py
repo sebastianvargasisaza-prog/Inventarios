@@ -6823,3 +6823,216 @@ cargar();
 </script>
 </body></html>"""
     return Response(html, mimetype="text/html")
+
+
+# ════════════════════════════════════════════════════════════════════════
+# IMPORT INVENTARIO ENVASE — formato real de Sebastian (29-abr-2026)
+# Excel con hojas ENVASES / GOTEROS / TAPAS / ETIQUETAS / PLEGADIZAS,
+# header en fila 4 (col F=tipo, G=PRESENTACION, H=CANTIDAD, Q=TOTAL).
+# La columna TOTAL es el inventario actual real.
+# ════════════════════════════════════════════════════════════════════════
+
+def _slug_codigo(nombre, presentacion):
+    """Genera un codigo MEE consistente: tipo + slug nombre + presentacion.
+    Ej: 'FRASCO AMBAR ' + '125ml' → 'AMBAR-125'.
+    """
+    import re as _re
+    s = (nombre or '').upper().strip()
+    s = _re.sub(r'[^A-Z0-9 ]', '', s)
+    s = _re.sub(r'\s+', ' ', s).strip()
+    # Quitar palabras genericas comunes
+    GENERIC = {'FRASCO', 'ENVASE', 'BOTTLE', 'PLASTIC', 'TAPA', 'GOTERO'}
+    tokens = [t for t in s.split() if t not in GENERIC]
+    base = '-'.join(tokens)[:30] if tokens else s.replace(' ', '-')[:30]
+    pres = (presentacion or '').upper().strip().replace(' ', '').replace('ML', '').replace('MM', '')
+    pres = _re.sub(r'[^A-Z0-9/]', '', pres)
+    if pres:
+        return f'{base}-{pres}'.strip('-')
+    return base or 'MEE-X'
+
+
+@bp.route("/api/admin/import-inventario-envase-xlsx", methods=["POST"])
+def admin_import_inventario_envase_xlsx():
+    """Importa el Excel INVENTARIO ENVASE.xlsx de Sebastian a maestro_mee.
+
+    Sebastian (29-abr-2026): "@INVENTARIO ENVASE.xlsx... mira allí están los
+    datos reales con inventario actual donde dice TOTAL... resuelve eso por
+    favor, ya sea que elimines y montes o normalices".
+
+    Body: multipart/form-data con 'file' = .xlsx
+    Query: ?dry_run=1 para preview sin escribir
+           ?modo=upsert (default) | reset_envases (borra todos los items
+                                    categoria='Envases' antes de importar)
+
+    Lee 3 hojas estructuradas: ENVASES, GOTEROS, TAPAS. Las hojas ETIQUETAS
+    y PLEGADIZAS tienen formato distinto y se ignoran (Sebastian las puede
+    cargar luego con otro formato).
+
+    Estructura esperada (header en fila 4, datos desde fila 6):
+      F: nombre del material
+      G: PRESENTACION (ej. 30ml, 89mm)
+      H: CANTIDAD (ingresos historicos — informativo, NO se usa para stock)
+      Q (col 17): TOTAL = stock actual real
+
+    Genera codigo automatico: tipo + slug(nombre) + presentacion.
+    Por cada fila: INSERT si no existe, UPDATE stock_actual si existe
+    (ajuste con auditoria en movimientos_mee).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+
+    dry_run = request.args.get('dry_run', '0') in ('1', 'true', 'True')
+    modo = (request.args.get('modo') or 'upsert').strip()
+
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return jsonify({'error': 'openpyxl no instalado'}), 500
+
+    try:
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({'error': f'Excel inválido: {e}'}), 400
+
+    # Mapeo hoja → categoria/prefijo
+    HOJAS = {
+        'ENVASES': ('Envases', 'ENV'),
+        'GOTEROS': ('Goteros', 'GOT'),
+        'TAPAS':   ('Tapas',   'TAP'),
+    }
+    items = []
+    detalles_por_hoja = {}
+    for sheet_name, (categoria, prefijo) in HOJAS.items():
+        if sheet_name not in wb.sheetnames:
+            detalles_por_hoja[sheet_name] = {'leidos': 0, 'skipped': 0, 'razon_skip': 'hoja no existe'}
+            continue
+        ws = wb[sheet_name]
+        leidos = 0; skipped = 0
+        for ri in range(6, ws.max_row + 1):
+            nombre = ws.cell(row=ri, column=6).value      # F
+            presentacion = ws.cell(row=ri, column=7).value  # G
+            total = ws.cell(row=ri, column=17).value      # Q
+            if not nombre:
+                continue
+            nombre_str = str(nombre).strip()
+            if not nombre_str:
+                continue
+            try:
+                stock = float(total) if total is not None else 0.0
+            except (ValueError, TypeError):
+                stock = 0.0
+                skipped += 1
+            pres_str = str(presentacion or '').strip()
+            slug = _slug_codigo(nombre_str, pres_str)
+            codigo = f'{prefijo}-{slug}'[:50]
+            descripcion_full = (
+                f'{nombre_str} {pres_str}'.strip()
+                if pres_str else nombre_str
+            )
+            items.append({
+                'codigo': codigo,
+                'descripcion': descripcion_full,
+                'categoria': categoria,
+                'unidad': 'und',
+                'stock': stock,
+                'sheet': sheet_name,
+                'row': ri,
+            })
+            leidos += 1
+        detalles_por_hoja[sheet_name] = {'leidos': leidos, 'skipped': skipped}
+
+    if not items:
+        return jsonify({'error': 'No se leyo ningun item de las hojas conocidas',
+                        'hojas_leidas': detalles_por_hoja}), 400
+
+    if dry_run:
+        return jsonify({
+            'ok': True, 'dry_run': True,
+            'total_items': len(items),
+            'hojas': detalles_por_hoja,
+            'preview': items[:8],
+            'mensaje': f'{len(items)} items detectados. Re-envia sin dry_run para escribir.',
+        })
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    insertados = 0; actualizados = 0; archivados = 0; ajustes_stock = 0
+
+    if modo == 'reset_envases':
+        # Archivar todos los items que NO van a venir en el import (de las
+        # 3 categorias afectadas). NO los borra — quedan auditables.
+        try:
+            cur = c.execute(
+                "UPDATE maestro_mee SET estado='Archivado' "
+                "WHERE categoria IN ('Envases','Goteros','Tapas') "
+                "AND COALESCE(estado,'Activo')='Activo'"
+            )
+            archivados = cur.rowcount or 0
+        except Exception:
+            pass
+
+    for it in items:
+        existing = c.execute(
+            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee WHERE codigo=?",
+            (it['codigo'],)
+        ).fetchone()
+        if existing:
+            stock_anterior = float(existing[1] or 0)
+            c.execute("""
+                UPDATE maestro_mee SET
+                  descripcion=?, categoria=?, unidad=?, stock_actual=?,
+                  estado='Activo'
+                WHERE codigo=?
+            """, (it['descripcion'], it['categoria'], it['unidad'],
+                  it['stock'], it['codigo']))
+            if abs(it['stock'] - stock_anterior) > 0.01:
+                try:
+                    c.execute("""
+                        INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+                        VALUES (?, 'Ajuste', ?, ?, ?)
+                    """, (it['codigo'], abs(it['stock']-stock_anterior), u,
+                          f'[Import INVENTARIO ENVASE.xlsx · {it["sheet"]}#{it["row"]}] '
+                          f'{stock_anterior:.0f} → {it["stock"]:.0f}'))
+                except sqlite3.OperationalError:
+                    pass
+                ajustes_stock += 1
+            actualizados += 1
+        else:
+            c.execute("""
+                INSERT INTO maestro_mee
+                  (codigo, descripcion, categoria, unidad, stock_actual,
+                   stock_minimo, estado, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?, 1000, 'Activo', datetime('now'))
+            """, (it['codigo'], it['descripcion'], it['categoria'],
+                  it['unidad'], it['stock']))
+            try:
+                c.execute("""
+                    INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+                    VALUES (?, 'Entrada', ?, ?, ?)
+                """, (it['codigo'], it['stock'], u,
+                      f'[Import inicial INVENTARIO ENVASE.xlsx · {it["sheet"]}#{it["row"]}]'))
+            except sqlite3.OperationalError:
+                pass
+            insertados += 1
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'modo': modo,
+        'total_items_archivo': len(items),
+        'insertados': insertados,
+        'actualizados': actualizados,
+        'ajustes_stock': ajustes_stock,
+        'archivados': archivados,
+        'hojas': detalles_por_hoja,
+        'mensaje': f'OK · {insertados} nuevos · {actualizados} actualizados · '
+                   f'{ajustes_stock} con cambio de stock'
+                   + (f' · {archivados} archivados (modo reset)' if archivados else ''),
+    })
