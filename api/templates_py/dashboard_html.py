@@ -5284,8 +5284,23 @@ async function ckBackfill(){
   try {
     var r = await fetch('/api/programacion/checklist/backfill', {method:'POST'});
     var d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
-    _toast(d.mensaje, 1);
+    if(!r.ok){
+      // Error en la fase de SELECT (ej. tabla rota) — mostrar detalle
+      console.error('backfill error:', d);
+      alert('Error: '+(d.error||r.status)+'\\n\\nDetalle en consola (F12).');
+      return;
+    }
+    if(d.fallas && d.fallas.length){
+      // Procesado parcial — listar las fallas
+      console.warn('backfill con fallas:', d.fallas);
+      var lista = d.fallas.slice(0, 5).map(function(f){
+        return '• '+(f.producto||'?')+' ('+(f.fecha||'')+')\\n  → '+(f.error||'').substring(0,150);
+      }).join('\\n');
+      alert(d.mensaje + '\\n\\nFallas (top 5 de '+d.fallas.length+'):\\n'+lista +
+            '\\n\\nDetalle completo en consola (F12).');
+    } else {
+      _toast(d.mensaje, 1);
+    }
     cargarChecklistResumen();
   } catch(e){ alert('Error: '+e.message); }
 }

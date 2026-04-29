@@ -4741,6 +4741,7 @@ def checklist_backfill():
     if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
         return jsonify({'error': 'Solo admins'}), 403
     conn = get_db(); c = conn.cursor()
+    rows = []
     try:
         rows = c.execute("""
             SELECT pp.id,
@@ -4754,25 +4755,55 @@ def checklist_backfill():
               AND NOT EXISTS (SELECT 1 FROM produccion_checklist
                               WHERE produccion_id=pp.id)
         """).fetchall()
-        total_creados = 0
-        producciones_procesadas = 0
-        for r in rows:
+    except Exception as e:
+        import traceback as _tb
+        return jsonify({
+            'error': f'Falla al listar producciones pendientes de checklist: {e}',
+            'fase': 'select_pendientes',
+            'traceback': _tb.format_exc()[-1500:],
+        }), 500
+
+    # Procesar cada produccion en su propio try/except — si una falla, las
+    # demas siguen. Asi el backfill no se aborta por un solo producto sin
+    # formula completa.
+    total_creados = 0
+    producciones_procesadas = 0
+    fallas = []
+    for r in rows:
+        try:
             items = _generar_checklist_produccion(
                 c, r[0], r[1], r[2], float(r[3] or 0),
                 generar_mps=True,
                 usuario=session.get('compras_user', 'sistema'))
             total_creados += items
             producciones_procesadas += 1
+        except Exception as e:
+            import traceback as _tb
+            fallas.append({
+                'produccion_id': r[0],
+                'producto': r[1],
+                'fecha': r[2],
+                'kg': r[3],
+                'error': str(e),
+                'traceback': _tb.format_exc()[-800:],
+            })
+    try:
         conn.commit()
-        return jsonify({
-            'ok': True,
-            'producciones_procesadas': producciones_procesadas,
-            'items_creados': total_creados,
-            'mensaje': f'{producciones_procesadas} producciones recibieron checklist '
-                       f'({total_creados} items totales)'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        pass
+    payload = {
+        'ok': len(fallas) == 0,
+        'producciones_procesadas': producciones_procesadas,
+        'items_creados': total_creados,
+        'producciones_pendientes': len(rows),
+        'fallas': fallas,
+        'mensaje': (f'{producciones_procesadas} producciones recibieron checklist '
+                    f'({total_creados} items totales)') if not fallas else (
+                    f'{producciones_procesadas}/{len(rows)} OK · '
+                    f'{len(fallas)} fallaron — ver "fallas" en la respuesta'),
+    }
+    # Devolver 200 incluso con fallas parciales (el frontend ve el detalle).
+    return jsonify(payload)
 
 
 # ════════════════════════════════════════════════════════════════════════
