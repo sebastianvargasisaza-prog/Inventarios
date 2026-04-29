@@ -4806,13 +4806,40 @@ function _renderProgramacion(d){
       warnBox.style.display = 'block';
       warnBox.innerHTML = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:14px;">'
         + '<div style="font-weight:700;color:#856404;margin-bottom:8px;font-size:13px;">⚠️ ' + ws.length + ' advertencia(s) de integridad de datos</div>'
-        + ws.map(function(w){
+        + ws.map(function(w, idx){
             var color = w.severidad === 'alta' ? '#c00' : (w.severidad === 'media' ? '#856404' : '#666');
-            var prods = w.productos ? '<div style="font-size:11px;color:#555;margin-top:3px;">Productos: ' + w.productos.slice(0,5).join(', ') + (w.productos.length > 5 ? ', +' + (w.productos.length-5) + ' más' : '') + '</div>' : '';
-            return '<div style="font-size:12px;color:'+color+';padding:6px 0;border-top:1px dashed #e0d8a8;">'
+            var prods = '';
+            if(w.productos && w.productos.length){
+              prods = '<div style="font-size:11px;color:#555;margin-top:6px"><b>Productos afectados:</b> '
+                    + w.productos.slice(0,5).map(function(p){
+                        return '<span style="background:#fef3c7;padding:2px 7px;border-radius:6px;color:#1c1917;font-weight:600;font-size:11px">'+_escHTML(p)+'</span>';
+                      }).join(' ')
+                    + (w.productos.length > 5 ? ' +'+(w.productos.length-5)+' más' : '')
+                    + ' <a href="/tecnica" target="_blank" style="color:#7c3aed;text-decoration:underline;margin-left:6px;font-weight:600">→ Ir a /tecnica</a>'
+                    + '</div>';
+            }
+            // Detalle de alias_collision: mostrar variantes con boton para fusionar
+            var detalleHtml = '';
+            if(w.tipo === 'alias_collision' && w.detalle && w.detalle.length){
+              detalleHtml = '<div style="margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px">'
+                + '<div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:5px">🔍 MPs que colisionan:</div>'
+                + w.detalle.map(function(g){
+                    var vlist = (g.variantes||[]).map(function(v){
+                      return '<li style="margin:3px 0"><span style="font-family:monospace;font-size:11px;background:#fef3c7;padding:1px 6px;border-radius:4px;color:#1c1917">'+_escHTML(v.codigo)+'</span> <span style="font-size:11px">'+_escHTML(v.nombre)+'</span></li>';
+                    }).join('');
+                    return '<div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px dashed #fde68a">'
+                      + '<div style="font-size:10px;color:#78716c;margin-bottom:3px">Normalizado: <code style="background:#fff;padding:1px 5px;border-radius:3px">'+_escHTML(g.normalizado)+'</code></div>'
+                      + '<ul style="margin:0;padding-left:18px">'+vlist+'</ul>'
+                      + '</div>';
+                  }).join('')
+                + '<div style="font-size:11px;color:#475569;margin-top:6px"><b>Cómo arreglar:</b> Decide cuál nombre es el canónico, edita el otro en <a href="/inventarios" target="_blank" style="color:#7c3aed;font-weight:600">Bodega MP → Limpiar proveedores</a> o ajusta los nombres en <code>maestro_mps</code> para que sean idénticos cuando son el mismo producto.</div>'
+                + '</div>';
+            }
+            return '<div style="font-size:12px;color:'+color+';padding:8px 0;border-top:1px dashed #e0d8a8;">'
               + '<strong>['+w.tipo+']</strong> ' + w.mensaje
               + (w.accion ? '<div style="font-size:11px;color:#666;font-style:italic;margin-top:2px;">→ ' + w.accion + '</div>' : '')
               + prods
+              + detalleHtml
               + '</div>';
           }).join('')
         + '</div>';
