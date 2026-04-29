@@ -2139,6 +2139,73 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """CREATE INDEX IF NOT EXISTS idx_compmejora_empleado ON rh_compromisos_mejora(empleado_id, estado)""",
         """CREATE INDEX IF NOT EXISTS idx_compmejora_evento ON rh_compromisos_mejora(evento_origen_id)""",
     ]),
+    (49, "chat interno EOS — threads, messages, presence (Fase 1 WhatsApp-style)", [
+        # Sebastian (29-abr-2026): "compromisos y chat desaparezca como esta y
+        # se convierta en algo como un lateral chat estilo whatsapp donde
+        # tu nombre arriba, las personas conectadas, asignar tareas, etc."
+        # Fase 1: chat 1-a-1 + grupos + broadcast + presencia online.
+        # Las tareas/compromisos se asignan via /tareas-operativas existente
+        # (mensaje tipo='tarea' linkea a tarea_operativa_id).
+
+        # 1) Threads (conversaciones): 1-a-1, grupo, broadcast
+        """CREATE TABLE IF NOT EXISTS chat_threads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL CHECK(tipo IN ('directo','grupo','broadcast')),
+            nombre TEXT DEFAULT '',
+            creado_por TEXT NOT NULL,
+            creado_en TEXT DEFAULT (datetime('now')),
+            ultimo_mensaje_id INTEGER,
+            ultimo_mensaje_en TEXT,
+            ultimo_mensaje_preview TEXT DEFAULT '',
+            activo INTEGER DEFAULT 1
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_threads_actividad ON chat_threads(activo, ultimo_mensaje_en DESC)""",
+
+        # 2) Members: quien participa de cada thread
+        """CREATE TABLE IF NOT EXISTS chat_thread_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thread_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            rol TEXT DEFAULT 'miembro',
+            silenciado INTEGER DEFAULT 0,
+            ultimo_leido_id INTEGER DEFAULT 0,
+            agregado_en TEXT DEFAULT (datetime('now')),
+            UNIQUE(thread_id, username)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_members_user ON chat_thread_members(username)""",
+        """CREATE INDEX IF NOT EXISTS idx_members_thread ON chat_thread_members(thread_id)""",
+
+        # 3) Messages: el contenido
+        """CREATE TABLE IF NOT EXISTS chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thread_id INTEGER NOT NULL,
+            sender TEXT NOT NULL,
+            contenido TEXT NOT NULL,
+            tipo_mensaje TEXT DEFAULT 'texto'
+              CHECK(tipo_mensaje IN ('texto','tarea','compromiso','archivo','imagen','sistema','llamado_atencion')),
+            metadata_json TEXT DEFAULT '{}',
+            tarea_operativa_id INTEGER,
+            compromiso_id INTEGER,
+            reply_to_id INTEGER,
+            creado_en TEXT DEFAULT (datetime('now')),
+            editado_en TEXT,
+            eliminado INTEGER DEFAULT 0
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_msgs_thread ON chat_messages(thread_id, creado_en DESC)""",
+        """CREATE INDEX IF NOT EXISTS idx_msgs_sender ON chat_messages(sender)""",
+
+        # 4) Presence: heartbeat de usuarios conectados
+        """CREATE TABLE IF NOT EXISTS chat_user_presence (
+            username TEXT PRIMARY KEY,
+            last_heartbeat TEXT,
+            estado TEXT DEFAULT 'desconectado'
+              CHECK(estado IN ('conectado','ausente','desconectado')),
+            last_thread_visto INTEGER,
+            display_name TEXT DEFAULT '',
+            avatar_color TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_presence_estado ON chat_user_presence(estado, last_heartbeat DESC)""",
+    ]),
     (47, "checklist editable + solicitudes de produccion + tareas operativas", [
         # Sebastian (29-abr-2026): el modal del checklist Pre-Produccion debe
         # tener cada item editable (dropdown de maestro_mee), cantidad

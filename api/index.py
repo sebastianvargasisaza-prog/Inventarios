@@ -176,6 +176,7 @@ from blueprints.comunicacion import bp as comunicacion_bp
 from blueprints.contabilidad import bp as contabilidad_bp
 from blueprints.programacion import bp as programacion_bp
 from blueprints.admin import bp as admin_bp
+from blueprints.chat import bp as chat_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -196,6 +197,7 @@ app.register_blueprint(comunicacion_bp)
 app.register_blueprint(contabilidad_bp)
 app.register_blueprint(programacion_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(chat_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
