@@ -97,13 +97,32 @@ def get_inventario():
     c = conn.cursor()
     c.execute('SELECT COUNT(*) FROM movimientos')
     mov = c.fetchone()[0]
+    # NOTA 28-abr-2026 (Sebastian): "producciones" (histórico) vs
+    # "produccion_programada" (futuro) eran confusas en el dashboard.
+    # Antes el KPI mostraba SOLO el histórico (9 producciones realizadas)
+    # pero el usuario esperaba ver las futuras (que el checklist verifica).
+    # Ahora devolvemos AMBAS para que el dashboard distinga.
     c.execute('SELECT COUNT(*) FROM producciones')
-    prod = c.fetchone()[0]
+    prod_historico = c.fetchone()[0]
+    # Próximas a producir: programadas activas en próximos 60 días
+    try:
+        c.execute("""
+            SELECT COUNT(*) FROM produccion_programada
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+              AND fecha_programada >= date('now','-1 day')
+              AND fecha_programada <= date('now','+60 day')
+        """)
+        prod_proximas = c.fetchone()[0]
+    except Exception:
+        prod_proximas = 0
     c.execute('SELECT COUNT(*) FROM alertas')
     alrt = c.fetchone()[0]
     c.execute('SELECT COALESCE(SUM(CASE WHEN tipo="Entrada" THEN cantidad ELSE -cantidad END),0) FROM movimientos')
     stock = c.fetchone()[0]
-    return jsonify({'total_items': mov, 'movimientos': mov, 'producciones': prod,
+    return jsonify({'total_items': mov, 'movimientos': mov,
+                    'producciones': prod_historico,
+                    'producciones_historico': prod_historico,
+                    'producciones_proximas': prod_proximas,
                     'alertas': alrt, 'stock_total': round(stock, 2)})
 
 @bp.route('/api/formulas', methods=['GET', 'POST'])

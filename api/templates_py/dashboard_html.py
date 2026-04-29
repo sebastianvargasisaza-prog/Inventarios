@@ -298,7 +298,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
       <div class="card"><h3>Lotes en Bodega</h3><p id="materiales-count">-</p></div>
       <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
-      <div class="card"><h3>Producciones</h3><p id="producciones-count">-</p></div>
+      <div class="card" style="cursor:pointer;" onclick="switchTab('programacion');" title="Click para ver Programación / Checklist">
+        <h3>Próximas a producir <span style="font-size:9px;color:#94a3b8;font-weight:500;">60d</span></h3>
+        <p id="producciones-proximas-count" style="color:#16a34a;">-</p>
+        <div style="font-size:10px;color:#78716c;margin-top:-2px;">
+          Histórico: <span id="producciones-count">-</span>
+        </div>
+      </div>
     </div>
 
     <!-- Alertas criticas rápidas -->
@@ -1970,6 +1976,12 @@ async function loadDashboard(){
     var r=await fetch('/api/inventario'), d=await r.json();
     document.getElementById('stock-total').textContent=Math.round(d.stock_total||0).toLocaleString('es-CO')+' g';
     document.getElementById('materiales-count').textContent=d.movimientos||'0';
+    var elProx=document.getElementById('producciones-proximas-count');
+    if(elProx){
+      var nProx = d.producciones_proximas||0;
+      elProx.textContent = nProx;
+      elProx.style.color = nProx>0 ? '#16a34a' : '#94a3b8';
+    }
     document.getElementById('producciones-count').textContent=d.producciones||'0';
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
