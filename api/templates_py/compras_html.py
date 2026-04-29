@@ -139,6 +139,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
   <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
   <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
+  <button class="tn" data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con seguimiento del ciclo completo">&#128100; Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
 </div>
 
 <!-- PANES -->
@@ -336,6 +337,29 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div id="solprod-lista" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
   <div id="solprod-empty" style="display:none;text-align:center;color:#94a3b8;padding:40px;font-size:13px">Sin solicitudes en este estado.</div>
+</div>
+
+<!-- ════════════ TAB: MIS SOLICITUDES ════════════ -->
+<div id="pane-mis-sol" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px;">
+    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128100; Mis solicitudes — ciclo completo</span>
+    <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
+      <label style="font-size:12px;color:#64748b;">Mostrar:</label>
+      <select id="mis-sol-filtro" onchange="loadMisSolicitudes()" style="padding:5px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">
+        <option value="abiertas" selected>Abiertas (en ciclo)</option>
+        <option value="cerradas">Cerradas (recibidas / canceladas)</option>
+        <option value="todas">Todas</option>
+      </select>
+      <button class="btn bp" onclick="loadMisSolicitudes()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
+  </div>
+  <div style="padding:8px 0 14px;color:#64748b;font-size:12px;line-height:1.5">
+    Aquí ves <b>tus</b> solicitudes con el seguimiento completo: pendiente → aprobada → OC → pagada → en tránsito → recibida.<br>
+    Cuando te llegue la mercancía, click <b>✅ Marcar Recibido</b> para cerrar el ciclo sin esperar a Catalina.
+  </div>
+  <div id="mis-sol-body">
+    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
+  </div>
 </div>
 
 <div id="pane-consol" class="pane">
@@ -871,8 +895,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
+    else if(tab==='mis-sol'){ loadMisSolicitudes(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
@@ -3854,7 +3879,96 @@ setTimeout(function(){
     var badge = document.getElementById('solprod-badge');
     if(badge && d.pendientes>0){ badge.textContent = d.pendientes; badge.style.display='inline-block'; }
   }).catch(function(){});
+  // Badge de Mis Solicitudes — cuenta abiertas del usuario logueado
+  fetch('/api/solicitudes-compra/mis?estado=abiertas').then(function(r){return r.json();}).then(function(d){
+    var badge = document.getElementById('mis-sol-badge');
+    if(badge && d.abiertas>0){ badge.textContent = d.abiertas; badge.style.display='inline-block'; }
+  }).catch(function(){});
 }, 1500);
+
+// ─── Mis Solicitudes (vista para el solicitante con ciclo completo) ─────
+async function loadMisSolicitudes(){
+  var estado = (document.getElementById('mis-sol-filtro')||{}).value || 'abiertas';
+  var body = document.getElementById('mis-sol-body');
+  if(!body) return;
+  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:30px;font-size:12px">Cargando...</div>';
+  try {
+    var r = await fetch('/api/solicitudes-compra/mis?estado='+encodeURIComponent(estado));
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
+    var sols = d.solicitudes || [];
+    // Actualizar badge
+    var badge = document.getElementById('mis-sol-badge');
+    if(badge){
+      if(d.abiertas>0){ badge.textContent = d.abiertas; badge.style.display='inline-block'; }
+      else badge.style.display = 'none';
+    }
+    if(!sols.length){
+      body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;font-size:13px">No tienes solicitudes '+(estado==='abiertas'?'abiertas':estado==='cerradas'?'cerradas':'')+'.</div>';
+      return;
+    }
+    body.innerHTML = sols.map(function(s){
+      var paso = s.paso || 0;
+      // Stepper visual de 6 pasos
+      var pasos = [
+        {n:1, label:'Pendiente', icon:'⏳'},
+        {n:2, label:'Aprobada / OC', icon:'📝'},
+        {n:3, label:'Autorizada', icon:'🟢'},
+        {n:4, label:'Pagada', icon:'💸'},
+        {n:5, label:'En tránsito', icon:'🚚'},
+        {n:6, label:'Recibida', icon:'✅'},
+      ];
+      var stepper = '<div style="display:flex;gap:4px;margin:10px 0">' +
+        pasos.map(function(p){
+          var done = paso >= p.n;
+          var bg = done ? s.paso_color : '#f1f5f9';
+          var fg = done ? '#fff' : '#94a3b8';
+          return '<div title="'+_esc(p.label)+'" style="flex:1;background:'+bg+';color:'+fg+';font-size:10px;font-weight:700;padding:4px 6px;border-radius:4px;text-align:center">'+p.icon+'</div>';
+        }).join('') +
+        '</div>';
+      var btnRecibir = s.puede_marcar_recibido
+        ? '<button onclick="marcarRecibidoSolicitante(\\''+_esc(s.numero)+'\\')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">✅ Marcar Recibido</button>'
+        : '';
+      var ocLine = s.numero_oc
+        ? '<div style="font-size:11px;color:#1e40af;margin-top:2px;font-family:monospace">'+_esc(s.numero_oc)+(s.oc_proveedor?' · '+_esc(s.oc_proveedor):'')+'</div>'
+        : '';
+      var fechas = [];
+      if(s.fecha_pago) fechas.push('💸 pagado '+s.fecha_pago.substring(0,10));
+      if(s.fecha_entrega_est) fechas.push('📅 entrega est. '+s.fecha_entrega_est);
+      if(s.fecha_recepcion) fechas.push('✅ recibido '+s.fecha_recepcion.substring(0,10));
+      var fechaLine = fechas.length ? '<div style="font-size:10px;color:#64748b;margin-top:4px">'+fechas.join(' · ')+'</div>' : '';
+      return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+s.paso_color+';border-radius:10px;padding:14px 18px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
+        '<div>'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+            '<span style="font-weight:700;font-family:monospace;color:#0f172a">'+_esc(s.numero)+'</span>'+
+            '<span style="background:'+s.paso_color+';color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:10px">'+_esc(s.paso_label)+'</span>'+
+            (s.urgencia==='Alta'||s.urgencia==='Urgente'?'<span style="background:#fee2e2;color:#dc2626;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px">'+_esc(s.urgencia)+'</span>':'')+
+          '</div>'+
+          '<div style="font-size:13px;color:#1e293b;margin-top:4px">'+_esc(s.observaciones||s.categoria||'(sin descripción)')+'</div>'+
+          ocLine + fechaLine + stepper +
+        '</div>'+
+        '<div>'+ btnRecibir +'</div>'+
+      '</div>';
+    }).join('');
+  } catch(e){
+    body.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+  }
+}
+
+async function marcarRecibidoSolicitante(numero){
+  var obs = prompt('¿Algo que anotar de esta recepción? (opcional)\\n\\nEsto cierra la solicitud '+numero+' marcando la OC como Recibida.', '');
+  if(obs===null) return;
+  try {
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/marcar-recibido-solicitante', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({observaciones: obs||''})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert(d.mensaje||'Recibido confirmado');
+    loadMisSolicitudes();
+  } catch(e){ alert('Error: '+e.message); }
+}
 
 // ─── Consolidado por Proveedor ────────────────────────────────────
 var _consolCache = [];  // cache indexado por posición

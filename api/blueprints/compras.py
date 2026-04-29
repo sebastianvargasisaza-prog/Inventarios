@@ -1350,6 +1350,176 @@ def handle_solicitudes_compra():
         rows_sol.append(row)
     return jsonify({'solicitudes': rows_sol})
 
+
+@bp.route('/api/solicitudes-compra/mis', methods=['GET'])
+def mis_solicitudes_con_ciclo():
+    """Devuelve las solicitudes del usuario logueado con el ciclo COMPLETO
+    consolidado: estado de la solicitud + estado de la OC vinculada + si
+    fue recibida fisicamente. Pensado para que el SOLICITANTE (Hernando,
+    Luz, etc) pueda hacer seguimiento sin depender de Catalina.
+
+    Sebastian (29-abr-2026): "si alguien pide papel, lo hace en
+    solicitudes, pero quizas alli mismo deberia aparecer todo el listado
+    de solicitudes que sean generales para que vean como va, si ya fue
+    aceptada pagada en transito y cuando lleguen coloquen recibido asi
+    hacemos el cierre de todo".
+
+    Querystring:
+      ?usuario=<user>  → fuerza el filtro (admin puede pasar otro)
+                         Si no se pasa, usa el session user.
+      ?estado=todas|abiertas|cerradas (default abiertas)
+        - abiertas: solicitudes en cualquier paso del ciclo no Recibida/Cancelada
+        - cerradas: Recibida, Cancelada, Rechazada
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    usuario_filtro = (request.args.get('usuario') or user).strip().lower()
+    estado_q = (request.args.get('estado') or 'abiertas').strip().lower()
+
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT s.numero, s.fecha, s.estado as estado_sol, s.solicitante,
+               s.urgencia, s.observaciones, s.numero_oc, s.area, s.empresa,
+               s.categoria, s.tipo, s.fecha_requerida, s.valor,
+               oc.estado as estado_oc, oc.proveedor as oc_proveedor,
+               oc.fecha_pago, oc.fecha_recepcion, oc.fecha_entrega_est,
+               oc.valor_total as oc_valor, oc.recibido_por
+        FROM solicitudes_compra s
+        LEFT JOIN ordenes_compra oc ON oc.numero_oc = s.numero_oc
+        WHERE LOWER(COALESCE(s.solicitante,''))=?
+        ORDER BY s.fecha DESC
+        LIMIT 200
+    """, (usuario_filtro,)).fetchall()
+
+    cols = [d[0] for d in c.description]
+    out = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        # Determinar el "paso" del ciclo y badge consolidado.
+        # Orden de prioridad: lo mas avanzado del ciclo manda.
+        oc_estado = (d.get('estado_oc') or '').strip()
+        sol_estado = (d.get('estado_sol') or '').strip()
+        paso = 1
+        paso_label = 'Pendiente aprobación'
+        paso_color = '#a16207'
+        cerrado = False
+        if oc_estado == 'Recibida':
+            paso, paso_label, paso_color = 6, '✅ Recibida en bodega', '#15803d'
+            cerrado = True
+        elif oc_estado == 'Parcial':
+            paso, paso_label, paso_color = 5, '📦 Recepción parcial — esperando resto', '#f59e0b'
+        elif oc_estado == 'Pagada':
+            paso, paso_label, paso_color = 4, '💸 Pagada — en tránsito hacia bodega', '#1e40af'
+        elif oc_estado == 'Autorizada':
+            paso, paso_label, paso_color = 3, '🟢 OC autorizada — pendiente pago', '#0891b2'
+        elif oc_estado in ('Aprobada', 'Revisada'):
+            paso, paso_label, paso_color = 3, f'📋 OC {oc_estado.lower()}', '#0891b2'
+        elif oc_estado == 'Borrador':
+            paso, paso_label, paso_color = 2, '📝 OC en borrador', '#6b7280'
+        elif oc_estado == 'Pendiente':
+            paso, paso_label, paso_color = 2, '📝 OC pendiente revisión', '#6b7280'
+        elif oc_estado in ('Cancelada', 'Rechazada'):
+            paso, paso_label, paso_color = 0, f'❌ OC {oc_estado.lower()}', '#dc2626'
+            cerrado = True
+        elif sol_estado == 'Aprobada':
+            paso, paso_label, paso_color = 2, '🟢 Solicitud aprobada — generando OC', '#0891b2'
+        elif sol_estado == 'Rechazada':
+            paso, paso_label, paso_color = 0, '❌ Solicitud rechazada', '#dc2626'
+            cerrado = True
+        else:
+            paso, paso_label, paso_color = 1, '⏳ Pendiente aprobación de Catalina', '#a16207'
+        d['paso'] = paso
+        d['paso_label'] = paso_label
+        d['paso_color'] = paso_color
+        d['cerrado'] = cerrado
+        # Habilitar boton "Marcar recibido" cuando la OC esta Pagada/Autorizada
+        # (la mercancia esta en transito) o si no hay OC pero la solicitud
+        # fue aprobada y nunca se genero OC formal (caso simple).
+        d['puede_marcar_recibido'] = (
+            oc_estado in ('Pagada', 'Autorizada', 'Parcial')
+            or (not oc_estado and sol_estado == 'Aprobada')
+        )
+        out.append(d)
+
+    if estado_q == 'cerradas':
+        out = [x for x in out if x['cerrado']]
+    elif estado_q == 'abiertas':
+        out = [x for x in out if not x['cerrado']]
+
+    abiertas_count = sum(1 for x in out if not x.get('cerrado'))
+    return jsonify({'solicitudes': out, 'usuario': usuario_filtro,
+                    'total': len(out), 'abiertas': abiertas_count})
+
+
+@bp.route('/api/solicitudes-compra/<numero>/marcar-recibido-solicitante', methods=['POST'])
+def marcar_recibido_solicitante(numero):
+    """El solicitante confirma que la mercancia ya llego (sin pasar por
+    Catalina). Cierra la cadena en su lado: actualiza la OC a 'Recibida'
+    si esta en Autorizada/Pagada/Parcial.
+
+    Solo puede hacerlo el solicitante original (o admin).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json() or {}
+    obs = (d.get('observaciones') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    # Verificar autoria
+    sol = c.execute(
+        "SELECT solicitante, numero_oc, estado FROM solicitudes_compra WHERE numero=?",
+        (numero.upper(),)
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    solicitante_orig = (sol[0] or '').lower()
+    es_admin = user in ADMIN_USERS
+    if solicitante_orig != user.lower() and not es_admin:
+        return jsonify({
+            'error': 'Solo el solicitante original o un admin puede marcar recibido'
+        }), 403
+
+    numero_oc = sol[1] or ''
+    if numero_oc:
+        oc_row = c.execute(
+            "SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+        ).fetchone()
+        if not oc_row:
+            return jsonify({'error': f'OC {numero_oc} no encontrada'}), 404
+        oc_estado = oc_row[0] or ''
+        if oc_estado not in ('Autorizada', 'Pagada', 'Parcial'):
+            return jsonify({
+                'error': f'OC en estado {oc_estado} — no se puede marcar recibida desde solicitante'
+            }), 409
+        c.execute("""
+            UPDATE ordenes_compra SET
+              estado='Recibida',
+              fecha_recepcion=COALESCE(fecha_recepcion, datetime('now')),
+              recibido_por=?,
+              observaciones_recepcion=COALESCE(observaciones_recepcion,'') || ?
+            WHERE numero_oc=?
+        """, (user, f' [Confirmado por solicitante {user}: {obs}]' if obs else f' [Confirmado por solicitante {user}]', numero_oc))
+        # Cerrar items del checklist linkeados (si aplica)
+        try:
+            c.execute("""
+                UPDATE produccion_checklist SET
+                  estado='recibido',
+                  fecha_recibido=date('now'),
+                  actualizado_at=datetime('now')
+                WHERE oc_numero=? AND estado IN ('solicitado','en_transito','pendiente')
+            """, (numero_oc,))
+        except sqlite3.OperationalError:
+            pass
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero': numero.upper(),
+        'numero_oc': numero_oc,
+        'mensaje': 'Recepción confirmada. La OC quedó marcada como Recibida.',
+    })
+
+
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
 def get_solicitud_estado(numero):
     conn = get_db(); c = conn.cursor()
