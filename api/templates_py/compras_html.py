@@ -133,9 +133,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="por-pagar">&#x1F4B0; Por Pagar</button>
   <button class="tn"     data-tab="alertas">&#x1F6A8; Alertas</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
-  <!-- Tab Influencers ocultado por solicitud de Catalina (28-abr-2026):
-       los pagos a influencers se hacen desde Marketing -> Tesoreria.
-       En Compras solo aparecen como suma agregada para tesoreria. -->
+  <!-- Tab Influencers RESTAURADO por solicitud de Sebastian (29-abr-2026):
+       el flujo de Jefferson (Marketing) → Catalina (Compras) → Pagada
+       requiere visibilidad desde Compras. Toda la logica (pane, loadInfluencers,
+       renderInfluencers) ya estaba en el codigo, solo se habia ocultado el boton. -->
+  <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
   <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
   <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
@@ -152,7 +154,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <div id="q-aut"></div>
     </div>
     <div class="qbox">
-      <div class="qtit">&#x1F4B8; OCs autorizadas &middot; por pagar</div>
+      <div class="qtit">&#x1F4B8; OCs en proceso &middot; <span style="font-size:11px;color:#94a3b8;font-weight:400">Borrador → Recibida</span></div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">&#xD3;rdenes aprobadas sin pago ejecutado</div>
       <div id="q-pag"></div>
     </div>
@@ -1012,11 +1014,10 @@ async function renderDash(){
   var mes=new Date().toISOString().substring(0,7);
   // FILTRO: excluir SOLs de influencers/cuentas de cobro (Catalina no los gestiona,
   // los maneja Marketing y se pagan via Tesoreria como suma agregada)
-  var _isInfluencer = function(s){
-    var cat = (s.categoria||'').toLowerCase();
-    return cat.indexOf('influencer')>=0 || cat.indexOf('cuenta de cobro')>=0;
-  };
-  var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente' && !_isInfluencer(s); });
+  // Sebastian (29-abr-2026): restaurar visibilidad de SOLs influencer/CC en
+  // el dashboard izquierdo. Antes se filtraban (commit 7a0e0a5 pedido por
+  // Catalina) pero rompia el flujo Jefferson → Catalina → Pagada.
+  var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
 
   // Estados que cuentan como "OC abierta / por procesar" — Catalina necesita verlas
   // todas, no solo Autorizadas. Las OCs manuales recien creadas quedan en Borrador.
@@ -1030,7 +1031,7 @@ async function renderDash(){
   // KPIs
   document.getElementById('kpi-area').innerHTML=
     mkKpi('SOLs pendientes',solicPend.length+' solicitudes','Esperando aprobación',solicPend.length>0?'w':'')+
-    mkKpi('OCs por pagar',ocsPorPagar.length+' autorizadas',fmt(vPorPagar),ocsPorPagar.length>0?'w':'')+
+    mkKpi('OCs en proceso',ocsPorPagar.length+' abiertas',fmt(vPorPagar),ocsPorPagar.length>0?'w':'')+
     mkKpi('Pagado este mes',pagMes.length+' OCs',fmt(vMes),'g')+
     mkKpi('MPs en déficit',nDeficit+' materiales','Stock bajo punto reorden',nDeficit>0?'w':'');
 
@@ -1141,7 +1142,10 @@ function revisarSolicitudPendiente(numero){
 
 function miniCard(o){
   var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">Ver detalle</button>';
-  if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
+  // Sebastian (29-abr-2026): admin puede autorizar directo desde Borrador
+  // (skip "Revisada" cuando es Sebastian/admin creando OC manual). El endpoint
+  // /autorizar acepta cualquier estado, lo unico que faltaba era el boton.
+  if((o.estado==='Borrador'||o.estado==='Revisada')&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
