@@ -842,6 +842,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 var OCS = [];
 var PROVS = [];
 var ES_C = {es_contadora};
+// Sebastian (29-abr-2026): "influencers no lo gestiona la asistente solo yo".
+// Tab Influencers oculto para Catalina; visible para Sebastian + Alejandro.
+if (ES_C) {
+  document.addEventListener('DOMContentLoaded', function(){
+    var tab = document.getElementById('tn-influencer');
+    if (tab) tab.style.display = 'none';
+  });
+}
 var ITMS = 0;
 var MP_ITMS = 0;
 var _MPCAT = [];

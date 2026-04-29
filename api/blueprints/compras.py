@@ -2298,6 +2298,49 @@ def pagar_oc(numero_oc):
         )
 
     conn.commit()
+
+    # ── Notificar al solicitante (Jefferson) cuando es OC influencer/CC ────
+    # Sebastian (29-abr-2026): "le notificaba a jefer" — restaurar el ping
+    # por email al solicitante cuando se le paga a uno de sus influencers.
+    # Solo notifica cuando la OC pasa a Pagada (no Parcial).
+    try:
+        cat_low_n = (categoria or '').lower()
+        es_influencer_oc = (
+            'influencer' in cat_low_n
+            or 'cuenta de cobro' in cat_low_n
+            or 'marketing' in cat_low_n
+        )
+        if es_influencer_oc and nuevo_estado == 'Pagada':
+            sol_info = cur.execute(
+                "SELECT solicitante, email_solicitante FROM solicitudes_compra "
+                "WHERE numero_oc=? LIMIT 1", (numero_oc,)
+            ).fetchone()
+            if sol_info:
+                _sol_user = (sol_info[0] or '').strip().lower()
+                _dest = (sol_info[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
+            else:
+                _dest = USER_EMAILS.get('jefferson', '')
+            if _dest:
+                _asunto = f"💸 Pago confirmado a {proveedor} — {numero_oc}"
+                _body = (
+                    f"<h2>Pago confirmado</h2>"
+                    f"<p>Sebastian autorizó y registró el pago a <b>{proveedor}</b>:</p>"
+                    f"<ul>"
+                    f"<li><b>OC:</b> {numero_oc}</li>"
+                    f"<li><b>Monto:</b> ${monto:,.0f} COP</li>"
+                    f"<li><b>Medio:</b> {medio}</li>"
+                    f"<li><b>Fecha:</b> {fecha_pago[:10]}</li>"
+                    f"</ul>"
+                    f"<p>El estado en Marketing → Influencers cambió a <b>Pagada</b>. "
+                    f"El comprobante de egreso (CE) se adjuntó al beneficiario si tenía email.</p>"
+                    f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group</p>"
+                )
+                _notificar_solicitante_email(_dest, _asunto, _body)
+    except Exception as _e_notif:
+        __import__('logging').getLogger('compras').error(
+            "Notificacion a Jefferson fallo (no critico): %s", _e_notif
+        )
+
     return jsonify({
         'ok': True,
         'estado': nuevo_estado,
@@ -2819,13 +2862,11 @@ def get_pagos_oc(numero_oc):
 def get_pagos():
     """Return all paid OCs with payment metadata (no image data).
 
-    Excluye OCs de influencers/CC — esos pagos viven en /marketing.
-    Reglas de exclusion (cualquiera dispara el filtro):
-      1. categoria es 'Influencer/Marketing Digital' o 'Cuenta de Cobro'
-      2. existe row en pagos_influencers para el numero_oc (Sebastian
-         creo OCs de influencers con categoria='MP' por error: la lista
-         de pagos las mostraba mezcladas con MPs reales)
-      3. solicitudes_compra.influencer_id NOT NULL para esa OC
+    Sebastian (29-abr-2026): "no salen los que he pagado". Antes excluiamos
+    influencers/CC del listado pero rompia la visibilidad de los pagos hechos
+    por Sebastian a influencers desde /compras tab Influencers. Ahora SI los
+    devolvemos pero marcados con `es_influencer: true` para que el frontend
+    los pueda destacar visualmente o filtrar.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -2839,22 +2880,22 @@ def get_pagos():
                COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0) as monto,
                oc.valor_total -
                  COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0)
-                 as saldo_pendiente
+                 as saldo_pendiente,
+               CASE WHEN oc.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+                    OR EXISTS(SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc=oc.numero_oc)
+                    OR EXISTS(SELECT 1 FROM solicitudes_compra sc
+                              WHERE sc.numero_oc=oc.numero_oc AND sc.influencer_id IS NOT NULL)
+                    THEN 1 ELSE 0 END as es_influencer
         FROM ordenes_compra oc
         WHERE oc.estado IN ('Pagada','Parcial')
-          AND oc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')
-          AND NOT EXISTS (
-              SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc = oc.numero_oc
-          )
-          AND NOT EXISTS (
-              SELECT 1 FROM solicitudes_compra sc
-              WHERE sc.numero_oc = oc.numero_oc AND sc.influencer_id IS NOT NULL
-          )
         ORDER BY oc.fecha_pago DESC
         LIMIT 500
     """)
     cols = [d[0] for d in cur.description]
     pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
+    # Convertir es_influencer a bool para JSON
+    for p in pagos:
+        p['es_influencer'] = bool(p.get('es_influencer'))
     return jsonify({'pagos': pagos})
 
 
