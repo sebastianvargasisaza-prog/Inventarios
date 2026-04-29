@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos6">
+<link rel="stylesheet" href="/static/cortex.css?v=eos7">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -5054,7 +5054,7 @@ async function abrirChecklistDetalle(produccionId, producto){
         galeriaHtml +
         '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' +
           '<button onclick="ckImagenPegarURL(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">📎 Pegar URL</button>' +
-          '<button onclick="ckImagenShopify(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🛍️ Sync Shopify completo</button>' +
+          '<button onclick="ckImagenShopify(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer" title="Forzar re-sync (el sync auto ya corre solo)">🔄 Re-sync</button>' +
           (d.imagen_url ? '<button onclick="ckImagenLimpiar(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🗑️ Quitar</button>' : '') +
         '</div>' +
       '</div>';

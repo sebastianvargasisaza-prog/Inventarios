@@ -3996,7 +3996,7 @@ def checklist_get(produccion_id):
     completados = totales['verificado_ok'] + totales['recibido'] + totales['listo']
     porcentaje = round((completados / total_items * 100), 1) if total_items > 0 else 0
 
-    # Metadata del producto desde formula_headers (sync Shopify)
+    # Metadata del producto desde formula_headers + auto-sync Shopify si pendiente
     producto_nombre = ''
     producto_meta = {}
     try:
@@ -4008,14 +4008,39 @@ def checklist_get(produccion_id):
                 (produccion_id,)
             ).fetchone()
             producto_nombre = r[0] if r else ''
+
         if producto_nombre:
-            mr = c.execute("""
-                SELECT COALESCE(imagen_url,''), COALESCE(sku_principal,''),
-                       COALESCE(descripcion_plain,''), COALESCE(precio_venta,0),
-                       COALESCE(peso_g,0), COALESCE(imagenes_extra_json,'[]'),
-                       COALESCE(shopify_handle,''), COALESCE(shopify_synced_at,'')
-                FROM formula_headers WHERE producto_nombre=?
-            """, (producto_nombre,)).fetchone()
+            def _read_meta():
+                mr = c.execute("""
+                    SELECT COALESCE(imagen_url,''), COALESCE(sku_principal,''),
+                           COALESCE(descripcion_plain,''), COALESCE(precio_venta,0),
+                           COALESCE(peso_g,0), COALESCE(imagenes_extra_json,'[]'),
+                           COALESCE(shopify_handle,''), COALESCE(shopify_synced_at,'')
+                    FROM formula_headers WHERE producto_nombre=?
+                """, (producto_nombre,)).fetchone()
+                return mr
+
+            mr = _read_meta()
+
+            # Auto-sync inmediato del producto si NUNCA se sincronizo (max 8s).
+            # Asi el primer click al checklist trae la foto sin que Sebastian
+            # tenga que hacer click manual.
+            if mr and not mr[7]:  # shopify_synced_at vacio
+                try:
+                    from blueprints.inventario import _shopify_sync_producto
+                    _shopify_sync_producto(conn, producto_nombre, timeout=8)
+                    mr = _read_meta()  # re-leer despues del sync
+                except Exception:
+                    pass
+
+            # Disparar sync masivo en background para los demas productos
+            # (no bloquea esta respuesta — corre en thread separado)
+            try:
+                from blueprints.inventario import _sync_shopify_pendientes_background
+                _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50)
+            except Exception:
+                pass
+
             if mr:
                 import json as _json
                 try:
@@ -4319,6 +4344,14 @@ def checklist_resumen_calendario():
     sync_count = 0
     try:
         sync_count = _sync_calendar_a_produccion_programada(conn, days_ahead=max(horizonte, 90))
+    except Exception:
+        pass
+
+    # Auto-sync masivo Shopify de productos pendientes en BACKGROUND.
+    # No bloquea la respuesta — al refresh el usuario ya tiene fotos.
+    try:
+        from blueprints.inventario import _sync_shopify_pendientes_background
+        _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50)
     except Exception:
         pass
 

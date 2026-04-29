@@ -285,27 +285,30 @@ def producto_imagen(producto_nombre):
     return jsonify({'ok': True, 'producto': producto_nombre, 'imagen_url': url})
 
 
-@bp.route('/api/formulas/<path:producto_nombre>/imagen-shopify-sync', methods=['POST'])
-def producto_imagen_shopify_sync(producto_nombre):
-    """Auto-sync completo desde Shopify: busca el producto por title match y
-    guarda imagen + SKU + descripcion + precio + peso + galeria de imagenes
-    extra (utiles para identificar etiqueta frontal/posterior).
-
-    Requiere shopify_token + shopify_shop en animus_config.
+def _shopify_creds(conn):
+    """Lee shopify_token y shopify_shop de animus_config. Retorna (token,shop)
+    o (None,None) si no estan configurados.
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    conn = get_db(); c = conn.cursor()
     try:
-        row_token = c.execute("SELECT valor FROM animus_config WHERE clave='shopify_token'").fetchone()
-        row_shop = c.execute("SELECT valor FROM animus_config WHERE clave='shopify_shop'").fetchone()
+        rt = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_token'").fetchone()
+        rs = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_shop'").fetchone()
     except Exception:
-        return jsonify({'error': 'animus_config no disponible'}), 500
-    if not row_token or not row_shop:
-        return jsonify({'error': 'Shopify no configurado (falta shopify_token / shopify_shop). Pega URL manualmente.'}), 400
-    token = row_token[0]
-    shop = row_shop[0]
+        return None, None
+    if not rt or not rs:
+        return None, None
+    return rt[0], rs[0]
 
+
+def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout=10):
+    """Sync de UN producto desde Shopify a formula_headers.
+
+    Reutilizable para sync individual o masivo. No requiere session.
+    Devuelve dict {ok, ...} o {error, ...}.
+    """
+    if not token or not shop:
+        token, shop = _shopify_creds(conn)
+    if not token or not shop:
+        return {'error': 'Shopify no configurado'}
     import urllib.request, urllib.parse, json as _json, re as _re
     base = f"https://{shop}/admin/api/2024-01/products.json"
     qs = urllib.parse.urlencode({'title': producto_nombre, 'limit': 5})
@@ -314,15 +317,14 @@ def producto_imagen_shopify_sync(producto_nombre):
         headers={'X-Shopify-Access-Token': token}
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
+        resp = urllib.request.urlopen(req, timeout=timeout)
         data = _json.loads(resp.read().decode('utf-8'))
     except Exception as e:
-        return jsonify({'error': f'Shopify API: {e}'}), 502
+        return {'error': f'Shopify API: {e}'}
     products = data.get('products', [])
     if not products:
-        return jsonify({'error': f'No encontrado en Shopify: "{producto_nombre}"'}), 404
+        return {'error': f'No encontrado en Shopify: "{producto_nombre}"', 'not_found': True}
 
-    # Primer match — el title de Shopify suele ser muy cercano al producto_nombre
     p0 = products[0]
     imgs = p0.get('images', []) or []
     imagen_principal = imgs[0].get('src', '') if imgs else ''
@@ -334,11 +336,10 @@ def producto_imagen_shopify_sync(producto_nombre):
     precio_venta = float(var0.get('price') or 0)
     peso_g = float(var0.get('grams') or 0)
     body_html = p0.get('body_html', '') or ''
-    # Plain text de la descripcion (sin HTML, util para preview)
     descripcion_plain = _re.sub(r'<[^>]+>', ' ', body_html)
     descripcion_plain = _re.sub(r'\s+', ' ', descripcion_plain).strip()[:500]
 
-    c.execute("""
+    cur = conn.execute("""
         UPDATE formula_headers SET
           imagen_url=?, imagen_actualizada_at=datetime('now'),
           shopify_id=?, shopify_handle=?,
@@ -347,29 +348,107 @@ def producto_imagen_shopify_sync(producto_nombre):
           imagenes_extra_json=?, shopify_synced_at=datetime('now')
         WHERE producto_nombre=?
     """, (
-        imagen_principal,
-        str(p0.get('id') or ''),
-        p0.get('handle') or '',
+        imagen_principal, str(p0.get('id') or ''), p0.get('handle') or '',
         body_html, descripcion_plain,
         sku_principal, precio_venta, peso_g,
-        _json.dumps(imagenes_extra),
-        producto_nombre,
+        _json.dumps(imagenes_extra), producto_nombre,
     ))
-    if c.rowcount == 0:
-        return jsonify({'error': f'Producto {producto_nombre} no existe en formula_headers'}), 404
+    if cur.rowcount == 0:
+        return {'error': f'Producto {producto_nombre} no existe en formula_headers'}
     conn.commit()
+    return {
+        'ok': True, 'producto': producto_nombre,
+        'imagen_url': imagen_principal, 'imagenes_count': len(imagenes_extra),
+        'sku': sku_principal, 'precio': precio_venta, 'peso_g': peso_g,
+        'shopify_product_id': p0.get('id'), 'shopify_handle': p0.get('handle'),
+    }
+
+
+def _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50):
+    """Sincroniza en BACKGROUND todos los productos cuyo shopify_synced_at sea
+    NULL o mas viejo que max_edad_horas. No bloquea el request HTTP que lo
+    invoco — corre en thread separado.
+
+    Idempotente: si ya esta corriendo en otro thread, retorna sin hacer nada.
+    """
+    import threading
+    if getattr(_sync_shopify_pendientes_background, '_running', False):
+        return  # ya hay otro thread sincronizando
+    _sync_shopify_pendientes_background._running = True
+
+    def _worker():
+        try:
+            from config import DB_PATH
+            import sqlite3
+            local_conn = sqlite3.connect(DB_PATH, timeout=30)
+            try:
+                token, shop = _shopify_creds(local_conn)
+                if not token or not shop:
+                    return
+                # Productos pendientes: nunca sincronizados o sync viejo
+                cutoff_sql = f"datetime('now', '-{int(max_edad_horas)} hours')"
+                rows = local_conn.execute(f"""
+                    SELECT producto_nombre FROM formula_headers
+                    WHERE COALESCE(shopify_synced_at,'') = ''
+                       OR shopify_synced_at < {cutoff_sql}
+                    LIMIT ?
+                """, (max_productos,)).fetchall()
+                for (prod,) in rows:
+                    try:
+                        _shopify_sync_producto(local_conn, prod, token, shop, timeout=8)
+                    except Exception:
+                        continue
+                    # Pequeño throttle para no saturar Shopify (rate limit ~2 req/s)
+                    import time as _t; _t.sleep(0.6)
+            finally:
+                local_conn.close()
+        finally:
+            _sync_shopify_pendientes_background._running = False
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
+@bp.route('/api/formulas/<path:producto_nombre>/imagen-shopify-sync', methods=['POST'])
+def producto_imagen_shopify_sync(producto_nombre):
+    """Sync de UN producto desde Shopify (manual via boton del modal).
+
+    Usa el helper compartido _shopify_sync_producto.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    res = _shopify_sync_producto(conn, producto_nombre, timeout=15)
+    if res.get('error'):
+        status = 404 if res.get('not_found') else (400 if 'no configurado' in res['error'] else 502)
+        return jsonify(res), status
+    return jsonify(res)
+
+
+@bp.route('/api/formulas/sync-shopify-all', methods=['POST'])
+def sync_shopify_all():
+    """Sincroniza TODOS los productos pendientes en background. No bloquea.
+
+    Util para forzar refresh masivo (ej. tras agregar productos nuevos a
+    Shopify). Tambien se llama automaticamente al cargar el checklist.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    token, shop = _shopify_creds(conn)
+    if not token or not shop:
+        return jsonify({'error': 'Shopify no configurado'}), 400
+    # Contar pendientes
+    pendientes = conn.execute("""
+        SELECT COUNT(*) FROM formula_headers
+        WHERE COALESCE(shopify_synced_at,'') = ''
+           OR shopify_synced_at < datetime('now', '-24 hours')
+    """).fetchone()[0]
+    _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=100)
     return jsonify({
         'ok': True,
-        'producto': producto_nombre,
-        'imagen_url': imagen_principal,
-        'imagenes_count': len(imagenes_extra),
-        'sku': sku_principal,
-        'precio': precio_venta,
-        'peso_g': peso_g,
-        'shopify_product_id': p0.get('id'),
-        'shopify_title': p0.get('title'),
-        'shopify_handle': p0.get('handle'),
-        'descripcion_preview': descripcion_plain[:120],
+        'pendientes': pendientes,
+        'mensaje': f'Sincronizando {pendientes} productos en background. Refresca en ~30s.'
     })
 
 @bp.route('/api/movimientos', methods=['GET', 'POST'])
