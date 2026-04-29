@@ -4215,6 +4215,55 @@ def checklist_item_solicitar(item_id):
                     'mensaje': f'Solicitud {sol_num} creada para {item_dict.get("descripcion","")}'})
 
 
+def _ensure_sync_log_table(conn):
+    """Tabla minima para registrar el timestamp del ultimo sync de cada
+    fuente externa (calendario, shopify, etc). Una fila por sync_type."""
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sync_log (
+                sync_type    TEXT PRIMARY KEY,
+                last_run_at  TEXT NOT NULL,
+                last_count   INTEGER DEFAULT 0,
+                last_error   TEXT
+            )
+        """)
+    except Exception:
+        pass
+
+
+def _record_sync(conn, sync_type, count, error=None):
+    """Registra timestamp del ultimo sync exitoso/fallido de un tipo."""
+    _ensure_sync_log_table(conn)
+    try:
+        ts = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        conn.execute("""
+            INSERT INTO sync_log (sync_type, last_run_at, last_count, last_error)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(sync_type) DO UPDATE SET
+                last_run_at = excluded.last_run_at,
+                last_count  = excluded.last_count,
+                last_error  = excluded.last_error
+        """, (sync_type, ts, count, error))
+        conn.commit()
+    except Exception:
+        pass
+
+
+def _get_last_sync(conn, sync_type):
+    """Lee timestamp y count del ultimo sync de un tipo. None si nunca."""
+    _ensure_sync_log_table(conn)
+    try:
+        row = conn.execute(
+            "SELECT last_run_at, last_count, last_error FROM sync_log WHERE sync_type=?",
+            (sync_type,)
+        ).fetchone()
+        if not row:
+            return None
+        return {'last_run_at': row[0], 'last_count': row[1] or 0, 'last_error': row[2]}
+    except Exception:
+        return None
+
+
 def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
     """Sincroniza eventos de Google Calendar a la tabla produccion_programada.
 
@@ -4318,24 +4367,79 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
             break  # un evento → un producto match
     if inserted:
         conn.commit()
+    # Registrar timestamp del sync (independiente de si hubo nuevas)
+    _record_sync(conn, 'calendar', inserted, error=cal.get('error'))
     return inserted
+
+
+def _start_calendar_sync_background_loop():
+    """Arranca un thread daemon que cada N minutos sincroniza el calendario
+    sin requerir que alguien tenga la pantalla abierta. Idempotente: solo
+    arranca una instancia por proceso. Se reinicia al primer request del
+    blueprint si Render hace cold-start.
+
+    Frecuencia configurable via env var CALENDAR_SYNC_INTERVAL_MIN
+    (default 10 min). Si <=0, queda desactivado.
+
+    Decision Sebastian 2026-04-29: el checklist debe estar fresco aunque
+    nadie lo este mirando — Catalina entra en la mañana y la cola ya
+    refleja lo que se agrego al calendar.
+    """
+    import threading, os, time as _t
+    if getattr(_start_calendar_sync_background_loop, '_running', False):
+        return
+    try:
+        interval_min = int(os.environ.get('CALENDAR_SYNC_INTERVAL_MIN', '10'))
+    except ValueError:
+        interval_min = 10
+    if interval_min <= 0:
+        return  # desactivado
+    _start_calendar_sync_background_loop._running = True
+
+    def _worker():
+        from config import DB_PATH
+        import sqlite3
+        # Pequeño delay inicial para no chocar con el startup del proceso
+        _t.sleep(20)
+        while True:
+            try:
+                local_conn = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    _sync_calendar_a_produccion_programada(local_conn, days_ahead=120)
+                finally:
+                    local_conn.close()
+            except Exception:
+                pass  # el loop nunca debe morir por una falla puntual
+            _t.sleep(max(60, interval_min * 60))
+
+    t = threading.Thread(target=_worker, daemon=True, name='calendar-sync-loop')
+    t.start()
+
+
+# Arrancar el loop al importar el blueprint (una vez por proceso)
+try:
+    _start_calendar_sync_background_loop()
+except Exception:
+    pass
 
 
 @bp.route('/api/programacion/checklist/sync-calendar', methods=['POST'])
 def checklist_sync_calendar_endpoint():
     """Endpoint manual para forzar sincronizacion calendario → produccion_programada.
 
-    Tambien se llama automaticamente al cargar /resumen-calendario, pero
-    este endpoint permite trigger manual desde la UI con feedback al usuario.
+    Tambien se llama automaticamente al cargar /resumen-calendario y por
+    un thread background cada N min (CALENDAR_SYNC_INTERVAL_MIN).
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     days = int(request.args.get('dias', 90))
     conn = get_db()
     inserted = _sync_calendar_a_produccion_programada(conn, days_ahead=days)
+    last = _get_last_sync(conn, 'calendar')
     return jsonify({
         'ok': True,
         'producciones_creadas': inserted,
+        'last_run_at': last['last_run_at'] if last else None,
         'mensaje': f'{inserted} producciones nuevas importadas del calendario'
                    if inserted else 'El calendario ya estaba sincronizado'
     })
@@ -4420,10 +4524,15 @@ def checklist_resumen_calendario():
             )
             d['dias_faltan'] = int(d['dias_faltan']) if d['dias_faltan'] is not None else 0
             out.append(d)
+        last_sync = _get_last_sync(conn, 'calendar')
         return jsonify({
             'producciones': out,
             'horizonte_dias': horizonte,
-            'sync_calendario': {'producciones_nuevas': sync_count},
+            'sync_calendario': {
+                'producciones_nuevas': sync_count,
+                'last_run_at': last_sync['last_run_at'] if last_sync else None,
+                'last_error': last_sync['last_error'] if last_sync else None,
+            },
         })
     except Exception as e:
         return jsonify({'error': str(e), 'producciones': []})
@@ -4902,6 +5011,11 @@ def tareas_operativas_list():
 def tareas_operativas_completar(tarea_id):
     """Operario marca la tarea como completada.
 
+    Cierra la cadena causal completa: tarea operativa → solicitud anticipada
+    → item del checklist. Asi cuando el operario marca "ya saque los envases",
+    el item del checklist Pre-Produccion pasa a 'recibido' automaticamente y
+    el % listo de la card del producto sube sin intervencion manual.
+
     Body opcional: {observaciones, cantidad_real (si difiere)}
     """
     if 'compras_user' not in session:
@@ -4921,12 +5035,35 @@ def tareas_operativas_completar(tarea_id):
     if cur.rowcount == 0:
         return jsonify({'error': 'Tarea no encontrada o ya completada'}), 404
     # Marcar la solicitud_produccion origen como completada (si aplica)
-    c.execute("""
-        UPDATE solicitudes_compra_anticipada
-        SET estado='completada' WHERE tarea_operativa_id=?
-    """, (tarea_id,))
+    # y propagar al item del checklist como 'recibido'.
+    sol_row = c.execute("""
+        SELECT id, checklist_item_id FROM solicitudes_compra_anticipada
+        WHERE tarea_operativa_id=?
+    """, (tarea_id,)).fetchone()
+    checklist_item_id = None
+    if sol_row:
+        sol_id, checklist_item_id = sol_row[0], sol_row[1]
+        c.execute(
+            "UPDATE solicitudes_compra_anticipada SET estado='completada' WHERE id=?",
+            (sol_id,)
+        )
+        if checklist_item_id:
+            c.execute("""
+                UPDATE produccion_checklist SET
+                  estado='recibido',
+                  fecha_recibido=date('now'),
+                  actualizado_at=datetime('now')
+                WHERE id=?
+            """, (checklist_item_id,))
     conn.commit()
-    return jsonify({'ok': True, 'tarea_id': tarea_id, 'mensaje': 'Tarea completada'})
+    return jsonify({
+        'ok': True,
+        'tarea_id': tarea_id,
+        'checklist_item_id': checklist_item_id,
+        'mensaje': 'Tarea completada' + (
+            ' · checklist actualizado' if checklist_item_id else ''
+        ),
+    })
 
 
 @bp.route('/api/tareas-operativas', methods=['POST'])

@@ -5051,7 +5051,19 @@ function _renderProgramacion(d){
         <button id="ck-h-90"  onclick="cargarChecklistResumen(90)"  style="padding:6px 12px;border:2px solid #15803d;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#15803d">90 días</button>
         <button onclick="ckSyncCalendario()" style="padding:6px 12px;background:#1e40af;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae las producciones del calendario animuslb.com a la tabla de programadas">📅 Sincronizar calendario</button>
         <button onclick="ckBackfill()" style="padding:6px 12px;background:#a16207;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Genera checklists (envases, etiquetas, serigrafía) para producciones programadas sin items">🔄 Generar faltantes</button>
+        <span style="margin-left:8px;font-size:11px;color:#666;font-weight:600">Auto:</span>
+        <select id="ck-autorefresh" onchange="ckSetAutoRefresh(this.value)" style="padding:5px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:11px;cursor:pointer" title="Refrescar automáticamente cada N segundos. El sync con calendario se dispara en cada refresh.">
+          <option value="0">off</option>
+          <option value="30">30s</option>
+          <option value="60" selected>1 min</option>
+          <option value="180">3 min</option>
+          <option value="300">5 min</option>
+        </select>
       </div>
+    </div>
+    <div id="ck-sync-info" style="font-size:11px;color:#78716c;margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <span id="ck-last-sync" style="font-style:italic">última sync: —</span>
+      <span id="ck-bg-info" style="color:#94a3b8">background sync activo (cada 10 min)</span>
     </div>
 
     <div id="ck-resumen-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px"></div>
@@ -5110,6 +5122,45 @@ function _renderProgramacion(d){
   </div><!-- /ptab-tareas -->
 
 <script>
+// Estado del auto-refresh
+window._ckAutoRefreshTimer = null;
+window._ckAutoRefreshSec = 60;
+window._ckLastDias = 60;
+
+function ckSetAutoRefresh(seg){
+  // Detener timer existente
+  if(window._ckAutoRefreshTimer){
+    clearInterval(window._ckAutoRefreshTimer);
+    window._ckAutoRefreshTimer = null;
+  }
+  var s = parseInt(seg||0, 10);
+  window._ckAutoRefreshSec = s;
+  if(!s){ return; }
+  window._ckAutoRefreshTimer = setInterval(function(){
+    // Pausar si la pestaña no esta visible (no quema requests innecesarios)
+    if(document.visibilityState !== 'visible') return;
+    // Solo si seguimos en el tab del checklist
+    var tab = document.getElementById('ptab-checklist');
+    if(!tab || tab.style.display === 'none') return;
+    cargarChecklistResumen(window._ckLastDias);
+  }, s * 1000);
+}
+
+function ckFmtRelativo(isoUtc){
+  if(!isoUtc) return '—';
+  try {
+    var t = new Date(isoUtc).getTime();
+    if(isNaN(t)) return isoUtc;
+    var seg = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if(seg < 60) return 'hace '+seg+'s';
+    var min = Math.round(seg/60);
+    if(min < 60) return 'hace '+min+' min';
+    var h = Math.round(min/60);
+    if(h < 24) return 'hace '+h+'h';
+    return 'hace '+Math.round(h/24)+'d';
+  } catch(e){ return '—'; }
+}
+
 async function cargarChecklistResumen(dias){
   // Cargar catalogo de productos en paralelo (no bloquea)
   if(typeof cargarCatalogoProductos==='function') cargarCatalogoProductos();
@@ -5124,6 +5175,7 @@ async function cargarChecklistResumen(dias){
     });
   }
   dias = dias || 60;
+  window._ckLastDias = dias;
   document.getElementById('ck-loading').style.display='block';
   document.getElementById('ck-empty').style.display='none';
   document.getElementById('ck-producciones-list').innerHTML='';
@@ -5132,6 +5184,16 @@ async function cargarChecklistResumen(dias){
     var r = await fetch('/api/programacion/checklist/resumen-calendario?dias='+dias);
     var d = await r.json();
     document.getElementById('ck-loading').style.display='none';
+    // Indicador de ultima sincronizacion
+    var sc = d.sync_calendario || {};
+    var lastEl = document.getElementById('ck-last-sync');
+    if(lastEl){
+      var rel = ckFmtRelativo(sc.last_run_at);
+      var nuevas = sc.producciones_nuevas || 0;
+      lastEl.textContent = 'última sync calendario: ' + rel + (nuevas>0 ? ' · '+nuevas+' nueva(s) producción(es) importada(s)' : '');
+      lastEl.style.color = sc.last_error ? '#dc2626' : '#15803d';
+      if(sc.last_error){ lastEl.title = sc.last_error; }
+    }
     var prods = d.producciones || [];
     if(!prods.length){
       document.getElementById('ck-empty').style.display='block';
@@ -5816,6 +5878,12 @@ async function ckMarcar(itemId, estado){
       if(tab==='checklist'){
         if(el_ck) el_ck.scrollIntoView({behavior:'smooth', block:'start'});
         cargarChecklistResumen();
+        // Iniciar auto-refresh con el valor del select (default 60s)
+        var sel = document.getElementById('ck-autorefresh');
+        if(sel && typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(sel.value);
+      } else {
+        // Detener auto-refresh al salir del tab checklist
+        if(typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(0);
       }
       if(tab==='tareas'){
         if(el_tk) el_tk.scrollIntoView({behavior:'smooth', block:'start'});
