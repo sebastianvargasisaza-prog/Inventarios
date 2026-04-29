@@ -4946,10 +4946,71 @@ def solicitudes_compra_anticipada_decidir(sol_id):
               sol_id, user))
         tarea_id = cur.lastrowid
     elif decision in ('oc', 'etiqueta_adhesiva'):
-        # Marca para que Catalina cree manualmente la OC desde compras
-        # (Aqui podriamos auto-generar la OC pero requiere mas data.
-        # De momento solo dejamos la decision y Catalina crea OC manual.)
-        pass
+        # Auto-crear OC en estado Borrador con los datos de la solicitud,
+        # linkeada bidireccionalmente con el item del checklist y la
+        # solicitud anticipada. Asi Catalina solo entra a /compras a
+        # ajustar precios y autorizarla — no tiene que recrear el item.
+        # Cuando la OC se reciba en /recepcion, recibir_oc cierra el
+        # item del checklist automaticamente via oc_numero.
+        try:
+            from datetime import datetime as _dt
+            year = _dt.now().year
+            row = c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
+                "FROM ordenes_compra WHERE numero_oc LIKE ?",
+                (f'OC-{year}-%',)
+            ).fetchone()
+            seq = (row[0] or 0) + 1
+            oc_num = f'OC-{year}-{seq:04d}'
+            categoria = 'MEE'  # envases/etiquetas/decoracion siempre son MEE
+            obs_oc = (
+                f'Auto-generada desde Solicitud #{sol_id} (decision: {decision}). '
+                f'Producto destino: {sol[2]}. '
+                f'{obs}'
+            ).strip()
+            c.execute("""
+                INSERT INTO ordenes_compra
+                  (numero_oc, fecha, estado, proveedor, observaciones,
+                   creado_por, fecha_entrega_est, categoria)
+                VALUES (?, ?, 'Borrador', ?, ?, ?, ?, ?)
+            """, (oc_num, _dt.now().isoformat(), proveedor or 'POR DEFINIR',
+                  obs_oc, user, fecha_obj or sol[8] or '', categoria))
+            # Item de la OC con la cantidad del checklist
+            c.execute("""
+                INSERT INTO ordenes_compra_items
+                  (numero_oc, codigo_mp, nombre_mp, cantidad_g,
+                   precio_unitario, subtotal)
+                VALUES (?, ?, ?, ?, 0, 0)
+            """, (oc_num, sol[4] or '', sol[5] or sol[4] or '', sol[6] or 0))
+            # Linkear bidireccionalmente
+            c.execute(
+                "UPDATE solicitudes_compra_anticipada SET oc_numero=? WHERE id=?",
+                (oc_num, sol_id)
+            )
+            c.execute(
+                "UPDATE produccion_checklist SET oc_numero=? WHERE id=?",
+                (oc_num, sol[1])
+            )
+            # Crear proveedor si no existe (alimenta catalogo)
+            if proveedor:
+                exists = c.execute(
+                    "SELECT 1 FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))",
+                    (proveedor,)
+                ).fetchone()
+                if not exists:
+                    try:
+                        c.execute("""
+                            INSERT INTO proveedores
+                              (nombre, categoria, fecha_creacion, activo)
+                            VALUES (?, ?, ?, 1)
+                        """, (proveedor, categoria, _dt.now().isoformat()))
+                    except Exception:
+                        pass
+            oc_num_creada = oc_num
+            oc_num = oc_num_creada  # para el return
+        except Exception as _e:
+            # Si falla el auto-create, queda como antes (Catalina crea manual)
+            oc_num = ''
 
     # Actualizar la solicitud
     c.execute("""
@@ -4959,7 +5020,10 @@ def solicitudes_compra_anticipada_decidir(sol_id):
           proveedor=?, tarea_operativa_id=?, observaciones=?
         WHERE id=?
     """, (decision, user, proveedor, tarea_id, obs, sol_id))
-    # Marcar el item del checklist como en_transito o solicitado
+    # Marcar el item del checklist:
+    #   inventario  → en_transito (ya existe, esperando que el operario lo saque)
+    #   oc/etiqueta_adhesiva → solicitado (con oc_numero linkeada para cierre auto)
+    #   serigrafia/tampografia → solicitado (esperando tarea operativa)
     c.execute("""
         UPDATE produccion_checklist SET
           estado=CASE WHEN ? IN ('inventario') THEN 'en_transito'
@@ -4968,11 +5032,16 @@ def solicitudes_compra_anticipada_decidir(sol_id):
         WHERE id=?
     """, (decision, sol[1]))
     conn.commit()
+    msg_extra = ''
+    if tarea_id:
+        msg_extra = f' (tarea operativa #{tarea_id} creada)'
+    elif oc_num:
+        msg_extra = f' (OC {oc_num} creada en Borrador — Catalina ajusta precios y autoriza)'
     return jsonify({
         'ok': True, 'solicitud_id': sol_id, 'decision': decision,
         'tarea_operativa_id': tarea_id,
-        'mensaje': f'Solicitud {sol_id} marcada como {decision}'
-                   + (f' (tarea operativa #{tarea_id} creada)' if tarea_id else '')
+        'oc_numero': oc_num,
+        'mensaje': f'Solicitud {sol_id} marcada como {decision}' + msg_extra,
     })
 
 

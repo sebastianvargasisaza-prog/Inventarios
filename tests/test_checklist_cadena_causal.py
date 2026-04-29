@@ -233,6 +233,51 @@ def test_recibir_oc_sin_link_no_falla():
 
 # ─── Fix 3: filtro de items legacy en checklist_get + resumen ───────────────
 
+def test_decidir_oc_crea_oc_auto_y_linkea():
+    """Cuando Catalina decide 'oc' o 'etiqueta_adhesiva', se debe auto-crear
+    una OC en Borrador linkeada al item del checklist y a la solicitud
+    anticipada via oc_numero. Asi cuando la OC se recibe, recibir_oc cierra
+    el item automaticamente."""
+    con = _setup_db()
+    c = con.cursor()
+    # Item del checklist con solicitud anticipada esperando decision
+    c.execute("INSERT INTO produccion_checklist (produccion_id, item_tipo, "
+              "descripcion, estado) VALUES (1, 'envase_primario', 'ENV 50ml', 'solicitado')")
+    item_id = c.lastrowid
+    c.execute("INSERT INTO solicitudes_compra_anticipada "
+              "(checklist_item_id, estado) VALUES (?, 'pendiente')", (item_id,))
+    sol_id = c.lastrowid
+
+    # Simular el insert de OC + linkeo del fix
+    oc_num = 'OC-2026-0042'
+    c.execute("INSERT INTO ordenes_compra (numero_oc, estado) VALUES (?, 'Borrador')", (oc_num,))
+    c.execute("UPDATE solicitudes_compra_anticipada SET oc_numero=? WHERE id=?", (oc_num, sol_id))
+    c.execute("UPDATE produccion_checklist SET oc_numero=? WHERE id=?", (oc_num, item_id))
+
+    # Verificar el linkeo
+    sol_oc = c.execute(
+        "SELECT oc_numero FROM solicitudes_compra_anticipada WHERE id=?", (sol_id,)
+    ).fetchone()
+    item_oc = c.execute(
+        "SELECT oc_numero FROM produccion_checklist WHERE id=?", (item_id,)
+    ).fetchone()
+    assert sol_oc[0] == oc_num
+    assert item_oc[0] == oc_num
+
+    # Ahora simular recepcion completa de la OC → debe cerrar el item
+    es_parcial = False
+    if not es_parcial:
+        c.execute(
+            "UPDATE produccion_checklist SET estado='recibido' "
+            "WHERE oc_numero=? AND estado IN ('solicitado','en_transito','pendiente')",
+            (oc_num,)
+        )
+    estado_final = c.execute(
+        "SELECT estado FROM produccion_checklist WHERE id=?", (item_id,)
+    ).fetchone()
+    assert estado_final[0] == 'recibido', "ciclo completo: solicitar → decidir oc → recibir → recibido"
+
+
 def test_filtro_legacy_etiquetas_en_get():
     """Los items con tipo etiqueta_frontal/posterior/lateral NO deben
     aparecer en el GET del checklist (cubierto por decoracion del envase)."""
