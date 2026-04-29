@@ -3128,10 +3128,14 @@ function renderInfluencers(){
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
           +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
-      // Sebastian (29-abr-2026): para Pendientes (creadas desde /solicitudes
-      // por Jefferson sin valor o sin OC), permitir definir valor + aprobar
-      // + auto-crear OC en un solo click — y separa rechazar/eliminar.
-      btns='<button class="btn inf-aprobar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#0891b2;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;">✏️ Definir valor &amp; aprobar</button>'
+      // Sebastian (29-abr-2026): si la SOL ya viene con valor desde Marketing
+      // (Jefferson cargo todo), boton directo "Pagar". Si valor=0 (form
+      // generico de /solicitudes), pedir el valor antes de pagar.
+      var valSol = Number(s.valor||0);
+      var btnPagar = valSol > 0
+        ? '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+valSol+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#7c3aed;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;">💸 Pagar</button>'
+        : '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="0" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#0891b2;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;">✏️ Definir valor &amp; pagar</button>';
+      btns = btnPagar
           +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
           +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:11px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
@@ -3217,38 +3221,66 @@ function renderInfluencers(){
       var br=e.target.closest('.inf-rechazar');
       var bd=e.target.closest('[data-act="del-sol"]');
       var be=e.target.closest('.inf-eliminar');
-      var ba=e.target.closest('.inf-aprobar-pendiente');
+      var bpd=e.target.closest('.inf-pagar-pendiente');
       var bx=e.target.closest('.inf-rechazar-pendiente');
       if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
       if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
       if(bd) eliminarSolicitud(bd.dataset.sol);
       if(be) eliminarSolicitudAprobada(be.dataset.sol, be.dataset.nombre);
-      if(ba) aprobarPendienteInfluencer(ba.dataset.sol, Number(ba.dataset.val), ba.dataset.nombre);
+      if(bpd) pagarPendienteInfluencer(bpd.dataset.sol, Number(bpd.dataset.val), bpd.dataset.nombre);
       if(bx) rechazarPendienteInfluencer(bx.dataset.sol);
     };
   }
 
-  // Aprobar SOL Pendiente (de /solicitudes con valor=0 o sin OC):
-  // pide valor al usuario, auto-aprueba la SOL y crea OC vinculada.
-  window.aprobarPendienteInfluencer = async function(sol, valActual, nombre){
-    var promptMsg = 'Definir valor a pagar a "' + (nombre||sol) + '":';
-    var inputDefault = valActual > 0 ? String(valActual) : '';
-    var v = prompt(promptMsg + '\\n\\n(Solo numero en COP, sin puntos ni signos)', inputDefault);
-    if(v === null) return;
-    var monto = parseFloat(String(v).replace(/[^\\d.]/g,''));
-    if(!monto || monto <= 0){ alert('Valor inválido. Cancelado.'); return; }
+  // Pagar SOL Pendiente en UN SOLO CLICK:
+  //   1. Si valor=0, pedirlo al usuario.
+  //   2. Aprobar SOL + crear OC vinculada (endpoint aprobar-influencer).
+  //   3. Pagar la OC recien creada (endpoint /pagar) — esto:
+  //      - registra pago en pagos_oc
+  //      - cambia OC a 'Pagada'
+  //      - sincroniza solicitudes_compra → 'Pagada'
+  //      - sincroniza pagos_influencers → 'Pagada' (visible para Jefferson)
+  //      - inserta en flujo_egresos (Tesoreria)
+  //      - genera Comprobante de Egreso PDF
+  //      - manda email automatico a Jefferson confirmando pago
+  // Sebastian (29-abr-2026): "le doy pagar le sale a el pagada y ya, porque
+  // catalina no tiene nada que ver con esto".
+  window.pagarPendienteInfluencer = async function(sol, valActual, nombre){
+    var monto = valActual;
+    if(!monto || monto <= 0){
+      var v = prompt('Valor a pagar a "' + (nombre||sol) + '" (COP, sin puntos):', '');
+      if(v === null) return;
+      monto = parseFloat(String(v).replace(/[^\\d.]/g,''));
+      if(!monto || monto <= 0){ alert('Valor inválido. Cancelado.'); return; }
+    }
+    if(!confirm('¿Confirmar pago de $'+monto.toLocaleString('es-CO')+' a '+(nombre||sol)+'?\\n\\nEsto crea la OC, registra el pago, genera comprobante y notifica a Jefferson.')) return;
     try {
-      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/aprobar-influencer',{
+      // Paso 1: aprobar (crea OC + entrada pagos_influencers)
+      var r1 = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/aprobar-influencer',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({valor: monto})
       });
-      var raw = await r.text();
-      var d = null; try { d = JSON.parse(raw); } catch(_){}
-      if(!r.ok){
-        alert('Error '+r.status+': '+ (d&&d.error || raw.substring(0,200)));
+      var raw1 = await r1.text();
+      var d1 = null; try { d1 = JSON.parse(raw1); } catch(_){}
+      if(!r1.ok){
+        alert('Error al aprobar SOL: '+(d1&&d1.error || raw1.substring(0,200)));
         return;
       }
-      _toast('Aprobada — OC '+(d.numero_oc||'')+' creada', 1);
+      var ocNum = d1.numero_oc;
+      if(!ocNum){ alert('OC no fue creada. Abort.'); loadInfluencers(); return; }
+      // Paso 2: pagar la OC recién creada
+      var r2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/pagar',{
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({monto: monto, medio: 'Transferencia'})
+      });
+      var raw2 = await r2.text();
+      var d2 = null; try { d2 = JSON.parse(raw2); } catch(_){}
+      if(!r2.ok){
+        alert('OC '+ocNum+' creada pero pago fallo: '+(d2&&d2.error || raw2.substring(0,200))+'\\n\\nPuedes pagarla manualmente desde el filtro "Por pagar".');
+        loadInfluencers();
+        return;
+      }
+      _toast('✅ Pagado: '+ocNum+' — Jefferson recibirá email', 1);
       loadInfluencers();
     } catch(e){ alert('Error de red: '+e.message); }
   };
