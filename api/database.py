@@ -1799,13 +1799,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_at TEXT""",
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_por TEXT DEFAULT ''""",
     ]),
-    (44, "formula_headers: imagen_url para mostrar foto del producto en checklist Pre-Produccion", [
+    (44, "formula_headers: metadata completa de Shopify (imagen + SKU + descripcion + precio + peso + galeria)", [
         # Sebastian (28-abr-2026): el modal del checklist debe mostrar la
-        # foto del producto (de animuslb.com / Shopify) para que el equipo
-        # sepa visualmente que producto es y reconozca etiquetas/tapa/
-        # serigrafia. Se puede llenar manual o auto-sync de Shopify.
+        # foto del producto y info relevante (SKU, etiqueta) tomada de
+        # animuslb.com (Shopify). Auto-sync via /imagen-shopify-sync.
         """ALTER TABLE formula_headers ADD COLUMN imagen_url TEXT DEFAULT ''""",
         """ALTER TABLE formula_headers ADD COLUMN imagen_actualizada_at TEXT""",
+        """ALTER TABLE formula_headers ADD COLUMN shopify_id TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN shopify_handle TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN descripcion_html TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN descripcion_plain TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN sku_principal TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN precio_venta REAL DEFAULT 0""",
+        """ALTER TABLE formula_headers ADD COLUMN peso_g REAL DEFAULT 0""",
+        """ALTER TABLE formula_headers ADD COLUMN imagenes_extra_json TEXT DEFAULT '[]'""",
+        """ALTER TABLE formula_headers ADD COLUMN shopify_synced_at TEXT""",
     ]),
     (42, "produccion_checklist: pre-flight checklist por produccion programada (MPs + envases + etiquetas + serigrafia/tampografia)", [
         # Master de plantillas: cada producto puede tener items default

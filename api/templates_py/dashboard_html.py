@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos3">
+<link rel="stylesheet" href="/static/cortex.css?v=eos4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -5004,6 +5004,7 @@ async function abrirChecklistDetalle(produccionId, producto){
       prog.parentNode.insertBefore(imgWrap, prog);
     }
     var prodNombre = d.producto_nombre || producto;
+    var meta = d.producto_meta || {};
     var imgHtml;
     if(d.imagen_url){
       imgHtml = '<img src="'+_escHTML(d.imagen_url)+'" alt="'+_escHTML(prodNombre)+'" '+
@@ -5013,13 +5014,47 @@ async function abrirChecklistDetalle(produccionId, producto){
     } else {
       imgHtml = '<div style="width:120px;height:120px;background:#f5f5f4;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:11px;text-align:center;padding:10px">Sin foto</div>';
     }
+    // Galería de imagenes extra (frontal/posterior/lateral)
+    var galeriaHtml = '';
+    var imgsExtra = (meta.imagenes_extra || []).filter(function(x,i){ return i>0 && x && x.src; });
+    if(imgsExtra.length){
+      galeriaHtml = '<div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">' +
+        imgsExtra.slice(0,5).map(function(im){
+          var alt = im.alt || ('Vista '+(im.position||''));
+          return '<img src="'+_escHTML(im.src)+'" alt="'+_escHTML(alt)+'" title="'+_escHTML(alt)+'" '+
+                 'style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid #e7e5e4;cursor:pointer" '+
+                 'onclick="window.open(this.src)">';
+        }).join('') +
+        '</div>';
+    }
+    // Línea de SKU + precio + peso si vino de Shopify
+    var bits = [];
+    if(meta.sku) bits.push('<b style="color:#0f766e">SKU:</b> '+_escHTML(meta.sku));
+    if(meta.precio>0) bits.push('$'+Math.round(meta.precio).toLocaleString('es-CO'));
+    if(meta.peso_g>0) bits.push(Math.round(meta.peso_g)+' g');
+    var metaLine = bits.length ? '<div style="font-size:11px;color:#475569;margin-top:6px">'+bits.join(' &middot; ')+'</div>' : '';
+    // Descripcion preview
+    var descHtml = '';
+    if(meta.descripcion){
+      var preview = meta.descripcion.substring(0,200) + (meta.descripcion.length>200?'…':'');
+      descHtml = '<div style="font-size:11px;color:#78716c;margin-top:6px;font-style:italic;line-height:1.4">'+_escHTML(preview)+'</div>';
+    }
+    // Link a Shopify storefront
+    var shopifyLink = '';
+    if(meta.shopify_handle){
+      shopifyLink = ' <a href="https://animuslb.com/products/'+_escHTML(meta.shopify_handle)+'" target="_blank" style="font-size:10px;color:#10b981;text-decoration:none;font-weight:600;margin-left:6px">↗ Ver en animuslb.com</a>';
+    }
+
     imgWrap.innerHTML = imgHtml +
       '<div style="flex:1">' +
-        '<div style="font-weight:700;font-size:15px;color:#1c1917">'+_escHTML(prodNombre)+'</div>' +
-        '<div style="font-size:11px;color:#78716c;margin-top:2px">'+(prim.cantidad_kg||0).toLocaleString('es-CO')+' kg · '+(prim.fecha_planeada||'-')+'</div>' +
+        '<div style="font-weight:700;font-size:15px;color:#1c1917">'+_escHTML(prodNombre)+shopifyLink+'</div>' +
+        '<div style="font-size:11px;color:#78716c;margin-top:2px">'+(prim.cantidad_kg||0).toLocaleString('es-CO')+' kg &middot; '+(prim.fecha_planeada||'-')+'</div>' +
+        metaLine +
+        descHtml +
+        galeriaHtml +
         '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' +
           '<button onclick="ckImagenPegarURL(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">📎 Pegar URL</button>' +
-          '<button onclick="ckImagenShopify(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🛍️ Sync Shopify</button>' +
+          '<button onclick="ckImagenShopify(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🛍️ Sync Shopify completo</button>' +
           (d.imagen_url ? '<button onclick="ckImagenLimpiar(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🗑️ Quitar</button>' : '') +
         '</div>' +
       '</div>';

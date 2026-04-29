@@ -3992,9 +3992,9 @@ def checklist_get(produccion_id):
     completados = totales['verificado_ok'] + totales['recibido'] + totales['listo']
     porcentaje = round((completados / total_items * 100), 1) if total_items > 0 else 0
 
-    # Imagen del producto (si existe en formula_headers.imagen_url)
-    imagen_url = ''
+    # Metadata del producto desde formula_headers (sync Shopify)
     producto_nombre = ''
+    producto_meta = {}
     try:
         if items and items[0].get('producto_nombre'):
             producto_nombre = items[0]['producto_nombre']
@@ -4005,11 +4005,29 @@ def checklist_get(produccion_id):
             ).fetchone()
             producto_nombre = r[0] if r else ''
         if producto_nombre:
-            r = c.execute(
-                "SELECT COALESCE(imagen_url,'') FROM formula_headers WHERE producto_nombre=?",
-                (producto_nombre,)
-            ).fetchone()
-            imagen_url = r[0] if r else ''
+            mr = c.execute("""
+                SELECT COALESCE(imagen_url,''), COALESCE(sku_principal,''),
+                       COALESCE(descripcion_plain,''), COALESCE(precio_venta,0),
+                       COALESCE(peso_g,0), COALESCE(imagenes_extra_json,'[]'),
+                       COALESCE(shopify_handle,''), COALESCE(shopify_synced_at,'')
+                FROM formula_headers WHERE producto_nombre=?
+            """, (producto_nombre,)).fetchone()
+            if mr:
+                import json as _json
+                try:
+                    imagenes_extra = _json.loads(mr[5] or '[]')
+                except Exception:
+                    imagenes_extra = []
+                producto_meta = {
+                    'imagen_url':       mr[0],
+                    'sku':              mr[1],
+                    'descripcion':      mr[2],
+                    'precio':           float(mr[3] or 0),
+                    'peso_g':           float(mr[4] or 0),
+                    'imagenes_extra':   imagenes_extra,
+                    'shopify_handle':   mr[6],
+                    'shopify_synced_at': mr[7],
+                }
     except Exception:
         pass
 
@@ -4020,7 +4038,10 @@ def checklist_get(produccion_id):
         'completados': completados,
         'porcentaje_listo': porcentaje,
         'producto_nombre': producto_nombre,
-        'imagen_url': imagen_url,
+        # Compat con UI vieja
+        'imagen_url': producto_meta.get('imagen_url', ''),
+        # Metadata Shopify completa
+        'producto_meta': producto_meta,
     })
 
 

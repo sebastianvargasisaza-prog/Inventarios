@@ -287,27 +287,31 @@ def producto_imagen(producto_nombre):
 
 @bp.route('/api/formulas/<path:producto_nombre>/imagen-shopify-sync', methods=['POST'])
 def producto_imagen_shopify_sync(producto_nombre):
-    """Auto-sync: busca el producto en Shopify por title match y guarda la URL
-    de la primera imagen como imagen_url en formula_headers.
+    """Auto-sync completo desde Shopify: busca el producto por title match y
+    guarda imagen + SKU + descripcion + precio + peso + galeria de imagenes
+    extra (utiles para identificar etiqueta frontal/posterior).
 
-    Requiere shopify_token + shopify_shop configurados.
+    Requiere shopify_token + shopify_shop en animus_config.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     try:
-        token = c.execute("SELECT valor FROM config WHERE clave='shopify_token'").fetchone()
-        shop = c.execute("SELECT valor FROM config WHERE clave='shopify_shop'").fetchone()
+        row_token = c.execute("SELECT valor FROM animus_config WHERE clave='shopify_token'").fetchone()
+        row_shop = c.execute("SELECT valor FROM animus_config WHERE clave='shopify_shop'").fetchone()
     except Exception:
-        return jsonify({'error': 'config no disponible'}), 500
-    if not token or not shop:
-        return jsonify({'error': 'Shopify no configurado. Pega URL manualmente.'}), 400
-    import urllib.request, urllib.parse, json as _json
-    base = f"https://{shop[0]}/admin/api/2024-01/products.json"
+        return jsonify({'error': 'animus_config no disponible'}), 500
+    if not row_token or not row_shop:
+        return jsonify({'error': 'Shopify no configurado (falta shopify_token / shopify_shop). Pega URL manualmente.'}), 400
+    token = row_token[0]
+    shop = row_shop[0]
+
+    import urllib.request, urllib.parse, json as _json, re as _re
+    base = f"https://{shop}/admin/api/2024-01/products.json"
     qs = urllib.parse.urlencode({'title': producto_nombre, 'limit': 5})
     req = urllib.request.Request(
         f"{base}?{qs}",
-        headers={'X-Shopify-Access-Token': token[0]}
+        headers={'X-Shopify-Access-Token': token}
     )
     try:
         resp = urllib.request.urlopen(req, timeout=15)
@@ -317,24 +321,55 @@ def producto_imagen_shopify_sync(producto_nombre):
     products = data.get('products', [])
     if not products:
         return jsonify({'error': f'No encontrado en Shopify: "{producto_nombre}"'}), 404
-    # Primera imagen del primer match
+
+    # Primer match — el title de Shopify suele ser muy cercano al producto_nombre
     p0 = products[0]
-    imgs = p0.get('images', [])
-    if not imgs:
-        return jsonify({'error': f'Producto encontrado pero sin imagenes'}), 404
-    imagen_url = imgs[0].get('src', '')
-    c.execute(
-        "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now') "
-        "WHERE producto_nombre=?",
-        (imagen_url, producto_nombre)
-    )
+    imgs = p0.get('images', []) or []
+    imagen_principal = imgs[0].get('src', '') if imgs else ''
+    imagenes_extra = [{'src': im.get('src', ''), 'alt': im.get('alt', ''), 'position': im.get('position', 0)}
+                       for im in imgs]
+    variants = p0.get('variants', []) or []
+    var0 = variants[0] if variants else {}
+    sku_principal = var0.get('sku', '') or ''
+    precio_venta = float(var0.get('price') or 0)
+    peso_g = float(var0.get('grams') or 0)
+    body_html = p0.get('body_html', '') or ''
+    # Plain text de la descripcion (sin HTML, util para preview)
+    descripcion_plain = _re.sub(r'<[^>]+>', ' ', body_html)
+    descripcion_plain = _re.sub(r'\s+', ' ', descripcion_plain).strip()[:500]
+
+    c.execute("""
+        UPDATE formula_headers SET
+          imagen_url=?, imagen_actualizada_at=datetime('now'),
+          shopify_id=?, shopify_handle=?,
+          descripcion_html=?, descripcion_plain=?,
+          sku_principal=?, precio_venta=?, peso_g=?,
+          imagenes_extra_json=?, shopify_synced_at=datetime('now')
+        WHERE producto_nombre=?
+    """, (
+        imagen_principal,
+        str(p0.get('id') or ''),
+        p0.get('handle') or '',
+        body_html, descripcion_plain,
+        sku_principal, precio_venta, peso_g,
+        _json.dumps(imagenes_extra),
+        producto_nombre,
+    ))
+    if c.rowcount == 0:
+        return jsonify({'error': f'Producto {producto_nombre} no existe en formula_headers'}), 404
     conn.commit()
     return jsonify({
         'ok': True,
         'producto': producto_nombre,
-        'imagen_url': imagen_url,
+        'imagen_url': imagen_principal,
+        'imagenes_count': len(imagenes_extra),
+        'sku': sku_principal,
+        'precio': precio_venta,
+        'peso_g': peso_g,
         'shopify_product_id': p0.get('id'),
         'shopify_title': p0.get('title'),
+        'shopify_handle': p0.get('handle'),
+        'descripcion_preview': descripcion_plain[:120],
     })
 
 @bp.route('/api/movimientos', methods=['GET', 'POST'])
