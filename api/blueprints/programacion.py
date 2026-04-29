@@ -3686,6 +3686,13 @@ ITEMS_CHECKLIST_DEFAULT = [
     ('tampografia',      'Tampografia en tapa si aplica',       30, 7),
 ]
 
+# Tipos legacy que ya NO se generan ni muestran. La decoracion del envase
+# (etiqueta_adhesiva / serigrafia / tampografia) cubre estas necesidades
+# y crea las OCs/tareas operativas correspondientes desde Compras.
+# Pedido Sebastian 2026-04-29: "quita lo de etiquetas frontales porque ya
+# esta en el que sale". Si necesitas reactivarlas, vacia esta tupla.
+TIPOS_LEGACY_OCULTOS = ('etiqueta_frontal', 'etiqueta_posterior', 'etiqueta_lateral')
+
 
 def _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=None):
     """Calcula disponibilidad real de un MP considerando TODAS las
@@ -3895,6 +3902,8 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
             tipo, desc, dias, orden, prov, obligatorio = row
             if not obligatorio:
                 continue  # solo crear los obligatorios automaticamente
+            if tipo in TIPOS_LEGACY_OCULTOS:
+                continue  # cubierto por la decoracion del envase
             c.execute("""INSERT INTO produccion_checklist
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
                  item_tipo, descripcion, estado, proveedor, dias_anticipacion,
@@ -3963,6 +3972,13 @@ def checklist_get(produccion_id):
     include_mps = request.args.get('include_mps', '0') == '1'
     conn = get_db(); c = conn.cursor()
     where_extra = "" if include_mps else " AND item_tipo != 'mp'"
+    # Excluir tipos legacy que ya se cubren con la decoracion del envase
+    if TIPOS_LEGACY_OCULTOS:
+        placeholders = ','.join(['?'] * len(TIPOS_LEGACY_OCULTOS))
+        where_extra += f" AND item_tipo NOT IN ({placeholders})"
+        legacy_params = list(TIPOS_LEGACY_OCULTOS)
+    else:
+        legacy_params = []
     rows = c.execute(f"""
         SELECT id, item_tipo, descripcion, cantidad_requerida, unidad, codigo_mp,
                stock_actual, deficit, estado, proveedor, solicitud_numero,
@@ -3982,7 +3998,7 @@ def checklist_get(produccion_id):
                          WHEN 'tampografia' THEN 8
                          ELSE 9 END,
           descripcion ASC
-    """, (produccion_id,)).fetchall()
+    """, [produccion_id] + legacy_params).fetchall()
     cols = [x[0] for x in c.description]
     items = [dict(zip(cols, r)) for r in rows]
 
@@ -4355,21 +4371,34 @@ def checklist_resumen_calendario():
     except Exception:
         pass
 
+    # Filtro legacy aplicado a cada subquery de conteo (etiquetas frontal/posterior/lateral
+    # ya no cuentan porque la decoracion del envase las cubre). Se construye dinamicamente
+    # para que cambiar TIPOS_LEGACY_OCULTOS arriba se propague aqui.
+    if TIPOS_LEGACY_OCULTOS:
+        legacy_sql = " AND item_tipo NOT IN (" + ",".join(["'" + t.replace("'", "''") + "'" for t in TIPOS_LEGACY_OCULTOS]) + ")"
+    else:
+        legacy_sql = ""
     try:
-        rows = c.execute("""
+        rows = c.execute(f"""
             SELECT pp.id,
                    pp.producto                                       as producto_nombre,
                    pp.fecha_programada                               as fecha_planeada,
                    COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg,0) as kg,
                    pp.estado                                         as estado_prod,
                    (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id) as total_items,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}) as total_items,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
                        AND estado IN ('verificado_ok','recibido','listo')) as completados,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
                        AND estado='pendiente') as pendientes,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id
-                       AND estado='solicitado') as solicitados
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
+                       AND estado='solicitado') as solicitados,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
+                       AND estado='en_transito') as en_transito,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
+                       AND estado='recibido') as recibidos,
+                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
+                       AND estado='no_aplica') as no_aplica
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
             WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')

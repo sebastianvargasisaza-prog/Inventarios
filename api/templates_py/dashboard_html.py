@@ -5171,10 +5171,28 @@ function rowProduccion(p){
   var diasColor = p.dias_faltan<0 ? '#dc2626' : p.dias_faltan<=7 ? '#f59e0b' : '#15803d';
   var pct = p.porcentaje || 0;
   var noChecklist = (p.total_items||0)===0;
+  // Pills de estado: cada estado con icono propio + tooltip explicativo + color distintivo.
+  // Solo se muestran los estados con count>0 para no saturar.
+  var pills = '';
+  function pill(cnt, ico, label, bg, fg, tip){
+    if(!cnt) return '';
+    return '<span title="'+tip+'" style="display:inline-flex;align-items:center;gap:3px;background:'+bg+';color:'+fg+';font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin:1px 0 1px 4px">'+ico+' '+cnt+'</span>';
+  }
+  pills += pill(p.pendientes,   '🔴', 'pend', '#fee2e2', '#991b1b', 'Pendiente — falta elegir o solicitar');
+  pills += pill(p.solicitados,  '⏳', 'sol',  '#fef3c7', '#92400e', 'Solicitado — en cola de Catalina (Compras)');
+  pills += pill(p.en_transito,  '🚚', 'tra',  '#dbeafe', '#1e40af', 'En tránsito — OC creada, esperando llegada');
+  pills += pill(p.recibidos,    '📦', 'rec',  '#dcfce7', '#166534', 'Recibido — ya está en bodega');
+  pills += pill(p.no_aplica,    '—',  'na',   '#f5f5f4', '#78716c', 'No aplica para este producto');
+  // Barra de progreso visual
+  var barraHtml = noChecklist ? '' :
+    '<div style="background:#e7e5e4;border-radius:6px;height:8px;overflow:hidden;margin-top:6px">' +
+      '<div style="background:'+color+';height:100%;width:'+pct+'%;transition:width .3s"></div>' +
+    '</div>';
   return '<div style="background:#fff;border:1px solid #e7e5e4;border-left:4px solid '+color+';border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="abrirChecklistDetalle('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')">' +
     '<div>' +
       '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+'</div>' +
       '<div style="font-size:11px;color:#78716c;margin-top:2px">' + (p.kg||0).toLocaleString('es-CO')+' kg · ' + p.fecha_planeada + '</div>' +
+      barraHtml +
     '</div>' +
     '<div style="text-align:center;min-width:80px"><div style="font-weight:800;color:'+diasColor+';font-size:1.1em">'+diasTxt+'</div><div style="font-size:10px;color:#78716c">para producir</div></div>' +
     '<div style="min-width:140px">' +
@@ -5182,10 +5200,9 @@ function rowProduccion(p){
         ? '<button onclick="event.stopPropagation();ckGenerar('+p.id+')" style="background:#a16207;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Generar checklist</button>'
         : '<div style="background:#f5f5f4;border-radius:8px;padding:6px 10px;text-align:center"><div style="font-weight:700;color:'+color+'">'+pct+'%</div><div style="font-size:10px;color:#78716c">'+(p.completados||0)+' de '+(p.total_items||0)+' OK</div></div>') +
     '</div>' +
-    '<div style="font-size:11px;color:#78716c;text-align:right;min-width:100px">' +
-      (p.pendientes>0 ? '🔴 '+p.pendientes+' pendientes<br>':'') +
-      (p.solicitados>0 ? '🟡 '+p.solicitados+' solicitados<br>':'') +
-      (noChecklist?'':'<span style="color:#15803d">Click para detalle →</span>') +
+    '<div style="font-size:11px;color:#78716c;text-align:right;min-width:140px">' +
+      (noChecklist ? '' : '<div style="text-align:right;line-height:1.6">'+pills+'</div>') +
+      (noChecklist?'':'<div style="margin-top:4px;color:#15803d">Click para detalle →</div>') +
     '</div>' +
   '</div>';
 }
