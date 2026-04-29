@@ -12,7 +12,7 @@ HOME_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="description" content="EOS · El primer rayo de claridad sobre tus datos · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -45,8 +45,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 <body>
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:16px;">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="EOS"
-         style="width:54px;height:54px;border-radius:12px;box-shadow:0 6px 20px rgba(167,139,250,0.35);flex-shrink:0;">
+    <span style="width:54px;height:54px;border-radius:12px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:#6d28d9;" aria-label="EOS">
+      <svg viewBox="0 0 32 32" width="46" height="46" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="12" r="3" fill="#6d28d9"/>
+        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+    </span>
     <div>
       <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
         <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">EOS</span>
@@ -56,7 +61,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
     </div>
   </div>
   <div class="hdr-right">
-    <div style="font-style:italic;color:#cbd5e1;">El cerebro operativo de tu laboratorio</div>
+    <div style="font-style:italic;color:#cbd5e1;">El primer rayo de claridad sobre tus datos</div>
     <div style="font-size:10px;color:#78716c;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por HHA Group</div>
   </div>
 </div>
@@ -90,7 +95,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 </div>
 <footer style="padding:24px 20px;border-top:1px solid #e7e5e4;margin-top:40px;text-align:center;font-size:11px;color:#a8a29e;background:#fafaf9;">
   <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">EOS</div>
-  <div style="margin-top:4px;font-style:italic;">El cerebro operativo de tu laboratorio</div>
+  <div style="margin-top:4px;font-style:italic;">El primer rayo de claridad sobre tus datos</div>
   <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:#1c1917">HHA Group</strong></div>
   <div style="margin-top:6px;color:#d6d3d1;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
 </footer>

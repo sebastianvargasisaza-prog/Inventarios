@@ -12,7 +12,7 @@ LOGIN_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="EOS · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="description" content="EOS · El primer rayo de claridad sobre tus datos · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -50,9 +50,15 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
 <body>
 <div class="card">
   <div class="logo">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="EOS" class="brand-mark">
+    <span class="brand-mark" style="display:inline-flex;align-items:center;justify-content:center;color:#6d28d9;" aria-label="EOS">
+      <svg viewBox="0 0 32 32" width="64" height="64" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="12" r="3" fill="#6d28d9"/>
+        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+    </span>
     <div class="brand-name">EOS</div>
-    <div class="brand-tag">El cerebro operativo de tu laboratorio</div>
+    <div class="brand-tag">El primer rayo de claridad sobre tus datos</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>
   </div>
   {error}

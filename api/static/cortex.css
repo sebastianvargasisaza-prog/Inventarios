@@ -267,7 +267,7 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
    Sin romper estilos existentes — solo refinamos lo que se ve obviamente
    default-feo en HTML legacy. */
 
-/* Tablas: renderizar con look Cortex */
+/* Tablas: renderizar con look EOS */
 table.cx-table {
   width: 100%;
   border-collapse: collapse;
