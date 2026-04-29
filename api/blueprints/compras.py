@@ -573,19 +573,34 @@ def editar_oc(numero_oc):
     EDITABLE_OBS_ONLY = {'Pagada'}
 
     # ─── Edicion completa ────────────────────────────────────────────────
+    # PATCH semántico: solo se actualiza lo que VIENE en el body. Lo que no se
+    # especifique mantiene su valor actual en BD. Esto permite PATCH parciales
+    # (ej. solo togglear con_iva desde el Consolidado sin reenviar proveedor).
     if estado in EDITABLE_FULL:
-        if not d.get('proveedor'):
-            return jsonify({'error': 'Proveedor requerido'}), 400
-        con_iva = 1 if d.get('con_iva') else 0
-        valor_sin_iva = float(d.get('valor_sin_iva', 0))
+        # Leer estado actual para fallback en campos no especificados
+        cur_row = c.execute("""
+            SELECT proveedor, COALESCE(categoria,'MP'), COALESCE(observaciones,''),
+                   COALESCE(fecha_entrega_est,''), COALESCE(con_iva,0),
+                   COALESCE(valor_sin_iva,0)
+            FROM ordenes_compra WHERE numero_oc=?
+        """, (numero_oc,)).fetchone()
+        cur_prov, cur_cat, cur_obs, cur_fent, cur_iva, cur_vsi = cur_row
+        proveedor = d['proveedor'] if 'proveedor' in d and d.get('proveedor') else cur_prov
+        if not proveedor:
+            return jsonify({'error': 'Proveedor requerido (no hay valor actual y no vino en body)'}), 400
+        categoria = d.get('categoria', cur_cat)
+        observaciones = d.get('observaciones', cur_obs) if 'observaciones' in d else cur_obs
+        fecha_entrega_est = d.get('fecha_entrega_est', cur_fent) if 'fecha_entrega_est' in d else cur_fent
+        con_iva = (1 if d.get('con_iva') else 0) if 'con_iva' in d else int(cur_iva or 0)
+        valor_sin_iva = float(d.get('valor_sin_iva', cur_vsi)) if 'valor_sin_iva' in d else float(cur_vsi or 0)
         c.execute("""
             UPDATE ordenes_compra SET
                 proveedor=?, categoria=?, observaciones=?,
                 fecha_entrega_est=?, con_iva=?, valor_sin_iva=?
             WHERE numero_oc=?""",
-            (d['proveedor'], d.get('categoria', 'MP'), d.get('observaciones', ''),
-             d.get('fecha_entrega_est', ''), con_iva, valor_sin_iva, numero_oc))
-        # Si vinieron items, reemplazar completo
+            (proveedor, categoria, observaciones,
+             fecha_entrega_est, con_iva, valor_sin_iva, numero_oc))
+        # Si vinieron items, reemplazar completo y recalcular valor_total con IVA
         if 'items' in d:
             c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
             valor_total = 0.0
@@ -597,6 +612,15 @@ def editar_oc(numero_oc):
                 valor_total += subtotal
             if con_iva:
                 valor_total = round(valor_total * 1.19, 2)
+            c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
+        else:
+            # Sin items en body → recalcular valor_total respetando con_iva sobre items existentes
+            # (importante cuando solo se togglea IVA sin tocar items)
+            sub = c.execute(
+                'SELECT COALESCE(SUM(subtotal),0) FROM ordenes_compra_items WHERE numero_oc=?',
+                (numero_oc,)
+            ).fetchone()[0] or 0.0
+            valor_total = round(sub * 1.19, 2) if con_iva else round(sub, 2)
             c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
         conn.commit()
         return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) actualizada'})

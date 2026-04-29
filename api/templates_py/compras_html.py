@@ -4125,14 +4125,19 @@ async function saveConsolEdits(idx){
       }
     }
 
-    // 2) OC: con_iva + observaciones
+    // 2) OC: con_iva + observaciones (PATCH parcial — el backend mantiene proveedor/categoria/etc. si no van).
+    //    Aun asi enviamos proveedor explicitamente como defensa en profundidad.
     var conIva = ocBox.querySelector('[data-field="con_iva"]').checked;
     var obs = ocBox.querySelector('[data-field="observaciones"]').value || '';
     if(origOC && (conIva !== !!origOC.con_iva || obs !== (origOC.observaciones||''))){
       try {
         var rr2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/editar', {
           method:'PATCH', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({con_iva:conIva?1:0, observaciones:obs, valor_sin_iva:origOC.valor_sin_iva||0})
+          body: JSON.stringify({
+            proveedor: p.proveedor || origOC.proveedor || '',
+            con_iva: conIva?1:0,
+            observaciones: obs
+          })
         });
         if(!rr2.ok){ var dd2 = await rr2.json().catch(function(){return{};}); errors.push(ocNum+' OC: '+(dd2.error||rr2.status)); }
       } catch(e){ errors.push(ocNum+' OC: '+e.message); }
