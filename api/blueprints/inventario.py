@@ -3684,6 +3684,229 @@ def mee_anular_movimiento(mov_id):
     conn.commit()
     return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado y stock revertido'})
 
+
+# ════════════════════════════════════════════════════════════════════════
+# MEE ampliado (29-abr-2026): proveedor, ajustar, historico, eliminar,
+# bulk import desde Excel — paridad de funcionalidades con MP.
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/api/mee/<codigo>', methods=['GET', 'PUT', 'DELETE'])
+def mee_item_detalle(codigo):
+    """GET: detalle de un MEE con stock, ultimo mov.
+    PUT: actualiza descripcion / categoria / unidad / proveedor.
+    DELETE: archiva (estado='Archivado'), no borra fisicamente.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user','')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("UPDATE maestro_mee SET estado='Archivado' WHERE codigo=?", (codigo,))
+        if c.rowcount == 0:
+            return jsonify({'error':'No encontrado'}), 404
+        conn.commit()
+        return jsonify({'ok': True, 'archivado': codigo})
+    if request.method == 'PUT':
+        d = request.json or {}
+        sets, params = [], []
+        for f in ('descripcion','categoria','unidad','proveedor','fabricante','stock_minimo'):
+            if f in d:
+                sets.append(f'{f}=?'); params.append(d[f])
+        if not sets:
+            return jsonify({'error':'Nada que actualizar'}), 400
+        params.append(codigo)
+        c.execute(f"UPDATE maestro_mee SET {', '.join(sets)} WHERE codigo=?", params)
+        if c.rowcount == 0:
+            return jsonify({'error':'No encontrado'}), 404
+        conn.commit()
+        return jsonify({'ok': True, 'codigo': codigo})
+    # GET
+    row = c.execute("""
+        SELECT codigo, descripcion, categoria, proveedor, fabricante, estado,
+               stock_actual, stock_minimo, unidad, fecha_creacion
+        FROM maestro_mee WHERE codigo=?
+    """, (codigo,)).fetchone()
+    if not row:
+        return jsonify({'error':'No encontrado'}), 404
+    cols = [d[0] for d in c.description]
+    return jsonify(dict(zip(cols, row)))
+
+
+@bp.route('/api/mee/<codigo>/proveedor', methods=['PUT'])
+def mee_set_proveedor(codigo):
+    """Cambiar proveedor de un MEE (igual que MP)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    proveedor = (d.get('proveedor') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor, codigo))
+    if c.rowcount == 0:
+        return jsonify({'error':'No encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'proveedor': proveedor})
+
+
+@bp.route('/api/mee/<codigo>/stock-minimo', methods=['PUT'])
+def mee_set_stock_minimo(codigo):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    try: nuevo = float(d.get('stock_minimo', 0))
+    except: return jsonify({'error':'stock_minimo invalido'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET stock_minimo=? WHERE codigo=?", (nuevo, codigo))
+    if c.rowcount == 0:
+        return jsonify({'error':'No encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'stock_minimo': nuevo})
+
+
+@bp.route('/api/mee/<codigo>/ajustar', methods=['POST'])
+def mee_ajustar_stock(codigo):
+    """Ajusta stock manual con motivo (auditado en movimientos_mee)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user','')
+    d = request.json or {}
+    try: cantidad_nueva = float(d.get('cantidad_nueva', 0))
+    except: return jsonify({'error':'cantidad_nueva invalida'}), 400
+    motivo = (d.get('motivo') or '').strip()
+    if not motivo:
+        return jsonify({'error': 'motivo requerido para ajuste'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
+    if not row:
+        return jsonify({'error':'No encontrado'}), 404
+    stock_anterior = float(row[0] or 0)
+    delta = cantidad_nueva - stock_anterior
+    c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (cantidad_nueva, codigo))
+    c.execute("""
+        INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+        VALUES (?, 'Ajuste', ?, ?, ?)
+    """, (codigo, abs(delta), user, f'Ajuste {stock_anterior} → {cantidad_nueva} ({"+" if delta>=0 else ""}{delta}). {motivo}'))
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'stock_anterior': stock_anterior,
+                    'stock_nuevo': cantidad_nueva, 'delta': delta})
+
+
+@bp.route('/api/mee/<codigo>/historico', methods=['GET'])
+def mee_historico_item(codigo):
+    """Histórico de movimientos de UN item MEE (ordenado descendente)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, tipo, cantidad, unidad, lote_ref, batch_ref,
+               responsable, observaciones, fecha, COALESCE(anulado,0) as anulado
+        FROM movimientos_mee
+        WHERE mee_codigo=?
+        ORDER BY fecha DESC, id DESC
+        LIMIT 200
+    """, (codigo,)).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'codigo': codigo, 'movimientos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/mee/import-bulk', methods=['POST'])
+def mee_import_bulk():
+    """Importa o actualiza MEE en lote desde JSON.
+
+    Body: {items: [{codigo, descripcion, categoria, presentacion, stock,
+                    proveedor?, unidad?, stock_minimo?}], modo: 'upsert'|'replace'}
+
+    upsert (default): si codigo existe, UPDATE descripcion/categoria/stock;
+                       si no existe, INSERT. No borra los que no aparezcan.
+    replace: archiva (estado='Archivado') los items NO incluidos.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user','')
+    d = request.json or {}
+    items = d.get('items') or []
+    modo = (d.get('modo') or 'upsert').strip()
+    if not items:
+        return jsonify({'error': 'items vacio'}), 400
+    conn = get_db(); c = conn.cursor()
+    insertados = 0; actualizados = 0
+    codigos_recibidos = set()
+    for it in items:
+        codigo = (it.get('codigo') or '').strip()
+        if not codigo: continue
+        codigos_recibidos.add(codigo)
+        descripcion = (it.get('descripcion') or '').strip()
+        categoria = (it.get('categoria') or 'Otro').strip()
+        unidad = (it.get('unidad') or 'und').strip()
+        proveedor = (it.get('proveedor') or '').strip()
+        try: stock = float(it.get('stock') or 0)
+        except: stock = 0
+        try: stock_min = float(it.get('stock_minimo') or 1000)
+        except: stock_min = 1000
+        existing = c.execute("SELECT codigo, stock_actual FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
+        if existing:
+            stock_anterior = float(existing[1] or 0)
+            c.execute("""
+                UPDATE maestro_mee SET
+                  descripcion=?, categoria=?, unidad=?, proveedor=?,
+                  stock_actual=?, stock_minimo=?, estado='Activo'
+                WHERE codigo=?
+            """, (descripcion, categoria, unidad, proveedor, stock, stock_min, codigo))
+            # Si cambió el stock, registrar movimiento de ajuste
+            if abs(stock - stock_anterior) > 0.01:
+                c.execute("""
+                    INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+                    VALUES (?, 'Ajuste', ?, ?, ?)
+                """, (codigo, abs(stock-stock_anterior), user,
+                      f'[Import Excel] {stock_anterior} → {stock}'))
+            actualizados += 1
+        else:
+            c.execute("""
+                INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor,
+                                         stock_actual, stock_minimo, estado, fecha_creacion)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Activo', datetime('now'))
+            """, (codigo, descripcion, categoria, unidad, proveedor, stock, stock_min))
+            c.execute("""
+                INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+                VALUES (?, 'Entrada', ?, ?, ?)
+            """, (codigo, stock, user, '[Import Excel] inventario inicial'))
+            insertados += 1
+    archivados = 0
+    if modo == 'replace':
+        # Archivar los que NO vinieron (estado='Activo' no recibidos)
+        rows = c.execute("SELECT codigo FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'").fetchall()
+        for (cod,) in rows:
+            if cod not in codigos_recibidos:
+                c.execute("UPDATE maestro_mee SET estado='Archivado' WHERE codigo=?", (cod,))
+                archivados += 1
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'insertados': insertados,
+        'actualizados': actualizados,
+        'archivados': archivados,
+        'total_recibidos': len(items),
+    })
+
+
+@bp.route('/api/mee/categorias', methods=['GET'])
+def mee_categorias():
+    """Lista categorias distintas del catalogo MEE con conteo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT COALESCE(categoria,'Sin categoria') as cat,
+               COUNT(*) as n,
+               COALESCE(SUM(stock_actual),0) as stock_total
+        FROM maestro_mee
+        WHERE COALESCE(estado,'Activo')='Activo'
+        GROUP BY cat
+        ORDER BY cat
+    """).fetchall()
+    cats = [{'categoria': r[0], 'count': r[1], 'stock_total': float(r[2] or 0)} for r in rows]
+    return jsonify({'categorias': cats})
+
+
 # ═══════════════════════════════════════════════════════════════
 #  ACONDICIONAMIENTO + LIBERACIÓN — Fase 4
 # ═══════════════════════════════════════════════════════════════

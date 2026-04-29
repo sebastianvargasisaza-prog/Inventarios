@@ -1,0 +1,546 @@
+[
+  {
+    "codigo": "ENV-SUERO-ILUMINADOR-TRX-30ML",
+    "descripcion": "SUERO ILUMINADOR TRX 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 2495,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-SUERO-NIACINAMIDA-30ML",
+    "descripcion": "SUERO NIACINAMIDA 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 448,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-PLASTIC-BOTTLE-NO-PRINT-30ML",
+    "descripcion": "PLASTIC BOTTLE NO PRINT 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 3240,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-PLASTIC-BOTTLE-30ML",
+    "descripcion": "PLASTIC BOTTLE 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 4320,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-SUERO-MULTIPEPTIDOS-30ML",
+    "descripcion": "SUERO MULTIPEPTIDOS 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 2942,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AMBAR-125ML",
+    "descripcion": "FRASCO AMBAR 125ml",
+    "categoria": "Envase",
+    "presentacion": "125ml",
+    "stock": 9,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AIRLESS-CONTORNO-15ML",
+    "descripcion": "FRASCO AIRLESS CONTORNO 15ml",
+    "categoria": "Envase",
+    "presentacion": "15ml",
+    "stock": 0,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AZUL-30ML",
+    "descripcion": "FRASCO AZUL 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 3998,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AMBAR-30ML",
+    "descripcion": "FRASCO AMBAR 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 2084,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-VIDRIO-OPALIZADO-ENANO-30ML",
+    "descripcion": "FRASCO VIDRIO OPALIZADO ENANO 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 6476,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-NEGRO-100ML",
+    "descripcion": "FRASCO NEGRO 100ml",
+    "categoria": "Envase",
+    "presentacion": "100ml",
+    "stock": 0,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-MAXLASH-10ML",
+    "descripcion": "ENVASE MAXLASH 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 469,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-BLANCO-CUADRADO-30ML",
+    "descripcion": "FRASCO BLANCO CUADRADO 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 5765,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-BLANCO-CUADRADO-15ML",
+    "descripcion": "FRASCO BLANCO CUADRADO 15ml",
+    "categoria": "Envase",
+    "presentacion": "15ml",
+    "stock": 500,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AMBAR-50ML",
+    "descripcion": "FRASCO AMBAR 50ml",
+    "categoria": "Envase",
+    "presentacion": "50ml",
+    "stock": 950,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-METALICO-MAXLASH-75ML",
+    "descripcion": "ENVASE METALICO MAXLASH 7,5ml",
+    "categoria": "Envase",
+    "presentacion": "7,5ml",
+    "stock": 1000,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-OPALIZADO-30ML",
+    "descripcion": "FRASCO OPALIZADO 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 0,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-PLASTIC-INNER-CUP-30ML",
+    "descripcion": "FRASCO PLASTIC INNER CUP 30ml",
+    "categoria": "Envase",
+    "presentacion": "30ml",
+    "stock": 15050,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIP-GLOSS-BLANCO-SIN-SERG-10ML",
+    "descripcion": "LIP GLOSS BLANCO SIN SERG 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 891,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-CAF-OSCURO-10ML",
+    "descripcion": "LIPS GLOSS CAFÉ OSCURO 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 271,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-CAF-CLARO-SIN-SERIG-10ML",
+    "descripcion": "LIPS GLOSS  CAFÉ CLARO SIN SERIG 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 766,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-ROSADO-10ML",
+    "descripcion": "LIPS GLOSS ROSADO 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 688,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-MERLOT-SIN-SERG-10ML",
+    "descripcion": "LIPS GLOSS MERLOT SIN SERG 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 780,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-ROSADO-OSCURO-10ML",
+    "descripcion": "LIPS GLOSS ROSADO OSCURO 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 762,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AMBAR-10ML",
+    "descripcion": "FRASCO AMBAR 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 3000,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-BLANCO-PUFF-50ML",
+    "descripcion": "FRASCO BLANCO PUFF 50ml",
+    "categoria": "Envase",
+    "presentacion": "50ml",
+    "stock": 127,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AIRLESS-JAR-BLANCO-50ML",
+    "descripcion": "FRASCO AIRLESS JAR BLANCO 50ml",
+    "categoria": "Envase",
+    "presentacion": "50ml",
+    "stock": 5000,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIP-GLOSS-BLANCO-SERIG-10ML",
+    "descripcion": "LIP GLOSS BLANCO SERIG 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 301,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-MERLOT-SERIG-10ML",
+    "descripcion": "LIPS GLOSS MERLOT SERIG 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 97,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-PEACH-10ML",
+    "descripcion": "LIPS GLOSS  PEACH 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 290,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-ROSADO-SERIG-MALVA-10ML",
+    "descripcion": "LIPS GLOSS ROSADO SERIG MALVA 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 77,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-REDONDO-BLANCO-150ML",
+    "descripcion": "ENVASE REDONDO BLANCO 150ml",
+    "categoria": "Envase",
+    "presentacion": "150ml",
+    "stock": 6591,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-AZUL-10ML",
+    "descripcion": "FRASCO AZUL 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 1523,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-CAF-OSCURO-SERIG-MO-10ML",
+    "descripcion": "LIPS GLOSS CAFÉ OSCURO SERIG MOCA 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 171,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-CAF-CLARO-SERIG-SIN-10ML",
+    "descripcion": "LIPS GLOSS  CAFÉ CLARO SERIG sin lote 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 430,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-ROSADO-CLARO-SERIG--10ML",
+    "descripcion": "LIPS GLOSS ROSADO CLARO SERIG sin lote BARBIE 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 500,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-SALMON-SERIG-SIN-LO-10ML",
+    "descripcion": "LIPS GLOSS SALMON SERIG sin lote 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 430,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-LIPS-GLOSS-GRIS-SERIG-SIN-LOTE-10ML",
+    "descripcion": "LIPS GLOSS GRIS SERIG sin lote 10ml",
+    "categoria": "Envase",
+    "presentacion": "10ml",
+    "stock": 1000,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-CONTORNO-RETINALDEHIDO-15ML",
+    "descripcion": "ENVASE CONTORNO RETINALDEHIDO 15ml",
+    "categoria": "Envase",
+    "presentacion": "15ml",
+    "stock": 234,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-PALETA-RUBORES-X6-NEGRA-X",
+    "descripcion": "Paleta rubores x6 negra -",
+    "categoria": "Envase",
+    "presentacion": "-",
+    "stock": 997,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-CILNDRICO-BLANCO-LOGO-X",
+    "descripcion": "Frasco cilíndrico blanco logo -",
+    "categoria": "Envase",
+    "presentacion": "-",
+    "stock": 1017,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-FRASCO-RUBOR-EN-POLO-DE-VIDRIO-X",
+    "descripcion": "Frasco rubor en polo de vidrio con tapa negra",
+    "categoria": "Envase",
+    "presentacion": "",
+    "stock": 990,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-PALETA-RUBORES-X4-NEGRA-X",
+    "descripcion": "Paleta rubores x4 negra",
+    "categoria": "Envase",
+    "presentacion": "",
+    "stock": 1005,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-CONCELER-TUBE-X",
+    "descripcion": "Envase conceler tube",
+    "categoria": "Envase",
+    "presentacion": "",
+    "stock": 4460,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "ENV-ENVASE-CONTORNO-MULTIPEPTIDOS-15ML",
+    "descripcion": "ENVASE CONTORNO MULTIPEPTIDOS 15ml",
+    "categoria": "Envase",
+    "presentacion": "15ml",
+    "stock": 662,
+    "sheet_origen": "ENVASES"
+  },
+  {
+    "codigo": "GOT-GOTERO-89MM",
+    "descripcion": "GOTERO 89mm",
+    "categoria": "Gotero",
+    "presentacion": "89mm",
+    "stock": 806,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "GOT-GOTERO-65MM",
+    "descripcion": "GOTERO 65mm",
+    "categoria": "Gotero",
+    "presentacion": "65mm",
+    "stock": 2739,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "GOT-GOTERO-72MM",
+    "descripcion": "GOTERO 72mm",
+    "categoria": "Gotero",
+    "presentacion": "72mm",
+    "stock": 418,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "GOT-GOTERO-55MM",
+    "descripcion": "GOTERO 55mm",
+    "categoria": "Gotero",
+    "presentacion": "55mm",
+    "stock": 1481,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "GOT-GREY-SCREW-PUMP-DROPPER-30ML",
+    "descripcion": "GREY SCREW PUMP DROPPER 30ml",
+    "categoria": "Gotero",
+    "presentacion": "30ml",
+    "stock": 11780,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "GOT-GOTERO-FRASCO-OPAL-NUEVO-30ML",
+    "descripcion": "GOTERO FRASCO OPAL NUEVO 30ml",
+    "categoria": "Gotero",
+    "presentacion": "30ml",
+    "stock": 1601,
+    "sheet_origen": "GOTEROS"
+  },
+  {
+    "codigo": "TAP-TAPA-PLASTIC-AIRLESS-PUMP-30ML",
+    "descripcion": "TAPA PLASTIC AIRLESS PUMP 30ml",
+    "categoria": "Tapa",
+    "presentacion": "30ml",
+    "stock": 14652,
+    "sheet_origen": "TAPAS"
+  },
+  {
+    "codigo": "TAP-TAPA-PATO-BLANCA-CON-SEGURO-120ML",
+    "descripcion": "TAPA PATO BLANCA CON SEGURO 120ml",
+    "categoria": "Tapa",
+    "presentacion": "120ml",
+    "stock": 2433,
+    "sheet_origen": "TAPAS"
+  },
+  {
+    "codigo": "TAP-TAPA-ENVASE-CUADRADO-30ML15ML",
+    "descripcion": "TAPA ENVASE CUADRADO 30ml/15ml",
+    "categoria": "Tapa",
+    "presentacion": "30ml/15ml",
+    "stock": 10000,
+    "sheet_origen": "TAPAS"
+  },
+  {
+    "codigo": "TAP-TAPA-PUFF-50ML",
+    "descripcion": "TAPA PUFF 50ml",
+    "categoria": "Tapa",
+    "presentacion": "50ml",
+    "stock": 2760,
+    "sheet_origen": "TAPAS"
+  },
+  {
+    "codigo": "ETI-LLEG-CANTIDAD",
+    "descripcion": "LLEGÓ CANTIDAD",
+    "categoria": "Etiquetas",
+    "presentacion": "CANTIDAD",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "ETI-OK-20000",
+    "descripcion": "OK 2000.0",
+    "categoria": "Etiquetas",
+    "presentacion": "2000.0",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "ETI-OK-X",
+    "descripcion": "OK",
+    "categoria": "Etiquetas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "ETI-OK-X-2",
+    "descripcion": "OK",
+    "categoria": "Etiquetas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "ETI-OK-4600",
+    "descripcion": "OK 460.0",
+    "categoria": "Etiquetas",
+    "presentacion": "460.0",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "ETI-OK-7400",
+    "descripcion": "OK 740.0",
+    "categoria": "Etiquetas",
+    "presentacion": "740.0",
+    "stock": 0,
+    "sheet_origen": "ETIQUETAS"
+  },
+  {
+    "codigo": "PLE-LOTEFV-LLEG",
+    "descripcion": "LOTE/FV LLEGÓ",
+    "categoria": "Plegadizas",
+    "presentacion": "LLEGÓ",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-OK",
+    "descripcion": "SIN FV/LOTE OK",
+    "categoria": "Plegadizas",
+    "presentacion": "OK",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-X",
+    "descripcion": "SIN FV/LOTE",
+    "categoria": "Plegadizas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-X-2",
+    "descripcion": "SIN FV/LOTE",
+    "categoria": "Plegadizas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-X-3",
+    "descripcion": "SIN FV/LOTE",
+    "categoria": "Plegadizas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-X-4",
+    "descripcion": "SIN FV/LOTE",
+    "categoria": "Plegadizas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  },
+  {
+    "codigo": "PLE-SIN-FVLOTE-X-5",
+    "descripcion": "SIN FV/LOTE",
+    "categoria": "Plegadizas",
+    "presentacion": "",
+    "stock": 0,
+    "sheet_origen": "PLEGADIZAS"
+  }
+]

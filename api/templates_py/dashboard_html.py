@@ -970,14 +970,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
     <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
       <div>
-        <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;">
-          <select id="mee-cat-filter-bodega" style="flex:1;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
-          <button onclick="cargarMeeStock()" style="white-space:nowrap;">&#8635; Actualizar</button>
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+          <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <input id="mee-search-input" type="text" placeholder="Buscar..." oninput="cargarMeeStock()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+          <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
+          <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
+          <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#0891b2;color:#fff;">&#128221; Agrupado</button>
         </div>
         <div style="overflow-x:auto;">
-          <table class="table"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Ultimo Mov.</th><th>Rotacion</th></tr></thead>
+          <table class="table" id="mee-tabla-estandar"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
           <tbody id="mee-stock-tbody"><tr><td colspan="8" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
         </div>
+        <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
       <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
         <h3 style="margin-bottom:14px;color:#2B7A78;font-size:1em;">&#9998; Registrar Movimiento</h3>
@@ -3651,38 +3655,222 @@ async function cargarMeeStock(){
     }
     var tb = document.getElementById('mee-stock-tbody');
     if(!tb) return;
-    if(!d.items || !d.items.length){
+    var search = (document.getElementById('mee-search-input')||{}).value || '';
+    var items = d.items || [];
+    if(search){
+      var q = search.toLowerCase();
+      items = items.filter(function(m){
+        return (m.descripcion||'').toLowerCase().indexOf(q)>=0 ||
+               (m.codigo||'').toLowerCase().indexOf(q)>=0 ||
+               (m.proveedor||'').toLowerCase().indexOf(q)>=0;
+      });
+    }
+    window._meeItems = items;  // cache para vista agrupada
+    if(!items.length){
       tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
     var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
-    var hoy=new Date(); hoy.setHours(0,0,0,0);
     var h='';
-    d.items.forEach(function(m){
+    items.forEach(function(m){
       var c=aC[m.alerta]||'#95a5a6';
       var lbl=aL[m.alerta]||'';
-      var lastMov=(m.ultima_entrada||m.ultima_salida||'').substring(0,10);
       var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
-      var rot='<span style="color:#bbb;font-size:0.8em;">Sin salidas</span>';
-      if(m.ultima_salida){
-        var ds=Math.floor((hoy-new Date(m.ultima_salida.substring(0,10)))/864e5);
-        var rc=ds<=30?'#27ae60':ds<=90?'#f39c12':'#e74c3c';
-        var rl=ds<=30?'Rapida ('+ds+'d)':ds<=90?'Media ('+ds+'d)':'Lenta ('+ds+'d)';
-        rot='<span style="color:'+rc+';font-size:0.8em;font-weight:600;">'+rl+'</span>';
-      }
-      h+='<tr>';
-      h+='<td style="font-family:monospace;font-size:0.82em;color:#555;">'+m.codigo+'</td>';
-      h+='<td style="font-size:0.88em;">'+m.descripcion+ob+'</td>';
-      h+='<td style="font-size:0.8em;color:#777;">'+m.categoria+'</td>';
-      h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td>';
+      h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
+      h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
+      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+'</td>';
+      h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
+      h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
-      h+='<td style="font-size:0.8em;color:#999;">'+(lastMov||'<span style="color:#ddd;">Ninguno</span>')+'</td>';
-      h+='<td>'+rot+'</td>';
+      h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
+      h+='<td style="white-space:nowrap">';
+      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock" style="padding:4px 7px;border:none;background:#0891b2;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#9878;</button>';
+      h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:4px 7px;border:none;background:#6d28d9;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#127981;</button>';
+      h+='<button onclick="meeMin(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,'+(m.stock_minimo||0)+')" title="Stock mínimo" style="padding:4px 7px;border:none;background:#d97706;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128208;</button>';
+      h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:4px 7px;border:none;background:#15803d;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128202;</button>';
+      h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465;</button>';
+      h+='</td>';
       h+='</tr>';
     });
     tb.innerHTML=h;
-  }catch(e){}
+    if(window._meeAgrupado) renderMeeAgrupado();
+  }catch(e){ console.error('cargarMeeStock:',e); }
+}
+
+// ─── Acciones MEE (paridad con MP) ──────────────────────────────
+async function meeAjustar(codigo){
+  var nuevo = prompt('Nueva cantidad de stock para '+codigo+':');
+  if(nuevo===null) return;
+  var n = parseFloat(nuevo);
+  if(isNaN(n) || n<0){ alert('Cantidad inválida'); return; }
+  var motivo = prompt('Motivo del ajuste (obligatorio):');
+  if(!motivo){ alert('Motivo requerido'); return; }
+  try {
+    var r = await fetch('/api/mee/'+encodeURIComponent(codigo)+'/ajustar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cantidad_nueva: n, motivo: motivo})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _toast('Stock ajustado: '+d.stock_anterior+' → '+d.stock_nuevo, 1);
+    cargarMeeStock();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function meeProveedor(codigo){
+  var prov = prompt('Proveedor para '+codigo+' (vacío para limpiar):', '');
+  if(prov===null) return;
+  try {
+    var r = await fetch('/api/mee/'+encodeURIComponent(codigo)+'/proveedor', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({proveedor: prov.trim()})
+    });
+    if(!r.ok){ alert('Error'); return; }
+    _toast('Proveedor actualizado', 1);
+    cargarMeeStock();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function meeMin(codigo, actual){
+  var n = prompt('Nuevo stock mínimo para '+codigo+' (actual: '+actual+'):', actual);
+  if(n===null) return;
+  var num = parseFloat(n); if(isNaN(num) || num<0){ alert('Inválido'); return; }
+  try {
+    var r = await fetch('/api/mee/'+encodeURIComponent(codigo)+'/stock-minimo', {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({stock_minimo: num})
+    });
+    if(!r.ok){ alert('Error'); return; }
+    _toast('Mínimo actualizado', 1);
+    cargarMeeStock();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function meeHistorico(codigo){
+  try {
+    var r = await fetch('/api/mee/'+encodeURIComponent(codigo)+'/historico');
+    var d = await r.json();
+    var movs = d.movimientos || [];
+    var html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px" id="mee-hist-modal" onclick="if(event.target===this)this.remove()">'+
+      '<div style="background:#fff;border-radius:14px;padding:20px;width:800px;max-width:100%;max-height:90vh;overflow-y:auto" onclick="event.stopPropagation()">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+          '<h3 style="margin:0">📊 Histórico · '+_escHTML(codigo)+'</h3>'+
+          '<button onclick="document.getElementById(&quot;mee-hist-modal&quot;).remove()" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px">&#10005;</button>'+
+        '</div>'+
+        (movs.length ?
+          '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase">Fecha</th>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase">Tipo</th>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:right;font-size:11px;text-transform:uppercase">Cantidad</th>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase">Lote/Batch</th>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase">Responsable</th>'+
+            '<th style="background:#fafaf9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase">Observaciones</th>'+
+          '</tr></thead><tbody>'+
+          movs.map(function(m){
+            var tCol = m.tipo==='Entrada'?'#16a34a':m.tipo==='Salida'?'#dc2626':'#7c3aed';
+            return '<tr style="border-bottom:1px solid #f5f5f4'+(m.anulado?';opacity:0.5;text-decoration:line-through':'')+'">'+
+              '<td style="padding:7px;font-size:12px">'+_escHTML((m.fecha||'').substring(0,16))+'</td>'+
+              '<td style="padding:7px"><span style="background:'+tCol+'22;color:'+tCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_escHTML(m.tipo)+'</span></td>'+
+              '<td style="padding:7px;text-align:right;font-weight:700">'+m.cantidad+' '+_escHTML(m.unidad||'und')+'</td>'+
+              '<td style="padding:7px;font-size:11px;color:#666">'+_escHTML(m.lote_ref||m.batch_ref||'-')+'</td>'+
+              '<td style="padding:7px;font-size:11px;color:#666">'+_escHTML(m.responsable||'-')+'</td>'+
+              '<td style="padding:7px;font-size:11px;color:#666;max-width:300px;word-wrap:break-word">'+_escHTML(m.observaciones||'')+'</td>'+
+            '</tr>';
+          }).join('')+
+          '</tbody></table>'
+          : '<div style="text-align:center;color:#a8a29e;padding:40px">Sin movimientos registrados</div>')+
+      '</div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function meeArchivar(codigo){
+  if(!confirm('¿Archivar (eliminar de la lista) "'+codigo+'"? Los movimientos históricos se conservan.')) return;
+  try {
+    var r = await fetch('/api/mee/'+encodeURIComponent(codigo), {method:'DELETE'});
+    if(!r.ok){ alert('Error'); return; }
+    _toast(codigo+' archivado', 1);
+    cargarMeeStock();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function meeImportarExcel(){
+  if(!confirm('Importar inventario MEE desde el Excel cargado?\\n\\n68 items en 5 categorías (Envases, Goteros, Tapas, Etiquetas, Plegadizas).\\n\\nLos códigos existentes se actualizan, los nuevos se crean.')) return;
+  try {
+    // Cargar JSON desde el repo
+    var rJson = await fetch('/static/scripts/mee_excel_import.json');
+    if(!rJson.ok){
+      // Fallback: pedir URL manual
+      alert('No se encuentra scripts/mee_excel_import.json. Asegúrate de hacer deploy.');
+      return;
+    }
+    var items = await rJson.json();
+    var r = await fetch('/api/mee/import-bulk', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items: items, modo: 'upsert'})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✅ Importación completa\\n\\nInsertados: '+d.insertados+'\\nActualizados: '+d.actualizados+'\\nTotal: '+d.total_recibidos);
+    cargarMeeStock();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+function meeAgrupadoToggle(){
+  window._meeAgrupado = !window._meeAgrupado;
+  var tabla = document.getElementById('mee-tabla-estandar');
+  var wrap = document.getElementById('mee-agrupado-wrap');
+  var btn = document.getElementById('mee-agrupado-btn');
+  if(window._meeAgrupado){
+    tabla.style.display = 'none';
+    wrap.style.display = 'block';
+    btn.innerHTML = '📋 Lista plana';
+    renderMeeAgrupado();
+  } else {
+    tabla.style.display = '';
+    wrap.style.display = 'none';
+    btn.innerHTML = '📑 Agrupado';
+  }
+}
+
+function renderMeeAgrupado(){
+  var wrap = document.getElementById('mee-agrupado-wrap');
+  var items = window._meeItems || [];
+  // Agrupar por categoria
+  var grupos = {};
+  items.forEach(function(m){
+    var cat = m.categoria || 'Sin categoría';
+    if(!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(m);
+  });
+  var cats = Object.keys(grupos).sort();
+  var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
+  wrap.innerHTML = cats.map(function(cat){
+    var grupo = grupos[cat];
+    var totalStock = grupo.reduce(function(a,m){return a+(m.stock_actual||0)},0);
+    var nBajo = grupo.filter(function(m){return m.alerta==='critico'||m.alerta==='bajo'}).length;
+    return '<details style="margin-bottom:10px;background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px" open>'+
+      '<summary style="cursor:pointer;font-weight:700;color:#1c1917;display:flex;align-items:center;gap:10px;list-style:none">'+
+        '<span style="font-size:15px">📦 '+_escHTML(cat)+'</span>'+
+        '<span style="font-size:12px;color:#78716c;font-weight:500">'+grupo.length+' items · '+totalStock.toLocaleString('es-CO')+' und total'+
+          (nBajo>0?' · <span style="color:#dc2626;font-weight:700">'+nBajo+' bajo mínimo</span>':'')+'</span>'+
+      '</summary>'+
+      '<div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px">'+
+        grupo.map(function(m){
+          var col = aC[m.alerta]||'#27ae60';
+          return '<div style="background:#fafaf9;border:1px solid #e7e5e4;border-left:3px solid '+col+';border-radius:8px;padding:10px;cursor:pointer" onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)">'+
+            '<div style="font-weight:600;font-size:12px;color:#1c1917">'+_escHTML(m.descripcion)+'</div>'+
+            '<div style="font-size:10px;color:#78716c;margin-top:2px;font-family:monospace">'+_escHTML(m.codigo)+'</div>'+
+            '<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center">'+
+              '<span style="font-weight:700;font-size:14px;color:#1c1917">'+(m.stock_actual||0).toLocaleString('es-CO')+' '+_escHTML(m.unidad||'und')+'</span>'+
+              '<span style="font-size:10px;color:#999">min '+(m.stock_minimo||0)+'</span>'+
+            '</div>'+
+          '</div>';
+        }).join('')+
+      '</div>'+
+    '</details>';
+  }).join('');
 }
 function meeActualizarTipo(tipo){ var iS=tipo==='Salida'; var lg=document.getElementById('mee-lote-group'); var bg=document.getElementById('mee-batch-group'); if(lg) lg.style.display=iS?'none':'block'; if(bg) bg.style.display=iS?'block':'none'; }
 function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none';return;} var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
