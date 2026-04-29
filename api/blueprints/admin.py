@@ -6851,6 +6851,151 @@ def _slug_codigo(nombre, presentacion):
     return base or 'MEE-X'
 
 
+@bp.route("/admin/inventario-envase-import", methods=["GET"])
+def admin_inventario_envase_import_page():
+    """Página simple para que Sebastian suba el Excel INVENTARIO ENVASE."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Import Inventario Envase</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:30px auto;padding:0 20px;color:#1e293b}
+      h1{font-size:20px;color:#0f172a}
+      .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:16px 0;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+      .label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px;display:block}
+      input[type=file]{display:block;margin:8px 0 14px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;width:100%;font-size:13px}
+      .btn{background:#16a34a;color:#fff;border:none;border-radius:6px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;margin-right:8px}
+      .btn.preview{background:#f59e0b}
+      .btn.reset{background:#dc2626}
+      pre{background:#f1f5f9;padding:12px;border-radius:8px;font-size:11px;overflow-x:auto;max-height:400px}
+      .nota{font-size:12px;color:#64748b;line-height:1.6;background:#fefce8;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:6px}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px;color:#0891b2">&larr; Volver al panel admin</a>
+    <h1>📤 Importar INVENTARIO ENVASE.xlsx</h1>
+    <div class="nota">
+      Sube el archivo <code>INVENTARIO ENVASE.xlsx</code>. El sistema lee las hojas
+      <b>ENVASES, GOTEROS, TAPAS</b> (las otras se ignoran por ahora) y actualiza el
+      inventario con la columna <b>TOTAL</b> de cada fila.<br><br>
+      <b>Preview</b> muestra qué pasaría sin escribir.<br>
+      <b>Importar</b> aplica el upsert (crea nuevos códigos + ajusta stock de existentes).<br>
+      <b>RESET + Importar</b> archiva todos los Envases/Goteros/Tapas activos antes de importar.
+    </div>
+    <div class="card">
+      <label class="label">Archivo Excel</label>
+      <input type="file" id="file" accept=".xlsx,.xlsm">
+      <div>
+        <button class="btn preview" onclick="enviar(true,'upsert')">👁 Preview (dry run)</button>
+        <button class="btn" onclick="enviar(false,'upsert')">📥 Importar (upsert)</button>
+        <button class="btn reset" onclick="enviarReset()">⚠️ RESET + Importar</button>
+      </div>
+    </div>
+    <div id="resultado"></div>
+    <script>
+    async function enviar(dryRun, modo){
+      var f = document.getElementById('file').files[0];
+      if(!f){ alert('Selecciona un archivo'); return; }
+      var fd = new FormData();
+      fd.append('file', f);
+      var qs = (dryRun?'dry_run=1&':'')+'modo='+encodeURIComponent(modo);
+      var r = await fetch('/api/admin/import-inventario-envase-xlsx?'+qs, {method:'POST', body: fd});
+      var d = await r.json();
+      var col = d.ok ? '#16a34a' : '#dc2626';
+      document.getElementById('resultado').innerHTML =
+        '<div class="card" style="border-left:4px solid '+col+'"><h3 style="margin:0 0 8px;color:'+col+'">'+
+        (d.ok?(d.dry_run?'✅ Preview OK':'✅ Importado'):'❌ Error')+'</h3>'+
+        '<pre>'+JSON.stringify(d, null, 2)+'</pre></div>';
+    }
+    function enviarReset(){
+      if(!confirm('⚠️ Esto ARCHIVA todos los Envases/Goteros/Tapas activos antes de importar. ¿Procedes?')) return;
+      enviar(false, 'reset_envases');
+    }
+    </script>
+    </body></html>"""
+    return Response(html, mimetype="text/html")
+
+
+@bp.route("/admin/producciones-debug", methods=["GET"])
+def admin_producciones_debug_page():
+    """Pagina simple para listar producciones programadas activas y borrar
+    fantasmas. Sebastian (29-abr-2026): "ese Limpiador kojico 20 kg no se
+    de donde lo esta sacando, revisa porfa para que lo elimines"."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Producciones programadas — debug</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
+      h1{font-size:20px;color:#0f172a}
+      table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}
+      th{background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:10px}
+      td{padding:10px;border-top:1px solid #f1f5f9;font-size:13px}
+      .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;text-transform:uppercase}
+      .b-cal{background:#dbeafe;color:#1e40af}
+      .b-man{background:#fef3c7;color:#92400e}
+      .btn-del{background:#dc2626;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer}
+      .nota{font-size:12px;color:#64748b;line-height:1.5;background:#eff6ff;border-left:3px solid #3b82f6;padding:10px 14px;border-radius:6px;margin:14px 0}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px;color:#0891b2">&larr; Volver al panel admin</a>
+    <h1>🗓️ Producciones programadas — diagnóstico</h1>
+    <div class="nota">
+      Lista todas las producciones activas (futuras y de hace ≤7 días). El campo
+      <b>origen</b> indica si vino del calendario (auto-sync) o se creó manualmente
+      en la app. Si ves una <b>fantasma</b> (que no recuerdas haber programado),
+      borra. El sync con calendar se ejecuta cada 10 min y ahora es bidireccional —
+      borra del calendar y desaparece sola en minutos.
+    </div>
+    <button onclick="cargar()" style="margin:12px 0;padding:8px 16px;background:#1e40af;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">🔄 Actualizar</button>
+    <button onclick="forzarSync()" style="margin:12px 0;padding:8px 16px;background:#0891b2;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">📅 Forzar sync calendario</button>
+    <div id="tabla">Cargando...</div>
+    <script>
+    async function cargar(){
+      var r = await fetch('/api/programacion/produccion-programada/listado');
+      var d = await r.json();
+      if(!r.ok){ document.getElementById('tabla').innerHTML='Error: '+(d.error||r.status); return; }
+      var prods = d.producciones || [];
+      if(!prods.length){ document.getElementById('tabla').innerHTML='<i>Sin producciones activas.</i>'; return; }
+      document.getElementById('tabla').innerHTML =
+        '<table><thead><tr>'+
+        '<th>ID</th><th>Producto</th><th>Fecha</th><th>kg</th><th>Origen</th><th>Estado</th><th>Observaciones</th><th></th>'+
+        '</tr></thead><tbody>'+
+        prods.map(function(p){
+          var bcl = p.origen==='calendar' ? 'b-cal' : 'b-man';
+          return '<tr>'+
+            '<td style="font-family:monospace;color:#64748b">'+p.id+'</td>'+
+            '<td><b>'+esc(p.producto)+'</b></td>'+
+            '<td>'+esc(p.fecha_programada||'')+'</td>'+
+            '<td style="font-family:monospace">'+(Math.round(p.kg||0))+'</td>'+
+            '<td><span class="badge '+bcl+'">'+esc(p.origen)+'</span></td>'+
+            '<td>'+esc(p.estado||'')+'</td>'+
+            '<td style="font-size:11px;color:#64748b;max-width:300px">'+esc((p.observaciones||'').substring(0,100))+'</td>'+
+            '<td><button class="btn-del" onclick="borrar('+p.id+', \\''+esc(p.producto).replace(/\\\\/g,'').replace(/\\'/g,"\\\\'")+'\\', \\''+esc(p.fecha_programada)+'\\')">Borrar</button></td>'+
+          '</tr>';
+        }).join('') +
+        '</tbody></table>';
+    }
+    function esc(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+    async function borrar(id, prod, fecha){
+      if(!confirm('¿Borrar definitivamente la producción '+id+' ('+prod+' · '+fecha+')? También borra items del checklist asociados.')) return;
+      var r = await fetch('/api/programacion/produccion-programada/'+id+'/borrar', {method:'DELETE'});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      alert(d.mensaje||'Borrada');
+      cargar();
+    }
+    async function forzarSync(){
+      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120', {method:'POST'});
+      var d = await r.json();
+      alert(d.mensaje || JSON.stringify(d));
+      cargar();
+    }
+    cargar();
+    </script>
+    </body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/api/admin/import-inventario-envase-xlsx", methods=["POST"])
 def admin_import_inventario_envase_xlsx():
     """Importa el Excel INVENTARIO ENVASE.xlsx de Sebastian a maestro_mee.
