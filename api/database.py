@@ -2026,6 +2026,119 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             WHERE COALESCE(fecha_proxima_revision,'') = ''
               AND COALESCE(fecha_emision,'') != ''""",
     ]),
+    (48, "RH ampliado: documentos + eventos detallados (incapacidad/accidente/licencias) + llamados atencion + compromisos mejora", [
+        # Sebastian (29-abr-2026): "termina de montar recursos humanos".
+        # Tabla 'empleados' ya existe. Agregamos:
+        # 1) Documentos del empleado (contrato, hoja vida, examenes, etc)
+        # 2) Eventos RH detallados (incapacidad comun/laboral, accidentes,
+        #    licencias maternidad/paternidad/luto, vacaciones, etc)
+        #    con calculo legal Colombia (Ley 100, Ley 776)
+        # 3) Llamados de atencion (verbal/escrito/suspension) - transversal,
+        #    cualquier jefe puede registrarlos en cualquier area
+        # 4) Compromisos de mejora (auto-creados por llamados con
+        #    plan de reinduccion / capacitacion correctiva)
+
+        """CREATE TABLE IF NOT EXISTS empleados_documentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+              -- contrato | hoja_vida | examen_medico_ingreso |
+              -- examen_medico_periodico | examen_medico_egreso |
+              -- afiliacion_eps | afiliacion_arl | afiliacion_afp |
+              -- afiliacion_caja | cedula | rut | foto |
+              -- certificado_estudios | certificado_laboral_anterior |
+              -- libreta_militar | otro
+            nombre TEXT DEFAULT '',
+            archivo_url TEXT DEFAULT '',  -- ruta al archivo o URL
+            archivo_data TEXT DEFAULT '',  -- base64 si es chico
+            mime_type TEXT DEFAULT '',
+            fecha_emision TEXT,
+            fecha_vencimiento TEXT,
+            observaciones TEXT DEFAULT '',
+            cargado_por TEXT DEFAULT '',
+            fecha_carga TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_empdoc_empleado ON empleados_documentos(empleado_id, tipo)""",
+        """CREATE INDEX IF NOT EXISTS idx_empdoc_venc ON empleados_documentos(fecha_vencimiento)""",
+
+        """CREATE TABLE IF NOT EXISTS rh_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+              -- incapacidad_comun | incapacidad_laboral | accidente_trabajo |
+              -- licencia_maternidad | licencia_paternidad | licencia_luto |
+              -- licencia_no_remunerada | licencia_calamidad |
+              -- vacaciones | permiso_remunerado |
+              -- llamado_atencion_verbal | llamado_atencion_escrito |
+              -- suspension | felicitacion | reinduccion | otro
+            fecha_inicio TEXT NOT NULL,
+            fecha_fin TEXT,
+            dias INTEGER DEFAULT 0,
+            descripcion TEXT DEFAULT '',
+            -- Para incapacidades / accidentes:
+            diagnostico TEXT DEFAULT '',
+            cie10 TEXT DEFAULT '',  -- codigo diagnostico
+            entidad_emisora TEXT DEFAULT '',  -- EPS / ARL / hospital
+            origen TEXT DEFAULT '',  -- comun | laboral
+            -- Para llamados de atencion:
+            motivo TEXT DEFAULT '',
+            severidad TEXT DEFAULT '',  -- leve | grave | muy_grave
+            jefe_id INTEGER,  -- empleado que registra el llamado
+            jefe_nombre TEXT DEFAULT '',
+            area TEXT DEFAULT '',
+            -- Calculo legal de pago:
+            salario_diario_referencia REAL DEFAULT 0,
+            pago_empleador REAL DEFAULT 0,
+            pago_eps REAL DEFAULT 0,
+            pago_arl REAL DEFAULT 0,
+            descuento_nomina REAL DEFAULT 0,
+            calculo_detalle_json TEXT DEFAULT '[]',
+            -- Documentos / soportes:
+            documento_url TEXT DEFAULT '',
+            -- Estado:
+            estado TEXT DEFAULT 'registrada'
+              CHECK(estado IN ('registrada','aprobada','rechazada','cerrada','cancelada')),
+            aprobado_por TEXT DEFAULT '',
+            fecha_aprobacion TEXT,
+            observaciones_cierre TEXT DEFAULT '',
+            -- Sync con tesoreria/nomina:
+            nomina_registro_id INTEGER,  -- FK a nomina_registros si aplica
+            sincronizado_tesoreria INTEGER DEFAULT 0,
+            -- Meta:
+            registrado_por TEXT DEFAULT '',
+            fecha_registro TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_rheventos_empleado ON rh_eventos(empleado_id, fecha_inicio DESC)""",
+        """CREATE INDEX IF NOT EXISTS idx_rheventos_tipo ON rh_eventos(tipo, estado)""",
+        """CREATE INDEX IF NOT EXISTS idx_rheventos_estado ON rh_eventos(estado)""",
+
+        """CREATE TABLE IF NOT EXISTS rh_compromisos_mejora (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL,
+            evento_origen_id INTEGER,  -- FK rh_eventos (llamado de atencion)
+            titulo TEXT NOT NULL,
+            descripcion TEXT DEFAULT '',
+            tipo TEXT DEFAULT 'reinduccion',
+              -- reinduccion | capacitacion_correctiva | seguimiento_disciplinario
+            plan_accion TEXT DEFAULT '',
+            fecha_compromiso TEXT NOT NULL,  -- fecha de creacion
+            fecha_objetivo TEXT,             -- fecha limite cumplimiento
+            estado TEXT DEFAULT 'pendiente'
+              CHECK(estado IN ('pendiente','en_progreso','completado','vencido','cancelado')),
+            video_url TEXT DEFAULT '',  -- link a video IA de reinduccion
+            evidencia_url TEXT DEFAULT '',
+            firma_empleado TEXT DEFAULT '',  -- nombre o aceptacion
+            fecha_firma_empleado TEXT,
+            verificado_por TEXT DEFAULT '',
+            fecha_verificacion TEXT,
+            jefe_responsable TEXT DEFAULT '',
+            observaciones TEXT DEFAULT '',
+            creado_por TEXT DEFAULT '',
+            fecha_creacion TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_compmejora_empleado ON rh_compromisos_mejora(empleado_id, estado)""",
+        """CREATE INDEX IF NOT EXISTS idx_compmejora_evento ON rh_compromisos_mejora(evento_origen_id)""",
+    ]),
     (47, "checklist editable + solicitudes de produccion + tareas operativas", [
         # Sebastian (29-abr-2026): el modal del checklist Pre-Produccion debe
         # tener cada item editable (dropdown de maestro_mee), cantidad

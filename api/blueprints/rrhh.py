@@ -573,6 +573,518 @@ def rrhh_seed_bancos():
     conn.commit()
     return jsonify({"ok": True, "actualizados": actualizados, "cedulas": detalles})
 
+
+# ════════════════════════════════════════════════════════════════════════
+# RH AMPLIADO (29-abr-2026): documentos + eventos + llamados + compromisos
+# Cumple ley colombiana 100/776 para incapacidades y accidentes laborales.
+# ════════════════════════════════════════════════════════════════════════
+
+def _calcular_pago_incapacidad(salario_mensual, tipo, dias):
+    """Calcula el desglose legal de pago segun ley colombiana.
+
+    Returns: dict con detalle por rango de dias, total empleador, total EPS,
+    total ARL, y si descuenta o no de la nomina.
+
+    Reglas (Ley 100, Ley 776, Ley 1822 maternidad):
+    - Incapacidad COMUN (origen general, enfermedad no laboral):
+        Dias 1-2: 100% empleador (no le paga EPS)
+        Dias 3-90: 66.66% EPS (auxilio monetario)
+        Dias 91-180: 50% EPS
+        > 180: pension de invalidez (no aplicable a este calculo)
+    - Incapacidad LABORAL / ACCIDENTE TRABAJO:
+        Dias 1-2: 100% empleador
+        Dias 3+: 100% ARL (toda la incapacidad)
+    - Maternidad: 18 semanas (126 dias) al 100% por EPS
+    - Paternidad: 14 dias al 100% por EPS
+    - Luto: 5 dias habiles al 100% empleador (Ley 1280)
+    """
+    dias = max(0, int(dias or 0))
+    salario_diario = float(salario_mensual or 0) / 30.0
+    detalle = []
+    pago_empleador = 0.0
+    pago_eps = 0.0
+    pago_arl = 0.0
+
+    if tipo == 'incapacidad_comun':
+        if dias >= 1:
+            d1 = min(dias, 2); pago = round(d1 * salario_diario, 0)
+            pago_empleador += pago
+            detalle.append({'rango':'Día 1-2', 'pagador':'EMPLEADOR', 'pct':100, 'dias':d1, 'monto':pago})
+        if dias > 2:
+            d2 = min(dias-2, 88)  # dias 3-90 = 88 dias
+            pago = round(d2 * salario_diario * 0.6666, 0)
+            pago_eps += pago
+            detalle.append({'rango':'Día 3-90', 'pagador':'EPS', 'pct':66.66, 'dias':d2, 'monto':pago})
+        if dias > 90:
+            d3 = min(dias-90, 90)  # dias 91-180 = 90 dias
+            pago = round(d3 * salario_diario * 0.50, 0)
+            pago_eps += pago
+            detalle.append({'rango':'Día 91-180', 'pagador':'EPS', 'pct':50, 'dias':d3, 'monto':pago})
+    elif tipo in ('incapacidad_laboral', 'accidente_trabajo'):
+        if dias >= 1:
+            d1 = min(dias, 2); pago = round(d1 * salario_diario, 0)
+            pago_empleador += pago
+            detalle.append({'rango':'Día 1-2', 'pagador':'EMPLEADOR', 'pct':100, 'dias':d1, 'monto':pago})
+        if dias > 2:
+            d2 = dias - 2
+            pago = round(d2 * salario_diario, 0)
+            pago_arl += pago
+            detalle.append({'rango':'Día 3 en adelante', 'pagador':'ARL', 'pct':100, 'dias':d2, 'monto':pago})
+    elif tipo == 'licencia_maternidad':
+        # 18 semanas = 126 dias al 100% EPS
+        d = min(dias, 126); pago = round(d * salario_diario, 0)
+        pago_eps += pago
+        detalle.append({'rango':f'Día 1-{d}', 'pagador':'EPS', 'pct':100, 'dias':d, 'monto':pago})
+        if dias > 126:
+            d_extra = dias - 126; pago_extra = round(d_extra * salario_diario, 0)
+            pago_empleador += pago_extra
+            detalle.append({'rango':f'Día {127}-{dias}', 'pagador':'EMPLEADOR (excede ley)', 'pct':100, 'dias':d_extra, 'monto':pago_extra})
+    elif tipo == 'licencia_paternidad':
+        d = min(dias, 14); pago = round(d * salario_diario, 0)
+        pago_eps += pago
+        detalle.append({'rango':f'Día 1-{d}', 'pagador':'EPS', 'pct':100, 'dias':d, 'monto':pago})
+    elif tipo == 'licencia_luto':
+        d = min(dias, 5); pago = round(d * salario_diario, 0)
+        pago_empleador += pago
+        detalle.append({'rango':f'Día 1-{d} (Ley 1280)', 'pagador':'EMPLEADOR', 'pct':100, 'dias':d, 'monto':pago})
+    elif tipo == 'licencia_no_remunerada':
+        detalle.append({'rango':f'{dias} días', 'pagador':'NO PAGA', 'pct':0, 'dias':dias, 'monto':0})
+    elif tipo == 'permiso_remunerado':
+        pago = round(dias * salario_diario, 0)
+        pago_empleador += pago
+        detalle.append({'rango':f'{dias} días', 'pagador':'EMPLEADOR', 'pct':100, 'dias':dias, 'monto':pago})
+    # llamados/felicitacion/reinduccion no llevan pago
+
+    total = pago_empleador + pago_eps + pago_arl
+    # Descuento de nomina = lo que NO paga el empleador (recupera de EPS/ARL via reembolso)
+    # Por simplicidad: si es incapacidad/accidente, los días 3+ se descuentan de
+    # nomina y se reembolsan via EPS/ARL.
+    descuento_nomina = pago_eps + pago_arl  # lo que se descuenta del pago directo
+
+    return {
+        'tipo': tipo, 'dias': dias,
+        'salario_mensual': float(salario_mensual or 0),
+        'salario_diario': round(salario_diario, 0),
+        'detalle': detalle,
+        'pago_empleador': pago_empleador,
+        'pago_eps': pago_eps,
+        'pago_arl': pago_arl,
+        'descuento_nomina': descuento_nomina,
+        'total': total,
+    }
+
+
+@bp.route('/api/rrhh/calcular-pago-evento', methods=['POST'])
+def rrhh_calcular_pago_evento():
+    """Preview del calculo legal de un evento (incapacidad/accidente/licencia).
+
+    Body: {salario_mensual, tipo, dias}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    return jsonify(_calcular_pago_incapacidad(
+        float(d.get('salario_mensual') or 0),
+        (d.get('tipo') or '').strip(),
+        int(d.get('dias') or 0),
+    ))
+
+
+@bp.route('/api/rrhh/eventos', methods=['GET', 'POST'])
+def rrhh_eventos():
+    """Lista eventos RH (todos o de un empleado) o crea uno nuevo.
+
+    GET querystring: ?empleado_id=X&tipo=X&estado=X
+    POST body: {empleado_id, tipo, fecha_inicio, fecha_fin, dias, ...}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        emp_id = int(d.get('empleado_id') or 0)
+        tipo = (d.get('tipo') or '').strip()
+        if not emp_id or not tipo:
+            return jsonify({'error': 'empleado_id y tipo requeridos'}), 400
+        # Calcular dias si vienen fecha_inicio + fecha_fin
+        f_ini = (d.get('fecha_inicio') or '').strip()
+        f_fin = (d.get('fecha_fin') or '').strip()
+        dias = int(d.get('dias') or 0)
+        if not dias and f_ini and f_fin:
+            try:
+                from datetime import date
+                d1 = date.fromisoformat(f_ini); d2 = date.fromisoformat(f_fin)
+                dias = (d2 - d1).days + 1
+            except Exception: pass
+
+        # Calcular pago si aplica (necesita salario_base del empleado)
+        emp = c.execute("SELECT salario_base FROM empleados WHERE id=?", (emp_id,)).fetchone()
+        salario_mensual = float(emp[0] or 0) if emp else 0
+        calc = _calcular_pago_incapacidad(salario_mensual, tipo, dias)
+        import json as _json
+
+        cur = c.execute("""
+            INSERT INTO rh_eventos (
+                empleado_id, tipo, fecha_inicio, fecha_fin, dias,
+                descripcion, diagnostico, cie10, entidad_emisora, origen,
+                motivo, severidad, jefe_id, jefe_nombre, area,
+                salario_diario_referencia, pago_empleador, pago_eps, pago_arl,
+                descuento_nomina, calculo_detalle_json,
+                documento_url, estado, registrado_por
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'registrada', ?)
+        """, (
+            emp_id, tipo, f_ini, f_fin or None, dias,
+            (d.get('descripcion') or '').strip(),
+            (d.get('diagnostico') or '').strip(),
+            (d.get('cie10') or '').strip(),
+            (d.get('entidad_emisora') or '').strip(),
+            (d.get('origen') or '').strip(),
+            (d.get('motivo') or '').strip(),
+            (d.get('severidad') or '').strip(),
+            d.get('jefe_id'),
+            (d.get('jefe_nombre') or user).strip(),
+            (d.get('area') or '').strip(),
+            calc['salario_diario'],
+            calc['pago_empleador'],
+            calc['pago_eps'],
+            calc['pago_arl'],
+            calc['descuento_nomina'],
+            _json.dumps(calc['detalle']),
+            (d.get('documento_url') or '').strip(),
+            user
+        ))
+        conn.commit()
+        return jsonify({'ok': True, 'evento_id': cur.lastrowid, 'calculo': calc})
+
+    # GET
+    where = []
+    params = []
+    emp_id = request.args.get('empleado_id')
+    if emp_id:
+        where.append("empleado_id=?"); params.append(int(emp_id))
+    tipo = request.args.get('tipo')
+    if tipo:
+        where.append("tipo=?"); params.append(tipo)
+    estado = request.args.get('estado')
+    if estado:
+        where.append("estado=?"); params.append(estado)
+    sql = "SELECT * FROM rh_eventos"
+    if where: sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_inicio DESC, fecha_registro DESC LIMIT 500"
+    rows = c.execute(sql, params).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify({'eventos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/rrhh/eventos/<int:evt_id>/aprobar', methods=['POST'])
+def rrhh_evento_aprobar(evt_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    cur = c.execute("""
+        UPDATE rh_eventos
+           SET estado='aprobada', aprobado_por=?, fecha_aprobacion=datetime('now')
+         WHERE id=? AND estado='registrada'
+    """, (user, evt_id))
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Evento no encontrado o ya aprobado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'evento_id': evt_id})
+
+
+@bp.route('/api/rrhh/eventos/<int:evt_id>/cerrar', methods=['POST'])
+def rrhh_evento_cerrar(evt_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    obs = (d.get('observaciones') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE rh_eventos
+           SET estado='cerrada', observaciones_cierre=?
+         WHERE id=?
+    """, (obs, evt_id))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/rrhh/empleados/<int:emp_id>/timeline', methods=['GET'])
+def rrhh_empleado_timeline(emp_id):
+    """Timeline completo del empleado: eventos + capacitaciones + nomina."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    emp = c.execute("SELECT * FROM empleados WHERE id=?", (emp_id,)).fetchone()
+    if not emp:
+        return jsonify({'error': 'Empleado no encontrado'}), 404
+    cols = [x[0] for x in c.description]
+    empleado = dict(zip(cols, emp))
+
+    eventos = c.execute(
+        "SELECT * FROM rh_eventos WHERE empleado_id=? ORDER BY fecha_inicio DESC LIMIT 100",
+        (emp_id,)
+    ).fetchall()
+    eventos_cols = [x[0] for x in c.description]
+    eventos_list = [dict(zip(eventos_cols, r)) for r in eventos]
+
+    # Resumen por tipo
+    resumen = {}
+    for ev in eventos_list:
+        t = ev.get('tipo','otro')
+        resumen[t] = resumen.get(t, 0) + 1
+
+    documentos = c.execute(
+        "SELECT id, tipo, nombre, fecha_emision, fecha_vencimiento FROM empleados_documentos WHERE empleado_id=? ORDER BY fecha_carga DESC",
+        (emp_id,)
+    ).fetchall()
+    docs_cols = [x[0] for x in c.description]
+    docs_list = [dict(zip(docs_cols, r)) for r in documentos]
+
+    compromisos = c.execute(
+        "SELECT * FROM rh_compromisos_mejora WHERE empleado_id=? ORDER BY fecha_creacion DESC LIMIT 50",
+        (emp_id,)
+    ).fetchall()
+    comp_cols = [x[0] for x in c.description]
+    comp_list = [dict(zip(comp_cols, r)) for r in compromisos]
+
+    return jsonify({
+        'empleado': empleado,
+        'eventos': eventos_list,
+        'documentos': docs_list,
+        'compromisos': comp_list,
+        'resumen_eventos': resumen,
+    })
+
+
+@bp.route('/api/rrhh/empleados/<int:emp_id>/documentos', methods=['GET', 'POST'])
+def rrhh_documentos(emp_id):
+    """GET: lista documentos del empleado. POST: cargar uno nuevo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        cur = c.execute("""
+            INSERT INTO empleados_documentos (
+                empleado_id, tipo, nombre, archivo_url, archivo_data, mime_type,
+                fecha_emision, fecha_vencimiento, observaciones, cargado_por
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            emp_id,
+            (d.get('tipo') or 'otro').strip(),
+            (d.get('nombre') or '').strip(),
+            (d.get('archivo_url') or '').strip(),
+            (d.get('archivo_data') or '').strip(),
+            (d.get('mime_type') or '').strip(),
+            (d.get('fecha_emision') or '').strip() or None,
+            (d.get('fecha_vencimiento') or '').strip() or None,
+            (d.get('observaciones') or '').strip(),
+            user
+        ))
+        conn.commit()
+        return jsonify({'ok': True, 'documento_id': cur.lastrowid})
+    # GET
+    rows = c.execute(
+        "SELECT id, tipo, nombre, archivo_url, mime_type, fecha_emision, fecha_vencimiento, observaciones, cargado_por, fecha_carga FROM empleados_documentos WHERE empleado_id=? ORDER BY fecha_carga DESC",
+        (emp_id,)
+    ).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify({'documentos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/rrhh/llamados-atencion', methods=['GET', 'POST'])
+def rrhh_llamados_atencion():
+    """API conveniente para crear/listar llamados de atencion (subset de eventos).
+
+    POST body: {empleado_id, severidad (verbal|escrito|suspension), motivo,
+                area?, jefe_nombre?, descripcion?, fecha?, plan_mejora?}
+    Crea evento + (opcional) compromiso_mejora.
+    GET: lista llamados activos
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        emp_id = int(d.get('empleado_id') or 0)
+        severidad = (d.get('severidad') or 'verbal').strip()
+        tipo_map = {
+            'verbal': 'llamado_atencion_verbal',
+            'escrito': 'llamado_atencion_escrito',
+            'suspension': 'suspension',
+        }
+        tipo = tipo_map.get(severidad, 'llamado_atencion_verbal')
+        motivo = (d.get('motivo') or '').strip()
+        if not emp_id or not motivo:
+            return jsonify({'error': 'empleado_id y motivo requeridos'}), 400
+        fecha = (d.get('fecha') or '').strip()
+        if not fecha:
+            from datetime import date
+            fecha = date.today().isoformat()
+        cur = c.execute("""
+            INSERT INTO rh_eventos (
+                empleado_id, tipo, fecha_inicio, dias, motivo, severidad,
+                descripcion, jefe_nombre, area, registrado_por, estado
+            ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 'registrada')
+        """, (
+            emp_id, tipo, fecha, motivo, severidad,
+            (d.get('descripcion') or '').strip(),
+            (d.get('jefe_nombre') or user).strip(),
+            (d.get('area') or '').strip(),
+            user
+        ))
+        evento_id = cur.lastrowid
+
+        # Si plan_mejora viene, crear compromiso ligado
+        compromiso_id = None
+        plan = (d.get('plan_mejora') or '').strip()
+        if plan:
+            cur2 = c.execute("""
+                INSERT INTO rh_compromisos_mejora (
+                    empleado_id, evento_origen_id, titulo, descripcion,
+                    tipo, plan_accion, fecha_compromiso, fecha_objetivo,
+                    jefe_responsable, creado_por
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                emp_id, evento_id,
+                f"Plan de mejora — {motivo[:80]}",
+                f"Tras {tipo}: {motivo}",
+                'reinduccion',
+                plan,
+                fecha,
+                (d.get('fecha_objetivo') or '').strip() or None,
+                (d.get('jefe_nombre') or user).strip(),
+                user
+            ))
+            compromiso_id = cur2.lastrowid
+        conn.commit()
+        return jsonify({'ok': True, 'evento_id': evento_id, 'compromiso_id': compromiso_id})
+    # GET
+    rows = c.execute("""
+        SELECT id, empleado_id, tipo, fecha_inicio, motivo, severidad,
+               descripcion, jefe_nombre, area, estado, registrado_por
+        FROM rh_eventos
+        WHERE tipo IN ('llamado_atencion_verbal','llamado_atencion_escrito','suspension')
+        ORDER BY fecha_inicio DESC LIMIT 200
+    """).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify({'llamados': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/rrhh/compromisos-mejora', methods=['GET', 'POST'])
+def rrhh_compromisos_mejora():
+    """GET: lista compromisos. POST: crear manual."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        cur = c.execute("""
+            INSERT INTO rh_compromisos_mejora (
+                empleado_id, evento_origen_id, titulo, descripcion, tipo,
+                plan_accion, fecha_compromiso, fecha_objetivo,
+                video_url, jefe_responsable, creado_por
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            int(d.get('empleado_id') or 0),
+            d.get('evento_origen_id'),
+            (d.get('titulo') or '').strip(),
+            (d.get('descripcion') or '').strip(),
+            (d.get('tipo') or 'reinduccion').strip(),
+            (d.get('plan_accion') or '').strip(),
+            (d.get('fecha_compromiso') or '').strip() or None,
+            (d.get('fecha_objetivo') or '').strip() or None,
+            (d.get('video_url') or '').strip(),
+            (d.get('jefe_responsable') or user).strip(),
+            user
+        ))
+        conn.commit()
+        return jsonify({'ok': True, 'compromiso_id': cur.lastrowid})
+    # GET
+    estado = request.args.get('estado')
+    where = ""
+    params = ()
+    if estado:
+        where = "WHERE estado=?"
+        params = (estado,)
+    rows = c.execute(f"""
+        SELECT * FROM rh_compromisos_mejora {where}
+        ORDER BY fecha_creacion DESC LIMIT 200
+    """, params).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify({'compromisos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/rrhh/compromisos-mejora/<int:cid>/completar', methods=['POST'])
+def rrhh_compromiso_completar(cid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE rh_compromisos_mejora SET
+          estado='completado',
+          verificado_por=?,
+          fecha_verificacion=datetime('now'),
+          evidencia_url=?
+        WHERE id=?
+    """, (user, (d.get('evidencia_url') or '').strip(), cid))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/rrhh/dashboard-rh-completo', methods=['GET'])
+def rrhh_dashboard_completo():
+    """KPIs ampliados de RH: empleados activos, eventos del mes, llamados,
+    compromisos vencidos, vencimientos de documentos.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    def _safe(q, default=0):
+        try:
+            r = c.execute(q).fetchone()
+            return r[0] if r and r[0] is not None else default
+        except Exception:
+            return default
+
+    emp_activos = _safe("SELECT COUNT(*) FROM empleados WHERE COALESCE(estado,'Activo')='Activo'")
+    eventos_mes = _safe("""SELECT COUNT(*) FROM rh_eventos
+                           WHERE substr(fecha_inicio,1,7) = strftime('%Y-%m','now')""")
+    incapac_activas = _safe("""SELECT COUNT(*) FROM rh_eventos
+                               WHERE tipo IN ('incapacidad_comun','incapacidad_laboral')
+                                 AND estado IN ('registrada','aprobada')
+                                 AND date('now') BETWEEN fecha_inicio AND COALESCE(fecha_fin,'9999-12-31')""")
+    llamados_30d = _safe("""SELECT COUNT(*) FROM rh_eventos
+                            WHERE tipo IN ('llamado_atencion_verbal','llamado_atencion_escrito','suspension')
+                              AND fecha_inicio >= date('now','-30 days')""")
+    compromisos_pendientes = _safe("""SELECT COUNT(*) FROM rh_compromisos_mejora
+                                      WHERE estado IN ('pendiente','en_progreso')""")
+    docs_por_vencer = _safe("""SELECT COUNT(*) FROM empleados_documentos
+                               WHERE COALESCE(fecha_vencimiento,'') != ''
+                                 AND fecha_vencimiento >= date('now')
+                                 AND fecha_vencimiento <= date('now','+30 days')""")
+    docs_vencidos = _safe("""SELECT COUNT(*) FROM empleados_documentos
+                             WHERE COALESCE(fecha_vencimiento,'') != ''
+                               AND fecha_vencimiento < date('now')""")
+    return jsonify({
+        'empleados_activos': emp_activos,
+        'eventos_mes': eventos_mes,
+        'incapacidades_activas': incapac_activas,
+        'llamados_atencion_30d': llamados_30d,
+        'compromisos_pendientes': compromisos_pendientes,
+        'documentos_por_vencer': docs_por_vencer,
+        'documentos_vencidos': docs_vencidos,
+    })
+
+
 # ═══════════════════════════════════════════════════════
 #  CALIDAD BPM — Página + API
 # ═══════════════════════════════════════════════════════
