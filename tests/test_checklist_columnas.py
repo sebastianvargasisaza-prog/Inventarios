@@ -126,14 +126,19 @@ def test_backfill_finds_producciones_sin_checklist():
 
 def test_no_hay_referencias_a_columnas_inexistentes():
     """Regresion: no debe haber 'pp.producto_nombre', 'pp.fecha_planeada'
-    o 'pp.cantidad_kg' / 'pp.batch_size_kg' en programacion.py — esas
-    columnas NO existen en produccion_programada."""
+    o 'pp.batch_size_kg' en programacion.py — esas columnas NO existen
+    en produccion_programada.
+
+    NOTA: 'pp.cantidad_kg' SI existe desde migracion 50 (agregada el
+    2026-04-29 para guardar el kg derivado del calendario sin depender
+    del JOIN con formula_headers.lote_size_kg). Ya no se valida.
+    """
     src = Path(__file__).parent.parent / "api" / "blueprints" / "programacion.py"
     text = src.read_text(encoding='utf-8')
     for token in ['pp.producto_nombre', 'pp.fecha_planeada',
-                  'pp.cantidad_kg', 'pp.batch_size_kg']:
+                  'pp.batch_size_kg']:
         assert token not in text, (
             f"Encontrado '{token}' en programacion.py — la tabla "
-            f"produccion_programada usa: producto, fecha_programada, lotes "
-            f"(con kg = lotes * formula_headers.lote_size_kg)"
+            f"produccion_programada usa: producto, fecha_programada, lotes, "
+            f"cantidad_kg (con fallback kg = lotes * formula_headers.lote_size_kg)"
         )
