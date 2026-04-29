@@ -1520,6 +1520,160 @@ def marcar_recibido_solicitante(numero):
     })
 
 
+@bp.route('/api/solicitudes-compra/<numero>/aprobar-influencer', methods=['POST'])
+def aprobar_solicitud_influencer(numero):
+    """Aprueba una SOL Pendiente de Influencer/CC, completa el valor, crea
+    la OC vinculada y registra en pagos_influencers.
+
+    Sebastian (29-abr-2026): Jefferson crea SOLs desde /solicitudes con
+    valor=0 y Pendiente. Este endpoint cierra el ciclo: define el valor,
+    auto-aprueba, crea OC y entrada en pagos_influencers — listo para
+    pagar desde /compras tab Influencers.
+
+    Body: {valor: 1500000}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin (Sebastian/Alejandro)'}), 403
+    d = request.get_json() or {}
+    monto = float(d.get('valor') or 0)
+    if monto <= 0:
+        return jsonify({'error': 'Valor debe ser mayor a 0'}), 400
+    numero = numero.upper()
+    conn = get_db(); cur = conn.cursor()
+    sol = cur.execute(
+        "SELECT estado, categoria, observaciones, numero_oc, influencer_id, solicitante "
+        "FROM solicitudes_compra WHERE numero=?", (numero,)
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    sol_estado, categoria, obs_orig, numero_oc_actual, infl_id, solicitante = sol
+    cat_low = (categoria or '').lower()
+    if not ('influencer' in cat_low or 'cuenta de cobro' in cat_low or 'marketing' in cat_low):
+        return jsonify({'error': 'Esta solicitud no es de influencer/CC'}), 400
+
+    # Buscar nombre del beneficiario
+    benef_nombre = ''
+    if infl_id:
+        try:
+            r = cur.execute("SELECT nombre FROM marketing_influencers WHERE id=?", (infl_id,)).fetchone()
+            if r: benef_nombre = r[0] or ''
+        except Exception:
+            pass
+    if not benef_nombre and obs_orig:
+        m = __import__('re').search(r'BENEFICIARIO:\s*([^|]+)', obs_orig, __import__('re').IGNORECASE)
+        if m: benef_nombre = m.group(1).strip()
+    if not benef_nombre:
+        benef_nombre = solicitante or 'Sin beneficiario'
+
+    # 1. Update SOL: valor + estado=Aprobada
+    cur.execute(
+        "UPDATE solicitudes_compra SET valor=?, estado='Aprobada', "
+        "aprobado_por=?, fecha_aprobacion=datetime('now') WHERE numero=?",
+        (monto, user, numero)
+    )
+
+    # 2. Crear OC si no existe
+    if not numero_oc_actual:
+        oc_num = numero.replace('SOL', 'OC')
+        # Si ya hay una OC con ese numero (raro pero posible), generar uno con sufijo
+        existing_oc = cur.execute(
+            "SELECT 1 FROM ordenes_compra WHERE numero_oc=?", (oc_num,)
+        ).fetchone()
+        if existing_oc:
+            from datetime import datetime as _dt
+            oc_num = oc_num + '-' + _dt.now().strftime('%H%M%S')
+        cur.execute("""
+            INSERT INTO ordenes_compra
+            (numero_oc, fecha, estado, proveedor, observaciones, creado_por,
+             categoria, valor_total)
+            VALUES (?, date('now'), 'Aprobada', ?, ?, ?, ?, ?)
+        """, (oc_num, benef_nombre, obs_orig or '', user, categoria, monto))
+        cur.execute(
+            "UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?",
+            (oc_num, numero)
+        )
+    else:
+        oc_num = numero_oc_actual
+        # Si la OC existe pero estaba en valor 0, actualizarla
+        cur.execute(
+            "UPDATE ordenes_compra SET valor_total=?, estado='Aprobada', "
+            "proveedor=COALESCE(NULLIF(proveedor,''),?) WHERE numero_oc=?",
+            (monto, benef_nombre, oc_num)
+        )
+
+    # 3. Registrar en pagos_influencers (si no existe ya)
+    try:
+        existing_pi = cur.execute(
+            "SELECT 1 FROM pagos_influencers WHERE numero_oc=?", (oc_num,)
+        ).fetchone()
+        if not existing_pi:
+            cur.execute("""
+                INSERT INTO pagos_influencers
+                (influencer_id, influencer_nombre, valor, fecha, estado,
+                 concepto, numero_oc)
+                VALUES (?, ?, ?, date('now'), 'Pendiente', ?, ?)
+            """, (infl_id, benef_nombre, int(monto),
+                  obs_orig[:200] if obs_orig else 'Cuenta de cobro', oc_num))
+    except sqlite3.OperationalError:
+        pass  # tabla puede no existir en instancias muy viejas
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero': numero,
+        'numero_oc': oc_num,
+        'valor': monto,
+        'mensaje': f'Aprobada — OC {oc_num} creada por ${monto:,.0f}'
+    })
+
+
+@bp.route('/api/solicitudes-compra/<numero>/rechazar', methods=['POST'])
+def rechazar_solicitud(numero):
+    """Marca una SOL como Rechazada y notifica al solicitante por email.
+    Sin tocar OC asociada (si la tiene). Solo admin.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    d = request.get_json() or {}
+    motivo = (d.get('motivo') or '').strip() or 'Sin motivo'
+    numero = numero.upper()
+    conn = get_db(); cur = conn.cursor()
+    sol = cur.execute(
+        "SELECT solicitante, email_solicitante, observaciones FROM solicitudes_compra WHERE numero=?",
+        (numero,)
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    cur.execute(
+        "UPDATE solicitudes_compra SET estado='Rechazada', "
+        "observaciones=COALESCE(observaciones,'') || ' | RECHAZADA: ' || ? "
+        "WHERE numero=?",
+        (motivo, numero)
+    )
+    conn.commit()
+    # Notificar al solicitante
+    try:
+        _sol_user = (sol[0] or '').strip().lower()
+        _dest = (sol[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
+        if _dest:
+            _asunto = f"❌ Solicitud {numero} rechazada"
+            _body = (
+                f"<h2>Tu solicitud de pago fue rechazada</h2>"
+                f"<p>Solicitud: <b>{numero}</b></p>"
+                f"<p>Motivo: <i>{motivo}</i></p>"
+                f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group</p>"
+            )
+            _notificar_solicitante_email(_dest, _asunto, _body)
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'numero': numero, 'estado': 'Rechazada', 'motivo': motivo})
+
+
 @bp.route('/api/solicitudes-compra/<numero>', methods=['GET'])
 def get_solicitud_estado(numero):
     conn = get_db(); c = conn.cursor()

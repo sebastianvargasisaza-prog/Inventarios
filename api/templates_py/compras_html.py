@@ -186,10 +186,12 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
     <select id="s-influencer" onchange="renderInfluencers()" title="Filtrar por estado">
-      <option value="Aprobada">Por pagar</option>
+      <option value="ACCION">⚡ Requieren acción (Pendientes + Por pagar)</option>
+      <option value="Pendiente">⏳ Pendientes — definir valor / aprobar</option>
+      <option value="Aprobada">💸 Por pagar</option>
       <option value="">Todos los estados</option>
-      <option value="Pagada">Pagadas</option>
-      <option value="Rechazada">Rechazadas</option>
+      <option value="Pagada">✅ Pagadas</option>
+      <option value="Rechazada">❌ Rechazadas</option>
     </select>
     <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid #c4b5fd;color:#5b21b6;font-weight:600;">
       <option value="estado_fecha">📌 Por pagar primero (default)</option>
@@ -2995,7 +2997,10 @@ function _infSortFn(criterio){
 function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
 function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
-  var st=(document.getElementById('s-influencer')||{value:'Aprobada'}).value;
+  // Sebastian (29-abr-2026): default 'ACCION' = Pendiente + Aprobada — todo
+  // lo que requiere su atencion. Antes era solo 'Aprobada' y se perdian las
+  // SOL Pendientes que Jefferson creo desde /solicitudes con valor=0.
+  var st=(document.getElementById('s-influencer')||{value:'ACCION'}).value;
   var ordCriterio=(document.getElementById('order-influencer')||{value:'estado_fecha'}).value;
   // Sort defensivo: aplicamos el criterio elegido SIEMPRE antes de filtrar/render
   if(Array.isArray(INFLUENCERS) && INFLUENCERS.length){
@@ -3064,7 +3069,12 @@ function renderInfluencers(){
 
   // ── Filter list ──────────────────────────────────────────────────────────
   var list=INFLUENCERS.filter(function(s){
-    if(st && s.estado!==st) return false;
+    // Filtro especial 'ACCION' = Pendiente + Aprobada (todo lo que requiere atencion)
+    if(st === 'ACCION'){
+      if(s.estado !== 'Pendiente' && s.estado !== 'Aprobada') return false;
+    } else if(st && s.estado!==st){
+      return false;
+    }
     if(q){
       var hay=(s.numero||'')+(s.solicitante||'')+(s.observaciones||'')+(s.numero_oc||'');
       if(hay.toLowerCase().indexOf(q)<0) return false;
@@ -3118,7 +3128,12 @@ function renderInfluencers(){
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
           +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
-      btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">🗑 Eliminar</button>';
+      // Sebastian (29-abr-2026): para Pendientes (creadas desde /solicitudes
+      // por Jefferson sin valor o sin OC), permitir definir valor + aprobar
+      // + auto-crear OC en un solo click — y separa rechazar/eliminar.
+      btns='<button class="btn inf-aprobar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#0891b2;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;">✏️ Definir valor &amp; aprobar</button>'
+          +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
+          +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:11px;">🗑 Eliminar</button>';
     } else if(s.estado==='Rechazada'){
       btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
     }
@@ -3202,12 +3217,58 @@ function renderInfluencers(){
       var br=e.target.closest('.inf-rechazar');
       var bd=e.target.closest('[data-act="del-sol"]');
       var be=e.target.closest('.inf-eliminar');
+      var ba=e.target.closest('.inf-aprobar-pendiente');
+      var bx=e.target.closest('.inf-rechazar-pendiente');
       if(bp) pagarInfluencer(bp.dataset.oc, bp.dataset.sol, Number(bp.dataset.val));
       if(br) rechazarInfluencer(br.dataset.oc, br.dataset.sol);
       if(bd) eliminarSolicitud(bd.dataset.sol);
       if(be) eliminarSolicitudAprobada(be.dataset.sol, be.dataset.nombre);
+      if(ba) aprobarPendienteInfluencer(ba.dataset.sol, Number(ba.dataset.val), ba.dataset.nombre);
+      if(bx) rechazarPendienteInfluencer(bx.dataset.sol);
     };
   }
+
+  // Aprobar SOL Pendiente (de /solicitudes con valor=0 o sin OC):
+  // pide valor al usuario, auto-aprueba la SOL y crea OC vinculada.
+  window.aprobarPendienteInfluencer = async function(sol, valActual, nombre){
+    var promptMsg = 'Definir valor a pagar a "' + (nombre||sol) + '":';
+    var inputDefault = valActual > 0 ? String(valActual) : '';
+    var v = prompt(promptMsg + '\\n\\n(Solo numero en COP, sin puntos ni signos)', inputDefault);
+    if(v === null) return;
+    var monto = parseFloat(String(v).replace(/[^\\d.]/g,''));
+    if(!monto || monto <= 0){ alert('Valor inválido. Cancelado.'); return; }
+    try {
+      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/aprobar-influencer',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({valor: monto})
+      });
+      var raw = await r.text();
+      var d = null; try { d = JSON.parse(raw); } catch(_){}
+      if(!r.ok){
+        alert('Error '+r.status+': '+ (d&&d.error || raw.substring(0,200)));
+        return;
+      }
+      _toast('Aprobada — OC '+(d.numero_oc||'')+' creada', 1);
+      loadInfluencers();
+    } catch(e){ alert('Error de red: '+e.message); }
+  };
+
+  // Rechazar SOL Pendiente (no autoriza el pago).
+  window.rechazarPendienteInfluencer = async function(sol){
+    var razon = prompt('Razón del rechazo (se notifica al solicitante):', '');
+    if(razon === null) return;
+    try {
+      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/rechazar',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({motivo: razon||'Rechazada sin motivo'})
+      });
+      var raw = await r.text();
+      var d = null; try { d = JSON.parse(raw); } catch(_){}
+      if(!r.ok){ alert('Error '+r.status+': '+ (d&&d.error || raw.substring(0,200))); return; }
+      _toast('Rechazada', 1);
+      loadInfluencers();
+    } catch(e){ alert('Error de red: '+e.message); }
+  };
   attachEvents(gel);
   attachEvents(gpag);
 }
