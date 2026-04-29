@@ -3090,8 +3090,11 @@ def planificacion_estrategica():
                 })
                 break
 
-    # ── 2b. Fuente secundaria: produccion_programada (DB local) ──────────
-    # Complementa cuando el calendario no tiene eventos o no hay SKUs en títulos
+    # ── 2b. Fuente secundaria: produccion_programada (DB local, MANUALES) ─
+    # Complementa cuando el calendario no tiene eventos o no hay SKUs en títulos.
+    # IMPORTANTE: filtramos origen='calendar' (filas auto-sync) para evitar
+    # duplicados — esas ya se procesan en 2a directamente del calendar source.
+    # Solo manuales (origen='manual' o NULL).
     _upper_to_prod = {p.upper(): p for p in formulas.keys()}
     try:
         local_rows = conn.execute(
@@ -3099,6 +3102,7 @@ def planificacion_estrategica():
                WHERE estado NOT IN ('completado','cancelado')
                  AND fecha_programada >= date('now', '-7 days')
                  AND fecha_programada <= ?
+                 AND COALESCE(origen,'manual') != 'calendar'
                ORDER BY fecha_programada""",
             (cutoff.isoformat(),)
         ).fetchall()
@@ -4258,10 +4262,12 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                     (prod, fecha_s)
                 ).fetchone()
                 if not exists:
+                    # origen='calendar' para que planificacion_estrategica las
+                    # filtre y no duplique con su lectura directa del calendar.
                     conn.execute(
                         """INSERT INTO produccion_programada
-                           (producto, fecha_programada, lotes, estado, observaciones)
-                           VALUES (?, ?, ?, 'programado', ?)""",
+                           (producto, fecha_programada, lotes, estado, observaciones, origen)
+                           VALUES (?, ?, ?, 'programado', ?, 'calendar')""",
                         (prod, fecha_s, lotes,
                          f'[auto-sync calendar] {titulo[:200]}')
                     )

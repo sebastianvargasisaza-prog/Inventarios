@@ -1799,6 +1799,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_at TEXT""",
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_por TEXT DEFAULT ''""",
     ]),
+    (45, "produccion_programada: columna origen para distinguir manual de auto-sync calendar (fix dedup en Planificacion Estrategica)", [
+        # Bug 29-abr-2026: Planificacion Estrategica leia 2 fuentes (Google
+        # Calendar + tabla produccion_programada) y mi sync auto que copio
+        # eventos del calendar a la tabla causo duplicados (cada produccion
+        # aparecia 2 veces — ej. "GEL HIDRATANTE (50kg)" y "GEL HIDRATANTE
+        # (35kg)" mismo dia, ambos del mismo evento de calendar).
+        # Solucion: marcar las filas auto-sync con origen='calendar' y
+        # filtrarlas en planificacion_estrategica. Las manuales: 'manual'.
+        """ALTER TABLE produccion_programada ADD COLUMN origen TEXT DEFAULT 'manual'""",
+        # Backfill: filas insertadas por mi sync tienen "[auto-sync calendar]"
+        # al inicio de observaciones — marcarlas como origen='calendar'.
+        """UPDATE produccion_programada
+              SET origen='calendar'
+            WHERE COALESCE(observaciones,'') LIKE '[auto-sync calendar]%'""",
+    ]),
     (44, "formula_headers: metadata completa de Shopify (imagen + SKU + descripcion + precio + peso + galeria)", [
         # Sebastian (28-abr-2026): el modal del checklist debe mostrar la
         # foto del producto y info relevante (SKU, etiqueta) tomada de

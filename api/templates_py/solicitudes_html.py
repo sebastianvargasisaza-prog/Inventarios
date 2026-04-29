@@ -5,7 +5,7 @@ SOLICITUDES_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Compras &amp; Pagos - Solicitudes</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos4">
+<link rel="stylesheet" href="/static/cortex.css?v=eos5">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
