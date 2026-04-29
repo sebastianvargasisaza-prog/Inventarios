@@ -6851,6 +6851,77 @@ def _slug_codigo(nombre, presentacion):
     return base or 'MEE-X'
 
 
+@bp.route("/admin/backfill-debug", methods=["GET"])
+def admin_backfill_debug_page():
+    """Pagina debug para correr el backfill de checklists y ver el detalle
+    de errores en pantalla — sin tener que abrir F12. Sebastian (29-abr-2026):
+    "f12 no me sirve para pegar eso"."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Backfill checklist — debug</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
+      h1{font-size:20px;color:#0f172a}
+      .btn{background:#a16207;color:#fff;border:none;border-radius:6px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer}
+      .ok{background:#dcfce7;color:#166534;padding:14px;border-radius:8px;border-left:4px solid #16a34a;margin-top:14px}
+      .err{background:#fee2e2;color:#991b1b;padding:14px;border-radius:8px;border-left:4px solid #dc2626;margin-top:14px}
+      .warn{background:#fef3c7;color:#92400e;padding:14px;border-radius:8px;border-left:4px solid #f59e0b;margin-top:14px}
+      pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;max-height:500px;line-height:1.5}
+      .falla{background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:8px;padding:12px 16px;margin:8px 0}
+      .falla h3{margin:0 0 6px;font-size:14px;color:#991b1b}
+      .nota{font-size:12px;color:#64748b;line-height:1.5;margin:10px 0}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px;color:#0891b2">&larr; admin</a>
+    <h1>🔧 Backfill checklists — debug</h1>
+    <div class="nota">
+      Esta página corre el endpoint <code>POST /api/programacion/checklist/backfill</code>
+      y muestra el resultado COMPLETO en pantalla (sin tener que ir a la consola).
+      Si hay errores por producción, los lista uno por uno con el traceback.
+    </div>
+    <button class="btn" onclick="ejecutar()">🔄 Ejecutar backfill ahora</button>
+    <div id="resultado"></div>
+    <script>
+    async function ejecutar(){
+      var box = document.getElementById('resultado');
+      box.innerHTML = '<div class="warn">⏳ Ejecutando... puede tardar varios segundos</div>';
+      try {
+        var r = await fetch('/api/programacion/checklist/backfill', {method:'POST'});
+        var d = await r.json();
+        var html = '';
+        if(!r.ok){
+          html += '<div class="err"><b>❌ Error '+r.status+'</b>: '+(d.error||'sin mensaje')+
+                  (d.fase ? '<br>Fase: <code>'+d.fase+'</code>' : '')+'</div>';
+          if(d.traceback) html += '<h3>Traceback:</h3><pre>'+esc(d.traceback)+'</pre>';
+        } else {
+          var nFallas = (d.fallas||[]).length;
+          if(nFallas === 0){
+            html += '<div class="ok"><b>✅ '+d.mensaje+'</b></div>';
+          } else {
+            html += '<div class="warn"><b>⚠️ '+d.mensaje+'</b></div>';
+            html += '<h3 style="margin-top:18px">Detalle de las '+nFallas+' fallas:</h3>';
+            d.fallas.forEach(function(f, i){
+              html += '<div class="falla">'+
+                '<h3>'+(i+1)+'. '+esc(f.producto||'?')+' · '+esc(f.fecha||'?')+' · '+(f.kg||0)+' kg (id '+f.produccion_id+')</h3>'+
+                '<div style="font-size:13px;color:#1e293b;margin-bottom:6px"><b>Error:</b> '+esc(f.error||'')+'</div>'+
+                (f.traceback ? '<pre style="max-height:200px">'+esc(f.traceback)+'</pre>' : '')+
+              '</div>';
+            });
+          }
+        }
+        html += '<details style="margin-top:18px"><summary style="cursor:pointer;color:#64748b;font-size:11px">Ver respuesta completa (raw JSON)</summary><pre>'+esc(JSON.stringify(d, null, 2))+'</pre></details>';
+        box.innerHTML = html;
+      } catch(e){
+        box.innerHTML = '<div class="err"><b>Error de red:</b> '+esc(e.message)+'</div>';
+      }
+    }
+    function esc(s){ return String(s||'').replace(/[&<>]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+    </script>
+    </body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/api/admin/sku-map", methods=["GET"])
 def admin_sku_map_listar():
     """Lista mapeos sku_producto_map + productos disponibles en

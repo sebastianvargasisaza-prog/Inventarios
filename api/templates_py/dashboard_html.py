@@ -5101,7 +5101,12 @@ function _renderProgramacion(d){
             <h3 id="ck-modal-titulo" style="margin:0;color:#1c1917"></h3>
             <div id="ck-modal-sub" style="font-size:12px;color:#78716c;margin-top:4px"></div>
           </div>
-          <button onclick="document.getElementById('ck-modal').style.display='none'" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700;line-height:1;" title="Cerrar">&#10005;</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button id="ck-nav-prev" onclick="ckNavegarProducto(-1)" title="Producto anterior (←)" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;width:36px;height:32px;cursor:pointer;font-size:16px;color:#1e293b;font-weight:700;line-height:1">◀</button>
+            <span id="ck-nav-pos" style="font-size:11px;color:#78716c;font-weight:600;min-width:48px;text-align:center"></span>
+            <button id="ck-nav-next" onclick="ckNavegarProducto(1)" title="Siguiente producto (→)" style="background:#1e40af;border:1px solid #1e40af;border-radius:6px;width:36px;height:32px;cursor:pointer;font-size:16px;color:#fff;font-weight:700;line-height:1">▶</button>
+            <button onclick="document.getElementById('ck-modal').style.display='none'" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700;line-height:1;margin-left:8px" title="Cerrar (Esc)">&#10005;</button>
+          </div>
         </div>
         <div id="ck-modal-progress" style="margin-bottom:14px"></div>
         <div id="ck-modal-items"></div>
@@ -5210,6 +5215,8 @@ async function cargarChecklistResumen(dias){
       cardKpi('🟡 Amarillo', amar, '#f59e0b', '50-89%') +
       cardKpi('🔴 Rojo', rojo, '#dc2626', '<50%') +
       cardKpi('Sin checklist', sinChecklist, '#78716c', 'click "Generar"');
+    // Guardar lista para navegacion siguiente/anterior dentro del modal
+    window._ckLista = prods.filter(function(p){ return (p.total_items||0) > 0; });
     // Lista de producciones
     document.getElementById('ck-producciones-list').innerHTML = prods.map(rowProduccion).join('');
   } catch(e){
@@ -5547,6 +5554,8 @@ async function abrirChecklistDetalle(produccionId, producto){
     // Guardar produccionId actual para refrescar despues de cambiar imagen
     window._ckCurrentProduccionId = produccionId;
     window._ckCurrentProducto = producto;
+    // Actualizar botones de navegacion ◀ N/M ▶ segun posicion en la lista
+    if(typeof ckActualizarNavegacion === 'function') ckActualizarNavegacion();
   } catch(e){ document.getElementById('ck-modal-items').innerHTML='Error: '+e.message; }
 }
 
@@ -5584,6 +5593,58 @@ async function ckImagenLimpiar(producto){
     if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
   } catch(e){ alert('Error: '+e.message); }
 }
+
+// Navegacion siguiente/anterior dentro del modal del checklist sin tener
+// que cerrar y volver a abrir. Sebastian (29-abr-2026): "falta como una
+// flecha para seguir al siguiente producto sin necesidad de salirse".
+function ckNavegarProducto(delta){
+  var lista = window._ckLista || [];
+  if(!lista.length) return;
+  var idActual = window._ckCurrentProduccionId;
+  var idx = lista.findIndex(function(p){ return p.id === idActual; });
+  if(idx < 0) return;
+  var nuevoIdx = idx + delta;
+  if(nuevoIdx < 0 || nuevoIdx >= lista.length) return;
+  var p = lista[nuevoIdx];
+  // Cerrar editor inline si esta abierto
+  document.querySelectorAll('tr.ck-edit-row').forEach(function(r){ r.remove(); });
+  abrirChecklistDetalle(p.id, p.producto_nombre);
+}
+
+function ckActualizarNavegacion(){
+  var lista = window._ckLista || [];
+  var idActual = window._ckCurrentProduccionId;
+  var idx = lista.findIndex(function(p){ return p.id === idActual; });
+  var prev = document.getElementById('ck-nav-prev');
+  var next = document.getElementById('ck-nav-next');
+  var pos  = document.getElementById('ck-nav-pos');
+  if(!prev || !next || !pos) return;
+  if(idx < 0 || !lista.length){
+    prev.disabled = next.disabled = true;
+    prev.style.opacity = next.style.opacity = '0.3';
+    pos.textContent = '';
+    return;
+  }
+  pos.textContent = (idx+1) + ' / ' + lista.length;
+  // Anterior
+  if(idx === 0){ prev.disabled = true; prev.style.opacity = '0.3'; prev.style.cursor = 'not-allowed'; }
+  else { prev.disabled = false; prev.style.opacity = '1'; prev.style.cursor = 'pointer'; }
+  // Siguiente
+  if(idx === lista.length - 1){ next.disabled = true; next.style.opacity = '0.3'; next.style.cursor = 'not-allowed'; }
+  else { next.disabled = false; next.style.opacity = '1'; next.style.cursor = 'pointer'; }
+}
+
+// Atajos de teclado: ← → para navegar, Esc para cerrar
+document.addEventListener('keydown', function(e){
+  var modal = document.getElementById('ck-modal');
+  if(!modal || modal.style.display === 'none') return;
+  // No interferir si el usuario esta escribiendo en un input/textarea
+  var tag = (e.target && e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if(e.key === 'ArrowRight'){ e.preventDefault(); ckNavegarProducto(1); }
+  else if(e.key === 'ArrowLeft'){ e.preventDefault(); ckNavegarProducto(-1); }
+  else if(e.key === 'Escape'){ modal.style.display = 'none'; }
+});
 
 async function ckSolicitar(itemId){
   if(!confirm('Generar solicitud de compra para este item?')) return;
