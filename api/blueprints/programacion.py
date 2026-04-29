@@ -4873,6 +4873,150 @@ def solicitudes_compra_anticipada_list():
     return jsonify({'items': items, 'total': len(items), 'pendientes': pendientes})
 
 
+# Alias grupales: cuando una tarea se asigna a un grupo (ej. "operarios"),
+# expandir a la lista real de usernames. Los grupos pueden solaparse.
+_GRUPOS_USUARIOS = {
+    'operarios': ['luz', 'miguel', 'felipe', 'valentina'],  # planta operacion
+    'jefes':     ['luz', 'daniela', 'hernando'],
+    'compras':   ['catalina'],
+    'gerencia':  ['sebastian', 'alejandro'],
+    'rrhh':      ['evelin', 'gisseth'],
+    'todos':     ['sebastian', 'alejandro', 'catalina', 'luz', 'daniela',
+                  'hernando', 'miguel', 'felipe', 'valentina', 'mayra',
+                  'evelin', 'gisseth', 'jefferson'],
+}
+
+
+def _resolver_emails_asignados(asignado_a_csv):
+    """Convierte un CSV de usernames/grupos en lista de emails unicos.
+
+    Ejemplo:
+      'luz,operarios' → ['luz@..', 'miguel@..', 'felipe@..', 'valentina@..']
+      (luz aparece en ambos, dedup automatico)
+
+    Si un username no tiene email configurado en USER_EMAILS, simplemente
+    se omite (no falla). Esto permite que la app funcione mientras
+    Sebastian va llenando los EMAIL_USERS env vars en Render.
+    """
+    if not asignado_a_csv:
+        return []
+    try:
+        from config import USER_EMAILS as _UE
+    except Exception:
+        return []
+    raw = [t.strip().lower() for t in str(asignado_a_csv).split(',') if t.strip()]
+    usernames = []
+    for token in raw:
+        if token in _GRUPOS_USUARIOS:
+            usernames.extend(_GRUPOS_USUARIOS[token])
+        else:
+            usernames.append(token)
+    # dedup preservando orden
+    seen = set()
+    emails = []
+    for u in usernames:
+        em = (_UE.get(u, '') or '').strip()
+        if em and em.lower() not in seen:
+            emails.append(em)
+            seen.add(em.lower())
+    return emails
+
+
+def _notificar_tarea_operativa(tarea_id):
+    """Envia email a los asignados de una tarea operativa recien creada.
+
+    Lee la tarea (en su propia conexion para no chocar con el commit del
+    caller), resuelve emails de los asignados via _resolver_emails_asignados,
+    y dispara el envio en background thread (no bloquea la respuesta HTTP
+    al usuario que decidio).
+
+    Falla silenciosa: si no hay SMTP configurado, no hay emails resueltos,
+    o falla el envio, simplemente loggea y sigue. La tarea ya esta en BD.
+    """
+    import threading
+    def _worker():
+        try:
+            from config import DB_PATH
+            import sqlite3 as _sql
+            con = _sql.connect(DB_PATH, timeout=30)
+            try:
+                row = con.execute("""
+                    SELECT id, titulo, descripcion, tipo, asignado_a,
+                           fecha_objetivo, cantidad, mee_codigo,
+                           producto_relacionado, creado_por
+                    FROM tareas_operativas WHERE id=?
+                """, (tarea_id,)).fetchone()
+            finally:
+                con.close()
+            if not row:
+                return
+            (_id, titulo, descripcion, tipo, asignado_a, fecha_obj,
+             cantidad, mee_codigo, producto, creado_por) = row
+            emails = _resolver_emails_asignados(asignado_a)
+            if not emails:
+                return  # nadie con email configurado, no hay nada que enviar
+            # Armar email HTML claro y accionable
+            urgencia_color = '#dc2626' if fecha_obj else '#1e40af'
+            html = f"""
+            <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
+              <div style="background:#0f172a;color:#fff;padding:18px 22px">
+                <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px">Nueva tarea operativa · EOS Inventarios</div>
+                <h2 style="margin:6px 0 0;font-size:18px">{_html_escape(titulo)}</h2>
+              </div>
+              <div style="padding:18px 22px;color:#1e293b;font-size:14px;line-height:1.55">
+                <p style="margin:0 0 12px">{_html_escape(descripcion)}</p>
+                <table style="border-collapse:collapse;font-size:13px;margin-top:14px">
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Cantidad</td><td style="font-weight:700">{int(cantidad or 0):,} und</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Producto</td><td>{_html_escape(producto or '—')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Material</td><td style="font-family:monospace">{_html_escape(mee_codigo or '—')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Fecha objetivo</td><td style="color:{urgencia_color};font-weight:700">{_html_escape(fecha_obj or 'sin fecha')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Tipo</td><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:11px">{_html_escape(tipo or '')}</code></td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Asignada a</td><td>{_html_escape(asignado_a or '')}</td></tr>
+                  <tr><td style="padding:4px 12px 4px 0;color:#64748b">Creada por</td><td>{_html_escape(creado_por or '')}</td></tr>
+                </table>
+                <div style="margin-top:18px;padding:12px 14px;background:#f0fdf4;border-left:3px solid #16a34a;border-radius:6px;color:#166534;font-size:13px">
+                  Marca <b>Completar</b> en el modulo cuando termines:<br>
+                  <a href="https://inventarios-0363.onrender.com/inventarios" style="color:#0f766e;font-weight:600">Planta → Programación → Tareas operativas</a>
+                </div>
+              </div>
+              <div style="background:#f8fafc;padding:12px 22px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0">
+                Esta notificacion se envio automaticamente. No respondas a este correo.
+              </div>
+            </div>
+            """
+            asunto = f"[EOS] Tarea pendiente: {titulo}"
+            try:
+                from notificaciones import SistemaNotificaciones
+                import os as _os
+                sn = SistemaNotificaciones(
+                    email_remitente=_os.environ.get('EMAIL_REMITENTE', ''),
+                    contraseña=_os.environ.get('EMAIL_PASSWORD', ''),
+                    smtp_server=_os.environ.get('SMTP_SERVER', 'smtp.gmail.com'),
+                    smtp_port=int(_os.environ.get('SMTP_PORT', '587')),
+                )
+                sn._enviar_email(asunto, html, destinatarios=emails)
+            except Exception:
+                import logging
+                logging.getLogger('programacion').warning(
+                    'notificacion tarea operativa #%s fallo', tarea_id, exc_info=True
+                )
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _html_escape(s):
+    """HTML-escape minimo para meter strings en templates de email."""
+    if s is None:
+        return ''
+    return (str(s)
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;'))
+
+
 @bp.route('/api/compras/solicitudes-produccion/<int:sol_id>/decidir', methods=['POST'])
 def solicitudes_compra_anticipada_decidir(sol_id):
     """Catalina decide ruta para una solicitud:
@@ -5032,9 +5176,18 @@ def solicitudes_compra_anticipada_decidir(sol_id):
         WHERE id=?
     """, (decision, sol[1]))
     conn.commit()
+    # Notificar a los asignados (background thread, falla silenciosa).
+    # Esto cierra la queja "no me esta llegando la alerta" — antes la tarea
+    # se creaba en BD pero nadie recibia email, solo aparecia en la pantalla
+    # de Planta si alguien entraba a verla.
+    if tarea_id:
+        try:
+            _notificar_tarea_operativa(tarea_id)
+        except Exception:
+            pass
     msg_extra = ''
     if tarea_id:
-        msg_extra = f' (tarea operativa #{tarea_id} creada)'
+        msg_extra = f' (tarea operativa #{tarea_id} creada · email enviado a asignados)'
     elif oc_num:
         msg_extra = f' (OC {oc_num} creada en Borrador — Catalina ajusta precios y autoriza)'
     return jsonify({
@@ -5167,4 +5320,10 @@ def tareas_operativas_crear():
         user
     ))
     conn.commit()
-    return jsonify({'ok': True, 'tarea_id': cur.lastrowid})
+    tarea_id = cur.lastrowid
+    # Notificar a los asignados (background, falla silenciosa)
+    try:
+        _notificar_tarea_operativa(tarea_id)
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'tarea_id': tarea_id})

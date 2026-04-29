@@ -278,6 +278,48 @@ def test_decidir_oc_crea_oc_auto_y_linkea():
     assert estado_final[0] == 'recibido', "ciclo completo: solicitar → decidir oc → recibir → recibido"
 
 
+def test_resolver_emails_asignados_expande_grupo_y_dedup(app, monkeypatch):
+    """El resolver debe:
+       - Mapear cada username a su email via USER_EMAILS.
+       - Expandir aliases grupales como 'operarios' a la lista real.
+       - Deduplicar cuando luz aparece tanto explicito como dentro de un grupo.
+       - Omitir usernames sin email configurado (no fallar).
+
+    Usa el fixture `app` para que conftest haga setup correcto del path
+    + env vars, y monkeypatch para no contaminar config entre tests."""
+    import config as _real_config
+    fake_emails = {
+        'luz':       'luz@hha.co',
+        'miguel':    'miguel@hha.co',
+        'felipe':    '',           # sin email — debe omitirse
+        'valentina': 'valen@hha.co',
+        'catalina':  'cata@hha.co',
+    }
+    monkeypatch.setattr(_real_config, 'USER_EMAILS', fake_emails)
+    from blueprints.programacion import _resolver_emails_asignados
+
+    # Caso 1: solo grupo
+    emails = _resolver_emails_asignados('operarios')
+    # _GRUPOS_USUARIOS['operarios'] = ['luz','miguel','felipe','valentina']
+    # felipe sin email → omitido
+    assert sorted(emails) == sorted(['luz@hha.co', 'miguel@hha.co', 'valen@hha.co'])
+
+    # Caso 2: combinacion username + grupo + dedup
+    emails = _resolver_emails_asignados('luz,operarios,catalina')
+    # luz aparece dos veces (explicito + dentro de operarios) → 1 sola
+    assert sorted(emails) == sorted([
+        'luz@hha.co', 'miguel@hha.co', 'valen@hha.co', 'cata@hha.co'
+    ])
+
+    # Caso 3: vacio
+    assert _resolver_emails_asignados('') == []
+    assert _resolver_emails_asignados(None) == []
+
+    # Caso 4: username desconocido (no en USER_EMAILS) → omitido sin error
+    emails = _resolver_emails_asignados('alguien_que_no_existe,luz')
+    assert emails == ['luz@hha.co']
+
+
 def test_filtro_legacy_etiquetas_en_get():
     """Los items con tipo etiqueta_frontal/posterior/lateral NO deben
     aparecer en el GET del checklist (cubierto por decoracion del envase)."""
