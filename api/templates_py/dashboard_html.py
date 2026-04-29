@@ -5498,10 +5498,9 @@ async function ckSolicitar(itemId){
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||'')); return; }
     _toast(d.mensaje||'Solicitud creada', 1);
-    // Recargar el modal — buscar produccionId del item
-    var modalTitle = document.getElementById('ck-modal-titulo').textContent;
+    // Refrescar sin cerrar el modal
     cargarChecklistResumen();
-    document.getElementById('ck-modal').style.display='none';
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
   } catch(e){ alert('Error: '+e.message); }
 }
 
@@ -5711,8 +5710,9 @@ async function ckMarcar(itemId, estado){
     });
     if(!r.ok){ alert('Error'); return; }
     _toast('Item actualizado', 1);
+    // Refrescar TODO sin cerrar el modal: el listado de fondo + el detalle abierto
     cargarChecklistResumen();
-    document.getElementById('ck-modal').style.display='none';
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
   } catch(e){ alert('Error: '+e.message); }
 }
 </script>
