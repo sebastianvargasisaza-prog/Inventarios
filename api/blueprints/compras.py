@@ -1221,7 +1221,7 @@ def handle_solicitudes_compra():
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
                sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
-               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(NULLIF(oc.valor_total,0), sc.valor, 0) as valor_oc,
                COALESCE(mi.nombre, '')           as inf_nombre,
                COALESCE(mi.banco, '')            as inf_banco,
                COALESCE(mi.cuenta_bancaria, '')  as inf_cuenta,
@@ -1238,7 +1238,7 @@ def handle_solicitudes_compra():
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
                sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
-               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(NULLIF(oc.valor_total,0), sc.valor, 0) as valor_oc,
                COALESCE(mi.nombre, '')           as inf_nombre,
                COALESCE(mi.banco, '')            as inf_banco,
                COALESCE(mi.cuenta_bancaria, '')  as inf_cuenta,
@@ -1256,11 +1256,18 @@ def handle_solicitudes_compra():
     if filtro_estado: sql += " AND sc.estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND sc.empresa=?"; params.append(filtro_empresa)
     filtro_categoria = request.args.get('categoria', '')
-    if filtro_categoria:
+    # Sebastian (29-abr-2026): cuando se pide 'Influencer/Marketing Digital'
+    # tambien incluir 'Cuenta de Cobro' — el tab Influencers de /compras
+    # gestiona ambas porque tienen el mismo flujo (pago directo a personas).
+    # Antes solo traia una categoria y SOLs de 'Cuenta de Cobro' quedaban
+    # invisibles aunque /admin/influencers-hoy SI las mostraba.
+    if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
+        sql += " AND sc.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+    elif filtro_categoria:
         sql += " AND sc.categoria=?"; params.append(filtro_categoria)
     else:
         sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
-    if filtro_categoria == 'Influencer/Marketing Digital':
+    if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
         # Cadena de prioridad para ordenar:
         #  1. pi.fecha_publicacion (fecha del contenido cuando se agendó en marketing)
         #  2. sc.fecha_requerida   (fecha tope cuando el pago debe hacerse)
@@ -1307,11 +1314,13 @@ def handle_solicitudes_compra():
                 sql_fb_full += " AND sc.estado=?"; params_fb.append(filtro_estado)
             if filtro_empresa:
                 sql_fb_full += " AND sc.empresa=?"; params_fb.append(filtro_empresa)
-            if filtro_categoria:
+            if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
+                sql_fb_full += " AND sc.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+            elif filtro_categoria:
                 sql_fb_full += " AND sc.categoria=?"; params_fb.append(filtro_categoria)
             else:
                 sql_fb_full += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
-            if filtro_categoria == 'Influencer/Marketing Digital':
+            if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
                 sql_fb_full += (
                     " ORDER BY CASE sc.estado WHEN 'Aprobada' THEN 0 "
                     "WHEN 'Pendiente' THEN 1 WHEN 'Pagada' THEN 2 ELSE 3 END, "
@@ -3563,7 +3572,7 @@ def solicitudes_pdf_resumen():
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.area,
                sc.fecha_requerida, sc.numero_oc,
-               COALESCE(oc.valor_total, 0) as valor_oc,
+               COALESCE(NULLIF(oc.valor_total,0), sc.valor, 0) as valor_oc,
                COALESCE(oc.proveedor, '') as proveedor
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
