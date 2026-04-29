@@ -1656,8 +1656,32 @@ def recibir_oc(numero_oc):
             (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre, numero_oc))
     except Exception:
         cur.execute("UPDATE ordenes_compra SET estado=?, fecha_recepcion=? WHERE numero_oc=?", (nuevo_estado, fecha, numero_oc))
+    # Cierre automatico de cadena: si la OC esta linkeada a items del checklist
+    # Pre-Produccion (via produccion_checklist.oc_numero) o solicitudes anticipadas,
+    # marcarlos como 'recibido'. Solo cuando recepcion es completa, no parcial.
+    items_checklist_actualizados = 0
+    if not es_parcial:
+        try:
+            cur.execute("""
+                UPDATE produccion_checklist SET
+                  estado='recibido',
+                  fecha_recibido=date('now'),
+                  actualizado_at=datetime('now')
+                WHERE oc_numero=? AND estado IN ('solicitado','en_transito','pendiente')
+            """, (numero_oc,))
+            items_checklist_actualizados = cur.rowcount or 0
+            cur.execute("""
+                UPDATE solicitudes_compra_anticipada SET estado='completada'
+                WHERE oc_numero=? AND estado IN ('decidida','pendiente')
+            """, (numero_oc,))
+        except Exception:
+            pass
     conn.commit()
-    return jsonify({'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos, 'estado': nuevo_estado, 'parcial': es_parcial})
+    return jsonify({
+        'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos,
+        'estado': nuevo_estado, 'parcial': es_parcial,
+        'checklist_actualizados': items_checklist_actualizados,
+    })
 
 # ============================================================
 # Compras — Flujo de autorizacion y pago
