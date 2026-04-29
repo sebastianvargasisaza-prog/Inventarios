@@ -3,7 +3,7 @@ TECNICA_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Tecnica & Aseguramiento - Espagiria</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos10">
+<link rel="stylesheet" href="/static/cortex.css?v=eos11">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
