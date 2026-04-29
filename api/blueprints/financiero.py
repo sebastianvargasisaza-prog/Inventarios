@@ -94,6 +94,22 @@ def financiero_kpis():
     if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
+    # Auto-sync Shopify → flujo_ingresos antes de calcular KPIs.
+    # Asi cuando Sebastian abre el dashboard, los pedidos Shopify recientes
+    # ya cuentan como ingresos del mes (antes el card decia $0 mientras
+    # Shopify mostraba $284.9M). Falla silenciosa.
+    try:
+        _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True)
+    except Exception:
+        pass
+    # Auto-backfill de egresos mal categorizados como Espagiria que en
+    # realidad son pagos a influencers (deben quedar como Animus). Idempotente.
+    # Sebastian 2026-04-29: "todo esto creo son influencers deberia quedar
+    # por animus no espagiria".
+    try:
+        _backfill_egresos_animus(conn)
+    except Exception:
+        pass
     periodo_actual = datetime.now().strftime('%Y-%m')
     # KPIs mes actual
     c.execute("SELECT COALESCE(SUM(monto),0), COUNT(*) FROM flujo_ingresos WHERE periodo=?", (periodo_actual,))
@@ -315,36 +331,74 @@ def pnl_por_empresa():
     return jsonify(out)
 
 
-@bp.route('/api/financiero/sync-shopify-ingresos', methods=['POST'])
-def financiero_sync_shopify():
-    """Sincroniza pedidos de Shopify NO marcados como flujo_synced
-    insertando filas en flujo_ingresos y marcando la orden con
-    flujo_synced=1 + flujo_ingreso_id (idempotente y reversible).
+def _backfill_egresos_animus(conn):
+    """Recategoriza egresos viejos mal etiquetados como Espagiria que en
+    realidad son pagos a influencers (deben quedar como Animus).
 
-    Body opcional:
-      - solo_pagados: bool (default True) — solo importa orders con
-        estado_pago='paid'/'pagado'. Evita registrar reservas o
-        ordenes cancelados.
-      - desde_fecha: 'YYYY-MM-DD' (opcional) — limita el rango.
-      - dry_run: bool (default False) — solo cuenta, no escribe.
+    Detecta via dos señales fuertes (no usa keywords ambiguas):
+      1. La referencia (numero_oc) tiene una fila en pagos_influencers.
+      2. La solicitud de compra origen tiene influencer_id NOT NULL.
+
+    Idempotente: solo actualiza filas que SIGUEN como 'Espagiria'.
+    Falla silenciosa si las tablas legacy no existen.
+
+    Returns: count de filas actualizadas.
     """
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
-        return jsonify({'error': 'No autorizado'}), 401
-    d = request.get_json() or {}
-    solo_pagados = d.get('solo_pagados', True)
-    desde_fecha = (d.get('desde_fecha') or '').strip()
-    dry_run = bool(d.get('dry_run', False))
+    c = conn.cursor()
+    try:
+        cur1 = c.execute("""
+            UPDATE flujo_egresos
+            SET empresa='Animus'
+            WHERE LOWER(COALESCE(empresa,''))='espagiria'
+              AND referencia IS NOT NULL
+              AND referencia IN (
+                SELECT DISTINCT numero_oc FROM pagos_influencers
+                WHERE numero_oc IS NOT NULL AND numero_oc != ''
+              )
+        """)
+        n1 = cur1.rowcount or 0
+    except sqlite3.OperationalError:
+        n1 = 0  # tabla pagos_influencers no existe en deploy viejo
+    try:
+        cur2 = c.execute("""
+            UPDATE flujo_egresos
+            SET empresa='Animus'
+            WHERE LOWER(COALESCE(empresa,''))='espagiria'
+              AND referencia IS NOT NULL
+              AND referencia IN (
+                SELECT DISTINCT numero_oc FROM solicitudes_compra
+                WHERE influencer_id IS NOT NULL AND numero_oc IS NOT NULL
+              )
+        """)
+        n2 = cur2.rowcount or 0
+    except sqlite3.OperationalError:
+        n2 = 0  # columna influencer_id no existe
+    if n1 or n2:
+        conn.commit()
+    return n1 + n2
 
-    conn = get_db(); c = conn.cursor()
 
+def _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True, desde_fecha='', dry_run=False):
+    """Helper compartido: sincroniza pedidos Shopify a flujo_ingresos.
+
+    Idempotente: ordenes con flujo_synced=1 se saltan; si ya existe un
+    ingreso con la misma referencia (SHOPIFY-<id>), tambien se salta y
+    solo se actualiza el link.
+
+    Usa indices numericos en lugar de Row factory para no exigir que el
+    caller configure conn.row_factory — asi se puede llamar desde
+    financiero_kpis sin contaminar las queries siguientes que esperan
+    tuples.
+
+    Returns dict con: ok, pendientes, importadas, total_importado, error.
+    """
+    c = conn.cursor()
     # Verificar que la columna flujo_synced existe (migracion 37)
     try:
         c.execute("SELECT flujo_synced FROM animus_shopify_orders LIMIT 1")
     except sqlite3.OperationalError:
-        return jsonify({
-            'error': 'Migracion #37 no aplicada — columna flujo_synced no existe. '
-                     'Reinicia la app para aplicar migraciones pendientes.',
-        }), 500
+        return {'ok': False, 'error': 'Migracion #37 no aplicada (flujo_synced ausente)',
+                'pendientes': 0, 'importadas': 0, 'total_importado': 0}
 
     where = ['(flujo_synced=0 OR flujo_synced IS NULL)']
     params = []
@@ -354,51 +408,44 @@ def financiero_sync_shopify():
         where.append("creado_en >= ?")
         params.append(desde_fecha)
 
+    # SELECT con orden FIJO de columnas: id(0), shopify_id(1), nombre(2),
+    # total(3), moneda(4), creado_en(5), ciudad(6)
     sql = f"""SELECT id, shopify_id, nombre, total, moneda, creado_en, ciudad
               FROM animus_shopify_orders
               WHERE {' AND '.join(where)}
               ORDER BY creado_en"""
     pendientes = c.execute(sql, params).fetchall()
     if not pendientes:
-        return jsonify({'ok': True, 'pendientes': 0, 'importadas': 0,
-                        'mensaje': 'No hay pedidos Shopify pendientes de sincronizar'})
+        return {'ok': True, 'pendientes': 0, 'importadas': 0, 'total_importado': 0}
 
     if dry_run:
-        return jsonify({
-            'ok': True, 'dry_run': True,
-            'pendientes': len(pendientes),
-            'total_a_importar': sum(float(r['total'] or 0) for r in pendientes),
-            'mensaje': f'{len(pendientes)} pedidos serian importados (dry_run no escribe)',
-        })
+        return {'ok': True, 'dry_run': True, 'pendientes': len(pendientes),
+                'importadas': 0,
+                'total_importado': sum(float(r[3] or 0) for r in pendientes)}
 
     importadas = 0
     total_importado = 0.0
     for row in pendientes:
-        order_id = row['id']
-        shopify_id = row['shopify_id'] or ''
-        total = float(row['total'] or 0)
+        order_id = row[0]
+        shopify_id = row[1] or ''
+        total = float(row[3] or 0)
         if total <= 0:
             continue
-        fecha = (row['creado_en'] or datetime.now().isoformat())[:10]
+        fecha = (row[5] or datetime.now().isoformat())[:10]
         periodo = fecha[:7]
-        nombre = row['nombre'] or ''
-        ciudad = row['ciudad'] or ''
+        nombre = row[2] or ''
         concepto = f'Shopify {shopify_id}' + (f' — {nombre[:40]}' if nombre else '')
         ref = f'SHOPIFY-{shopify_id}' if shopify_id else f'SHOPIFY-{order_id}'
-
-        # Idempotencia adicional: si ya existe ingreso con esa referencia, skip + marcar
         existente = c.execute(
-            "SELECT id FROM flujo_ingresos WHERE referencia=?",
-            (ref,)
+            "SELECT id FROM flujo_ingresos WHERE referencia=?", (ref,)
         ).fetchone()
         if existente:
-            ing_id = existente[0] if not isinstance(existente, dict) else existente['id']
+            ing_id = existente[0]
             c.execute(
                 "UPDATE animus_shopify_orders SET flujo_synced=1, flujo_ingreso_id=? WHERE id=?",
                 (ing_id, order_id)
             )
             continue
-
         c.execute("""INSERT INTO flujo_ingresos
                      (fecha, empresa, concepto, categoria, monto, periodo,
                       fuente, referencia, creado_por)
@@ -412,16 +459,93 @@ def financiero_sync_shopify():
         )
         importadas += 1
         total_importado += total
-
     conn.commit()
-    return jsonify({
-        'ok': True,
-        'pendientes': len(pendientes),
-        'importadas': importadas,
-        'total_importado': total_importado,
-        'mensaje': f'{importadas} pedidos Shopify sincronizados a flujo_ingresos. '
-                   f'Total: ${total_importado:,.0f} COP',
-    })
+    return {'ok': True, 'pendientes': len(pendientes), 'importadas': importadas,
+            'total_importado': total_importado}
+
+
+def _start_shopify_ingresos_background_loop():
+    """Thread daemon que cada SHOPIFY_INGRESOS_SYNC_INTERVAL_MIN min sincroniza
+    pedidos Shopify nuevos a flujo_ingresos sin que nadie tenga la pantalla
+    abierta. Default 30 min. <=0 desactiva.
+
+    Resuelve la queja Sebastian (29-abr-2026): "lo de shopy no lo esta
+    registrando como ingresos" — antes solo se sincronizaba si Sebastian
+    presionaba un boton manual o llamaba el endpoint.
+    """
+    import threading, os, time as _t
+    if getattr(_start_shopify_ingresos_background_loop, '_running', False):
+        return
+    try:
+        interval_min = int(os.environ.get('SHOPIFY_INGRESOS_SYNC_INTERVAL_MIN', '30'))
+    except ValueError:
+        interval_min = 30
+    if interval_min <= 0:
+        return
+    _start_shopify_ingresos_background_loop._running = True
+
+    def _worker():
+        from config import DB_PATH
+        import sqlite3 as _sql
+        _t.sleep(45)  # delay inicial
+        while True:
+            try:
+                local_conn = _sql.connect(DB_PATH, timeout=30)
+                try:
+                    _sync_shopify_a_flujo_ingresos(local_conn, solo_pagados=True)
+                finally:
+                    local_conn.close()
+            except Exception:
+                pass  # nunca matar el loop por una falla puntual
+            _t.sleep(max(60, interval_min * 60))
+
+    t = threading.Thread(target=_worker, daemon=True, name='shopify-ingresos-sync-loop')
+    t.start()
+
+
+# Arrancar el loop al importar el blueprint (una vez por proceso)
+try:
+    _start_shopify_ingresos_background_loop()
+except Exception:
+    pass
+
+
+@bp.route('/api/financiero/sync-shopify-ingresos', methods=['POST'])
+def financiero_sync_shopify():
+    """Sincroniza pedidos de Shopify NO marcados como flujo_synced
+    insertando filas en flujo_ingresos y marcando la orden con
+    flujo_synced=1 + flujo_ingreso_id (idempotente y reversible).
+
+    Tambien corre automaticamente:
+      - cada vez que se cargan los KPIs del Financiero
+      - en background cada SHOPIFY_INGRESOS_SYNC_INTERVAL_MIN minutos
+
+    Body opcional:
+      - solo_pagados: bool (default True) — solo importa orders con
+        estado_pago='paid'/'pagado'. Evita registrar reservas o
+        ordenes cancelados.
+      - desde_fecha: 'YYYY-MM-DD' (opcional) — limita el rango.
+      - dry_run: bool (default False) — solo cuenta, no escribe.
+    """
+    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.get_json() or {}
+    conn = get_db()
+    res = _sync_shopify_a_flujo_ingresos(
+        conn,
+        solo_pagados=d.get('solo_pagados', True),
+        desde_fecha=(d.get('desde_fecha') or '').strip(),
+        dry_run=bool(d.get('dry_run', False)),
+    )
+    if not res.get('ok'):
+        return jsonify({'error': res.get('error', 'sync fallo'), **res}), 500
+    importadas = res.get('importadas', 0)
+    total_importado = res.get('total_importado', 0)
+    res['mensaje'] = (
+        f'{importadas} pedidos Shopify sincronizados a flujo_ingresos. '
+        f'Total: ${total_importado:,.0f} COP'
+    ) if importadas else 'No hay pedidos Shopify pendientes de sincronizar'
+    return jsonify(res)
 
 
 @bp.route('/api/financiero/sync-shopify-status', methods=['GET'])

@@ -1882,8 +1882,21 @@ def pagar_oc(numero_oc):
             "sync pagos_influencers falló para OC %s: %s", numero_oc, _e
         )
     try:
+        # Detectar empresa pagadora con la misma logica multi-señal que usan los
+        # comprobantes de egreso. Influencers / marketing / cuenta de cobro →
+        # ANIMUS; mercancia/MPs/servicios tecnicos → ESPAGIRIA. Antes estaba
+        # hardcoded a 'Espagiria' y por eso pagos a influencers (Ana Sofia,
+        # Maria Camila Soto, daisy lopez, etc.) aparecian mal categorizados
+        # en el Historial de Egresos del Financiero. Sebastian 2026-04-29.
+        empresa_egreso = 'Animus' if _is_animus_payment(
+            cur,
+            numero_oc=numero_oc,
+            beneficiario_nombre=proveedor,
+            observaciones=obs,
+            categoria=cat_egreso,
+        ) else 'Espagiria'
         cur.execute("INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                   (fecha_pago, 'Espagiria', f'Pago OC {numero_oc} - {proveedor}',
+                   (fecha_pago, empresa_egreso, f'Pago OC {numero_oc} - {proveedor}',
                     cat_egreso, monto, datetime.now().strftime('%Y-%m'),
                     'compras', numero_oc, usuario_actual, f'{medio}. {obs}'))
     except sqlite3.OperationalError as _e:
