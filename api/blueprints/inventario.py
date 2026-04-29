@@ -93,37 +93,114 @@ def _require_admin():
 
 @bp.route('/api/inventario')
 def get_inventario():
+    """Endpoint principal del Dashboard de Planta. Devuelve KPIs agrupados
+    en 3 zonas: AHORA (acción hoy), CERCA (próximos 7-30d), CONTEXTO (totales).
+
+    Sebastian (28-abr-2026): replanteo del dashboard. Antes solo devolvia
+    4 KPIs sueltos. Ahora estructurado para poder ver de un vistazo qué
+    requiere acción YA, qué viene pronto, y dónde estamos parados.
+    """
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT COUNT(*) FROM movimientos')
-    mov = c.fetchone()[0]
-    # NOTA 28-abr-2026 (Sebastian): "producciones" (histórico) vs
-    # "produccion_programada" (futuro) eran confusas en el dashboard.
-    # Antes el KPI mostraba SOLO el histórico (9 producciones realizadas)
-    # pero el usuario esperaba ver las futuras (que el checklist verifica).
-    # Ahora devolvemos AMBAS para que el dashboard distinga.
-    c.execute('SELECT COUNT(*) FROM producciones')
-    prod_historico = c.fetchone()[0]
+
+    def _safe(query, default=0):
+        try:
+            r = c.execute(query).fetchone()
+            return r[0] if r and r[0] is not None else default
+        except Exception:
+            return default
+
+    # ── CONTEXTO (totales / composición) ──────────────────────────────
+    mov = _safe('SELECT COUNT(*) FROM movimientos')
+    prod_historico = _safe('SELECT COUNT(*) FROM producciones')
+    stock_total = _safe('SELECT COALESCE(SUM(CASE WHEN tipo="Entrada" THEN cantidad ELSE -cantidad END),0) FROM movimientos')
+    alrt = _safe('SELECT COUNT(*) FROM alertas')
+
+    # ── AHORA (crítico — acción hoy) ──────────────────────────────────
+    # MPs sin stock (en cero)
+    mps_sin_stock = _safe("""
+        SELECT COUNT(*) FROM maestro_mps m
+        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                   FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+        WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) <= 0
+    """)
+    # MPs bajo mínimo (incluye sin stock)
+    mps_bajo_min = _safe("""
+        SELECT COUNT(*) FROM maestro_mps m
+        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                   FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+        WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo
+    """)
+    # Lotes vencidos (estado_lote='VENCIDO' en entradas)
+    lotes_vencidos = _safe("""
+        SELECT COUNT(*) FROM movimientos
+        WHERE tipo='Entrada' AND estado_lote='VENCIDO'
+    """)
+
+    # ── CERCA (próximos 7-30 días) ────────────────────────────────────
     # Próximas a producir: programadas activas en próximos 60 días
-    try:
-        c.execute("""
-            SELECT COUNT(*) FROM produccion_programada
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-              AND fecha_programada >= date('now','-1 day')
-              AND fecha_programada <= date('now','+60 day')
-        """)
-        prod_proximas = c.fetchone()[0]
-    except Exception:
-        prod_proximas = 0
-    c.execute('SELECT COUNT(*) FROM alertas')
-    alrt = c.fetchone()[0]
-    c.execute('SELECT COALESCE(SUM(CASE WHEN tipo="Entrada" THEN cantidad ELSE -cantidad END),0) FROM movimientos')
-    stock = c.fetchone()[0]
-    return jsonify({'total_items': mov, 'movimientos': mov,
-                    'producciones': prod_historico,
-                    'producciones_historico': prod_historico,
-                    'producciones_proximas': prod_proximas,
-                    'alertas': alrt, 'stock_total': round(stock, 2)})
+    prod_proximas = _safe("""
+        SELECT COUNT(*) FROM produccion_programada
+        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+          AND fecha_programada >= date('now','-1 day')
+          AND fecha_programada <= date('now','+60 day')
+    """)
+    # Lotes en cuarentena (esperando QC)
+    lotes_cuarentena = _safe("""
+        SELECT COUNT(*) FROM movimientos
+        WHERE tipo='Entrada' AND estado_lote='CUARENTENA'
+    """)
+    # Vencimientos críticos en próximos 30 días
+    venc_criticos = _safe("""
+        SELECT COUNT(*) FROM movimientos
+        WHERE tipo='Entrada' AND estado_lote IN ('CRITICO','PROXIMO')
+          AND fecha_vencimiento IS NOT NULL
+          AND fecha_vencimiento <= date('now','+30 day')
+    """)
+    # OCs en tránsito (Autorizada/Pagada sin recepción)
+    ocs_transito = _safe("""
+        SELECT COUNT(*) FROM ordenes_compra
+        WHERE estado IN ('Autorizada','Pagada')
+          AND (fecha_recepcion IS NULL OR fecha_recepcion = '')
+          AND COALESCE(categoria,'') NOT IN
+              ('Influencer/Marketing Digital','Cuenta de Cobro','SVC')
+    """)
+    # MEE bajo mínimo (envases)
+    mees_bajo_min = _safe("""
+        SELECT COUNT(*) FROM maestro_mee
+        WHERE COALESCE(activo,1)=1 AND COALESCE(stock_minimo,0)>0
+          AND COALESCE(stock_actual,0) < COALESCE(stock_minimo,0)
+    """)
+
+    return jsonify({
+        # Compatibilidad con frontend viejo
+        'total_items': mov, 'movimientos': mov,
+        'producciones': prod_historico,
+        'producciones_historico': prod_historico,
+        'producciones_proximas': prod_proximas,
+        'alertas': alrt,
+        'stock_total': round(stock_total, 2),
+        # KPIs nuevos del dashboard replanteado (zonas)
+        'kpis': {
+            'ahora': {
+                'mps_sin_stock':   mps_sin_stock,
+                'mps_bajo_minimo': mps_bajo_min,
+                'lotes_vencidos':  lotes_vencidos,
+            },
+            'cerca': {
+                'prod_proximas':       prod_proximas,
+                'lotes_cuarentena':    lotes_cuarentena,
+                'venc_criticos_30d':   venc_criticos,
+                'ocs_en_transito':     ocs_transito,
+                'mees_bajo_minimo':    mees_bajo_min,
+            },
+            'contexto': {
+                'stock_total_g':   round(stock_total, 0),
+                'lotes_bodega':    mov,
+                'prod_historico':  prod_historico,
+            },
+        },
+    })
 
 @bp.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():

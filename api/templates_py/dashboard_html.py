@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos1">
+<link rel="stylesheet" href="/static/cortex.css?v=eos2">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -293,18 +293,42 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="loadDashboardCompleto();loadAcond();loadLiberaciones('');" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
     </div>
 
-    <!-- KPI Cards -->
-    <div class="grid" style="margin-bottom:20px;">
-      <div class="card"><h3>Stock Total</h3><p id="stock-total">-</p></div>
-      <div class="card"><h3>Lotes en Bodega</h3><p id="materiales-count">-</p></div>
-      <div class="card" id="card-alertas" style="cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo Minimo</h3><p id="alertas-count" style="color:#e65100;">-</p></div>
-      <div class="card" style="cursor:pointer;" onclick="switchTab('programacion');" title="Click para ver Programación / Checklist">
-        <h3>Próximas a producir <span style="font-size:9px;color:#94a3b8;font-weight:500;">60d</span></h3>
-        <p id="producciones-proximas-count" style="color:#16a34a;">-</p>
-        <div style="font-size:10px;color:#78716c;margin-top:-2px;">
-          Histórico: <span id="producciones-count">-</span>
-        </div>
-      </div>
+    <!-- ═══ ZONA AHORA — qué requiere acción hoy ═══ -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#dc2626;border-radius:50%;display:inline-block;"></span>
+      AHORA &middot; acción hoy
+      <span style="flex:1;height:1px;background:#fecaca;"></span>
+    </div>
+    <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(3,1fr);">
+      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs sin stock</h3><p id="kpi-mps-sin-stock" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">críticas — bloquean producción</div></div>
+      <div class="card" id="card-alertas" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo mínimo</h3><p id="alertas-count" style="color:#e65100;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">incluye las en cero</div></div>
+      <div class="card" style="border-left:4px solid #dc2626;"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">en bodega — dar de baja</div></div>
+    </div>
+
+    <!-- ═══ ZONA CERCA — próximos 7-30 días ═══ -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#f59e0b;border-radius:50%;display:inline-block;"></span>
+      CERCA &middot; próximos 7-30 días
+      <span style="flex:1;height:1px;background:#fde68a;"></span>
+    </div>
+    <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(5,1fr);">
+      <div class="card" style="border-left:4px solid #16a34a;cursor:pointer;" onclick="switchTab('programacion');" title="Programación / Checklist"><h3>Próximas a producir <span style="font-size:9px;color:#94a3b8;font-weight:500;">60d</span></h3><p id="producciones-proximas-count" style="color:#16a34a;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">click → checklist</div></div>
+      <div class="card" style="border-left:4px solid #f59e0b;"><h3>Vencimientos &lt;30d</h3><p id="kpi-venc-criticos" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">priorizar uso FEFO</div></div>
+      <div class="card" style="border-left:4px solid #7c3aed;"><h3>Lotes en cuarentena</h3><p id="kpi-cuarentena" style="color:#7c3aed;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">esperando QC</div></div>
+      <div class="card" style="border-left:4px solid #1e40af;cursor:pointer;" onclick="window.location.href='/recepcion'" title="Ir a Recepción"><h3>OCs en tránsito</h3><p id="kpi-ocs-transito" style="color:#1e40af;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">por recibir</div></div>
+      <div class="card" style="border-left:4px solid #f59e0b;"><h3>MEE bajo mínimo</h3><p id="kpi-mees-bajo" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">envases / etiquetas</div></div>
+    </div>
+
+    <!-- ═══ ZONA CONTEXTO — composición y tendencia ═══ -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#6d28d9;border-radius:50%;display:inline-block;"></span>
+      CONTEXTO &middot; composición y tendencia
+      <span style="flex:1;height:1px;background:#e9d5ff;"></span>
+    </div>
+    <div class="grid" style="margin-bottom:20px;grid-template-columns:repeat(3,1fr);">
+      <div class="card"><h3>Stock total</h3><p id="stock-total" style="font-size:1.4em;">-</p><div style="font-size:10px;color:#78716c;">en gramos · MPs activas</div></div>
+      <div class="card"><h3>Lotes en bodega</h3><p id="materiales-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:#78716c;">total movimientos registrados</div></div>
+      <div class="card"><h3>Producciones (histórico)</h3><p id="producciones-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:#78716c;">producciones realizadas total</div></div>
     </div>
 
     <!-- Alertas criticas rápidas -->
@@ -1983,6 +2007,26 @@ async function loadDashboard(){
       elProx.style.color = nProx>0 ? '#16a34a' : '#94a3b8';
     }
     document.getElementById('producciones-count').textContent=d.producciones||'0';
+
+    // KPIs nuevos del dashboard replanteado en zonas AHORA/CERCA/CONTEXTO
+    var k = d.kpis || {ahora:{}, cerca:{}, contexto:{}};
+    function setKpi(id, val, fallbackZero){
+      var el = document.getElementById(id);
+      if(!el) return;
+      var n = val||0;
+      el.textContent = n;
+      // Atenuar si está en cero (visual: todo OK)
+      if(fallbackZero && n===0) el.style.opacity = '0.4';
+      else el.style.opacity = '1';
+    }
+    var a = k.ahora || {};
+    setKpi('kpi-mps-sin-stock', a.mps_sin_stock, true);
+    setKpi('kpi-lotes-vencidos', a.lotes_vencidos, true);
+    var ce = k.cerca || {};
+    setKpi('kpi-venc-criticos', ce.venc_criticos_30d, true);
+    setKpi('kpi-cuarentena', ce.lotes_cuarentena, true);
+    setKpi('kpi-ocs-transito', ce.ocs_en_transito, true);
+    setKpi('kpi-mees-bajo', ce.mees_bajo_minimo, true);
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
       var el=document.getElementById('alertas-count');

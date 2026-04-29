@@ -6,7 +6,7 @@ SALIDA_HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Hub de Salida - ANIMUS Lab</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos1">
+<link rel="stylesheet" href="/static/cortex.css?v=eos2">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}

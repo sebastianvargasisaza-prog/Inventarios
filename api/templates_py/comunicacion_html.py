@@ -6,7 +6,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <title>Comunicación — Tareas, Chat & Comité</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos1">
+<link rel="stylesheet" href="/static/cortex.css?v=eos2">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   *{box-sizing:border-box}
