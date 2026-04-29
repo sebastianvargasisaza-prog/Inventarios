@@ -160,7 +160,6 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <button class="tab" id="t-eventos" onclick="goTo('eventos',this)">&#129496; Eventos &amp; Reportes</button>
     <button class="tab" id="t-llamados" onclick="goTo('llamados',this)">&#128226; Llamados de atenci&oacute;n</button>
     <button class="tab" id="t-compromisos" onclick="goTo('compromisos',this)">&#128221; Compromisos</button>
-    <button class="tab" id="t-nom" onclick="goTo('nom',this)">&#128184; N&oacute;mina</button>
     <button class="tab" id="t-aus" onclick="goTo('aus',this)">&#128197; Ausencias</button>
     <button class="tab" id="t-cap" onclick="goTo('cap',this)">&#127891; Capacitaciones</button>
     <button class="tab" id="t-eva" onclick="goTo('eva',this)">&#11088; Evaluaciones</button>
@@ -255,47 +254,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
   <div id="compromisos-lista"></div>
 </div>
 
-<!-- ═══ NÓMINA ═══ -->
-<div id="nom" class="page">
-  <div class="ctrl-bar">
-    <select id="nom-mes">
-      <option value="01">Enero</option><option value="02">Febrero</option>
-      <option value="03">Marzo</option><option value="04">Abril</option>
-      <option value="05">Mayo</option><option value="06">Junio</option>
-      <option value="07">Julio</option><option value="08">Agosto</option>
-      <option value="09">Septiembre</option><option value="10">Octubre</option>
-      <option value="11">Noviembre</option><option value="12">Diciembre</option>
-    </select>
-    <select id="nom-anio"><option>2026</option><option>2025</option></select>
-    <select id="nom-quinc" style="font-weight:600;">
-      <option value="Q1">1&ordf; Quincena (1&#8209;15)</option>
-      <option value="Q2">2&ordf; Quincena (16&#8209;fin)</option>
-    </select>
-    <button class="btn btn-primary" onclick="loadNomina()">Calcular</button>
-    <label class="btn" style="background:#7c3aed;color:#fff;cursor:pointer;margin-left:4px;" title="Importar Excel de nomina">&#128194; Importar Excel<input type="file" accept=".xlsx" style="display:none;" onchange="importarExcel(this)"></label>
-    <button class="btn btn-success" onclick="guardarNomina()" style="margin-left:auto;">&#128190; Guardar</button>
-    <button class="btn" id="btn-aprobar" style="display:none;background:#16a34a;color:#fff;" onclick="aprobarNomina()">&#10003; Aprobar</button>
-    <button class="btn" id="btn-pagar" style="display:none;background:#166534;color:#fff;" onclick="pagarNomina()">&#128184; Marcar como Pagada</button>
-    <button class="btn" onclick="exportarNomina()" style="background:#0284c7;color:#fff;" title="Descargar Excel">&#11015; Excel</button>
-    <span id="nom-estado-badge" style="margin-left:8px;"></span>
-  </div>
-  <div class="card" style="overflow-x:auto;">
-    <table id="nom-table">
-      <thead><tr>
-        <th>Empleado</th><th>Empresa</th><th>D&iacute;as</th>
-        <th>Salario Base</th><th>Aux. Transporte</th><th>H. Extras</th><th>Bonos</th>
-        <th>-Salud (4%)</th><th>-Pensi&oacute;n (4%)</th><th>NETO</th><th>Banco / Cuenta</th><th></th>
-      </tr></thead>
-      <tbody id="nom-body"></tbody>
-    </table>
-  </div>
-  <div class="nomina-summary" id="nom-summary" style="display:none;"></div>
-  <div class="card" style="margin-top:16px;" id="nom-aportes" style="display:none;">
-    <div class="card-hd"><h2>&#127968; Aportes Empleador (no deducidos del empleado)</h2></div>
-    <div id="nom-aportes-body"></div>
-  </div>
-</div>
-
+<!-- (Nómina movida a /tesoreria — 29-abr-2026) -->
 <!-- ═══ AUSENCIAS ═══ -->
 <div id="aus" class="page">
   <div class="ctrl-bar">
@@ -563,7 +522,6 @@ function goTo(id, btn) {
   btn.classList.add('active');
   if (id==='dash') loadDashboard();
   else if (id==='emp') loadEmpleados();
-  else if (id==='nom') initNomina();
   else if (id==='aus') loadAusencias();
   else if (id==='cap') loadCapacitaciones();
   else if (id==='eva') loadEvaluaciones();
@@ -968,191 +926,8 @@ async function saveEmp() {
 }
 
 // ─── NÓMINA ──────────────────────────────────────────
-function initNomina(){
-  var now = new Date();
-  document.getElementById('nom-mes').value = String(now.getMonth()+1).padStart(2,'0');
-  document.getElementById('nom-anio').value = String(now.getFullYear());
-  document.getElementById('nom-quinc').value = now.getDate() <= 15 ? 'Q1' : 'Q2';
-  window._esAdmin = (typeof USUARIO !== 'undefined' && (USUARIO.toLowerCase()==='sebastian' || USUARIO.toLowerCase()==='alejandro'));
-  loadNomina();
-  checkEstadoNomina();
-}
+// (Funciones de nomina movidas a /tesoreria — 29-abr-2026)
 
-async function loadNomina(){
-  var mes = document.getElementById('nom-mes').value;
-  var anio = document.getElementById('nom-anio').value;
-  var quinc = document.getElementById('nom-quinc').value;
-  var periodo = anio+'-'+mes+'-'+quinc;
-  try {
-    nominaData = await fetch('/api/rrhh/nomina/'+periodo).then(function(r){return r.json();});
-    renderNomina();
-  } catch(e){console.error(e);}
-}
-
-function calcNeto(row){
-  var base = parseFloat(row.salario_base)||0;
-  var aux = parseFloat(row.aux_transporte)||0;
-  var he = parseFloat(row.valor_horas_extras)||0;
-  var bonos = parseFloat(row.bonificaciones)||0;
-  var salud = Math.round(base*0.04);
-  var pension = Math.round(base*0.04);
-  var otros = parseFloat(row.otros_descuentos)||0;
-  return base+aux+he+bonos-salud-pension-otros;
-}
-
-function renderNomina(){
-  var tbody = document.getElementById('nom-body');
-  var totalBruto=0,totalNeto=0,totalDed=0;
-  var aportesTot={salud:0,pension:0,arl:0,sena:0,icbf:0,caja:0,total:0};
-  tbody.innerHTML = nominaData.map(function(e,i){
-    var neto = calcNeto(e);
-    totalBruto += (e.salario_base||0)+(e.aux_transporte||0)+(e.valor_horas_extras||0)+(e.bonificaciones||0);
-    totalDed += (e.desc_salud||0)+(e.desc_pension||0)+(e.otros_descuentos||0);
-    totalNeto += neto;
-    var ae = e.aportes_empleador||{};
-    Object.keys(aportesTot).forEach(function(k){aportesTot[k]+=(ae[k]||0);});
-    return '<tr>' +
-      '<td><strong>'+e.nombre+'</strong><br><small style="color:#78716c;">'+e.cargo+'</small></td>' +
-      '<td>'+badgeEmpresa(e.empresa)+'</td>' +
-      '<td><input type="number" value="'+e.dias_trabajados+'" min="0" max="31" style="width:60px;" onchange="nominaData['+i+'].dias_trabajados=this.value;renderNomina();"></td>' +
-      '<td>'+fmt(e.salario_base)+'</td>' +
-      '<td style="color:#16a34a;">'+fmt(e.aux_transporte)+'</td>' +
-      '<td><input type="number" value="'+(e.valor_horas_extras||0)+'" min="0" step="10000" onchange="nominaData['+i+'].valor_horas_extras=parseFloat(this.value)||0;renderNomina();"></td>' +
-      '<td><input type="number" value="'+(e.bonificaciones||0)+'" min="0" step="10000" onchange="nominaData['+i+'].bonificaciones=parseFloat(this.value)||0;renderNomina();"></td>' +
-      '<td style="color:#dc2626;">-'+fmt(e.desc_salud)+'</td>' +
-      '<td style="color:#dc2626;">-'+fmt(e.desc_pension)+'</td>' +
-      '<td style="font-weight:700;color:#6d28d9;">'+fmt(neto)+'</td>' +
-      '<td style="font-size:12px;color:#374151;">' +
-        (e.banco ? '<span style="display:block;font-weight:600;">'+e.banco+'</span><span style="color:#6b7280;">'+(e.tipo_cuenta||'')+'</span><span style="display:block;font-family:monospace;font-size:11px;color:#6d28d9;">'+(e.numero_cuenta||'')+'</span>' : '<span style="color:#d1d5db;font-style:italic;">Sin registrar</span>') +
-      '</td>' +
-      '<td><button class="btn" style="padding:2px 8px;font-size:11px;" onclick="verComprobante('+e.id+')" title="Ver comprobante">&#128424;</button></td>' +
-      '</tr>';
-  }).join('');
-
-  var s = document.getElementById('nom-summary');
-  s.style.display='grid';
-  s.innerHTML =
-    '<div class="sum-item"><div class="sum-lbl">Total Devengado</div><div class="sum-val">'+fmt(totalBruto)+'</div></div>' +
-    '<div class="sum-item red"><div class="sum-lbl">Total Deducciones</div><div class="sum-val">-'+fmt(totalDed)+'</div></div>' +
-    '<div class="sum-item green"><div class="sum-lbl">Total Neto a Pagar</div><div class="sum-val">'+fmt(totalNeto)+'</div></div>' +
-    '<div class="sum-item purple"><div class="sum-lbl">Aportes Empleador</div><div class="sum-val">'+fmt(aportesTot.total)+'</div></div>' +
-    '<div class="sum-item purple"><div class="sum-lbl">Costo Total Empresa</div><div class="sum-val">'+fmt(totalBruto+aportesTot.total)+'</div></div>';
-
-  var ap = document.getElementById('nom-aportes');
-  ap.style.display='block';
-  ap.querySelector('#nom-aportes-body').innerHTML =
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;">' +
-    [['Salud (8.5%)',aportesTot.salud],['Pensi\u00f3n (12%)',aportesTot.pension],
-     ['ARL',aportesTot.arl],['SENA (2%)',aportesTot.sena],
-     ['ICBF (3%)',aportesTot.icbf],['Caja (4%)',aportesTot.caja],['TOTAL',aportesTot.total]].map(function(x){
-      return '<div style="text-align:center;background:#f9f8f7;border-radius:8px;padding:10px;">' +
-        '<div style="font-size:11px;color:#78716c;">'+x[0]+'</div>' +
-        '<div style="font-size:16px;font-weight:700;color:'+(x[0]==='TOTAL'?'#6d28d9':'#1C1917')+';">'+fmt(x[1])+'</div></div>';
-    }).join('') + '</div>';
-}
-
-async function guardarNomina(){
-  var mes = document.getElementById('nom-mes').value;
-  var anio = document.getElementById('nom-anio').value;
-  var quinc = document.getElementById('nom-quinc').value;
-  var periodo = anio+'-'+mes+'-'+quinc;
-  nominaData.forEach(function(e){e.neto=calcNeto(e);});
-  try {
-    var r = await fetch('/api/rrhh/nomina/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({periodo:periodo,registros:nominaData})});
-    var d = await r.json();
-    if(d.ok){ alert('N\u00f3mina guardada: '+d.registros+' registros para '+periodo);
-      checkEstadoNomina(); }
-    else alert(d.error||'Error');
-  } catch(e){alert('Error: '+e.message);}
-}
-
-async function checkEstadoNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
-  var periodo=anio+'-'+mes+'-'+quinc;
-  try{
-    var res=await fetch('/api/rrhh/nomina/'+periodo).then(r=>r.json());
-    var estados=res.map(e=>e.estado||'').filter(Boolean);
-    var pagadas=estados.filter(s=>s==='Pagada').length;
-    var aprobadas=estados.filter(s=>s==='Aprobada').length;
-    var badge=document.getElementById('nom-estado-badge');
-    var btnAp=document.getElementById('btn-aprobar');
-    var btnPag=document.getElementById('btn-pagar');
-    if(pagadas>0 && pagadas===estados.length){
-      badge.innerHTML='<span style="background:#166534;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700;">&#128184; Pagada</span>';
-      if(btnAp) btnAp.style.display='none';
-      if(btnPag) btnPag.style.display='none';
-    } else if(aprobadas>0 && aprobadas===estados.length){
-      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#10003; Aprobada — pendiente pago</span>';
-      if(btnAp) btnAp.style.display='none';
-      if(btnPag && window._esAdmin) btnPag.style.display='inline-block';
-    } else if(estados.length>0){
-      badge.innerHTML='<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;">Pendiente aprobación</span>';
-      if(btnAp && window._esAdmin) btnAp.style.display='inline-block';
-      if(btnPag) btnPag.style.display='none';
-    } else {
-      badge.innerHTML='';
-      if(btnAp) btnAp.style.display='none';
-      if(btnPag) btnPag.style.display='none';
-    }
-  } catch(e){}
-}
-
-
-async function aprobarNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
-  var periodo=anio+'-'+mes+'-'+quinc;
-  if(!confirm('\u00bfAprobar n\u00f3mina '+periodo+'? Esta acci\u00f3n quedar\u00e1 registrada.')) return;
-  try{
-    var r=await fetch('/api/rrhh/nomina/'+periodo+'/aprobar',{method:'PATCH'});
-    var d=await r.json();
-    if(d.ok) { alert('\u2713 N\u00f3mina '+periodo+' aprobada por '+d.por+' ('+d.aprobados+' registros)'); checkEstadoNomina(); }
-    else alert(d.error||'Sin permiso');
-  } catch(e){alert('Error: '+e.message);}
-}
-
-
-async function pagarNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
-  var periodo=anio+'-'+mes+'-'+quinc;
-  if(!confirm('¿Marcar nómina '+periodo+' como PAGADA? Registrará fecha y usuario. Esta acción no se puede deshacer.')) return;
-  try{
-    var r=await fetch('/api/rrhh/nomina/'+periodo+'/pagar',{method:'PATCH'});
-    var d=await r.json();
-    if(d.ok) { alert('✅ Nómina '+periodo+' marcada como Pagada por '+d.por+' el '+d.fecha); checkEstadoNomina(); }
-    else alert(d.error||'Sin permiso');
-  } catch(e){alert('Error: '+e.message);}
-}
-function verComprobante(empId){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
-  var periodo=anio+'-'+mes+'-'+quinc;
-  window.open('/api/rrhh/nomina/'+periodo+'/comprobante/'+empId,'_blank','width=700,height=900');
-}
-
-function exportarNomina(){
-  var mes=document.getElementById('nom-mes').value, anio=document.getElementById('nom-anio').value, quinc=document.getElementById('nom-quinc').value;
-  window.location.href='/api/rrhh/nomina/'+anio+'-'+mes+'-'+quinc+'/export';
-}
-
-async function importarExcel(input){
-  var file=input.files[0]; if(!file) return;
-  var fd=new FormData(); fd.append('file',file);
-  try{
-    var r=await fetch('/api/rrhh/nomina/importar-excel',{method:'POST',body:fd});
-    var d=await r.json();
-    if(!d.ok){ alert(d.error||'Error al importar'); return; }
-    var matched=d.data||[];
-    matched.forEach(function(row){
-      var idx=nominaData.findIndex(function(e){return e.id===row.empleado_id;});
-      if(idx>=0) nominaData[idx].dias_trabajados=row.dias_trabajados;
-    });
-    renderNomina();
-    alert('\u2713 Importado: '+matched.length+' empleados de '+d.total_excel+' en el Excel ('+
-          (d.total_excel-matched.length)+' no coincidieron). Revisa y guarda.');
-  } catch(e){alert('Error: '+e.message);}
-  input.value='';
-}
-
-// ─── AUSENCIAS ───────────────────────────────────────
 async function loadAusencias(){
   var tipo = document.getElementById('aus-tipo').value;
   var estado = document.getElementById('aus-estado').value;
