@@ -2161,15 +2161,48 @@ def pagar_oc(numero_oc):
         except sqlite3.OperationalError:
             items_db = []
 
-        if items_db:
-            items_pdf = [
-                {'descripcion': r[0] or '', 'fecha': '',
-                 'cantidad': float(r[1] or 0) / 1000.0 or 1,
-                 'valor_unit': float(r[3] or 0) / max(float(r[1] or 1) / 1000.0, 1)}
-                for r in items_db
-            ]
+        # Detectar si la OC es de servicio (no mercancia con peso real). Para
+        # servicios/donaciones/cuentas de cobro/influencers, los items pueden
+        # tener cantidad_g=1 como placeholder y subtotal=monto total — si los
+        # tratamos como gramos el PDF muestra cant=0 (1g/1000=0.001 redondeado)
+        # y valor_total = unit*0.001 = 1/1000 del valor real (bug Sebastian
+        # 29-abr-2026: $1,200,000 aparecía como $1,200 en CE-2026-0008).
+        cat_low_pdf = (categoria or '').lower()
+        es_servicio_oc = any(k in cat_low_pdf for k in (
+            'influencer', 'marketing', 'cuenta de cobro', 'servicio',
+            'admin', 'infraestructura', 'cc', 'svc',
+        ))
+        if items_db and not es_servicio_oc:
+            # Mercancia real (MPs, MEE): cantidad_g viene en gramos, subtotal
+            # es valor del item completo. Mostrar en kg para legibilidad.
+            items_pdf = []
+            for r in items_db:
+                cant_g = float(r[1] or 0)
+                subt = float(r[3] or 0)
+                cant_kg = cant_g / 1000.0
+                if cant_kg <= 0.01:
+                    # Cantidad insignificante → tratar como servicio: cant=1, unit=subtotal
+                    items_pdf.append({
+                        'descripcion': r[0] or '', 'fecha': '',
+                        'cantidad': 1, 'valor_unit': subt,
+                    })
+                else:
+                    p_unit = subt / cant_kg if cant_kg > 0 else 0
+                    items_pdf.append({
+                        'descripcion': r[0] or '', 'fecha': '',
+                        'cantidad': cant_kg, 'valor_unit': p_unit,
+                    })
+        elif items_db:
+            # Servicio CON items registrados (ej. una donacion con descripcion
+            # "Donacion") — usar el subtotal directo como valor_unit con cant=1
+            items_pdf = [{
+                'descripcion': r[0] or f"Pago OC {numero_oc} - {categoria}",
+                'fecha': fecha_pago[:10],
+                'cantidad': 1,
+                'valor_unit': float(r[3] or 0) or monto,
+            } for r in items_db]
         else:
-            # Servicio sin items detallados: 1 fila genérica
+            # Servicio sin items detallados: 1 fila generica con el monto total
             items_pdf = [{
                 'descripcion': f"Pago OC {numero_oc} - {categoria}",
                 'fecha': fecha_pago[:10],

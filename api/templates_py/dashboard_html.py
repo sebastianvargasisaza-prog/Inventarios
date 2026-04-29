@@ -5324,14 +5324,31 @@ async function ckBackfill(){
 // Borra HARD una produccion programada (admin only — backend valida).
 // Util para limpiar duplicados o fantasmas que aparecen en el horizonte.
 async function ckBorrarProduccion(produccionId, producto, fecha){
+  // Guard: si el id no llegó (fila vieja o cache stale), abortar con mensaje claro
+  if(!produccionId || produccionId === 'undefined' || produccionId === 'null'){
+    alert('Esta tarjeta no tiene id válido. Recarga la página (Ctrl+F5) e intenta de nuevo.');
+    return;
+  }
   if(!confirm('¿Borrar la producción "'+producto+'" del '+fecha+'?\\n\\nEsto la elimina DEFINITIVAMENTE junto con su checklist. Solo úsalo para duplicados o fantasmas que NO existen en el calendario.')) return;
   try {
     var r = await fetch('/api/programacion/produccion-programada/'+produccionId+'/borrar', {method:'DELETE'});
-    var d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-    _toast(d.mensaje || 'Borrada', 1);
+    // Robusto: parse texto crudo y solo despues intentar JSON. Si la respuesta
+    // es HTML (ej. login redirect, 404 de Flask, error 502 de Render), no
+    // crasheamos con "Unexpected token '<'" — mostramos el error real.
+    var raw = await r.text();
+    var d = null;
+    try { d = JSON.parse(raw); } catch(_){}
+    if(!r.ok){
+      if(d && d.error){ alert('Error '+r.status+': '+d.error); }
+      else if(r.status === 401){ alert('Sesión expirada. Vuelve a entrar a /login y reintenta.'); }
+      else if(r.status === 403){ alert('Sin permisos. Solo Sebastian/Alejandro pueden borrar producciones.'); }
+      else if(r.status === 404){ alert('Producción no encontrada. Recarga (Ctrl+F5) — quizá ya fue borrada por otro usuario.'); }
+      else { alert('Error '+r.status+'. Respuesta del servidor:\\n\\n'+raw.substring(0,300)); }
+      return;
+    }
+    _toast((d && d.mensaje) || 'Borrada', 1);
     cargarChecklistResumen(window._ckLastDias || 60);
-  } catch(e){ alert('Error: '+e.message); }
+  } catch(e){ alert('Error de red: '+e.message); }
 }
 
 async function ckRegenerar(produccionId){

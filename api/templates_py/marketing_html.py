@@ -2087,8 +2087,17 @@ async function confirmarPagoInf() {
   const data = await resp.json();
   if(data.ok) {
     closeModal('modal-inf-pago');
-    showAlert('inf-alert','Solicitud de pago creada correctamente');
+    // Sebastian (29-abr-2026): Jefferson necesita feedback claro de que
+    // la solicitud SI se envio, donde queda y que pasa despues. Antes solo
+    // decia "creada correctamente" sin contexto.
+    const monto = (data.monto || valor).toLocaleString('es-CO');
+    showAlert('inf-alert',
+      `✅ Solicitud ${data.numero} creada — $${monto} COP. ` +
+      `Visible para Sebastián en /compras → tab Influencers. ` +
+      `Cuando se pague recibirás email automático.`);
     loadInfluencers();
+    // Refrescar también la pestaña de Pagos si está cargada
+    try { if(typeof cargarPagosInfluencers === 'function') cargarPagosInfluencers(); } catch(_){}
   } else {
     showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
   }

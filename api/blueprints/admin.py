@@ -6922,6 +6922,118 @@ def admin_backfill_debug_page():
     return Response(html, mimetype="text/html")
 
 
+@bp.route("/admin/influencers-hoy", methods=["GET"])
+def admin_influencers_hoy():
+    """Diagnostico rapido: que paso con influencers hoy.
+    Sebastian (29-abr-2026): "revisa si jeferson hoy pidio pagos de
+    influencers ya sea por la pagina de influencers o por solicitudes".
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    creados = solicitudes = ocs_inf = pagos_inf = []
+
+    try:
+        c.execute("""
+            SELECT id, nombre, red_social, usuario_red, tarifa, fecha_registro,
+                   COALESCE(banco,''), COALESCE(cuenta_bancaria,'')
+            FROM marketing_influencers
+            WHERE DATE(fecha_registro) = DATE('now','localtime')
+               OR DATE(fecha_registro) = DATE('now')
+            ORDER BY id DESC
+        """)
+        creados = [dict(zip([d[0] for d in c.description], r)) for r in c.fetchall()]
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            SELECT numero, fecha, estado, solicitante, valor, observaciones,
+                   numero_oc, categoria
+            FROM solicitudes_compra
+            WHERE (DATE(fecha) = DATE('now','localtime') OR DATE(fecha) = DATE('now'))
+              AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+            ORDER BY numero DESC
+        """)
+        solicitudes = [dict(zip([d[0] for d in c.description], r)) for r in c.fetchall()]
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            SELECT numero_oc, fecha, estado, proveedor, valor_total, categoria
+            FROM ordenes_compra
+            WHERE (DATE(fecha) = DATE('now','localtime') OR DATE(fecha) = DATE('now'))
+              AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+            ORDER BY numero_oc DESC
+        """)
+        ocs_inf = [dict(zip([d[0] for d in c.description], r)) for r in c.fetchall()]
+    except Exception:
+        pass
+    try:
+        c.execute("""
+            SELECT id, influencer_id, influencer_nombre, valor, fecha,
+                   estado, concepto, numero_oc
+            FROM pagos_influencers
+            WHERE DATE(fecha) = DATE('now','localtime')
+               OR DATE(fecha) = DATE('now')
+            ORDER BY id DESC
+        """)
+        pagos_inf = [dict(zip([d[0] for d in c.description], r)) for r in c.fetchall()]
+    except Exception:
+        pass
+
+    def _esc(s): return str(s or '').replace('<','&lt;').replace('>','&gt;')
+    def _money(v):
+        try: return '$'+f"{float(v or 0):,.0f}"
+        except Exception: return str(v)
+
+    def _tabla(titulo, items, cols, money_cols=()):
+        if not items:
+            return f"<h2>{titulo}</h2><div class='empty'>Nada hoy.</div>"
+        body = f"<h2>{titulo} ({len(items)})</h2><table><thead><tr>"
+        for k in cols: body += f"<th>{k}</th>"
+        body += "</tr></thead><tbody>"
+        for it in items:
+            body += "<tr>"
+            for k in cols:
+                v = it.get(k)
+                cell = _money(v) if k in money_cols else _esc(v)
+                body += f"<td>{cell}</td>"
+            body += "</tr>"
+        body += "</tbody></table>"
+        return body
+
+    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Influencers hoy</title>
+    <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1200px;margin:24px auto;padding:0 16px;color:#1e293b}
+    h1{font-size:20px;margin-bottom:6px}h2{font-size:15px;margin-top:24px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+    table{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
+    th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+    th{background:#f8fafc;font-weight:700;color:#475569;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+    .empty{color:#94a3b8;font-style:italic;padding:14px;background:#fafaf9;border-radius:6px}
+    a{color:#0891b2}</style></head><body>
+    <a href="/admin" style="font-size:12px">&larr; admin</a>
+    <h1>&#128202; Actividad influencers &mdash; HOY</h1>
+    <p style="color:#64748b;font-size:12px">Diagn&oacute;stico r&aacute;pido de qu&eacute; pas&oacute; hoy con influencers/cuentas de cobro.</p>"""
+    + _tabla("&#128221; Influencers nuevos hoy", creados,
+             ["id","nombre","red_social","usuario_red","tarifa","banco"],
+             money_cols=("tarifa",))
+    + _tabla("&#128203; Solicitudes (SOL) hoy &mdash; influencer/CC", solicitudes,
+             ["numero","fecha","estado","solicitante","valor","numero_oc"],
+             money_cols=("valor",))
+    + _tabla("&#128722; OCs hoy &mdash; influencer/CC", ocs_inf,
+             ["numero_oc","fecha","estado","proveedor","valor_total"],
+             money_cols=("valor_total",))
+    + _tabla("&#128181; Pagos influencers hoy", pagos_inf,
+             ["id","influencer_nombre","valor","fecha","estado","numero_oc","concepto"],
+             money_cols=("valor",))
+    + "</body></html>")
+
+    conn.close()
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/api/admin/sku-map", methods=["GET"])
 def admin_sku_map_listar():
     """Lista mapeos sku_producto_map + productos disponibles en
