@@ -157,6 +157,9 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
   <nav>
     <button class="tab active" id="t-dash" onclick="goTo('dash',this)">&#128202; Dashboard</button>
     <button class="tab" id="t-emp" onclick="goTo('emp',this)">&#128100; Empleados</button>
+    <button class="tab" id="t-eventos" onclick="goTo('eventos',this)">&#129496; Eventos &amp; Reportes</button>
+    <button class="tab" id="t-llamados" onclick="goTo('llamados',this)">&#128226; Llamados de atenci&oacute;n</button>
+    <button class="tab" id="t-compromisos" onclick="goTo('compromisos',this)">&#128221; Compromisos</button>
     <button class="tab" id="t-nom" onclick="goTo('nom',this)">&#128184; N&oacute;mina</button>
     <button class="tab" id="t-aus" onclick="goTo('aus',this)">&#128197; Ausencias</button>
     <button class="tab" id="t-cap" onclick="goTo('cap',this)">&#127891; Capacitaciones</button>
@@ -204,6 +207,52 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <button class="btn btn-primary" onclick="openEmpModal(null)">+ Nuevo</button>
   </div>
   <div id="emp-grid" class="emp-grid"></div>
+</div>
+
+<!-- ═══ EVENTOS & REPORTES (incapacidad/accidente/licencia) ═══ -->
+<div id="eventos" class="page">
+  <div class="card-hd">
+    <h2>&#129496; Eventos del personal · Incapacidad / Accidente / Licencia</h2>
+    <div style="display:flex;gap:6px">
+      <select id="ev-filtro-tipo" onchange="cargarEventosRH()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+        <option value="">Todos los tipos</option>
+        <option value="incapacidad_comun">Incapacidad común</option>
+        <option value="incapacidad_laboral">Incapacidad laboral</option>
+        <option value="accidente_trabajo">Accidente trabajo</option>
+        <option value="licencia_maternidad">Licencia maternidad</option>
+        <option value="licencia_paternidad">Licencia paternidad</option>
+        <option value="licencia_luto">Licencia luto</option>
+        <option value="licencia_no_remunerada">Licencia no remunerada</option>
+        <option value="vacaciones">Vacaciones</option>
+        <option value="permiso_remunerado">Permiso remunerado</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="abrirModalEventoRH()">&#43; Registrar evento</button>
+    </div>
+  </div>
+  <div id="eventos-lista"></div>
+</div>
+
+<!-- ═══ LLAMADOS DE ATENCIÓN ═══ -->
+<div id="llamados" class="page">
+  <div class="card-hd">
+    <h2>&#128226; Llamados de atenci&oacute;n · Verbal · Escrito · Suspensi&oacute;n</h2>
+    <button class="btn btn-primary btn-sm" onclick="abrirModalLlamado()">&#43; Registrar llamado</button>
+  </div>
+  <div id="llamados-lista"></div>
+</div>
+
+<!-- ═══ COMPROMISOS DE MEJORA / REINDUCCIONES ═══ -->
+<div id="compromisos" class="page">
+  <div class="card-hd">
+    <h2>&#128221; Compromisos de mejora &amp; reinducciones</h2>
+    <select id="comp-filtro" onchange="cargarCompromisos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+      <option value="pendiente">Pendientes</option>
+      <option value="en_progreso">En progreso</option>
+      <option value="completado">Completados</option>
+      <option value="">Todos</option>
+    </select>
+  </div>
+  <div id="compromisos-lista"></div>
 </div>
 
 <!-- ═══ NÓMINA ═══ -->
@@ -519,6 +568,234 @@ function goTo(id, btn) {
   else if (id==='cap') loadCapacitaciones();
   else if (id==='eva') loadEvaluaciones();
   else if (id==='sgsst') loadSgsst();
+  else if (id==='eventos') cargarEventosRH();
+  else if (id==='llamados') cargarLlamadosAtencion();
+  else if (id==='compromisos') cargarCompromisos();
+}
+
+// ═══ EVENTOS / REPORTES ═════════════════════════════════════════════
+async function cargarEventosRH(){
+  var lista = document.getElementById('eventos-lista');
+  if(!lista) return;
+  lista.innerHTML = '<div style="text-align:center;color:#888;padding:20px">Cargando...</div>';
+  var tipo = document.getElementById('ev-filtro-tipo').value;
+  try {
+    var qs = tipo ? '?tipo='+encodeURIComponent(tipo) : '';
+    var r = await fetch('/api/rrhh/eventos'+qs);
+    var d = await r.json();
+    var items = d.eventos || [];
+    if(!items.length){ lista.innerHTML = '<div style="text-align:center;color:#a8a29e;padding:40px">Sin eventos</div>'; return; }
+    var tipoColors = {incapacidad_comun:'#d97706',incapacidad_laboral:'#dc2626',accidente_trabajo:'#dc2626',licencia_maternidad:'#7c3aed',licencia_paternidad:'#7c3aed',licencia_luto:'#1e293b',licencia_no_remunerada:'#64748b',vacaciones:'#16a34a',permiso_remunerado:'#16a34a',llamado_atencion_verbal:'#d97706',llamado_atencion_escrito:'#dc2626',suspension:'#7f1d1d'};
+    lista.innerHTML = '<table><thead><tr>'+
+      '<th>Empleado</th><th>Tipo</th><th>Fechas</th><th>Días</th><th>Pago empleador</th><th>Pago EPS</th><th>Pago ARL</th><th>Estado</th><th></th>'+
+      '</tr></thead><tbody>'+
+      items.map(function(e){
+        var col = tipoColors[e.tipo]||'#64748b';
+        var fechas = (e.fecha_inicio||'') + (e.fecha_fin?' → '+e.fecha_fin:'');
+        return '<tr>'+
+          '<td><b>#'+e.empleado_id+'</b></td>'+
+          '<td><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+e.tipo+'</span></td>'+
+          '<td style="font-size:12px">'+fechas+'</td>'+
+          '<td style="text-align:center;font-weight:700">'+(e.dias||0)+'</td>'+
+          '<td style="text-align:right;font-family:monospace">'+(e.pago_empleador?'$'+Math.round(e.pago_empleador).toLocaleString('es-CO'):'—')+'</td>'+
+          '<td style="text-align:right;font-family:monospace;color:#16a34a">'+(e.pago_eps?'$'+Math.round(e.pago_eps).toLocaleString('es-CO'):'—')+'</td>'+
+          '<td style="text-align:right;font-family:monospace;color:#7c3aed">'+(e.pago_arl?'$'+Math.round(e.pago_arl).toLocaleString('es-CO'):'—')+'</td>'+
+          '<td><span class="badge badge-'+(e.estado==='aprobada'?'activo':e.estado==='cerrada'?'indef':'inactivo')+'">'+e.estado+'</span></td>'+
+          '<td>'+(e.estado==='registrada'?'<button class="btn btn-success btn-sm" onclick="aprobarEvento('+e.id+')">Aprobar</button>':'')+'</td>'+
+          '</tr>';
+      }).join('')+'</tbody></table>';
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+}
+
+function abrirModalEventoRH(){
+  var html = '<div id="evt-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">'+
+    '<div style="background:#fff;border-radius:14px;padding:24px;width:560px;max-width:100%;max-height:90vh;overflow-y:auto">'+
+      '<h3 style="margin:0 0 14px">Registrar evento</h3>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div><label style="font-size:11px;color:#555">Empleado ID</label><input id="evt-emp" type="number" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+        '<div><label style="font-size:11px;color:#555">Tipo</label><select id="evt-tipo" onchange="evtRecalcular()" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px">'+
+          '<option value="incapacidad_comun">Incapacidad común</option>'+
+          '<option value="incapacidad_laboral">Incapacidad laboral</option>'+
+          '<option value="accidente_trabajo">Accidente trabajo</option>'+
+          '<option value="licencia_maternidad">Licencia maternidad</option>'+
+          '<option value="licencia_paternidad">Licencia paternidad</option>'+
+          '<option value="licencia_luto">Licencia luto</option>'+
+          '<option value="licencia_no_remunerada">Licencia no remunerada</option>'+
+          '<option value="vacaciones">Vacaciones</option>'+
+          '<option value="permiso_remunerado">Permiso remunerado</option>'+
+        '</select></div>'+
+        '<div><label style="font-size:11px;color:#555">Fecha inicio</label><input id="evt-ini" type="date" onchange="evtRecalcular()" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+        '<div><label style="font-size:11px;color:#555">Fecha fin</label><input id="evt-fin" type="date" onchange="evtRecalcular()" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+        '<div><label style="font-size:11px;color:#555">Diagnóstico</label><input id="evt-diag" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px" placeholder="Ej. Gripa común"></div>'+
+        '<div><label style="font-size:11px;color:#555">CIE-10</label><input id="evt-cie10" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px" placeholder="J00"></div>'+
+        '<div><label style="font-size:11px;color:#555">Entidad emisora</label><input id="evt-entidad" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px" placeholder="Sura, Sanitas, ARL..."></div>'+
+        '<div><label style="font-size:11px;color:#555">URL documento</label><input id="evt-doc" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+      '</div>'+
+      '<div style="margin-top:10px"><label style="font-size:11px;color:#555">Descripción</label><textarea id="evt-desc" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-family:inherit"></textarea></div>'+
+      '<div id="evt-preview" style="margin-top:14px;background:#f9f8f7;border:1px solid #e7e5e4;border-radius:8px;padding:12px;font-size:12px;color:#475569;display:none"></div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
+        '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(&quot;evt-modal&quot;).remove()">Cancelar</button>'+
+        '<button class="btn btn-primary btn-sm" onclick="guardarEventoRH()">Guardar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function evtRecalcular(){
+  var emp = parseInt(document.getElementById('evt-emp').value||0);
+  if(!emp) return;
+  var tipo = document.getElementById('evt-tipo').value;
+  var ini = document.getElementById('evt-ini').value;
+  var fin = document.getElementById('evt-fin').value;
+  if(!ini || !fin) return;
+  var dias = Math.floor((new Date(fin) - new Date(ini)) / 86400000) + 1;
+  // Buscar salario del empleado
+  var er = await fetch('/api/rrhh/empleados');
+  var ed = await er.json();
+  var emp_obj = (ed.empleados||[]).find(function(x){return x.id===emp});
+  if(!emp_obj){ document.getElementById('evt-preview').style.display='none'; return; }
+  var r = await fetch('/api/rrhh/calcular-pago-evento', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({salario_mensual: emp_obj.salario_base, tipo: tipo, dias: dias})
+  });
+  var d = await r.json();
+  var html = '<b>📊 Cálculo legal automático ('+dias+' días)</b><br>';
+  (d.detalle||[]).forEach(function(x){
+    html += '<div style="margin-top:4px">• '+x.rango+': <b style="color:'+(x.pagador==='EMPLEADOR'?'#dc2626':x.pagador==='EPS'?'#16a34a':'#7c3aed')+'">'+x.pagador+'</b> ('+x.pct+'%) — '+x.dias+' días = $'+Math.round(x.monto).toLocaleString('es-CO')+'</div>';
+  });
+  html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e7e5e4">Total: <b>$'+Math.round(d.total||0).toLocaleString('es-CO')+'</b> · Descuento nómina: $'+Math.round(d.descuento_nomina||0).toLocaleString('es-CO')+'</div>';
+  var pr = document.getElementById('evt-preview');
+  pr.innerHTML = html; pr.style.display = 'block';
+}
+
+async function guardarEventoRH(){
+  var body = {
+    empleado_id: parseInt(document.getElementById('evt-emp').value||0),
+    tipo: document.getElementById('evt-tipo').value,
+    fecha_inicio: document.getElementById('evt-ini').value,
+    fecha_fin: document.getElementById('evt-fin').value,
+    diagnostico: document.getElementById('evt-diag').value,
+    cie10: document.getElementById('evt-cie10').value,
+    entidad_emisora: document.getElementById('evt-entidad').value,
+    documento_url: document.getElementById('evt-doc').value,
+    descripcion: document.getElementById('evt-desc').value,
+  };
+  var r = await fetch('/api/rrhh/eventos', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var d = await r.json();
+  if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+  document.getElementById('evt-modal').remove();
+  cargarEventosRH();
+}
+
+async function aprobarEvento(eid){
+  if(!confirm('Aprobar este evento?')) return;
+  var r = await fetch('/api/rrhh/eventos/'+eid+'/aprobar', {method:'POST'});
+  if(r.ok) cargarEventosRH();
+  else alert('Error');
+}
+
+// ═══ LLAMADOS DE ATENCIÓN ═══════════════════════════════════════════
+async function cargarLlamadosAtencion(){
+  var lista = document.getElementById('llamados-lista');
+  lista.innerHTML = '<div style="text-align:center;color:#888;padding:20px">Cargando...</div>';
+  try {
+    var r = await fetch('/api/rrhh/llamados-atencion');
+    var d = await r.json();
+    var items = d.llamados || [];
+    if(!items.length){ lista.innerHTML = '<div style="text-align:center;color:#a8a29e;padding:40px">Sin llamados de atención</div>'; return; }
+    lista.innerHTML = '<table><thead><tr><th>Empleado</th><th>Severidad</th><th>Motivo</th><th>Jefe</th><th>Área</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>'+
+      items.map(function(l){
+        var sevColor = l.severidad==='suspension'?'#7f1d1d':l.severidad==='escrito'?'#dc2626':'#d97706';
+        return '<tr>'+
+          '<td><b>#'+l.empleado_id+'</b></td>'+
+          '<td><span style="background:'+sevColor+'22;color:'+sevColor+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+(l.severidad||'').toUpperCase()+'</span></td>'+
+          '<td>'+(l.motivo||'')+'</td>'+
+          '<td style="font-size:12px">'+(l.jefe_nombre||'')+'</td>'+
+          '<td style="font-size:12px">'+(l.area||'')+'</td>'+
+          '<td style="font-size:12px">'+(l.fecha_inicio||'')+'</td>'+
+          '<td><span class="badge badge-indef">'+l.estado+'</span></td>'+
+          '</tr>';
+      }).join('')+'</tbody></table>';
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+}
+
+function abrirModalLlamado(){
+  var html = '<div id="lla-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">'+
+    '<div style="background:#fff;border-radius:14px;padding:24px;width:520px;max-width:100%;max-height:90vh;overflow-y:auto">'+
+      '<h3 style="margin:0 0 14px">📢 Registrar llamado de atención</h3>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div><label style="font-size:11px;color:#555">Empleado ID</label><input id="lla-emp" type="number" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+        '<div><label style="font-size:11px;color:#555">Severidad</label><select id="lla-sev" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px">'+
+          '<option value="verbal">Verbal</option><option value="escrito">Escrito</option><option value="suspension">Suspensión</option>'+
+        '</select></div>'+
+        '<div><label style="font-size:11px;color:#555">Área</label><input id="lla-area" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px" placeholder="Planta, Marketing..."></div>'+
+        '<div><label style="font-size:11px;color:#555">Fecha</label><input id="lla-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+      '</div>'+
+      '<div style="margin-top:10px"><label style="font-size:11px;color:#555">Motivo *</label><input id="lla-motivo" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px" placeholder="Llegó tarde 3 veces / Envasó mal el lote..."></div>'+
+      '<div style="margin-top:10px"><label style="font-size:11px;color:#555">Descripción detallada</label><textarea id="lla-desc" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-family:inherit"></textarea></div>'+
+      '<div style="margin-top:10px"><label style="font-size:11px;color:#555">Plan de mejora (genera compromiso ligado)</label><textarea id="lla-plan" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-family:inherit" placeholder="Ej: Reinducción de envasado, capacitación específica..."></textarea></div>'+
+      '<div style="margin-top:10px"><label style="font-size:11px;color:#555">Fecha objetivo cumplimiento</label><input id="lla-obj" type="date" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px"></div>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">'+
+        '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(&quot;lla-modal&quot;).remove()">Cancelar</button>'+
+        '<button class="btn btn-primary btn-sm" onclick="guardarLlamado()">Guardar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function guardarLlamado(){
+  var body = {
+    empleado_id: parseInt(document.getElementById('lla-emp').value||0),
+    severidad: document.getElementById('lla-sev').value,
+    area: document.getElementById('lla-area').value,
+    fecha: document.getElementById('lla-fecha').value,
+    motivo: document.getElementById('lla-motivo').value,
+    descripcion: document.getElementById('lla-desc').value,
+    plan_mejora: document.getElementById('lla-plan').value,
+    fecha_objetivo: document.getElementById('lla-obj').value,
+  };
+  if(!body.empleado_id || !body.motivo){ alert('Empleado y motivo requeridos'); return; }
+  var r = await fetch('/api/rrhh/llamados-atencion', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var d = await r.json();
+  if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+  document.getElementById('lla-modal').remove();
+  alert('Llamado registrado'+(d.compromiso_id?' + compromiso #'+d.compromiso_id:''));
+  cargarLlamadosAtencion();
+}
+
+// ═══ COMPROMISOS DE MEJORA ═══════════════════════════════════════════
+async function cargarCompromisos(){
+  var lista = document.getElementById('compromisos-lista');
+  if(!lista) return;
+  lista.innerHTML = '<div style="text-align:center;color:#888;padding:20px">Cargando...</div>';
+  var estado = document.getElementById('comp-filtro').value;
+  try {
+    var qs = estado ? '?estado='+estado : '';
+    var r = await fetch('/api/rrhh/compromisos-mejora'+qs);
+    var d = await r.json();
+    var items = d.compromisos || [];
+    if(!items.length){ lista.innerHTML = '<div style="text-align:center;color:#a8a29e;padding:40px">Sin compromisos en este estado</div>'; return; }
+    lista.innerHTML = items.map(function(c){
+      var estCol = c.estado==='completado'?'#16a34a':c.estado==='vencido'?'#dc2626':c.estado==='en_progreso'?'#d97706':'#64748b';
+      return '<div style="background:#fff;border:1px solid #e8e5e0;border-left:4px solid '+estCol+';border-radius:10px;padding:14px 18px;margin-bottom:10px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'+
+          '<div><b style="font-size:14px">'+(c.titulo||'')+'</b> <span style="background:#f3f4f6;color:#475569;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:8px">'+c.tipo+'</span></div>'+
+          '<span style="background:'+estCol+'22;color:'+estCol+';padding:2px 10px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase">'+c.estado+'</span>'+
+        '</div>'+
+        '<div style="font-size:12px;color:#475569;margin-top:4px">Empleado #'+c.empleado_id+' · Jefe: '+(c.jefe_responsable||'-')+' · Objetivo: '+(c.fecha_objetivo||'-')+'</div>'+
+        (c.descripcion?'<div style="font-size:13px;color:#1c1917;margin-top:6px">'+c.descripcion+'</div>':'')+
+        (c.plan_accion?'<div style="font-size:12px;color:#475569;margin-top:6px;font-style:italic">📋 Plan: '+c.plan_accion+'</div>':'')+
+        (c.estado==='pendiente'||c.estado==='en_progreso' ? '<button class="btn btn-success btn-sm" style="margin-top:8px" onclick="completarCompromiso('+c.id+')">✓ Marcar completado</button>' : '')+
+      '</div>';
+    }).join('');
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+}
+
+async function completarCompromiso(cid){
+  var ev = prompt('URL de evidencia (opcional):', '') || '';
+  var r = await fetch('/api/rrhh/compromisos-mejora/'+cid+'/completar', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({evidencia_url: ev})});
+  if(r.ok) cargarCompromisos();
+  else alert('Error');
 }
 
 // ─── utils ───────────────────────────────────────────
