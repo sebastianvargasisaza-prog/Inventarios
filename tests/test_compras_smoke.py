@@ -184,6 +184,7 @@ def test_compras_no_orphan_fetch_urls():
         "/api/ordenes-compra", "/api/programacion/",
         "/api/proveedores-compras", "/api/solicitudes-compra",
         "/api/conteo/", "/api/admin/",
+        "/api/precio-historico/",
     ]
     orphans = []
     for url in fetches:

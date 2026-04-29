@@ -133,7 +133,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn"     data-tab="por-pagar">&#x1F4B0; Por Pagar</button>
   <button class="tn"     data-tab="alertas">&#x1F6A8; Alertas</button>
   <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
-  <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
+  <!-- Tab Influencers ocultado por solicitud de Catalina (28-abr-2026):
+       los pagos a influencers se hacen desde Marketing -> Tesoreria.
+       En Compras solo aparecen como suma agregada para tesoreria. -->
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
   <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
 </div>
@@ -960,8 +962,18 @@ async function renderDash(){
 
   // KPI data
   var mes=new Date().toISOString().substring(0,7);
-  var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
-  var ocsPorPagar=OCS.filter(function(o){ return o.estado==='Autorizada'; });
+  // FILTRO: excluir SOLs de influencers/cuentas de cobro (Catalina no los gestiona,
+  // los maneja Marketing y se pagan via Tesoreria como suma agregada)
+  var _isInfluencer = function(s){
+    var cat = (s.categoria||'').toLowerCase();
+    return cat.indexOf('influencer')>=0 || cat.indexOf('cuenta de cobro')>=0;
+  };
+  var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente' && !_isInfluencer(s); });
+
+  // Estados que cuentan como "OC abierta / por procesar" — Catalina necesita verlas
+  // todas, no solo Autorizadas. Las OCs manuales recien creadas quedan en Borrador.
+  var _OC_ABIERTA = ['Borrador','Revisada','Aprobada','Autorizada','Parcial'];
+  var ocsPorPagar=OCS.filter(function(o){ return _OC_ABIERTA.indexOf(o.estado)>=0; });
   var pagMes=OCS.filter(function(o){ return o.estado==='Pagada'&&(o.fecha_pago||o.fecha||'').startsWith(mes); });
   var vPorPagar=ocsPorPagar.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
   var vMes=pagMes.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
@@ -978,18 +990,60 @@ async function renderDash(){
   var urgColor={'Alta':'#dc2626','Media':'#f59e0b','Normal':'#64748b'};
   var stBg={'Pendiente':'#fef3c7','Aprobada':'#d1fae5','Rechazada':'#fee2e2','Pagada':'#e0f2fe'};
   var stFg={'Pendiente':'#92400e','Aprobada':'#065f46','Rechazada':'#991b1b','Pagada':'#075985'};
+  // Cards de SOL ENRIQUECIDAS — Catalina pidio ver TODOS los datos sin abrir
+  // cada modal: items, observaciones completas, justificacion, total estimado.
   document.getElementById('q-aut').innerHTML=solicPend.length
     ? solicPend.slice(0,8).map(function(s){
         var urg=s.urgencia||'Normal';
         var urgC=urgColor[urg]||'#78716c';
-        return '<div class="card" style="margin-bottom:8px;">'
+        var obs = (s.observaciones||'').trim();
+        var valTot = parseFloat(s.valor||0);
+        // Items resumidos (los carga get_solicitud_estado al hacer click,
+        // aqui solo mostramos lo que ya viene en el listado)
+        var itemsHint = '';
+        if (s.numero) {
+          itemsHint = '<div id="solitems-'+esc(s.numero)+'" style="margin-top:6px;font-size:11px;color:#57534e;line-height:1.5;"></div>';
+          // Lazy-load items para esta SOL
+          (function(num){
+            setTimeout(function(){
+              fetch('/api/solicitudes-compra/'+encodeURIComponent(num))
+                .then(function(r){return r.json();})
+                .then(function(d){
+                  var box = document.getElementById('solitems-'+num);
+                  if (!box || !d.items || !d.items.length) return;
+                  var html = '<div style="background:#fafaf9;border-radius:6px;padding:6px 8px;margin-top:4px;">';
+                  html += '<div style="font-size:10px;font-weight:700;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">'
+                       + d.items.length + ' item(s) solicitados</div>';
+                  d.items.slice(0,6).forEach(function(it){
+                    var prov = it.proveedor||it.proveedor_sugerido||'';
+                    html += '<div style="font-size:11px;display:flex;justify-content:space-between;gap:6px;padding:2px 0;">'
+                         + '<span style="flex:1;">&bull; '+esc((it.nombre_mp||it.codigo_mp||'?').substring(0,40))+'</span>'
+                         + '<span style="color:#78716c;white-space:nowrap;">'+(parseFloat(it.cantidad_g||0).toLocaleString('es-CO'))+' '+esc(it.unidad||'g')+'</span>'
+                         + (prov?'<span style="color:#6d28d9;font-size:10px;">'+esc(prov.substring(0,12))+'</span>':'')
+                         + '</div>';
+                  });
+                  if (d.items.length > 6) html += '<div style="font-size:10px;color:#a8a29e;margin-top:2px;">... y '+(d.items.length-6)+' mas</div>';
+                  html += '</div>';
+                  box.innerHTML = html;
+                }).catch(function(){});
+            }, 50);
+          })(s.numero);
+        }
+        return '<div class="card" style="margin-bottom:10px;">'
           +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
-          +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.categoria||'-')+'</div></div>'
+          +'<div class="cprov">'+esc(s.solicitante||'-')+' &middot; '+esc(s.categoria||'-')+'</div></div>'
           +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
-          +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span>'
-          +(s.observaciones?'<span style="font-size:11px;color:#57534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">'+esc((s.observaciones||'').substring(0,50))+'</span>':'')
-          +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
-          +'<div class="acts"><button class="btn bi bs" onclick="revisarSolicitudPendiente(&quot;'+esc(s.numero)+'&quot;)">Revisar</button></div>'
+          +'<div class="cmeta" style="flex-wrap:wrap;gap:8px;">'
+          +'<span>&#128197; '+fdate(s.fecha)+'</span>'
+          +(s.fecha_requerida?'<span style="color:#dc2626;">Requiere: '+esc(s.fecha_requerida)+'</span>':'')
+          +(valTot>0?'<span style="font-weight:700;color:#15803d;">$'+valTot.toLocaleString('es-CO')+'</span>':'')
+          +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
+          +'</div>'
+          // Justificacion / observaciones COMPLETAS (no truncadas)
+          +(obs?'<div style="margin-top:6px;background:#fffbeb;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:0 6px 6px 0;font-size:11px;color:#78350f;line-height:1.5;">'+esc(obs)+'</div>':'')
+          // Items lazy-loaded
+          + itemsHint
+          +'<div class="acts" style="margin-top:8px;"><button class="btn bi bs" onclick="revisarSolicitudPendiente(&quot;'+esc(s.numero)+'&quot;)">Revisar / Editar</button></div>'
           +'</div>';
       }).join('')
     : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>';
@@ -2530,28 +2584,41 @@ async function guardarCambioProveedor(numOC){
   }
 }
 
-// ─── Guardar precios de items (alimenta histórico de precios) ──────
-async function guardarPreciosItems(numOC){
-  var rows = document.querySelectorAll('#sol-items-table tbody tr[data-cod]');
+// ─── Guardar TODO (cantidad + proveedor + precio) por SOL ─────────────
+// Catalina puede editar A PEDIR, PROVEEDOR y PRECIO. Al guardar se persiste:
+//   1. solicitudes_compra_items (cantidad, precio_unit_g, proveedor_sugerido)
+//   2. maestro_mps.proveedor (normalizado para futuras compras)
+//   3. precio_historico_mp (memoria de precios -> alertas de aumento)
+async function guardarPreciosItems(numOC, solNumero){
+  var rows = document.querySelectorAll('#sol-items-table tbody tr[data-itemid]');
   if (!rows.length) { alert('No hay items para actualizar'); return; }
   var btn = document.getElementById('btn-guardar-precios');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
   var items = [];
   rows.forEach(function(tr){
-    var cod = tr.getAttribute('data-cod');
-    var inp = tr.querySelector('input.precio-unit');
-    if (!cod || !inp) return;
-    var precio = parseFloat((inp.value||'').replace(/[^\d.]/g,''));
-    if (!isFinite(precio) || precio <= 0) return;
-    items.push({codigo_mp: cod, precio_unitario: precio});
+    var iid = tr.getAttribute('data-itemid');
+    var inpPrecio = tr.querySelector('input.precio-unit');
+    var inpCant = tr.querySelector('input.cant-edit');
+    var inpProv = tr.querySelector('input.prov-edit');
+    if (!iid) return;
+    var precio = inpPrecio ? parseFloat((inpPrecio.value||'').replace(/[^\d.]/g,'')) : 0;
+    var cantidad = inpCant ? parseFloat((inpCant.value||'').replace(/[^\d.]/g,'')) : null;
+    var prov = inpProv ? (inpProv.value||'').trim() : null;
+    var item = {id: parseInt(iid)};
+    if (isFinite(precio) && precio > 0) item.precio_unit_g = precio;
+    if (cantidad != null && isFinite(cantidad) && cantidad > 0) item.cantidad_g = cantidad;
+    if (prov != null) item.proveedor = prov;
+    items.push(item);
   });
-  if (!items.length) {
-    alert('Ingresá al menos un precio antes de guardar');
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar precios'; }
+  if (!items.length || !solNumero) {
+    alert('Nada que guardar — ¿faltan datos?');
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
     return;
   }
   try {
-    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/items-precios', {
+    // Endpoint nuevo: PATCH /api/solicitudes-compra/<numero>/items
+    // Persiste cantidad/proveedor/precio + actualiza maestro_mps + alimenta historico
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(solNumero)+'/items', {
       method:'PATCH',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({items: items})
@@ -2560,17 +2627,98 @@ async function guardarPreciosItems(numOC){
     if (!d.ok) { alert('Error: '+(d.error||'no se pudo guardar')); }
     else {
       var totalEl = document.getElementById('sol-valor-total');
-      if (totalEl && d.valor_total_nuevo != null) totalEl.textContent = fmt(d.valor_total_nuevo);
-      // Visual feedback
-      if (btn) { btn.style.background = '#065f46'; btn.textContent = '✓ Guardado · '+d.items_actualizados+' items'; }
+      if (totalEl && d.valor_total != null) totalEl.textContent = fmt(d.valor_total);
+      // Feedback visual con resumen de cambios
+      var msg = '✓ '+d.items_actualizados+' items';
+      if (d.maestro_mps_actualizados>0) msg += ' · '+d.maestro_mps_actualizados+' provs';
+      if (d.precios_historicos_insertados>0) msg += ' · '+d.precios_historicos_insertados+' precios al hist.';
+      if (btn) { btn.style.background = '#065f46'; btn.textContent = msg; }
       setTimeout(function(){
-        if (btn) { btn.disabled = false; btn.style.background = '#0f766e'; btn.textContent = '💾 Guardar precios'; }
-      }, 2000);
+        if (btn) { btn.disabled = false; btn.style.background = '#0f766e'; btn.textContent = '💾 Guardar cambios'; }
+      }, 2500);
     }
   } catch (e) {
     alert('Error de red: '+e.message);
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar precios'; }
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
   }
+}
+
+// Recalcula valor estimado en la celda VALOR EST. al editar precio o cantidad
+function recalcularValorEst(input){
+  try {
+    var tr = input.closest('tr');
+    if (!tr) return;
+    var cant = parseFloat((tr.querySelector('input.cant-edit')||{}).value||0);
+    var precio = parseFloat((tr.querySelector('input.precio-unit')||{}).value||0);
+    var celdaValor = tr.querySelector('.td-valor-est');
+    if (!celdaValor) return;
+    if (cant > 0 && precio > 0) {
+      var v = Math.round(cant * precio);
+      celdaValor.innerHTML = '<strong style="color:#1F5F5B;">$'+v.toLocaleString('es-CO')+'</strong>';
+    } else {
+      celdaValor.innerHTML = '<span style="color:#a8a29e;font-size:11px;">—</span>';
+    }
+  } catch(e) {}
+}
+
+// Modal de histórico de precios para una MP
+async function verHistoricoPrecio(codigoMp){
+  if (!codigoMp) return;
+  try {
+    var r = await fetch('/api/precio-historico/'+encodeURIComponent(codigoMp));
+    var d = await r.json();
+    var serie = d.serie || [];
+    var stats = d.stats || {};
+    var alertaColor = {
+      'estable':'#15803d','subiendo':'#f59e0b','subiendo_fuerte':'#dc2626',
+      'bajando':'#15803d','volatil':'#a16207','sin_datos':'#78716c'
+    };
+    var color = alertaColor[stats.alerta] || '#6d28d9';
+    var modalId = 'cx-hist-' + Date.now();
+    var html = '<div id="'+modalId+'" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)document.getElementById(&quot;'+modalId+'&quot;).remove()">';
+    html += '<div style="background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;">';
+    html += '<div><div style="font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;">Histórico de precios</div>';
+    html += '<div style="font-size:18px;font-weight:700;color:#1c1917;font-family:monospace;">'+esc(d.codigo_mp)+'</div>';
+    html += '<div style="font-size:13px;color:#57534e;">'+esc(d.nombre_mp||'')+'</div></div>';
+    html += '<button onclick="document.getElementById(&quot;'+modalId+'&quot;).remove()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:#78716c;">×</button>';
+    html += '</div>';
+    if (!serie.length) {
+      html += '<div style="text-align:center;padding:40px;color:#78716c;">Sin histórico aún. Cuando guardes precios en SOLs/OCs irán quedando aquí.</div>';
+    } else {
+      // Stats
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">';
+      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Último precio</div><div style="font-size:18px;font-weight:800;">$'+(stats.ultimo_precio||0).toLocaleString('es-CO')+'/g</div></div>';
+      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Variación</div><div style="font-size:18px;font-weight:800;color:'+color+';">'+(stats.variacion_pct>=0?'+':'')+(stats.variacion_pct||0)+'%</div></div>';
+      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Promedio 90d</div><div style="font-size:18px;font-weight:800;">$'+(stats.promedio_90d||0).toLocaleString('es-CO')+'</div></div>';
+      html += '<div style="background:#fafaf9;border-radius:8px;padding:10px;"><div style="font-size:10px;color:#78716c;text-transform:uppercase;">Proveedores</div><div style="font-size:18px;font-weight:800;">'+(stats.n_proveedores_distintos||0)+'</div></div>';
+      html += '</div>';
+      if (stats.alerta_msg) {
+        html += '<div style="background:'+color+'1a;border-left:4px solid '+color+';padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:14px;color:'+color+';font-size:13px;font-weight:600;">'+esc(stats.alerta_msg)+'</div>';
+      }
+      // Tabla
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead style="background:#f5f3ff;color:#4c1d95;"><tr>';
+      html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Fecha</th>';
+      html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Proveedor</th>';
+      html += '<th style="text-align:right;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Precio/g</th>';
+      html += '<th style="text-align:left;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;">Origen</th>';
+      html += '</tr></thead><tbody>';
+      serie.slice(0,40).forEach(function(s){
+        html += '<tr style="border-top:1px solid #f5f5f4;">';
+        html += '<td style="padding:7px 10px;font-family:monospace;font-size:11px;">'+esc((s.fecha||'').substring(0,10))+'</td>';
+        html += '<td style="padding:7px 10px;">'+esc(s.proveedor||'-')+'</td>';
+        html += '<td style="padding:7px 10px;text-align:right;font-weight:700;">$'+(s.precio_unit_g||0).toLocaleString('es-CO')+'</td>';
+        html += '<td style="padding:7px 10px;font-size:10px;color:#78716c;">'+esc(s.fuente||'')+(s.sol_numero?' '+esc(s.sol_numero):'')+(s.oc_numero?' '+esc(s.oc_numero):'')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div></div>';
+    var box = document.createElement('div');
+    box.innerHTML = html;
+    document.body.appendChild(box.firstElementChild);
+  } catch(e){ alert('Error cargando histórico: '+e.message); }
 }
 
 // ─── Detalle OC ─────────────────────────────────────────────────
@@ -3337,15 +3485,16 @@ async function openSolicitudDetail(num){
       h+='<table id="sol-items-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
       h+='<thead style="background:#1F5F5B;color:#fff;">';
       h+='<tr>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">CÓDIGO</th>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'24':'32')+'%;">MATERIAL</th>';
-      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">PROVEEDOR</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:10%;">CÓDIGO</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'22':'30')+'%;">MATERIAL</th>';
+      h+='<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'15':'14')+'%;">PROVEEDOR</th>';
       h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">EN ESTANTERÍA</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:11%;">A PEDIR</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'12':'13')+'%;">A PEDIR'+(puedeEditarPrecios?' <span style="font-size:9px;font-weight:400;opacity:.85">editable</span>':'')+'</th>';
       if(puedeEditarPrecios){
-        h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:14%;">PRECIO UNIT (g)</th>';
+        h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:13%;">PRECIO UNIT (g)</th>';
       }
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'19':'15')+'%;">VALOR EST.</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'13':'15')+'%;">VALOR EST.</th>';
+      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:6%;"></th>';
       h+='</tr></thead><tbody>';
       // Formatea cantidades preservando decimales en péptidos (< 10g):
       // 0.4g → "0.4 g", 7g → "7 g", 1500g → "1.5 kg"
@@ -3390,24 +3539,42 @@ async function openSolicitudDetail(num){
           justificacionesUnicas[it.justificacion] = (justificacionesUnicas[it.justificacion]||0) + 1;
         }
         // precio unitario actual (si ya hay) para pre-poblar el input
-        var precioActual = parseFloat(it.precio_unitario||0) || 0;
-        var provActual = it.proveedor || '';
-        var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">— sin asignar —</span>';
-        h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
+        var precioActual = parseFloat(it.precio_unit_g || it.precio_unitario || 0) || 0;
+        var provActual = it.proveedor_sugerido || it.proveedor || '';
+        var itemId = it.id || '';
+        h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" data-itemid="'+esc(itemId)+'" data-nombre="'+esc(it.nombre_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
         h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'—')+'</td>';
         h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_mp||'—')+'</td>';
-        h+='<td class="td-prov" data-cod="'+esc(it.codigo_mp||'')+'" data-nom="'+esc(it.nombre_mp||'')+'" data-prov="'+esc(provActual)+'" style="padding:11px 14px;font-size:12px;color:#475569;">'+provHtml+' <button class="btn-edit-prov-mp" title="Cambiar proveedor de esta MP" style="margin-left:4px;padding:2px 6px;font-size:11px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
-        h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
-        h+='<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(pedir, it.unidad)+'</td>';
+        // PROVEEDOR — input directo (con datalist de proveedores conocidos)
         if(puedeEditarPrecios){
-          // Input numérico inline. step 0.01 permite precios <$1/g (poco común
-          // pero posible en commodities). placeholder con sugerencia si la
-          // tabla precios_mp_historico devuelve uno (TODO en backend futuro).
+          h+='<td style="padding:8px 10px;">';
+          h+='<input class="prov-edit" type="text" list="prov-dl-detail" value="'+esc(provActual)+'" placeholder="Proveedor..." style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;">';
+          h+='</td>';
+        } else {
+          var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">— sin asignar —</span>';
+          h+='<td style="padding:11px 14px;font-size:12px;color:#475569;">'+provHtml+'</td>';
+        }
+        h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
+        // A PEDIR editable
+        if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;text-align:right;">';
-          h+='<input class="precio-unit" type="number" min="0" step="0.01" value="'+(precioActual||'')+'" placeholder="$/g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;">';
+          h+='<input class="cant-edit" type="number" min="0" step="any" value="'+pedir+'" placeholder="g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;font-weight:700;color:#1F5F5B;" oninput="recalcularValorEst(this)">';
+          h+='</td>';
+        } else {
+          h+='<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(pedir, it.unidad)+'</td>';
+        }
+        if(puedeEditarPrecios){
+          h+='<td style="padding:8px 10px;text-align:right;">';
+          h+='<input class="precio-unit" type="number" min="0" step="0.01" value="'+(precioActual||'')+'" placeholder="$/g" style="width:100%;max-width:110px;text-align:right;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;font-family:monospace;" oninput="recalcularValorEst(this)">';
           h+='</td>';
         }
-        h+='<td style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
+        h+='<td class="td-valor-est" style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
+        // Boton historico de precios
+        if(puedeEditarPrecios && it.codigo_mp){
+          h+='<td style="padding:8px 6px;text-align:center;"><button onclick="verHistoricoPrecio(&quot;'+esc(it.codigo_mp)+'&quot;)" title="Ver histórico de precios" style="background:#f5f3ff;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;">📈</button></td>';
+        } else {
+          h+='<td></td>';
+        }
         h+='</tr>';
       });
       // Fila de total — colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
@@ -3418,7 +3585,7 @@ async function openSolicitudDetail(num){
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;">'+fmtCant(totalCantPedir,'g')+'</td>';
       if(puedeEditarPrecios){
         h+='<td style="padding:8px 10px;text-align:right;">';
-        h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar precios</button>';
+        h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;,&quot;'+esc(s.numero||num)+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar cambios</button>';
         h+='</td>';
       }
       h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;" id="sol-valor-total">'+(totalValorEst > 0 ? fmt(totalValorEst) : '—')+'</td>';

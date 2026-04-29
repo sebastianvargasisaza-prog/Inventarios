@@ -1351,13 +1351,37 @@ def get_solicitud_estado(numero):
                 __import__('logging').getLogger('compras').error(
                     "SELECT %s en solicitudes_compra falló: %s", col, _e
                 )
-    c.execute("""SELECT codigo_mp, nombre_mp, cantidad_g, unidad,
-                        COALESCE(valor_estimado, 0), COALESCE(justificacion, '')
-                 FROM solicitudes_compra_items WHERE numero=?""", (numero.upper(),))
-    items = [
-        dict(zip(['codigo_mp','nombre_mp','cantidad_g','unidad','valor_estimado','justificacion'], r))
-        for r in c.fetchall()
-    ]
+    # IMPORTANTE: incluir id (PK) y campos editables nuevos para que el modal
+    # pueda hacer PATCH /api/solicitudes-compra/<numero>/items
+    try:
+        c.execute("""SELECT id, codigo_mp, nombre_mp, cantidad_g, unidad,
+                            COALESCE(valor_estimado, 0),
+                            COALESCE(justificacion, ''),
+                            COALESCE(precio_unit_g, 0),
+                            COALESCE(proveedor_sugerido, '')
+                     FROM solicitudes_compra_items WHERE numero=?""",
+                  (numero.upper(),))
+        items = [
+            dict(zip(['id','codigo_mp','nombre_mp','cantidad_g','unidad',
+                      'valor_estimado','justificacion',
+                      'precio_unit_g','proveedor_sugerido'], r))
+            for r in c.fetchall()
+        ]
+    except sqlite3.OperationalError:
+        # Fallback si migration #43 todavia no aplicada
+        c.execute("""SELECT id, codigo_mp, nombre_mp, cantidad_g, unidad,
+                            COALESCE(valor_estimado, 0),
+                            COALESCE(justificacion, '')
+                     FROM solicitudes_compra_items WHERE numero=?""",
+                  (numero.upper(),))
+        items = [
+            dict(zip(['id','codigo_mp','nombre_mp','cantidad_g','unidad',
+                      'valor_estimado','justificacion'], r))
+            for r in c.fetchall()
+        ]
+        for it in items:
+            it['precio_unit_g'] = 0
+            it['proveedor_sugerido'] = ''
 
     # Enriquecer cada item con stock_actual_g (suma de movimientos) +
     # precio_referencia + proveedor de maestro_mps. Para que el modal de
@@ -3532,6 +3556,233 @@ def update_sol_observaciones(numero):
     c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
     conn.commit()
     return jsonify({'ok': True, 'numero': numero.upper()})
+
+
+# ─── Edicion de items de SOL: cantidad/proveedor/precio (req. Catalina 2026) ──
+
+@bp.route('/api/solicitudes-compra/<numero>/items', methods=['PATCH'])
+def update_sol_items(numero):
+    """Catalina edita items de una SOL antes de aprobar:
+       - cantidad_g  (puede aumentar si conviene pedir mas)
+       - proveedor   (si cambia, se normaliza en maestro_mps)
+       - precio_unit_g (si cambia, se inserta en precio_historico_mp)
+
+    Body: {items: [{id, cantidad_g, proveedor, precio_unit_g}, ...]}
+
+    Side effects:
+      1. solicitudes_compra_items.cantidad_g / valor_estimado actualizados
+      2. solicitudes_compra.valor recalculado
+      3. maestro_mps.proveedor actualizado si proveedor != actual
+      4. precio_historico_mp insertado si precio_unit_g cambio
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    items_in = d.get('items') or []
+    if not items_in:
+        return jsonify({'error': 'No hay items en el body'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    sol = c.execute(
+        "SELECT numero FROM solicitudes_compra WHERE numero=?",
+        (numero.upper(),)
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': 'SOL no encontrada'}), 404
+
+    cambios = {
+        'items_actualizados': 0,
+        'maestro_mps_actualizados': 0,
+        'precios_historicos_insertados': 0,
+    }
+    now = datetime.now().isoformat()
+
+    for it in items_in:
+        item_id = it.get('id')
+        if not item_id:
+            continue
+        # Estado actual del item
+        row = c.execute("""
+            SELECT id, codigo_mp, nombre_mp, cantidad_g,
+                   COALESCE(precio_unit_g, 0) as precio_unit_g,
+                   COALESCE(valor_estimado, 0) as valor_estimado,
+                   COALESCE(proveedor_sugerido, '') as proveedor_actual
+            FROM solicitudes_compra_items
+            WHERE id=? AND numero=?
+        """, (item_id, numero.upper())).fetchone()
+        if not row:
+            continue
+        (_id, codigo_mp, nombre_mp, cant_actual,
+         precio_actual, valor_actual, prov_actual) = row
+
+        # Valores nuevos (si vienen, sino mantenemos los actuales)
+        cant_nueva = float(it.get('cantidad_g', cant_actual) or 0)
+        precio_nuevo = float(it.get('precio_unit_g', precio_actual) or 0)
+        prov_nuevo = (it.get('proveedor', prov_actual) or '').strip()
+        valor_nuevo = round(cant_nueva * precio_nuevo, 2) if precio_nuevo > 0 else valor_actual
+
+        # 1) Update item
+        c.execute("""
+            UPDATE solicitudes_compra_items
+               SET cantidad_g=?, precio_unit_g=?, valor_estimado=?,
+                   proveedor_sugerido=?, actualizado_at=?, actualizado_por=?
+             WHERE id=?
+        """, (cant_nueva, precio_nuevo, valor_nuevo, prov_nuevo, now, user, item_id))
+        cambios['items_actualizados'] += 1
+
+        # 2) Si proveedor cambio -> normalizar en maestro_mps
+        if codigo_mp and prov_nuevo and prov_nuevo != prov_actual:
+            try:
+                c.execute("""
+                    UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?
+                """, (prov_nuevo, codigo_mp))
+                if c.rowcount > 0:
+                    cambios['maestro_mps_actualizados'] += 1
+            except Exception:
+                pass
+
+        # 3) Si precio cambio (>0) y es distinto del anterior -> historico
+        if precio_nuevo > 0 and abs(precio_nuevo - (precio_actual or 0)) > 1e-6:
+            try:
+                c.execute("""
+                    INSERT INTO precio_historico_mp
+                        (codigo_mp, nombre_mp, proveedor, precio_unit_g,
+                         cantidad_g, valor_total, fuente, sol_numero, usuario)
+                    VALUES (?, ?, ?, ?, ?, ?, 'sol_editada', ?, ?)
+                """, (codigo_mp or '', nombre_mp or '', prov_nuevo,
+                      precio_nuevo, cant_nueva, valor_nuevo,
+                      numero.upper(), user))
+                cambios['precios_historicos_insertados'] += 1
+            except Exception:
+                pass
+
+    # 4) Recalcular valor total de la SOL
+    total = c.execute("""
+        SELECT COALESCE(SUM(valor_estimado), 0)
+          FROM solicitudes_compra_items WHERE numero=?
+    """, (numero.upper(),)).fetchone()[0] or 0
+    c.execute(
+        "UPDATE solicitudes_compra SET valor=? WHERE numero=?",
+        (float(total), numero.upper())
+    )
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero': numero.upper(),
+        'valor_total': float(total),
+        **cambios,
+    })
+
+
+# ─── Historico de precios por MP ─────────────────────────────────────────────
+
+@bp.route('/api/precio-historico/<path:codigo_mp>', methods=['GET'])
+def get_precio_historico(codigo_mp):
+    """Devuelve serie temporal de precios + agregados para detectar aumentos.
+
+    Returns:
+        {
+          codigo_mp, nombre_mp,
+          serie: [{fecha, proveedor, precio_unit_g, fuente, sol, oc}, ...],
+          stats: {
+            ultimo_precio, primer_precio, variacion_pct,
+            promedio_30d, promedio_90d,
+            min_precio, max_precio,
+            n_proveedores_distintos,
+            alerta: 'sin_datos'|'estable'|'subiendo'|'bajando'|'volatil'
+          }
+        }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, fecha, proveedor, precio_unit_g, cantidad_g, fuente,
+               sol_numero, oc_numero, usuario
+        FROM precio_historico_mp
+        WHERE codigo_mp = ?
+        ORDER BY fecha DESC
+        LIMIT 200
+    """, (codigo_mp,)).fetchall()
+
+    serie = [
+        {
+            'id': r[0], 'fecha': r[1], 'proveedor': r[2],
+            'precio_unit_g': r[3], 'cantidad_g': r[4],
+            'fuente': r[5], 'sol_numero': r[6], 'oc_numero': r[7],
+            'usuario': r[8],
+        }
+        for r in rows
+    ]
+
+    stats = {}
+    if serie:
+        precios = [s['precio_unit_g'] for s in serie if s['precio_unit_g']]
+        if precios:
+            stats['ultimo_precio'] = precios[0]
+            stats['primer_precio'] = precios[-1]
+            stats['min_precio'] = min(precios)
+            stats['max_precio'] = max(precios)
+            if stats['primer_precio'] > 0:
+                stats['variacion_pct'] = round(
+                    (stats['ultimo_precio'] - stats['primer_precio'])
+                    / stats['primer_precio'] * 100,
+                    2
+                )
+            else:
+                stats['variacion_pct'] = 0
+
+            # Promedios temporales
+            from datetime import datetime as _dt, timedelta as _td
+            now = _dt.now()
+            d30 = (now - _td(days=30)).isoformat()
+            d90 = (now - _td(days=90)).isoformat()
+            p30 = [s['precio_unit_g'] for s in serie if s['fecha'] >= d30 and s['precio_unit_g']]
+            p90 = [s['precio_unit_g'] for s in serie if s['fecha'] >= d90 and s['precio_unit_g']]
+            stats['promedio_30d'] = round(sum(p30) / len(p30), 4) if p30 else None
+            stats['promedio_90d'] = round(sum(p90) / len(p90), 4) if p90 else None
+
+            stats['n_proveedores_distintos'] = len(
+                {s['proveedor'] for s in serie if s['proveedor']}
+            )
+
+            # Alerta
+            v = stats.get('variacion_pct', 0)
+            if abs(v) < 5:
+                stats['alerta'] = 'estable'
+                stats['alerta_msg'] = 'Precio estable (variación <5%)'
+            elif v >= 20:
+                stats['alerta'] = 'subiendo_fuerte'
+                stats['alerta_msg'] = (
+                    f'Subió {v:.1f}% — considerar explorar otros proveedores'
+                )
+            elif v >= 5:
+                stats['alerta'] = 'subiendo'
+                stats['alerta_msg'] = f'Subió {v:.1f}% — vigilar tendencia'
+            elif v <= -5:
+                stats['alerta'] = 'bajando'
+                stats['alerta_msg'] = f'Bajó {v:.1f}% — buena negociación'
+
+    # Nombre del MP (si existe)
+    nombre_mp = ''
+    try:
+        n = c.execute(
+            "SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?",
+            (codigo_mp,)
+        ).fetchone()
+        if n:
+            nombre_mp = n[0] or ''
+    except Exception:
+        pass
+
+    return jsonify({
+        'codigo_mp': codigo_mp,
+        'nombre_mp': nombre_mp,
+        'serie': serie,
+        'stats': stats,
+    })
 
 
 # ─── ALERTAS VIVAS DE COMPRAS (Sprint 3) ─────────────────────────────────────

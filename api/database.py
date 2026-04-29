@@ -1767,6 +1767,38 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE animus_shopify_orders ADD COLUMN flujo_ingreso_id INTEGER""",
         """CREATE INDEX IF NOT EXISTS idx_shopify_flujo_pending ON animus_shopify_orders(flujo_synced) WHERE flujo_synced=0""",
     ]),
+    (43, "precio_historico_mp: memoria de precios por MP+proveedor — detectar aumentos y sugerir nuevos proveedores", [
+        # Cada vez que Catalina (o el sistema) registra un precio para un MP
+        # — sea en una SOL editada, una OC creada, o una recepcion — se inserta
+        # una fila aqui. Asi tenemos serie temporal por MP+proveedor.
+        """CREATE TABLE IF NOT EXISTS precio_historico_mp (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_mp       TEXT NOT NULL,
+            nombre_mp       TEXT DEFAULT '',
+            proveedor       TEXT DEFAULT '',
+            precio_unit_g   REAL NOT NULL,
+            cantidad_g      REAL DEFAULT 0,
+            valor_total     REAL DEFAULT 0,
+            fecha           TEXT NOT NULL DEFAULT (datetime('now')),
+            fuente          TEXT DEFAULT 'manual'
+                CHECK(fuente IN ('manual','sol_editada','oc_creada','oc_pagada','recepcion','import')),
+            sol_numero      TEXT DEFAULT '',
+            oc_numero       TEXT DEFAULT '',
+            usuario         TEXT DEFAULT '',
+            observaciones   TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_phist_mp_fecha ON precio_historico_mp(codigo_mp, fecha DESC)""",
+        """CREATE INDEX IF NOT EXISTS idx_phist_proveedor ON precio_historico_mp(proveedor)""",
+        """CREATE INDEX IF NOT EXISTS idx_phist_fecha ON precio_historico_mp(fecha DESC)""",
+
+        # Asegurar que solicitudes_compra_items tenga campos editables consistentes.
+        # cantidad_g y valor_estimado ya existen; agregamos precio_unit_g para
+        # claridad (catalina edita precio por gramo, no valor total).
+        """ALTER TABLE solicitudes_compra_items ADD COLUMN precio_unit_g REAL DEFAULT 0""",
+        """ALTER TABLE solicitudes_compra_items ADD COLUMN proveedor_sugerido TEXT DEFAULT ''""",
+        """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_at TEXT""",
+        """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_por TEXT DEFAULT ''""",
+    ]),
     (42, "produccion_checklist: pre-flight checklist por produccion programada (MPs + envases + etiquetas + serigrafia/tampografia)", [
         # Master de plantillas: cada producto puede tener items default
         # configurables. Si un producto no tiene plantilla, usa la generica.
