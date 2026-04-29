@@ -1,18 +1,18 @@
-# Auto-extraído de index.py — Fase A refactor (rebranded Cortex Labs)
+# Auto-extraído de index.py — Fase A refactor (rebranded EOS)
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Cortex Labs · Acceso</title>
+<title>EOS · Acceso</title>
 <link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
-<meta name="application-name" content="Cortex Labs">
-<meta name="apple-mobile-web-app-title" content="Cortex Labs">
+<meta name="application-name" content="EOS">
+<meta name="apple-mobile-web-app-title" content="EOS">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="description" content="EOS · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -50,8 +50,8 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
 <body>
 <div class="card">
   <div class="logo">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="brand-mark">
-    <div class="brand-name">Cortex Labs</div>
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="EOS" class="brand-mark">
+    <div class="brand-name">EOS</div>
     <div class="brand-tag">El cerebro operativo de tu laboratorio</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>
   </div>
@@ -65,7 +65,7 @@ input[type=text]:focus,input[type=password]:focus{border-color:#a78bfa;backgroun
   <div class="back"><a href="/">← Volver al portal</a></div>
 </div>
 <footer class="app-footer">
-  <div><strong>Cortex Labs v1.0</strong> &middot; Edición Espagiria</div>
+  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
   <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
   <div style="margin-top:6px;color:#334155;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
 </footer>

@@ -3,16 +3,16 @@ HOME_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Cortex Labs · Portal HHA Group</title>
+<title>EOS · Portal HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
-<meta name="application-name" content="Cortex Labs">
-<meta name="apple-mobile-web-app-title" content="Cortex Labs">
+<meta name="application-name" content="EOS">
+<meta name="apple-mobile-web-app-title" content="EOS">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="description" content="EOS · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=cortex4">
@@ -45,11 +45,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
 <body>
 <div class="hdr">
   <div style="display:flex;align-items:center;gap:16px;">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs"
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="EOS"
          style="width:54px;height:54px;border-radius:12px;box-shadow:0 6px 20px rgba(167,139,250,0.35);flex-shrink:0;">
     <div>
       <div class="hdr-logo" style="display:flex;align-items:baseline;gap:10px;">
-        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">EOS</span>
         <span style="font-size:10px;color:#a78bfa;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border:1px solid #6d28d9;padding:2px 7px;border-radius:4px;">v1.0</span>
       </div>
       <div class="hdr-sub">by <strong style="color:#fff">HHA Group</strong> &middot; Espagiria &middot; ANIMUS Lab</div>
@@ -89,7 +89,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;min-heig
   <div class="note">Los modulos oscuros requieren <a href="/login">iniciar sesion como CEO</a></div>
 </div>
 <footer style="padding:24px 20px;border-top:1px solid #e7e5e4;margin-top:40px;text-align:center;font-size:11px;color:#a8a29e;background:#fafaf9;">
-  <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">Cortex Labs</div>
+  <div style="font-weight:700;color:#6d28d9;letter-spacing:0.3px;font-size:13px;">EOS</div>
   <div style="margin-top:4px;font-style:italic;">El cerebro operativo de tu laboratorio</div>
   <div style="margin-top:10px;letter-spacing:1px;text-transform:uppercase;">Desarrollado por <strong style="color:#1c1917">HHA Group</strong></div>
   <div style="margin-top:6px;color:#d6d3d1;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>

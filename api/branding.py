@@ -4,16 +4,19 @@ Branding centralizado de la aplicacion.
 
 Para cambiar el nombre del producto, modificar SOLO este archivo.
 
-Producto:  Cortex Labs
-Compania:  HHA Group
-Tagline:   El cerebro operativo de tu laboratorio
+Producto:  EOS  (diosa griega de la aurora — primer rayo)
+Compania:  HHA Group  (Hermes · Hefesto · Asclepio)
+Tagline:   El primer rayo de claridad sobre tus datos
+
+Renombrado 28-abr-2026: era "Cortex Labs", Alejandro pidio nombre mitologico
+griego (en linea con HHA, Espagiria, ANIMUS, ANIMA, Persefone).
 """
 
 # ===================== Identidad de producto =====================
 
-PRODUCT_NAME       = "Cortex Labs"
-PRODUCT_NAME_SHORT = "Cortex"
-PRODUCT_TAGLINE    = "El cerebro operativo de tu laboratorio"
+PRODUCT_NAME       = "EOS"
+PRODUCT_NAME_SHORT = "EOS"
+PRODUCT_TAGLINE    = "El primer rayo de claridad sobre tus datos"
 
 # ===================== Compania =====================
 
@@ -31,7 +34,50 @@ COPYRIGHT_LINE     = f"© 2026 {COMPANY_LEGAL} — Todos los derechos reservados
 # ===================== Version =====================
 
 VERSION            = "1.0.0"
-VERSION_LABEL      = "Cortex Labs v1.0 · Edicion Espagiria"
+VERSION_LABEL      = "EOS v1.0 · Edicion Espagiria"
+
+# ===================== Color brand =====================
+# Mantenemos #6d28d9 como acento primario para no repintar toda la UI.
+# La paleta EOS completa esta documentada en /static/cortex.css.
+
+BRAND_PRIMARY      = "#6d28d9"   # violeta — acentos, links, botones primarios
+BRAND_AURORA       = "#FF8E72"   # coral — alertas suaves, highlights
+BRAND_GOLD         = "#FFCB77"   # dorado — acentos celebracion / KPI
+BRAND_NIGHT        = "#0A0A0B"   # noche — fondo oscuro
+
+# ===================== Logo SVG inline (concepto: punto + eco) =====================
+# Punto solido (sol/dato) sobre dos arcos descendentes (ondas / eco / propagacion).
+# Aurora literal: el sol asomando, irradiando. Usa currentColor para heredar
+# el color del contenedor — un solo SVG sirve para dark y light.
+#
+# viewBox 0 0 32 32 — escalable de 16px (favicon) a 200px (hero) sin perdida.
+
+LOGO_SVG = (
+    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" '
+    'fill="none" stroke="currentColor">'
+    '<circle cx="16" cy="12" r="3" fill="currentColor" stroke="none"/>'
+    '<path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" '
+    'stroke-linecap="round" opacity=".55"/>'
+    '<path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" '
+    'stroke-linecap="round" opacity=".25"/>'
+    '</svg>'
+)
+
+
+def logo_svg(size: int = 32, color: str = "currentColor") -> str:
+    """Logo EOS inline como SVG. Escala libre, color heredable."""
+    return (
+        f'<svg viewBox="0 0 32 32" width="{size}" height="{size}" '
+        f'xmlns="http://www.w3.org/2000/svg" fill="none" stroke="{color}" '
+        f'class="eos-logo">'
+        f'<circle cx="16" cy="12" r="3" fill="{color}" stroke="none"/>'
+        f'<path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" '
+        f'stroke-linecap="round" opacity=".55"/>'
+        f'<path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" '
+        f'stroke-linecap="round" opacity=".25"/>'
+        f'</svg>'
+    )
+
 
 # ===================== Helpers de presentacion =====================
 
@@ -53,22 +99,25 @@ def header_html(scale: str = "default") -> str:
     if scale == "compact":
         return (
             f'<div class="brand-header" style="display:flex;align-items:center;gap:10px">'
-            f'<span class="brand-name" style="font-weight:700;font-size:18px;color:#6d28d9">{PRODUCT_NAME}</span>'
+            f'<span style="color:{BRAND_PRIMARY};display:inline-flex;">{logo_svg(20, BRAND_PRIMARY)}</span>'
+            f'<span class="brand-name" style="font-weight:700;font-size:18px;color:{BRAND_PRIMARY};letter-spacing:3px">{PRODUCT_NAME}</span>'
             f'<span class="brand-by" style="font-size:11px;color:#78716c;font-weight:500">{POWERED_BY_SHORT}</span>'
             f'</div>'
         )
     if scale == "hero":
         return (
             f'<div class="brand-hero" style="text-align:center;padding:24px 0">'
-            f'<div style="font-size:34px;font-weight:800;color:#6d28d9;letter-spacing:-1px">{PRODUCT_NAME}</div>'
+            f'<div style="color:{BRAND_PRIMARY};display:flex;justify-content:center;margin-bottom:12px;">{logo_svg(72, BRAND_PRIMARY)}</div>'
+            f'<div style="font-size:34px;font-weight:300;color:{BRAND_PRIMARY};letter-spacing:8px">{PRODUCT_NAME}</div>'
             f'<div style="font-size:13px;color:#57534e;margin-top:6px;font-style:italic">{PRODUCT_TAGLINE}</div>'
             f'<div style="font-size:11px;color:#a8a29e;margin-top:14px;letter-spacing:1px;text-transform:uppercase">{POWERED_BY}</div>'
             f'</div>'
         )
     # default
     return (
-        f'<div class="brand-header" style="display:flex;align-items:baseline;gap:8px">'
-        f'<span class="brand-name" style="font-weight:700;font-size:20px;color:#6d28d9;letter-spacing:-0.3px">{PRODUCT_NAME}</span>'
+        f'<div class="brand-header" style="display:flex;align-items:center;gap:10px">'
+        f'<span style="color:{BRAND_PRIMARY};display:inline-flex;">{logo_svg(22, BRAND_PRIMARY)}</span>'
+        f'<span class="brand-name" style="font-weight:700;font-size:20px;color:{BRAND_PRIMARY};letter-spacing:4px">{PRODUCT_NAME}</span>'
         f'<span class="brand-tagline" style="font-size:11px;color:#a8a29e;font-style:italic">{PRODUCT_TAGLINE}</span>'
         f'<span class="brand-by" style="margin-left:auto;font-size:11px;color:#78716c;font-weight:500">{POWERED_BY_SHORT}</span>'
         f'</div>'
@@ -80,7 +129,7 @@ def footer_html() -> str:
     return (
         f'<footer class="brand-footer" style="padding:16px 20px;border-top:1px solid #e7e5e4;'
         f'margin-top:32px;text-align:center;font-size:11px;color:#a8a29e">'
-        f'<div><strong style="color:#6d28d9">{PRODUCT_NAME}</strong> {VERSION_LABEL.split("·")[1].strip() if "·" in VERSION_LABEL else "v" + VERSION}</div>'
+        f'<div><strong style="color:{BRAND_PRIMARY};letter-spacing:3px">{PRODUCT_NAME}</strong> {VERSION_LABEL.split("·")[1].strip() if "·" in VERSION_LABEL else "v" + VERSION}</div>'
         f'<div style="margin-top:4px">{COPYRIGHT_LINE}</div>'
         f'<div style="margin-top:2px">{POWERED_BY}</div>'
         f'</footer>'
@@ -95,7 +144,7 @@ def meta_tags_html() -> str:
         f'<meta name="apple-mobile-web-app-capable" content="yes">'
         f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
         f'<meta name="mobile-web-app-capable" content="yes">'
-        f'<meta name="theme-color" content="#6d28d9">'
+        f'<meta name="theme-color" content="{BRAND_PRIMARY}">'
         f'<meta name="description" content="{PRODUCT_NAME} · {PRODUCT_TAGLINE}">'
         f'<meta name="author" content="{COMPANY_NAME}">'
     )
@@ -132,6 +181,8 @@ _SVG_ICONS = {
     'config':      '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H22a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/>',
     'campana':     '<path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
     'lupa':        '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    # Logo EOS como icono usable (concepto C: punto + eco)
+    'eos':         '<circle cx="16" cy="12" r="3" fill="currentColor"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>',
 }
 
 
@@ -151,8 +202,10 @@ def icon(name: str, size: int = 24, color: str = "currentColor",
     paths = _SVG_ICONS.get(name)
     if not paths:
         paths = '<rect x="4" y="4" width="16" height="16" rx="2"/>'
+    # El icono 'eos' usa viewBox 0 0 32 32, los demas 0 0 24 24
+    viewbox = "0 0 32 32" if name == 'eos' else "0 0 24 24"
     return (
-        f'<svg viewBox="0 0 24 24" width="{size}" height="{size}" '
+        f'<svg viewBox="{viewbox}" width="{size}" height="{size}" '
         f'fill="none" stroke="{color}" stroke-width="{stroke_width}" '
         f'stroke-linecap="round" stroke-linejoin="round" class="{css_class}">'
         f'{paths}</svg>'
@@ -170,18 +223,18 @@ def module_header(modulo: str, subtitulo: str = "",
                   icon_name: str = None,
                   back_url: str = "/modulos",
                   with_dark_toggle: bool = True) -> str:
-    """Devuelve el HTML completo de un header de modulo Cortex Labs.
+    """Devuelve el HTML completo de un header de modulo EOS.
 
     Args:
         modulo: nombre del modulo (ej "Planta", "Compras", "Calidad")
         subtitulo: descripcion (ej "stock · lotes · trazabilidad")
-        icon_name: clave de icono (ver list_icons()). Si None, usa el logo Cortex.
+        icon_name: clave de icono (ver list_icons()). Si None, usa el logo EOS.
         back_url: a donde lleva el boton "Modulos"
         with_dark_toggle: incluye boton de toggle dark mode
 
     Genera estructura:
         <header class="cx-mod-header">
-          <img logo />
+          <SVG logo EOS />
           <div>
             <div title>Modulo</div>
             <div sub>by HHA Group · subtitulo</div>
@@ -192,16 +245,19 @@ def module_header(modulo: str, subtitulo: str = "",
           </nav>
         </header>
     """
+    # Logo EOS inline (SVG, escala desde 32px). Reemplaza la imagen PNG anterior.
     logo_html = (
-        f'<img src="/static/icons/icon-192.png?v=cortex3" '
-        f'alt="{PRODUCT_NAME}" class="cx-mod-header__logo">'
+        f'<span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;'
+        f'color:{BRAND_PRIMARY};">'
+        f'{logo_svg(38, BRAND_PRIMARY)}'
+        f'</span>'
     )
 
     # Icono opcional al lado del nombre del modulo (en violeta)
     icon_inline = ""
     if icon_name:
         icon_inline = (
-            f'<span style="display:inline-flex;vertical-align:middle;color:#6d28d9;'
+            f'<span style="display:inline-flex;vertical-align:middle;color:{BRAND_PRIMARY};'
             f'margin-right:8px;">{icon(icon_name, size=22)}</span>'
         )
 
@@ -223,7 +279,7 @@ def module_header(modulo: str, subtitulo: str = "",
         f'<div>'
         f'<div class="cx-mod-header__title">{icon_inline}{modulo}</div>'
         f'<div class="cx-mod-header__sub">'
-        f'<strong>Cortex Labs</strong> &middot; by HHA Group'
+        f'<strong style="letter-spacing:3px">{PRODUCT_NAME}</strong> &middot; by HHA Group'
         + (f' &middot; {subtitulo}' if subtitulo else '')
         + f'</div>'
         f'</div>'
@@ -259,4 +315,6 @@ def context_dict() -> dict:
         "version":           VERSION,
         "version_label":     VERSION_LABEL,
         "copyright":         COPYRIGHT_LINE,
+        "logo_svg":          LOGO_SVG,
+        "brand_primary":     BRAND_PRIMARY,
     }

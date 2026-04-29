@@ -86,13 +86,13 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M14 18V6a2 2 0 00-2-2H4a2 2 0 00-2 2v11a1 1 0 001 1h2"/><path d="M15 18h-3M22 18h-2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M14 9h3l3 4v5h-2"/></svg>
       Recepción de Mercancía
     </div>
-    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; ingreso de MP &amp; MEE desde OCs</div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; ingreso de MP &amp; MEE desde OCs</div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
@@ -203,8 +203,14 @@ async function loadQueue() {
     var r = await fetch('/api/recepcion/seguimiento');
     var all = await r.json();
     if (!Array.isArray(all)) all = [];
+    // Pendientes = TODO lo que aun no esta totalmente recibido.
+    // Incluye Autorizada, Pagada (en transito), Parcial y Aprobada.
     var pendientes = all.filter(function(x) {
-      return (x.estado === 'Autorizada' && (!x.fecha_recepcion || x.fecha_recepcion.length < 3)) || x.estado === 'Parcial';
+      var sinRecibir = !x.fecha_recepcion || x.fecha_recepcion.length < 3;
+      return (x.estado === 'Autorizada' && sinRecibir)
+          || (x.estado === 'Pagada'     && sinRecibir)
+          || (x.estado === 'Aprobada'   && sinRecibir)
+          || x.estado === 'Parcial';
     });
     var el = document.getElementById('queue-list');
     if (pendientes.length === 0) {
@@ -216,11 +222,33 @@ async function loadQueue() {
     pendientes.forEach(function(oc) {
       var dt = oc.fecha ? new Date(oc.fecha) : null;
       var dias = dt ? Math.floor((today - dt) / 86400000) : 0;
+      // Badge segun estado real
+      var badge = '';
+      if (oc.en_transito) {
+        badge = '<span style="display:inline-block;background:#1e40af;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">&#x1F69A; EN TR&Aacute;NSITO</span>';
+      } else if (oc.estado === 'Parcial') {
+        badge = '<span style="display:inline-block;background:#f59e0b;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">PARCIAL</span>';
+      } else if (oc.estado === 'Aprobada') {
+        badge = '<span style="display:inline-block;background:#9333ea;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.4px;">APROBADA</span>';
+      }
+      // Trazabilidad SOL → OC
+      var solRef = oc.sol_numero
+        ? '<div style="font-size:10px;color:#7c3aed;font-weight:600;margin-top:3px;">&larr; ' + oc.sol_numero + '</div>'
+        : '';
+      // ETA si la hay
+      var eta = oc.fecha_entrega_est
+        ? '<div style="font-size:10px;color:#0891b2;margin-top:2px;">&#x23F0; ETA ' + oc.fecha_entrega_est + '</div>'
+        : '';
       html += '<div class="oc-card" data-oc="' + oc.numero_oc + '" onclick="cargarOC(this.dataset.oc)">'
-        + '<div class="oc-num">' + oc.numero_oc + '</div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:start;gap:6px;">'
+        +   '<div class="oc-num">' + oc.numero_oc + '</div>'
+        +   badge
+        + '</div>'
+        + solRef
         + '<div class="oc-prov">' + (oc.proveedor || '') + '</div>'
         + '<div class="oc-val">$' + Number(oc.valor_total||0).toLocaleString() + '</div>'
-        + '<div class="oc-dias">' + (dias > 0 ? dias + 'd en transito' : 'Reciente') + '</div>'
+        + eta
+        + '<div class="oc-dias">' + (dias > 0 ? dias + 'd desde OC' : 'Reciente') + '</div>'
         + '</div>';
     });
     html += '</div>';

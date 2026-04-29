@@ -6691,7 +6691,7 @@ def admin_auditoria_lotes_html():
 
     dias = int(request.args.get("dias", 2))
     html = """<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Auditoria Lotes — Cortex Labs</title>
+<title>Auditoria Lotes — EOS</title>
 <style>
 body{font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f4;color:#1c1917;
      padding:24px;max-width:1400px;margin:0 auto;}

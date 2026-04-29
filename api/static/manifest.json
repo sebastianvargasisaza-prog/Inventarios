@@ -1,8 +1,8 @@
 {
-  "name": "Cortex Labs · Sistema Operativo de Laboratorio",
-  "short_name": "Cortex Labs",
-  "description": "El cerebro operativo de tu laboratorio. Desarrollado por HHA Group para Espagiria & ÁNIMUS Lab.",
-  "id": "co.hhagroup.cortexlabs",
+  "name": "EOS · Sistema Operativo del Holding",
+  "short_name": "EOS",
+  "description": "El primer rayo de claridad sobre tus datos. Desarrollado por HHA Group para Espagiria & ÁNIMUS Lab.",
+  "id": "co.hhagroup.eos",
   "start_url": "/modulos",
   "scope": "/",
   "display": "standalone",

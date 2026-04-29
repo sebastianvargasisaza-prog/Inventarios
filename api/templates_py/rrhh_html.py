@@ -137,13 +137,13 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 </head>
 <body>
 <header class="cx-mod-header cx-fade-in">
-  <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
     <div class="cx-mod-header__title">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/></svg>
       Recursos Humanos
     </div>
-    <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; empleados &middot; nómina &middot; SGSST &middot; <span style="color:#a8a29e">{usuario}</span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; empleados &middot; nómina &middot; SGSST &middot; <span style="color:#a8a29e">{usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>

@@ -79,37 +79,50 @@ def recepcion_seguimiento():
     # generaba que las OCs nuevas creadas desde solicitud (estado='Revisada')
     # quedaran invisibles en recepcion. Categoria-filter sigue excluyendo
     # servicios/CC/influencers (no requieren recepcion fisica de mercancia).
+    # JOIN con solicitudes_compra: trae el numero SOL de origen para que
+    # Recepcion vea la trazabilidad SOL → OC → recepcion. Sebastian pidió
+    # 28-abr-2026: las OCs en transito deben mostrar de qué SOL vienen.
     c.execute(
-        'SELECT numero_oc, fecha, estado, proveedor, categoria, '
-        'COALESCE(valor_total,0), COALESCE(fecha_recepcion,""), '
-        'COALESCE(observaciones,"") || '
-        '  CASE WHEN COALESCE(observaciones_recepcion,"") != "" '
-        '       THEN " | RECEP: " || observaciones_recepcion ELSE "" END, '
-        'COALESCE(tiene_discrepancias,0), '
-        'COALESCE(fecha_pago,""), COALESCE(fecha_autorizacion,""), '
-        'COALESCE(recibido_por,"") '
-        "FROM ordenes_compra WHERE estado IN "
+        'SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor, oc.categoria, '
+        'COALESCE(oc.valor_total,0), COALESCE(oc.fecha_recepcion,""), '
+        'COALESCE(oc.observaciones,"") || '
+        '  CASE WHEN COALESCE(oc.observaciones_recepcion,"") != "" '
+        '       THEN " | RECEP: " || oc.observaciones_recepcion ELSE "" END, '
+        'COALESCE(oc.tiene_discrepancias,0), '
+        'COALESCE(oc.fecha_pago,""), COALESCE(oc.fecha_autorizacion,""), '
+        'COALESCE(oc.recibido_por,""), '
+        'COALESCE(sc.numero,""), '            # sol_numero (origen)
+        'COALESCE(oc.fecha_entrega_est,"") '  # ETA estimada
+        'FROM ordenes_compra oc '
+        'LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc '
+        "WHERE oc.estado IN "
         "('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial','Pagada') "
-        "AND categoria NOT IN ('SVC','CC','Influencer/Marketing Digital') "
+        "AND oc.categoria NOT IN ('SVC','CC','Influencer/Marketing Digital','Cuenta de Cobro') "
         'ORDER BY '
         # Priorizar las que aun no se reciben para que aparezcan arriba
-        "  CASE estado "
+        "  CASE oc.estado "
         "    WHEN 'Borrador'   THEN 1 "
         "    WHEN 'Pendiente'  THEN 2 "
         "    WHEN 'Revisada'   THEN 3 "
         "    WHEN 'Aprobada'   THEN 4 "
         "    WHEN 'Autorizada' THEN 5 "
-        "    WHEN 'Recibida'   THEN 6 "
-        "    WHEN 'Parcial'    THEN 7 "
-        "    ELSE 8 END, "
-        '  fecha DESC '
+        "    WHEN 'Pagada'     THEN 6 "  # Pagada antes de Recibida = en transito
+        "    WHEN 'Recibida'   THEN 7 "
+        "    WHEN 'Parcial'    THEN 8 "
+        "    ELSE 9 END, "
+        '  oc.fecha DESC '
         'LIMIT 300')
     rows = c.fetchall()
+    # Estado derivado "en_transito": OC pagada o autorizada PERO no recibida
+    def _en_transito(estado, fecha_recep):
+        return estado in ('Autorizada', 'Pagada') and not fecha_recep
     return jsonify([
         {'numero_oc': r[0], 'fecha': r[1], 'estado': r[2], 'proveedor': r[3],
          'categoria': r[4], 'valor_total': r[5], 'fecha_recepcion': r[6],
          'observaciones': r[7], 'tiene_discrepancias': r[8],
-         'fecha_pago': r[9], 'fecha_autorizacion': r[10], 'recibido_por': r[11]}
+         'fecha_pago': r[9], 'fecha_autorizacion': r[10], 'recibido_por': r[11],
+         'sol_numero': r[12], 'fecha_entrega_est': r[13],
+         'en_transito': _en_transito(r[2], r[6])}
         for r in rows
     ])
 

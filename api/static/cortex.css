@@ -1,6 +1,9 @@
 /* =========================================================================
-   Cortex Labs — Sistema de diseño global
+   EOS — Sistema de diseño global
    Aplicado a todos los templates HTML para consistencia visual.
+   Renombrado 28-abr-2026 (era "Cortex Labs"). El archivo conserva el nombre
+   cortex.css y los prefijos cx- de las clases para no romper imports — solo
+   el branding visible al usuario cambió.
    v1 — abril 2026
    ========================================================================= */
 
@@ -199,7 +202,7 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
 .cx-chip-info    { background: var(--cx-info-pale);    color: var(--cx-info);    }
 .cx-chip-violet  { background: var(--cx-primary-pale); color: var(--cx-primary); }
 
-/* Cortex Labs — Header de modulo unificado */
+/* EOS — Header de modulo unificado */
 .cx-mod-header {
   background: var(--cx-card);
   border-bottom: 1px solid var(--cx-border);

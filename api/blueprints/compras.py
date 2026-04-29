@@ -2688,7 +2688,8 @@ def get_por_pagar():
     # Excluimos:
     #   - OCs ya capturadas en bloque 'servicios' arriba (Aprobada/Autorizada
     #     con categoria de pago directo)
-    #   - OCs de Influencer/Marketing Digital — esas viven en /marketing
+    #   - OCs de Influencer/Marketing Digital y Cuenta de Cobro
+    #     — esas viven en /marketing (Catalina NO las gestiona)
     cur.execute("""
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
                oc.estado, oc.observaciones, oc.fecha as fecha_recepcion,
@@ -2699,7 +2700,7 @@ def get_por_pagar():
         WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada')
           AND NOT (oc.estado IN ('Aprobada','Autorizada')
                    AND oc.categoria IN ({0}))
-          AND oc.categoria NOT IN ('Influencer/Marketing Digital')
+          AND oc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')
         ORDER BY oc.fecha DESC
     """.format(','.join('?' for _ in CATEGORIAS_PAGO_DIRECTO)), CATEGORIAS_PAGO_DIRECTO)
     cols = [d[0] for d in cur.description]

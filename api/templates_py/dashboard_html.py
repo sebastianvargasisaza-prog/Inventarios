@@ -244,13 +244,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div class="container">
   <header class="cx-mod-header cx-fade-in">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 7.5l-9-5-9 5 9 5z"/><path d="M3 7.5v9l9 5 9-5v-9M12 12.5v9"/></svg>
         Planta
       </div>
-      <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; Espagiria Laboratorios &middot; stock, lotes &amp; trazabilidad</div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria Laboratorios &middot; stock, lotes &amp; trazabilidad</div>
     </div>
     <div class="cx-mod-header__nav">
       <span id="oper-chip" class="cx-chip cx-chip-violet" style="display:none"></span>

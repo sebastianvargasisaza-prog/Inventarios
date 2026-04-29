@@ -3,16 +3,16 @@ HUB_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Cortex Labs · Panel Central</title>
+<title>EOS · Panel Central</title>
 <link rel="stylesheet" href="/static/cortex.css?v=cortex4">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
-<meta name="application-name" content="Cortex Labs">
-<meta name="apple-mobile-web-app-title" content="Cortex Labs">
+<meta name="application-name" content="EOS">
+<meta name="apple-mobile-web-app-title" content="EOS">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#6d28d9">
-<meta name="description" content="Cortex Labs · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
+<meta name="description" content="EOS · El cerebro operativo de tu laboratorio · Desarrollado por HHA Group">
 <meta name="author" content="HHA Group">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -89,11 +89,11 @@ body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;font-siz
 <body>
 <div class="header">
   <div style="display:flex;align-items:center;gap:14px;">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs"
+    <img src="/static/icons/icon-192.png?v=cortex4" alt="EOS"
          style="width:46px;height:46px;border-radius:10px;box-shadow:0 4px 14px rgba(167,139,250,0.3);flex-shrink:0;">
     <div>
       <div class="header-logo" style="display:flex;align-items:baseline;gap:8px;">
-        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Cortex Labs</span>
+        <span style="background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">EOS</span>
         <span style="font-size:10px;color:#a78bfa;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:2px 6px;border-radius:4px;">v1.0</span>
       </div>
       <div class="header-sub">by <strong style="color:#cbd5e1">HHA Group</strong> &nbsp;·&nbsp; Espagiria &nbsp;·&nbsp; ANIMUS Lab</div>
@@ -389,7 +389,7 @@ setInterval(loadAll, 60000);
 
 <footer style="padding:18px 20px;border-top:1px solid #334155;margin-top:24px;text-align:center;font-size:11px;color:#64748b;background:#0f172a;">
   <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;">
-    <span style="font-weight:700;background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.3px;font-size:13px;">Cortex Labs</span>
+    <span style="font-weight:700;background:linear-gradient(135deg,#a78bfa,#6d28d9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:0.3px;font-size:13px;">EOS</span>
     <span style="font-size:9px;color:#a78bfa;font-weight:700;letter-spacing:1px;text-transform:uppercase;border:1px solid #4c1d95;padding:1px 5px;border-radius:3px;">v1.0</span>
   </div>
   <div style="margin-top:6px;font-style:italic;color:#94a3b8;">El cerebro operativo de tu laboratorio</div>

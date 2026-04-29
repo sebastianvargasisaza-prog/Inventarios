@@ -71,13 +71,13 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
         HOY · qué pasa ahora
       </div>
-      <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#15803d">Financiero</a> para P&amp;L</div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#15803d">Financiero</a> para P&amp;L</div>
     </div>
     <div class="cx-mod-header__nav">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>

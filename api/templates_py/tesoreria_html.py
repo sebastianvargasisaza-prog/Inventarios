@@ -66,13 +66,13 @@ HTML = r"""
 </head>
 <body>
   <header class="cx-mod-header cx-fade-in">
-    <img src="/static/icons/icon-192.png?v=cortex4" alt="Cortex Labs" class="cx-mod-header__logo">
+    <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#15803d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></svg>
         Tesorería
       </div>
-      <div class="cx-mod-header__sub"><strong>Cortex Labs</strong> &middot; Caja · P&amp;L · Cartera · Pagos · Facturación · Nómina · SIIGO</div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Caja · P&amp;L · Cartera · Pagos · Facturación · Nómina · SIIGO</div>
     </div>
     <div class="cx-mod-header__nav">
       <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
