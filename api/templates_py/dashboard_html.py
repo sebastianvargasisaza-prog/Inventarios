@@ -5257,9 +5257,15 @@ function rowProduccion(p){
     '<div style="background:#e7e5e4;border-radius:6px;height:8px;overflow:hidden;margin-top:6px">' +
       '<div style="background:'+color+';height:100%;width:'+pct+'%;transition:width .3s"></div>' +
     '</div>';
+  // Badge de origen: distingue producciones del calendario auto-sync vs manuales
+  var origenBadge = (p.origen === 'calendar')
+    ? '<span title="Sincronizada desde Google Calendar" style="background:#dbeafe;color:#1e40af;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">📅 cal</span>'
+    : '<span title="Entrada manual (no viene del calendario) — si esta duplicada, click ✖ para borrar" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">✋ man</span>';
+  // Boton borrar (X) inline al lado del nombre — solo admin, valida en backend.
+  var btnBorrar = '<button onclick="event.stopPropagation();ckBorrarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+', '+JSON.stringify(p.fecha_planeada).replace(/"/g,'&quot;')+')" title="Borrar esta producción (admin) — útil para limpiar duplicados/fantasmas" style="background:transparent;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;width:20px;height:20px;font-size:10px;font-weight:700;cursor:pointer;padding:0;line-height:1;margin-left:6px;vertical-align:middle">✖</button>';
   return '<div style="background:#fff;border:1px solid #e7e5e4;border-left:4px solid '+color+';border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="abrirChecklistDetalle('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')">' +
     '<div>' +
-      '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+'</div>' +
+      '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+origenBadge+btnBorrar+'</div>' +
       '<div style="font-size:11px;color:#78716c;margin-top:2px">' + (p.kg||0).toLocaleString('es-CO')+' kg · ' + p.fecha_planeada + '</div>' +
       barraHtml +
     '</div>' +
@@ -5315,6 +5321,19 @@ async function ckBackfill(){
 // Borra y regenera el checklist de una produccion — util cuando se actualizo
 // la formula (lote_size_kg / volumen_unitario_ml) y queremos recalcular las
 // cantidades de envases automaticamente con la nueva info.
+// Borra HARD una produccion programada (admin only — backend valida).
+// Util para limpiar duplicados o fantasmas que aparecen en el horizonte.
+async function ckBorrarProduccion(produccionId, producto, fecha){
+  if(!confirm('¿Borrar la producción "'+producto+'" del '+fecha+'?\\n\\nEsto la elimina DEFINITIVAMENTE junto con su checklist. Solo úsalo para duplicados o fantasmas que NO existen en el calendario.')) return;
+  try {
+    var r = await fetch('/api/programacion/produccion-programada/'+produccionId+'/borrar', {method:'DELETE'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _toast(d.mensaje || 'Borrada', 1);
+    cargarChecklistResumen(window._ckLastDias || 60);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
 async function ckRegenerar(produccionId){
   if(!confirm('Borrar y regenerar el checklist de esta producción?\\n\\nEsto recalcula MPs y envases con la presentación actual del producto. Las correcciones manuales que hayas hecho se pierden.')) return;
   try {

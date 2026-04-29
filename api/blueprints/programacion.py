@@ -4663,6 +4663,7 @@ def checklist_resumen_calendario():
                    COALESCE(NULLIF(pp.cantidad_kg, 0),
                             COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0)) as kg,
                    pp.estado                                         as estado_prod,
+                   COALESCE(pp.origen, 'manual')                     as origen,
                    (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}) as total_items,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
