@@ -236,6 +236,107 @@ def del_formula(producto_nombre):
     conn.commit()
     return jsonify({'message': f'Formula {producto_nombre} eliminada'})
 
+
+@bp.route('/api/formulas/<path:producto_nombre>/imagen', methods=['POST', 'GET', 'DELETE'])
+def producto_imagen(producto_nombre):
+    """Gestiona la URL de imagen de un producto (para mostrar en checklist).
+
+    POST  body: {imagen_url: "https://..."}  → guarda
+    GET                                       → devuelve URL actual
+    DELETE                                    → limpia URL
+
+    Sebastian (28-abr-2026): Permite que el modal del checklist
+    Pre-Produccion muestre la foto del producto (tomada de animuslb.com /
+    Shopify) para que el equipo reconozca cual es visualmente.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'GET':
+        r = c.execute(
+            "SELECT COALESCE(imagen_url,'') FROM formula_headers WHERE producto_nombre=?",
+            (producto_nombre,)
+        ).fetchone()
+        return jsonify({'producto': producto_nombre, 'imagen_url': r[0] if r else ''})
+
+    if request.method == 'DELETE':
+        c.execute(
+            "UPDATE formula_headers SET imagen_url='', imagen_actualizada_at=datetime('now') "
+            "WHERE producto_nombre=?",
+            (producto_nombre,)
+        )
+        conn.commit()
+        return jsonify({'ok': True, 'producto': producto_nombre, 'imagen_url': ''})
+
+    # POST
+    d = request.json or {}
+    url = (d.get('imagen_url') or '').strip()
+    if url and not url.startswith(('http://', 'https://', '/static/')):
+        return jsonify({'error': 'URL invalida (debe empezar con http(s):// o /static/)'}), 400
+    cur = c.execute(
+        "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now') "
+        "WHERE producto_nombre=?",
+        (url, producto_nombre)
+    )
+    if cur.rowcount == 0:
+        return jsonify({'error': f'Producto {producto_nombre} no existe en formula_headers'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'producto': producto_nombre, 'imagen_url': url})
+
+
+@bp.route('/api/formulas/<path:producto_nombre>/imagen-shopify-sync', methods=['POST'])
+def producto_imagen_shopify_sync(producto_nombre):
+    """Auto-sync: busca el producto en Shopify por title match y guarda la URL
+    de la primera imagen como imagen_url en formula_headers.
+
+    Requiere shopify_token + shopify_shop configurados.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        token = c.execute("SELECT valor FROM config WHERE clave='shopify_token'").fetchone()
+        shop = c.execute("SELECT valor FROM config WHERE clave='shopify_shop'").fetchone()
+    except Exception:
+        return jsonify({'error': 'config no disponible'}), 500
+    if not token or not shop:
+        return jsonify({'error': 'Shopify no configurado. Pega URL manualmente.'}), 400
+    import urllib.request, urllib.parse, json as _json
+    base = f"https://{shop[0]}/admin/api/2024-01/products.json"
+    qs = urllib.parse.urlencode({'title': producto_nombre, 'limit': 5})
+    req = urllib.request.Request(
+        f"{base}?{qs}",
+        headers={'X-Shopify-Access-Token': token[0]}
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        data = _json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        return jsonify({'error': f'Shopify API: {e}'}), 502
+    products = data.get('products', [])
+    if not products:
+        return jsonify({'error': f'No encontrado en Shopify: "{producto_nombre}"'}), 404
+    # Primera imagen del primer match
+    p0 = products[0]
+    imgs = p0.get('images', [])
+    if not imgs:
+        return jsonify({'error': f'Producto encontrado pero sin imagenes'}), 404
+    imagen_url = imgs[0].get('src', '')
+    c.execute(
+        "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now') "
+        "WHERE producto_nombre=?",
+        (imagen_url, producto_nombre)
+    )
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'producto': producto_nombre,
+        'imagen_url': imagen_url,
+        'shopify_product_id': p0.get('id'),
+        'shopify_title': p0.get('title'),
+    })
+
 @bp.route('/api/movimientos', methods=['GET', 'POST'])
 def handle_movimientos():
     conn = get_db()

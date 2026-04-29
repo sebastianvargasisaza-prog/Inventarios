@@ -3945,18 +3945,28 @@ def checklist_generar(produccion_id):
 
 @bp.route('/api/programacion/checklist/<int:produccion_id>', methods=['GET'])
 def checklist_get(produccion_id):
-    """Devuelve el checklist completo de una produccion con totales por estado."""
+    """Devuelve el checklist completo de una produccion con totales por estado.
+
+    Sebastian (28-abr-2026): el modal NO debe mostrar items tipo 'mp'
+    (materias primas) — esos ya viven en Planificacion Estrategica con
+    detalle agregado de stock+transito+solicitado-demanda. El checklist
+    Pre-Produccion se enfoca en MEE: envases, tapas, etiquetas, serigrafia,
+    tampografia. Por default, ?include_mps=0 (excluye MPs); pasar
+    ?include_mps=1 para listarlas (uso debug/auditor).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    include_mps = request.args.get('include_mps', '0') == '1'
     conn = get_db(); c = conn.cursor()
-    rows = c.execute("""
+    where_extra = "" if include_mps else " AND item_tipo != 'mp'"
+    rows = c.execute(f"""
         SELECT id, item_tipo, descripcion, cantidad_requerida, unidad, codigo_mp,
                stock_actual, deficit, estado, proveedor, solicitud_numero,
                oc_numero, fecha_solicitud, fecha_eta, fecha_recibido,
                responsable, observaciones, dias_anticipacion, actualizado_at,
                producto_nombre, fecha_planeada
         FROM produccion_checklist
-        WHERE produccion_id=?
+        WHERE produccion_id=?{where_extra}
         ORDER BY
           CASE item_tipo WHEN 'mp' THEN 1
                          WHEN 'envase_primario' THEN 2
@@ -3972,7 +3982,7 @@ def checklist_get(produccion_id):
     cols = [x[0] for x in c.description]
     items = [dict(zip(cols, r)) for r in rows]
 
-    # Totales por estado
+    # Totales por estado (solo de los items mostrados — sin MPs por default)
     totales = {'pendiente': 0, 'verificado_ok': 0, 'solicitado': 0,
                'en_transito': 0, 'recibido': 0, 'listo': 0, 'no_aplica': 0}
     for it in items:
@@ -3982,12 +3992,35 @@ def checklist_get(produccion_id):
     completados = totales['verificado_ok'] + totales['recibido'] + totales['listo']
     porcentaje = round((completados / total_items * 100), 1) if total_items > 0 else 0
 
+    # Imagen del producto (si existe en formula_headers.imagen_url)
+    imagen_url = ''
+    producto_nombre = ''
+    try:
+        if items and items[0].get('producto_nombre'):
+            producto_nombre = items[0]['producto_nombre']
+        else:
+            r = c.execute(
+                "SELECT producto FROM produccion_programada WHERE id=?",
+                (produccion_id,)
+            ).fetchone()
+            producto_nombre = r[0] if r else ''
+        if producto_nombre:
+            r = c.execute(
+                "SELECT COALESCE(imagen_url,'') FROM formula_headers WHERE producto_nombre=?",
+                (producto_nombre,)
+            ).fetchone()
+            imagen_url = r[0] if r else ''
+    except Exception:
+        pass
+
     return jsonify({
         'items': items,
         'totales_por_estado': totales,
         'total_items': total_items,
         'completados': completados,
         'porcentaje_listo': porcentaje,
+        'producto_nombre': producto_nombre,
+        'imagen_url': imagen_url,
     })
 
 

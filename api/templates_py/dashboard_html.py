@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos2">
+<link rel="stylesheet" href="/static/cortex.css?v=eos3">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -4857,7 +4857,7 @@ function _renderProgramacion(d){
             <h3 id="ck-modal-titulo" style="margin:0;color:#1c1917"></h3>
             <div id="ck-modal-sub" style="font-size:12px;color:#78716c;margin-top:4px"></div>
           </div>
-          <button onclick="document.getElementById('ck-modal').style.display='none'" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:18px">×</button>
+          <button onclick="document.getElementById('ck-modal').style.display='none'" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700;line-height:1;" title="Cerrar">&#10005;</button>
         </div>
         <div id="ck-modal-progress" style="margin-bottom:14px"></div>
         <div id="ck-modal-items"></div>
@@ -4993,6 +4993,36 @@ async function abrirChecklistDetalle(produccionId, producto){
     if(!r.ok){ document.getElementById('ck-modal-items').innerHTML='Error: '+(d.error||''); return; }
     var prim = (d.items||[])[0]||{};
     document.getElementById('ck-modal-sub').textContent = (prim.cantidad_kg||0).toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-');
+
+    // Imagen del producto + acciones (sync Shopify, pegar URL manual)
+    var imgWrap = document.getElementById('ck-modal-imagen');
+    if(!imgWrap){
+      imgWrap = document.createElement('div');
+      imgWrap.id = 'ck-modal-imagen';
+      imgWrap.style.cssText = 'margin-bottom:14px;display:flex;gap:14px;align-items:flex-start;background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:12px';
+      var prog = document.getElementById('ck-modal-progress');
+      prog.parentNode.insertBefore(imgWrap, prog);
+    }
+    var prodNombre = d.producto_nombre || producto;
+    var imgHtml;
+    if(d.imagen_url){
+      imgHtml = '<img src="'+_escHTML(d.imagen_url)+'" alt="'+_escHTML(prodNombre)+'" '+
+                'style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e7e5e4;background:#fff" '+
+                'data-fallback="1" onerror="this.style.display=\\'none\\';if(this.nextElementSibling)this.nextElementSibling.style.display=\\'flex\\'">' +
+                '<div style="display:none;width:120px;height:120px;background:#f5f5f4;border-radius:8px;align-items:center;justify-content:center;color:#a8a29e;font-size:11px;text-align:center;padding:10px">Imagen no disponible</div>';
+    } else {
+      imgHtml = '<div style="width:120px;height:120px;background:#f5f5f4;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:11px;text-align:center;padding:10px">Sin foto</div>';
+    }
+    imgWrap.innerHTML = imgHtml +
+      '<div style="flex:1">' +
+        '<div style="font-weight:700;font-size:15px;color:#1c1917">'+_escHTML(prodNombre)+'</div>' +
+        '<div style="font-size:11px;color:#78716c;margin-top:2px">'+(prim.cantidad_kg||0).toLocaleString('es-CO')+' kg · '+(prim.fecha_planeada||'-')+'</div>' +
+        '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button onclick="ckImagenPegarURL(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">📎 Pegar URL</button>' +
+          '<button onclick="ckImagenShopify(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#10b981;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🛍️ Sync Shopify</button>' +
+          (d.imagen_url ? '<button onclick="ckImagenLimpiar(&quot;'+_escHTML(prodNombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">🗑️ Quitar</button>' : '') +
+        '</div>' +
+      '</div>';
     var pct = d.porcentaje_listo||0;
     var color = pct>=90?'#15803d':pct>=50?'#f59e0b':'#dc2626';
     document.getElementById('ck-modal-progress').innerHTML =
@@ -5035,7 +5065,45 @@ async function abrirChecklistDetalle(produccionId, producto){
     });
     html += '</tbody></table>';
     document.getElementById('ck-modal-items').innerHTML = html;
+    // Guardar produccionId actual para refrescar despues de cambiar imagen
+    window._ckCurrentProduccionId = produccionId;
+    window._ckCurrentProducto = producto;
   } catch(e){ document.getElementById('ck-modal-items').innerHTML='Error: '+e.message; }
+}
+
+// Pegar URL de imagen manualmente (Sebastian la copia desde animuslb.com)
+async function ckImagenPegarURL(producto){
+  var url = prompt('URL de imagen para "'+producto+'" (ej. https://animuslb.com/cdn/...):', '');
+  if(url===null) return;
+  url = (url||'').trim();
+  if(!url){ alert('URL vacia.'); return; }
+  try {
+    var r = await fetch('/api/formulas/'+encodeURIComponent(producto)+'/imagen', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({imagen_url: url})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function ckImagenShopify(producto){
+  try {
+    var r = await fetch('/api/formulas/'+encodeURIComponent(producto)+'/imagen-shopify-sync', {method:'POST'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _toast('Imagen sincronizada de Shopify', 1);
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function ckImagenLimpiar(producto){
+  if(!confirm('Quitar imagen del producto "'+producto+'"?')) return;
+  try {
+    await fetch('/api/formulas/'+encodeURIComponent(producto)+'/imagen', {method:'DELETE'});
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
+  } catch(e){ alert('Error: '+e.message); }
 }
 
 async function ckSolicitar(itemId){

@@ -1799,6 +1799,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_at TEXT""",
         """ALTER TABLE solicitudes_compra_items ADD COLUMN actualizado_por TEXT DEFAULT ''""",
     ]),
+    (44, "formula_headers: imagen_url para mostrar foto del producto en checklist Pre-Produccion", [
+        # Sebastian (28-abr-2026): el modal del checklist debe mostrar la
+        # foto del producto (de animuslb.com / Shopify) para que el equipo
+        # sepa visualmente que producto es y reconozca etiquetas/tapa/
+        # serigrafia. Se puede llenar manual o auto-sync de Shopify.
+        """ALTER TABLE formula_headers ADD COLUMN imagen_url TEXT DEFAULT ''""",
+        """ALTER TABLE formula_headers ADD COLUMN imagen_actualizada_at TEXT""",
+    ]),
     (42, "produccion_checklist: pre-flight checklist por produccion programada (MPs + envases + etiquetas + serigrafia/tampografia)", [
         # Master de plantillas: cada producto puede tener items default
         # configurables. Si un producto no tiene plantilla, usa la generica.
