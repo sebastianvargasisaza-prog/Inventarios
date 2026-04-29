@@ -6851,6 +6851,299 @@ def _slug_codigo(nombre, presentacion):
     return base or 'MEE-X'
 
 
+@bp.route("/api/admin/mee-fugas-check", methods=["GET"])
+def admin_mee_fugas_check():
+    """Audita el catalogo maestro_mee buscando "fugas" tipicas tras un
+    import: codigos duplicados (case-insensitive o trim), stocks NULL,
+    descripciones vacias, items con stock negativo, items archivados
+    que aun aparecen en producciones programadas, y discrepancia entre
+    stock_actual y la suma de movimientos_mee.
+
+    Sebastian (29-abr-2026): "verifica que no tengamos fugas" tras
+    cargar INVENTARIO ENVASE.xlsx.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    fugas = {}
+
+    # 1) Resumen general por categoria (lo que se importo + el resto)
+    try:
+        cats = c.execute("""
+            SELECT COALESCE(categoria,'(sin)'),
+                   COUNT(*) FILTER (WHERE COALESCE(estado,'Activo')='Activo'),
+                   COUNT(*) FILTER (WHERE estado='Archivado'),
+                   COALESCE(SUM(stock_actual) FILTER (WHERE COALESCE(estado,'Activo')='Activo'),0)
+            FROM maestro_mee
+            GROUP BY COALESCE(categoria,'(sin)')
+            ORDER BY 2 DESC
+        """).fetchall()
+        fugas['resumen_por_categoria'] = [
+            {'categoria': r[0], 'activos': r[1], 'archivados': r[2], 'stock_total': r[3]}
+            for r in cats
+        ]
+    except Exception as e:
+        fugas['resumen_por_categoria'] = {'error': str(e)}
+
+    # 2) Codigos duplicados (case-insensitive o con trim diferente)
+    try:
+        dups = c.execute("""
+            SELECT LOWER(TRIM(codigo)) as k, COUNT(*) as n,
+                   GROUP_CONCAT(codigo, ' | ') as variantes
+            FROM maestro_mee
+            GROUP BY LOWER(TRIM(codigo))
+            HAVING n > 1
+        """).fetchall()
+        fugas['codigos_duplicados'] = [
+            {'clave': r[0], 'count': r[1], 'variantes': r[2]} for r in dups
+        ]
+    except Exception as e:
+        fugas['codigos_duplicados'] = {'error': str(e)}
+
+    # 3) Items con stock NULL o negativo
+    try:
+        rows = c.execute("""
+            SELECT codigo, descripcion, stock_actual, estado
+            FROM maestro_mee
+            WHERE stock_actual IS NULL OR stock_actual < 0
+            LIMIT 50
+        """).fetchall()
+        fugas['stock_invalido'] = [
+            {'codigo': r[0], 'descripcion': r[1], 'stock': r[2], 'estado': r[3]}
+            for r in rows
+        ]
+    except Exception as e:
+        fugas['stock_invalido'] = {'error': str(e)}
+
+    # 4) Descripciones vacias (codigo huerfano sin nombre)
+    try:
+        rows = c.execute("""
+            SELECT codigo, stock_actual, categoria
+            FROM maestro_mee
+            WHERE (descripcion IS NULL OR TRIM(descripcion)='')
+              AND COALESCE(estado,'Activo')='Activo'
+            LIMIT 50
+        """).fetchall()
+        fugas['sin_descripcion'] = [
+            {'codigo': r[0], 'stock': r[1], 'categoria': r[2]} for r in rows
+        ]
+    except Exception as e:
+        fugas['sin_descripcion'] = {'error': str(e)}
+
+    # 5) Items archivados que aparecen en checklists activos
+    try:
+        rows = c.execute("""
+            SELECT pc.id, pc.descripcion, pc.mee_codigo_asignado,
+                   m.estado, m.descripcion as mee_desc
+            FROM produccion_checklist pc
+            JOIN maestro_mee m ON m.codigo = pc.mee_codigo_asignado
+            WHERE m.estado='Archivado'
+              AND pc.estado IN ('pendiente','solicitado','en_transito')
+            LIMIT 30
+        """).fetchall()
+        fugas['archivados_en_checklist'] = [
+            {'item_id': r[0], 'item_desc': r[1], 'mee_codigo': r[2],
+             'mee_estado': r[3], 'mee_desc': r[4]}
+            for r in rows
+        ]
+    except Exception as e:
+        fugas['archivados_en_checklist'] = {'error': str(e)}
+
+    # 6) Reconciliacion stock vs movimientos (top 10 con mayor desfase)
+    try:
+        rows = c.execute("""
+            SELECT m.codigo, m.descripcion, COALESCE(m.stock_actual,0) as stock_actual,
+                   COALESCE((
+                     SELECT SUM(CASE
+                       WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                       WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                       ELSE 0 END)
+                     FROM movimientos_mee mm WHERE mm.mee_codigo=m.codigo
+                   ),0) as stock_calc
+            FROM maestro_mee m
+            WHERE COALESCE(m.estado,'Activo')='Activo'
+              AND m.categoria IN ('Envases','Goteros','Tapas')
+        """).fetchall()
+        desfases = []
+        for r in rows:
+            sa, sc = float(r[2] or 0), float(r[3] or 0)
+            if abs(sa - sc) > 0.5:
+                desfases.append({
+                    'codigo': r[0], 'descripcion': r[1],
+                    'stock_actual': sa, 'stock_movimientos': sc,
+                    'diff': round(sa - sc, 2),
+                })
+        desfases.sort(key=lambda x: abs(x['diff']), reverse=True)
+        fugas['reconciliacion_stock'] = {
+            'count_con_desfase': len(desfases),
+            'top_10': desfases[:10],
+        }
+    except Exception as e:
+        fugas['reconciliacion_stock'] = {'error': str(e)}
+
+    # 7) Movimientos del import reciente (audit trail del Excel)
+    try:
+        rows = c.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(cantidad),0)
+            FROM movimientos_mee
+            WHERE observaciones LIKE '%INVENTARIO ENVASE%'
+              AND fecha >= datetime('now','-2 day')
+        """).fetchone()
+        fugas['movimientos_import_2d'] = {
+            'count': rows[0] if rows else 0,
+            'cantidad_total': rows[1] if rows else 0,
+        }
+    except Exception as e:
+        fugas['movimientos_import_2d'] = {'error': str(e)}
+
+    # Score: fugas detectadas
+    n_dup = len(fugas.get('codigos_duplicados', []) or [])
+    n_neg = len(fugas.get('stock_invalido', []) or [])
+    n_sd  = len(fugas.get('sin_descripcion', []) or [])
+    n_arc = len(fugas.get('archivados_en_checklist', []) or [])
+    n_rec = (fugas.get('reconciliacion_stock', {}) or {}).get('count_con_desfase', 0)
+    fugas['_summary'] = {
+        'codigos_duplicados': n_dup,
+        'stock_invalido': n_neg,
+        'sin_descripcion': n_sd,
+        'archivados_en_uso': n_arc,
+        'desfase_stock_movimientos': n_rec,
+        'todo_ok': (n_dup == 0 and n_neg == 0 and n_sd == 0 and n_arc == 0),
+    }
+    conn.close()
+    return jsonify(fugas)
+
+
+@bp.route("/admin/mee-fugas-check", methods=["GET"])
+def admin_mee_fugas_check_page():
+    """Pagina HTML para ver el resultado de la auditoria post-import."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>MEE — verificación de fugas</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
+      h1{font-size:20px}
+      h2{font-size:15px;color:#0f172a;margin-top:22px;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
+      .ok{background:#dcfce7;color:#166534;padding:10px 14px;border-radius:8px;font-weight:700;border-left:4px solid #16a34a}
+      .warn{background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-weight:700;border-left:4px solid #f59e0b}
+      .err{background:#fee2e2;color:#991b1b;padding:10px 14px;border-radius:8px;font-weight:700;border-left:4px solid #dc2626}
+      table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:6px 0}
+      th{background:#f8fafc;color:#475569;text-align:left;padding:8px}
+      td{padding:8px;border-top:1px solid #f1f5f9}
+      .small{font-size:11px;color:#94a3b8}
+      .empty{color:#94a3b8;font-style:italic;padding:8px 0}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px;color:#0891b2">&larr; admin</a>
+    <h1>🔍 MEE — verificación de fugas tras import</h1>
+    <div id="content">Cargando...</div>
+    <script>
+    function tablaFromArr(arr, cols, emptyMsg){
+      if(!arr || !arr.length) return '<div class="empty">'+emptyMsg+'</div>';
+      var head = '<tr>' + cols.map(function(c){return '<th>'+c.label+'</th>';}).join('') + '</tr>';
+      var rows = arr.map(function(r){
+        return '<tr>' + cols.map(function(c){
+          var v = r[c.key];
+          if(typeof v === 'number') return '<td style="font-family:monospace">'+(v.toLocaleString('es-CO'))+'</td>';
+          return '<td>'+(v==null?'':String(v))+'</td>';
+        }).join('') + '</tr>';
+      }).join('');
+      return '<table><thead>'+head+'</thead><tbody>'+rows+'</tbody></table>';
+    }
+    async function cargar(){
+      var r = await fetch('/api/admin/mee-fugas-check');
+      var d = await r.json();
+      var s = d._summary || {};
+      var todoOk = s.todo_ok && (s.desfase_stock_movimientos===0);
+      var head = todoOk
+        ? '<div class="ok">✅ Sin fugas detectadas. Catálogo limpio.</div>'
+        : ('<div class="' + (s.codigos_duplicados+s.stock_invalido+s.archivados_en_uso > 0 ? 'err' : 'warn') + '">' +
+           '⚠️ Hallazgos: ' +
+           [
+             s.codigos_duplicados>0 ? s.codigos_duplicados+' códigos duplicados' : '',
+             s.stock_invalido>0 ? s.stock_invalido+' stock inválido' : '',
+             s.sin_descripcion>0 ? s.sin_descripcion+' sin descripción' : '',
+             s.archivados_en_uso>0 ? s.archivados_en_uso+' archivados en uso' : '',
+             s.desfase_stock_movimientos>0 ? s.desfase_stock_movimientos+' con desfase stock vs movimientos' : '',
+           ].filter(Boolean).join(' · ') +
+           '</div>');
+
+      var html = head;
+
+      // Resumen por categoria
+      html += '<h2>📊 Catálogo por categoría</h2>';
+      html += tablaFromArr(d.resumen_por_categoria, [
+        {key:'categoria', label:'Categoría'},
+        {key:'activos', label:'Activos'},
+        {key:'archivados', label:'Archivados'},
+        {key:'stock_total', label:'Stock total (und)'},
+      ], 'Sin datos');
+
+      // Movimientos del import
+      var mi = d.movimientos_import_2d || {};
+      html += '<h2>📥 Auditoría del último import (últimos 2 días)</h2>';
+      html += '<div style="font-size:13px"><b>'+(mi.count||0)+'</b> movimientos registrados con etiqueta "INVENTARIO ENVASE" · cantidad acumulada: <b>'+(mi.cantidad_total||0).toLocaleString('es-CO')+'</b></div>';
+
+      // Duplicados
+      html += '<h2>🔁 Códigos duplicados</h2>';
+      html += tablaFromArr(d.codigos_duplicados, [
+        {key:'clave', label:'Clave normalizada'},
+        {key:'count', label:'Veces'},
+        {key:'variantes', label:'Variantes'},
+      ], '✅ Sin duplicados');
+
+      // Stock inválido
+      html += '<h2>⚠️ Stock NULL o negativo</h2>';
+      html += tablaFromArr(d.stock_invalido, [
+        {key:'codigo', label:'Código'},
+        {key:'descripcion', label:'Descripción'},
+        {key:'stock', label:'Stock'},
+        {key:'estado', label:'Estado'},
+      ], '✅ Todos los stocks válidos');
+
+      // Sin descripción
+      html += '<h2>❓ Items activos sin descripción</h2>';
+      html += tablaFromArr(d.sin_descripcion, [
+        {key:'codigo', label:'Código'},
+        {key:'stock', label:'Stock'},
+        {key:'categoria', label:'Categoría'},
+      ], '✅ Todos tienen descripción');
+
+      // Archivados en uso
+      html += '<h2>🛑 Items archivados todavía referenciados en checklists activos</h2>';
+      html += tablaFromArr(d.archivados_en_checklist, [
+        {key:'item_id', label:'Item'},
+        {key:'item_desc', label:'Descripción del item'},
+        {key:'mee_codigo', label:'MEE código'},
+        {key:'mee_desc', label:'MEE descripción'},
+        {key:'mee_estado', label:'Estado MEE'},
+      ], '✅ Ningún archivado referenciado');
+
+      // Reconciliacion
+      var rec = d.reconciliacion_stock || {};
+      html += '<h2>📐 Reconciliación: stock_actual vs SUM(movimientos)</h2>';
+      html += '<div style="font-size:13px;margin-bottom:6px"><b>'+(rec.count_con_desfase||0)+'</b> items con desfase mayor a 0.5 und (top 10):</div>';
+      html += tablaFromArr(rec.top_10 || [], [
+        {key:'codigo', label:'Código'},
+        {key:'descripcion', label:'Descripción'},
+        {key:'stock_actual', label:'stock_actual'},
+        {key:'stock_movimientos', label:'SUM movs'},
+        {key:'diff', label:'Δ'},
+      ], '✅ Sin desfases');
+      html += '<div class="small">El desfase es esperable cuando se importa stock como override (no via movimientos), pero no debe crecer descontrolado. La columna Δ positiva = stock_actual > suma de movimientos (override del Excel).</div>';
+
+      document.getElementById('content').innerHTML = html;
+    }
+    cargar();
+    </script>
+    </body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/admin/inventario-envase-import", methods=["GET"])
 def admin_inventario_envase_import_page():
     """Página simple para que Sebastian suba el Excel INVENTARIO ENVASE."""
