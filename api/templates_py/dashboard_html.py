@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos7">
+<link rel="stylesheet" href="/static/cortex.css?v=eos8">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -5005,25 +5005,28 @@ async function abrirChecklistDetalle(produccionId, producto){
     }
     var prodNombre = d.producto_nombre || producto;
     var meta = d.producto_meta || {};
+    // Proxy server-side para evitar hotlink/CORS de Shopify CDN
+    var proxyBase = '/api/imagen-producto/' + encodeURIComponent(prodNombre);
     var imgHtml;
     if(d.imagen_url){
-      imgHtml = '<img src="'+_escHTML(d.imagen_url)+'" alt="'+_escHTML(prodNombre)+'" '+
-                'style="width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e7e5e4;background:#fff" '+
-                'data-fallback="1" onerror="this.style.display=\\'none\\';if(this.nextElementSibling)this.nextElementSibling.style.display=\\'flex\\'">' +
-                '<div style="display:none;width:120px;height:120px;background:#f5f5f4;border-radius:8px;align-items:center;justify-content:center;color:#a8a29e;font-size:11px;text-align:center;padding:10px">Imagen no disponible</div>';
+      imgHtml = '<img src="'+proxyBase+'?t='+Date.now()+'" alt="'+_escHTML(prodNombre)+'" '+
+                'style="width:200px;height:200px;object-fit:cover;border-radius:10px;border:1px solid #e7e5e4;background:#fff;flex-shrink:0" '+
+                'onerror="this.style.display=\\'none\\';if(this.nextElementSibling)this.nextElementSibling.style.display=\\'flex\\'">' +
+                '<div style="display:none;width:200px;height:200px;background:#f5f5f4;border-radius:10px;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;text-align:center;padding:12px;flex-shrink:0">Imagen no disponible</div>';
     } else {
-      imgHtml = '<div style="width:120px;height:120px;background:#f5f5f4;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:11px;text-align:center;padding:10px">Sin foto</div>';
+      imgHtml = '<div style="width:200px;height:200px;background:#f5f5f4;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;text-align:center;padding:12px;flex-shrink:0">Sin foto</div>';
     }
-    // Galería de imagenes extra (frontal/posterior/lateral)
+    // Galería de imagenes extra (frontal/posterior/lateral) — usa proxy
     var galeriaHtml = '';
     var imgsExtra = (meta.imagenes_extra || []).filter(function(x,i){ return i>0 && x && x.src; });
     if(imgsExtra.length){
-      galeriaHtml = '<div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">' +
-        imgsExtra.slice(0,5).map(function(im){
-          var alt = im.alt || ('Vista '+(im.position||''));
-          return '<img src="'+_escHTML(im.src)+'" alt="'+_escHTML(alt)+'" title="'+_escHTML(alt)+'" '+
-                 'style="width:42px;height:42px;object-fit:cover;border-radius:5px;border:1px solid #e7e5e4;cursor:pointer" '+
-                 'onclick="window.open(this.src)">';
+      galeriaHtml = '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' +
+        imgsExtra.slice(0,6).map(function(im, i){
+          var proxyUrl = proxyBase + '?idx=' + (i+1) + '&t=' + Date.now();
+          var alt = im.alt || ('Vista '+(im.position||(i+2)));
+          return '<img src="'+proxyUrl+'" alt="'+_escHTML(alt)+'" title="'+_escHTML(alt)+'" '+
+                 'style="width:54px;height:54px;object-fit:cover;border-radius:6px;border:1px solid #e7e5e4;cursor:pointer" '+
+                 'onerror="this.style.opacity=0.3">';
         }).join('') +
         '</div>';
     }

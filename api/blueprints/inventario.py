@@ -425,6 +425,88 @@ def producto_imagen_shopify_sync(producto_nombre):
     return jsonify(res)
 
 
+# ─── Proxy de imagenes Shopify ────────────────────────────────────────
+# Las imagenes guardadas vienen de cdn.shopify.com. Algunos browsers / setups
+# bloquean hotlink directo (CORS / referer policy / lazy network). Servimos
+# las imagenes via proxy desde nuestro propio dominio para evitar problemas.
+# Cache simple en memoria: dict {url -> (content_bytes, mime, fetched_at)}
+_IMG_CACHE = {}
+_IMG_CACHE_MAX = 200      # max entradas (LRU implicito)
+_IMG_CACHE_TTL = 3600 * 6  # 6 horas
+
+
+def _fetch_imagen_remota(url, timeout=10):
+    """Descarga imagen de URL remota con cache simple. Devuelve (bytes, mime)
+    o (None, None) si falla.
+    """
+    import time as _t
+    now = _t.time()
+    hit = _IMG_CACHE.get(url)
+    if hit and (now - hit[2]) < _IMG_CACHE_TTL:
+        return hit[0], hit[1]
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'EOS-Holding/1.0 (image-proxy)',
+            'Accept': 'image/*,*/*;q=0.8',
+        })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = resp.read()
+            mime = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
+    except Exception:
+        return None, None
+    # LRU eviction simple
+    if len(_IMG_CACHE) >= _IMG_CACHE_MAX:
+        oldest = min(_IMG_CACHE.items(), key=lambda kv: kv[1][2])
+        _IMG_CACHE.pop(oldest[0], None)
+    _IMG_CACHE[url] = (data, mime, now)
+    return data, mime
+
+
+@bp.route('/api/imagen-producto/<path:producto_nombre>', methods=['GET'])
+def imagen_producto_proxy(producto_nombre):
+    """Sirve la imagen principal del producto via proxy.
+
+    Resuelve el problema de hotlink/CORS al mostrar imagenes de Shopify CDN
+    desde nuestro dominio. El navegador hace request a /api/imagen-producto/
+    <nombre> en vez de cdn.shopify.com.
+
+    Querystring opcional: ?idx=N para servir la imagen N de imagenes_extra.
+    """
+    if 'compras_user' not in session:
+        return ('Unauthorized', 401)
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COALESCE(imagen_url,''), COALESCE(imagenes_extra_json,'[]') "
+        "FROM formula_headers WHERE producto_nombre=?",
+        (producto_nombre,)
+    ).fetchone()
+    if not row:
+        return ('Not Found', 404)
+    imagen_url, imgs_json = row[0], row[1]
+
+    idx = request.args.get('idx')
+    if idx is not None:
+        import json as _json
+        try:
+            imgs = _json.loads(imgs_json or '[]')
+            n = int(idx)
+            if 0 <= n < len(imgs):
+                imagen_url = imgs[n].get('src', '') or imagen_url
+        except Exception:
+            pass
+
+    if not imagen_url:
+        return ('No image', 404)
+    data, mime = _fetch_imagen_remota(imagen_url, timeout=10)
+    if data is None:
+        return ('Upstream fetch failed', 502)
+    resp = Response(data, mimetype=mime)
+    # Cache navegador: 1h. Si re-syncamos en BD, el bumpeo de URL cambia el cache key
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
 @bp.route('/api/formulas/sync-shopify-all', methods=['POST'])
 def sync_shopify_all():
     """Sincroniza TODOS los productos pendientes en background. No bloquea.
