@@ -2586,16 +2586,19 @@ def get_pagos_oc(numero_oc):
 
 @bp.route('/api/compras/pagos', methods=['GET'])
 def get_pagos():
-    """Return all paid OCs with payment metadata (no image data)."""
+    """Return all paid OCs with payment metadata (no image data).
+
+    Excluye OCs de influencers/CC — esos pagos viven en /marketing.
+    Reglas de exclusion (cualquiera dispara el filtro):
+      1. categoria es 'Influencer/Marketing Digital' o 'Cuenta de Cobro'
+      2. existe row en pagos_influencers para el numero_oc (Sebastian
+         creo OCs de influencers con categoria='MP' por error: la lista
+         de pagos las mostraba mezcladas con MPs reales)
+      3. solicitudes_compra.influencer_id NOT NULL para esa OC
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); cur = conn.cursor()
-    # Antes: solo devolvia valor_total (total de la OC). En pagos parciales
-    # el frontend mostraba el total entero, no lo realmente pagado. Ahora
-    # agregamos:
-    #   - monto: SUMA real de pagos en pagos_oc (source-of-truth)
-    #   - saldo_pendiente: valor_total - monto (lo que falta pagar)
-    #   - estado actual (Pagada / Parcial) para badge UX
     cur.execute("""
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total,
                oc.medio_pago, oc.fecha_pago, oc.pagado_por, oc.estado,
@@ -2608,6 +2611,14 @@ def get_pagos():
                  as saldo_pendiente
         FROM ordenes_compra oc
         WHERE oc.estado IN ('Pagada','Parcial')
+          AND oc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+          AND NOT EXISTS (
+              SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc = oc.numero_oc
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM solicitudes_compra sc
+              WHERE sc.numero_oc = oc.numero_oc AND sc.influencer_id IS NOT NULL
+          )
         ORDER BY oc.fecha_pago DESC
         LIMIT 500
     """)
@@ -2682,40 +2693,19 @@ def get_por_pagar():
         for row in cur.fetchall()
     ]
 
-    # FIX Catalina: OCs en proceso (no llegan aun a "pagar" porque no han
-    # sido autorizadas o recibidas) tambien deben verse aqui para seguimiento.
-    # Antes quedaban invisibles entre que se creaban y se autorizaban.
-    # Excluimos:
-    #   - OCs ya capturadas en bloque 'servicios' arriba (Aprobada/Autorizada
-    #     con categoria de pago directo)
-    #   - OCs de Influencer/Marketing Digital y Cuenta de Cobro
-    #     — esas viven en /marketing (Catalina NO las gestiona)
-    cur.execute("""
-        SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
-               oc.estado, oc.observaciones, oc.fecha as fecha_recepcion,
-               COALESCE(p.condiciones_pago, '') as condiciones_pago,
-               oc.creado_por
-        FROM ordenes_compra oc
-        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
-        WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada')
-          AND NOT (oc.estado IN ('Aprobada','Autorizada')
-                   AND oc.categoria IN ({0}))
-          AND oc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')
-        ORDER BY oc.fecha DESC
-    """.format(','.join('?' for _ in CATEGORIAS_PAGO_DIRECTO)), CATEGORIAS_PAGO_DIRECTO)
-    cols = [d[0] for d in cur.description]
-    en_proceso = [
-        {**dict(zip(cols, row)), 'pago_directo': False, 'tipo': 'En proceso'}
-        for row in cur.fetchall()
-    ]
-
-    todos = fisicas + servicios + en_proceso
+    # NOTA 28-abr-2026 (sesion #2 Sebastian): retiramos la seccion
+    # "en_proceso" de Por Pagar. Las OCs en Borrador/Revisada/Pendiente/
+    # Aprobada NO son "pendiente de pago" todavia — estan en proceso de
+    # creacion/autorizacion y se ven en Dashboard y otras pestañas.
+    # Por Pagar ahora muestra SOLO lo que esta listo para pagar:
+    #   - Mercancia recibida (Recibida/Parcial)
+    #   - Servicios autorizados (Aprobada/Autorizada con categoria de pago directo)
+    todos = fisicas + servicios
     todos.sort(key=lambda x: x.get('fecha_recepcion') or x.get('fecha') or '', reverse=True)
 
     total_valor = sum(item.get('valor_total', 0) or 0 for item in todos)
     total_servicios = sum(item['valor_total'] or 0 for item in servicios)
     total_fisicas = sum(item['valor_total'] or 0 for item in fisicas)
-    total_proceso = sum(item['valor_total'] or 0 for item in en_proceso)
 
     return jsonify({
         'items': todos,
@@ -2729,10 +2719,6 @@ def get_por_pagar():
             'mercancia_recibida': {
                 'count': len(fisicas),
                 'valor': round(total_fisicas, 2),
-            },
-            'en_proceso': {
-                'count': len(en_proceso),
-                'valor': round(total_proceso, 2),
             },
         }
     })
@@ -2980,6 +2966,7 @@ def consolidado_por_proveedor():
             o.valor_total,
             o.categoria,
             o.observaciones,
+            i.id,
             i.codigo_mp,
             i.nombre_mp,
             i.cantidad_g,
@@ -2988,7 +2975,9 @@ def consolidado_por_proveedor():
             pv.nit,
             pv.contacto,
             pv.telefono,
-            pv.email
+            pv.email,
+            COALESCE(o.con_iva, 0) AS con_iva,
+            COALESCE(o.valor_sin_iva, 0) AS valor_sin_iva
         FROM ordenes_compra o
         LEFT JOIN ordenes_compra_items i ON o.numero_oc = i.numero_oc
         LEFT JOIN proveedores pv ON LOWER(TRIM(o.proveedor)) = LOWER(TRIM(pv.nombre))
@@ -3003,8 +2992,9 @@ def consolidado_por_proveedor():
 
     for row in rows:
         (prov, oc, estado, fecha, valor_total_oc, cat, obs,
-         cod_mp, nom_mp, cant, precio_u, subtotal,
-         nit, contacto, telefono, email) = row
+         item_id, cod_mp, nom_mp, cant, precio_u, subtotal,
+         nit, contacto, telefono, email,
+         con_iva, valor_sin_iva) = row
         prov = prov or 'Sin proveedor'
 
         if prov not in proveedores:
@@ -3026,7 +3016,7 @@ def consolidado_por_proveedor():
         if not p['telefono'] and telefono: p['telefono'] = telefono
         if not p['email'] and email: p['email'] = email
 
-        # Registrar OC (incluye observaciones para fallback)
+        # Registrar OC (incluye observaciones, con_iva, items_raw para edicion)
         if oc and oc not in p['ocs']:
             p['ocs'][oc] = {
                 'numero_oc': oc,
@@ -3035,10 +3025,24 @@ def consolidado_por_proveedor():
                 'valor_total': valor_total_oc or 0,
                 'categoria': cat or '',
                 'observaciones': obs or '',
+                'con_iva': int(con_iva or 0),
+                'valor_sin_iva': float(valor_sin_iva or 0),
+                'items_raw': [],   # items individuales por OC para modo editar
             }
             p['valor_total'] += valor_total_oc or 0
 
-        # Consolidar item por codigo_mp
+        # Items individuales (para modo editar) por OC
+        if oc and item_id is not None:
+            p['ocs'][oc]['items_raw'].append({
+                'id': item_id,
+                'codigo_mp': cod_mp or '',
+                'nombre_mp': nom_mp or cod_mp or '',
+                'cantidad_g': cant or 0,
+                'precio_unitario': precio_u or 0,
+                'subtotal': subtotal or 0,
+            })
+
+        # Consolidar item por codigo_mp (modo lectura)
         if cod_mp:
             if cod_mp not in p['items']:
                 p['items'][cod_mp] = {

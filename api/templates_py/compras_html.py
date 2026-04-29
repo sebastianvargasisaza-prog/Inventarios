@@ -3734,7 +3734,12 @@ async function loadConsolidado(){
   }
 }
 
+// Cache global del modo edit por idx de proveedor en el consolidado.
+// _consolEditMode[idx] = true significa que el render usa modo edit.
+var _consolEditMode = {};
+
 function renderConsolCard(p, idx){
+  if (_consolEditMode[idx]) return renderConsolCardEdit(p, idx);
   var estadoColors = {'Borrador':'#94a3b8','Revisada':'#f59e0b','Autorizada':'#22c55e'};
 
   // Contenido principal: ítems si los hay, OCs con observaciones si no
@@ -3788,8 +3793,9 @@ function renderConsolCard(p, idx){
 
   var ocsHtml = p.ocs.map(function(o){
     var col = estadoColors[o.estado] || '#94a3b8';
+    var ivaTag = o.con_iva ? ' <span style="color:#0891b2;font-weight:700;font-size:10px;">+IVA</span>' : '';
     return '<span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;margin-right:4px;">'
-      +o.numero_oc+' <span style="color:'+col+';">'+o.estado+'</span></span>';
+      +o.numero_oc+' <span style="color:'+col+';">'+o.estado+'</span>'+ivaTag+'</span>';
   }).join('');
 
   var totalFmt = p.valor_total > 0 ? '$'+Number(p.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0}) : '--';
@@ -3812,7 +3818,9 @@ function renderConsolCard(p, idx){
           : '')
         +'<div style="margin-top:6px;">'+ocsHtml+'</div>'
       +'</div>'
-      +'<div style="display:flex;gap:8px;flex-shrink:0;">'
+      +'<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">'
+        +'<button class="btn" data-consol-idx="'+idx+'" onclick="toggleConsolEdit(parseInt(this.dataset.consolIdx))"'
+          +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x270F;&#xFE0F; Editar</button>'
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'
         +'<button class="btn bp" data-print-idx="'+idx+'" onclick="imprimirPedido(parseInt(this.dataset.printIdx))"'
@@ -3821,6 +3829,175 @@ function renderConsolCard(p, idx){
     +'</div>'
     +'<div style="padding:12px 18px;">'+contenidoHtml+'</div>'
   +'</div>';
+}
+
+// Modo EDIT: items individuales por OC con inputs editables, IVA toggle por OC,
+// observaciones editables, total recalculado en vivo. "Guardar" persiste todo
+// con los endpoints PATCH existentes.
+function renderConsolCardEdit(p, idx){
+  var pid = 'consol-edit-'+idx;
+  var ocsHtml = (p.ocs||[]).map(function(o, oi){
+    var ocId = pid+'-oc-'+oi;
+    var itemsRows = (o.items_raw||[]).map(function(it, ii){
+      var rid = ocId+'-it-'+ii;
+      return '<tr data-item-id="'+it.id+'" data-row-id="'+rid+'">'
+        +'<td style="padding:6px 8px;font-size:12px;color:#1e293b;">'+escConH(it.nombre_mp||it.codigo_mp||'?')+'</td>'
+        +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="'+(it.cantidad_g||0)+'" '
+          +'data-field="cantidad_g" oninput="recalcConsolOCFromEl(this)" '
+          +'style="width:90px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
+        +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="'+(it.precio_unitario||0)+'" '
+          +'data-field="precio_unitario" oninput="recalcConsolOCFromEl(this)" '
+          +'style="width:100px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
+        +'<td style="padding:6px 8px;font-size:12px;color:#475569;text-align:right;" class="row-subtotal">'
+          +'$'+Number(it.subtotal||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
+        +'</tr>';
+    }).join('');
+
+    return '<div data-oc-id="'+ocId+'" data-oc-num="'+o.numero_oc+'" '
+      +'style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:12px;margin-bottom:10px;">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
+        +'<div style="font-weight:700;font-family:monospace;color:#1e293b;">'+o.numero_oc+' <span style="font-size:11px;color:#64748b;font-weight:500;">('+o.estado+')</span></div>'
+        +'<label style="font-size:12px;color:#0891b2;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">'
+          +'<input type="checkbox" data-field="con_iva" '+(o.con_iva?'checked':'')+' '
+          +'onchange="recalcConsolOCFromEl(this)"> Con IVA 19%</label>'
+      +'</div>'
+      +(itemsRows
+        ? '<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+            +'<thead><tr>'
+              +'<th style="text-align:left;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Producto</th>'
+              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Cantidad (g)</th>'
+              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Precio unit.</th>'
+              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Subtotal</th>'
+            +'</tr></thead><tbody>'+itemsRows+'</tbody></table>'
+        : '<div style="font-size:11px;color:#94a3b8;padding:8px 0;">Sin items detallados en esta OC.</div>')
+      +'<div style="margin-top:10px;font-size:12px;font-weight:700;color:#0f172a;text-align:right;" class="oc-total">'
+        +'Total OC: $'+Number(o.valor_total||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</div>'
+      +'<div style="margin-top:10px;">'
+        +'<label style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;">Observaciones</label>'
+        +'<textarea data-field="observaciones" rows="2" placeholder="Notas, justificación, condiciones especiales..." '
+        +'style="width:100%;padding:6px 8px;margin-top:4px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;">'
+        +escConH(o.observaciones||'')+'</textarea>'
+      +'</div>'
+    +'</div>';
+  }).join('');
+
+  return '<div id="'+pid+'" data-prov-idx="'+idx+'" '
+    +'style="background:#fff;border:2px solid #7c3aed;border-radius:12px;margin-bottom:16px;overflow:hidden;">'
+    +'<div style="background:#faf5ff;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e9d5ff;">'
+      +'<span style="font-size:22px;margin-top:2px;">&#x270F;&#xFE0F;</span>'
+      +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-weight:700;font-size:16px;color:#5b21b6;">'+escConH(p.proveedor)+' <span style="font-size:12px;color:#7c3aed;font-weight:500;">— Modo edición</span></div>'
+        +'<div style="font-size:11px;color:#7c3aed;margin-top:2px;">Edita cantidades, precios, IVA y observaciones. Click "Guardar" para persistir.</div>'
+      +'</div>'
+      +'<div style="display:flex;gap:8px;flex-shrink:0;">'
+        +'<button class="btn" data-prov-idx="'+idx+'" onclick="saveConsolEdits(parseInt(this.dataset.provIdx))" '
+          +'style="padding:8px 14px;font-size:12px;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;">&#x1F4BE; Guardar</button>'
+        +'<button class="btn" data-prov-idx="'+idx+'" onclick="cancelConsolEdit(parseInt(this.dataset.provIdx))" '
+          +'style="padding:8px 14px;font-size:12px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;font-weight:600;">Cancelar</button>'
+      +'</div>'
+    +'</div>'
+    +'<div style="padding:12px 18px;">'+ocsHtml+'</div>'
+  +'</div>';
+}
+
+function toggleConsolEdit(idx){
+  _consolEditMode[idx] = !_consolEditMode[idx];
+  var body = document.getElementById('consol-body');
+  body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+}
+
+function cancelConsolEdit(idx){
+  _consolEditMode[idx] = false;
+  var body = document.getElementById('consol-body');
+  body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+}
+
+// Recalcula el total de UNA OC en modo edit cuando cambian inputs.
+// Aplica IVA 19% si el checkbox está marcado.
+function recalcConsolOCFromEl(el){
+  var box = el.closest('[data-oc-id]');
+  if(box) recalcConsolOC(box.dataset.ocId);
+}
+function recalcConsolOC(ocId){
+  var ocBox = document.querySelector('[data-oc-id="'+ocId+'"]');
+  if(!ocBox) return;
+  var conIva = ocBox.querySelector('[data-field="con_iva"]').checked;
+  var subtotal = 0;
+  ocBox.querySelectorAll('tr[data-item-id]').forEach(function(tr){
+    var cant = parseFloat(tr.querySelector('[data-field="cantidad_g"]').value)||0;
+    var prec = parseFloat(tr.querySelector('[data-field="precio_unitario"]').value)||0;
+    var st = cant * prec;
+    tr.querySelector('.row-subtotal').textContent = '$'+Number(st).toLocaleString('es-CO',{maximumFractionDigits:0});
+    subtotal += st;
+  });
+  var total = conIva ? subtotal * 1.19 : subtotal;
+  var totEl = ocBox.querySelector('.oc-total');
+  if(totEl){
+    var ivaLine = conIva
+      ? ' <span style="font-size:10px;color:#0891b2;font-weight:500;">(subtotal $'+Number(subtotal).toLocaleString('es-CO',{maximumFractionDigits:0})+' + IVA)</span>'
+      : '';
+    totEl.innerHTML = 'Total OC: $'+Number(total).toLocaleString('es-CO',{maximumFractionDigits:0})+ivaLine;
+  }
+}
+
+// Persiste TODOS los cambios de una card de proveedor:
+//   - Por cada item modificado: PATCH /api/ordenes-compra/<oc>/items/<id>
+//   - Por cada OC: PATCH /api/ordenes-compra/<oc>/editar (con_iva + observaciones)
+async function saveConsolEdits(idx){
+  var p = _consolCache[idx];
+  if(!p) return;
+  var card = document.getElementById('consol-edit-'+idx);
+  if(!card) return;
+
+  var errors = [];
+  var ocBoxes = card.querySelectorAll('[data-oc-id]');
+  for(var oi = 0; oi < ocBoxes.length; oi++){
+    var ocBox = ocBoxes[oi];
+    var ocNum = ocBox.dataset.ocNum;
+
+    // 1) Items: detectar cambios vs original y PATCH
+    var origOC = p.ocs.find(function(x){return x.numero_oc===ocNum;});
+    var origItems = (origOC && origOC.items_raw) || [];
+    var rows = ocBox.querySelectorAll('tr[data-item-id]');
+    for(var ri = 0; ri < rows.length; ri++){
+      var tr = rows[ri];
+      var itemId = parseInt(tr.dataset.itemId, 10);
+      var newCant = parseFloat(tr.querySelector('[data-field="cantidad_g"]').value)||0;
+      var newPrec = parseFloat(tr.querySelector('[data-field="precio_unitario"]').value)||0;
+      var orig = origItems.find(function(it){return it.id===itemId;});
+      if(!orig) continue;
+      if(Math.abs(newCant-(orig.cantidad_g||0))>0.001 || Math.abs(newPrec-(orig.precio_unitario||0))>0.001){
+        try {
+          var rr = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/items/'+itemId, {
+            method:'PATCH', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({cantidad_g:newCant, precio_unitario:newPrec})
+          });
+          if(!rr.ok){ var dd = await rr.json().catch(function(){return{};}); errors.push(ocNum+' item '+itemId+': '+(dd.error||rr.status)); }
+        } catch(e){ errors.push(ocNum+' item '+itemId+': '+e.message); }
+      }
+    }
+
+    // 2) OC: con_iva + observaciones
+    var conIva = ocBox.querySelector('[data-field="con_iva"]').checked;
+    var obs = ocBox.querySelector('[data-field="observaciones"]').value || '';
+    if(origOC && (conIva !== !!origOC.con_iva || obs !== (origOC.observaciones||''))){
+      try {
+        var rr2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/editar', {
+          method:'PATCH', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({con_iva:conIva?1:0, observaciones:obs, valor_sin_iva:origOC.valor_sin_iva||0})
+        });
+        if(!rr2.ok){ var dd2 = await rr2.json().catch(function(){return{};}); errors.push(ocNum+' OC: '+(dd2.error||rr2.status)); }
+      } catch(e){ errors.push(ocNum+' OC: '+e.message); }
+    }
+  }
+
+  if(errors.length){
+    alert('Errores al guardar: '+errors.join(' | '));
+  } else {
+    alert('Cambios guardados correctamente.');
+  }
+  _consolEditMode[idx] = false;
+  loadConsolidado();
 }
 
 async function copiarPedido(idx){
@@ -4269,7 +4446,8 @@ async function loadPorPagar(){
           '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#78350f;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
           '<div style="font-size:18px;font-weight:800;color:#059669;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          '<button class="btn bs" style="margin-top:8px;padding:6px 14px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar ahora</button>'+
+          '<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+          '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
     } else {
@@ -4291,13 +4469,35 @@ async function loadPorPagar(){
           '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
           '<div style="font-size:18px;font-weight:800;color:#1e293b;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          '<button class="btn bs" style="margin-top:8px;padding:6px 14px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+          '<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+          '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
     }
   }catch(e){
     document.getElementById('por-pagar-merc-list').innerHTML = '<div style="color:#dc2626;padding:20px;">Error: '+_esc(e.message)+'</div>';
   }
+}
+
+// Rechazar OC desde Por Pagar — devuelve la SOL al estado Pendiente para que
+// el solicitante pueda corregir o reenviar. Marca la OC como Rechazada con
+// el motivo en observaciones. Reusa endpoint /api/compras/oc/<num>/rechazar.
+async function rechazarPorPagar(numOC){
+  var motivo = prompt('Motivo del rechazo (se devolverá a la SOL de origen):');
+  if(motivo===null) return;          // cancelado
+  motivo = (motivo||'').trim();
+  if(!motivo){ alert('Indica un motivo.'); return; }
+  try{
+    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/rechazar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({motivo: motivo})
+    });
+    var d = await r.json().catch(function(){return {};});
+    if(!r.ok){ alert('Error al rechazar: '+(d.error||r.status)); return; }
+    alert('OC '+numOC+' rechazada. La solicitud de origen volvió a estado Pendiente.');
+    if(typeof loadPorPagar==='function') loadPorPagar();
+    if(typeof loadOCs==='function') loadOCs();
+  }catch(e){ alert('Error de red: '+e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════════
