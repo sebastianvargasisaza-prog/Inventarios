@@ -4524,3 +4524,412 @@ def checklist_backfill():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CHECKLIST EDITABLE + SOLICITUDES PRODUCCION + TAREAS OPERATIVAS
+# Sebastian (29-abr-2026): cada item del checklist se hace editable, con
+# dropdown de maestro_mee, cantidad calculada automaticamente, y boton
+# "Solicitar" que crea entrada en cola de Catalina. Catalina decide:
+# inventario / OC / serigrafia / tampografia (genera tarea operativa).
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/api/checklist/mee-options', methods=['GET'])
+def checklist_mee_options():
+    """Devuelve materiales de maestro_mee filtrados por tipo del item.
+
+    Querystring: ?tipo=envase_primario|tapa|etiqueta_frontal|etc
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    tipo = request.args.get('tipo', '')
+    # Mapeo tipo_item -> categoria/keywords en maestro_mee
+    keyword_map = {
+        'envase_primario':    ['envase', 'frasco', 'bote', 'tubo', 'pote'],
+        'envase_secundario':  ['caja', 'estuche', 'secundario'],
+        'tapa':               ['tapa', 'dosificador', 'pump', 'gotero', 'spray'],
+        'etiqueta_frontal':   ['etiqueta', 'label'],
+        'etiqueta_posterior': ['etiqueta', 'label'],
+        'etiqueta_lateral':   ['etiqueta', 'label'],
+        'caja_exterior':      ['caja', 'corrugada', 'exterior'],
+        'instructivo':        ['instructivo', 'inserto'],
+    }
+    keywords = keyword_map.get(tipo, [])
+    conn = get_db(); c = conn.cursor()
+    if keywords:
+        # OR de LIKE por cada keyword
+        like_clauses = " OR ".join(["LOWER(descripcion) LIKE ?" for _ in keywords])
+        params = [f"%{k}%" for k in keywords]
+        rows = c.execute(f"""
+            SELECT codigo, descripcion, COALESCE(stock_actual,0), unidad,
+                   COALESCE(proveedor,''), COALESCE(categoria,'')
+            FROM maestro_mee
+            WHERE COALESCE(estado,'Activo')='Activo'
+              AND ({like_clauses})
+            ORDER BY descripcion
+        """, params).fetchall()
+    else:
+        rows = c.execute("""
+            SELECT codigo, descripcion, COALESCE(stock_actual,0), unidad,
+                   COALESCE(proveedor,''), COALESCE(categoria,'')
+            FROM maestro_mee
+            WHERE COALESCE(estado,'Activo')='Activo'
+            ORDER BY descripcion
+            LIMIT 200
+        """).fetchall()
+    return jsonify({
+        'tipo': tipo,
+        'options': [
+            {'codigo': r[0], 'descripcion': r[1], 'stock': float(r[2] or 0),
+             'unidad': r[3] or 'und', 'proveedor': r[4], 'categoria': r[5]}
+            for r in rows
+        ]
+    })
+
+
+@bp.route('/api/programacion/checklist/items/<int:item_id>/asignar-mee', methods=['POST'])
+def checklist_item_asignar_mee(item_id):
+    """Guarda el material MEE elegido para un item + cantidad calculada.
+
+    Body: {mee_codigo, cantidad_unidades, decoracion_tipo (opcional)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    mee_codigo = (d.get('mee_codigo') or '').strip()
+    cantidad = float(d.get('cantidad_unidades') or 0)
+    decoracion = (d.get('decoracion_tipo') or '').strip()
+    descripcion_actualizada = (d.get('descripcion') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    # Si MEE existe, traer su descripcion para poblar el item
+    desc_mee = ''
+    if mee_codigo:
+        rm = c.execute("SELECT descripcion FROM maestro_mee WHERE codigo=?", (mee_codigo,)).fetchone()
+        desc_mee = rm[0] if rm else ''
+
+    sets = ['mee_codigo_asignado=?', 'cantidad_unidades=?', 'actualizado_at=datetime(\'now\')']
+    params = [mee_codigo, cantidad]
+    if decoracion:
+        sets.append('decoracion_tipo=?'); params.append(decoracion)
+    if desc_mee:
+        sets.append('codigo_mp=?'); params.append(mee_codigo)
+    if descripcion_actualizada:
+        sets.append('descripcion=?'); params.append(descripcion_actualizada)
+    elif desc_mee:
+        sets.append('descripcion=?'); params.append(desc_mee)
+    params.append(item_id)
+    c.execute(f"UPDATE produccion_checklist SET {', '.join(sets)} WHERE id=?", params)
+    if c.rowcount == 0:
+        return jsonify({'error': 'Item no encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'item_id': item_id, 'mee_codigo': mee_codigo,
+                    'cantidad_unidades': cantidad, 'descripcion': desc_mee or descripcion_actualizada})
+
+
+@bp.route('/api/programacion/checklist/items/<int:item_id>/solicitar-produccion', methods=['POST'])
+def checklist_item_solicitar_produccion(item_id):
+    """Genera una entrada en solicitudes_compra_anticipada (cola de Catalina) para el
+    item del checklist. Catalina luego decide ruta (inventario/OC/serigrafia).
+
+    Body opcional: {fecha_objetivo, observaciones}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    item = c.execute("""
+        SELECT id, produccion_id, producto_nombre, item_tipo, descripcion,
+               cantidad_requerida, cantidad_unidades, mee_codigo_asignado,
+               decoracion_tipo, fecha_planeada, codigo_mp
+        FROM produccion_checklist WHERE id=?
+    """, (item_id,)).fetchone()
+    if not item:
+        return jsonify({'error': 'Item no encontrado'}), 404
+
+    cantidad = float(item[6] or 0) or float(item[5] or 0)
+    fecha_obj = (d.get('fecha_objetivo') or item[9] or '').strip()
+    observ = (d.get('observaciones') or '').strip()
+
+    # Si ya tiene una solicitud_produccion_id activa, devolverla (idempotente)
+    existing = c.execute(
+        "SELECT id FROM solicitudes_compra_anticipada WHERE checklist_item_id=? AND estado IN ('pendiente','decidida')",
+        (item_id,)
+    ).fetchone()
+    if existing:
+        return jsonify({'ok': True, 'solicitud_id': existing[0], 'ya_existia': True})
+
+    cur = c.execute("""
+        INSERT INTO solicitudes_compra_anticipada
+          (checklist_item_id, produccion_id, producto_nombre, tipo_item,
+           mee_codigo, descripcion, cantidad_unidades, decoracion_tipo,
+           fecha_objetivo, estado, solicitado_por, observaciones)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?)
+    """, (item_id, item[1], item[2] or '', item[3] or '',
+          item[7] or item[10] or '', item[4] or '', cantidad,
+          item[8] or '', fecha_obj, user, observ))
+    sol_id = cur.lastrowid
+
+    # Actualizar el item: vincular + estado='solicitado'
+    c.execute("""
+        UPDATE produccion_checklist SET
+          solicitud_produccion_id=?,
+          estado='solicitado',
+          fecha_solicitud=datetime('now'),
+          actualizado_at=datetime('now')
+        WHERE id=?
+    """, (sol_id, item_id))
+    conn.commit()
+    return jsonify({'ok': True, 'solicitud_id': sol_id, 'item_id': item_id,
+                    'mensaje': f'Solicitud {sol_id} enviada a Catalina'})
+
+
+@bp.route('/api/compras/solicitudes-produccion', methods=['GET'])
+def solicitudes_compra_anticipada_list():
+    """Lista las solicitudes pendientes (queue de Catalina).
+
+    Querystring: ?estado=pendiente|decidida|todas (default pendiente)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    estado = request.args.get('estado', 'pendiente')
+    conn = get_db(); c = conn.cursor()
+    where = ""
+    params = ()
+    if estado != 'todas':
+        where = "WHERE sp.estado=?"
+        params = (estado,)
+    rows = c.execute(f"""
+        SELECT sp.id, sp.producto_nombre, sp.tipo_item, sp.mee_codigo,
+               sp.descripcion, sp.cantidad_unidades, sp.decoracion_tipo,
+               sp.fecha_objetivo, sp.estado, sp.decision, sp.fecha_creacion,
+               sp.solicitado_por, sp.observaciones,
+               COALESCE(m.stock_actual, 0) as stock_actual,
+               COALESCE(m.proveedor, '') as proveedor_default,
+               sp.proveedor, sp.oc_numero, sp.tarea_operativa_id
+        FROM solicitudes_compra_anticipada sp
+        LEFT JOIN maestro_mee m ON m.codigo = sp.mee_codigo
+        {where}
+        ORDER BY
+          CASE sp.estado WHEN 'pendiente' THEN 1 WHEN 'decidida' THEN 2 ELSE 3 END,
+          sp.fecha_objetivo ASC, sp.fecha_creacion DESC
+        LIMIT 300
+    """, params).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # Sugerencia de ruta para cada solicitud
+    for it in items:
+        tipo = it.get('tipo_item') or ''
+        cant = float(it.get('cantidad_unidades') or 0)
+        stock = float(it.get('stock_actual') or 0)
+        if tipo in ('etiqueta_frontal', 'etiqueta_posterior', 'etiqueta_lateral', 'instructivo'):
+            it['ruta_sugerida'] = 'oc'  # etiquetas siempre OC
+        elif it.get('decoracion_tipo') in ('serigrafia', 'tampografia'):
+            it['ruta_sugerida'] = 'serigrafia' if it['decoracion_tipo']=='serigrafia' else 'tampografia'
+        elif stock >= cant and stock > 0:
+            it['ruta_sugerida'] = 'inventario'
+        else:
+            it['ruta_sugerida'] = 'oc'
+    pendientes = sum(1 for x in items if x.get('estado')=='pendiente')
+    return jsonify({'items': items, 'total': len(items), 'pendientes': pendientes})
+
+
+@bp.route('/api/compras/solicitudes-produccion/<int:sol_id>/decidir', methods=['POST'])
+def solicitudes_compra_anticipada_decidir(sol_id):
+    """Catalina decide ruta para una solicitud:
+       inventario | oc | serigrafia | tampografia | etiqueta_adhesiva
+
+    Body: {decision, proveedor?, fecha_objetivo?, observaciones?, asignado_a? (CSV)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    decision = (d.get('decision') or '').strip()
+    if decision not in ('inventario', 'oc', 'serigrafia', 'tampografia', 'etiqueta_adhesiva'):
+        return jsonify({'error': 'decision invalida'}), 400
+    proveedor = (d.get('proveedor') or '').strip()
+    fecha_obj = (d.get('fecha_objetivo') or '').strip()
+    asignado_a = (d.get('asignado_a') or '').strip()
+    obs = (d.get('observaciones') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    sol = c.execute("""
+        SELECT id, checklist_item_id, producto_nombre, tipo_item, mee_codigo,
+               descripcion, cantidad_unidades, decoracion_tipo, fecha_objetivo
+        FROM solicitudes_compra_anticipada WHERE id=?
+    """, (sol_id,)).fetchone()
+    if not sol:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+
+    tarea_id = None
+    oc_num = ''
+
+    # Si la decision es 'inventario' Y hay decoracion (serigrafia/tampografia),
+    # generar tarea operativa para sacar envases de bodega y mandarlos a decorar
+    if decision in ('serigrafia', 'tampografia'):
+        # Genera tarea operativa: sacar envases blancos de bodega para enviar
+        titulo = f"Sacar {int(sol[6])} envases para {decision} - {sol[2]}"
+        descripcion = (
+            f"Sacar de bodega {int(sol[6])} unidades de {sol[5] or sol[4]} "
+            f"para enviar a {decision} con proveedor {proveedor or 'por definir'}. "
+            f"Producto destino: {sol[2]}. {obs}"
+        )
+        cur = c.execute("""
+            INSERT INTO tareas_operativas
+              (titulo, descripcion, tipo, producto_relacionado, mee_codigo,
+               cantidad, asignado_a, fecha_objetivo, estado,
+               origen_tipo, origen_id, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', 'solicitud_produccion', ?, ?)
+        """, (titulo, descripcion,
+              f'sacar_envases_{decision}',
+              sol[2], sol[4] or '', sol[6],
+              asignado_a or 'luz,operarios',
+              fecha_obj or sol[8] or '',
+              sol_id, user))
+        tarea_id = cur.lastrowid
+    elif decision == 'inventario':
+        titulo = f"Sacar {int(sol[6])} de bodega - {sol[5] or sol[4]}"
+        descripcion = (
+            f"Producción {sol[2]} requiere {int(sol[6])} unidades de "
+            f"{sol[5] or sol[4]}. Sacar de bodega y dejar listo. {obs}"
+        )
+        cur = c.execute("""
+            INSERT INTO tareas_operativas
+              (titulo, descripcion, tipo, producto_relacionado, mee_codigo,
+               cantidad, asignado_a, fecha_objetivo, estado,
+               origen_tipo, origen_id, creado_por)
+            VALUES (?, ?, 'sacar_inventario', ?, ?, ?, ?, ?, 'pendiente',
+                    'solicitud_produccion', ?, ?)
+        """, (titulo, descripcion, sol[2], sol[4] or '', sol[6],
+              asignado_a or 'luz,operarios',
+              fecha_obj or sol[8] or '',
+              sol_id, user))
+        tarea_id = cur.lastrowid
+    elif decision in ('oc', 'etiqueta_adhesiva'):
+        # Marca para que Catalina cree manualmente la OC desde compras
+        # (Aqui podriamos auto-generar la OC pero requiere mas data.
+        # De momento solo dejamos la decision y Catalina crea OC manual.)
+        pass
+
+    # Actualizar la solicitud
+    c.execute("""
+        UPDATE solicitudes_compra_anticipada SET
+          estado='decidida', decision=?, decidido_por=?,
+          fecha_decision=datetime('now'),
+          proveedor=?, tarea_operativa_id=?, observaciones=?
+        WHERE id=?
+    """, (decision, user, proveedor, tarea_id, obs, sol_id))
+    # Marcar el item del checklist como en_transito o solicitado
+    c.execute("""
+        UPDATE produccion_checklist SET
+          estado=CASE WHEN ? IN ('inventario') THEN 'en_transito'
+                      ELSE 'solicitado' END,
+          actualizado_at=datetime('now')
+        WHERE id=?
+    """, (decision, sol[1]))
+    conn.commit()
+    return jsonify({
+        'ok': True, 'solicitud_id': sol_id, 'decision': decision,
+        'tarea_operativa_id': tarea_id,
+        'mensaje': f'Solicitud {sol_id} marcada como {decision}'
+                   + (f' (tarea operativa #{tarea_id} creada)' if tarea_id else '')
+    })
+
+
+@bp.route('/api/tareas-operativas', methods=['GET'])
+def tareas_operativas_list():
+    """Lista de tareas operativas. Querystring:
+       ?usuario=<username> (filtra por asignado_a)
+       ?estado=pendiente|completada|todas (default pendiente+en_progreso)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = (request.args.get('usuario') or '').strip().lower()
+    estado_q = (request.args.get('estado') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    where = []
+    params = []
+    if estado_q == 'todas':
+        pass
+    elif estado_q in ('pendiente', 'en_progreso', 'completada', 'cancelada'):
+        where.append("estado=?"); params.append(estado_q)
+    else:
+        where.append("estado IN ('pendiente','en_progreso')")
+    if usuario:
+        where.append("(LOWER(asignado_a) LIKE ? OR asignado_a='')")
+        params.append(f"%{usuario}%")
+    sql = "SELECT * FROM tareas_operativas"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_objetivo ASC, fecha_creacion DESC LIMIT 300"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'tareas': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/tareas-operativas/<int:tarea_id>/completar', methods=['POST'])
+def tareas_operativas_completar(tarea_id):
+    """Operario marca la tarea como completada.
+
+    Body opcional: {observaciones, cantidad_real (si difiere)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    obs = (d.get('observaciones') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    cur = c.execute("""
+        UPDATE tareas_operativas SET
+          estado='completada',
+          completado_por=?,
+          fecha_completado=datetime('now'),
+          observaciones_cierre=?
+        WHERE id=? AND estado IN ('pendiente','en_progreso')
+    """, (user, obs, tarea_id))
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Tarea no encontrada o ya completada'}), 404
+    # Marcar la solicitud_produccion origen como completada (si aplica)
+    c.execute("""
+        UPDATE solicitudes_compra_anticipada
+        SET estado='completada' WHERE tarea_operativa_id=?
+    """, (tarea_id,))
+    conn.commit()
+    return jsonify({'ok': True, 'tarea_id': tarea_id, 'mensaje': 'Tarea completada'})
+
+
+@bp.route('/api/tareas-operativas', methods=['POST'])
+def tareas_operativas_crear():
+    """Crear una tarea operativa manualmente (para jefes / Catalina).
+
+    Body: {titulo, descripcion, tipo, asignado_a, fecha_objetivo,
+           producto_relacionado?, cantidad?, mee_codigo?}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    titulo = (d.get('titulo') or '').strip()
+    if not titulo:
+        return jsonify({'error': 'titulo requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    cur = c.execute("""
+        INSERT INTO tareas_operativas
+          (titulo, descripcion, tipo, producto_relacionado, mee_codigo,
+           cantidad, asignado_a, fecha_objetivo, estado,
+           origen_tipo, creado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', 'manual', ?)
+    """, (
+        titulo, (d.get('descripcion') or '').strip(),
+        (d.get('tipo') or 'general').strip(),
+        (d.get('producto_relacionado') or '').strip(),
+        (d.get('mee_codigo') or '').strip(),
+        float(d.get('cantidad') or 0),
+        (d.get('asignado_a') or '').strip(),
+        (d.get('fecha_objetivo') or '').strip(),
+        user
+    ))
+    conn.commit()
+    return jsonify({'ok': True, 'tarea_id': cur.lastrowid})

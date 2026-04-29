@@ -5,7 +5,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos9">
+<link rel="stylesheet" href="/static/cortex.css?v=eos10">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -5183,19 +5183,28 @@ async function abrirChecklistDetalle(produccionId, producto){
       '<th style="padding:8px 10px;text-align:right">Acciones</th>' +
       '</tr></thead><tbody>';
     items.forEach(function(it){
-      var icon = {mp:'⚗️',envase_primario:'🧴',tapa:'🔘',etiqueta_frontal:'🏷️',etiqueta_posterior:'🏷️',caja_exterior:'📦',serigrafia:'🎨',tampografia:'🎨',instructivo:'📄'}[it.item_tipo]||'•';
+      var icon = {mp:'⚗️',envase_primario:'🧴',tapa:'🔘',etiqueta_frontal:'🏷️',etiqueta_posterior:'🏷️',etiqueta_lateral:'🏷️',caja_exterior:'📦',serigrafia:'🎨',tampografia:'🎨',instructivo:'📄'}[it.item_tipo]||'•';
       var stCfg = {pendiente:['🔴 Pendiente','#dc2626'],verificado_ok:['✅ Verificado','#15803d'],solicitado:['⏳ Solicitado','#a16207'],en_transito:['🚚 En tránsito','#1e40af'],recibido:['📦 Recibido','#15803d'],listo:['✓ Listo','#15803d'],no_aplica:['— N/A','#78716c']}[it.estado]||['?','#78716c'];
-      var cantTxt = it.cantidad_requerida ? (Math.round(it.cantidad_requerida).toLocaleString('es-CO')+' '+(it.unidad||'g')) : '—';
-      var refLink = it.solicitud_numero ? '<div style="font-size:10px;color:#a16207;margin-top:2px">'+_escHTML(it.solicitud_numero)+'</div>' : (it.oc_numero ? '<div style="font-size:10px;color:#1e40af;margin-top:2px">'+_escHTML(it.oc_numero)+'</div>' : '');
-      var canSolicitar = (it.estado==='pendiente') && !it.solicitud_numero;
+      var cantTxt = it.cantidad_unidades>0 ? (Math.round(it.cantidad_unidades).toLocaleString('es-CO')+' und') :
+                    (it.cantidad_requerida ? (Math.round(it.cantidad_requerida).toLocaleString('es-CO')+' '+(it.unidad||'g')) : '—');
+      var refLink = it.solicitud_produccion_id ? '<div style="font-size:10px;color:#a16207;margin-top:2px">📋 SP-'+it.solicitud_produccion_id+'</div>' :
+                    (it.solicitud_numero ? '<div style="font-size:10px;color:#a16207;margin-top:2px">'+_escHTML(it.solicitud_numero)+'</div>' :
+                    (it.oc_numero ? '<div style="font-size:10px;color:#1e40af;margin-top:2px">'+_escHTML(it.oc_numero)+'</div>' : ''));
+      // Tipos editables (con dropdown MEE)
+      var ESEDIT = ['envase_primario','envase_secundario','tapa','etiqueta_frontal','etiqueta_posterior','etiqueta_lateral','caja_exterior','instructivo','otro'];
+      var esEditable = ESEDIT.indexOf(it.item_tipo) >= 0;
+      var canSolicitar = (it.estado==='pendiente' && !it.solicitud_produccion_id);
       var canMarcar = ['pendiente','solicitado','en_transito'].indexOf(it.estado)>=0;
       var acciones = '';
-      if(canSolicitar) acciones += '<button onclick="ckSolicitar('+it.id+')" style="background:#a16207;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Solicitar</button>';
+      if(esEditable) acciones += '<button onclick="ckAbrirEditor('+it.id+',&quot;'+it.item_tipo+'&quot;,'+(it.cantidad_unidades||0)+')" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">✏️ Elegir</button>';
+      if(canSolicitar) acciones += '<button onclick="ckSolicitarProduccion('+it.id+')" style="background:#a16207;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">📋 Solicitar</button>';
       if(canMarcar) acciones += '<button onclick="ckMarcar('+it.id+',&quot;recibido&quot;)" style="background:#15803d;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Recibido</button>';
       acciones += '<button onclick="ckMarcar('+it.id+',&quot;no_aplica&quot;)" style="background:#78716c;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">N/A</button>';
       var obs = it.observaciones ? '<div style="font-size:10px;color:#78716c;margin-top:3px;font-family:monospace">'+_escHTML(it.observaciones)+'</div>' : '';
+      var meeLine = it.mee_codigo_asignado ? '<div style="font-size:10px;color:#0f766e;margin-top:2px"><b>MEE:</b> '+_escHTML(it.mee_codigo_asignado)+'</div>' : '';
+      var decoLine = it.decoracion_tipo ? '<div style="font-size:10px;color:#7c3aed;margin-top:2px"><b>Decoración:</b> '+_escHTML(it.decoracion_tipo)+'</div>' : '';
       html += '<tr style="border-bottom:1px solid #f5f5f4">' +
-        '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+obs+'</td>' +
+        '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+meeLine+decoLine+obs+'</td>' +
         '<td style="padding:10px;text-align:right;font-family:monospace">'+cantTxt+'</td>' +
         '<td style="padding:10px"><span style="color:'+stCfg[1]+';font-weight:700">'+stCfg[0]+'</span>'+(it.proveedor?'<div style="font-size:10px;color:#78716c">'+_escHTML(it.proveedor)+'</div>':'')+refLink+'</td>' +
         '<td style="padding:10px;text-align:right;white-space:nowrap">'+acciones+'</td>' +
@@ -5255,6 +5264,119 @@ async function ckSolicitar(itemId){
     var modalTitle = document.getElementById('ck-modal-titulo').textContent;
     cargarChecklistResumen();
     document.getElementById('ck-modal').style.display='none';
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+// Editor de item del checklist: dropdown MEE + cantidad calculada + decoracion
+async function ckAbrirEditor(itemId, itemTipo, cantUnd){
+  // Cargar opciones MEE para este tipo
+  var r = await fetch('/api/checklist/mee-options?tipo='+encodeURIComponent(itemTipo));
+  var d = await r.json();
+  var options = d.options || [];
+
+  // Modal simple inline
+  var modalHtml =
+    '<div id="ck-editor-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">' +
+    '<div style="background:#fff;border-radius:14px;padding:24px;width:600px;max-width:100%;max-height:90vh;overflow:auto">' +
+    '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">' +
+      '<h3 style="margin:0;color:#1c1917">✏️ Editar item · '+itemTipo+'</h3>' +
+      '<button onclick="document.getElementById(&quot;ck-editor-modal&quot;).remove()" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700;line-height:1">&#10005;</button>' +
+    '</div>' +
+    '<label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Material (de bodega MEE)</label>' +
+    '<input type="text" id="ck-ed-search" placeholder="Buscar..." style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin:6px 0;font-size:13px" oninput="ckEditorFiltrar()">' +
+    '<div id="ck-ed-list" style="max-height:200px;overflow-y:auto;border:1px solid #e7e5e4;border-radius:6px"></div>';
+
+  // Selector decoracion (solo para envases)
+  if(itemTipo==='envase_primario' || itemTipo==='envase_secundario'){
+    modalHtml += '<div style="margin-top:14px"><label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Decoración (opcional)</label>' +
+      '<select id="ck-ed-deco" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:6px;font-size:13px">' +
+        '<option value="">— Sin decoración —</option>' +
+        '<option value="etiqueta_adhesiva">Etiqueta adhesiva</option>' +
+        '<option value="serigrafia">Serigrafía</option>' +
+        '<option value="tampografia">Tampografía</option>' +
+      '</select></div>';
+  }
+
+  modalHtml +=
+    '<div style="margin-top:14px"><label style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Cantidad (unidades)</label>' +
+    '<input type="number" id="ck-ed-cant" value="'+(cantUnd||0)+'" min="0" step="1" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:6px;font-size:13px"></div>' +
+    '<div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end">' +
+      '<button onclick="document.getElementById(&quot;ck-editor-modal&quot;).remove()" style="background:#fff;border:1px solid #d6d3d1;color:#475569;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>' +
+      '<button onclick="ckGuardarEditor('+itemId+')" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">💾 Guardar</button>' +
+    '</div>' +
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+  // Render lista
+  window._ckEdOptions = options;
+  window._ckEdSelected = null;
+  ckEditorFiltrar();
+}
+
+function ckEditorFiltrar(){
+  var q = (document.getElementById('ck-ed-search').value||'').toLowerCase().trim();
+  var opts = window._ckEdOptions || [];
+  var filtered = q ? opts.filter(function(o){
+    return (o.descripcion||'').toLowerCase().indexOf(q)>=0 ||
+           (o.codigo||'').toLowerCase().indexOf(q)>=0;
+  }) : opts;
+  var list = document.getElementById('ck-ed-list');
+  if(!filtered.length){ list.innerHTML = '<div style="padding:14px;color:#a8a29e;text-align:center;font-size:12px">Sin coincidencias</div>'; return; }
+  list.innerHTML = filtered.slice(0, 60).map(function(o){
+    var stockColor = o.stock>0 ? '#16a34a' : '#dc2626';
+    return '<div onclick="ckEdSeleccionar(&quot;'+_escHTML(o.codigo).replace(/"/g,'&quot;')+'&quot;)" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f4" onmouseover="this.style.background=&quot;#fafaf9&quot;" onmouseout="this.style.background=&quot;#fff&quot;">' +
+      '<div style="font-size:13px;font-weight:600;color:#1c1917">'+_escHTML(o.descripcion)+'</div>' +
+      '<div style="font-size:10px;color:#78716c;margin-top:2px"><span style="font-family:monospace">'+_escHTML(o.codigo)+'</span> · stock: <span style="color:'+stockColor+';font-weight:600">'+Math.round(o.stock)+' '+_escHTML(o.unidad||'und')+'</span>'+(o.proveedor?' · '+_escHTML(o.proveedor):'')+'</div>' +
+      '</div>';
+  }).join('');
+}
+
+function ckEdSeleccionar(codigo){
+  window._ckEdSelected = codigo;
+  document.querySelectorAll('#ck-ed-list > div').forEach(function(d){d.style.background='#fff'});
+  // Highlight visual
+  document.querySelectorAll('#ck-ed-list > div').forEach(function(d){
+    if(d.innerHTML.indexOf(codigo)>=0) d.style.background = '#dbeafe';
+  });
+  // Auto-fill cantidad si no hay
+  var input = document.getElementById('ck-ed-cant');
+  if(!input.value || parseFloat(input.value)===0){
+    // Estimar: si producto tiene volumen_unitario_ml, cantidad = kg_produccion * 1000 / volumen
+    var prim = (window._ckCurrentMeta||{});
+    if(prim.volumen_unitario_ml > 0 && prim.cantidad_kg > 0){
+      input.value = Math.ceil((prim.cantidad_kg * 1000) / prim.volumen_unitario_ml);
+    }
+  }
+}
+
+async function ckGuardarEditor(itemId){
+  var codigo = window._ckEdSelected;
+  if(!codigo){ alert('Selecciona un material primero.'); return; }
+  var cant = parseFloat(document.getElementById('ck-ed-cant').value||0);
+  var decoEl = document.getElementById('ck-ed-deco');
+  var deco = decoEl ? (decoEl.value||'') : '';
+  try {
+    var r = await fetch('/api/programacion/checklist/items/'+itemId+'/asignar-mee', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mee_codigo: codigo, cantidad_unidades: cant, decoracion_tipo: deco})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    document.getElementById('ck-editor-modal').remove();
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function ckSolicitarProduccion(itemId){
+  if(!confirm('Enviar solicitud a Catalina?')) return;
+  try {
+    var r = await fetch('/api/programacion/checklist/items/'+itemId+'/solicitar-produccion', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _toast(d.mensaje||'Solicitud enviada', 1);
+    if(window._ckCurrentProduccionId) abrirChecklistDetalle(window._ckCurrentProduccionId, window._ckCurrentProducto);
   } catch(e){ alert('Error: '+e.message); }
 }
 

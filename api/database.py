@@ -2026,6 +2026,73 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             WHERE COALESCE(fecha_proxima_revision,'') = ''
               AND COALESCE(fecha_emision,'') != ''""",
     ]),
+    (47, "checklist editable + solicitudes de produccion + tareas operativas", [
+        # Sebastian (29-abr-2026): el modal del checklist Pre-Produccion debe
+        # tener cada item editable (dropdown de maestro_mee), cantidad
+        # calculada automaticamente, y boton "Solicitar" que cree una solicitud
+        # para Catalina. Catalina decide: sacar de inventario, OC al proveedor
+        # o serigrafia/tampografia (genera tarea operativa para sacar envases).
+
+        # 1) Volumen unitario por producto (para calcular unidades de envases)
+        """ALTER TABLE formula_headers ADD COLUMN volumen_unitario_ml REAL DEFAULT 0""",
+
+        # 2) Columnas en produccion_checklist
+        """ALTER TABLE produccion_checklist ADD COLUMN mee_codigo_asignado TEXT DEFAULT ''""",
+        """ALTER TABLE produccion_checklist ADD COLUMN decoracion_tipo TEXT DEFAULT ''""",
+        """ALTER TABLE produccion_checklist ADD COLUMN cantidad_unidades REAL DEFAULT 0""",
+        """ALTER TABLE produccion_checklist ADD COLUMN solicitud_produccion_id INTEGER""",
+
+        # 3) Tabla nueva: solicitudes de produccion (queue de Catalina)
+        """CREATE TABLE IF NOT EXISTS solicitudes_compra_anticipada (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checklist_item_id INTEGER NOT NULL,
+            produccion_id     INTEGER,
+            producto_nombre   TEXT NOT NULL,
+            tipo_item         TEXT NOT NULL,
+            mee_codigo        TEXT DEFAULT '',
+            descripcion       TEXT DEFAULT '',
+            cantidad_unidades REAL DEFAULT 0,
+            decoracion_tipo   TEXT DEFAULT '',
+            fecha_objetivo    TEXT,
+            estado            TEXT DEFAULT 'pendiente'
+              CHECK(estado IN ('pendiente','decidida','completada','cancelada')),
+            decision          TEXT DEFAULT '',
+            decidido_por      TEXT DEFAULT '',
+            fecha_decision    TEXT,
+            oc_numero         TEXT DEFAULT '',
+            tarea_operativa_id INTEGER,
+            proveedor         TEXT DEFAULT '',
+            observaciones     TEXT DEFAULT '',
+            solicitado_por    TEXT DEFAULT '',
+            fecha_creacion    TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_solprod_estado ON solicitudes_compra_anticipada(estado, fecha_creacion DESC)""",
+        """CREATE INDEX IF NOT EXISTS idx_solprod_producto ON solicitudes_compra_anticipada(producto_nombre)""",
+
+        # 4) Tabla nueva: tareas operativas (para planta/operarios)
+        """CREATE TABLE IF NOT EXISTS tareas_operativas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo            TEXT NOT NULL,
+            descripcion       TEXT DEFAULT '',
+            tipo              TEXT DEFAULT 'general',
+            producto_relacionado TEXT DEFAULT '',
+            mee_codigo           TEXT DEFAULT '',
+            cantidad             REAL DEFAULT 0,
+            asignado_a           TEXT DEFAULT '',
+            fecha_objetivo       TEXT,
+            estado               TEXT DEFAULT 'pendiente'
+              CHECK(estado IN ('pendiente','en_progreso','completada','cancelada')),
+            origen_tipo          TEXT DEFAULT 'manual',
+            origen_id            INTEGER,
+            creado_por           TEXT DEFAULT '',
+            completado_por       TEXT DEFAULT '',
+            fecha_creacion       TEXT DEFAULT (datetime('now')),
+            fecha_completado     TEXT,
+            observaciones_cierre TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_tareas_estado ON tareas_operativas(estado, fecha_objetivo)""",
+        """CREATE INDEX IF NOT EXISTS idx_tareas_asignado ON tareas_operativas(asignado_a)""",
+    ]),
 ]
 
 
