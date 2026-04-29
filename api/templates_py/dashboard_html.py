@@ -5553,30 +5553,48 @@ function ckEditorFiltrar(){
   }) : opts;
   var list = document.getElementById('ck-ed-list');
   if(!filtered.length){ list.innerHTML = '<div style="padding:14px;color:#a8a29e;text-align:center;font-size:12px">Sin coincidencias</div>'; return; }
+  // Render con data-codigo + listeners delegados (sin mouseover/mouseout inline que pisa la selección)
   list.innerHTML = filtered.slice(0, 60).map(function(o){
     var stockColor = o.stock>0 ? '#16a34a' : '#dc2626';
-    return '<div onclick="ckEdSeleccionar(&quot;'+_escHTML(o.codigo).replace(/"/g,'&quot;')+'&quot;)" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f5f5f4" onmouseover="this.style.background=&quot;#fafaf9&quot;" onmouseout="this.style.background=&quot;#fff&quot;">' +
-      '<div style="font-size:13px;font-weight:600;color:#1c1917">'+_escHTML(o.descripcion)+'</div>' +
+    var sel = (window._ckEdSelected === o.codigo);
+    var bg = sel ? '#dbeafe' : '#fff';
+    var bd = sel ? '2px solid #3b82f6' : '1px solid #f5f5f4';
+    return '<div class="ck-mee-row" data-codigo="'+_escHTML(o.codigo)+'" '+
+           'style="padding:8px 12px;cursor:pointer;border-bottom:'+bd+';background:'+bg+'">' +
+      '<div style="font-size:13px;font-weight:600;color:#1c1917">'+(sel?'✓ ':'')+_escHTML(o.descripcion)+'</div>' +
       '<div style="font-size:10px;color:#78716c;margin-top:2px"><span style="font-family:monospace">'+_escHTML(o.codigo)+'</span> · stock: <span style="color:'+stockColor+';font-weight:600">'+Math.round(o.stock)+' '+_escHTML(o.unidad||'und')+'</span>'+(o.proveedor?' · '+_escHTML(o.proveedor):'')+'</div>' +
       '</div>';
   }).join('');
+  // Adjuntar handlers via JS (no inline) — más robusto contra escapes
+  list.querySelectorAll('.ck-mee-row').forEach(function(row){
+    row.addEventListener('click', function(){
+      ckEdSeleccionar(row.dataset.codigo);
+    });
+    row.addEventListener('mouseenter', function(){
+      if(row.dataset.codigo !== window._ckEdSelected){ row.style.background = '#fafaf9'; }
+    });
+    row.addEventListener('mouseleave', function(){
+      if(row.dataset.codigo !== window._ckEdSelected){ row.style.background = '#fff'; }
+    });
+  });
 }
 
 function ckEdSeleccionar(codigo){
   window._ckEdSelected = codigo;
-  document.querySelectorAll('#ck-ed-list > div').forEach(function(d){d.style.background='#fff'});
-  // Highlight visual
-  document.querySelectorAll('#ck-ed-list > div').forEach(function(d){
-    if(d.innerHTML.indexOf(codigo)>=0) d.style.background = '#dbeafe';
-  });
+  // Re-render para que el highlight (✓ + bg azul + border) sobreviva
+  ckEditorFiltrar();
   // Auto-fill cantidad si no hay
   var input = document.getElementById('ck-ed-cant');
-  if(!input.value || parseFloat(input.value)===0){
-    // Estimar: si producto tiene volumen_unitario_ml, cantidad = kg_produccion * 1000 / volumen
+  if(input && (!input.value || parseFloat(input.value)===0)){
     var prim = (window._ckCurrentMeta||{});
     if(prim.volumen_unitario_ml > 0 && prim.cantidad_kg > 0){
       input.value = Math.ceil((prim.cantidad_kg * 1000) / prim.volumen_unitario_ml);
     }
+  }
+  // Mostrar el codigo seleccionado en un badge sobre el input de busqueda
+  var search = document.getElementById('ck-ed-search');
+  if(search){
+    search.placeholder = '✓ Seleccionado: ' + codigo + ' (busca otro para cambiar)';
   }
 }
 
