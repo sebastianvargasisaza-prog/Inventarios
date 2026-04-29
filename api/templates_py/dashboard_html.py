@@ -1277,6 +1277,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#9989; Checklist Pre-Producción
     </button>
+    <button id="prog-tab-tareas" onclick="switchProgTab('tareas')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#127919; Tareas operativas <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -4878,6 +4882,18 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-checklist -->
 
+  <!-- ── Tab: Tareas Operativas ─────────────────────────────────────── -->
+  <div id="ptab-tareas" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#0891b2">&#127919; Tareas Operativas</h2>
+        <p style="color:#666;font-size:13px;margin:0">Tareas asignadas desde Compras (Catalina) o jefes · Operarios marcan completada</p>
+      </div>
+      <button onclick="cargarTareasOperativas()" style="padding:6px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21BA; Actualizar</button>
+    </div>
+    <div id="tareas-op-lista"></div>
+  </div><!-- /ptab-tareas -->
+
 <script>
 async function cargarChecklistResumen(dias){
   // Cargar catalogo de productos en paralelo (no bloquea)
@@ -5455,16 +5471,20 @@ async function ckMarcar(itemId, estado){
       var el_c  = document.getElementById('ptab-centro');
       var el_p  = document.getElementById('ptab-plan');
       var el_ck = document.getElementById('ptab-checklist');
+      var el_tk = document.getElementById('ptab-tareas');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display = tab==='centro' ? 'block' : 'none';
       el_p.style.display = tab==='plan'   ? 'block' : 'none';
       if(el_ck) el_ck.style.display = tab==='checklist' ? 'block' : 'none';
+      if(el_tk) el_tk.style.display = tab==='tareas' ? 'block' : 'none';
       var bc  = document.getElementById('prog-tab-centro');
       var bp  = document.getElementById('prog-tab-plan');
       var bck = document.getElementById('prog-tab-checklist');
+      var btk = document.getElementById('prog-tab-tareas');
       if(bc) { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
       if(bp) { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
       if(bck){ bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
+      if(btk){ btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -5473,9 +5493,75 @@ async function ckMarcar(itemId, estado){
         if(el_ck) el_ck.scrollIntoView({behavior:'smooth', block:'start'});
         cargarChecklistResumen();
       }
+      if(tab==='tareas'){
+        if(el_tk) el_tk.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarTareasOperativas==='function') cargarTareasOperativas();
+      }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
     }
+  }
+
+  async function cargarTareasOperativas(){
+    var lista = document.getElementById('tareas-op-lista');
+    if(!lista) return;
+    lista.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/tareas-operativas');
+      var d = await r.json();
+      var tareas = d.tareas || [];
+      var badge = document.getElementById('prog-tareas-badge');
+      if(badge){
+        var pend = tareas.filter(function(t){return t.estado==='pendiente'||t.estado==='en_progreso'}).length;
+        if(pend){ badge.textContent = pend; badge.style.display='inline-block'; }
+        else badge.style.display = 'none';
+      }
+      if(!tareas.length){
+        lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px">Sin tareas operativas pendientes 🎉</div>';
+        return;
+      }
+      lista.innerHTML = tareas.map(function(t){
+        var tipoColors = {sacar_envases_serigrafia:'#7c3aed',sacar_envases_tampografia:'#7c3aed',sacar_inventario:'#16a34a',envasado:'#0891b2',etiquetado:'#d97706',general:'#64748b'};
+        var col = tipoColors[t.tipo]||'#64748b';
+        var estCol = t.estado==='pendiente'?'#dc2626':t.estado==='en_progreso'?'#d97706':t.estado==='completada'?'#15803d':'#94a3b8';
+        var fechaObj = t.fecha_objetivo?'<span style="color:#dc2626;font-size:11px;font-weight:700">📅 '+_escHTML(t.fecha_objetivo)+'</span>':'';
+        return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+col+';border-radius:10px;padding:14px 18px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
+          '<div>'+
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+              '<span style="font-weight:700;color:#0f172a;font-size:14px">'+_escHTML(t.titulo)+'</span>'+
+              '<span style="background:'+col+'22;color:'+col+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">'+_escHTML(t.tipo||'')+'</span>'+
+              '<span style="background:'+estCol+'22;color:'+estCol+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;text-transform:uppercase">'+_escHTML(t.estado)+'</span>'+
+            '</div>'+
+            '<div style="font-size:13px;color:#475569;margin-top:6px">'+_escHTML(t.descripcion||'')+'</div>'+
+            '<div style="font-size:11px;color:#64748b;margin-top:4px">'+
+              (t.producto_relacionado?'📦 <b>'+_escHTML(t.producto_relacionado)+'</b> · ':'')+
+              (t.cantidad>0?'🔢 '+Math.round(t.cantidad).toLocaleString('es-CO')+' und · ':'')+
+              (t.asignado_a?'👥 '+_escHTML(t.asignado_a)+' · ':'')+
+              fechaObj +
+            '</div>'+
+          '</div>'+
+          '<div style="text-align:right">'+
+            (t.estado==='pendiente'||t.estado==='en_progreso' ? '<button onclick="completarTareaOp('+t.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">✓ Completar</button>' : '') +
+          '</div>'+
+        '</div>';
+      }).join('');
+    } catch(e){
+      lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function completarTareaOp(tid){
+    var obs = prompt('Observaciones del cierre (opcional):', '') || '';
+    try {
+      var r = await fetch('/api/tareas-operativas/'+tid+'/completar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({observaciones: obs})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      _toast('Tarea completada', 1);
+      cargarTareasOperativas();
+    } catch(e){ alert('Error: '+e.message); }
   }
   // Safe modal backdrop close — placed after all functions are defined
   (function(){

@@ -137,6 +137,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
        los pagos a influencers se hacen desde Marketing -> Tesoreria.
        En Compras solo aparecen como suma agregada para tesoreria. -->
   <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
+  <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
   <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
 </div>
 
@@ -314,6 +315,27 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
+</div>
+
+<!-- Pane: Solicitudes de Producción (cola de Catalina desde el checklist Pre-Produccion) -->
+<div id="pane-solprod" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px;">
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128737;&#65039; Solicitudes desde Producción</span>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">Llegan del checklist Pre-Producción · Decide ruta: inventario / OC / serigrafía / tampografía</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+      <select id="solprod-filtro-estado" onchange="loadSolicitudesProduccion()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+        <option value="pendiente">Pendientes</option>
+        <option value="decidida">Decididas</option>
+        <option value="completada">Completadas</option>
+        <option value="todas">Todas</option>
+      </select>
+      <button class="btn bp" onclick="loadSolicitudesProduccion()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
+  </div>
+  <div id="solprod-lista" style="display:flex;flex-direction:column;gap:10px;margin-top:14px"></div>
+  <div id="solprod-empty" style="display:none;text-align:center;color:#94a3b8;padding:40px;font-size:13px">Sin solicitudes en este estado.</div>
 </div>
 
 <div id="pane-consol" class="pane">
@@ -848,6 +870,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
+    else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     var fab = document.getElementById('fab-btn');
     if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
@@ -3707,6 +3730,131 @@ async function gestionarSol(decision){
   }catch(e){ alert('Error: '+e); }
 }
 
+
+// ─── Solicitudes de Producción (cola de Catalina) ─────────────────
+async function loadSolicitudesProduccion(){
+  var estado = (document.getElementById('solprod-filtro-estado')||{}).value || 'pendiente';
+  var lista = document.getElementById('solprod-lista');
+  var empty = document.getElementById('solprod-empty');
+  if(!lista) return;
+  lista.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px;font-size:12px">Cargando...</div>';
+  empty.style.display = 'none';
+  try {
+    var r = await fetch('/api/compras/solicitudes-produccion?estado='+encodeURIComponent(estado));
+    var d = await r.json();
+    if(!r.ok){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+(d.error||r.status)+'</div>'; return; }
+    var items = d.items || [];
+    // Badge en el tab
+    var badge = document.getElementById('solprod-badge');
+    if(badge){
+      var nPend = d.pendientes || 0;
+      if(nPend > 0){ badge.textContent = nPend; badge.style.display = 'inline-block'; }
+      else { badge.style.display = 'none'; }
+    }
+    if(!items.length){ lista.innerHTML=''; empty.style.display='block'; return; }
+    var rutaColors = {inventario:'#16a34a', oc:'#1e40af', serigrafia:'#7c3aed', tampografia:'#7c3aed', etiqueta_adhesiva:'#0891b2'};
+    var rutaLabels = {inventario:'📦 Sacar de inventario', oc:'🛒 Crear OC', serigrafia:'🎨 Mandar a serigrafía', tampografia:'🖋️ Mandar a tampografía', etiqueta_adhesiva:'🏷️ OC etiquetas adhesivas'};
+    lista.innerHTML = items.map(function(it){
+      var ruta = it.ruta_sugerida || 'oc';
+      var stockTxt = (it.stock_actual||0).toLocaleString('es-CO');
+      var cantTxt = Math.round(it.cantidad_unidades||0).toLocaleString('es-CO');
+      var fechaObj = it.fecha_objetivo ? '<span style="color:#dc2626;font-size:11px;font-weight:600">📅 '+it.fecha_objetivo+'</span>' : '';
+      var decoBadge = it.decoracion_tipo ? '<span style="background:#f3e8ff;color:#7c3aed;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px">'+it.decoracion_tipo+'</span>' : '';
+      var estadoBadge = '';
+      if(it.estado==='pendiente') estadoBadge = '<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">PENDIENTE</span>';
+      else if(it.estado==='decidida') estadoBadge = '<span style="background:#dbeafe;color:#1e40af;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">DECIDIDA: '+_esc(it.decision||'')+'</span>';
+      else estadoBadge = '<span style="background:#dcfce7;color:#166534;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">'+_esc(it.estado||'')+'</span>';
+      var acciones = '';
+      if(it.estado === 'pendiente'){
+        acciones = '<button onclick="solprodDecidir('+it.id+')" style="background:'+(rutaColors[ruta]||'#1e40af')+';color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Decidir →</button>';
+      }
+      var oc_o_tarea = '';
+      if(it.oc_numero) oc_o_tarea += '<div style="font-size:10px;color:#1e40af;margin-top:2px">📄 '+_esc(it.oc_numero)+'</div>';
+      if(it.tarea_operativa_id) oc_o_tarea += '<div style="font-size:10px;color:#15803d;margin-top:2px">🎯 Tarea operativa #'+it.tarea_operativa_id+'</div>';
+      return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(rutaColors[ruta]||'#94a3b8')+';border-radius:10px;padding:14px 18px;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center">'+
+        '<div>'+
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+            '<span style="font-weight:700;color:#0f172a;font-size:14px">'+_esc(it.producto_nombre||'')+'</span>'+
+            decoBadge + estadoBadge +
+          '</div>'+
+          '<div style="font-size:13px;color:#1e293b;margin-top:4px"><b>'+_esc(it.tipo_item||'')+'</b> · '+_esc(it.descripcion||it.mee_codigo||'')+'</div>'+
+          '<div style="font-size:11px;color:#64748b;margin-top:4px">'+
+            '🔢 <b>'+cantTxt+' und</b> · '+
+            '📦 stock: <b style="color:'+(it.stock_actual>=it.cantidad_unidades?'#16a34a':'#dc2626')+'">'+stockTxt+'</b> · '+
+            (fechaObj?fechaObj+' · ':'')+
+            '<i>'+rutaLabels[ruta]+'</i>'+
+          '</div>'+
+          (it.observaciones?'<div style="font-size:11px;color:#78716c;margin-top:4px;font-style:italic">"'+_esc(it.observaciones)+'"</div>':'')+
+          oc_o_tarea +
+        '</div>'+
+        '<div style="text-align:right">'+acciones+'</div>'+
+      '</div>';
+    }).join('');
+  } catch(e){
+    lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+  }
+}
+
+async function solprodDecidir(solId){
+  // Modal con opciones de decision
+  var html = '<div id="solprod-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px">'+
+    '<div style="background:#fff;border-radius:14px;padding:24px;width:520px;max-width:100%">'+
+      '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">'+
+        '<h3 style="margin:0">Decidir solicitud #'+solId+'</h3>'+
+        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:transparent;border:1px solid #d6d3d1;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#1c1917;font-weight:700">&#10005;</button>'+
+      '</div>'+
+      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Ruta</label>'+
+      '<select id="sp-decision" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+        '<option value="inventario">📦 Sacar de inventario (genera tarea operativa)</option>'+
+        '<option value="oc">🛒 Crear OC (compras nuevas)</option>'+
+        '<option value="serigrafia">🎨 Mandar a serigrafía (saca envases + tarea)</option>'+
+        '<option value="tampografia">🖋️ Mandar a tampografía (saca envases + tarea)</option>'+
+        '<option value="etiqueta_adhesiva">🏷️ OC etiquetas adhesivas</option>'+
+      '</select>'+
+      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Proveedor (si aplica)</label>'+
+      '<input id="sp-prov" type="text" placeholder="Ej. Cromaroma / nombre del serigrafista..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>'+
+      '<input id="sp-fecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignado a (CSV)</label>'+
+      '<input id="sp-asign" type="text" value="luz,operarios" placeholder="luz,miguel,luis..." style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px">'+
+      '<label style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Observaciones</label>'+
+      '<textarea id="sp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;margin:6px 0 14px;font-size:13px;font-family:inherit"></textarea>'+
+      '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+        '<button onclick="document.getElementById(&quot;solprod-modal&quot;).remove()" style="background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>'+
+        '<button onclick="solprodEnviarDecision('+solId+')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">✅ Confirmar</button>'+
+      '</div>'+
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function solprodEnviarDecision(solId){
+  var body = {
+    decision: document.getElementById('sp-decision').value,
+    proveedor: document.getElementById('sp-prov').value,
+    fecha_objetivo: document.getElementById('sp-fecha').value,
+    asignado_a: document.getElementById('sp-asign').value,
+    observaciones: document.getElementById('sp-obs').value,
+  };
+  try {
+    var r = await fetch('/api/compras/solicitudes-produccion/'+solId+'/decidir', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    document.getElementById('solprod-modal').remove();
+    alert(d.mensaje||'Decisión guardada');
+    loadSolicitudesProduccion();
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+// Auto-cargar badge al cargar la página
+setTimeout(function(){
+  fetch('/api/compras/solicitudes-produccion?estado=pendiente').then(function(r){return r.json();}).then(function(d){
+    var badge = document.getElementById('solprod-badge');
+    if(badge && d.pendientes>0){ badge.textContent = d.pendientes; badge.style.display='inline-block'; }
+  }).catch(function(){});
+}, 1500);
 
 // ─── Consolidado por Proveedor ────────────────────────────────────
 var _consolCache = [];  // cache indexado por posición
