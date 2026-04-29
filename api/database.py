@@ -1814,12 +1814,20 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
               SET origen='calendar'
             WHERE COALESCE(observaciones,'') LIKE '[auto-sync calendar]%'""",
     ]),
-    (44, "formula_headers: metadata completa de Shopify (imagen + SKU + descripcion + precio + peso + galeria)", [
-        # Sebastian (28-abr-2026): el modal del checklist debe mostrar la
-        # foto del producto y info relevante (SKU, etiqueta) tomada de
-        # animuslb.com (Shopify). Auto-sync via /imagen-shopify-sync.
+    (44, "formula_headers: imagen_url para mostrar foto del producto en checklist Pre-Produccion", [
+        # Sebastian (28-abr-2026): el modal del checklist muestra foto del
+        # producto. Esta migracion ya corrio en produccion con 2 columnas.
+        # NO MODIFICAR — las migraciones son inmutables una vez deployadas.
+        # Para columnas adicionales de Shopify ver migracion #46.
         """ALTER TABLE formula_headers ADD COLUMN imagen_url TEXT DEFAULT ''""",
         """ALTER TABLE formula_headers ADD COLUMN imagen_actualizada_at TEXT""",
+    ]),
+    (46, "formula_headers: metadata Shopify completa (SKU + descripcion + precio + peso + galeria)", [
+        # Bug 29-abr-2026: agregue estas columnas dentro de la #44 retroactivamente.
+        # Como #44 ya estaba marcada como aplicada en prod, las nuevas no se crearon
+        # y el endpoint imagen-shopify-sync fallaba con 500 "no such column".
+        # Se separan en #46 para que corran en el proximo boot.
+        # Idempotente: ALTER ADD con duplicate column name se ignora silenciosa.
         """ALTER TABLE formula_headers ADD COLUMN shopify_id TEXT DEFAULT ''""",
         """ALTER TABLE formula_headers ADD COLUMN shopify_handle TEXT DEFAULT ''""",
         """ALTER TABLE formula_headers ADD COLUMN descripcion_html TEXT DEFAULT ''""",

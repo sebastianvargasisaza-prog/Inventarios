@@ -6,7 +6,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <title>Espagiria — Panel Asistente Gerencia</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos5">
+<link rel="stylesheet" href="/static/cortex.css?v=eos6">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
