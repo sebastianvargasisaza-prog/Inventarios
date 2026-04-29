@@ -6851,6 +6851,170 @@ def _slug_codigo(nombre, presentacion):
     return base or 'MEE-X'
 
 
+@bp.route("/api/admin/sku-map", methods=["GET"])
+def admin_sku_map_listar():
+    """Lista mapeos sku_producto_map + productos disponibles en
+    formula_headers para validar matches."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    rows = c.execute(
+        "SELECT sku, producto_nombre, COALESCE(activo,1) FROM sku_producto_map ORDER BY sku"
+    ).fetchall()
+    productos = [r[0] for r in c.execute(
+        "SELECT producto_nombre FROM formula_headers ORDER BY producto_nombre"
+    ).fetchall()]
+    # Marcar mapeos huerfanos (producto_nombre que NO existe en formula_headers)
+    productos_set = set(productos)
+    out = [{
+        'sku': r[0], 'producto_nombre': r[1],
+        'activo': bool(r[2]),
+        'producto_existe': (r[1] in productos_set),
+    } for r in rows]
+    conn.close()
+    return jsonify({'mapeos': out, 'productos_disponibles': productos})
+
+
+@bp.route("/api/admin/sku-map", methods=["POST"])
+def admin_sku_map_upsert():
+    """Upsert de un mapeo SKU. Body: {sku, producto_nombre, activo}.
+
+    Tras editar, OPCIONAL: cancela producciones programadas con origen=
+    'calendar' del producto VIEJO en fechas futuras — para limpiar las
+    fantasmas que se generaron antes del fix. Pasar ?cleanup=1.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    sku = (d.get('sku') or '').strip().upper()
+    producto = (d.get('producto_nombre') or '').strip()
+    activo = 1 if d.get('activo', True) else 0
+    cleanup = request.args.get('cleanup', '0') in ('1', 'true', 'True')
+    producto_anterior = (d.get('producto_anterior') or '').strip()
+    if not sku or not producto:
+        return jsonify({'error': 'sku y producto_nombre requeridos'}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("""
+        INSERT INTO sku_producto_map (sku, producto_nombre, activo)
+        VALUES (?, ?, ?)
+        ON CONFLICT(sku) DO UPDATE SET
+          producto_nombre=excluded.producto_nombre,
+          activo=excluded.activo
+    """, (sku, producto, activo))
+    canceladas = 0
+    if cleanup and producto_anterior and producto_anterior != producto:
+        # Cancelar producciones futuras con origen='calendar' que apuntan
+        # al producto erroneo (solo las del horizonte futuro)
+        try:
+            cur = c.execute("""
+                UPDATE produccion_programada
+                SET estado='cancelado',
+                    observaciones=COALESCE(observaciones,'') ||
+                      ' [auto-cancelado: SKU ' || ? || ' remapeado de ' || ? || ' a ' || ? || ']'
+                WHERE producto=? AND origen='calendar'
+                  AND fecha_programada >= date('now','-1 day')
+                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+            """, (sku, producto_anterior, producto, producto_anterior))
+            canceladas = cur.rowcount or 0
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'ok': True, 'sku': sku, 'producto_nombre': producto, 'activo': bool(activo),
+        'canceladas_cleanup': canceladas,
+        'mensaje': f'SKU {sku} mapeado a {producto}'
+                   + (f' · {canceladas} producciones erroneas canceladas' if canceladas else ''),
+    })
+
+
+@bp.route("/admin/sku-map", methods=["GET"])
+def admin_sku_map_page():
+    """UI editable del mapeo SKU → producto."""
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>SKU map editor</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
+      h1{font-size:20px;color:#0f172a}
+      table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;font-size:13px;margin-top:14px}
+      th{background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px;text-align:left;padding:10px}
+      td{padding:8px 10px;border-top:1px solid #f1f5f9;vertical-align:middle}
+      input,select{padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px}
+      .sku{font-family:monospace;font-weight:700;color:#0891b2}
+      .err-row td{background:#fee2e2}
+      .warn-row td{background:#fef3c7}
+      .btn{background:#16a34a;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px}
+      .btn-del{background:#dc2626}
+      .nota{font-size:12px;color:#64748b;background:#eff6ff;border-left:3px solid #3b82f6;padding:10px 14px;border-radius:6px;margin:14px 0;line-height:1.5}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px;color:#0891b2">&larr; admin</a>
+    <h1>🔗 Mapeo SKU → Producto (sku_producto_map)</h1>
+    <div class="nota">
+      Cuando un evento del Google Calendar tiene un SKU (ej. <code>HKJ</code>),
+      el sistema lo busca en esta tabla para saber qué producto fabricar.
+      Si un mapeo está mal, las producciones se generan con el producto incorrecto
+      (caso real: HKJ apuntaba a Limpiador Kojico cuando es Emulsión Hidratante).<br><br>
+      <b>Filas en rojo:</b> el producto referenciado NO existe en formula_headers.<br>
+      <b>Editar:</b> cambia el desplegable y dale Guardar. Si quieres también
+      cancelar las producciones erróneas del producto anterior, marca "Limpiar fantasmas".
+    </div>
+    <button onclick="cargar()" style="padding:8px 16px;background:#1e40af;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">🔄 Recargar</button>
+    <div id="tabla">Cargando...</div>
+    <script>
+    var _productos = [];
+    async function cargar(){
+      var r = await fetch('/api/admin/sku-map');
+      var d = await r.json();
+      _productos = d.productos_disponibles || [];
+      var rows = (d.mapeos||[]);
+      document.getElementById('tabla').innerHTML =
+        '<table><thead><tr>'+
+        '<th>SKU</th><th>Producto actual</th><th>Activo</th><th>¿Existe?</th><th>Cambiar a</th><th>Limpiar fantasmas</th><th></th>'+
+        '</tr></thead><tbody>'+
+        rows.map(function(m, i){
+          var rowCls = m.producto_existe ? '' : 'err-row';
+          var opciones = '<option value="">— elegir —</option>' +
+            _productos.map(function(p){
+              return '<option value="'+esc(p)+'"'+(p===m.producto_nombre?' selected':'')+'>'+esc(p)+'</option>';
+            }).join('');
+          return '<tr class="'+rowCls+'">'+
+            '<td><span class="sku">'+esc(m.sku)+'</span></td>'+
+            '<td>'+esc(m.producto_nombre)+'</td>'+
+            '<td><input type="checkbox" id="act-'+i+'"'+(m.activo?' checked':'')+'></td>'+
+            '<td>'+(m.producto_existe?'✅':'⚠️ huérfano')+'</td>'+
+            '<td><select id="prod-'+i+'" style="width:280px">'+opciones+'</select></td>'+
+            '<td style="text-align:center"><input type="checkbox" id="clean-'+i+'" title="Cancelar producciones programadas del producto anterior"></td>'+
+            '<td><button class="btn" onclick="guardar('+i+', \\''+esc(m.sku)+'\\', \\''+esc(m.producto_nombre).replace(/\\\\/g,'').replace(/\\'/g,"\\\\'")+'\\')">💾 Guardar</button></td>'+
+          '</tr>';
+        }).join('') +
+        '</tbody></table>';
+    }
+    function esc(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+    async function guardar(i, sku, productoAnterior){
+      var prod = document.getElementById('prod-'+i).value;
+      var act = document.getElementById('act-'+i).checked;
+      var clean = document.getElementById('clean-'+i).checked;
+      if(!prod){ alert('Selecciona un producto'); return; }
+      var r = await fetch('/api/admin/sku-map'+(clean?'?cleanup=1':''), {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({sku: sku, producto_nombre: prod, activo: act, producto_anterior: productoAnterior})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      alert(d.mensaje||'Guardado');
+      cargar();
+    }
+    cargar();
+    </script>
+    </body></html>"""
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/api/admin/mee-fugas-check", methods=["GET"])
 def admin_mee_fugas_check():
     """Audita el catalogo maestro_mee buscando "fugas" tipicas tras un
