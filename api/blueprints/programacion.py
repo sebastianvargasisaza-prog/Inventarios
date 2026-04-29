@@ -2081,7 +2081,7 @@ def listado_produccion_programada():
                pp.observaciones,
                COALESCE(pp.lotes,1) * COALESCE(fh.lote_size_kg,0) as kg
         FROM produccion_programada pp
-        LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
         WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
           AND pp.fecha_programada >= date('now','-7 day')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
@@ -3945,7 +3945,45 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
             pass
 
     # 2) Envases / etiquetas / decoracion (plantilla del producto o default)
+    # Sebastian (29-abr-2026): "ya la app sabe la presentacion del producto,
+    # deberia calcular en automatico la cantidad de envases ... pero con la
+    # opcion de corregir de ser necesario". Calculamos cantidad_unidades
+    # desde formula_headers.volumen_unitario_ml o peso_g; el editor inline
+    # ya existente permite ajustar manualmente.
     try:
+        # Presentacion del producto (en g o ml — para cosmeticos densidad ~1)
+        presentacion_g_ml = 0.0
+        try:
+            pres = c.execute("""
+                SELECT COALESCE(volumen_unitario_ml, 0), COALESCE(peso_g, 0)
+                FROM formula_headers
+                WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+            """, (producto_nombre,)).fetchone()
+            if pres:
+                vol_ml = float(pres[0] or 0)
+                peso_g = float(pres[1] or 0)
+                # Preferir volumen_unitario_ml; fallback a peso_g de Shopify
+                presentacion_g_ml = vol_ml or peso_g
+        except Exception:
+            pass
+
+        # Calcular unidades objetivo con 5% de merma (estandar industrial)
+        import math as _math
+        if presentacion_g_ml > 0 and (cantidad_kg or 0) > 0:
+            unidades_objetivo = int(_math.ceil(
+                (cantidad_kg * 1000.0) / presentacion_g_ml * 1.05
+            ))
+        else:
+            unidades_objetivo = 0  # sin info; frontend mostrara "—"
+
+        # Tipos que llevan cantidad_unidades (los que son piezas fisicas);
+        # serigrafia/tampografia son servicios, no aplican unidades.
+        TIPOS_CON_UNIDADES = {
+            'envase_primario', 'envase_secundario', 'tapa', 'caja_exterior',
+            'etiqueta_frontal', 'etiqueta_posterior', 'etiqueta_lateral',
+            'instructivo', 'otro',
+        }
+
         # Buscar plantilla especifica del producto
         plantilla = c.execute("""
             SELECT item_tipo, descripcion, dias_anticipacion, orden, proveedor_default, obligatorio
@@ -3970,13 +4008,21 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
                 continue  # solo crear los obligatorios automaticamente
             if tipo in TIPOS_LEGACY_OCULTOS:
                 continue  # cubierto por la decoracion del envase
+            cant_ud = unidades_objetivo if tipo in TIPOS_CON_UNIDADES else 0
+            unidad_label = 'ud' if cant_ud > 0 else ''
+            obs_calc = (
+                f"Auto: {cantidad_kg:.1f}kg / {presentacion_g_ml:.0f}{'ml' if (pres and (pres[0] or 0)>0) else 'g'} "
+                f"= {cant_ud} ud (+5% merma)"
+            ) if cant_ud > 0 else ''
             c.execute("""INSERT INTO produccion_checklist
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
-                 item_tipo, descripcion, estado, proveedor, dias_anticipacion,
+                 item_tipo, descripcion, cantidad_unidades, unidad,
+                 estado, proveedor, dias_anticipacion, observaciones,
                  actualizado_por)
-                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
-                 tipo, desc, 'pendiente', prov or '', dias or 30, usuario))
+                 tipo, desc, cant_ud, unidad_label,
+                 'pendiente', prov or '', dias or 30, obs_calc, usuario))
             items_creados += 1
     except Exception:
         pass
@@ -4000,16 +4046,19 @@ def checklist_generar(produccion_id):
     # kg total = lotes * formula_headers.lote_size_kg
     prod = c.execute("""
         SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
-               COALESCE(fh.lote_size_kg, 0) as lote_kg
+               COALESCE(fh.lote_size_kg, 0) as lote_kg,
+               COALESCE(pp.cantidad_kg, 0)  as cantidad_kg_explicita
         FROM produccion_programada pp
-        LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
         WHERE pp.id=?
     """, (produccion_id,)).fetchone()
     if not prod:
         return jsonify({'error': 'Produccion no encontrada'}), 404
     lotes = int(prod[3] or 1)
     lote_kg = float(prod[4] or 0)
-    cant = lotes * lote_kg
+    cant_explicita = float(prod[5] or 0)
+    # Prioridad: cantidad_kg explicita (del calendario) > lotes * lote_kg
+    cant = cant_explicita if cant_explicita > 0 else (lotes * lote_kg)
 
     if d.get('forzar'):
         c.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (produccion_id,))
@@ -4411,10 +4460,15 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                 continue
             lote_kg = formulas[prod].get('lote_size_kg', 0) or 0
             lotes = max(1, round((kg_evento or lote_kg) / lote_kg)) if lote_kg > 0 else 1
+            # cantidad_kg explicita: prioriza kg extraido del titulo del evento
+            # ("~5kg") sobre el calculo derivado lotes*lote_kg. Si ninguno aplica,
+            # 0 (el frontend mostrara "Sin tamano de lote — verificar formula").
+            cantidad_kg_calc = (kg_evento or 0) or (lotes * lote_kg if lote_kg > 0 else 0)
             # INSERT idempotente: si ya existe (producto, fecha), no duplicar
             try:
                 exists = conn.execute(
-                    "SELECT 1 FROM produccion_programada WHERE producto=? AND fecha_programada=? LIMIT 1",
+                    "SELECT id, COALESCE(cantidad_kg,0) FROM produccion_programada "
+                    "WHERE producto=? AND fecha_programada=? LIMIT 1",
                     (prod, fecha_s)
                 ).fetchone()
                 if not exists:
@@ -4422,12 +4476,19 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                     # filtre y no duplique con su lectura directa del calendar.
                     conn.execute(
                         """INSERT INTO produccion_programada
-                           (producto, fecha_programada, lotes, estado, observaciones, origen)
-                           VALUES (?, ?, ?, 'programado', ?, 'calendar')""",
-                        (prod, fecha_s, lotes,
+                           (producto, fecha_programada, lotes, cantidad_kg,
+                            estado, observaciones, origen)
+                           VALUES (?, ?, ?, ?, 'programado', ?, 'calendar')""",
+                        (prod, fecha_s, lotes, cantidad_kg_calc,
                          f'[auto-sync calendar] {titulo[:200]}')
                     )
                     inserted += 1
+                elif (exists[1] or 0) <= 0 and cantidad_kg_calc > 0:
+                    # Backfill: la fila existe pero sin cantidad_kg — actualizar.
+                    conn.execute(
+                        "UPDATE produccion_programada SET cantidad_kg=? WHERE id=?",
+                        (cantidad_kg_calc, exists[0])
+                    )
             except Exception:
                 continue
             break  # un evento → un producto match
@@ -4599,7 +4660,8 @@ def checklist_resumen_calendario():
             SELECT pp.id,
                    pp.producto                                       as producto_nombre,
                    pp.fecha_programada                               as fecha_planeada,
-                   COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg,0) as kg,
+                   COALESCE(NULLIF(pp.cantidad_kg, 0),
+                            COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0)) as kg,
                    pp.estado                                         as estado_prod,
                    (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}) as total_items,
@@ -4616,7 +4678,7 @@ def checklist_resumen_calendario():
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
                        AND estado='no_aplica') as no_aplica
             FROM produccion_programada pp
-            LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+            LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
               AND pp.fecha_programada >= date('now','-30 day')
               AND pp.fecha_programada <= date('now','+' || ? || ' day')
@@ -4711,7 +4773,7 @@ def disponibilidad_mp_endpoint(codigo_mp):
                    ROUND(COALESCE(fi.cantidad_g_por_lote,0) * COALESCE(pp.lotes, 1)) as req_g
             FROM produccion_programada pp
             JOIN formula_items fi ON fi.producto_nombre = pp.producto
-            LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+            LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE fi.material_id = ?
               AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
               AND pp.fecha_programada >= date('now','-1 day')
@@ -4755,9 +4817,11 @@ def checklist_backfill():
                 SELECT pp.id,
                        pp.producto                                          as producto_nombre,
                        pp.fecha_programada                                  as fecha_planeada,
-                       COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0) as kg
+                       COALESCE(NULLIF(pp.cantidad_kg, 0),
+                                COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0)) as kg
                 FROM produccion_programada pp
-                LEFT JOIN formula_headers fh ON fh.producto_nombre = pp.producto
+                LEFT JOIN formula_headers fh
+                       ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
                 WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
                   AND pp.fecha_programada >= date('now','-30 day')
                   AND NOT EXISTS (SELECT 1 FROM produccion_checklist

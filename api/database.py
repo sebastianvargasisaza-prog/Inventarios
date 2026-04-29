@@ -2273,6 +2273,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """CREATE INDEX IF NOT EXISTS idx_tareas_estado ON tareas_operativas(estado, fecha_objetivo)""",
         """CREATE INDEX IF NOT EXISTS idx_tareas_asignado ON tareas_operativas(asignado_a)""",
     ]),
+    (50, "produccion_programada: cantidad_kg explicita (auto-derivada del calendario, no depende del JOIN con formula_headers)", [
+        # Sebastian (29-abr-2026): el modal del checklist mostraba "0 kg" porque
+        # el SELECT hacia 'COALESCE(pp.lotes,1) * COALESCE(fh.lote_size_kg,0)' y
+        # cuando el JOIN con formula_headers fallaba (mismatch de capitalizacion
+        # o espacios), lote_size_kg salia NULL → 0. Ahora persistimos el kg
+        # directo en la fila al sincronizar del calendario.
+        "ALTER TABLE produccion_programada ADD COLUMN cantidad_kg REAL DEFAULT 0",
+    ]),
 ]
 
 

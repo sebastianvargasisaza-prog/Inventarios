@@ -5312,6 +5312,23 @@ async function ckBackfill(){
   } catch(e){ alert('Error: '+e.message); }
 }
 
+// Borra y regenera el checklist de una produccion — util cuando se actualizo
+// la formula (lote_size_kg / volumen_unitario_ml) y queremos recalcular las
+// cantidades de envases automaticamente con la nueva info.
+async function ckRegenerar(produccionId){
+  if(!confirm('Borrar y regenerar el checklist de esta producción?\\n\\nEsto recalcula MPs y envases con la presentación actual del producto. Las correcciones manuales que hayas hecho se pierden.')) return;
+  try {
+    var r = await fetch('/api/programacion/checklist/generar/'+produccionId, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({forzar:true})
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _toast('Regenerado: '+(d.items_creados||0)+' items', 1);
+    abrirChecklistDetalle(produccionId, window._ckCurrentProducto || '');
+  } catch(e){ alert('Error: '+e.message); }
+}
+
 // Sincroniza eventos del Google Calendar (animuslb.com) → produccion_programada.
 // Idempotente: usa (producto, fecha) como key. Auto-llamado al cargar el
 // resumen, pero este boton da trigger manual + feedback visible.
@@ -5425,7 +5442,15 @@ async function abrirChecklistDetalle(produccionId, producto){
     if(!r.ok){ document.getElementById('ck-modal-items').innerHTML='Error: '+(d.error||''); return; }
     var prim = (d.items||[])[0]||{};
     window._ckCurrentMeta = prim;  // guardar contexto para el editor inline (fecha_planeada, cantidad_kg, volumen_unitario_ml)
-    document.getElementById('ck-modal-sub').textContent = (prim.cantidad_kg||0).toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-');
+    var ckKg = prim.cantidad_kg||0;
+    var subEl = document.getElementById('ck-modal-sub');
+    if(ckKg > 0){
+      subEl.innerHTML = ckKg.toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-')+
+        ' &middot; <a href="javascript:void(0)" onclick="ckRegenerar('+produccionId+')" style="color:#a16207;font-size:11px;font-weight:700;text-decoration:none">🔁 Regenerar checklist</a>';
+    } else {
+      subEl.innerHTML = '<span style="color:#a16207">⚠️ Sin tamaño de lote — completa <code>lote_size_kg</code> en la fórmula o pon kg en el título del calendario</span>'+
+        ' &middot; <a href="javascript:void(0)" onclick="ckRegenerar('+produccionId+')" style="color:#a16207;font-size:11px;font-weight:700;text-decoration:none">🔁 Regenerar</a>';
+    }
 
     // Imagen del producto + acciones (sync Shopify, pegar URL manual)
     var imgWrap = document.getElementById('ck-modal-imagen');
