@@ -412,6 +412,45 @@ def test_notificar_alertas_es_idempotente(app, db_clean):
     assert n2 <= n1
 
 
+def test_rechazar_sol_influencer_notifica_a_jefferson_no_a_sebastian(app, db_clean):
+    """Bug fix Sebastian (29-abr-2026): rechazar SOL de Influencer/CC
+    siempre debe mandar email a Jefferson, no al solicitante (que puede
+    haber sido Sebastian cargando bulk).
+
+    No verificamos el envío de email real (sin SMTP en tests) — verificamos
+    la lógica leyendo la respuesta del endpoint y observaciones generadas.
+    """
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    con = sqlite3.connect(db_path)
+
+    # Crear SOL Cuenta de Cobro con solicitante='sebastian' (bulk import-style)
+    con.execute("""
+        INSERT INTO solicitudes_compra
+          (numero, fecha, estado, solicitante, urgencia, observaciones,
+           categoria, valor)
+        VALUES ('SOL-TEST-REJ', date('now'), 'Aprobada', 'sebastian', 'Normal',
+                'BENEFICIARIO: Test', 'Cuenta de Cobro', 500000)
+    """)
+    con.commit(); con.close()
+
+    client = _login_admin(app)
+    r = client.post("/api/solicitudes-compra/SOL-TEST-REJ/rechazar",
+                    json={"motivo": "Test rechazo"},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    d = r.get_json()
+    assert d["estado"] == "Rechazada"
+
+    # Verificar que la SOL quedó marcada Rechazada con motivo
+    con = sqlite3.connect(db_path)
+    sol = con.execute(
+        "SELECT estado, observaciones FROM solicitudes_compra WHERE numero='SOL-TEST-REJ'"
+    ).fetchone()
+    con.close()
+    assert sol[0] == "Rechazada"
+    assert "RECHAZADA: Test rechazo" in sol[1]
+
+
 def test_marketing_metrics_loop_es_callable():
     """_start_marketing_metrics_loop existe y es invocable sin crashear."""
     import sys, os

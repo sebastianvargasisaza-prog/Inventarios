@@ -1653,7 +1653,8 @@ def rechazar_solicitud(numero):
     numero = numero.upper()
     conn = get_db(); cur = conn.cursor()
     sol = cur.execute(
-        "SELECT solicitante, email_solicitante, observaciones FROM solicitudes_compra WHERE numero=?",
+        "SELECT solicitante, email_solicitante, observaciones, categoria "
+        "FROM solicitudes_compra WHERE numero=?",
         (numero,)
     ).fetchone()
     if not sol:
@@ -1665,10 +1666,23 @@ def rechazar_solicitud(numero):
         (motivo, numero)
     )
     conn.commit()
-    # Notificar al solicitante
+    # Notificar al solicitante. Sebastian (29-abr-2026): "cuando doy rechazar
+    # en compras a una cuenta de influencer me esta llegando a mi deberia
+    # llegarle a jeferson". Para SOLs de Influencer/CC el destinatario SIEMPRE
+    # debe ser Jefferson (responsable de marketing) — no el solicitante real
+    # que puede haber sido Sebastián cargando bulk.
     try:
         _sol_user = (sol[0] or '').strip().lower()
-        _dest = (sol[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
+        _categoria = (sol[3] or '').strip()
+        _es_influencer = _categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+        if _es_influencer:
+            # Forzar Jefferson como destinatario para SOLs de marketing
+            _dest = USER_EMAILS.get('jefferson', '')
+            # Fallback solo si Jefferson no está configurado: usar email de la SOL
+            if not _dest:
+                _dest = (sol[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
+        else:
+            _dest = (sol[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
         if _dest:
             _asunto = f"❌ Solicitud {numero} rechazada"
             _body = (
@@ -2507,15 +2521,20 @@ def pagar_oc(numero_oc):
             or 'marketing' in cat_low_n
         )
         if es_influencer_oc and nuevo_estado == 'Pagada':
-            sol_info = cur.execute(
-                "SELECT solicitante, email_solicitante FROM solicitudes_compra "
-                "WHERE numero_oc=? LIMIT 1", (numero_oc,)
-            ).fetchone()
-            if sol_info:
-                _sol_user = (sol_info[0] or '').strip().lower()
-                _dest = (sol_info[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
-            else:
-                _dest = USER_EMAILS.get('jefferson', '')
+            # Sebastian (29-abr-2026): "deberia llegarle a jeferson" no a quien
+            # creó la SOL (puede haber sido Sebastian cargando bulk). Para OCs
+            # de Influencer/CC el destinatario SIEMPRE es Jefferson.
+            _dest = USER_EMAILS.get('jefferson', '')
+            # Fallback: si Jefferson no está configurado, usar el solicitante
+            # original (mejor algo que nada).
+            if not _dest:
+                sol_info = cur.execute(
+                    "SELECT solicitante, email_solicitante FROM solicitudes_compra "
+                    "WHERE numero_oc=? LIMIT 1", (numero_oc,)
+                ).fetchone()
+                if sol_info:
+                    _sol_user = (sol_info[0] or '').strip().lower()
+                    _dest = (sol_info[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
             if _dest:
                 _asunto = f"💸 Pago confirmado a {proveedor} — {numero_oc}"
                 _body = (
