@@ -6780,11 +6780,19 @@ def tareas_operativas_list():
     """Lista de tareas operativas. Querystring:
        ?usuario=<username> (filtra por asignado_a)
        ?estado=pendiente|completada|todas (default pendiente+en_progreso)
+       ?contexto=planta|mias|todas (Sebastian 29-abr-2026: el caso
+        "Cargar influencers" salia en /planta porque era una tarea
+        chat_asignacion para Jeferson — la asignacion era grupal).
+        - planta: solo tareas fisicas de planta (excluye chat_asignacion)
+        - mias: solo asignadas al usuario actual
+        - todas (default): backward-compatible
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    me = (session.get('compras_user', '') or '').strip().lower()
     usuario = (request.args.get('usuario') or '').strip().lower()
     estado_q = (request.args.get('estado') or '').strip()
+    contexto = (request.args.get('contexto') or '').strip().lower()
     conn = get_db(); c = conn.cursor()
     where = []
     params = []
@@ -6797,6 +6805,17 @@ def tareas_operativas_list():
     if usuario:
         where.append("(LOWER(asignado_a) LIKE ? OR asignado_a='')")
         params.append(f"%{usuario}%")
+    if contexto == 'planta':
+        # Solo tipos fisicos de planta. chat_asignacion es generica entre
+        # cualquier par de usuarios y NO pertenece al flujo de planta.
+        where.append("(tipo IN ('sacar_envases_serigrafia','sacar_envases_tampografia','sacar_inventario','envasado','etiquetado','recoleccion_mee','recoleccion_mp','dispensacion','limpieza_sala','cambio_lote','muestreo','revision_visual') "
+                     "OR origen_tipo IN ('solicitud_produccion','sol_anticipada'))")
+        where.append("COALESCE(origen_tipo,'') != 'chat'")
+    elif contexto == 'mias':
+        # Solo las asignadas a mi (csv split o match exacto). origen_tipo
+        # 'chat' tambien aplica — son tareas que me asignaron en chat.
+        where.append("(',' || LOWER(REPLACE(COALESCE(asignado_a,''),' ','')) || ',') LIKE ?")
+        params.append(f"%,{me},%")
     sql = "SELECT * FROM tareas_operativas"
     if where:
         sql += " WHERE " + " AND ".join(where)

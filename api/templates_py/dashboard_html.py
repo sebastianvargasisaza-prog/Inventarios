@@ -7191,7 +7191,9 @@ async function ckMarcar(itemId, estado){
     if(!lista) return;
     lista.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px">Cargando...</div>';
     try {
-      var r = await fetch('/api/tareas-operativas');
+      // Sebastian (29-abr-2026): /planta solo muestra tareas fisicas de planta
+      // (excluye chat_asignacion como "Cargar influencers" que era para Jeferson).
+      var r = await fetch('/api/tareas-operativas?contexto=planta');
       var d = await r.json();
       var tareas = d.tareas || [];
       var badge = document.getElementById('prog-tareas-badge');
