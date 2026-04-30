@@ -1022,17 +1022,26 @@ async function renderDash(){
 
   // KPI data
   var mes=new Date().toISOString().substring(0,7);
-  // FILTRO: excluir SOLs de influencers/cuentas de cobro (Catalina no los gestiona,
-  // los maneja Marketing y se pagan via Tesoreria como suma agregada)
-  // Sebastian (29-abr-2026): restaurar visibilidad de SOLs influencer/CC en
-  // el dashboard izquierdo. Antes se filtraban (commit 7a0e0a5 pedido por
-  // Catalina) pero rompia el flujo Jefferson → Catalina → Pagada.
+  // Sebastian (30-abr-2026): SOLs y OCs de influencers NO deben salir en
+  // el dashboard de Compras — Catalina no las gestiona. El flujo correcto es
+  // Jefferson (Marketing) solicita pago → aparece en tab Influencers (admin
+  // only) → Sebastian paga. Las cantidades SI se cuentan en el KPI total
+  // para que el panorama financiero quede completo.
+  function _esInflLike(x){
+    var c = (x && (x.categoria||'') ).toString().toLowerCase();
+    return c.indexOf('influencer')>=0 || c.indexOf('marketing')>=0
+        || c.indexOf('cuenta de cobro')>=0;
+  }
   var solicPend=SOLIC.filter(function(s){ return s.estado==='Pendiente'; });
+  var solicPendVisible=solicPend.filter(function(s){ return !_esInflLike(s); });
+  var solicPendInfl=solicPend.length - solicPendVisible.length;
 
-  // Estados que cuentan como "OC abierta / por procesar" — Catalina necesita verlas
-  // todas, no solo Autorizadas. Las OCs manuales recien creadas quedan en Borrador.
+  // Estados que cuentan como "OC abierta / por procesar" — KPI cuenta TODAS
+  // (incluyendo influencer), pero la lista visual oculta las de influencer.
   var _OC_ABIERTA = ['Borrador','Revisada','Aprobada','Autorizada','Parcial'];
   var ocsPorPagar=OCS.filter(function(o){ return _OC_ABIERTA.indexOf(o.estado)>=0; });
+  var ocsPorPagarVisible=ocsPorPagar.filter(function(o){ return !_esInflLike(o); });
+  var ocsPorPagarInfl=ocsPorPagar.length - ocsPorPagarVisible.length;
   var pagMes=OCS.filter(function(o){ return o.estado==='Pagada'&&(o.fecha_pago||o.fecha||'').startsWith(mes); });
   var vPorPagar=ocsPorPagar.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
   var vMes=pagMes.reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0);
@@ -1051,8 +1060,21 @@ async function renderDash(){
   var stFg={'Pendiente':'#92400e','Aprobada':'#065f46','Rechazada':'#991b1b','Pagada':'#075985'};
   // Cards de SOL ENRIQUECIDAS — Catalina pidio ver TODOS los datos sin abrir
   // cada modal: items, observaciones completas, justificacion, total estimado.
-  document.getElementById('q-aut').innerHTML=solicPend.length
-    ? solicPend.slice(0,8).map(function(s){
+  // Footer cuando hay influencer items ocultos: link al tab Influencers (admin only).
+  var _hintInflSol = (solicPendInfl>0)
+    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
+      +'+ '+solicPendInfl+' SOL de influencers ocultas — ver tab '
+      +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
+      +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
+      +'</div>' : '';
+  var _hintInflOC = (ocsPorPagarInfl>0)
+    ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
+      +'+ '+ocsPorPagarInfl+' OC de influencers ocultas — ver tab '
+      +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
+      +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
+      +'</div>' : '';
+  document.getElementById('q-aut').innerHTML=(solicPendVisible.length
+    ? solicPendVisible.slice(0,8).map(function(s){
         var urg=s.urgencia||'Normal';
         var urgC=urgColor[urg]||'#78716c';
         var obs = (s.observaciones||'').trim();
@@ -1105,12 +1127,12 @@ async function renderDash(){
           +'<div class="acts" style="margin-top:8px;"><button class="btn bi bs" onclick="revisarSolicitudPendiente(&quot;'+esc(s.numero)+'&quot;)">Revisar / Editar</button></div>'
           +'</div>';
       }).join('')
-    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>';
+    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>') + _hintInflSol;
 
-  // Right queue: OCs autorizadas (ready to pay)
-  document.getElementById('q-pag').innerHTML=ocsPorPagar.length
-    ? ocsPorPagar.slice(0,8).map(function(o){ return miniCard(o); }).join('')
-    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin OCs autorizadas ✓</div>';
+  // Right queue: OCs autorizadas (ready to pay) — sin influencers
+  document.getElementById('q-pag').innerHTML=(ocsPorPagarVisible.length
+    ? ocsPorPagarVisible.slice(0,8).map(function(o){ return miniCard(o); }).join('')
+    : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin OCs autorizadas ✓</div>') + _hintInflOC;
 
   // Spending chart by category
   var _catLabels=['MP','MEE','SVC','ADM','INF','CC'];
