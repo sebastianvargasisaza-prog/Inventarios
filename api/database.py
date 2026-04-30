@@ -2281,6 +2281,19 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # directo en la fila al sincronizar del calendario.
         "ALTER TABLE produccion_programada ADD COLUMN cantidad_kg REAL DEFAULT 0",
     ]),
+    (51, "chat: reacciones a mensajes (Fase 3 — emoji reactions)", [
+        # Sebastian (29-abr-2026): Fase 3 del chat — reacciones rapidas
+        # con 5 emojis. UNIQUE(message_id, username, emoji) evita duplicados.
+        """CREATE TABLE IF NOT EXISTS chat_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            emoji TEXT NOT NULL,
+            creado_en TEXT DEFAULT (datetime('now')),
+            UNIQUE(message_id, username, emoji)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_chat_react_msg ON chat_reactions(message_id)""",
+    ]),
 ]
 
 

@@ -26,6 +26,131 @@ from config import COMPRAS_USERS
 bp = Blueprint('chat', __name__)
 
 
+@bp.route('/api/chat/widget.js')
+def chat_widget_js():
+    """JS del widget flotante 💬 que se inyecta en TODAS las paginas
+    (excepto /chat /login /logout). Sebastian (29-abr-2026): "vista
+    lateral persistente tipo WhatsApp Web — boton flotante en cualquier
+    pagina"."""
+    if 'compras_user' not in session:
+        return Response("// no auth", mimetype="application/javascript")
+    js = """
+(function(){
+  // No inyectar en /chat (seria recursivo) ni en /login
+  var p = window.location.pathname;
+  if (p === '/chat' || p === '/login' || p === '/logout') return;
+  // Idempotente: si ya esta cargado, no re-cargar
+  if (window.__chatWidgetLoaded) return;
+  window.__chatWidgetLoaded = true;
+
+  // Crear estilos
+  var s = document.createElement('style');
+  s.textContent = '\\
+    #cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s}\\
+    #cw-fab:hover{transform:scale(1.08)}\\
+    #cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}\\
+    #cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}\\
+    @keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}\\
+    #cw-panel{position:fixed;bottom:90px;right:20px;width:380px;max-width:calc(100vw - 40px);height:560px;max-height:calc(100vh - 130px);background:#fff;border:1px solid #e7e5e4;border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.25);z-index:9997;display:none;flex-direction:column;overflow:hidden}\\
+    #cw-panel.open{display:flex}\\
+    #cw-panel iframe{flex:1;border:none;background:#fafaf9}\\
+    #cw-panel-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#7c3aed;color:#fff;font-size:13px;font-weight:700}\\
+    #cw-panel-close{background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0;line-height:1}\\
+  ';
+  document.head.appendChild(s);
+
+  // Crear FAB
+  var fab = document.createElement('button');
+  fab.id = 'cw-fab';
+  fab.title = 'EOS Chat — clic para abrir / Esc para cerrar';
+  fab.innerHTML = '\\u{1F4AC}<span id="cw-badge" style="display:none">0</span>';
+  fab.onclick = function(){ togglePanel(); };
+  document.body.appendChild(fab);
+
+  // Crear panel embebido
+  var panel = document.createElement('div');
+  panel.id = 'cw-panel';
+  panel.innerHTML = '<div id="cw-panel-hdr">\\u{1F4AC} EOS Chat <button id="cw-panel-close">\\u00D7</button></div><iframe id="cw-iframe" src="" allow="autoplay"></iframe>';
+  document.body.appendChild(panel);
+  document.getElementById('cw-panel-close').onclick = function(){ togglePanel(false); };
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && panel.classList.contains('open')) togglePanel(false);
+  });
+
+  function togglePanel(force){
+    var open = (typeof force === 'boolean') ? force : !panel.classList.contains('open');
+    if (open) {
+      var iframe = document.getElementById('cw-iframe');
+      if (!iframe.src || iframe.src === window.location.origin + '/') iframe.src = '/chat';
+      panel.classList.add('open');
+      // Limpiar badge cuando abre el panel
+      var b = document.getElementById('cw-badge');
+      if (b) { b.style.display = 'none'; b.textContent = '0'; }
+    } else {
+      panel.classList.remove('open');
+    }
+  }
+
+  // Polling cada 15s para detectar mensajes nuevos
+  var lastTotal = 0;
+  var soundOn = true;
+  function checkUnread(){
+    fetch('/api/chat/unread-summary').then(function(r){return r.json();}).then(function(d){
+      var total = d.total || 0;
+      var b = document.getElementById('cw-badge');
+      if (b) {
+        if (total > 0) {
+          b.textContent = total > 99 ? '99+' : total;
+          b.style.display = 'flex';
+        } else {
+          b.style.display = 'none';
+        }
+      }
+      // Toast solo si subio el contador y el panel esta cerrado
+      if (total > lastTotal && !panel.classList.contains('open') && lastTotal > 0) {
+        var nuevo = total - lastTotal;
+        showToast('\\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
+                  'Click para abrir el chat');
+        if (soundOn) playPing();
+      }
+      lastTotal = total;
+    }).catch(function(){});
+  }
+
+  function showToast(titulo, sub){
+    // Quitar toast anterior si existe
+    var prev = document.getElementById('cw-toast');
+    if (prev) prev.remove();
+    var t = document.createElement('div');
+    t.id = 'cw-toast';
+    t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+titulo+'</div><div style="font-size:11px;color:#cbd5e1">'+sub+'</div>';
+    t.onclick = function(){ togglePanel(true); t.remove(); };
+    document.body.appendChild(t);
+    setTimeout(function(){ if (t.parentNode) t.remove(); }, 6000);
+  }
+
+  function playPing(){
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      osc.start(); osc.stop(ctx.currentTime + 0.2);
+    } catch(e){}
+  }
+
+  // Primer check inmediato + polling 15s
+  checkUnread();
+  setInterval(checkUnread, 15000);
+})();
+"""
+    return Response(js, mimetype="application/javascript")
+
+
 @bp.route('/chat')
 def chat_ui():
     if 'compras_user' not in session:
@@ -252,6 +377,24 @@ def chat_messages(thread_id):
     """, params).fetchall()
     cols = [d[0] for d in c.description]
     messages = [dict(zip(cols, r)) for r in rows]
+    # Enriquecer con reacciones (Fase 3) — agrega un dict {emoji: [users]} por msg
+    if messages:
+        msg_ids = [m['id'] for m in messages]
+        placeholders = ','.join('?' * len(msg_ids))
+        try:
+            r_rows = c.execute(
+                f"SELECT message_id, emoji, username FROM chat_reactions "
+                f"WHERE message_id IN ({placeholders})",
+                msg_ids
+            ).fetchall()
+            by_msg = {}
+            for mid, em, uname in r_rows:
+                by_msg.setdefault(mid, {}).setdefault(em, []).append(uname)
+            for m in messages:
+                m['reactions'] = by_msg.get(m['id'], {})
+        except Exception:
+            for m in messages:
+                m['reactions'] = {}
     messages.reverse()  # cronológico ascendente
     return jsonify({'messages': messages})
 
@@ -444,3 +587,120 @@ def chat_asignar_tarea(thread_id):
         'message_id': msg_id,
         'mensaje': f'Tarea creada y asignada a {asignado_a}'
     })
+
+
+# ─── Fase 3: Reacciones a mensajes ──────────────────────────────────────
+@bp.route('/api/chat/messages/<int:message_id>/react', methods=['POST', 'DELETE'])
+def chat_message_reaccion(message_id):
+    """Toggle de una reaccion (emoji) a un mensaje.
+    POST con body {emoji} agrega; DELETE quita. Idempotente."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    msg = c.execute(
+        "SELECT thread_id FROM chat_messages WHERE id=?", (message_id,)
+    ).fetchone()
+    if not msg:
+        return jsonify({'error': 'Mensaje no existe'}), 404
+    member = c.execute(
+        "SELECT 1 FROM chat_thread_members WHERE thread_id=? AND username=?",
+        (msg[0], user)
+    ).fetchone()
+    if not member:
+        return jsonify({'error': 'No eres miembro de este chat'}), 403
+    d = request.json or {}
+    emoji = (d.get('emoji') or '').strip()
+    EMOJIS_OK = ('👍', '❤️', '😂', '🔥', '👀', '✅', '❌', '🙏')
+    if emoji not in EMOJIS_OK:
+        return jsonify({'error': f'emoji invalido (usar uno de {EMOJIS_OK})'}), 400
+    if request.method == 'DELETE':
+        c.execute(
+            "DELETE FROM chat_reactions WHERE message_id=? AND username=? AND emoji=?",
+            (message_id, user, emoji)
+        )
+    else:
+        # Toggle: si ya existe, borrar. Si no, agregar.
+        existing = c.execute(
+            "SELECT id FROM chat_reactions WHERE message_id=? AND username=? AND emoji=?",
+            (message_id, user, emoji)
+        ).fetchone()
+        if existing:
+            c.execute("DELETE FROM chat_reactions WHERE id=?", (existing[0],))
+        else:
+            c.execute(
+                "INSERT INTO chat_reactions (message_id, username, emoji) VALUES (?, ?, ?)",
+                (message_id, user, emoji)
+            )
+    conn.commit()
+    # Devolver counts actualizados de ese mensaje
+    rows = c.execute(
+        "SELECT emoji, COUNT(*) FROM chat_reactions WHERE message_id=? GROUP BY emoji",
+        (message_id,)
+    ).fetchall()
+    return jsonify({
+        'ok': True,
+        'reactions': [{'emoji': r[0], 'count': r[1]} for r in rows]
+    })
+
+
+# ─── Fase 3: Busqueda global en mensajes ──────────────────────────────
+@bp.route('/api/chat/search', methods=['GET'])
+def chat_search():
+    """Busca en chat_messages por contenido — solo en threads donde el user
+    es miembro. Devuelve top 30 matches con contexto."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'results': [], 'q': q, 'mensaje': 'Escribe al menos 2 letras'})
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT m.id, m.thread_id, m.sender, m.contenido, m.tipo_mensaje,
+               m.creado_en, t.tipo as thread_tipo, t.nombre as thread_nombre
+        FROM chat_messages m
+        JOIN chat_threads t ON t.id = m.thread_id
+        WHERE m.eliminado=0
+          AND m.thread_id IN (
+            SELECT thread_id FROM chat_thread_members WHERE username=?
+          )
+          AND LOWER(m.contenido) LIKE LOWER(?)
+        ORDER BY m.creado_en DESC
+        LIMIT 30
+    """, (user, f"%{q}%")).fetchall()
+    cols = [d[0] for d in c.description]
+    results = [dict(zip(cols, r)) for r in rows]
+    return jsonify({'results': results, 'q': q, 'count': len(results)})
+
+
+# ─── Fase 3: Resumen global de mensajes no leidos (badge widget) ─────
+@bp.route('/api/chat/unread-summary', methods=['GET'])
+def chat_unread_summary():
+    """Devuelve total de mensajes no leidos del usuario para el badge
+    del widget flotante. Liviano — usado por polling cada 10-15s."""
+    if 'compras_user' not in session:
+        return jsonify({'total': 0, 'threads': []}), 200  # 200 silencioso
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT t.id, t.tipo, t.nombre, t.ultimo_mensaje_preview,
+                   t.ultimo_mensaje_en, m.username as me_user,
+                   m.ultimo_leido_id,
+                   (SELECT COUNT(*) FROM chat_messages msg
+                    WHERE msg.thread_id=t.id
+                      AND msg.eliminado=0
+                      AND msg.sender != ?
+                      AND (m.ultimo_leido_id IS NULL OR msg.id > m.ultimo_leido_id)
+                   ) as unread
+            FROM chat_threads t
+            JOIN chat_thread_members m ON m.thread_id=t.id
+            WHERE m.username=?
+        """, (user, user)).fetchall()
+        cols = [d[0] for d in c.description]
+        threads_unread = [dict(zip(cols, r)) for r in rows if (r[-1] or 0) > 0]
+        total = sum(t['unread'] for t in threads_unread)
+        return jsonify({'total': total, 'threads': threads_unread})
+    except Exception as e:
+        return jsonify({'total': 0, 'threads': [], '_err': str(e)}), 200

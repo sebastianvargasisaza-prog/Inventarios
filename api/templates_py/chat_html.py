@@ -120,8 +120,9 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
     </div>
 
     <div class="search-wrap">
-      <input class="search-input" id="search-input" placeholder="Buscar persona o conversación..." oninput="filtrarThreads()">
+      <input class="search-input" id="search-input" placeholder="Buscar conversación o mensaje..." oninput="onSearchInput(this.value)">
     </div>
+    <div id="search-results" style="display:none;max-height:280px;overflow-y:auto;border-bottom:1px solid #e7e5e4;background:#fff;"></div>
 
     <div class="tabs-bar">
       <div class="tab-pill on" data-filter="todos" onclick="setFiltro('todos',this)">Todos</div>
@@ -416,8 +417,27 @@ async function cargarMensajes(thread_id, append){
           '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
           '</div></div>';
       } else {
-        html += '<div class="msg'+(mine?' mine':'')+'"><div>'+
+        // Render reacciones existentes (Fase 3)
+        var reactsHtml = '';
+        if(m.reactions){
+          var pairs = [];
+          for(var em in m.reactions){
+            if(!m.reactions.hasOwnProperty(em)) continue;
+            var users = m.reactions[em] || [];
+            var meReact = users.indexOf(ME) >= 0;
+            pairs.push('<button onclick="toggleReaccion('+m.id+',&quot;'+em+'&quot;)" '+
+                      'style="background:'+(meReact?'#ede9fe':'#f5f5f4')+';border:1px solid '+(meReact?'#a78bfa':'#e7e5e4')+';border-radius:12px;padding:1px 8px;font-size:11px;cursor:pointer;margin-right:3px" '+
+                      'title="'+_esc(users.join(', '))+'">'+em+' '+users.length+'</button>');
+          }
+          if(pairs.length) reactsHtml = '<div style="margin-top:3px;display:flex;flex-wrap:wrap">'+pairs.join('')+'</div>';
+        }
+        // Botón "+" para agregar reacción (al hover)
+        var btnAddReact = '<button class="add-react" onclick="abrirPickerReact('+m.id+',event)" '+
+          'style="position:absolute;'+(mine?'left:-32px':'right:-32px')+';top:0;background:#fff;border:1px solid #e7e5e4;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center" title="Reaccionar">😊</button>';
+        html += '<div class="msg'+(mine?' mine':'')+'" style="position:relative" onmouseenter="this.querySelector(\\'.add-react\\').style.display=\\'flex\\'" onmouseleave="this.querySelector(\\'.add-react\\').style.display=\\'none\\'"><div style="position:relative">'+
+          btnAddReact +
           '<div class="bubble">'+senderHtml+_esc(m.contenido).replace(/\n/g,'<br>')+'</div>'+
+          reactsHtml +
           '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
           '</div></div>';
       }
@@ -584,6 +604,86 @@ async function crearTareaChat(){
     await cargarMensajes(ACTIVE_THREAD);
     cargarThreads();
   } catch(e){ alert('Error de red: '+e.message); }
+}
+
+// ─── Fase 3: Busqueda global de mensajes ──────────────────────────────
+var _searchTimer = null;
+function onSearchInput(val){
+  // Filtrar threads localmente (comportamiento previo)
+  filtrarThreads();
+  // Si el query tiene >=2 chars, buscar mensajes en backend
+  clearTimeout(_searchTimer);
+  var box = document.getElementById('search-results');
+  if(!val || val.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  _searchTimer = setTimeout(async function(){
+    try {
+      var r = await fetch('/api/chat/search?q=' + encodeURIComponent(val));
+      var d = await r.json();
+      var results = d.results || [];
+      if(!results.length){
+        box.innerHTML = '<div style="padding:14px;color:#a8a29e;font-size:12px;text-align:center">Sin mensajes que coincidan con "'+_esc(val)+'"</div>';
+        box.style.display = 'block';
+        return;
+      }
+      var html = '<div style="padding:8px 14px;color:#78716c;font-size:11px;font-weight:700;text-transform:uppercase">'+results.length+' mensaje'+(results.length>1?'s':'')+' encontrado'+(results.length>1?'s':'')+'</div>';
+      results.forEach(function(m){
+        var threadLabel = m.thread_tipo === 'directo' ? '@'+_esc(m.sender) :
+                          (m.thread_nombre || (m.thread_tipo==='broadcast'?'Todos':'Grupo'));
+        html += '<div onclick="abrirThread('+m.thread_id+');document.getElementById(\\'search-input\\').value=\\'\\';onSearchInput(\\'\\');" '+
+          'style="padding:10px 14px;border-bottom:1px solid #f5f5f4;cursor:pointer" '+
+          'onmouseover="this.style.background=\\'#fafaf9\\'" onmouseout="this.style.background=\\'\\'">'+
+          '<div style="font-size:11px;color:#7c3aed;font-weight:700">'+_esc(threadLabel)+' · '+_esc(m.sender)+'</div>'+
+          '<div style="font-size:13px;color:#1c1917;margin-top:2px">'+_esc(m.contenido.substring(0,120))+'</div>'+
+          '<div style="font-size:10px;color:#a8a29e;margin-top:2px">'+(m.creado_en||'').substring(0,16)+'</div>'+
+          '</div>';
+      });
+      box.innerHTML = html;
+      box.style.display = 'block';
+    } catch(e){ console.error('search:',e); }
+  }, 280);
+}
+
+// ─── Fase 3: Reacciones ─────────────────────────────────────────────────
+var EMOJIS_RAPIDOS = ['👍','❤️','😂','🔥','✅'];
+function abrirPickerReact(msgId, ev){
+  if(ev) ev.stopPropagation();
+  // Quitar picker previo
+  var prev = document.getElementById('cw-picker-react');
+  if(prev) prev.remove();
+  var picker = document.createElement('div');
+  picker.id = 'cw-picker-react';
+  picker.style.cssText = 'position:fixed;background:#fff;border:1px solid #e7e5e4;border-radius:24px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:99999;display:flex;gap:4px';
+  // Posicionar cerca del click
+  var x = (ev && ev.clientX) || 100;
+  var y = (ev && ev.clientY) || 100;
+  picker.style.left = Math.max(10, x - 90) + 'px';
+  picker.style.top = (y - 50) + 'px';
+  EMOJIS_RAPIDOS.forEach(function(em){
+    var b = document.createElement('button');
+    b.textContent = em;
+    b.style.cssText = 'background:transparent;border:none;font-size:18px;cursor:pointer;padding:4px 6px;border-radius:6px';
+    b.onmouseover = function(){ this.style.background = '#f5f5f4'; };
+    b.onmouseout = function(){ this.style.background = 'transparent'; };
+    b.onclick = function(){ toggleReaccion(msgId, em); picker.remove(); };
+    picker.appendChild(b);
+  });
+  document.body.appendChild(picker);
+  // Cerrar si click fuera
+  setTimeout(function(){
+    document.addEventListener('click', function _close(e){
+      if(!picker.contains(e.target)){ picker.remove(); document.removeEventListener('click', _close); }
+    });
+  }, 50);
+}
+
+async function toggleReaccion(msgId, emoji){
+  try {
+    var r = await fetch('/api/chat/messages/'+msgId+'/react',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({emoji: emoji})
+    });
+    if(r.ok && ACTIVE_THREAD) await cargarMensajes(ACTIVE_THREAD);
+  } catch(e){}
 }
 
 // Marcar tarea como completada desde el card del chat

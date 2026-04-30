@@ -247,6 +247,40 @@ def _maybe_trigger_backup():
 
 
 @app.after_request
+def _inject_chat_widget(response):
+    """Inyectar el widget flotante 💬 EOS Chat en TODAS las paginas HTML
+    autenticadas — excepto /chat /login /logout (donde seria redundante).
+
+    Sebastian (29-abr-2026): "vista lateral persistente tipo WhatsApp Web
+    — boton flotante en cualquier pagina". Se hace via after_request para
+    no tener que editar cada template.
+    """
+    try:
+        if not session.get('compras_user'):
+            return response  # Anonimos no ven el widget
+        path = request.path or ''
+        if path.startswith('/chat') or path.startswith('/login') or path.startswith('/logout'):
+            return response
+        if path.startswith('/api/') or path.startswith('/static/'):
+            return response
+        ct = (response.headers.get('Content-Type') or '').lower()
+        if not ct.startswith('text/html'):
+            return response
+        # Solo inyectar si la respuesta tiene </body>
+        body = response.get_data(as_text=True)
+        if '</body>' not in body:
+            return response
+        snippet = '<script src="/api/chat/widget.js" async></script>'
+        body = body.replace('</body>', snippet + '</body>', 1)
+        response.set_data(body)
+        # Refrescar Content-Length
+        response.headers['Content-Length'] = str(len(response.get_data()))
+    except Exception:
+        pass  # Inyeccion no critica — fallar silenciosamente
+    return response
+
+
+@app.after_request
 def _no_cache_html(response):
     """Forzar no-cache en TODAS las páginas HTML del app.
 
