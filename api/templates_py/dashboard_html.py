@@ -5830,6 +5830,92 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-autoplan -->
 
+  <!-- ── Asistente conversacional EOS Planta · Claude API ── -->
+  <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:flex;align-items:center;justify-content:center">🤖</button>
+  <div id="ai-panel" style="display:none;position:fixed;bottom:150px;right:20px;width:380px;max-width:92vw;height:520px;max-height:80vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9998;overflow:hidden;flex-direction:column">
+    <div style="background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:800;font-size:14px">🤖 EOS Planta</div>
+        <div style="font-size:11px;opacity:.85">Asistente Claude · contexto de tu planta</div>
+      </div>
+      <button onclick="aiTogglePanel()" style="background:rgba(255,255,255,.18);border:none;color:#fff;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px">✕</button>
+    </div>
+    <div id="ai-messages" style="flex:1;overflow:auto;padding:14px 14px 8px;background:#f9fafb;font-size:13px"></div>
+    <div style="padding:10px 12px 12px;background:#fff;border-top:1px solid #e5e7eb">
+      <div style="display:flex;gap:6px">
+        <input id="ai-input" placeholder="Pregúntame sobre planta, producciones, MP..." onkeydown="if(event.key==='Enter')aiEnviar()" style="flex:1;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <button onclick="aiEnviar()" id="ai-send" style="background:#7c3aed;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-weight:700;cursor:pointer">▶</button>
+      </div>
+      <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+        <button onclick="aiQuick('¿Cuánto Suero AH 1.5% puedo producir esta semana?')" style="background:#f3e8ff;color:#7c3aed;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">Producir esta semana</button>
+        <button onclick="aiQuick('¿Hay alertas críticas hoy?')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">¿Alertas?</button>
+        <button onclick="aiQuick('¿Qué producciones hay programadas próximas?')" style="background:#dbeafe;color:#1e40af;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">Producciones</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Asistente conversacional Claude · contexto planta
+var _AI_HIST = [];
+function aiTogglePanel(){
+  var p = document.getElementById('ai-panel');
+  var open = p.style.display !== 'flex';
+  p.style.display = open ? 'flex' : 'none';
+  if(open && _AI_HIST.length === 0){
+    aiAddMsg('assistant', '👋 Hola, soy el asistente de tu planta. Conozco las cadencias, capacidades, equipos, producciones y MP en tiempo real. Pregúntame:\n\n• "¿Cuánto Suero AH puedo producir esta semana?"\n• "¿Por qué hay alerta crítica?"\n• "¿Qué cadencia tiene Vit C?"');
+  }
+}
+function aiAddMsg(role, txt){
+  var box = document.getElementById('ai-messages');
+  var bg = role==='user' ? '#7c3aed' : '#fff';
+  var col = role==='user' ? '#fff' : '#0f172a';
+  var border = role==='user' ? 'none' : '1px solid #e5e7eb';
+  var align = role==='user' ? 'flex-end' : 'flex-start';
+  var div = document.createElement('div');
+  div.style.cssText = 'display:flex;justify-content:'+align+';margin-bottom:8px';
+  div.innerHTML = '<div style="background:'+bg+';color:'+col+';border:'+border+';padding:9px 12px;border-radius:12px;max-width:85%;white-space:pre-wrap;line-height:1.45;font-size:13px">'+_escHTML(txt)+'</div>';
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+async function aiEnviar(){
+  var input = document.getElementById('ai-input');
+  var pregunta = input.value.trim();
+  if(!pregunta) return;
+  input.value = '';
+  aiAddMsg('user', pregunta);
+  _AI_HIST.push({role:'user', content:pregunta});
+  // Loading
+  var box = document.getElementById('ai-messages');
+  var loading = document.createElement('div');
+  loading.id = 'ai-loading';
+  loading.style.cssText = 'color:#94a3b8;font-size:11px;padding:6px 10px';
+  loading.textContent = 'Pensando...';
+  box.appendChild(loading);
+  box.scrollTop = box.scrollHeight;
+  document.getElementById('ai-send').disabled = true;
+  try {
+    var r = await fetch('/api/asistente/planta', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({pregunta: pregunta, historial: _AI_HIST.slice(-10)})
+    });
+    var d = await r.json();
+    document.getElementById('ai-loading')?.remove();
+    var resp = d.respuesta || d.error || 'No pude responder.';
+    aiAddMsg('assistant', resp);
+    if(d.respuesta) _AI_HIST.push({role:'assistant', content:d.respuesta});
+  } catch(e){
+    document.getElementById('ai-loading')?.remove();
+    aiAddMsg('assistant', '⚠ Error de red: '+e.message);
+  }
+  document.getElementById('ai-send').disabled = false;
+  input.focus();
+}
+function aiQuick(p){
+  document.getElementById('ai-input').value = p;
+  aiEnviar();
+}
+</script>
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;

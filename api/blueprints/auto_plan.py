@@ -708,6 +708,189 @@ def configs_mp():
     return jsonify({'configs': [dict(zip(cols, r)) for r in rows]})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# Asistente conversacional · Claude API con contexto de planta
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "asistente conversacional ya tenemos la cosa
+# flotante" — conectar el chat flotante con Claude API + contexto de
+# planta para que pueda responder preguntas como:
+#   "¿Cuánto Suero AH puedo producir esta semana?"
+#   "¿Por qué hay alerta crítica?"
+#   "Programa 2 lotes de Vit C para el viernes"
+
+def _build_planta_context(c):
+    """Recolecta snapshot del estado de planta para el prompt de Claude."""
+    snapshot = {}
+
+    # KPIs
+    try:
+        snapshot['areas_planta'] = [
+            dict(zip(['codigo', 'nombre', 'estado', 'puede_producir', 'puede_envasar'], r))
+            for r in c.execute(
+                "SELECT codigo, nombre, estado, puede_producir, puede_envasar "
+                "FROM areas_planta WHERE activo=1 ORDER BY orden LIMIT 15"
+            ).fetchall()
+        ]
+    except Exception:
+        snapshot['areas_planta'] = []
+
+    try:
+        snapshot['equipos_resumen'] = [
+            {'area_codigo': r[0], 'tipo': r[1], 'count': r[2]}
+            for r in c.execute(
+                "SELECT area_codigo, tipo, COUNT(*) FROM equipos_planta "
+                "WHERE activo=1 AND tipo IN ('tanque','marmita','olla','envasadora') "
+                "GROUP BY area_codigo, tipo"
+            ).fetchall()
+        ]
+    except Exception:
+        snapshot['equipos_resumen'] = []
+
+    try:
+        snapshot['operarios'] = [
+            dict(zip(['nombre', 'rol'], r))
+            for r in c.execute(
+                "SELECT nombre, rol_predeterminado FROM operarios_planta WHERE activo=1"
+            ).fetchall()
+        ]
+    except Exception:
+        snapshot['operarios'] = []
+
+    # Producciones próximas 14d
+    try:
+        snapshot['producciones_proximas'] = [
+            {'producto': r[0], 'fecha': r[1], 'lotes': r[2], 'estado': r[3]}
+            for r in c.execute(
+                "SELECT producto, fecha_programada, lotes, estado FROM produccion_programada "
+                "WHERE fecha_programada >= date('now') AND fecha_programada <= date('now','+14 days') "
+                "ORDER BY fecha_programada ASC LIMIT 25"
+            ).fetchall()
+        ]
+    except Exception:
+        snapshot['producciones_proximas'] = []
+
+    # Cadencias configuradas
+    try:
+        snapshot['cadencias_skus'] = [
+            {'producto': r[0], 'cadencia_d': r[1], 'cobertura_d': r[2], 'merma_pct': r[3]}
+            for r in c.execute(
+                "SELECT producto_nombre, cadencia_dias, cobertura_target_dias, merma_pct "
+                "FROM sku_planeacion_config WHERE activo=1 AND cadencia_dias IS NOT NULL "
+                "ORDER BY prioridad LIMIT 10"
+            ).fetchall()
+        ]
+    except Exception:
+        snapshot['cadencias_skus'] = []
+
+    # Último auto-plan run
+    try:
+        last_run = c.execute(
+            "SELECT ejecutado_at, producciones_creadas, compras_creadas, alertas_criticas "
+            "FROM auto_plan_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if last_run:
+            snapshot['ultimo_run'] = {
+                'fecha': last_run[0], 'prods': last_run[1],
+                'compras': last_run[2], 'alertas': last_run[3]
+            }
+    except Exception:
+        pass
+
+    return snapshot
+
+
+@bp.route('/api/asistente/planta', methods=['POST'])
+def asistente_planta():
+    """Asistente conversacional con contexto de planta. Usa Claude API.
+    Body: {pregunta: str, historial?: [{role, content}, ...]}"""
+    import os
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    pregunta = (d.get('pregunta') or '').strip()
+    if not pregunta:
+        return jsonify({'error': 'pregunta requerida'}), 400
+    historial = d.get('historial') or []
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({
+            'respuesta': 'El asistente conversacional necesita ANTHROPIC_API_KEY configurada en Render. Cuando esté lista, podré responder con contexto completo de la planta.',
+            'sin_api_key': True,
+        })
+
+    conn = get_db(); c = conn.cursor()
+    try:
+        ctx = _build_planta_context(c)
+    except Exception as e:
+        ctx = {}
+        log.warning(f'asistente: no se pudo armar contexto: {e}')
+
+    system_prompt = f"""Eres el asistente experto de planta para Espagiria Laboratorios (HHA Group), un laboratorio cosmético colombiano con certificación INVIMA. La planta produce sueros, hidratantes, limpiadores, contornos y similares.
+
+Tu nombre es EOS Planta y te creó Claude. Eres preciso, breve y útil — un asistente operativo, no un chatbot genérico.
+
+CONTEXTO ACTUAL DE LA PLANTA (snapshot {datetime.now().isoformat()}):
+{json.dumps(ctx, ensure_ascii=False, indent=2)}
+
+REGLAS:
+- Vit C → cadencia 30d (oxida)
+- Suero AH 1.5% → cadencia 90d, lote 90kg
+- L/M/V producir, Ma/Ju acondicionar/envasar/conteo cíclico
+- MP mínimo 30d, ideal 60d
+- Envases mínimo 90d (China lead 180d)
+- 4 operarios: Mayerlin (dispensación fija), Camilo, Milton, Sebastián M.
+- Áreas: FAB1/2/3, ENV1/2, DISP, LAV, ESC1, ACOND, FAB_FLOAT, CC, RECEP
+
+Responde en español, conciso (máximo 150 palabras salvo que pidan detalle). Si te piden hacer algo (programar, crear, ejecutar), describe los pasos pero NO ejecutas — solo Sebastian/admin pueden ejecutar.
+
+Usuario actual: {user}
+"""
+
+    messages = []
+    for h in historial[-10:]:
+        if h.get('role') in ('user', 'assistant') and h.get('content'):
+            messages.append({'role': h['role'], 'content': h['content']})
+    messages.append({'role': 'user', 'content': pregunta})
+
+    try:
+        import urllib.request, urllib.error
+        body = json.dumps({
+            'model': 'claude-haiku-4-5-20251001',
+            'max_tokens': 800,
+            'system': system_prompt,
+            'messages': messages,
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=body, method='POST',
+            headers={
+                'content-type': 'application/json',
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+            },
+        )
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        text = (data.get('content') or [{}])[0].get('text', '').strip()
+        return jsonify({
+            'respuesta': text,
+            'usage': data.get('usage', {}),
+            'modelo': 'claude-haiku-4-5',
+        })
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = e.read().decode('utf-8')
+        except Exception:
+            err_body = str(e)
+        log.warning(f'Claude API error: {err_body}')
+        return jsonify({'error': f'Claude API: {e.code}', 'detalle': err_body[:200]}), 500
+    except Exception as e:
+        log.warning(f'Asistente fallo: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.route('/api/auto-plan/configs/emails', methods=['GET', 'POST'])
 def configs_emails():
     if 'compras_user' not in session:
