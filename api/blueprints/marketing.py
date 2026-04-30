@@ -3355,6 +3355,31 @@ def mkt_solicitar_pago_influencer(iid):
 
         conn.commit()
 
+        # Sebastian (30-abr-2026): "verifica que en marketing si pueda solicitar
+        # el pago... le aparece en compras le doy pagar". Notif in-app a Sebastian
+        # + Alejandro para que sepan que llegó solicitud nueva sin tener que
+        # abrir /compras manualmente.
+        try:
+            from blueprints.notif import push_notif_multi
+            try:
+                from blueprints.compras import ADMIN_USERS as _ADMIN
+            except Exception:
+                _ADMIN = ('sebastian', 'alejandro')
+            destinatarios = [a.lower() for a in _ADMIN]
+            push_notif_multi(
+                destinatarios,
+                'oc_estado',
+                f'💸 Solicitud pago: {inf["nombre"]}',
+                body=f'{numero} · ${monto:,.0f} · {concepto[:60]}',
+                link='/compras#influencer',
+                remitente=solicitante_user,
+                importante=True
+            )
+        except Exception as _e:
+            __import__('logging').getLogger('marketing').warning(
+                'push_notif solicitud pago fallo: %s', _e
+            )
+
         return jsonify({"ok": True, "numero": numero, "oc": oc_num, "monto": monto})
     finally:
         pass
