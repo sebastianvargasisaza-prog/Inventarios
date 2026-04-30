@@ -164,6 +164,13 @@ def db_clean(app):
         conn.execute("DELETE FROM users_passwords")
         conn.execute("DELETE FROM backup_log")
         conn.execute("DELETE FROM security_events")
+        # Sebastian (30-abr-2026): users_mfa también debe limpiarse — sino el
+        # state de MFA enrolado de un test contamina al siguiente (login flow
+        # cambia si MFA está activo).
+        try:
+            conn.execute("DELETE FROM users_mfa")
+        except sqlite3.OperationalError:
+            pass  # tabla puede no existir si migration 58 aún no corrió en este test
         conn.commit()
         conn.close()
     except Exception:

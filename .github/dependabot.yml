@@ -1,0 +1,47 @@
+# Dependabot · escaneo automático de vulnerabilidades + actualizaciones
+# Sebastian (30-abr-2026): Falta dependency scanning automático mencionado en
+# audit de seguridad. Dependabot lo cubre gratis en GitHub.
+#
+# - pip: requirements.txt + requirements-dev.txt → CVEs Python
+# - github-actions: workflows del repo → versiones outdated
+# - Frecuencia weekly para no saturar; PRs separadas por ecosystem.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/Bogota"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Actualizaciones de seguridad: PR inmediata sin esperar al schedule
+    # (default behavior de Dependabot, no requiere config explícita).
+    groups:
+      flask-stack:
+        patterns:
+          - "Flask*"
+          - "Werkzeug"
+          - "Jinja2"
+          - "itsdangerous"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      timezone: "America/Bogota"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
