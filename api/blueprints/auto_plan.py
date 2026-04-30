@@ -3309,33 +3309,28 @@ def _calcular_demanda_suministro(c, producto, dias_horizonte=60):
 
 
 def _generar_proyeccion_lotes(c, horizonte_meses):
-    """Genera proyección de lotes con LÓGICA MRP REAL.
+    """Genera proyección de lotes UNIFICADA con _calcular_recomendacion_sku.
 
-    Sebastian (30-abr-2026): "la lógica seria sabemos cuanto se vende y
-    cuanto se necesita por shopify, en el calendario aparece que se ha
-    producido hasta hoy para excluirlos".
-
-    Para cada SKU:
-      1. Calcula demanda (velocidad × cobertura objetivo)
-      2. Resta suministro existente (stock + producciones futuras BD + Calendar)
-      3. Si déficit > 0 O cubierto_hasta_dias < margen → programar lote(s)
-      4. Si ya está cubierto → SKIP (no duplicar)
+    Sebastian (30-abr-2026): el motor y las recomendaciones deben dar lo
+    mismo. Para cada SKU calcula la recomendación, y si es accionable
+    proyecta los lotes hasta el horizonte respetando su cadencia.
     """
     proyeccion = []
     skus = c.execute("""
-        SELECT spc.producto_nombre, spc.cadencia_dias, spc.cobertura_target_dias,
-               spc.cobertura_min_dias, spc.merma_pct, fh.lote_size_kg, spc.prioridad
+        SELECT spc.producto_nombre, spc.cadencia_dias, spc.merma_pct, spc.prioridad,
+               fh.lote_size_kg
         FROM sku_planeacion_config spc
         LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
         WHERE spc.activo = 1 AND fh.lote_size_kg IS NOT NULL
+          AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado','pausado')
         ORDER BY spc.prioridad ASC, spc.producto_nombre
     """).fetchall()
 
     fecha_hoy = datetime.now().date()
     fecha_fin = fecha_hoy + timedelta(days=horizonte_meses * 30)
     LOTES_MAX_POR_DIA = 2
-    MARGEN_DIAS = 20  # Sebastian: producir 20d antes de agotar
-    lotes_por_fecha = {}  # ISO → count
+    MARGEN_DIAS = 20
+    lotes_por_fecha = {}
 
     def _ajustar_a_lmv_disponible(fecha_base):
         f = fecha_base
@@ -3356,85 +3351,47 @@ def _generar_proyeccion_lotes(c, horizonte_meses):
             f += timedelta(days=1)
         return f
 
-    for producto, cadencia, cob_target, cob_min, merma, lote_kg, prioridad in skus:
-        # ── LÓGICA MRP ──
-        info = _calcular_demanda_suministro(c, producto, dias_horizonte=horizonte_meses * 30)
-        velocidad_proj = info['velocidad_dia']
-        cubierto_hasta = info['cubierto_hasta_dias']
-        suministro_total = info['suministro_total_unidades']
-        demanda = info['demanda_unidades']
-        cob_target_efectivo = cob_target or 60
-        margen_minimo = cob_min or MARGEN_DIAS
-
-        # Solo SKIP si REALMENTE está cubierto MUY arriba del horizonte
-        # (con buffer extra de margen). NO se basa en producciones_futuras_count
-        # porque ese cuenta también producciones_programadas que aún hay que
-        # producir — esas SÍ aparecen en el plan.
-        if cubierto_hasta >= (horizonte_meses * 30 + margen_minimo):
-            # Más cubierto que el horizonte+margen — definitivamente no necesita
+    for producto, cadencia, merma, prioridad, lote_kg in skus:
+        # Usar la lógica unificada del motor de recomendaciones
+        rec = _calcular_recomendacion_sku(c, producto, lote_kg, cadencia, merma, prioridad)
+        # Solo proyectar si es accionable
+        if rec['urgencia'] in ('innecesaria', 'sin_ventas', 'baja_rotacion', 'inactivo'):
+            continue
+        if not rec.get('fecha_proxima'):
             continue
 
-        factor_g = info['factor_g']
-        unidades_por_lote = (lote_kg * 1000) / max(factor_g, 1)
+        # Cadencia efectiva: histórica > configurada > default 60d
+        cadencia_efectiva = (rec.get('cadencia_historica_dias')
+                             or rec.get('cadencia_configurada')
+                             or 60)
+        # Lote efectivo: típico histórico > default
+        lote_efectivo = rec.get('lote_tipico_kg') or lote_kg or 30
 
-        # Calcular lotes necesarios
-        unidades_faltan = max(0, demanda - suministro_total)
-        lotes_a_programar = int((unidades_faltan / max(unidades_por_lote, 1)) + 0.5)
+        try:
+            siguiente = datetime.strptime(rec['fecha_proxima'], '%Y-%m-%d').date()
+        except Exception:
+            siguiente = fecha_hoy + timedelta(days=2)
+        siguiente = _ajustar_a_lmv_disponible(siguiente)
+        n_lote = 0
 
-        # Fallback si NO hay velocidad (sin datos Shopify) o NO hay déficit:
-        # programar según CADENCIA configurada — Sebastian: "monte todo
-        # automáticamente, no quiero ver el calendario vacío".
-        if cadencia and lotes_a_programar == 0:
-            # Cuántos lotes caben en el horizonte según cadencia
-            lotes_por_cadencia = max(1, int((horizonte_meses * 30) / cadencia))
-            lotes_a_programar = lotes_por_cadencia
-        elif lotes_a_programar == 0 and horizonte_meses >= 2:
-            # Sin cadencia y sin déficit: al menos 1 lote por SKU en 2m+
-            lotes_a_programar = 1
-
-        if lotes_a_programar == 0:
-            continue
-
-        # Fecha del primer lote
-        ultima_prod = _ultima_produccion(c, producto)
-        if ultima_prod and cadencia:
-            # Próximo según cadencia desde la última real
-            dias_desde_ult = (fecha_hoy - ultima_prod).days
-            if dias_desde_ult >= cadencia:
-                # Ya tocaba — programar pronto
-                dias_offset = max(2, (prioridad or 3))
-            else:
-                dias_offset = max(2, cadencia - dias_desde_ult)
-        elif cubierto_hasta > margen_minimo:
-            dias_offset = max(2, int(cubierto_hasta - margen_minimo))
-        else:
-            # Distribuir según prioridad para no saturar fecha_hoy
-            dias_offset = max(2, (prioridad or 3) * 2)
-
-        fecha_base = fecha_hoy + timedelta(days=dias_offset)
-        siguiente = _ajustar_a_lmv_disponible(fecha_base)
-        intervalo = cadencia if cadencia else max(int(unidades_por_lote / max(velocidad_proj, 0.5)), 14)
-
-        for n_lote in range(lotes_a_programar):
-            if siguiente > fecha_fin:
-                break
+        while siguiente <= fecha_fin and n_lote < 30:  # safety
             iso = siguiente.isoformat()
             lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
             proyeccion.append({
                 'producto': producto,
                 'fecha': iso,
                 'mes': siguiente.strftime('%Y-%m'),
-                'lote_kg': lote_kg,
-                'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
-                'velocidad_dia': velocidad_proj,
+                'lote_kg': lote_efectivo,
+                'kg_con_merma': lote_efectivo * (1 + (merma or 0) / 100.0),
+                'velocidad_dia': rec.get('velocidad_dia') or 0,
                 'tipo': 'mrp',
-                'cadencia_dias': cadencia,
-                'razon_mrp': f'demanda {demanda:.0f}u, suministro {suministro_total:.0f}u, déficit {unidades_faltan:.0f}u',
+                'cadencia_dias': cadencia_efectiva,
+                'razon_mrp': rec.get('razon') or '',
                 'lote_num': n_lote + 1,
-                'lotes_total_planeados': lotes_a_programar,
-                'mrp_info': info,
+                'urgencia_inicial': rec['urgencia'],
             })
-            siguiente = _ajustar_a_lmv_disponible(siguiente + timedelta(days=intervalo))
+            n_lote += 1
+            siguiente = _ajustar_a_lmv_disponible(siguiente + timedelta(days=cadencia_efectiva))
 
     return sorted(proyeccion, key=lambda x: x['fecha'])
 
