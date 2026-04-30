@@ -1179,6 +1179,452 @@ def perfil_riesgo():
 # Asistente accionable — tools
 # ════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════
+# FORECAST MULTI-HORIZONTE — 1sem / 1m / 2m / 3m / 6m / 12m
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "ideal que sea semanal, 1 mes, 2 meses 3 meses
+# 6 meses 1 año... la app saca todo, necesidades completas, y quedan
+# además las asignaciones semanales".
+#
+# Devuelve para el horizonte solicitado:
+#  - producciones_por_mes (count, kg total, lotes)
+#  - mp_consumo_mensual (gramos por material)
+#  - envases_consumo_mensual (unidades por código MEE)
+#  - capacidad_uso_pct por área por mes
+#  - compras_urgentes (envases China que tocan comprar YA)
+#  - alertas_capacidad
+#  - costo_proyectado (estimado si hay precios de MP)
+
+def _generar_proyeccion_lotes(c, horizonte_meses):
+    """Genera proyección de lotes para los próximos N meses considerando
+    cadencias + velocidad + tendencia. NO crea registros, solo proyecta."""
+    proyeccion = []
+    skus = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, spc.cobertura_target_dias,
+               spc.cobertura_min_dias, spc.merma_pct, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1 AND fh.lote_size_kg IS NOT NULL
+    """).fetchall()
+
+    fecha_hoy = datetime.now().date()
+    fecha_fin = fecha_hoy + timedelta(days=horizonte_meses * 30)
+
+    for producto, cadencia, cob_target, cob_min, merma, lote_kg in skus:
+        velocidad, factor = _velocidad_total_producto(c, producto)
+        velocidad_proj = velocidad * factor
+        if velocidad_proj <= 0:
+            velocidad_proj = 0.5  # fallback conservador
+        stock_actual = _stock_actual_pt(c, producto)
+        ultima_prod = _ultima_produccion(c, producto)
+
+        # Generar lotes proyectados
+        if cadencia:
+            # Producción regular cada N días
+            inicio = ultima_prod or fecha_hoy
+            siguiente = inicio + timedelta(days=cadencia)
+            while siguiente <= fecha_fin:
+                if siguiente >= fecha_hoy:
+                    proyeccion.append({
+                        'producto': producto,
+                        'fecha': siguiente.isoformat(),
+                        'mes': siguiente.strftime('%Y-%m'),
+                        'lote_kg': lote_kg,
+                        'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
+                        'velocidad_dia': velocidad_proj,
+                        'tipo': 'cadencia',
+                        'cadencia_dias': cadencia,
+                    })
+                siguiente += timedelta(days=cadencia)
+        else:
+            # Auto por umbral: cuándo bajará bajo cob_min
+            stock_proj = stock_actual
+            cursor_dia = fecha_hoy
+            while cursor_dia <= fecha_fin:
+                stock_proj -= velocidad_proj
+                dias_restantes = stock_proj / max(velocidad_proj, 0.01)
+                if dias_restantes < (cob_min or 30):
+                    # Producir → cubrir cob_target
+                    unidades_a_producir = velocidad_proj * (cob_target or 60)
+                    proyeccion.append({
+                        'producto': producto,
+                        'fecha': cursor_dia.isoformat(),
+                        'mes': cursor_dia.strftime('%Y-%m'),
+                        'lote_kg': lote_kg,
+                        'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
+                        'velocidad_dia': velocidad_proj,
+                        'tipo': 'umbral',
+                        'cadencia_dias': None,
+                    })
+                    stock_proj += unidades_a_producir
+                cursor_dia += timedelta(days=7)
+    return sorted(proyeccion, key=lambda x: x['fecha'])
+
+
+@bp.route('/api/planta/forecast', methods=['GET'])
+def planta_forecast():
+    """Forecast multi-horizonte. Querystring:
+       ?meses=1|2|3|6|12 (default 3)
+
+    Devuelve plan COMPLETO + necesidades agregadas para el horizonte:
+    - producciones_proyectadas (lista cronológica)
+    - resumen_mensual: por mes, cuántos lotes, kg total
+    - mp_consumo_mensual: por material × mes (g + kg)
+    - envases_necesarios: por código envase × mes (unidades)
+    - capacidad_uso: por área × mes (% capacidad usada)
+    - compras_urgentes: lo que hay que pedir HOY por lead time
+    - alertas: capacidad excedida, MP en déficit a futuro
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        meses = int(request.args.get('meses', 3))
+    except Exception:
+        meses = 3
+    meses = max(1, min(meses, 12))
+
+    conn = get_db(); c = conn.cursor()
+    proyeccion = _generar_proyeccion_lotes(c, meses)
+
+    # Resumen por mes
+    resumen_mensual = {}
+    for p in proyeccion:
+        m = p['mes']
+        if m not in resumen_mensual:
+            resumen_mensual[m] = {'lotes': 0, 'kg_total': 0, 'productos_distintos': set()}
+        resumen_mensual[m]['lotes'] += 1
+        resumen_mensual[m]['kg_total'] += p['kg_con_merma']
+        resumen_mensual[m]['productos_distintos'].add(p['producto'])
+    for m in resumen_mensual:
+        resumen_mensual[m]['productos_distintos'] = len(resumen_mensual[m]['productos_distintos'])
+        resumen_mensual[m]['kg_total'] = round(resumen_mensual[m]['kg_total'], 1)
+
+    # Consumo MP por mes
+    mp_consumo = {}  # mes -> material_id -> {nombre, gramos}
+    for p in proyeccion:
+        items = c.execute("""
+            SELECT material_id, material_nombre, COALESCE(cantidad_g_por_lote,0), porcentaje
+            FROM formula_items
+            WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+        """, (p['producto'],)).fetchall()
+        for mat_id, mat_nom, cant_lote, pct in items:
+            req_g = cant_lote
+            if not req_g and pct:
+                req_g = (pct / 100.0) * (p['lote_kg'] or 0) * 1000
+            req_g = req_g * (1 + (p.get('merma_pct') or 0) / 100.0)
+            m = p['mes']
+            if m not in mp_consumo:
+                mp_consumo[m] = {}
+            if mat_id not in mp_consumo[m]:
+                mp_consumo[m][mat_id] = {'nombre': mat_nom, 'gramos': 0}
+            mp_consumo[m][mat_id]['gramos'] += req_g
+
+    # Envases por mes (necesita producto_presentaciones)
+    envases_consumo = {}
+    for p in proyeccion:
+        # Buscar presentación default y envase
+        pres = c.execute("""
+            SELECT envase_codigo, factor_g_por_unidad, etiqueta
+            FROM producto_presentaciones
+            WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND activo=1
+            ORDER BY es_default DESC, id ASC
+            LIMIT 1
+        """, (p['producto'],)).fetchone()
+        if not pres or not pres[0]:
+            continue
+        env_codigo, factor, etiqueta = pres
+        if not factor or factor <= 0:
+            # Estimar factor desde lote y volumen ml (asumiendo densidad ~1)
+            continue
+        unidades = (p['kg_con_merma'] * 1000) / factor
+        m = p['mes']
+        if m not in envases_consumo:
+            envases_consumo[m] = {}
+        if env_codigo not in envases_consumo[m]:
+            envases_consumo[m][env_codigo] = {'etiqueta': etiqueta, 'unidades': 0, 'productos': set()}
+        envases_consumo[m][env_codigo]['unidades'] += unidades
+        envases_consumo[m][env_codigo]['productos'].add(p['producto'])
+    # Convertir set a list para JSON
+    for m in envases_consumo:
+        for cod in envases_consumo[m]:
+            envases_consumo[m][cod]['productos'] = list(envases_consumo[m][cod]['productos'])
+            envases_consumo[m][cod]['unidades'] = int(envases_consumo[m][cod]['unidades'])
+
+    # Capacidad por área por mes (cuántos lotes vs días disponibles L/M/V)
+    capacidad_uso = {}
+    for p in proyeccion:
+        # Asignación implícita: por categoría
+        # FAB1=lotes >50kg, FAB2=lotes 20-50kg, FAB3=lotes >100kg, FAB_FLOAT=<20kg
+        kg = p['lote_kg'] or 0
+        if kg >= 100:
+            area = 'FAB3'
+        elif kg >= 50:
+            area = 'FAB1'
+        elif kg >= 20:
+            area = 'FAB2'
+        else:
+            area = 'FAB_FLOAT'
+        m = p['mes']
+        capacidad_uso.setdefault(m, {}).setdefault(area, 0)
+        capacidad_uso[m][area] += 1
+    # 12 días LMV/mes promedio (4.3 sem × 3 días)
+    DIAS_LMV_MES = 13
+    alertas_capacidad = []
+    for m, areas in capacidad_uso.items():
+        for area, lotes in areas.items():
+            uso_pct = round((lotes / DIAS_LMV_MES) * 100)
+            capacidad_uso[m][area] = {'lotes': lotes, 'uso_pct': uso_pct}
+            if uso_pct > 90:
+                alertas_capacidad.append({
+                    'mes': m, 'area': area, 'lotes': lotes, 'uso_pct': uso_pct,
+                    'severidad': 'critica' if uso_pct > 100 else 'alta',
+                    'mensaje': f'{area} en {m}: {lotes} lotes vs ~{DIAS_LMV_MES} días disponibles ({uso_pct}%)'
+                })
+
+    # Compras urgentes: envases China con lead 180d
+    compras_urgentes = []
+    fecha_hoy = datetime.now().date()
+    for m, envs in envases_consumo.items():
+        for env_codigo, info in envs.items():
+            try:
+                mes_dt = datetime.strptime(m, '%Y-%m').date()
+                dias_hasta_mes = (mes_dt - fecha_hoy).days
+            except Exception:
+                continue
+            # Buscar lead time
+            lt = c.execute(
+                "SELECT lead_time_dias, origen FROM mp_lead_time_config WHERE material_id=?",
+                (env_codigo,)
+            ).fetchone()
+            if not lt:
+                lt = (14, 'local')
+            lead, origen = lt
+            # Si dias_hasta_mes < lead → debes comprar YA
+            if dias_hasta_mes < lead:
+                compras_urgentes.append({
+                    'envase_codigo': env_codigo,
+                    'etiqueta': info['etiqueta'],
+                    'unidades_requeridas': info['unidades'],
+                    'mes_objetivo': m,
+                    'lead_time_dias': lead,
+                    'origen': origen,
+                    'dias_hasta_mes': dias_hasta_mes,
+                    'urgencia': 'critica' if origen in ('china', 'usa', 'europa') else 'alta',
+                })
+
+    # Costo proyectado (si tenemos precios de MP)
+    costo_total_estimado = 0
+    try:
+        for m, mats in mp_consumo.items():
+            for mat_id, info in mats.items():
+                pr = c.execute(
+                    "SELECT precio_unitario FROM movimientos WHERE material_id=? AND precio_unitario>0 ORDER BY id DESC LIMIT 1",
+                    (mat_id,)
+                ).fetchone()
+                precio_g = (pr[0] / 1000.0) if pr else 0
+                costo_total_estimado += info['gramos'] * precio_g
+    except Exception:
+        pass
+
+    return jsonify({
+        'horizonte_meses': meses,
+        'fecha_inicio': fecha_hoy.isoformat(),
+        'fecha_fin': (fecha_hoy + timedelta(days=meses * 30)).isoformat(),
+        'producciones_proyectadas': proyeccion,
+        'resumen_mensual': resumen_mensual,
+        'mp_consumo_mensual': mp_consumo,
+        'envases_consumo_mensual': envases_consumo,
+        'capacidad_uso_mensual': capacidad_uso,
+        'compras_urgentes': compras_urgentes,
+        'alertas_capacidad': alertas_capacidad,
+        'costo_total_estimado': round(costo_total_estimado, 0),
+        'kpis': {
+            'total_lotes_proyectados': len(proyeccion),
+            'total_kg_proyectados': round(sum(p['kg_con_merma'] for p in proyeccion), 1),
+            'productos_distintos': len(set(p['producto'] for p in proyeccion)),
+            'meses_con_alerta_capacidad': len(set(a['mes'] for a in alertas_capacidad)),
+            'compras_urgentes_count': len(compras_urgentes),
+        },
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ASIGNACIÓN SEMANAL — Qué se hace en cada área cada día
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/asignacion-semanal', methods=['GET'])
+def planta_asignacion_semanal():
+    """Vista por área × día de la semana.
+
+    Sebastian (30-abr-2026): "asignaciones semanales que sería diferente
+    pues que se hace en cada área".
+
+    Querystring: ?fecha=YYYY-MM-DD (default = lunes de esta semana)
+
+    Devuelve:
+      areas: [{codigo, nombre, dias: {lunes, martes, miercoles, jueves, viernes}}]
+      cada día tiene: producciones[], envasados[], conteos[], limpiezas[], operarios[]
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    fecha_str = request.args.get('fecha')
+    if fecha_str:
+        try:
+            base = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        except Exception:
+            base = datetime.now().date()
+    else:
+        base = datetime.now().date()
+    # Encontrar lunes de esa semana
+    while base.weekday() != 0:
+        base -= timedelta(days=1)
+    dias_semana = [base + timedelta(days=i) for i in range(5)]  # L-V
+    nombres_dia = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']
+
+    conn = get_db(); c = conn.cursor()
+    fecha_inicio = dias_semana[0].isoformat()
+    fecha_fin = dias_semana[-1].isoformat()
+
+    # Cargar áreas activas con flag de limpieza profunda
+    areas = c.execute("""
+        SELECT codigo, nombre, requiere_limpieza_profunda, puede_producir, puede_envasar, tipo
+        FROM areas_planta WHERE activo=1
+        ORDER BY orden
+    """).fetchall()
+
+    # Producciones programadas en la semana
+    prods = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               pp.area_id, ap.codigo as area_codigo,
+               op_disp.nombre || ' ' || COALESCE(op_disp.apellido,'') as op_disp_nombre,
+               op_elab.nombre || ' ' || COALESCE(op_elab.apellido,'') as op_elab_nombre,
+               op_env.nombre  || ' ' || COALESCE(op_env.apellido,'')  as op_env_nombre,
+               pp.estado
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        LEFT JOIN operarios_planta op_disp ON op_disp.id = pp.operario_dispensacion_id
+        LEFT JOIN operarios_planta op_elab ON op_elab.id = pp.operario_elaboracion_id
+        LEFT JOIN operarios_planta op_env  ON op_env.id  = pp.operario_envasado_id
+        WHERE pp.fecha_programada BETWEEN ? AND ?
+          AND pp.estado IN ('pendiente','en_proceso')
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    # Limpieza profunda calendario
+    limpiezas = c.execute("""
+        SELECT fecha, area_codigo, asignado_a, estado, razon_asignacion
+        FROM limpieza_profunda_calendario
+        WHERE fecha BETWEEN ? AND ?
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    # Conteos cíclicos
+    conteos = c.execute("""
+        SELECT fecha, material_id, material_nombre, asignado_a, estado, categoria_abc
+        FROM conteo_ciclico_calendario
+        WHERE fecha BETWEEN ? AND ?
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    # Tareas operativas (acondicionamiento, etc)
+    tareas = c.execute("""
+        SELECT id, titulo, tipo, fecha_objetivo, asignado_a, producto_relacionado, estado
+        FROM tareas_operativas
+        WHERE fecha_objetivo BETWEEN ? AND ?
+          AND estado IN ('pendiente','en_proceso')
+    """, (fecha_inicio, fecha_fin)).fetchall()
+
+    # Armar estructura por área
+    resultado = []
+    for area_codigo, area_nombre, req_limp, puede_prod, puede_env, tipo in areas:
+        area_data = {
+            'codigo': area_codigo, 'nombre': area_nombre,
+            'tipo': tipo, 'requiere_limpieza_profunda': bool(req_limp),
+            'puede_producir': bool(puede_prod), 'puede_envasar': bool(puede_env),
+            'dias': {},
+        }
+        for i, dia in enumerate(dias_semana):
+            dia_str = dia.isoformat()
+            nombre_dia = nombres_dia[i]
+            es_lmv = dia.weekday() in (0, 2, 4)
+            area_data['dias'][nombre_dia] = {
+                'fecha': dia_str,
+                'es_dia_produccion': es_lmv,
+                'es_dia_acond_conteo': not es_lmv,
+                'producciones': [],
+                'limpiezas': [],
+                'conteos': [],
+                'tareas': [],
+            }
+        # Llenar producciones
+        for p in prods:
+            if p[5] != area_codigo:
+                continue
+            try:
+                f = datetime.strptime(p[2][:10], '%Y-%m-%d').date()
+                idx = (f - dias_semana[0]).days
+                if idx < 0 or idx > 4:
+                    continue
+                nd = nombres_dia[idx]
+                area_data['dias'][nd]['producciones'].append({
+                    'id': p[0], 'producto': p[1], 'lotes': p[3],
+                    'op_dispensacion': (p[6] or '').strip() or None,
+                    'op_elaboracion': (p[7] or '').strip() or None,
+                    'op_envasado': (p[8] or '').strip() or None,
+                    'estado': p[9],
+                })
+            except Exception:
+                pass
+        # Llenar limpiezas
+        for l in limpiezas:
+            if l[1] != area_codigo:
+                continue
+            try:
+                f = datetime.strptime(l[0][:10], '%Y-%m-%d').date()
+                idx = (f - dias_semana[0]).days
+                if 0 <= idx <= 4:
+                    area_data['dias'][nombres_dia[idx]]['limpiezas'].append({
+                        'asignado_a': l[2], 'estado': l[3], 'razon': l[4]
+                    })
+            except Exception:
+                pass
+        # Conteos cíclicos van solo a áreas de almacén (ALMP, ALMPT, ALM_MP)
+        if area_codigo in ('ALMP', 'ALMPT', 'ALM_MP', 'BDG'):
+            for cn in conteos:
+                try:
+                    f = datetime.strptime(cn[0][:10], '%Y-%m-%d').date()
+                    idx = (f - dias_semana[0]).days
+                    if 0 <= idx <= 4:
+                        area_data['dias'][nombres_dia[idx]]['conteos'].append({
+                            'material': cn[2] or cn[1],
+                            'asignado_a': cn[3], 'estado': cn[4], 'abc': cn[5],
+                        })
+                except Exception:
+                    pass
+        resultado.append(area_data)
+
+    # Tareas no asociadas a área: sumarizar aparte
+    tareas_globales = []
+    for t in tareas:
+        try:
+            f = datetime.strptime((t[3] or '')[:10], '%Y-%m-%d').date()
+            idx = (f - dias_semana[0]).days
+            if 0 <= idx <= 4:
+                tareas_globales.append({
+                    'id': t[0], 'titulo': t[1], 'tipo': t[2],
+                    'fecha': nombres_dia[idx], 'asignado_a': t[4],
+                    'producto': t[5], 'estado': t[6],
+                })
+        except Exception:
+            pass
+
+    return jsonify({
+        'semana_inicio': fecha_inicio,
+        'semana_fin': fecha_fin,
+        'dias': [{'nombre': nombres_dia[i], 'fecha': dias_semana[i].isoformat(),
+                  'weekday': dias_semana[i].weekday(),
+                  'es_lmv': dias_semana[i].weekday() in (0, 2, 4)} for i in range(5)],
+        'areas': resultado,
+        'tareas_globales': tareas_globales,
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # Dossier de Lote PDF — INVIMA / trazabilidad completa
 # ════════════════════════════════════════════════════════════════════════
 @bp.route('/api/planta/dossier-lote/<lote>', methods=['GET'])

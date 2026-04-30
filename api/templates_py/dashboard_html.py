@@ -1314,52 +1314,42 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div id="programacion" class="tab-content">
 <div style="padding:18px">
-  <!-- sub-tab bar -->
-  <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:10px;align-items:center;flex-wrap:wrap">
-    <button id="prog-tab-centro" onclick="switchProgTab('centro')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff">
-      &#128225; Centro
+  <!-- 4 pestañas únicas (Sebastian 30-abr-2026: "reduce a las pestañas necesarias") -->
+  <div style="display:flex;gap:10px;margin-bottom:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;align-items:center;flex-wrap:wrap">
+    <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
+      &#128197; Plan
     </button>
-    <button id="prog-tab-plan" onclick="switchProgTab('plan')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#128301; Planificación Estratégica
+    <button id="prog-tab-asignacion" onclick="switchProgTab('asignacion')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#128205; Asignación Semanal
     </button>
-    <button id="prog-tab-checklist" onclick="switchProgTab('checklist')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#9989; Checklist Pre-Producción
-    </button>
-    <button id="prog-tab-tareas" onclick="switchProgTab('tareas')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127919; Tareas operativas <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
-    </button>
-    <button id="prog-tab-plano" onclick="switchProgTab('plano')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127919; Centro de Mando <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">live</span>
-    </button>
-    <button id="prog-tab-presentaciones" onclick="switchProgTab('presentaciones')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#128230; Presentaciones
-    </button>
-    <button id="prog-tab-equipos" onclick="switchProgTab('equipos')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127981; Equipos
-    </button>
-    <button id="prog-tab-preflight" onclick="switchProgTab('preflight')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#128679; Pre-flight
-    </button>
-    <button id="prog-tab-plansem" onclick="switchProgTab('plansem')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 2px 6px rgba(14,165,233,.3)">
-      &#128197; Plan Semanal
+    <button id="prog-tab-mando" onclick="switchProgTab('mando')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#127919; Centro de Mando <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">live</span>
     </button>
     <button id="prog-tab-autoplan" onclick="switchProgTab('autoplan')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 2px 8px rgba(124,58,237,.4)">
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.4)">
       &#129302; Auto-Plan
     </button>
-    <button id="prog-tab-conteo" onclick="switchProgTab('conteo')"
-      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#128203; Conteo cíclico
+    <button id="prog-tab-config" onclick="switchProgTab('config')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#9881; Configuración
     </button>
+    <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
+  </div>
+  <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
+  <div style="display:none">
+    <button id="prog-tab-centro"></button>
+    <button id="prog-tab-plan"></button>
+    <button id="prog-tab-checklist"></button>
+    <button id="prog-tab-tareas"></button>
+    <button id="prog-tab-plano"></button>
+    <button id="prog-tab-presentaciones"></button>
+    <button id="prog-tab-equipos"></button>
+    <button id="prog-tab-preflight"></button>
+    <button id="prog-tab-plansem"></button>
+    <button id="prog-tab-conteo"></button>
   </div>
 
   <div id="ptab-centro">
@@ -5878,6 +5868,78 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-conteo -->
 
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- ptab-planv2: Plan unificado con horizontes 1sem→1año + necesidades   -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div id="ptab-planv2" style="display:none">
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0;color:#fff;font-size:22px">📅 Plan de Producción</h2>
+          <p style="margin:4px 0 0;color:#cffafe;font-size:13px">Producciones · MP · Envases · Capacidad — todo proyectado por horizonte</p>
+        </div>
+        <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
+      </div>
+      <!-- Switcher de horizonte -->
+      <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
+        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">Semana</button>
+        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 mes</button>
+        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">2 meses</button>
+        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">3 meses</button>
+        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">6 meses</button>
+        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 año</button>
+      </div>
+    </div>
+
+    <!-- KPIs siempre visibles -->
+    <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+
+    <!-- Sección: Comprar AHORA (urgentes por lead time) -->
+    <div id="pv2-comprar-ya" style="display:none;margin-bottom:16px"></div>
+
+    <!-- Vista que cambia según horizonte: cards | calendar | timeline | heatmap -->
+    <div id="pv2-vista"></div>
+  </div><!-- /ptab-planv2 -->
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- ptab-asignacion: Asignación semanal por área (qué hace FAB1 hoy?)    -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div id="ptab-asignacion" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">📍 Asignación Semanal por Área</h2>
+        <p style="color:#666;font-size:13px;margin:0">Qué se hace en cada sala cada día (L/M/V producir · Ma/Ju acondicionar/conteo)</p>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button onclick="asigSemana(-1)" style="background:#fff;border:1px solid #cbd5e1;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:600">← Anterior</button>
+        <input id="asig-fecha" type="date" onchange="asigCargar()" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <button onclick="asigSemana(1)" style="background:#fff;border:1px solid #cbd5e1;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:600">Siguiente →</button>
+        <button onclick="asigSemana(0)" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:700">Hoy</button>
+      </div>
+    </div>
+    <div id="asig-grid"></div>
+  </div><!-- /ptab-asignacion -->
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- ptab-config: Configuración (Presentaciones + Equipos + Cadencias…)   -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div id="ptab-config" style="display:none">
+    <div style="background:#1f2937;color:#fff;padding:16px 20px;border-radius:10px;margin-bottom:16px">
+      <h2 style="margin:0;color:#fff;font-size:20px">⚙️ Configuración</h2>
+      <p style="margin:4px 0 0;color:#9ca3af;font-size:12px">Setup del módulo Planta — se configura una vez, raramente se cambia</p>
+    </div>
+    <!-- Sub-tabs internos de Configuración -->
+    <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #e5e7eb;padding-bottom:8px;flex-wrap:wrap">
+      <button id="cfg-stab-pres" onclick="cfgSubtab('pres')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#1f2937;color:#fff">📦 Presentaciones</button>
+      <button id="cfg-stab-equipos" onclick="cfgSubtab('equipos')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🏭 Equipos</button>
+      <button id="cfg-stab-cadencias" onclick="cfgSubtab('cadencias')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">📦 Cadencias SKU</button>
+      <button id="cfg-stab-mp" onclick="cfgSubtab('mp')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🛒 Lead times MP</button>
+      <button id="cfg-stab-emails" onclick="cfgSubtab('emails')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">📧 Emails</button>
+      <button id="cfg-stab-riesgo" onclick="cfgSubtab('riesgo')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🎨 Perfil Riesgo</button>
+    </div>
+    <div id="cfg-content"></div>
+  </div><!-- /ptab-config -->
+
   <!-- ── Asistente conversacional EOS Planta · Claude API ── -->
   <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:flex;align-items:center;justify-content:center">🤖</button>
   <div id="ai-panel" style="display:none;position:fixed;bottom:150px;right:20px;width:380px;max-width:92vw;height:520px;max-height:80vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9998;overflow:hidden;flex-direction:column">
@@ -7108,18 +7170,43 @@ async function ckMarcar(itemId, estado){
       var el_ps  = document.getElementById('ptab-plansem');
       var el_ap  = document.getElementById('ptab-autoplan');
       var el_cc  = document.getElementById('ptab-conteo');
+      // Nuevas pestañas (4 únicas)
+      var el_pv2 = document.getElementById('ptab-planv2');
+      var el_asg = document.getElementById('ptab-asignacion');
+      var el_cfg = document.getElementById('ptab-config');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
-      el_c.style.display  = tab==='centro' ? 'block' : 'none';
-      el_p.style.display  = tab==='plan'   ? 'block' : 'none';
-      if(el_ck)  el_ck.style.display  = tab==='checklist' ? 'block' : 'none';
-      if(el_tk)  el_tk.style.display  = tab==='tareas'    ? 'block' : 'none';
-      if(el_pln) el_pln.style.display = tab==='plano'     ? 'block' : 'none';
-      if(el_pr)  el_pr.style.display  = tab==='presentaciones' ? 'block' : 'none';
-      if(el_eq)  el_eq.style.display  = tab==='equipos'   ? 'block' : 'none';
-      if(el_pf)  el_pf.style.display  = tab==='preflight' ? 'block' : 'none';
-      if(el_ps)  el_ps.style.display  = tab==='plansem'   ? 'block' : 'none';
-      if(el_ap)  el_ap.style.display  = tab==='autoplan'  ? 'block' : 'none';
-      if(el_cc)  el_cc.style.display  = tab==='conteo'    ? 'block' : 'none';
+      // Hide TODOS los antiguos por default
+      el_c.style.display  = 'none';
+      el_p.style.display  = 'none';
+      if(el_ck)  el_ck.style.display  = 'none';
+      if(el_tk)  el_tk.style.display  = 'none';
+      if(el_pln) el_pln.style.display = 'none';
+      if(el_pr)  el_pr.style.display  = 'none';
+      if(el_eq)  el_eq.style.display  = 'none';
+      if(el_pf)  el_pf.style.display  = 'none';
+      if(el_ps)  el_ps.style.display  = 'none';
+      if(el_ap)  el_ap.style.display  = 'none';
+      if(el_cc)  el_cc.style.display  = 'none';
+      if(el_pv2) el_pv2.style.display = 'none';
+      if(el_asg) el_asg.style.display = 'none';
+      if(el_cfg) el_cfg.style.display = 'none';
+      // 4 pestañas oficiales: planv2 / asignacion / mando / autoplan / config
+      if(tab==='planv2')      { if(el_pv2) el_pv2.style.display = 'block'; }
+      else if(tab==='asignacion') { if(el_asg) el_asg.style.display = 'block'; }
+      else if(tab==='mando')      { if(el_pln) el_pln.style.display = 'block'; }
+      else if(tab==='autoplan')   { if(el_ap)  el_ap.style.display  = 'block'; }
+      else if(tab==='config')     { if(el_cfg) el_cfg.style.display = 'block'; }
+      // Compatibilidad con sub-tabs antiguos invocados desde Configuración
+      else if(tab==='presentaciones') { if(el_pr) el_pr.style.display='block'; }
+      else if(tab==='equipos')        { if(el_eq) el_eq.style.display='block'; }
+      else if(tab==='preflight')      { if(el_pf) el_pf.style.display='block'; }
+      else if(tab==='plansem')        { if(el_ps) el_ps.style.display='block'; }
+      else if(tab==='conteo')         { if(el_cc) el_cc.style.display='block'; }
+      else if(tab==='centro')         { el_c.style.display='block'; }
+      else if(tab==='plan')           { el_p.style.display='block'; }
+      else if(tab==='checklist')      { if(el_ck) el_ck.style.display='block'; }
+      else if(tab==='tareas')         { if(el_tk) el_tk.style.display='block'; }
+      else if(tab==='plano')          { if(el_pln) el_pln.style.display='block'; }
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -7138,7 +7225,19 @@ async function ckMarcar(itemId, estado){
       if(bpf) { bpf.style.background = tab==='preflight' ? '#dc2626' : '#e2e8f0'; bpf.style.color = tab==='preflight' ? '#fff' : '#1a4a7a'; }
       var bcc = document.getElementById('prog-tab-conteo');
       if(bcc) { bcc.style.background = tab==='conteo' ? '#0f766e' : '#e2e8f0'; bcc.style.color = tab==='conteo' ? '#fff' : '#1a4a7a'; }
-      // Plan Semanal: gradient siempre activo (es el botón hero)
+      // 4 pestañas oficiales: estilos
+      var bpv2 = document.getElementById('prog-tab-planv2');
+      var basg = document.getElementById('prog-tab-asignacion');
+      var bmando = document.getElementById('prog-tab-mando');
+      var bcfg = document.getElementById('prog-tab-config');
+      var bap2 = document.getElementById('prog-tab-autoplan');
+      function gradActivo(elem, gradient){ if(!elem) return; elem.style.background = gradient; elem.style.color='#fff'; }
+      function gradInactivo(elem){ if(!elem) return; elem.style.background='#e2e8f0'; elem.style.color='#1a4a7a'; elem.style.boxShadow=''; }
+      if(tab==='planv2'){ gradActivo(bpv2,'linear-gradient(135deg,#0f766e,#0891b2)'); bpv2.style.boxShadow='0 3px 10px rgba(8,145,178,.35)'; } else gradInactivo(bpv2);
+      if(tab==='asignacion'){ gradActivo(basg,'#0f766e'); } else gradInactivo(basg);
+      if(tab==='mando'){ gradActivo(bmando,'#1a4a7a'); } else gradInactivo(bmando);
+      if(tab==='autoplan'){ gradActivo(bap2,'linear-gradient(135deg,#7c3aed,#dc2626)'); bap2.style.boxShadow='0 3px 10px rgba(124,58,237,.4)'; } else gradInactivo(bap2);
+      if(tab==='config'){ gradActivo(bcfg,'#1f2937'); } else gradInactivo(bcfg);
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -7186,6 +7285,19 @@ async function ckMarcar(itemId, estado){
       if(tab==='conteo'){
         if(el_cc) el_cc.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarConteoCalendario==='function') cargarConteoCalendario();
+      }
+      // === Nuevas 4 pestañas oficiales ===
+      if(tab==='planv2'){
+        if(el_pv2) el_pv2.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof planV2Init==='function') planV2Init();
+      }
+      if(tab==='asignacion'){
+        if(el_asg) el_asg.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof asigInit==='function') asigInit();
+      }
+      if(tab==='config'){
+        if(el_cfg) el_cfg.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cfgInit==='function') cfgInit();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -7673,6 +7785,10 @@ async function ckMarcar(itemId, estado){
       if(this.checked) cmStartAutoRefresh();
       else cmStopAutoRefresh();
     });}
+    // Default tab: Plan v2 cuando abres Programación
+    setTimeout(function(){
+      if(typeof switchProgTab==='function') switchProgTab('planv2');
+    }, 100);
   });
 
   // KPIs de actividades (turnos, horas por operario, por tipo)
@@ -8936,6 +9052,438 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace;color:'+(c.alertas_criticas>0?'#dc2626':'#64748b')+';font-weight:'+(c.alertas_criticas>0?'700':'400')+'">'+c.alertas_criticas+'</td>'
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+(c.emails_enviados||0)+'</td>'
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace;font-size:11px;color:#64748b">'+(c.duracion_ms||0)+'ms</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PLAN V2 — Multi-horizonte (1sem / 1m / 2m / 3m / 6m / 1año)
+  // ════════════════════════════════════════════════════════════════════════
+  var _PV2_HORIZONTE = '0.25';  // semana por default
+  var _PV2_DATA = null;
+
+  function planV2Init(){ planV2Cargar(); }
+
+  function planV2Horizonte(meses){
+    _PV2_HORIZONTE = meses;
+    document.querySelectorAll('.phz-btn').forEach(function(b){
+      var act = b.dataset.meses === meses;
+      b.style.background = act ? '#fff' : 'rgba(255,255,255,.18)';
+      b.style.color = act ? '#0f766e' : '#fff';
+    });
+    planV2Cargar();
+  }
+
+  async function planV2Cargar(){
+    var vista = document.getElementById('pv2-vista');
+    var kpis = document.getElementById('pv2-kpis');
+    if(!vista) return;
+    vista.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8">Cargando plan...</div>';
+    var meses = parseFloat(_PV2_HORIZONTE);
+    try {
+      if(meses < 1){
+        // Semana → reusa plan-semanal existente con dias=14
+        var r = await fetch('/api/planta/plan-semanal?dias=14');
+        var d = await r.json();
+        _PV2_DATA = d;
+        planV2RenderSemana(d);
+      } else {
+        var r = await fetch('/api/planta/forecast?meses='+Math.round(meses));
+        var d = await r.json();
+        _PV2_DATA = d;
+        planV2RenderForecast(d, Math.round(meses));
+      }
+    } catch(e){
+      vista.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function planV2RenderSemana(d){
+    var kpis = document.getElementById('pv2-kpis');
+    var k = d.kpis || {};
+    kpis.innerHTML = ''
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_roja_dias?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;10</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_roja_dias?'#dc2626':'#15803d')+'">'+(k.alerta_roja_dias||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.sin_mp_suficiente?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Sin MP</div><div style="font-size:26px;font-weight:800;color:'+(k.sin_mp_suficiente?'#dc2626':'#15803d')+'">'+(k.sin_mp_suficiente||0)+'</div></div>';
+
+    document.getElementById('pv2-comprar-ya').style.display = 'none';
+
+    var vista = document.getElementById('pv2-vista');
+    var items = d.items || [];
+    if(!items.length){
+      vista.innerHTML = '<div style="background:#f0fdf4;padding:30px;border-radius:10px;text-align:center;color:#166534;font-size:14px">✓ Sin producciones próximas — todo dentro de cobertura</div>';
+      return;
+    }
+    vista.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">'
+      + items.map(function(it){
+        var diasCol = it.alerta_dias==='rojo'?'#dc2626':(it.alerta_dias==='amarillo'?'#d97706':(it.alerta_dias==='verde'?'#15803d':'#94a3b8'));
+        var diasTxt = it.dias_inventario===null?'—':it.dias_inventario+'d';
+        var mpCol = it.alcanza_mp?'#15803d':'#dc2626';
+        var img = it.imagen_url
+          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
+          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,#0f766e,#0891b2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
+        return '<div onclick="abrirPlanSemModal('+it.produccion_id+')" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .12s">'
+          + img
+          +'<div style="padding:10px 12px"><b style="color:#0f172a;font-size:13px">'+_escHTML(it.producto)+'</b>'
+          +'<div style="font-size:11px;color:#64748b;margin-top:2px">📅 '+_escHTML(it.fecha_programada)+' · '+(it.lotes||1)+' lote(s)</div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px">'
+          +'<div style="background:'+diasCol+'15;color:'+diasCol+';padding:5px;border-radius:5px;text-align:center;font-size:10px;font-weight:700">⏰ '+diasTxt+'</div>'
+          +'<div style="background:'+mpCol+'15;color:'+mpCol+';padding:5px;border-radius:5px;text-align:center;font-size:10px;font-weight:700">'+(it.alcanza_mp?'✓ MP':'✗ MP')+'</div>'
+          +'</div></div></div>';
+      }).join('')
+      +'</div>';
+  }
+
+  function planV2RenderForecast(d, meses){
+    var k = d.kpis || {};
+    var kpis = document.getElementById('pv2-kpis');
+    kpis.innerHTML = ''
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Lotes proyectados</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total_lotes_proyectados||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total kg</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.total_kg_proyectados||0).toLocaleString('es-CO')+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">SKUs distintos</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.productos_distintos||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.compras_urgentes_count?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">🛒 Comprar YA</div><div style="font-size:26px;font-weight:800;color:'+(k.compras_urgentes_count?'#dc2626':'#15803d')+'">'+(k.compras_urgentes_count||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.meses_con_alerta_capacidad?'#d97706':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Meses cuello botella</div><div style="font-size:26px;font-weight:800;color:'+(k.meses_con_alerta_capacidad?'#d97706':'#15803d')+'">'+(k.meses_con_alerta_capacidad||0)+'</div></div>';
+
+    // Sección comprar YA (urgentes)
+    var compYa = d.compras_urgentes || [];
+    var box = document.getElementById('pv2-comprar-ya');
+    if(compYa.length){
+      box.style.display = 'block';
+      box.innerHTML = '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:12px;padding:16px">'
+        +'<h3 style="margin:0 0 10px;color:#991b1b">🚨 Comprar AHORA · '+compYa.length+' material(es) por lead time</h3>'
+        +'<div style="font-size:12px;color:#7f1d1d;margin-bottom:10px">Estos envases NO llegarán a tiempo si no se piden hoy. Lead time China = 180 días.</div>'
+        +'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#fee2e2"><th style="padding:8px;text-align:left">Envase</th><th style="padding:8px;text-align:right">Cantidad</th><th style="padding:8px;text-align:left">Origen</th><th style="padding:8px;text-align:right">Lead</th><th style="padding:8px;text-align:right">Necesario para</th></tr></thead><tbody>'
+        + compYa.map(function(c){
+          return '<tr style="border-top:1px solid #fecaca">'
+            +'<td style="padding:6px 8px"><b>'+_escHTML(c.etiqueta)+'</b><br><code style="font-size:10px;color:#991b1b">'+_escHTML(c.envase_codigo)+'</code></td>'
+            +'<td style="padding:6px 8px;text-align:right;font-family:monospace;font-weight:800">'+c.unidades_requeridas.toLocaleString('es-CO')+'</td>'
+            +'<td style="padding:6px 8px"><span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+_escHTML(c.origen)+'</span></td>'
+            +'<td style="padding:6px 8px;text-align:right;font-family:monospace">'+c.lead_time_dias+'d</td>'
+            +'<td style="padding:6px 8px;text-align:right">'+_escHTML(c.mes_objetivo)+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    } else {
+      box.style.display = 'none';
+    }
+
+    var vista = document.getElementById('pv2-vista');
+    if(meses === 1){
+      planV2RenderCalendarioMes(d, vista);
+    } else if(meses <= 3){
+      planV2RenderTimeline(d, vista, meses);
+    } else {
+      planV2RenderHeatmap(d, vista, meses);
+    }
+  }
+
+  function planV2RenderCalendarioMes(d, vista){
+    // Agrupar producciones por fecha
+    var prods = d.producciones_proyectadas || [];
+    var porFecha = {};
+    prods.forEach(function(p){ porFecha[p.fecha] = porFecha[p.fecha] || []; porFecha[p.fecha].push(p); });
+    // Generar calendario para próximos 30 días
+    var hoy = new Date(d.fecha_inicio);
+    var html = '<h3 style="margin:0 0 10px;color:#0f172a;font-size:15px">📅 Calendario próximos 30 días</h3>';
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px">';
+    ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(function(dn){
+      html += '<div style="font-weight:800;color:#475569;text-align:center;padding:6px;background:#f1f5f9;border-radius:4px">'+dn+'</div>';
+    });
+    // Padding hasta lunes
+    var pad = (hoy.getDay() + 6) % 7;
+    for(var i=0;i<pad;i++) html += '<div></div>';
+    for(var d_=0; d_<30; d_++){
+      var fecha = new Date(hoy); fecha.setDate(fecha.getDate()+d_);
+      var fStr = fecha.toISOString().substring(0,10);
+      var weekday = (fecha.getDay()+6)%7;
+      var esLMV = [0,2,4].indexOf(weekday) >= 0;
+      var prodsDia = porFecha[fStr] || [];
+      var bg = esLMV ? '#fff' : '#f9fafb';
+      var border = prodsDia.length ? '#0f766e' : '#e5e7eb';
+      html += '<div style="background:'+bg+';border:1px solid '+border+';border-radius:6px;padding:6px;min-height:70px;font-size:10px">'
+        +'<div style="color:#94a3b8;font-weight:700;font-size:10px">'+fecha.getDate()+'</div>'
+        + prodsDia.slice(0,3).map(function(p){
+          return '<div style="background:#dbeafe;color:#1e40af;padding:2px 4px;border-radius:3px;margin-top:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(p.producto)+'">'+_escHTML(p.producto.substring(0,18))+'</div>';
+        }).join('')
+        + (prodsDia.length>3?'<div style="font-size:9px;color:#64748b;margin-top:2px">+'+(prodsDia.length-3)+' más</div>':'')
+        +'</div>';
+    }
+    html += '</div>';
+    vista.innerHTML = html;
+  }
+
+  function planV2RenderTimeline(d, vista, meses){
+    // Agrupar producciones por SKU
+    var prods = d.producciones_proyectadas || [];
+    var porSku = {};
+    prods.forEach(function(p){ porSku[p.producto] = porSku[p.producto] || []; porSku[p.producto].push(p); });
+    var hoy = new Date(d.fecha_inicio);
+    var fin = new Date(d.fecha_fin);
+    var dias = Math.round((fin - hoy) / (1000*60*60*24));
+
+    var html = '<h3 style="margin:0 0 10px;color:#0f172a;font-size:15px">📊 Timeline · '+meses+' meses</h3>';
+    html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;overflow-x:auto">';
+    // Eje X: meses
+    html += '<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-bottom:8px;font-size:11px;font-weight:700;color:#64748b">';
+    html += '<div>SKU</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat('+meses+',1fr)">';
+    for(var m=0;m<meses;m++){
+      var d2 = new Date(hoy); d2.setMonth(d2.getMonth()+m);
+      html += '<div style="text-align:center">'+d2.toLocaleString('es-CO',{month:'short',year:'2-digit'}).toUpperCase()+'</div>';
+    }
+    html += '</div></div>';
+    // Filas SKU
+    Object.keys(porSku).sort().forEach(function(sku){
+      html += '<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:5px 0;border-top:1px solid #f1f5f9;font-size:11px">';
+      html += '<div style="font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(sku)+'">'+_escHTML(sku)+'</div>';
+      html += '<div style="position:relative;height:20px;background:#f8fafc;border-radius:3px">';
+      porSku[sku].forEach(function(p){
+        var pf = new Date(p.fecha);
+        var offset = (pf - hoy) / (fin - hoy) * 100;
+        if(offset < 0 || offset > 100) return;
+        html += '<div title="'+_escAttr(p.fecha+' · '+p.kg_con_merma+'kg')+'" style="position:absolute;left:'+offset+'%;top:2px;width:8px;height:16px;background:#0f766e;border-radius:2px"></div>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+
+    // Tabla resumen mensual
+    html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:15px">📈 Resumen mensual</h3>';
+    html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<thead style="background:#f9fafb"><tr><th style="padding:8px 12px;text-align:left">Mes</th><th style="padding:8px;text-align:right">Lotes</th><th style="padding:8px;text-align:right">Kg total</th><th style="padding:8px;text-align:right">SKUs</th></tr></thead><tbody>';
+    var resumen = d.resumen_mensual || {};
+    Object.keys(resumen).sort().forEach(function(m){
+      var r = resumen[m];
+      html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 12px;font-weight:700">'+_escHTML(m)+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.lotes+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.kg_total+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.productos_distintos+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+
+    vista.innerHTML = html;
+  }
+
+  function planV2RenderHeatmap(d, vista, meses){
+    // Heatmap SKU × mes (intensidad = kg)
+    var prods = d.producciones_proyectadas || [];
+    var skus = [...new Set(prods.map(function(p){return p.producto}))].sort();
+    var meses_keys = Object.keys(d.resumen_mensual || {}).sort();
+
+    // Calcular max kg por celda para normalizar color
+    var celda = {};
+    prods.forEach(function(p){
+      var k = p.producto+'|'+p.mes;
+      celda[k] = (celda[k]||0) + p.kg_con_merma;
+    });
+    var maxVal = Math.max(...Object.values(celda), 1);
+
+    var html = '<h3 style="margin:0 0 10px;color:#0f172a;font-size:15px">🌡 Mapa de calor · '+meses+' meses</h3>';
+    html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;overflow-x:auto">';
+    html += '<div style="display:grid;grid-template-columns:240px repeat('+meses_keys.length+',minmax(50px,1fr));gap:2px;font-size:10px">';
+    html += '<div></div>';
+    meses_keys.forEach(function(m){
+      html += '<div style="text-align:center;padding:6px 4px;background:#f1f5f9;border-radius:3px;font-weight:700;color:#475569">'+_escHTML(m.substring(5))+'</div>';
+    });
+    skus.forEach(function(sku){
+      html += '<div style="padding:6px 8px;font-size:11px;font-weight:600;color:#0f172a;background:#f8fafc;border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(sku)+'">'+_escHTML(sku.substring(0,30))+'</div>';
+      meses_keys.forEach(function(m){
+        var v = celda[sku+'|'+m] || 0;
+        var pct = Math.min(100, (v/maxVal)*100);
+        var bg = v > 0 ? 'rgba(15,118,110,'+(0.15+pct/130)+')' : '#fafafa';
+        html += '<div style="padding:6px 4px;background:'+bg+';border-radius:3px;text-align:center;font-size:10px;color:'+(v>maxVal*0.5?'#fff':'#0f172a')+';font-weight:700" title="'+_escAttr(sku+' · '+m+': '+v.toFixed(0)+'kg')+'">'+(v>0?v.toFixed(0):'')+'</div>';
+      });
+    });
+    html += '</div></div>';
+
+    // Necesidades agregadas año
+    if(meses >= 6){
+      html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:15px">🛒 Necesidades agregadas '+meses+' meses</h3>';
+      // Sumar MP total
+      var mpTotal = {};
+      Object.values(d.mp_consumo_mensual || {}).forEach(function(mes){
+        Object.keys(mes).forEach(function(matId){
+          mpTotal[matId] = mpTotal[matId] || {nombre: mes[matId].nombre, gramos: 0};
+          mpTotal[matId].gramos += mes[matId].gramos;
+        });
+      });
+      var mpArr = Object.entries(mpTotal).map(function(e){return Object.assign({material_id:e[0]}, e[1]);}).sort(function(a,b){return b.gramos-a.gramos;}).slice(0,15);
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:14px">';
+      html += '<div style="padding:10px 14px;background:#f9fafb;font-weight:700;font-size:12px;color:#475569">Top 15 materias primas</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f9fafb"><tr><th style="padding:6px 10px;text-align:left">Material</th><th style="padding:6px 10px;text-align:right">Total gramos</th><th style="padding:6px 10px;text-align:right">Total kg</th></tr></thead><tbody>';
+      mpArr.forEach(function(m){
+        html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px"><b>'+_escHTML(m.nombre||m.material_id)+'</b></td><td style="padding:6px 10px;text-align:right;font-family:monospace">'+Math.round(m.gramos).toLocaleString('es-CO')+'</td><td style="padding:6px 10px;text-align:right;font-family:monospace;font-weight:700">'+(m.gramos/1000).toFixed(2)+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // Envases agregados
+      var envTotal = {};
+      Object.values(d.envases_consumo_mensual || {}).forEach(function(mes){
+        Object.keys(mes).forEach(function(cod){
+          envTotal[cod] = envTotal[cod] || {etiqueta: mes[cod].etiqueta, unidades: 0};
+          envTotal[cod].unidades += mes[cod].unidades;
+        });
+      });
+      var envArr = Object.entries(envTotal).map(function(e){return Object.assign({codigo:e[0]}, e[1]);}).sort(function(a,b){return b.unidades-a.unidades;});
+      if(envArr.length){
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">';
+        html += '<div style="padding:10px 14px;background:#f9fafb;font-weight:700;font-size:12px;color:#475569">Envases requeridos</div>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f9fafb"><tr><th style="padding:6px 10px;text-align:left">Envase</th><th style="padding:6px 10px;text-align:right">Unidades</th></tr></thead><tbody>';
+        envArr.forEach(function(e){
+          html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:6px 10px"><b>'+_escHTML(e.etiqueta)+'</b> <code style="font-size:10px;color:#64748b">'+_escHTML(e.codigo)+'</code></td><td style="padding:6px 10px;text-align:right;font-family:monospace;font-weight:700">'+e.unidades.toLocaleString('es-CO')+'</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+    }
+    vista.innerHTML = html;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ASIGNACIÓN SEMANAL · qué hace cada área cada día
+  // ════════════════════════════════════════════════════════════════════════
+  var _ASIG_FECHA = null;
+  function asigInit(){
+    var hoy = new Date();
+    document.getElementById('asig-fecha').value = hoy.toISOString().substring(0,10);
+    _ASIG_FECHA = hoy;
+    asigCargar();
+  }
+  function asigSemana(delta){
+    var input = document.getElementById('asig-fecha');
+    var f = input.value ? new Date(input.value) : new Date();
+    if(delta === 0) f = new Date();
+    else f.setDate(f.getDate() + delta*7);
+    input.value = f.toISOString().substring(0,10);
+    asigCargar();
+  }
+  async function asigCargar(){
+    var grid = document.getElementById('asig-grid');
+    var fecha = document.getElementById('asig-fecha').value;
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8">Cargando...</div>';
+    try {
+      var r = await fetch('/api/planta/asignacion-semanal?fecha='+fecha);
+      var d = await r.json();
+      var dias = d.dias || [];
+      var areas = d.areas || [];
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
+      // Header
+      html += '<thead><tr style="background:#1f2937;color:#fff">';
+      html += '<th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Área</th>';
+      dias.forEach(function(dia){
+        var bg = dia.es_lmv ? '#0f766e' : '#475569';
+        var ico = dia.es_lmv ? '⚙️' : '📦';
+        html += '<th style="padding:10px 8px;text-align:center;font-size:11px;background:'+bg+';text-transform:uppercase;letter-spacing:.3px">'+ico+' '+_escHTML(dia.nombre)+'<br><span style="font-weight:400;font-size:9px;opacity:.85">'+_escHTML(dia.fecha.substring(5))+'</span></th>';
+      });
+      html += '</tr></thead><tbody>';
+      areas.forEach(function(area){
+        if(!area.puede_producir && !area.puede_envasar && area.tipo!=='apoyo_asignable') return;
+        html += '<tr style="border-top:1px solid #e2e8f0">';
+        var areaCol = area.requiere_limpieza_profunda ? '#0891b2' : '#94a3b8';
+        html += '<td style="padding:10px 12px;background:#f8fafc"><b style="color:#0f172a">'+_escHTML(area.nombre)+'</b><br><code style="color:'+areaCol+';font-size:10px">'+_escHTML(area.codigo)+'</code>'+(area.requiere_limpieza_profunda?'<br><span style="font-size:9px;color:#0891b2;font-weight:700">🧹 LIMP. PROF.</span>':'')+'</td>';
+        ['lunes','martes','miercoles','jueves','viernes'].forEach(function(nd){
+          var datos = area.dias[nd] || {};
+          var prods = datos.producciones || [];
+          var limps = datos.limpiezas || [];
+          var conts = datos.conteos || [];
+          var celda = '';
+          prods.forEach(function(p){
+            celda += '<div style="background:#dbeafe;color:#1e40af;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px"><b>🔬 '+_escHTML(p.producto.substring(0,22))+'</b>'+(p.lotes>1?' ×'+p.lotes:'')+(p.op_elaboracion?'<br>👤 '+_escHTML(p.op_elaboracion.substring(0,20)):'')+'</div>';
+          });
+          limps.forEach(function(l){
+            celda += '<div style="background:#fef3c7;color:#92400e;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:700">🧹 Limpieza profunda<br><span style="font-weight:400">'+_escHTML(l.asignado_a||'—')+'</span></div>';
+          });
+          conts.forEach(function(c){
+            celda += '<div style="background:#f3e8ff;color:#6b21a8;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px">📦 '+_escHTML((c.material||'').substring(0,18))+'</div>';
+          });
+          if(!celda) celda = '<div style="color:#cbd5e1;text-align:center;font-size:11px;padding:8px">—</div>';
+          html += '<td style="padding:6px;vertical-align:top;background:'+(datos.es_dia_produccion?'#fff':'#fafafa')+'">'+celda+'</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // Tareas globales (sin área)
+      var tareasG = d.tareas_globales || [];
+      if(tareasG.length){
+        html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:14px">📋 Tareas operativas (sin área específica)</h3>';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:12px">';
+        tareasG.forEach(function(t){
+          html += '<div style="padding:6px 0;border-bottom:1px solid #f1f5f9"><b>'+_escHTML(t.fecha)+'</b> · '+_escHTML(t.titulo)+' · '+_escHTML(t.asignado_a||'')+'</div>';
+        });
+        html += '</div>';
+      }
+
+      grid.innerHTML = html;
+    } catch(e){
+      grid.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // CONFIGURACIÓN · sub-tabs (Presentaciones, Equipos, Cadencias, etc.)
+  // ════════════════════════════════════════════════════════════════════════
+  var _CFG_SUB = 'pres';
+  function cfgInit(){ cfgSubtab(_CFG_SUB); }
+  function cfgSubtab(s){
+    _CFG_SUB = s;
+    ['pres','equipos','cadencias','mp','emails','riesgo'].forEach(function(x){
+      var btn = document.getElementById('cfg-stab-'+x);
+      if(btn){ btn.style.background = (s===x)?'#1f2937':'#e5e7eb'; btn.style.color = (s===x)?'#fff':'#475569'; }
+    });
+    var c = document.getElementById('cfg-content');
+    // Cargamos los divs antiguos como contenido — reusamos sus cargadores
+    if(s==='pres'){
+      c.innerHTML = '<div id="ptab-presentaciones-host"></div>';
+      // Mover el contenido de ptab-presentaciones aquí (clonando)
+      var src = document.getElementById('ptab-presentaciones');
+      if(src) c.innerHTML = src.outerHTML.replace('display:none','display:block').replace('id="ptab-presentaciones"','id="ptab-presentaciones-rendered"');
+      if(typeof cargarPresentaciones==='function') setTimeout(cargarPresentaciones, 50);
+    } else if(s==='equipos'){
+      var src = document.getElementById('ptab-equipos');
+      if(src) c.innerHTML = src.outerHTML.replace('display:none','display:block').replace('id="ptab-equipos"','id="ptab-equipos-rendered"');
+      if(typeof cargarEquipos==='function') setTimeout(cargarEquipos, 50);
+    } else if(s==='cadencias'){
+      c.innerHTML = '<p style="color:#64748b;font-size:13px">Cadencia, cobertura y merma por SKU. Edita inline.</p><div id="ap-skus-tabla"></div>';
+      if(typeof apCargarSkus==='function') setTimeout(apCargarSkus, 50);
+    } else if(s==='mp'){
+      c.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="apMpNuevo()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button></div><div id="ap-mp-tabla"></div>';
+      if(typeof apCargarMp==='function') setTimeout(apCargarMp, 50);
+    } else if(s==='emails'){
+      c.innerHTML = '<div id="ap-emails-tabla"></div>';
+      if(typeof apCargarEmails==='function') setTimeout(apCargarEmails, 50);
+    } else if(s==='riesgo'){
+      c.innerHTML = '<p style="color:#64748b;font-size:13px">Productos con perfil de riesgo (pigmento, ácido, sensibilidad). Usado por el motor de gates pre-flight para detectar arrastre crítico.</p><div id="cfg-riesgo-tabla"><div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div></div>';
+      cfgCargarRiesgo();
+    }
+  }
+
+  async function cfgCargarRiesgo(){
+    var box = document.getElementById('cfg-riesgo-tabla');
+    if(!box) return;
+    try {
+      var r = await fetch('/api/auto-plan/configs/perfil-riesgo');
+      var d = await r.json();
+      var rows = d.perfiles || [];
+      box.innerHTML = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Pigmento</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Color</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Ácido</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Riesgo arrastre</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Notas</th>'
+        +'</tr></thead><tbody>'
+        + rows.map(function(p){
+          var pigCol = p.tiene_pigmento ? '#dc2626' : '#94a3b8';
+          var rieCol = p.riesgo_arrastre_pct >= 50 ? '#dc2626' : (p.riesgo_arrastre_pct >= 25 ? '#d97706' : '#15803d');
+          return '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:7px 10px"><b>'+_escHTML(p.producto_nombre)+'</b></td>'
+            +'<td style="padding:7px 10px;text-align:center"><span style="background:'+pigCol+'22;color:'+pigCol+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+(p.tiene_pigmento?'SÍ':'no')+'</span></td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.color_descripcion||'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:center">'+(p.es_acido?'🧪':'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;color:'+rieCol+';font-weight:700">'+p.riesgo_arrastre_pct+'%</td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML((p.notas||'').substring(0,60))+'</td>'
             +'</tr>';
         }).join('')
         +'</tbody></table></div>';
