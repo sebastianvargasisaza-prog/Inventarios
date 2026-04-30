@@ -1178,6 +1178,209 @@ def perfil_riesgo():
 # ════════════════════════════════════════════════════════════════════════
 # Asistente accionable — tools
 # ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+# Dossier de Lote PDF — INVIMA / trazabilidad completa
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/dossier-lote/<lote>', methods=['GET'])
+def dossier_lote_pdf(lote):
+    """Genera PDF con TODA la trazabilidad de un lote PT:
+       - Datos producto + presentación
+       - Producción programada (fecha, área, operarios)
+       - Eventos de envasado
+       - Resultados microbiológicos
+       - Disposición de cola_liberacion
+       - Movimientos de MP consumidas
+
+    Sebastian: "auto-evidencia regulatoria (INVIMA)" — sirve como
+    documentación lista para auditoría."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from flask import Response
+    conn = get_db(); c = conn.cursor()
+
+    # Datos envasado
+    env = c.execute("""
+        SELECT pe.id, pe.produccion_id, pe.producto_nombre, pe.lote,
+               pe.presentacion_etiqueta, pe.unidades_planeadas,
+               pe.unidades_envasadas, pe.envase_codigo, pe.iniciado_at,
+               pe.iniciado_por, pe.terminado_at, pe.terminado_por,
+               pe.estado, pp.fecha_programada, pp.cantidad_kg,
+               ap.codigo as area_codigo, ap.nombre as area_nombre
+        FROM produccion_envasado pe
+        LEFT JOIN produccion_programada pp ON pp.id = pe.produccion_id
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        WHERE pe.lote = ?
+        ORDER BY pe.id DESC LIMIT 1
+    """, (lote,)).fetchone()
+
+    if not env:
+        return jsonify({'error': 'Lote no encontrado en envasados'}), 404
+
+    # Resultados micro
+    micro_rows = c.execute("""
+        SELECT microorganismo, valor, estado, fecha_analisis, deadline_resultado
+        FROM calidad_micro_resultados
+        WHERE lote = ? ORDER BY fecha_analisis DESC
+    """, (lote,)).fetchall()
+
+    # Cola liberación
+    cola = c.execute("""
+        SELECT estado, disposicion, fecha_envasado, fecha_min_liberacion,
+               aprobado_por, aprobado_at, notas
+        FROM cola_liberacion WHERE lote = ?
+        ORDER BY id DESC LIMIT 1
+    """, (lote,)).fetchone()
+
+    # Operarios asignados a la producción
+    ops = c.execute("""
+        SELECT op.nombre, op.apellido, op.rol_predeterminado
+        FROM produccion_programada pp
+        LEFT JOIN operarios_planta op ON op.id IN (
+            pp.operario_dispensacion_id, pp.operario_elaboracion_id,
+            pp.operario_envasado_id, pp.operario_acondicionamiento_id
+        )
+        WHERE pp.id = ? AND op.id IS NOT NULL
+    """, (env[1],)).fetchall() if env[1] else []
+
+    # Generar PDF
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return jsonify({'error': 'fpdf no disponible'}), 500
+
+    class PDF(FPDF):
+        def footer(self):
+            self.set_y(-12)
+            self.set_font('Helvetica', 'I', 8)
+            self.set_text_color(150, 150, 150)
+            self.cell(0, 6, f'Dossier · Generado el {datetime.now().strftime("%d/%m/%Y %H:%M")} · Pag. {self.page_no()}', align='C')
+
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=18)
+    W = pdf.w - 20
+
+    # Header
+    pdf.set_fill_color(124, 58, 237)
+    pdf.rect(10, 10, W, 22, 'F')
+    pdf.set_xy(12, 13)
+    pdf.set_font('Helvetica', 'B', 14)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(W - 4, 8, 'ESPAGIRIA LABORATORIO S.A.S.', ln=True)
+    pdf.set_x(12)
+    pdf.set_font('Helvetica', '', 8)
+    pdf.set_text_color(220, 220, 220)
+    pdf.cell(W - 4, 5, 'Dossier de lote · Trazabilidad INVIMA', ln=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(6)
+
+    # Título
+    pdf.set_font('Helvetica', 'B', 13)
+    pdf.cell(W, 8, f'DOSSIER LOTE: {lote}', ln=True, align='C')
+    pdf.ln(4)
+
+    # Producto
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(W, 7, ' PRODUCTO', border=1, fill=True, ln=True)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(50, 6, '  Nombre:', border='LB')
+    pdf.cell(W - 50, 6, str(env[2] or ''), border='RB', ln=True)
+    pdf.cell(50, 6, '  Presentación:', border='LB')
+    pdf.cell(W - 50, 6, str(env[4] or '—'), border='RB', ln=True)
+    pdf.cell(50, 6, '  Envase:', border='LB')
+    pdf.cell(W - 50, 6, str(env[7] or '—'), border='RB', ln=True)
+    pdf.cell(50, 6, '  Cantidad lote:', border='LB')
+    pdf.cell(W - 50, 6, f'{env[14] or 0} kg', border='RB', ln=True)
+    pdf.cell(50, 6, '  Unidades envasadas:', border='LB')
+    pdf.cell(W - 50, 6, str(env[6] or 'pendiente'), border='RB', ln=True)
+    pdf.ln(4)
+
+    # Producción
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(W, 7, ' PRODUCCIÓN', border=1, fill=True, ln=True)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(50, 6, '  Fecha programada:', border='LB')
+    pdf.cell(W - 50, 6, str(env[13] or '—'), border='RB', ln=True)
+    pdf.cell(50, 6, '  Área:', border='LB')
+    pdf.cell(W - 50, 6, f'{env[16] or "—"} ({env[15] or "—"})', border='RB', ln=True)
+    if ops:
+        pdf.cell(50, 6, '  Operarios:', border='LB')
+        ops_txt = ', '.join(f'{o[0]} {o[1] or ""}'.strip() for o in ops)
+        pdf.cell(W - 50, 6, ops_txt[:80], border='RB', ln=True)
+    pdf.ln(4)
+
+    # Envasado
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(W, 7, ' ENVASADO', border=1, fill=True, ln=True)
+    pdf.set_font('Helvetica', '', 9)
+    pdf.cell(50, 6, '  Iniciado:', border='LB')
+    pdf.cell(W - 50, 6, f'{env[8] or "—"} por {env[9] or "—"}', border='RB', ln=True)
+    pdf.cell(50, 6, '  Terminado:', border='LB')
+    pdf.cell(W - 50, 6, f'{env[10] or "pendiente"} por {env[11] or "—"}', border='RB', ln=True)
+    pdf.cell(50, 6, '  Estado:', border='LB')
+    pdf.cell(W - 50, 6, str(env[12] or '—'), border='RB', ln=True)
+    pdf.ln(4)
+
+    # Microbiológicos
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(W, 7, ' RESULTADOS MICROBIOLÓGICOS', border=1, fill=True, ln=True)
+    if not micro_rows:
+        pdf.set_font('Helvetica', 'I', 9)
+        pdf.cell(W, 6, '  Sin análisis registrados', border='LRB', ln=True)
+    else:
+        pdf.set_font('Helvetica', 'B', 8)
+        pdf.set_fill_color(250, 250, 250)
+        pdf.cell(50, 6, '  Microorganismo', border=1, fill=True)
+        pdf.cell(30, 6, 'Valor', border=1, fill=True)
+        pdf.cell(40, 6, 'Estado', border=1, fill=True)
+        pdf.cell(W - 120, 6, 'Fecha', border=1, fill=True, ln=True)
+        pdf.set_font('Helvetica', '', 8)
+        for m in micro_rows:
+            pdf.cell(50, 5, '  ' + str(m[0] or '')[:30], border='LR')
+            pdf.cell(30, 5, str(m[1] or '—'), border='R')
+            pdf.cell(40, 5, str(m[2] or '—'), border='R')
+            pdf.cell(W - 120, 5, str(m[3] or '—'), border='R', ln=True)
+        pdf.cell(W, 0, '', border='T', ln=True)
+    pdf.ln(4)
+
+    # Liberación
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(W, 7, ' LIBERACIÓN', border=1, fill=True, ln=True)
+    pdf.set_font('Helvetica', '', 9)
+    if cola:
+        pdf.cell(50, 6, '  Estado:', border='LB')
+        pdf.cell(W - 50, 6, str(cola[0] or '—'), border='RB', ln=True)
+        pdf.cell(50, 6, '  Disposición:', border='LB')
+        pdf.cell(W - 50, 6, str(cola[1] or 'pendiente'), border='RB', ln=True)
+        pdf.cell(50, 6, '  Aprobado por:', border='LB')
+        pdf.cell(W - 50, 6, f'{cola[4] or "—"} el {cola[5] or "—"}', border='RB', ln=True)
+        if cola[6]:
+            pdf.cell(50, 6, '  Notas:', border='LB')
+            pdf.cell(W - 50, 6, str(cola[6])[:80], border='RB', ln=True)
+    else:
+        pdf.set_font('Helvetica', 'I', 9)
+        pdf.cell(W, 6, '  Sin registro de liberación', border='LRB', ln=True)
+    pdf.ln(8)
+
+    # Footer firma
+    pdf.set_font('Helvetica', '', 8)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(W, 5, f'Dossier auto-generado por EOS Auto-Plan · {datetime.now().isoformat()}', align='C', ln=True)
+
+    pdf_bytes = pdf.output(dest='S')
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode('latin-1')
+    return Response(
+        pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'inline; filename=dossier_{lote}.pdf'}
+    )
+
+
 @bp.route('/api/asistente/tool/<tool_name>', methods=['POST'])
 def asistente_tool(tool_name):
     """Endpoints de tools que el asistente Claude puede invocar."""
