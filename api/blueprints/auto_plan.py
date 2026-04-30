@@ -1427,6 +1427,61 @@ def detectar_cambios_demanda():
 # ════════════════════════════════════════════════════════════════════════
 # DEBUG CALENDAR — visibilidad total de qué se lee y cómo se matchea
 # ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/calendar-eventos-plan', methods=['GET'])
+def calendar_eventos_plan():
+    """Devuelve eventos del Google Calendar que el motor MRP matchea con
+    productos configurados, para mostrarlos EN el calendario del Plan v2.
+
+    Sebastian (30-abr-2026): "tal cual como es" — el calendario real debe
+    aparecer en el Plan, no solo las proyecciones del motor.
+
+    Querystring: ?dias=30|60|90|180|365 (default 30)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 30))
+    except Exception:
+        dias = 30
+    conn = get_db(); c = conn.cursor()
+    eventos = _calendar_events_cached()
+    fecha_hoy = datetime.now().date()
+    fecha_top = fecha_hoy + timedelta(days=dias)
+
+    productos = c.execute("""
+        SELECT producto_nombre, alias_calendar FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+    productos_list = [{'nombre': p[0], 'alias': p[1]} for p in productos]
+
+    items = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f < fecha_hoy or f > fecha_top:
+            continue
+        # Match
+        mejor_score = 0
+        mejor_producto = None
+        for p in productos_list:
+            score = _match_producto_evento(p['nombre'], p['alias'], ev.get('titulo'), ev.get('descripcion', ''))
+            if score > mejor_score:
+                mejor_score = score
+                mejor_producto = p['nombre']
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+        items.append({
+            'fecha': f.isoformat(),
+            'titulo': ev.get('titulo', ''),
+            'producto_match': mejor_producto if mejor_score >= 60 else None,
+            'score': mejor_score,
+            'kg': kg,
+            'origen': 'google_calendar',
+        })
+    items.sort(key=lambda x: x['fecha'])
+    return jsonify({'eventos': items, 'total': len(items)})
+
+
 @bp.route('/api/planta/calendar-debug', methods=['GET'])
 def calendar_debug():
     """Devuelve TODOS los eventos del calendar, su match con productos
@@ -2852,7 +2907,8 @@ def _producciones_futuras_kg(c, producto):
 
 
 def _factor_g_por_unidad(c, producto):
-    """Devuelve el factor g/unidad de la presentación default. Fallback 30g."""
+    """Devuelve el factor g/unidad. Fallback inteligente por categoría."""
+    # 1) Presentación default
     r = c.execute("""
         SELECT factor_g_por_unidad, peso_g, volumen_ml FROM producto_presentaciones
         WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) AND activo=1
@@ -2864,8 +2920,44 @@ def _factor_g_por_unidad(c, producto):
         if r[1] and r[1] > 0:
             return float(r[1])
         if r[2] and r[2] > 0:
-            return float(r[2])  # asumir densidad 1
-    return 30.0  # default razonable para sueros
+            return float(r[2])
+    # 2) Fallback por categoría
+    cat_row = c.execute(
+        "SELECT categoria FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    cat = (cat_row[0] if cat_row else '') or ''
+    factores_cat = {
+        'limpiador': 150.0,        # 150 mL
+        'hidratante': 50.0,        # 50 mL airless
+        'suero': 30.0,             # 30 mL típico
+        'suero_vit_c': 30.0,
+        'suero_ah': 30.0,
+        'contorno': 12.0,          # 10-15 mL
+        'contorno_ojos': 12.0,
+        'maxlash': 4.5,
+        'blush_balm': 6.0,
+        'mascarilla': 50.0,
+        'crema_corporal': 200.0,
+        'esencia': 100.0,
+    }
+    if cat in factores_cat:
+        return factores_cat[cat]
+    # 3) Heurística por nombre del producto
+    nombre_upper = (producto or '').upper()
+    if 'LIMPIADOR' in nombre_upper:
+        return 150.0
+    if 'HIDRATANTE' in nombre_upper or 'EMULSION' in nombre_upper:
+        return 50.0
+    if 'CONTORNO' in nombre_upper:
+        return 12.0
+    if 'MAXLASH' in nombre_upper:
+        return 4.5
+    if 'CREMA CORPORAL' in nombre_upper:
+        return 200.0
+    if 'MASCARILLA' in nombre_upper:
+        return 50.0
+    return 30.0  # default suero
 
 
 def _calcular_demanda_suministro(c, producto, dias_horizonte=60):
@@ -2963,9 +3055,12 @@ def _generar_proyeccion_lotes(c, horizonte_meses):
         cob_target_efectivo = cob_target or 60
         margen_minimo = cob_min or MARGEN_DIAS
 
-        # ¿Está YA cubierto por calendar/BD para todo el horizonte?
-        if info['producciones_futuras_count'] > 0 and cubierto_hasta >= (horizonte_meses * 30 - margen_minimo):
-            # Ya hay suficientes producciones programadas
+        # Solo SKIP si REALMENTE está cubierto MUY arriba del horizonte
+        # (con buffer extra de margen). NO se basa en producciones_futuras_count
+        # porque ese cuenta también producciones_programadas que aún hay que
+        # producir — esas SÍ aparecen en el plan.
+        if cubierto_hasta >= (horizonte_meses * 30 + margen_minimo):
+            # Más cubierto que el horizonte+margen — definitivamente no necesita
             continue
 
         factor_g = info['factor_g']

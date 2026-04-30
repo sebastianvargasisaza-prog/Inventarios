@@ -9801,19 +9801,42 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  function planV2RenderCalendarioMes(d, vista){
-    // Agrupar producciones por fecha
+  async function planV2RenderCalendarioMes(d, vista){
+    // Agrupar producciones del MOTOR por fecha
     var prods = d.producciones_proyectadas || [];
     var porFecha = {};
-    prods.forEach(function(p){ porFecha[p.fecha] = porFecha[p.fecha] || []; porFecha[p.fecha].push(p); });
-    // Generar calendario para próximos 30 días
+    prods.forEach(function(p){
+      porFecha[p.fecha] = porFecha[p.fecha] || [];
+      porFecha[p.fecha].push({producto: p.producto, origen: 'motor', kg: p.kg_con_merma});
+    });
+
+    // Sumar eventos REALES del Google Calendar
+    try {
+      var rcal = await fetch('/api/planta/calendar-eventos-plan?dias=35');
+      var dcal = await rcal.json();
+      (dcal.eventos || []).forEach(function(ev){
+        porFecha[ev.fecha] = porFecha[ev.fecha] || [];
+        porFecha[ev.fecha].push({
+          producto: ev.producto_match || ev.titulo,
+          titulo_real: ev.titulo,
+          origen: 'calendar',
+          kg: ev.kg,
+          score: ev.score,
+        });
+      });
+    } catch(e){ /* silent */ }
+
     var hoy = new Date(d.fecha_inicio);
-    var html = '<h3 style="margin:0 0 10px;color:#0f172a;font-size:15px">📅 Calendario próximos 30 días</h3>';
+    var html = '<h3 style="margin:0 0 8px;color:#0f172a;font-size:15px">📅 Calendario próximos 30 días</h3>';
+    html += '<div style="display:flex;gap:14px;font-size:11px;color:#64748b;margin-bottom:8px;flex-wrap:wrap">'
+      +'<span><span style="display:inline-block;width:10px;height:10px;background:#0891b2;border-radius:2px;vertical-align:middle"></span> Google Calendar (real)</span>'
+      +'<span><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle"></span> Motor MRP (proyectado)</span>'
+      +'<span><span style="display:inline-block;width:10px;height:10px;background:#15803d;border-radius:2px;vertical-align:middle"></span> Confirmado en BD</span>'
+      +'</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-size:11px">';
     ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].forEach(function(dn){
       html += '<div style="font-weight:800;color:#475569;text-align:center;padding:6px;background:#f1f5f9;border-radius:4px">'+dn+'</div>';
     });
-    // Padding hasta lunes
     var pad = (hoy.getDay() + 6) % 7;
     for(var i=0;i<pad;i++) html += '<div></div>';
     for(var d_=0; d_<30; d_++){
@@ -9826,10 +9849,15 @@ async function ckMarcar(itemId, estado){
       var border = prodsDia.length ? '#0f766e' : '#e5e7eb';
       html += '<div style="background:'+bg+';border:1px solid '+border+';border-radius:6px;padding:6px;min-height:70px;font-size:10px">'
         +'<div style="color:#94a3b8;font-weight:700;font-size:10px">'+fecha.getDate()+'</div>'
-        + prodsDia.slice(0,3).map(function(p){
-          return '<div style="background:#dbeafe;color:#1e40af;padding:2px 4px;border-radius:3px;margin-top:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(p.producto)+'">'+_escHTML(p.producto.substring(0,18))+'</div>';
+        + prodsDia.slice(0,4).map(function(p){
+          var col = p.origen==='calendar' ? '#0891b2' : '#7c3aed';
+          var bgCol = p.origen==='calendar' ? '#cffafe' : '#ede9fe';
+          var txtCol = p.origen==='calendar' ? '#155e75' : '#5b21b6';
+          var label = p.titulo_real || p.producto;
+          var kgTxt = p.kg ? ' '+Math.round(p.kg)+'kg' : '';
+          return '<div style="background:'+bgCol+';color:'+txtCol+';padding:2px 4px;border-radius:3px;margin-top:2px;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-left:2px solid '+col+'" title="'+_escAttr((p.titulo_real||p.producto)+kgTxt+' · '+p.origen)+'">'+_escHTML(label.substring(0,16))+kgTxt+'</div>';
         }).join('')
-        + (prodsDia.length>3?'<div style="font-size:9px;color:#64748b;margin-top:2px">+'+(prodsDia.length-3)+' más</div>':'')
+        + (prodsDia.length>4?'<div style="font-size:9px;color:#64748b;margin-top:2px">+'+(prodsDia.length-4)+' más</div>':'')
         +'</div>';
     }
     html += '</div>';
