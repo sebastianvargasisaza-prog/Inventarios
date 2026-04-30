@@ -34,6 +34,8 @@ def chat_widget_js():
     pagina"."""
     if 'compras_user' not in session:
         return Response("// no auth", mimetype="application/javascript")
+    # No cachear el widget JS — Sebastian (29-abr-2026): los browsers
+    # cacheaban version vieja con bugs y costaba forzar Ctrl+F5.
     js = """
 (function(){
   // No inyectar en /chat (seria recursivo) ni en /login
@@ -76,13 +78,19 @@ def chat_widget_js():
     '<div id="cw-panel-hdr">'
       +'\\u{1F4AC} EOS Chat'
       +'<div id="cw-panel-actions">'
+        +'<button id="cw-reload" title="Recargar chat (refresca cache)">\\u21BB</button>'
         +'<a id="cw-open-tab" href="/chat" target="_blank" title="Abrir en pestaña nueva">\\u2197</a>'
         +'<button id="cw-panel-close" title="Cerrar (Esc)">\\u00D7</button>'
       +'</div>'
     +'</div>'
-    +'<iframe id="cw-iframe" src="" allow="autoplay" loading="lazy"></iframe>';
+    +'<iframe id="cw-iframe" src="" allow="autoplay"></iframe>';
   document.body.appendChild(panel);
   document.getElementById('cw-panel-close').onclick = function(){ togglePanel(false); };
+  document.getElementById('cw-reload').onclick = function(e){
+    e.stopPropagation();
+    var iframe = document.getElementById('cw-iframe');
+    iframe.src = '/chat?embed=1&t=' + Date.now();
+  };
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && panel.classList.contains('open')) togglePanel(false);
   });
@@ -91,8 +99,8 @@ def chat_widget_js():
     var open = (typeof force === 'boolean') ? force : !panel.classList.contains('open');
     if (open) {
       var iframe = document.getElementById('cw-iframe');
-      // ?embed=1 hace que /chat ajuste el layout para panel pequeño
-      if (!iframe.src || iframe.src.indexOf('/chat') < 0) iframe.src = '/chat?embed=1';
+      // ?embed=1 + timestamp fuerza recarga fresh cada apertura (evita cache stale)
+      iframe.src = '/chat?embed=1&t=' + Date.now();
       panel.classList.add('open');
       // Limpiar badge al abrir
       var b = document.getElementById('cw-badge');
@@ -165,7 +173,10 @@ def chat_widget_js():
   setInterval(checkUnread, 15000);
 })();
 """
-    return Response(js, mimetype="application/javascript")
+    resp = Response(js, mimetype="application/javascript")
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 @bp.route('/chat')
