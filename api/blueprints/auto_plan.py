@@ -2332,7 +2332,7 @@ def configs_sku_update(config_id):
     params = []
     for col in ('cadencia_dias', 'cobertura_target_dias', 'cobertura_min_dias',
                 'cobertura_max_dias', 'merma_pct', 'prioridad', 'categoria',
-                'presentacion_default_id', 'notas'):
+                'presentacion_default_id', 'notas', 'alias_calendar'):
         if col in d:
             campos.append(f'{col}=?')
             params.append(d[col])

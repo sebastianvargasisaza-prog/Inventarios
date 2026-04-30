@@ -5973,6 +5973,7 @@ function _renderProgramacion(d){
         </div>
       </div>
       <div id="pv2-cobertura" style="margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.12);border-radius:8px;font-size:12px;color:#cffafe">📊 Cargando cobertura SKUs...</div>
+      <div id="pv2-calendar-status" style="margin-top:6px;padding:8px 14px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#cffafe;display:none"></div>
       <!-- Switcher de horizonte -->
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
         <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
@@ -6029,6 +6030,7 @@ function _renderProgramacion(d){
       <button id="cfg-stab-mp" onclick="cfgSubtab('mp')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🛒 Lead times MP</button>
       <button id="cfg-stab-emails" onclick="cfgSubtab('emails')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">📧 Emails</button>
       <button id="cfg-stab-riesgo" onclick="cfgSubtab('riesgo')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🎨 Perfil Riesgo</button>
+      <button id="cfg-stab-calendar" onclick="cfgSubtab('calendar')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#fbbf24,#dc2626);color:#fff">📆 Google Calendar</button>
     </div>
     <div id="cfg-content"></div>
   </div><!-- /ptab-config -->
@@ -9287,6 +9289,25 @@ async function ckMarcar(itemId, estado){
     planV2Cargar();
     planV2DetectarCambios();
     planV2CargarCobertura();
+    planV2CargarCalendarStatus();
+  }
+
+  async function planV2CargarCalendarStatus(){
+    var box = document.getElementById('pv2-calendar-status');
+    if(!box) return;
+    try {
+      var r = await fetch('/api/planta/calendar-debug');
+      var d = await r.json();
+      if(d.total_eventos === 0){
+        box.style.display = 'block';
+        box.innerHTML = '⚠ <b>Calendar vacío</b> — verifica GCAL_ICAL_URL en Render. <a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">Ir a Configuración</a>';
+        return;
+      }
+      box.style.display = 'block';
+      box.innerHTML = '📆 Calendar: <b>'+d.total_eventos+'</b> eventos · ✓ <b style="color:#86efac">'+d.matcheados+'</b> matcheados con productos · '
+        +(d.sin_match_aceptable ? '? <b style="color:#fbbf24">'+d.sin_match_aceptable+'</b> sin match — '+'<a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">configurar aliases</a>' : '<span style="color:#86efac">100% identificados</span>')
+        +' · ⚖ <b>'+d.con_kg_detectados+'</b> con kg parseados';
+    } catch(e){ /* silent */ }
   }
 
   async function planV2CargarCobertura(){
@@ -10027,9 +10048,17 @@ async function ckMarcar(itemId, estado){
   function cfgInit(){ cfgSubtab(_CFG_SUB); }
   function cfgSubtab(s){
     _CFG_SUB = s;
-    ['pres','equipos','cadencias','mp','emails','riesgo'].forEach(function(x){
+    ['pres','equipos','cadencias','mp','emails','riesgo','calendar'].forEach(function(x){
       var btn = document.getElementById('cfg-stab-'+x);
-      if(btn){ btn.style.background = (s===x)?'#1f2937':'#e5e7eb'; btn.style.color = (s===x)?'#fff':'#475569'; }
+      if(btn){
+        if(x==='calendar'){
+          btn.style.background = (s===x)?'#dc2626':'linear-gradient(135deg,#fbbf24,#dc2626)';
+          btn.style.color = '#fff';
+        } else {
+          btn.style.background = (s===x)?'#1f2937':'#e5e7eb';
+          btn.style.color = (s===x)?'#fff':'#475569';
+        }
+      }
     });
     var c = document.getElementById('cfg-content');
     // Cargamos los divs antiguos como contenido — reusamos sus cargadores
@@ -10055,7 +10084,100 @@ async function ckMarcar(itemId, estado){
     } else if(s==='riesgo'){
       c.innerHTML = '<p style="color:#64748b;font-size:13px">Productos con perfil de riesgo (pigmento, ácido, sensibilidad). Usado por el motor de gates pre-flight para detectar arrastre crítico.</p><div id="cfg-riesgo-tabla"><div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div></div>';
       cfgCargarRiesgo();
+    } else if(s==='calendar'){
+      c.innerHTML = '<div style="background:linear-gradient(135deg,#fef3c7,#fbbf24);color:#78350f;padding:14px 18px;border-radius:10px;margin-bottom:14px">'
+        +'<h3 style="margin:0 0 4px;color:#78350f;font-size:15px">📆 Lectura del Google Calendar</h3>'
+        +'<p style="margin:0;font-size:12px;color:#7c2d12">El motor MRP lee tu calendario y matchea cada evento con un producto. Revisa que estén bien matcheados — si hay errores, configura aliases en la sección de cadencias.</p>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;margin-bottom:12px"><button onclick="cfgCargarCalendar()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-weight:700;cursor:pointer">🔄 Re-leer Calendar</button><button onclick="cfgCargarAliases()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer">⚙ Editar aliases</button></div>'
+        +'<div id="cfg-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>'
+        +'<div id="cfg-cal-tabla"><div style="text-align:center;color:#94a3b8;padding:20px">Pulsa "Re-leer Calendar"</div></div>';
+      cfgCargarCalendar();
     }
+  }
+
+  async function cfgCargarCalendar(){
+    var box = document.getElementById('cfg-cal-tabla');
+    var kpis = document.getElementById('cfg-cal-kpis');
+    if(!box) return;
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Leyendo calendar...</div>';
+    try {
+      var r = await fetch('/api/planta/calendar-debug');
+      var d = await r.json();
+      if(!r.ok){ box.innerHTML = '<div style="color:#dc2626">Error: '+(d.error||'')+'</div>'; return; }
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">Eventos</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+d.total_eventos+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">✓ Matcheados</div><div style="font-size:24px;font-weight:800;color:#15803d">'+d.matcheados+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(d.en_conflicto?'#dc2626':'#15803d')+';border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">⚠ Conflicto</div><div style="font-size:24px;font-weight:800;color:'+(d.en_conflicto?'#dc2626':'#15803d')+'">'+d.en_conflicto+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(d.sin_match_aceptable?'#d97706':'#15803d')+';border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">? Sin match</div><div style="font-size:24px;font-weight:800;color:'+(d.sin_match_aceptable?'#d97706':'#15803d')+'">'+d.sin_match_aceptable+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">⚖ Con kg</div><div style="font-size:24px;font-weight:800;color:#7c3aed">'+d.con_kg_detectados+'</div></div>';
+      var eventos = d.eventos || [];
+      if(!eventos.length){
+        box.innerHTML = '<div style="background:#fef3c7;border:1px solid #fbbf24;color:#92400e;padding:20px;border-radius:10px;text-align:center"><b>Sin eventos en calendar</b><br><span style="font-size:12px">Verifica que GCAL_ICAL_URL esté configurado en Render.</span></div>';
+        return;
+      }
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Evento</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Fecha</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Kg</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto matcheado</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Score</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Estado</th>'
+        +'</tr></thead><tbody>';
+      eventos.forEach(function(e){
+        var col = {matcheado:'#15803d',conflicto:'#dc2626',sin_match:'#d97706',no_relacionado:'#94a3b8'}[e.estado] || '#475569';
+        var ico = {matcheado:'✓',conflicto:'⚠',sin_match:'?',no_relacionado:'·'}[e.estado] || '';
+        html += '<tr style="border-top:1px solid #f1f5f9">'
+          +'<td style="padding:7px 10px"><b>'+_escHTML(e.titulo)+'</b></td>'
+          +'<td style="padding:7px 10px;font-family:monospace;font-size:11px">'+_escHTML(e.fecha)+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(e.kg_detectados!=null?e.kg_detectados+'kg':'<span style="color:#94a3b8">—</span>')+'</td>'
+          +'<td style="padding:7px 10px;font-size:11px">'+(e.producto_match?'<b>'+_escHTML(e.producto_match)+'</b>':'<span style="color:#94a3b8">—</span>')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+col+';font-weight:700">'+e.score_match+'</td>'
+          +'<td style="padding:7px 10px;text-align:center"><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+ico+' '+e.estado+'</span></td>'
+          +'</tr>';
+        if(e.candidatos_top3 && e.candidatos_top3.length > 1 && e.estado==='conflicto'){
+          html += '<tr><td colspan="6" style="padding:4px 30px;background:#fef2f2;font-size:10px;color:#7f1d1d">Candidatos: '+e.candidatos_top3.map(function(cc){return cc.producto+' ('+cc.score+')'}).join(' · ')+'</td></tr>';
+        }
+      });
+      html += '</tbody></table></div>';
+      box.innerHTML = html;
+    } catch(err){ box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+err.message+'</div>'; }
+  }
+
+  async function cfgCargarAliases(){
+    var box = document.getElementById('cfg-cal-tabla');
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/configs/sku');
+      var d = await r.json();
+      var rows = d.configs || [];
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">'
+        +'<div style="padding:12px 14px;background:#f9fafb;font-size:12px;color:#475569"><b>Aliases del Calendar por producto</b><br><span style="font-size:11px;color:#64748b">Separa con coma. Ejemplo: <code style="background:#fff;padding:1px 5px;border-radius:3px">AH 1.5%, AH, Hidratante AH</code></span></div>'
+        +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Aliases (CSV)</th>'
+        +'</tr></thead><tbody>';
+      rows.forEach(function(c){
+        html += '<tr style="border-top:1px solid #f1f5f9">'
+          +'<td style="padding:7px 10px"><b>'+_escHTML(c.producto_nombre)+'</b></td>'
+          +'<td style="padding:5px 10px"><input type="text" value="'+_escAttr(c.alias_calendar||'')+'" placeholder="alias1, alias2, ..." onblur="apAliasGuardar('+c.id+', this)" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"></td>'
+          +'</tr>';
+      });
+      html += '</tbody></table></div>';
+      box.innerHTML = html;
+    } catch(e){ box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+  }
+
+  async function apAliasGuardar(id, input){
+    try {
+      var r = await fetch('/api/auto-plan/configs/sku/'+id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({alias_calendar: input.value.trim() || null})
+      });
+      if(r.ok){ input.style.background='#f0fdf4'; setTimeout(function(){input.style.background='';}, 800); }
+    } catch(e){}
   }
 
   async function cfgCargarRiesgo(){
