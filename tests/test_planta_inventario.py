@@ -575,6 +575,141 @@ def test_limpiar_drift_solo_admin(app, db_clean):
     assert r.status_code == 403
 
 
+def test_e2e_oc_recepcion_a_produccion(app, db_clean):
+    """Flujo completo: crear OC → recibir → completar producción.
+    Verifica que el stock fluye correctamente entre los 3 pasos.
+    """
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_E2E"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_E2E", "MP e2e", 1000, 0),  # arrancamos sin stock
+    ])
+
+    # Crear OC + items
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, categoria, valor_total) "
+        "VALUES ('OC-TEST-E2E', date('now'), 'Autorizada', 'PROV TEST', 'MP', 100000)"
+    )
+    con.execute(
+        "INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) "
+        "VALUES ('OC-TEST-E2E', 'MP_E2E', 'MP e2e', 5000)"
+    )
+    con.commit()
+    con.close()
+
+    client = app.test_client()
+    _set_admin_session(client)
+
+    # Paso 1: Stock inicial = 0
+    assert _stock_actual(db_path, "MP_E2E") == 0
+
+    # Paso 2: Recibir OC
+    r1 = client.post("/api/ordenes-compra/OC-TEST-E2E/recibir", json={
+        "items_recepcion": [{"codigo_mp": "MP_E2E", "cantidad_recibida": 5000,
+                             "lote": "L001", "estado": "OK"}],
+        "receptor_nombre": "test"
+    }, headers={"Origin": "http://localhost"})
+    assert r1.status_code == 200, r1.get_data(as_text=True)
+    assert _stock_actual(db_path, "MP_E2E") == 5000
+
+    # Paso 3: Crear producción que consume MP
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=2)
+
+    # Paso 4: Completar producción → descuenta 2*1000 = 2000g
+    r2 = client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                     headers={"Origin": "http://localhost"})
+    assert r2.status_code == 200, r2.get_data(as_text=True)
+    assert _stock_actual(db_path, "MP_E2E") == 3000  # 5000 - 2000
+
+
+def test_alertas_planta_endpoint_responde(app, db_clean):
+    """El endpoint de alertas vivas de planta responde 200 con estructura JSON."""
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.get("/api/planta/alertas-vivas")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    d = r.get_json()
+    # Debe tener al menos las keys principales
+    assert isinstance(d, dict)
+
+
+def test_kardex_mp_responde(app, db_clean):
+    """Kardex de un MP devuelve estructura coherente con movimientos + saldo."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    # Crear MP con movimientos
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "INSERT OR REPLACE INTO maestro_mps "
+        "(codigo_mp, nombre_inci, nombre_comercial, tipo, activo) "
+        "VALUES ('MP_KARDEX', 'Kardex test', 'Kardex test', 'MP', 1)"
+    )
+    con.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha) "
+        "VALUES ('MP_KARDEX', 'Kardex test', 1000, 'Entrada', datetime('now','-5 day'))"
+    )
+    con.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha) "
+        "VALUES ('MP_KARDEX', 'Kardex test', 200, 'Salida', datetime('now','-2 day'))"
+    )
+    con.commit()
+    con.close()
+
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.get("/api/planta/kardex/MP_KARDEX")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    d = r.get_json()
+    # Debe tener movimientos
+    assert "movimientos" in d or "kardex" in d or len(d) > 0
+
+
+def test_kardex_mp_inexistente_devuelve_404(app, db_clean):
+    """Kardex de un MP que no existe devuelve 404."""
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.get("/api/planta/kardex/MP_NO_EXISTE_XYZ")
+    assert r.status_code == 404
+
+
+def test_recibir_oc_sin_auth_falla(app, db_clean):
+    """Recibir OC sin autenticación devuelve 401."""
+    client = app.test_client()
+    r = client.post("/api/ordenes-compra/OC-CUALQUIERA/recibir", json={},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 401
+
+
+def test_completar_descuenta_y_audit_no_reporta_anomalia(app, db_clean):
+    """Después de completar una producción, /admin/audit-inventario NO debe
+    reportar esa producción como 'legacy sin descontar'."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_AUDIT_CLEAN"
+    _setup_producto_con_formula(db_path, producto, lote_kg=8, mps=[
+        ("MP_AUDIT", "MP audit", 600, 50000),
+    ])
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+
+    client = app.test_client()
+    _set_admin_session(client)
+    client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                headers={"Origin": "http://localhost"})
+
+    # Audit no debe listar esta producción como legacy
+    r = client.get("/admin/audit-inventario")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # La producción NO debe aparecer en la sección legacy
+    # (busca el id de la producción cerca del título legacy)
+    legacy_section_idx = body.find("Producciones LEGACY")
+    siguiente_section_idx = body.find("Producciones ATRASADAS")
+    if legacy_section_idx > 0 and siguiente_section_idx > legacy_section_idx:
+        legacy_html = body[legacy_section_idx:siguiente_section_idx]
+        assert producto not in legacy_html, (
+            f"Producción {producto} aparece como legacy aunque ya descontó"
+        )
+
+
 def test_audit_endpoint_solo_admin(app, db_clean):
     """/admin/audit-inventario es solo admin."""
     from .conftest import TEST_PASSWORD

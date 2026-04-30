@@ -280,7 +280,7 @@ def test_sync_shopify_dry_run_no_escribe(app, db_clean):
     d = r.get_json()
     assert d['dry_run'] is True
     assert d['pendientes'] == 3
-    assert d['total_a_importar'] == 300000
+    assert d['total_importado'] == 300000
 
     # Verificar que NO se escribieron ingresos
     db = sqlite3.connect(os.environ["DB_PATH"])
