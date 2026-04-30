@@ -5974,6 +5974,7 @@ function _renderProgramacion(d){
       </div>
       <div id="pv2-cobertura" style="margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.12);border-radius:8px;font-size:12px;color:#cffafe">📊 Cargando cobertura SKUs...</div>
       <div id="pv2-calendar-status" style="margin-top:6px;padding:8px 14px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#cffafe;display:none"></div>
+      <div id="pv2-auditoria" style="margin-top:6px;padding:8px 14px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#cffafe;display:none"></div>
       <!-- Switcher de horizonte -->
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
         <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
@@ -9294,6 +9295,78 @@ async function ckMarcar(itemId, estado){
     planV2CargarCobertura();
     planV2CargarCalendarStatus();
     planV2CargarRecomendaciones();
+    planV2CargarAuditoria();
+  }
+
+  async function planV2CargarAuditoria(){
+    var box = document.getElementById('pv2-auditoria');
+    if(!box) return;
+    try {
+      var r = await fetch('/api/planta/auditoria-calendar');
+      var d = await r.json();
+      var k = d.kpis || {};
+      if((d.total||0) === 0){
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = 'block';
+      var pct = k.cumple_margen_pct || 0;
+      var col = pct >= 80 ? '#86efac' : (pct >= 60 ? '#fcd34d' : '#fca5a5');
+      var icon = pct >= 80 ? '✓' : (pct >= 60 ? '⚠' : '🔴');
+      box.innerHTML = '<b style="color:'+col+'">'+icon+' '+pct+'% cumple margen 20d</b> '
+        + '· de '+d.total+' producciones en Calendar: '
+        + (k.ok ? '<b style="color:#86efac">'+k.ok+' OK</b> · ' : '')
+        + (k.temprana ? '<span style="color:#93c5fd">'+k.temprana+' tempranas</span> · ' : '')
+        + (k.ajustada ? '<span style="color:#fcd34d">'+k.ajustada+' ajustadas</span> · ' : '')
+        + (k.tarde ? '<span style="color:#fb923c">'+k.tarde+' tardes</span> · ' : '')
+        + (k.stockout ? '<b style="color:#fca5a5">'+k.stockout+' stock-outs</b>' : '')
+        + ' <a href="#" onclick="planV2VerAuditoria();return false" style="color:#fff;text-decoration:underline;margin-left:6px">ver detalle</a>';
+    } catch(e){ /* silent */ }
+  }
+
+  async function planV2VerAuditoria(){
+    try {
+      var r = await fetch('/api/planta/auditoria-calendar');
+      var d = await r.json();
+      var auditorias = d.auditorias || [];
+      var modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+      modal.onclick = function(e){if(e.target===modal)modal.remove();};
+      var byClase = {ok:'#15803d',temprana:'#0891b2',ajustada:'#d97706',tarde:'#dc2626',stockout:'#7f1d1d'};
+      var html = '<div style="background:#fff;border-radius:12px;width:900px;max-width:96vw;max-height:90vh;overflow:auto;padding:20px">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f172a">📊 Auditoría Calendar · margen 20d</h3><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>'
+        +'<p style="color:#64748b;font-size:12px;margin:0 0 14px">Para cada producción del Calendar, calculamos cuánto cubría el lote anterior vs cuándo se hizo la siguiente. Si el margen real ≥ 20 días → se cumplió la regla.</p>';
+      if(!auditorias.length){
+        html += '<div style="text-align:center;padding:40px;color:#94a3b8">Sin pares consecutivos para auditar</div>';
+      } else {
+        html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+          +'<thead style="background:#f9fafb"><tr>'
+          +'<th style="padding:8px;text-align:left">Producto</th>'
+          +'<th style="padding:8px;text-align:left">Anterior</th>'
+          +'<th style="padding:8px;text-align:left">Actual</th>'
+          +'<th style="padding:8px;text-align:right">Gap</th>'
+          +'<th style="padding:8px;text-align:right">Cubre</th>'
+          +'<th style="padding:8px;text-align:right">Margen</th>'
+          +'<th style="padding:8px;text-align:left">Estado</th>'
+          +'</tr></thead><tbody>';
+        auditorias.forEach(function(a){
+          var col = byClase[a.clase] || '#64748b';
+          html += '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:6px 8px"><b>'+_escHTML(a.producto)+'</b></td>'
+            +'<td style="padding:6px 8px;font-size:11px">'+_escHTML(a.fecha_anterior)+'<br><span style="color:#64748b">'+a.kg_anterior+'kg</span></td>'
+            +'<td style="padding:6px 8px;font-size:11px">'+_escHTML(a.fecha_actual)+'</td>'
+            +'<td style="padding:6px 8px;text-align:right;font-family:monospace">'+a.gap_dias+'d</td>'
+            +'<td style="padding:6px 8px;text-align:right;font-family:monospace">'+a.duracion_estimada_lote+'d</td>'
+            +'<td style="padding:6px 8px;text-align:right;font-family:monospace;font-weight:700;color:'+col+'">'+(a.margen_dias>0?'+':'')+a.margen_dias+'d</td>'
+            +'<td style="padding:6px 8px"><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase">'+a.clase+'</span></td>'
+            +'</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+      modal.innerHTML = html;
+      document.body.appendChild(modal);
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   async function recDescontinuar(producto){

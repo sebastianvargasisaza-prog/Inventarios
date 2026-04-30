@@ -1738,6 +1738,129 @@ def planta_recomendaciones():
     })
 
 
+# ════════════════════════════════════════════════════════════════════════
+# AUDITORÍA del Calendar — ¿se cumplió margen 20d?
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "la pregunta real es lo que está en el calendario
+# si cumple la lógica de producto planeado 20 días antes de que se agote".
+
+@bp.route('/api/planta/auditoria-calendar', methods=['GET'])
+def auditoria_calendar():
+    """Para cada producción en el Calendar, evalúa si se hizo respetando el
+    margen de 20 días antes de agotar stock.
+
+    Lógica:
+      Para cada lote del calendar histórico:
+        - Calcula duración estimada del lote = kg × 1000 / factor_g / velocidad
+        - Calcula gap real entre esta producción y la anterior
+        - margen_real = duración_anterior - gap
+        - Si margen >= 20d   → OK ✓
+        - Si margen 5-20d    → AJUSTADA (debió producirse antes)
+        - Si margen 0-5d     → TARDE (al límite)
+        - Si margen < 0      → STOCK-OUT (producción tarde, hubo días sin stock)
+        - Si margen > 40d    → TEMPRANA (overstock)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    eventos = _calendar_events_cached()
+    productos_cfg = c.execute("""
+        SELECT producto_nombre, alias_calendar FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+
+    # Agrupar eventos por producto
+    eventos_por_producto = {}  # producto → [(fecha, kg)]
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        mejor_score = 0
+        mejor_producto = None
+        for p in productos_cfg:
+            score = _match_producto_evento(p[0], p[1], ev.get('titulo'), ev.get('descripcion', ''))
+            if score > mejor_score:
+                mejor_score = score
+                mejor_producto = p[0]
+        if mejor_score < 60 or not mejor_producto:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+        eventos_por_producto.setdefault(mejor_producto, []).append({
+            'fecha': f, 'kg': kg, 'titulo': ev.get('titulo', '')
+        })
+
+    # Auditar cada lote
+    auditorias = []
+    for producto, lotes in eventos_por_producto.items():
+        if len(lotes) < 2:
+            continue
+        lotes.sort(key=lambda x: x['fecha'])
+        velocidad, factor = _velocidad_total_producto(c, producto)
+        velocidad_proj = max(0.01, velocidad * factor)
+        factor_g = _factor_g_por_unidad(c, producto)
+
+        for i in range(1, len(lotes)):
+            lote_actual = lotes[i]
+            lote_anterior = lotes[i-1]
+            gap_dias = (lote_actual['fecha'] - lote_anterior['fecha']).days
+            kg_anterior = lote_anterior['kg'] or 30
+            unidades_anterior = (kg_anterior * 1000) / max(factor_g, 1)
+            duracion_lote_anterior = unidades_anterior / max(velocidad_proj, 0.01)
+            margen_real = duracion_lote_anterior - gap_dias
+
+            if margen_real >= 40:
+                clase = 'temprana'
+                msg = f'Lote anterior ({kg_anterior}kg) cubría {duracion_lote_anterior:.0f}d, gap {gap_dias}d → produjiste {margen_real:.0f}d antes (overstock)'
+            elif margen_real >= 20:
+                clase = 'ok'
+                msg = f'Lote anterior cubría {duracion_lote_anterior:.0f}d, gap {gap_dias}d → margen {margen_real:.0f}d ≥ 20d ✓'
+            elif margen_real >= 5:
+                clase = 'ajustada'
+                msg = f'Margen {margen_real:.0f}d (debajo de 20d ideal pero positivo)'
+            elif margen_real >= 0:
+                clase = 'tarde'
+                msg = f'Margen {margen_real:.0f}d — producción al límite'
+            else:
+                clase = 'stockout'
+                msg = f'Stock se agotó {abs(margen_real):.0f}d antes de la nueva producción'
+
+            auditorias.append({
+                'producto': producto,
+                'fecha_actual': lote_actual['fecha'].isoformat(),
+                'fecha_anterior': lote_anterior['fecha'].isoformat(),
+                'kg_anterior': kg_anterior,
+                'gap_dias': gap_dias,
+                'duracion_estimada_lote': round(duracion_lote_anterior, 1),
+                'margen_dias': round(margen_real, 1),
+                'velocidad_dia': round(velocidad_proj, 2),
+                'clase': clase,
+                'mensaje': msg,
+            })
+
+    # Resumen
+    total = len(auditorias)
+    by_clase = {}
+    for a in auditorias:
+        by_clase[a['clase']] = by_clase.get(a['clase'], 0) + 1
+
+    cumple_margen = (by_clase.get('ok', 0) + by_clase.get('temprana', 0)) / max(total, 1) * 100
+
+    return jsonify({
+        'auditorias': auditorias,
+        'total': total,
+        'kpis': {
+            'cumple_margen_pct': round(cumple_margen, 1),
+            'ok': by_clase.get('ok', 0),
+            'temprana': by_clase.get('temprana', 0),
+            'ajustada': by_clase.get('ajustada', 0),
+            'tarde': by_clase.get('tarde', 0),
+            'stockout': by_clase.get('stockout', 0),
+        },
+        'productos_evaluados': len(eventos_por_producto),
+    })
+
+
 @bp.route('/api/planta/calendar-eventos-plan', methods=['GET'])
 def calendar_eventos_plan():
     """Devuelve eventos del Google Calendar que el motor MRP matchea con
