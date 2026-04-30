@@ -66,6 +66,15 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
 .msgs-wrap{flex:1;overflow-y:auto;padding:18px;background:#f5f4f0}
 .msg{display:flex;margin-bottom:10px;max-width:75%}
 .msg.mine{margin-left:auto;flex-direction:row-reverse}
+.add-react{position:absolute;top:0;background:#fff;border:1px solid #e7e5e4;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center;z-index:5}
+.msg .add-react{right:-32px}
+.msg.mine .add-react{left:-32px;right:auto}
+.msg:hover .add-react{display:flex}
+.mention{background:#ede9fe;color:#6d28d9;padding:1px 4px;border-radius:4px;font-weight:700}
+.mention.me{background:#fef3c7;color:#92400e}
+.mention-suggest{position:absolute;background:#fff;border:1px solid #e7e5e4;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:180px;overflow-y:auto;z-index:9999;min-width:180px}
+.mention-suggest .item{padding:7px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
+.mention-suggest .item:hover,.mention-suggest .item.sel{background:#f5f5f4}
 .bubble{padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;color:#1c1917;background:#fff;border:1px solid #e7e5e4;box-shadow:0 1px 2px rgba(0,0,0,.03);max-width:100%;word-wrap:break-word;overflow-wrap:break-word}
 .msg.mine .bubble{background:#dcfce7;border-color:#bbf7d0;color:#14532d}
 .bubble-meta{font-size:10px;color:#a8a29e;margin-top:3px}
@@ -425,18 +434,20 @@ async function cargarMensajes(thread_id, append){
             if(!m.reactions.hasOwnProperty(em)) continue;
             var users = m.reactions[em] || [];
             var meReact = users.indexOf(ME) >= 0;
-            pairs.push('<button onclick="toggleReaccion('+m.id+',&quot;'+em+'&quot;)" '+
+            // Pasar emoji via dataset, evitar escape inline frágil
+            pairs.push('<button data-react-emoji="'+_esc(em)+'" data-react-msg="'+m.id+'" '+
                       'style="background:'+(meReact?'#ede9fe':'#f5f5f4')+';border:1px solid '+(meReact?'#a78bfa':'#e7e5e4')+';border-radius:12px;padding:1px 8px;font-size:11px;cursor:pointer;margin-right:3px" '+
                       'title="'+_esc(users.join(', '))+'">'+em+' '+users.length+'</button>');
           }
           if(pairs.length) reactsHtml = '<div style="margin-top:3px;display:flex;flex-wrap:wrap">'+pairs.join('')+'</div>';
         }
-        // Botón "+" para agregar reacción (al hover)
-        var btnAddReact = '<button class="add-react" onclick="abrirPickerReact('+m.id+',event)" '+
-          'style="position:absolute;'+(mine?'left:-32px':'right:-32px')+';top:0;background:#fff;border:1px solid #e7e5e4;border-radius:50%;width:26px;height:26px;cursor:pointer;font-size:12px;display:none;align-items:center;justify-content:center" title="Reaccionar">😊</button>';
-        html += '<div class="msg'+(mine?' mine':'')+'" style="position:relative" onmouseenter="this.querySelector(\\'.add-react\\').style.display=\\'flex\\'" onmouseleave="this.querySelector(\\'.add-react\\').style.display=\\'none\\'"><div style="position:relative">'+
+        // Botón "+" para agregar reacción (visible en :hover via CSS)
+        var btnAddReact = '<button class="add-react" data-add-react-msg="'+m.id+'" title="Reaccionar">😊</button>';
+        // Renderizar @menciones en el contenido (Fase 4)
+        var contenidoHtml = renderMenciones(_esc(m.contenido)).replace(/\n/g,'<br>');
+        html += '<div class="msg'+(mine?' mine':'')+'" style="position:relative"><div style="position:relative">'+
           btnAddReact +
-          '<div class="bubble">'+senderHtml+_esc(m.contenido).replace(/\n/g,'<br>')+'</div>'+
+          '<div class="bubble">'+senderHtml+contenidoHtml+'</div>'+
           reactsHtml +
           '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
           '</div></div>';
@@ -604,6 +615,140 @@ async function crearTareaChat(){
     await cargarMensajes(ACTIVE_THREAD);
     cargarThreads();
   } catch(e){ alert('Error de red: '+e.message); }
+}
+
+// ─── Fase 4: @menciones — render + autocomplete ─────────────────────
+// Resalta @username en el contenido del mensaje. Si soy yo el mencionado,
+// usa la clase 'mention me' (ámbar) para destacar.
+function renderMenciones(htmlEsc){
+  return htmlEsc.replace(/@([a-z0-9_.-]+)/gi, function(match, uname){
+    var lower = uname.toLowerCase();
+    var meTag = (lower === ME.toLowerCase());
+    return '<span class="mention'+(meTag?' me':'')+'">@'+uname+'</span>';
+  });
+}
+
+// Event delegation para reacciones (click en pill o botón +)
+document.addEventListener('click', function(e){
+  var btnReactExist = e.target.closest('[data-react-emoji]');
+  if(btnReactExist){
+    var em = btnReactExist.getAttribute('data-react-emoji');
+    var msgId = parseInt(btnReactExist.getAttribute('data-react-msg'),10);
+    if(em && msgId) toggleReaccion(msgId, em);
+    return;
+  }
+  var btnAddR = e.target.closest('[data-add-react-msg]');
+  if(btnAddR){
+    e.stopPropagation();
+    var msgId2 = parseInt(btnAddR.getAttribute('data-add-react-msg'),10);
+    if(msgId2) abrirPickerReact(msgId2, e);
+  }
+});
+
+// Autocomplete de @menciones en el composer
+var _menSuggest = null;
+var _menSuggestSel = 0;
+var _menMembers = [];
+
+async function _cargarMiembrosThread(){
+  if(!ACTIVE_THREAD) return [];
+  try {
+    // Reuse: si tenemos USERS y es un grupo/broadcast, todos pueden ser mencionados.
+    // Si es directo, solo el otro participante.
+    return USERS.filter(function(u){ return u.username !== ME; }).map(function(u){ return u.username; });
+  } catch(e){ return []; }
+}
+
+document.addEventListener('input', async function(e){
+  var ta = e.target;
+  if(ta && ta.id === 'composer'){
+    var pos = ta.selectionStart || 0;
+    var antes = ta.value.substring(0, pos);
+    // Detectar si la "palabra" actual empieza con @
+    var match = antes.match(/(^|\s)@([a-z0-9_.-]*)$/i);
+    if(match){
+      var prefijo = match[2].toLowerCase();
+      if(!_menMembers.length) _menMembers = await _cargarMiembrosThread();
+      var filtered = _menMembers.filter(function(u){ return u.toLowerCase().indexOf(prefijo) === 0; });
+      mostrarMenSuggest(filtered, ta);
+    } else {
+      cerrarMenSuggest();
+    }
+  }
+});
+
+function mostrarMenSuggest(list, ta){
+  cerrarMenSuggest();
+  if(!list.length) return;
+  _menSuggestSel = 0;
+  var el = document.createElement('div');
+  el.className = 'mention-suggest';
+  el.id = 'men-suggest';
+  list.slice(0, 8).forEach(function(u, i){
+    var item = document.createElement('div');
+    item.className = 'item' + (i===0?' sel':'');
+    item.textContent = '@' + u;
+    item.dataset.uname = u;
+    item.onmouseenter = function(){ _menSelectItem(i); };
+    item.onclick = function(){ _menInsert(u, ta); };
+    el.appendChild(item);
+  });
+  // Posicionar arriba del textarea
+  var rect = ta.getBoundingClientRect();
+  el.style.left = rect.left + 'px';
+  el.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+  document.body.appendChild(el);
+  _menSuggest = el;
+}
+
+function cerrarMenSuggest(){
+  if(_menSuggest){ _menSuggest.remove(); _menSuggest = null; }
+}
+
+function _menSelectItem(i){
+  if(!_menSuggest) return;
+  var items = _menSuggest.querySelectorAll('.item');
+  items.forEach(function(it,idx){ it.classList.toggle('sel', idx===i); });
+  _menSuggestSel = i;
+}
+
+function _menInsert(uname, ta){
+  // Reemplaza el "@prefix" actual por "@uname "
+  var pos = ta.selectionStart || 0;
+  var antes = ta.value.substring(0, pos);
+  var despues = ta.value.substring(pos);
+  var match = antes.match(/(^|\s)@([a-z0-9_.-]*)$/i);
+  if(match){
+    var nuevoAntes = antes.substring(0, antes.length - match[2].length) + uname + ' ';
+    ta.value = nuevoAntes + despues;
+    ta.selectionStart = ta.selectionEnd = nuevoAntes.length;
+  }
+  cerrarMenSuggest();
+  ta.focus();
+}
+
+// Teclas en composer: navegar + seleccionar suggest, o enviar
+var _composerKeydownOriginal = window.composerKeydown;
+window.composerKeydown = function(e){
+  if(_menSuggest){
+    var items = _menSuggest.querySelectorAll('.item');
+    if(e.key === 'ArrowDown'){ e.preventDefault(); _menSelectItem(Math.min(_menSuggestSel+1, items.length-1)); return; }
+    if(e.key === 'ArrowUp'){ e.preventDefault(); _menSelectItem(Math.max(0, _menSuggestSel-1)); return; }
+    if(e.key === 'Enter' || e.key === 'Tab'){
+      e.preventDefault();
+      var sel = items[_menSuggestSel];
+      if(sel) _menInsert(sel.dataset.uname, document.getElementById('composer'));
+      return;
+    }
+    if(e.key === 'Escape'){ e.preventDefault(); cerrarMenSuggest(); return; }
+  }
+  if(_composerKeydownOriginal) return _composerKeydownOriginal(e);
+};
+
+// Resetear cache de miembros cuando se cambia de thread
+var _abrirThreadOriginal = window.abrirThread;
+if(_abrirThreadOriginal){
+  window.abrirThread = function(tid){ _menMembers = []; cerrarMenSuggest(); return _abrirThreadOriginal(tid); };
 }
 
 // ─── Fase 3: Busqueda global de mensajes ──────────────────────────────

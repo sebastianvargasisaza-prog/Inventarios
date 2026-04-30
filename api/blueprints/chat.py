@@ -331,8 +331,28 @@ def chat_messages(thread_id):
         tipo = (d.get('tipo_mensaje') or 'texto').strip()
         if tipo not in ('texto', 'tarea', 'compromiso', 'archivo', 'imagen', 'sistema', 'llamado_atencion'):
             tipo = 'texto'
+        # Parsear @menciones del contenido (Fase 4) — solo nombres de
+        # usuarios que SI son miembros del thread. Esto evita spam y
+        # crear menciones invalidas.
+        import re as _re
+        mention_candidates = set(
+            m.lower() for m in _re.findall(r'(?:^|\s)@([a-z0-9_.-]+)', contenido, _re.IGNORECASE)
+        )
+        valid_mentions = []
+        if mention_candidates:
+            placeholders = ','.join('?' * len(mention_candidates))
+            cands = list(mention_candidates)
+            members_rows = c.execute(
+                f"SELECT LOWER(username) FROM chat_thread_members WHERE thread_id=? "
+                f"AND LOWER(username) IN ({placeholders})",
+                [thread_id] + cands
+            ).fetchall()
+            valid_mentions = [r[0] for r in members_rows]
         import json as _json
-        meta = _json.dumps(d.get('metadata') or {})
+        meta_dict = d.get('metadata') or {}
+        if valid_mentions:
+            meta_dict['mentions'] = valid_mentions
+        meta = _json.dumps(meta_dict)
         cur = c.execute("""
             INSERT INTO chat_messages
               (thread_id, sender, contenido, tipo_mensaje, metadata_json,
@@ -356,7 +376,39 @@ def chat_messages(thread_id):
             WHERE thread_id=? AND username=?
         """, (msg_id, thread_id, user))
         conn.commit()
-        return jsonify({'ok': True, 'message_id': msg_id})
+
+        # Email solo a los mencionados (no a todos los miembros).
+        # Sebastian (29-abr-2026): asi en grupos grandes no se spamea
+        # cuando alguien escribe algo no relevante para todos.
+        if valid_mentions:
+            try:
+                import sys, os, threading as _th
+                sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                from notificaciones import SistemaNotificaciones
+                from config import USER_EMAILS
+                destinos = [USER_EMAILS.get(m, '') for m in valid_mentions if m != user.lower()]
+                destinos = [e for e in destinos if e]
+                if destinos:
+                    asunto = f"@{user} te mencionó en el chat"
+                    body = (
+                        f"<h2>Te mencionaron en EOS Chat</h2>"
+                        f"<p><b>{user}</b> escribió:</p>"
+                        f"<div style='background:#f5f5f4;padding:14px;border-radius:8px;border-left:4px solid #6d28d9'>"
+                        f"<i>{contenido[:500]}</i>"
+                        f"</div>"
+                        f"<p><a href='/chat'>Abrir el chat</a> para responder.</p>"
+                        f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
+                    )
+                    notif = SistemaNotificaciones()
+                    _th.Thread(
+                        target=notif._enviar_email,
+                        args=(asunto, body, destinos),
+                        daemon=True
+                    ).start()
+            except Exception as _em:
+                import logging
+                logging.getLogger('chat').warning("Email mencion fallo: %s", _em)
+        return jsonify({'ok': True, 'message_id': msg_id, 'mentions': valid_mentions})
 
     # GET — paginated (default últimos 50)
     limit = min(int(request.args.get('limit', 50)), 200)
