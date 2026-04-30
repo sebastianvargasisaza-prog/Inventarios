@@ -7206,7 +7206,14 @@ async function limpiarDriftMee(){{
         "Producciones cuya fecha pasó hace >1 día y siguen 'programadas'. O bien se hicieron y no se marcaron completadas, o quedaron olvidadas. Revisar y completar/cancelar.")
     + '</body></html>')
 
-    return Response(html, mimetype="text/html")
+    resp = Response(html, mimetype="text/html")
+    # No cachear — el reporte cambia tras cada acción (limpiar drift, completar
+    # producción, etc). Sebastian (29-abr-2026): el botón nuevo no aparecía
+    # porque Chrome servía HTML cacheado.
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @bp.route("/admin/influencers-limpieza", methods=["GET"])
