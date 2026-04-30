@@ -9895,10 +9895,18 @@ async function ckMarcar(itemId, estado){
   function planV2RenderForecast(d, meses){
     var k = d.kpis || {};
     var kpis = document.getElementById('pv2-kpis');
+    var desglose = k.desglose || {};
+    var dMotor = desglose.motor_mrp || {lotes:0,kg:0,skus:0};
+    var dBd = desglose.bd_interna || {lotes:0,kg:0,skus:0};
+    var dCal = desglose.google_calendar || {lotes:0,kg:0,skus:0};
     kpis.innerHTML = ''
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Lotes proyectados</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total_lotes_proyectados||0)+'</div></div>'
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total kg</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.total_kg_proyectados||0).toLocaleString('es-CO')+'</div></div>'
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">SKUs distintos</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.productos_distintos||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px">'
+        +'<div style="font-size:11px;color:#64748b;text-transform:uppercase">Total lotes planeados</div>'
+        +'<div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total_lotes_proyectados||0)+'</div>'
+        +'<div style="font-size:10px;color:#64748b;margin-top:4px">📆 '+dCal.lotes+' Calendar · 🤖 '+dMotor.lotes+' Motor · ✓ '+dBd.lotes+' BD</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total kg</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.total_kg_proyectados||0).toLocaleString('es-CO')+'</div><div style="font-size:10px;color:#64748b;margin-top:4px">📆 '+dCal.kg+'kg · 🤖 '+dMotor.kg+'kg</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">SKUs distintos</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.productos_distintos||0)+'</div><div style="font-size:10px;color:#64748b;margin-top:4px">con producción en horizonte</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.compras_urgentes_count?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">🛒 Comprar YA</div><div style="font-size:26px;font-weight:800;color:'+(k.compras_urgentes_count?'#dc2626':'#15803d')+'">'+(k.compras_urgentes_count||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.meses_con_alerta_capacidad?'#d97706':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Meses cuello botella</div><div style="font-size:26px;font-weight:800;color:'+(k.meses_con_alerta_capacidad?'#d97706':'#15803d')+'">'+(k.meses_con_alerta_capacidad||0)+'</div></div>';
 

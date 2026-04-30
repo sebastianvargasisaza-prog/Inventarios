@@ -3573,14 +3573,83 @@ def planta_forecast():
         'compras_urgentes': compras_urgentes,
         'alertas_capacidad': alertas_capacidad,
         'costo_total_estimado': round(costo_total_estimado, 0),
-        'kpis': {
-            'total_lotes_proyectados': len(proyeccion),
-            'total_kg_proyectados': round(sum(p['kg_con_merma'] for p in proyeccion), 1),
-            'productos_distintos': len(set(p['producto'] for p in proyeccion)),
-            'meses_con_alerta_capacidad': len(set(a['mes'] for a in alertas_capacidad)),
-            'compras_urgentes_count': len(compras_urgentes),
-        },
+        'kpis': _calcular_kpis_horizonte(c, proyeccion, meses, alertas_capacidad, compras_urgentes),
     })
+
+
+def _calcular_kpis_horizonte(c, proyeccion, meses, alertas_capacidad, compras_urgentes):
+    """KPIs unificados que cuentan TODO lo planeado en el horizonte:
+    - Calendar real (eventos matcheados con productos)
+    - Motor MRP (proyección)
+    - BD (produccion_programada)
+    Sebastian: que los KPIs reflejen la realidad completa, no solo lo nuevo.
+    """
+    fecha_hoy = datetime.now().date()
+    fecha_fin = fecha_hoy + timedelta(days=meses * 30)
+
+    # 1) Motor MRP (proyección)
+    motor_lotes = len(proyeccion)
+    motor_kg = sum(p['kg_con_merma'] for p in proyeccion)
+    motor_skus = set(p['producto'] for p in proyeccion)
+
+    # 2) BD interna (produccion_programada futura)
+    bd_rows = c.execute("""
+        SELECT producto, cantidad_kg FROM produccion_programada
+        WHERE estado IN ('pendiente','en_proceso')
+          AND fecha_programada >= date('now')
+          AND fecha_programada <= date(?)
+    """, (fecha_fin.isoformat(),)).fetchall()
+    bd_lotes = len(bd_rows)
+    bd_kg = sum(float(r[1] or 0) for r in bd_rows)
+    bd_skus = set((r[0] or '').strip().upper() for r in bd_rows if r[0])
+
+    # 3) Calendar real (eventos matcheados con kg parseados)
+    eventos = _calendar_events_cached()
+    cal_lotes = 0
+    cal_kg = 0
+    cal_skus = set()
+    productos_cfg = c.execute("""
+        SELECT producto_nombre, alias_calendar FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            if f < fecha_hoy or f > fecha_fin:
+                continue
+        except Exception:
+            continue
+        # Match
+        mejor_score = 0
+        mejor_producto = None
+        for p in productos_cfg:
+            score = _match_producto_evento(p[0], p[1], ev.get('titulo'), ev.get('descripcion', ''))
+            if score > mejor_score:
+                mejor_score = score
+                mejor_producto = p[0]
+        if mejor_score < 60:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or 30
+        cal_lotes += 1
+        cal_kg += kg
+        cal_skus.add((mejor_producto or '').strip().upper())
+
+    # SKUs totales con plan
+    skus_total = motor_skus.union(bd_skus).union(cal_skus)
+
+    return {
+        # KPI unificado: todo planeado
+        'total_lotes_proyectados': motor_lotes + bd_lotes + cal_lotes,
+        'total_kg_proyectados': round(motor_kg + bd_kg + cal_kg, 1),
+        'productos_distintos': len(skus_total),
+        # Breakdown por origen
+        'desglose': {
+            'motor_mrp': {'lotes': motor_lotes, 'kg': round(motor_kg, 1), 'skus': len(motor_skus)},
+            'bd_interna': {'lotes': bd_lotes, 'kg': round(bd_kg, 1), 'skus': len(bd_skus)},
+            'google_calendar': {'lotes': cal_lotes, 'kg': round(cal_kg, 1), 'skus': len(cal_skus)},
+        },
+        'meses_con_alerta_capacidad': len(set(a['mes'] for a in alertas_capacidad)),
+        'compras_urgentes_count': len(compras_urgentes),
+    }
 
 
 # ════════════════════════════════════════════════════════════════════════
