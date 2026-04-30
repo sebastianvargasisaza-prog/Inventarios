@@ -6922,6 +6922,139 @@ def admin_backfill_debug_page():
     return Response(html, mimetype="text/html")
 
 
+@bp.route("/admin/influencers-limpieza", methods=["GET"])
+def admin_influencers_limpieza():
+    """Lista filas dudosas en pagos_influencers para limpiarlas.
+    Sebastian (29-abr-2026): "salian Pendientes y al dia muchos que ni
+    hemos pagado ni tenemos pendiente". Causa: pagos_influencers tiene
+    filas viejas sin OC vinculada (imports historicos) que inflan el
+    badge "Al dia".
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    # Filas con pi.estado='Pagada' SIN OC valida en ordenes_compra
+    sin_oc = c.execute("""
+        SELECT pi.id, pi.influencer_nombre, pi.valor, pi.fecha, pi.estado,
+               pi.numero_oc, pi.concepto
+        FROM pagos_influencers pi
+        LEFT JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
+        WHERE oc.numero_oc IS NULL
+        ORDER BY pi.fecha DESC LIMIT 500
+    """).fetchall()
+    cols = [d[0] for d in c.description]
+    sin_oc = [dict(zip(cols, r)) for r in sin_oc]
+
+    # Filas con OC en estado raro (Borrador/Pendiente >30 dias sin moverse)
+    oc_stuck = c.execute("""
+        SELECT pi.id, pi.influencer_nombre, pi.valor, pi.fecha, pi.estado,
+               pi.numero_oc, oc.estado as oc_estado, oc.fecha as oc_fecha
+        FROM pagos_influencers pi
+        JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
+        WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada')
+          AND oc.fecha < date('now','-30 day')
+        ORDER BY oc.fecha ASC LIMIT 500
+    """).fetchall()
+    cols = [d[0] for d in c.description]
+    oc_stuck = [dict(zip(cols, r)) for r in oc_stuck]
+
+    def _esc(s): return str(s or '').replace('<','&lt;').replace('>','&gt;')
+    def _money(v):
+        try: return '$'+f"{float(v or 0):,.0f}"
+        except Exception: return str(v)
+
+    def _tabla(titulo, items, cols_def):
+        if not items:
+            return f"<h2>{titulo}</h2><div class='empty'>Nada para limpiar.</div>"
+        body = f"<h2>{titulo} ({len(items)})</h2><table><thead><tr><th>✓</th>"
+        for c_, _ in cols_def: body += f"<th>{c_}</th>"
+        body += "</tr></thead><tbody>"
+        for it in items:
+            body += f"<tr><td><input type='checkbox' name='ids' value='{it['id']}'></td>"
+            for _, key in cols_def:
+                v = it.get(key)
+                cell = _money(v) if key in ('valor',) else _esc(v)
+                body += f"<td>{cell}</td>"
+            body += "</tr>"
+        body += "</tbody></table>"
+        return body
+
+    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpieza pagos influencers</title>
+    <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1300px;margin:24px auto;padding:0 16px;color:#1e293b}
+    h1{font-size:20px;margin-bottom:6px}h2{font-size:15px;margin-top:24px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+    table{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
+    th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+    th{background:#f8fafc;font-weight:700;color:#475569;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+    .empty{color:#94a3b8;font-style:italic;padding:14px;background:#fafaf9;border-radius:6px}
+    a{color:#0891b2}.warn{background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;margin:14px 0;font-size:13px}
+    button{background:#dc2626;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;margin:10px 0}
+    button:hover{background:#b91c1c}
+    </style></head><body>
+    <a href="/admin" style="font-size:12px">&larr; admin</a>
+    <h1>&#129529; Limpieza de pagos_influencers</h1>
+    <div class="warn">
+      <b>&#9888;&#65039; Atencion:</b> estas filas estan en pagos_influencers pero
+      NO tienen OC valida o la OC esta atascada. Probablemente son imports
+      historicos o solicitudes muertas. Si las eliminas, el badge "Al dia" /
+      "Pendiente" del influencer se corrige.
+      <br>Marca las que quieras borrar y click "Eliminar seleccionadas".
+    </div>
+    <form id="frm-clean" onsubmit="return false;">"""
+    + _tabla("&#128206; SIN OC vinculada (potenciales imports historicos)", sin_oc,
+             [("ID","id"),("Influencer","influencer_nombre"),("Valor","valor"),
+              ("Fecha","fecha"),("Estado pi","estado"),("OC?","numero_oc"),
+              ("Concepto","concepto")])
+    + _tabla("&#9203; OC atascada >30 dias (Borrador/Pendiente/Revisada/Aprobada)", oc_stuck,
+             [("ID","id"),("Influencer","influencer_nombre"),("Valor","valor"),
+              ("Fecha pi","fecha"),("OC","numero_oc"),
+              ("OC estado","oc_estado"),("OC fecha","oc_fecha")])
+    + """
+    <button type="button" onclick="eliminarSel()">&#128465; Eliminar seleccionadas</button>
+    <button type="button" onclick="seleccionarTodas()" style="background:#475569">&#9989; Seleccionar todo (visible)</button>
+    </form>
+    <script>
+    function seleccionarTodas(){
+      var cbs = document.querySelectorAll('input[name=ids]');
+      var allChecked = Array.from(cbs).every(function(cb){return cb.checked;});
+      cbs.forEach(function(cb){ cb.checked = !allChecked; });
+    }
+    async function eliminarSel(){
+      var ids = Array.from(document.querySelectorAll('input[name=ids]:checked')).map(function(cb){return parseInt(cb.value);});
+      if(!ids.length){ alert('Marca al menos una fila para eliminar.'); return; }
+      if(!confirm('Eliminar '+ids.length+' filas de pagos_influencers? Esto NO toca ordenes_compra ni solicitudes_compra.')) return;
+      var r = await fetch('/admin/influencers-limpieza', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids:ids})});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      alert('Eliminadas '+d.eliminadas+' filas. Recargando.');
+      location.reload();
+    }
+    </script>
+    </body></html>""")
+
+    conn.close()
+    return Response(html, mimetype="text/html")
+
+
+@bp.route("/admin/influencers-limpieza", methods=["POST"])
+def admin_influencers_limpieza_post():
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Solo admin"}), 403
+    d = request.get_json() or {}
+    ids = [int(x) for x in (d.get("ids") or []) if str(x).isdigit()]
+    if not ids:
+        return jsonify({"error": "ids vacio"}), 400
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    placeholders = ",".join("?" * len(ids))
+    c.execute(f"DELETE FROM pagos_influencers WHERE id IN ({placeholders})", ids)
+    conn.commit()
+    n = c.rowcount
+    conn.close()
+    return jsonify({"ok": True, "eliminadas": n})
+
+
 @bp.route("/admin/influencers-hoy", methods=["GET"])
 def admin_influencers_hoy():
     """Diagnostico rapido: que paso con influencers hoy.

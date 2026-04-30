@@ -213,7 +213,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F3AF; Dashboard</button>
   <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
   <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
-  <button class="tab-btn" data-tab="pagos" onclick="switchTab('pagos')">&#x1F4B0; Pagos Realizados</button>
+  <button class="tab-btn" data-tab="pagos" onclick="switchTab('pagos')">&#x1F4B0; Mis Pagos &amp; Solicitudes</button>
   <button class="tab-btn" data-tab="contenido" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
   <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">&#x1F9E0; Inteligencia</button>
 </div>
@@ -373,6 +373,8 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
   </div>
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+  <!-- Banner de solicitudes pendientes (visible si hay alguna) -->
+  <div id="inf-pendientes-banner" style="display:none;background:linear-gradient(90deg,#78350f,#7c2d12);color:#fed7aa;padding:14px 18px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.5;border:1px solid #b45309;"></div>
   <div id="inf-alert" style="display:none;"></div>
   <div class="card">
     <div class="tbl-wrap">
@@ -390,8 +392,8 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div id="tab-pagos" class="tab-panel">
   <div class="actions-bar">
     <div>
-      <div class="page-title">&#x1F4B0; Pagos Realizados a Influencers</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Histórico cronológico · descarga el comprobante PDF de cada pago</div>
+      <div class="page-title">&#x1F4B0; Mis Pagos & Solicitudes</div>
+      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Filtro default: <b>⏳ esperando pago</b> (lo que está con Sebastián). Cambia a "Pagados" para ver el histórico con comprobantes PDF.</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
       <input class="search-box" id="pag-search" placeholder="Buscar influencer, OC, concepto..." oninput="renderPagos()">
@@ -399,9 +401,9 @@ window.addEventListener('unhandledrejection', function(ev) {
         <option value="">Todos los meses</option>
       </select>
       <select id="pag-estado" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
-        <option value="" selected>Todos</option>
-        <option value="Pagada">Pagados</option>
-        <option value="Pendiente">Pendientes</option>
+        <option value="Pendiente" selected>⏳ Esperando pago (mis solicitudes)</option>
+        <option value="Pagada">✅ Pagados</option>
+        <option value="">Todos</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
       <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Detectar y corregir comprobantes que dicen Espagiria pero deberian decir ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:6px 10px;">&#x1F527; Fix legacy ANIMUS</button>
@@ -969,10 +971,16 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div style="font-weight:700;color:#a78bfa;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
       <div id="pago-banco-preview" style="line-height:1.8;"></div>
     </div>
+    <!-- Linea explicativa: que pasa despues de crear la solicitud -->
+    <div style="background:#1e1b4b;border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
+      <b style="color:#a5b4fc;">📌 Qué pasa después:</b><br>
+      Esta solicitud va a <b>Sebastián</b> en /compras → tab Influencers para autorizar y pagar.
+      Recibirás <b>email automático</b> cuando se haga el pago. Catalina no participa en este flujo.
+    </div>
     <div id="pago-inf-alert" style="display:none;margin-bottom:8px;"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
       <button class="btn btn-outline" onclick="closeModal('modal-inf-pago')">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarPagoInf()">Crear Solicitud</button>
+      <button class="btn btn-primary" onclick="confirmarPagoInf()">💸 Enviar a Sebastián</button>
     </div>
   </div>
 </div>
@@ -1910,6 +1918,23 @@ async function loadInfluencers() {
       +`<div style="font-size:11px;color:#64748b;margin-top:2px;">${k.label}</div>`
       +'</div>').join('');
   }
+  // Banner de solicitudes pendientes — visible si hay alguna esperando pago
+  const banner = document.getElementById('inf-pendientes-banner');
+  if(banner) {
+    const conPendiente = infs.filter(x => x.tiene_pendiente);
+    if(conPendiente.length > 0) {
+      const totalPend = kpis.total_pendiente || 0;
+      banner.style.display = 'block';
+      banner.innerHTML = '<b>⏳ Tienes ' + conPendiente.length + ' solicitud'
+        + (conPendiente.length>1?'es':'') + ' esperando pago</b> · '
+        + 'Total: <b>' + fmtM(totalPend) + '</b>'
+        + '<br><span style="font-size:11px;color:#fcd34d;opacity:.85;">'
+        + 'Sebastián las autoriza y paga desde /compras → tab Influencers. '
+        + 'Cuando se paguen recibirás email automático.</span>';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
   const body = document.getElementById('inf-body');
   if(!infs.length) {
     const errMsg = data._error ? ` (error: ${data._error.substring(0,80)})` : '';
@@ -1923,12 +1948,12 @@ async function loadInfluencers() {
       : '<span style="color:#475569;">Sin datos</span>';
     let estadoBadge;
     if(r.tiene_pendiente) {
-      // Solicitud activa esperando pago (Jefferson la creo y aun no se transfirio)
-      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u23f3 Pendiente</span>';
+      // Solicitud activa esperando que Sebastian autorice y pague
+      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Solicitud creada \u2014 esperando que Sebasti\u00e1n la autorice y pague">\u23f3 Esperando pago</span>';
     } else if(r.toca_pagar) {
-      // Ciclo de pago vencido y no hay solicitud activa todavia \u2192 recordatorio a Jefferson
+      // Ciclo de pago vencido y no hay solicitud activa \u2014 Jefferson debe SOLICITAR (no pagar)
       const dias = r.dias_desde_ultimo_pago || 0;
-      estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Hace '+dias+' dias del ultimo pago. Ciclo: '+r.ciclo_pago+'">\u23f0 Toca pagar</span>';
+      estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Hace '+dias+' dias del ultimo pago. Ciclo: '+r.ciclo_pago+' \u2014 click \ud83d\udcb8 Solicitar para crear cuenta de cobro">\ud83d\udccc Toca solicitar</span>';
     } else if(r.pagos_count>0) {
       // Tiene al menos un pago confirmado (OC pagada)
       estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u2713 Al d\u00eda</span>';
@@ -1955,8 +1980,8 @@ async function loadInfluencers() {
       +`<td>${estadoBadge}</td>`
       +`<td style="white-space:nowrap;">`
         +`<button class="btn btn-outline btn-sm" onclick="verHistorial(${r.id})" title="Ver historial" style="color:#818cf8;border-color:#818cf8;">&#x1F4CB;</button> `
-        +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar">&#x270F;&#xFE0F;</button> `
-        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Solicitar pago">&#x1F4B8;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
+        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Crear cuenta de cobro y enviar a Sebastián para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button>`
       +'</td>'
       +'</tr>';

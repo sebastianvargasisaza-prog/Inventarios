@@ -2771,6 +2771,7 @@ def mkt_influencers_panel():
                          WHEN COALESCE(oc.estado,'') IN ('Rechazada','Cancelada')
                            THEN NULL
                          WHEN COALESCE(oc.estado,'') = '' AND pi.estado = 'Pagada'
+                              AND pi.fecha >= date('now','-180 day')
                            THEN 'Pagada'
                          WHEN COALESCE(oc.estado,'') = ''
                            THEN NULL
