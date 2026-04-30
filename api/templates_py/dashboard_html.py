@@ -6036,10 +6036,50 @@ async function ckMarcar(itemId, estado){
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Número de lotes</label>
         <input id="mp-lotes" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
       </div>
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:14px">
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Observaciones (opcional)</label>
         <textarea id="mp-obs" rows="2" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
       </div>
+      <!-- Asignacion post-INVIMA: sala fisica + operarios por fase -->
+      <details id="mp-asignacion" style="margin-bottom:18px;border:1px solid #e0e7ff;border-radius:8px;padding:10px 12px;background:#f5f8ff" open>
+        <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#1e3a8a;outline:none">
+          🏭 Asignar sala &amp; operarios
+          <span style="font-size:11px;color:#64748b;font-weight:400;margin-left:6px">(opcional, se puede dejar y editar despues)</span>
+        </summary>
+        <div style="margin-top:12px">
+          <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Sala / Área</label>
+          <select id="mp-sala" onchange="mpChequearConflictoSala()" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
+            <option value="">— sin asignar —</option>
+          </select>
+          <div id="mp-sala-warn" style="font-size:11px;margin-top:4px;color:#dc2626;display:none"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Dispensación</label>
+              <select id="mp-op-disp" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
+                <option value="">—</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Elaboración</label>
+              <select id="mp-op-elab" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
+                <option value="">—</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Envasado</label>
+              <select id="mp-op-env" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
+                <option value="">—</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Acondicionamiento</label>
+              <select id="mp-op-acon" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
+                <option value="">—</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </details>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button onclick="cerrarModalProgramar()" style="background:#f0f0f0;color:#444;border:none;border-radius:6px;padding:9px 20px;font-size:14px;cursor:pointer">Cancelar</button>
         <button onclick="guardarProgramacion()" style="background:#0d6efd;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer">💾 Guardar</button>
@@ -6057,9 +6097,81 @@ async function ckMarcar(itemId, estado){
 
   <script>
   // ── Programar Producción Modal ───────────────────────────────────────────
-  function abrirModalProgramar(producto) {
+  // Cache global de areas + operarios (cargado al abrir modal, sirve tambien
+  // para vista de listado y futura vista plano interactivo).
+  var _PLANTA_AREAS = null;
+  var _PLANTA_OPERARIOS = null;
+
+  async function _mpCargarCatalogos(){
+    try{
+      var r1 = await fetch('/api/planta/areas');
+      var d1 = await r1.json();
+      _PLANTA_AREAS = d1.areas || [];
+    }catch(e){ _PLANTA_AREAS = []; }
+    try{
+      var r2 = await fetch('/api/planta/operarios');
+      var d2 = await r2.json();
+      _PLANTA_OPERARIOS = d2.operarios || [];
+    }catch(e){ _PLANTA_OPERARIOS = []; }
+  }
+
+  function _mpPoblarSelectores(){
+    // Sala — etiqueta enriquecida con capacidades para que se vea cual sirve
+    var sel = document.getElementById('mp-sala');
+    sel.innerHTML = '<option value="">— sin asignar —</option>' +
+      (_PLANTA_AREAS||[]).map(function(a){
+        var caps = [];
+        if(a.puede_producir) caps.push('prod');
+        if(a.puede_envasar)  caps.push('env');
+        if(a.marmita_ml)     caps.push('marmita ' + a.marmita_ml + 'ml');
+        if(a.especial)       caps.push(a.especial);
+        return '<option value="'+a.id+'">'+a.nombre+'  ('+caps.join(' · ')+')</option>';
+      }).join('');
+
+    // Operarios — armar 4 selects con defaults segun rol_predeterminado.
+    // Mayerlin (fija_dispensacion=true) se preselecciona y bloquea el slot.
+    var ops = _PLANTA_OPERARIOS || [];
+    var faseToOpDefault = {disp:null, elab:null, env:null, acon:null};
+    ops.forEach(function(o){
+      if (o.es_jefe) return;
+      if (o.fija_dispensacion)                faseToOpDefault.disp = o.id;
+      else if (o.rol === 'envasado')          faseToOpDefault.env  = o.id;
+      else if (o.rol === 'acondicionamiento') faseToOpDefault.acon = o.id;
+      else if (o.rol === 'todero' && faseToOpDefault.elab===null) faseToOpDefault.elab = o.id;
+    });
+    function _opt(o){ return '<option value="'+o.id+'">'+o.nombre_completo+(o.fija_dispensacion?' 🔒':'')+'</option>'; }
+    var optsHTML = '<option value="">—</option>' +
+      ops.filter(function(o){ return !o.es_jefe; }).map(_opt).join('');
+    ['mp-op-disp','mp-op-elab','mp-op-env','mp-op-acon'].forEach(function(id){
+      document.getElementById(id).innerHTML = optsHTML;
+    });
+    // Aplicar defaults
+    if(faseToOpDefault.disp) document.getElementById('mp-op-disp').value = faseToOpDefault.disp;
+    if(faseToOpDefault.elab) document.getElementById('mp-op-elab').value = faseToOpDefault.elab;
+    if(faseToOpDefault.env)  document.getElementById('mp-op-env').value  = faseToOpDefault.env;
+    if(faseToOpDefault.acon) document.getElementById('mp-op-acon').value = faseToOpDefault.acon;
+  }
+
+  async function mpChequearConflictoSala(){
+    var sala_id = document.getElementById('mp-sala').value;
+    var fecha   = document.getElementById('mp-fecha').value;
+    var warn    = document.getElementById('mp-sala-warn');
+    warn.style.display = 'none'; warn.textContent = '';
+    if(!sala_id || !fecha) return;
+    try{
+      var r = await fetch('/api/planta/areas?fecha='+encodeURIComponent(fecha));
+      var d = await r.json();
+      var sala = (d.areas||[]).find(function(a){ return String(a.id)===String(sala_id); });
+      if(sala && sala.ocupada_por && sala.ocupada_por.length){
+        var nombres = sala.ocupada_por.map(function(o){ return o.producto; }).join(', ');
+        warn.textContent = '⚠️ Esa sala ya tiene producción ese día: ' + nombres + '. Igual puedes asignarla, decides tú.';
+        warn.style.display = 'block';
+      }
+    }catch(e){}
+  }
+
+  async function abrirModalProgramar(producto) {
     document.getElementById('mp-producto').value = producto;
-    // Default date = today + 3 days
     var d = new Date(); d.setDate(d.getDate() + 3);
     document.getElementById('mp-fecha').value = d.toISOString().slice(0,10);
     document.getElementById('mp-lotes').value = 1;
@@ -6067,6 +6179,15 @@ async function ckMarcar(itemId, estado){
     cargarEventosProducto(producto);
     var m = document.getElementById('modal-programar');
     m.style.display = 'flex';
+    // Cargar catalogos solo la primera vez
+    if(_PLANTA_AREAS===null) await _mpCargarCatalogos();
+    _mpPoblarSelectores();
+    // Listener para re-chequear conflicto cuando cambia fecha
+    var fInp = document.getElementById('mp-fecha');
+    if(!fInp._planta_listener){
+      fInp.addEventListener('change', mpChequearConflictoSala);
+      fInp._planta_listener = true;
+    }
   }
   function cerrarModalProgramar() {
     document.getElementById('modal-programar').style.display = 'none';
@@ -6656,25 +6777,46 @@ async function ckMarcar(itemId, estado){
     });
   }
 
-  function guardarProgramacion() {
+  async function guardarProgramacion() {
     var producto = document.getElementById('mp-producto').value;
     var fecha    = document.getElementById('mp-fecha').value;
     var lotes    = parseInt(document.getElementById('mp-lotes').value) || 1;
     var obs      = document.getElementById('mp-obs').value;
     if(!fecha){ alert('Selecciona una fecha'); return; }
-    fetch('/api/programacion/programar', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({producto:producto, fecha:fecha, lotes:lotes, observaciones:obs})
-    }).then(function(r){ return r.json(); }).then(function(d){
-      if(d.ok){
-        cerrarModalProgramar();
-        // Reload projection
-        actualizarDashboard();
-      } else {
-        alert('Error: ' + (d.error||'desconocido'));
+    try{
+      var r = await fetch('/api/programacion/programar', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({producto:producto, fecha:fecha, lotes:lotes, observaciones:obs})
+      });
+      var d = await r.json();
+      if(!d.ok){ alert('Error: '+(d.error||'desconocido')); return; }
+      // Si hay sala u operario seleccionado, persistir asignacion
+      var asign = {};
+      var sala = document.getElementById('mp-sala').value;
+      var disp = document.getElementById('mp-op-disp').value;
+      var elab = document.getElementById('mp-op-elab').value;
+      var env  = document.getElementById('mp-op-env').value;
+      var acon = document.getElementById('mp-op-acon').value;
+      if(sala) asign.area_id                       = parseInt(sala);
+      if(disp) asign.operario_dispensacion_id      = parseInt(disp);
+      if(elab) asign.operario_elaboracion_id       = parseInt(elab);
+      if(env)  asign.operario_envasado_id          = parseInt(env);
+      if(acon) asign.operario_acondicionamiento_id = parseInt(acon);
+      if(Object.keys(asign).length){
+        var rA = await fetch('/api/programacion/programar/'+d.id+'/asignar', {
+          method:'PATCH', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(asign)
+        });
+        var dA = await rA.json();
+        if(dA.warnings && dA.warnings.length){
+          // No bloqueante — solo informativo
+          console.warn('Conflicto asignacion:', dA.warnings);
+        }
       }
-    }).catch(function(e){ alert('Error de red: '+e); });
+      cerrarModalProgramar();
+      actualizarDashboard();
+    }catch(e){ alert('Error de red: '+e); }
   }
 
   function cargarEventosProducto(producto) {
@@ -6688,11 +6830,26 @@ async function ckMarcar(itemId, estado){
       lista.style.display = 'block';
       items.innerHTML = futuros.map(function(ev){
         var estadoColor = ev.estado === 'pendiente' ? '#0d6efd' : '#fd7e14';
-        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:12px">' +
-          '<span style="flex:1;font-weight:600">'+ev.fecha+'</span>' +
-          '<span style="color:#555">'+ev.lotes+' lote'+(ev.lotes>1?'s':'')+'</span>' +
-          '<span style="background:'+estadoColor+';color:#fff;padding:2px 7px;border-radius:8px">'+ev.estado+'</span>' +
-          '<button onclick="cancelarEvento('+ev.id+',\\''+producto+'\\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
+        // Badges sala + operarios asignados (post-INVIMA)
+        var asignadoBits = [];
+        if(ev.area_nombre) asignadoBits.push('🏭 '+ev.area_nombre);
+        if(ev.operario_dispensacion)      asignadoBits.push('Disp: '+ev.operario_dispensacion);
+        if(ev.operario_elaboracion)       asignadoBits.push('Elab: '+ev.operario_elaboracion);
+        if(ev.operario_envasado)          asignadoBits.push('Env: '+ev.operario_envasado);
+        if(ev.operario_acondicionamiento) asignadoBits.push('Acon: '+ev.operario_acondicionamiento);
+        var asignadoHTML = asignadoBits.length
+          ? '<div style="font-size:11px;color:#475569;margin-top:4px;line-height:1.5">'+asignadoBits.map(function(b){
+              return '<span style="background:#eef2ff;color:#3730a3;padding:1px 6px;border-radius:4px;margin-right:4px;display:inline-block;margin-bottom:2px">'+b+'</span>';
+            }).join('')+'</div>'
+          : '<div style="font-size:10px;color:#94a3b8;font-style:italic;margin-top:4px">Sin sala/operarios asignados</div>';
+        return '<div style="padding:8px 0;border-bottom:1px solid #f5f5f5;font-size:12px">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="flex:1;font-weight:600">'+ev.fecha+'</span>' +
+            '<span style="color:#555">'+ev.lotes+' lote'+(ev.lotes>1?'s':'')+'</span>' +
+            '<span style="background:'+estadoColor+';color:#fff;padding:2px 7px;border-radius:8px">'+ev.estado+'</span>' +
+            '<button onclick="cancelarEvento('+ev.id+',\\''+producto+'\\')" style="background:#dc3545;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer">✕</button>' +
+          '</div>' +
+          asignadoHTML +
           '</div>';
       }).join('');
     });

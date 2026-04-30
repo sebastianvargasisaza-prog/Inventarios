@@ -2013,16 +2013,37 @@ def prog_debug_ventas():
 
 @bp.route('/api/programacion/programar', methods=['GET'])
 def prog_listar_eventos():
-    """List all future production events."""
+    """List all future production events.
+
+    Enriquecido (30-abr-2026): incluye sala asignada + operarios por fase
+    para que el modal de programar producto y otras vistas muestren el
+    estado de asignacion sin pegarle a otro endpoint.
+    """
     conn = get_db()
-    rows = conn.execute(
-        """SELECT id, producto, fecha_programada, lotes, estado, observaciones, creado_en
-           FROM produccion_programada
-           ORDER BY fecha_programada"""
-    ).fetchall()
+    rows = conn.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes, pp.estado,
+               pp.observaciones, pp.creado_en,
+               pp.area_id, ap.nombre as area_nombre, ap.codigo as area_codigo,
+               od.nombre || ' ' || COALESCE(od.apellido,'')  as op_disp,
+               oe.nombre || ' ' || COALESCE(oe.apellido,'')  as op_elab,
+               oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
+               oa.nombre || ' ' || COALESCE(oa.apellido,'')  as op_acon
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap     ON ap.id  = pp.area_id
+        LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
+        LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
+        LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+        LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
+        ORDER BY pp.fecha_programada
+    """).fetchall()
     return jsonify([{
         'id': r[0], 'producto': r[1], 'fecha': r[2],
-        'lotes': r[3], 'estado': r[4], 'observaciones': r[5], 'creado_en': r[6]
+        'lotes': r[3], 'estado': r[4], 'observaciones': r[5], 'creado_en': r[6],
+        'area_id': r[7], 'area_nombre': r[8], 'area_codigo': r[9],
+        'operario_dispensacion':      (r[10] or '').strip() or None,
+        'operario_elaboracion':       (r[11] or '').strip() or None,
+        'operario_envasado':          (r[12] or '').strip() or None,
+        'operario_acondicionamiento': (r[13] or '').strip() or None,
     } for r in rows])
 
 
@@ -2067,6 +2088,283 @@ def prog_cancelar_evento(evento_id):
     return jsonify({'ok': True, 'id': evento_id})
 
 
+# ─── Planta: catalogo areas + operarios + asignacion (Capa 2) ──────────────
+# Sebastian (30-abr-2026): asignar sala fisica + operario por fase a cada
+# produccion. Mayerlin fija dispensacion (regla dura). Las salas tienen
+# capacidades distintas post-INVIMA (ver migracion 55).
+
+@bp.route('/api/planta/areas', methods=['GET'])
+def planta_listar_areas():
+    """Lista las 5 salas con capacidades y disponibilidad opcional por fecha.
+
+    Query params:
+        fecha: YYYY-MM-DD opcional. Si viene, agrega ocupada_por con la
+               produccion que tiene asignada esa sala en esa fecha.
+        requiere_marmita_ml: opcional. Si viene, marca solo las que tengan
+                             marmita >= ese tamano.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    fecha = (request.args.get('fecha') or '').strip()
+    req_marmita = request.args.get('requiere_marmita_ml')
+    try:
+        req_marmita = int(req_marmita) if req_marmita else None
+    except (TypeError, ValueError):
+        req_marmita = None
+
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, codigo, nombre, puede_producir, puede_envasar,
+               marmita_ml, especial, estado, orden
+        FROM areas_planta
+        WHERE activo=1
+        ORDER BY orden, id
+    """).fetchall()
+
+    # Si dieron fecha, calcular ocupacion de cada sala ese dia
+    ocupacion = {}
+    if fecha:
+        try:
+            date.fromisoformat(fecha)
+            for r in conn.execute("""
+                SELECT pp.area_id, pp.id, pp.producto, pp.lotes,
+                       COALESCE(pp.lotes,1)*COALESCE(fh.lote_size_kg,0) as kg
+                FROM produccion_programada pp
+                LEFT JOIN formula_headers fh
+                    ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto))
+                WHERE pp.fecha_programada=?
+                  AND pp.area_id IS NOT NULL
+                  AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+            """, (fecha,)):
+                ocupacion.setdefault(r[0], []).append({
+                    'produccion_id': r[1], 'producto': r[2],
+                    'lotes': r[3], 'kg': r[4],
+                })
+        except ValueError:
+            pass
+
+    out = []
+    for r in rows:
+        area = {
+            'id': r[0], 'codigo': r[1], 'nombre': r[2],
+            'puede_producir': bool(r[3]), 'puede_envasar': bool(r[4]),
+            'marmita_ml': r[5], 'especial': r[6],
+            'estado': r[7], 'orden': r[8],
+        }
+        ocup = ocupacion.get(r[0], [])
+        area['ocupada_por'] = ocup
+        area['libre_en_fecha'] = (len(ocup) == 0) if fecha else None
+        if req_marmita is not None:
+            area['cumple_marmita'] = (r[5] is not None and r[5] >= req_marmita)
+        out.append(area)
+    return jsonify({'areas': out, 'fecha': fecha or None})
+
+
+@bp.route('/api/planta/areas/<int:area_id>/estado', methods=['PATCH'])
+def planta_actualizar_estado_area(area_id):
+    """Cambia el estado de una sala: libre / ocupada / sucia / limpiando.
+    Lo usa quien marca que la senora del aseo ya termino, o que una sala
+    quedo sucia despues de produccion."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    nuevo = (data.get('estado') or '').strip().lower()
+    if nuevo not in ('libre', 'ocupada', 'sucia', 'limpiando'):
+        return jsonify({'error': 'estado invalido'}), 400
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE areas_planta SET estado=? WHERE id=? AND activo=1",
+        (nuevo, area_id)
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return jsonify({'error': 'sala no encontrada'}), 404
+    return jsonify({'ok': True, 'id': area_id, 'estado': nuevo})
+
+
+@bp.route('/api/planta/operarios', methods=['GET'])
+def planta_listar_operarios():
+    """Lista crew activo. Mayerlin fija dispensacion, Luis Enrique es jefe."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, nombre, apellido, rol_predeterminado,
+               fija_en_dispensacion, es_jefe_produccion
+        FROM operarios_planta
+        WHERE activo=1
+        ORDER BY es_jefe_produccion DESC, fija_en_dispensacion DESC, nombre
+    """).fetchall()
+    out = [{
+        'id': r[0],
+        'nombre': r[1],
+        'apellido': r[2] or '',
+        'nombre_completo': (r[1] + ' ' + (r[2] or '')).strip(),
+        'rol': r[3] or '',
+        'fija_dispensacion': bool(r[4]),
+        'es_jefe': bool(r[5]),
+    } for r in rows]
+    return jsonify({'operarios': out, 'total': len(out)})
+
+
+@bp.route('/api/programacion/programar/<int:evento_id>/asignar', methods=['PATCH'])
+def prog_asignar_sala_operarios(evento_id):
+    """Asigna sala fisica y operarios por fase a una produccion programada.
+
+    Body JSON (todo opcional, NULL para desasignar):
+        area_id: int
+        operario_dispensacion_id: int
+        operario_elaboracion_id: int
+        operario_envasado_id: int
+        operario_acondicionamiento_id: int
+
+    Valida que:
+    - La sala exista y este activa.
+    - Si se asigna sala que NO produce y la produccion implica producir → 400.
+    - Conflicto: si OTRA produccion ya tomo esa sala ese dia → warning en
+      la respuesta (no bloquea — Sebastian decide).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+
+    # Verificar que la produccion existe
+    pp = c.execute(
+        "SELECT id, producto, fecha_programada, area_id FROM produccion_programada WHERE id=?",
+        (evento_id,)
+    ).fetchone()
+    if not pp:
+        return jsonify({'error': 'produccion no encontrada'}), 404
+
+    updates = []
+    params = []
+    warnings = []
+
+    # Sala
+    if 'area_id' in data:
+        new_area = data['area_id']
+        if new_area is not None:
+            try:
+                new_area = int(new_area)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'area_id invalido'}), 400
+            sala = c.execute(
+                "SELECT id, nombre, puede_producir FROM areas_planta WHERE id=? AND activo=1",
+                (new_area,)
+            ).fetchone()
+            if not sala:
+                return jsonify({'error': 'sala no existe o inactiva'}), 400
+            # Conflicto: misma fecha, sala ya tomada por otra produccion
+            conflictos = c.execute("""
+                SELECT id, producto FROM produccion_programada
+                WHERE fecha_programada=? AND area_id=? AND id<>?
+                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+            """, (pp[2], new_area, evento_id)).fetchall()
+            if conflictos:
+                warnings.append({
+                    'tipo': 'sala_ocupada',
+                    'sala': sala[1],
+                    'fecha': pp[2],
+                    'choca_con': [{'id': x[0], 'producto': x[1]} for x in conflictos],
+                })
+        updates.append('area_id=?'); params.append(new_area)
+
+    # Operarios por fase
+    for campo in ('operario_dispensacion_id', 'operario_elaboracion_id',
+                  'operario_envasado_id', 'operario_acondicionamiento_id'):
+        if campo in data:
+            val = data[campo]
+            if val is not None:
+                try:
+                    val = int(val)
+                except (TypeError, ValueError):
+                    return jsonify({'error': f'{campo} invalido'}), 400
+                op = c.execute(
+                    "SELECT id, nombre FROM operarios_planta WHERE id=? AND activo=1",
+                    (val,)
+                ).fetchone()
+                if not op:
+                    return jsonify({'error': f'{campo}: operario no existe'}), 400
+            updates.append(f'{campo}=?'); params.append(val)
+
+    if not updates:
+        return jsonify({'error': 'nada que actualizar'}), 400
+
+    params.append(evento_id)
+    c.execute(
+        f"UPDATE produccion_programada SET {', '.join(updates)} WHERE id=?",
+        params
+    )
+    conn.commit()
+    return jsonify({'ok': True, 'id': evento_id, 'warnings': warnings})
+
+
+@bp.route('/api/planta/operarios/historial', methods=['GET'])
+def planta_historial_operarios():
+    """Devuelve cuantos dias lleva cada operario en cada fase, ultimos 14 dias.
+    Sirve para sugerir rotacion: si Camilo lleva 5 dias en acondicionamiento,
+    el UI lo marca con un badge 'rotar'. Mayerlin se excluye (es fija)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    # Cuenta apariciones por operario+fase en producciones de los ultimos 14 dias
+    sql = """
+        SELECT op.id, op.nombre, op.apellido, fase, COUNT(*) as veces
+        FROM operarios_planta op
+        LEFT JOIN (
+            SELECT operario_dispensacion_id as op_id, 'dispensacion' as fase, fecha_programada
+              FROM produccion_programada
+              WHERE operario_dispensacion_id IS NOT NULL
+                AND fecha_programada >= date('now','-14 day')
+                AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+            UNION ALL
+            SELECT operario_elaboracion_id, 'elaboracion', fecha_programada
+              FROM produccion_programada
+              WHERE operario_elaboracion_id IS NOT NULL
+                AND fecha_programada >= date('now','-14 day')
+                AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+            UNION ALL
+            SELECT operario_envasado_id, 'envasado', fecha_programada
+              FROM produccion_programada
+              WHERE operario_envasado_id IS NOT NULL
+                AND fecha_programada >= date('now','-14 day')
+                AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+            UNION ALL
+            SELECT operario_acondicionamiento_id, 'acondicionamiento', fecha_programada
+              FROM produccion_programada
+              WHERE operario_acondicionamiento_id IS NOT NULL
+                AND fecha_programada >= date('now','-14 day')
+                AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+        ) hist ON hist.op_id = op.id
+        WHERE op.activo=1 AND op.es_jefe_produccion=0
+        GROUP BY op.id, fase
+        ORDER BY op.nombre, fase
+    """
+    raw = conn.execute(sql).fetchall()
+    # Reformatear: { op_id: {nombre, fija, fases: {fase: count}} }
+    result = {}
+    for r in raw:
+        op_id, nombre, apellido, fase, veces = r
+        if op_id not in result:
+            result[op_id] = {
+                'id': op_id, 'nombre': nombre, 'apellido': apellido or '',
+                'fases': {}, 'total': 0,
+            }
+        if fase:
+            result[op_id]['fases'][fase] = veces
+            result[op_id]['total'] += veces
+    # Marcar quien necesita rotar (>=4 veces seguidas en una sola fase)
+    for op in result.values():
+        for fase, cnt in op['fases'].items():
+            if cnt >= 4 and op['total'] == cnt:
+                op['sugerir_rotar'] = True
+                op['fase_acumulada'] = fase
+                op['dias_en_fase'] = cnt
+                break
+    return jsonify({'operarios': list(result.values()), 'ventana_dias': 14})
+
+
 @bp.route('/api/programacion/produccion-programada/listado', methods=['GET'])
 def listado_produccion_programada():
     """Lista todas las producciones programadas activas con su origen,
@@ -2079,19 +2377,32 @@ def listado_produccion_programada():
         SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
                pp.estado, COALESCE(pp.origen,'manual') as origen,
                pp.observaciones,
-               COALESCE(pp.lotes,1) * COALESCE(fh.lote_size_kg,0) as kg
+               COALESCE(pp.lotes,1) * COALESCE(fh.lote_size_kg,0) as kg,
+               pp.area_id, ap.nombre as area_nombre,
+               pp.operario_dispensacion_id, od.nombre || ' ' || COALESCE(od.apellido,'') as op_disp,
+               pp.operario_elaboracion_id,  oe.nombre || ' ' || COALESCE(oe.apellido,'') as op_elab,
+               pp.operario_envasado_id,     oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
+               pp.operario_acondicionamiento_id, oa.nombre || ' ' || COALESCE(oa.apellido,'') as op_acon
         FROM produccion_programada pp
         LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
+        LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
+        LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+        LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
         WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
           AND pp.fecha_programada >= date('now','-7 day')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """).fetchall()
-    cols = [d[0] for d in conn.execute(
-        "SELECT 1 as id, '' as producto, '' as fecha_programada, 1 as lotes,"
-        " '' as estado, '' as origen, '' as observaciones, 0.0 as kg "
-        "WHERE 0"
-    ).description]
-    out = [dict(zip(cols, r)) for r in rows]
+    out = [{
+        'id': r[0], 'producto': r[1], 'fecha_programada': r[2], 'lotes': r[3],
+        'estado': r[4], 'origen': r[5], 'observaciones': r[6], 'kg': r[7],
+        'area_id': r[8], 'area_nombre': r[9],
+        'operario_dispensacion_id': r[10], 'operario_dispensacion': (r[11] or '').strip() or None,
+        'operario_elaboracion_id':  r[12], 'operario_elaboracion':  (r[13] or '').strip() or None,
+        'operario_envasado_id':     r[14], 'operario_envasado':     (r[15] or '').strip() or None,
+        'operario_acondicionamiento_id': r[16], 'operario_acondicionamiento': (r[17] or '').strip() or None,
+    } for r in rows]
     return jsonify({'producciones': out, 'total': len(out)})
 
 
