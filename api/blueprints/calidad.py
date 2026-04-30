@@ -563,3 +563,468 @@ def auditorias_list():
     c.execute("SELECT * FROM auditorias ORDER BY fecha_planeada DESC LIMIT 100")
     cols = [x[0] for x in c.description]
     return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CALIDAD AMPLIADA — Micro Specs + Resultados (heatmap) + Agua + OOS
+# Sebastian (30-abr-2026)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _calc_estado_micro(valor, valor_texto, spec):
+    """Calcula estado de un resultado micro vs spec.
+    spec = dict con limite_industria, meta_lab, tipo_limite.
+    Returns: 'ok' / 'fuera_meta' / 'fuera_industria' / 'observacion'."""
+    if not spec:
+        return 'observacion'
+    tipo = spec.get('tipo_limite', 'maximo')
+    li = spec.get('limite_industria')
+    ml = spec.get('meta_lab')
+    if tipo == 'ausencia':
+        # Si reportan numero > 0 o texto que no diga "ausencia/negativo/<10/<1/0"
+        v_str = (valor_texto or '').strip().lower()
+        if valor is not None and valor > 0:
+            return 'fuera_industria'
+        if v_str and not any(k in v_str for k in ['ausencia','ausente','negativo','<10','<1','<100','no detect','0 ufc','sin crecimiento']):
+            return 'observacion'
+        return 'ok'
+    if valor is None:
+        return 'observacion'
+    if tipo == 'maximo':
+        if li is not None and valor > li:
+            return 'fuera_industria'
+        if ml is not None and valor > ml:
+            return 'fuera_meta'
+        return 'ok'
+    if tipo == 'minimo':
+        if li is not None and valor < li:
+            return 'fuera_industria'
+        if ml is not None and valor < ml:
+            return 'fuera_meta'
+        return 'ok'
+    return 'observacion'
+
+
+@bp.route('/api/calidad/micro/specs', methods=['GET', 'POST'])
+def calidad_micro_specs():
+    """GET: lista todas las specs (incluye los defaults globales aplicables a
+    cualquier producto si no tiene override).
+    POST: crea/actualiza spec para un producto+microorganismo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        prod = (d.get('producto_nombre') or '').strip()
+        micro = (d.get('microorganismo') or '').strip()
+        if not prod or not micro:
+            return jsonify({'error': 'producto_nombre y microorganismo requeridos'}), 400
+        c.execute("""INSERT INTO calidad_micro_specs
+            (producto_nombre, microorganismo, unidad, limite_industria,
+             meta_lab, tipo_limite, metodo_referencia, activa)
+            VALUES (?,?,?,?,?,?,?,1)
+            ON CONFLICT(producto_nombre, microorganismo) DO UPDATE SET
+              unidad=excluded.unidad,
+              limite_industria=excluded.limite_industria,
+              meta_lab=excluded.meta_lab,
+              tipo_limite=excluded.tipo_limite,
+              metodo_referencia=excluded.metodo_referencia""",
+            (prod, micro, d.get('unidad') or 'UFC/g',
+             d.get('limite_industria'), d.get('meta_lab'),
+             d.get('tipo_limite') or 'maximo',
+             d.get('metodo_referencia')))
+        conn.commit()
+        return jsonify({'ok': True})
+
+    producto = (request.args.get('producto') or '').strip()
+    rows = c.execute("""SELECT id, producto_nombre, microorganismo, unidad,
+                              limite_industria, meta_lab, tipo_limite,
+                              metodo_referencia, activa
+                       FROM calidad_micro_specs
+                       WHERE activa=1
+                         AND (? = '' OR producto_nombre = ?)
+                       ORDER BY producto_nombre, microorganismo""",
+                    (producto, producto)).fetchall()
+    cols = ['id','producto_nombre','microorganismo','unidad','limite_industria',
+            'meta_lab','tipo_limite','metodo_referencia','activa']
+    specs = [dict(zip(cols, r)) for r in rows]
+    # Defaults globales
+    rows_d = c.execute("""SELECT microorganismo, unidad, limite_industria,
+                                 meta_lab, tipo_limite, descripcion
+                         FROM calidad_micro_specs_default
+                         ORDER BY id""").fetchall()
+    cols_d = ['microorganismo','unidad','limite_industria','meta_lab','tipo_limite','descripcion']
+    defaults = [dict(zip(cols_d, r)) for r in rows_d]
+    return jsonify({'specs': specs, 'defaults': defaults})
+
+
+@bp.route('/api/calidad/micro/resultados', methods=['GET', 'POST'])
+def calidad_micro_resultados():
+    """GET: lista resultados con filtros (producto, lote, estado, desde, hasta).
+    POST: registra un resultado nuevo. Calcula estado vs spec."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        producto = (d.get('producto_nombre') or '').strip()
+        lote = (d.get('lote') or '').strip()
+        micro = (d.get('microorganismo') or '').strip()
+        if not producto or not lote or not micro:
+            return jsonify({'error': 'producto_nombre, lote y microorganismo requeridos'}), 400
+        valor = d.get('valor')
+        try:
+            valor = float(valor) if valor not in (None, '') else None
+        except (TypeError, ValueError):
+            valor = None
+        valor_texto = (d.get('valor_texto') or '').strip() or None
+
+        # Buscar spec: primero por producto, luego default
+        spec = c.execute("""SELECT unidad, limite_industria, meta_lab, tipo_limite
+                            FROM calidad_micro_specs
+                            WHERE producto_nombre=? AND microorganismo=? AND activa=1""",
+                         (producto, micro)).fetchone()
+        if not spec:
+            spec_d = c.execute("""SELECT unidad, limite_industria, meta_lab, tipo_limite
+                                  FROM calidad_micro_specs_default
+                                  WHERE microorganismo=?""", (micro,)).fetchone()
+            spec = spec_d
+        spec_dict = None
+        if spec:
+            spec_dict = {'unidad': spec[0], 'limite_industria': spec[1],
+                         'meta_lab': spec[2], 'tipo_limite': spec[3]}
+        estado = _calc_estado_micro(valor, valor_texto, spec_dict)
+        unidad = (d.get('unidad') or (spec_dict['unidad'] if spec_dict else 'UFC/g'))
+
+        from datetime import date as _date
+        fecha_analisis = (d.get('fecha_analisis') or '').strip() or _date.today().isoformat()
+        c.execute("""INSERT INTO calidad_micro_resultados
+            (lote, producto_nombre, fecha_muestreo, fecha_analisis,
+             microorganismo, valor, valor_texto, unidad, estado, laboratorio,
+             analista, metodo, observaciones, creado_por)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (lote, producto,
+             (d.get('fecha_muestreo') or '').strip() or None,
+             fecha_analisis,
+             micro, valor, valor_texto, unidad, estado,
+             (d.get('laboratorio') or 'Interno').strip(),
+             (d.get('analista') or '').strip() or user,
+             (d.get('metodo') or '').strip() or None,
+             (d.get('observaciones') or '').strip() or None,
+             user))
+        new_id = c.lastrowid
+
+        # Si fuera_industria → crear OOS automáticamente
+        oos_codigo = None
+        if estado == 'fuera_industria':
+            try:
+                last = c.execute(
+                    "SELECT codigo FROM calidad_oos WHERE codigo LIKE 'OOS-%' ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                n = 1
+                if last:
+                    try: n = int(last[0].split('-')[-1]) + 1
+                    except: n = 1
+                oos_codigo = f'OOS-{n:03d}'
+                c.execute("""INSERT INTO calidad_oos
+                    (codigo, origen, lote, producto, parametro, valor_obtenido,
+                     valor_obtenido_texto, valor_esperado_texto, limite_violado,
+                     accion_inmediata, creado_por)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (oos_codigo, 'micro', lote, producto, micro, valor, valor_texto,
+                     f'≤ {spec_dict["limite_industria"]} {unidad}' if spec_dict else 'según spec',
+                     'limite_industria',
+                     f'Lote {lote} pasa a CUARENTENA. No liberar hasta cierre OOS.',
+                     user))
+                oos_id = c.lastrowid
+                c.execute("UPDATE calidad_micro_resultados SET oos_id=? WHERE id=?", (oos_id, new_id))
+                # Notif in-app a calidad + admin
+                try:
+                    from blueprints.notif import push_notif_multi
+                    push_notif_multi(
+                        ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian','alejandro'],
+                        'capa', f'⚠ OOS {oos_codigo}: {micro} en {producto}',
+                        body=f'Lote {lote} · valor {valor or valor_texto} {unidad}',
+                        link='/calidad', remitente=user, importante=True
+                    )
+                except Exception:
+                    pass
+            except Exception as _e:
+                __import__('logging').getLogger('calidad').warning(
+                    'Auto-OOS fallo para resultado %s: %s', new_id, _e
+                )
+        elif estado == 'fuera_meta':
+            # Notif menos urgente — solo a calidad
+            try:
+                from blueprints.notif import push_notif
+                push_notif('controlcalidad.espagiria', 'capa',
+                           f'Resultado fuera de meta lab: {micro} en {producto}',
+                           body=f'Lote {lote} · valor {valor or valor_texto} {unidad}',
+                           link='/calidad', remitente=user)
+            except Exception: pass
+        conn.commit()
+        return jsonify({'ok': True, 'id': new_id, 'estado': estado, 'oos_codigo': oos_codigo}), 201
+
+    # GET
+    producto = (request.args.get('producto') or '').strip()
+    lote = (request.args.get('lote') or '').strip()
+    estado = (request.args.get('estado') or '').strip()
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    where = []; params = []
+    if producto: where.append('producto_nombre=?'); params.append(producto)
+    if lote: where.append('lote=?'); params.append(lote)
+    if estado: where.append('estado=?'); params.append(estado)
+    if desde: where.append('fecha_analisis >= ?'); params.append(desde)
+    if hasta: where.append('fecha_analisis <= ?'); params.append(hasta)
+    sql = """SELECT id, lote, producto_nombre, fecha_muestreo, fecha_analisis,
+                    microorganismo, valor, valor_texto, unidad, estado,
+                    laboratorio, analista, metodo, observaciones, oos_id
+             FROM calidad_micro_resultados"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_analisis DESC, id DESC LIMIT 500"
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','lote','producto_nombre','fecha_muestreo','fecha_analisis',
+            'microorganismo','valor','valor_texto','unidad','estado',
+            'laboratorio','analista','metodo','observaciones','oos_id']
+    return jsonify({'resultados': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/calidad/micro/heatmap', methods=['GET'])
+def calidad_micro_heatmap():
+    """Mapa de calor: matriz producto × microorganismo con:
+       - peor_estado (worst case en últimos N meses)
+       - n_resultados
+       - n_fuera_industria
+       - n_fuera_meta
+       - ultimo_valor / fecha
+    Window: últimos 12 meses por default.
+    Sebastian: 'tener un mapa de calor o de resultados consolidados con alerta'.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    meses = int(request.args.get('meses', 12))
+    conn = get_db(); c = conn.cursor()
+
+    # Lista de microorganismos relevantes (defaults + custom usados)
+    micros = [r[0] for r in c.execute(
+        "SELECT microorganismo FROM calidad_micro_specs_default ORDER BY id"
+    ).fetchall()]
+    extras = [r[0] for r in c.execute(
+        "SELECT DISTINCT microorganismo FROM calidad_micro_resultados "
+        "WHERE microorganismo NOT IN (SELECT microorganismo FROM calidad_micro_specs_default)"
+    ).fetchall()]
+    micros += extras
+
+    # Lista de productos con resultados en la ventana
+    prods = [r[0] for r in c.execute(
+        "SELECT DISTINCT producto_nombre FROM calidad_micro_resultados "
+        "WHERE fecha_analisis >= date('now','-' || ? || ' months') "
+        "ORDER BY producto_nombre", (meses,)
+    ).fetchall()]
+
+    # Construir matriz
+    matriz = []
+    for prod in prods:
+        row = {'producto': prod, 'cells': []}
+        for m in micros:
+            cell = c.execute("""SELECT
+                  COUNT(*) as n,
+                  SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) as n_fi,
+                  SUM(CASE WHEN estado='fuera_meta' THEN 1 ELSE 0 END) as n_fm,
+                  MAX(fecha_analisis) as ultima_fecha
+                FROM calidad_micro_resultados
+                WHERE producto_nombre=? AND microorganismo=?
+                  AND fecha_analisis >= date('now','-' || ? || ' months')
+            """, (prod, m, meses)).fetchone()
+            n, n_fi, n_fm, ultima = cell
+            if not n:
+                row['cells'].append({'micro': m, 'n': 0, 'estado': 'sin_dato'})
+                continue
+            ult_val = c.execute("""SELECT valor, valor_texto, estado, unidad
+                FROM calidad_micro_resultados
+                WHERE producto_nombre=? AND microorganismo=? AND fecha_analisis=?
+                ORDER BY id DESC LIMIT 1""", (prod, m, ultima)).fetchone()
+            estado_peor = 'fuera_industria' if n_fi > 0 else ('fuera_meta' if n_fm > 0 else 'ok')
+            row['cells'].append({
+                'micro': m, 'n': n,
+                'n_fuera_industria': n_fi or 0,
+                'n_fuera_meta': n_fm or 0,
+                'estado': estado_peor,
+                'ultima_fecha': ultima,
+                'ultimo_valor': ult_val[0] if ult_val else None,
+                'ultimo_texto': ult_val[1] if ult_val else None,
+                'unidad': ult_val[3] if ult_val else 'UFC/g',
+            })
+        matriz.append(row)
+
+    # KPIs globales
+    total_res = c.execute(
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+    ).fetchone()[0] or 0
+    total_fi = c.execute(
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+    ).fetchone()[0] or 0
+    total_fm = c.execute(
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_meta' AND fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+    ).fetchone()[0] or 0
+
+    return jsonify({
+        'meses_ventana': meses,
+        'microorganismos': micros,
+        'productos': prods,
+        'matriz': matriz,
+        'kpis': {
+            'total_resultados': total_res,
+            'total_fuera_industria': total_fi,
+            'total_fuera_meta': total_fm,
+            'tasa_ok': round((total_res - total_fi - total_fm) * 100 / total_res, 1) if total_res else None,
+        },
+    })
+
+
+@bp.route('/api/calidad/agua/registros', methods=['GET', 'POST'])
+def calidad_agua_registros():
+    """COC-PRO-008 Sistema de Agua. GET lista registros con filtro fecha+punto.
+    POST registra una lectura nueva. Calcula estado vs umbrales BPM:
+       pH purificada: 5.0-7.5
+       conductividad ≤ 1.3 µS/cm a 25°C (USP <645>)
+       TOC ≤ 500 ppb (USP <643>)
+       microorganismos ≤ 100 UFC/100mL (USP)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        punto = (d.get('punto_muestreo') or '').strip()
+        if not punto:
+            return jsonify({'error': 'punto_muestreo requerido'}), 400
+
+        ph = d.get('ph')
+        cond = d.get('conductividad_us_cm')
+        toc = d.get('toc_ppb')
+        micro = d.get('microorganismos_ufc_ml')
+        try: ph = float(ph) if ph not in (None,'') else None
+        except: ph = None
+        try: cond = float(cond) if cond not in (None,'') else None
+        except: cond = None
+        try: toc = float(toc) if toc not in (None,'') else None
+        except: toc = None
+        try: micro = float(micro) if micro not in (None,'') else None
+        except: micro = None
+
+        # Calcular estado (USP — agua purificada)
+        estado = 'ok'
+        warnings = []
+        if ph is not None:
+            if ph < 5.0 or ph > 7.5: estado = 'fuera_spec'; warnings.append(f'pH={ph} fuera 5.0-7.5')
+            elif ph < 5.5 or ph > 7.0: estado = 'alerta' if estado=='ok' else estado
+        if cond is not None:
+            if cond > 1.3: estado = 'fuera_spec'; warnings.append(f'cond={cond}µS > 1.3')
+            elif cond > 1.1: estado = 'alerta' if estado=='ok' else estado
+        if toc is not None:
+            if toc > 500: estado = 'fuera_spec'; warnings.append(f'TOC={toc}ppb > 500')
+            elif toc > 400: estado = 'alerta' if estado=='ok' else estado
+        if micro is not None:
+            if micro > 100: estado = 'fuera_spec'; warnings.append(f'micro={micro}UFC/ml > 100')
+            elif micro > 50: estado = 'alerta' if estado=='ok' else estado
+
+        from datetime import date as _date
+        fecha_reg = (d.get('fecha') or '').strip() or _date.today().isoformat()
+        obs_extra = d.get('observaciones') or ''
+        if warnings:
+            obs_final = '; '.join(warnings) + (' | ' + obs_extra if obs_extra else '')
+        else:
+            obs_final = obs_extra.strip() or None
+        c.execute("""INSERT INTO calidad_sistema_agua
+            (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
+             toc_ppb, microorganismos_ufc_ml, cloro_residual_ppm, temperatura_c,
+             estado, observaciones, operador)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (fecha_reg,
+             (d.get('hora') or '').strip() or None,
+             punto, d.get('tipo_agua') or 'purificada',
+             ph, cond, toc, micro,
+             d.get('cloro_residual_ppm'), d.get('temperatura_c'),
+             estado, obs_final, user))
+        new_id = c.lastrowid
+        # Si fuera_spec → notif urgente
+        if estado == 'fuera_spec':
+            try:
+                from blueprints.notif import push_notif_multi
+                push_notif_multi(
+                    ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                    'capa', f'⚠ Sistema de agua FUERA DE SPEC: {punto}',
+                    body='; '.join(warnings),
+                    link='/calidad', remitente=user, importante=True
+                )
+            except Exception: pass
+        conn.commit()
+        return jsonify({'ok': True, 'id': new_id, 'estado': estado, 'warnings': warnings}), 201
+
+    # GET
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    punto = (request.args.get('punto') or '').strip()
+    where = []; params = []
+    if desde: where.append('fecha >= ?'); params.append(desde)
+    if hasta: where.append('fecha <= ?'); params.append(hasta)
+    if punto: where.append('punto_muestreo=?'); params.append(punto)
+    sql = "SELECT * FROM calidad_sistema_agua"
+    if where: sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha DESC, hora DESC, id DESC LIMIT 500"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    out = [dict(zip(cols, r)) for r in rows]
+    return jsonify({'registros': out})
+
+
+@bp.route('/api/calidad/oos', methods=['GET'])
+def calidad_oos_list():
+    """Lista de OOS (Out Of Spec). Filtros: estado, desde, hasta, lote."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    estado = (request.args.get('estado') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    sql = "SELECT * FROM calidad_oos"
+    params = []
+    if estado: sql += " WHERE estado=?"; params.append(estado)
+    sql += " ORDER BY estado='cerrado' ASC, fecha_deteccion DESC LIMIT 200"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'oos': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/calidad/oos/<int:oos_id>', methods=['PATCH'])
+def calidad_oos_update(oos_id):
+    """Actualiza OOS — flujo investigación → aprobación → cierre."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    sets = []; params = []
+    for col in ('accion_inmediata','causa_raiz','disposicion','aprobado_por',
+                'fecha_objetivo_cierre','capa_id'):
+        if col in d:
+            sets.append(f'{col}=?'); params.append(d[col])
+    if 'estado' in d:
+        nuevo = d['estado']
+        if nuevo not in ('abierto','en_investigacion','en_aprobacion','cerrado','rechazado'):
+            return jsonify({'error': 'estado invalido'}), 400
+        sets.append('estado=?'); params.append(nuevo)
+        if nuevo == 'cerrado':
+            sets.append('fecha_cierre=?'); params.append(datetime.now().date().isoformat())
+            sets.append('aprobado_por=?'); params.append(user)
+            sets.append('fecha_aprobacion=?'); params.append(datetime.now().isoformat())
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(oos_id)
+    c.execute(f"UPDATE calidad_oos SET {', '.join(sets)} WHERE id=?", params)
+    conn.commit()
+    return jsonify({'ok': True})

@@ -2754,6 +2754,160 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             'Calidad', 'menor', '2026-04-29', '2026-05-15',
             'aseguramiento.espagiria', 'en_proceso', 'aseguramiento.espagiria')""",
     ]),
+    (61, "calidad ampliada: micro specs + resultados + sistema de agua + OOS workflow", [
+        # Sebastian (30-abr-2026): "los resultados de los microbiologicos a
+        # todo producto le hacemos micro y sale resultado como tener un mapa
+        # de calor o de resultados consolidados con alerta la industria
+        # permite hasta un punto, pero un punto de meta y corte propio del
+        # laboratorio asi tenemos un solo consolidado para saber como se
+        # comportan". + COC-PRO-008 (sistema agua) + OOS (Out Of Spec).
+
+        # ── Tabla 1: calidad_micro_specs ──────────────────────────────────
+        # Limites por (producto × microorganismo). Doble: limite_industria
+        # (norma INVIMA / farmacopea) y meta_lab (interno mas estricto).
+        """CREATE TABLE IF NOT EXISTS calidad_micro_specs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL,
+            microorganismo TEXT NOT NULL,
+            unidad TEXT NOT NULL DEFAULT 'UFC/g',
+            limite_industria REAL,
+            meta_lab REAL,
+            tipo_limite TEXT NOT NULL DEFAULT 'maximo'
+                CHECK(tipo_limite IN ('maximo','minimo','rango','ausencia')),
+            metodo_referencia TEXT,
+            activa INTEGER NOT NULL DEFAULT 1,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(producto_nombre, microorganismo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_micro_specs_prod ON calidad_micro_specs(producto_nombre)",
+        # Seed con microorganismos típicos de cosméticos colombianos
+        # (Resolución 2950/2017 INVIMA + farmacopea USP/EP):
+        #   Mesófilos aerobios totales ≤ 1000 UFC/g (industria), meta lab 100
+        #   Mohos y levaduras ≤ 100 UFC/g, meta lab 10
+        #   E. coli — ausencia/g
+        #   S. aureus — ausencia/g
+        #   P. aeruginosa — ausencia/g
+        # Estos se aplican a TODOS los productos por default. Se seedearán
+        # automáticamente al crear/migrar fórmulas via endpoint.
+        """CREATE TABLE IF NOT EXISTS calidad_micro_specs_default (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            microorganismo TEXT NOT NULL UNIQUE,
+            unidad TEXT NOT NULL DEFAULT 'UFC/g',
+            limite_industria REAL,
+            meta_lab REAL,
+            tipo_limite TEXT NOT NULL DEFAULT 'maximo',
+            descripcion TEXT
+        )""",
+        """INSERT OR IGNORE INTO calidad_micro_specs_default
+           (microorganismo, unidad, limite_industria, meta_lab, tipo_limite, descripcion) VALUES
+           ('Mesófilos aerobios totales', 'UFC/g', 1000, 100, 'maximo',
+            'INVIMA Res 2950/2017 — productos no estériles. Meta lab más estricta para detección temprana.'),
+           ('Mohos y levaduras',          'UFC/g',  100,  10, 'maximo',
+            'INVIMA — indicador de contaminación ambiental / materia prima.'),
+           ('E. coli',                    'UFC/g',    0,   0, 'ausencia',
+            'INVIMA — patógeno indicador de contaminación fecal. Cero tolerancia.'),
+           ('Staphylococcus aureus',      'UFC/g',    0,   0, 'ausencia',
+            'INVIMA — patógeno indicador de contaminación de personal/manipulación.'),
+           ('Pseudomonas aeruginosa',     'UFC/g',    0,   0, 'ausencia',
+            'INVIMA — patógeno oportunista, contaminación por agua.'),
+           ('Candida albicans',           'UFC/g',    0,   0, 'ausencia',
+            'Patógeno fúngico — usual en productos íntimos / boca.'),
+           ('Burkholderia cepacia',       'UFC/g',    0,   0, 'ausencia',
+            'Recomendado FDA para cosméticos sin alcohol — detección obligatoria post-2017.')""",
+
+        # ── Tabla 2: calidad_micro_resultados ─────────────────────────────
+        # Cada análisis micro de un lote PT con su lectura por microorganismo.
+        # Estado calculado al insertar: ok / fuera_meta / fuera_industria.
+        """CREATE TABLE IF NOT EXISTS calidad_micro_resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lote TEXT NOT NULL,
+            producto_nombre TEXT NOT NULL,
+            fecha_muestreo TEXT,
+            fecha_analisis TEXT NOT NULL DEFAULT (date('now')),
+            microorganismo TEXT NOT NULL,
+            valor REAL,
+            valor_texto TEXT,
+            unidad TEXT NOT NULL DEFAULT 'UFC/g',
+            estado TEXT NOT NULL DEFAULT 'ok'
+                CHECK(estado IN ('ok','fuera_meta','fuera_industria','observacion')),
+            laboratorio TEXT DEFAULT 'Interno',
+            analista TEXT,
+            metodo TEXT,
+            observaciones TEXT,
+            oos_id INTEGER,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_micro_res_prod ON calidad_micro_resultados(producto_nombre, fecha_analisis DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_micro_res_lote ON calidad_micro_resultados(lote)",
+        "CREATE INDEX IF NOT EXISTS idx_micro_res_estado ON calidad_micro_resultados(estado, fecha_analisis DESC)",
+
+        # ── Tabla 3: calidad_sistema_agua (COC-PRO-008) ──────────────────
+        # Registros diarios/semanales del sistema de agua purificada.
+        # Parámetros: pH, conductividad (µS/cm), TOC (ppb), microorgs,
+        # cloro residual (si aplica), temperatura.
+        """CREATE TABLE IF NOT EXISTS calidad_sistema_agua (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL DEFAULT (date('now')),
+            hora TEXT,
+            punto_muestreo TEXT NOT NULL,
+            tipo_agua TEXT NOT NULL DEFAULT 'purificada'
+                CHECK(tipo_agua IN ('purificada','potable','destilada','wfi','grado_reactivo')),
+            ph REAL,
+            conductividad_us_cm REAL,
+            toc_ppb REAL,
+            microorganismos_ufc_ml REAL,
+            cloro_residual_ppm REAL,
+            temperatura_c REAL,
+            estado TEXT NOT NULL DEFAULT 'ok'
+                CHECK(estado IN ('ok','alerta','fuera_spec')),
+            observaciones TEXT,
+            operador TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_agua_fecha ON calidad_sistema_agua(fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_agua_punto ON calidad_sistema_agua(punto_muestreo, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_agua_estado ON calidad_sistema_agua(estado, fecha DESC)",
+
+        # ── Tabla 4: calidad_oos (Out Of Specification) ──────────────────
+        # Workflow formal cuando un análisis sale OOS:
+        #   - Lote a cuarentena automática
+        #   - Investigación obligatoria (causa raíz)
+        #   - Disposición (release, reproceso, rechazo, destrucción)
+        #   - Aprobación gerencial
+        """CREATE TABLE IF NOT EXISTS calidad_oos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            origen TEXT NOT NULL DEFAULT 'micro'
+                CHECK(origen IN ('micro','fisicoquimico','agua','estabilidad','otro')),
+            lote TEXT,
+            producto TEXT,
+            parametro TEXT NOT NULL,
+            valor_obtenido REAL,
+            valor_obtenido_texto TEXT,
+            valor_esperado_texto TEXT,
+            limite_violado TEXT NOT NULL DEFAULT 'meta_lab'
+                CHECK(limite_violado IN ('meta_lab','limite_industria','ambos')),
+            fecha_deteccion TEXT NOT NULL DEFAULT (date('now')),
+            fecha_objetivo_cierre TEXT,
+            fecha_cierre TEXT,
+            estado TEXT NOT NULL DEFAULT 'abierto'
+                CHECK(estado IN ('abierto','en_investigacion','en_aprobacion','cerrado','rechazado')),
+            accion_inmediata TEXT,
+            causa_raiz TEXT,
+            disposicion TEXT
+                CHECK(disposicion IS NULL OR disposicion IN ('liberado','reprocesado','rechazado','destruido','reanalisis')),
+            aprobado_por TEXT,
+            fecha_aprobacion TEXT,
+            capa_id INTEGER,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (capa_id) REFERENCES capa_desviaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_oos_estado ON calidad_oos(estado, fecha_deteccion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_oos_lote ON calidad_oos(lote)",
+        "CREATE INDEX IF NOT EXISTS idx_oos_producto ON calidad_oos(producto)",
+    ]),
 ]
 
 

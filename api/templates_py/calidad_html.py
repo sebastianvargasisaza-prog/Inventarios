@@ -131,7 +131,9 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
-  
+  <div class="tab" onclick="goTab('tab-micro')">&#x1F9EB; Micro &amp; Heatmap</div>
+  <div class="tab" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
+  <div class="tab" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
 </div>
 <div class="main">
 
@@ -227,6 +229,158 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
+
+<!-- MICRO HEATMAP -->
+<div id="tab-micro" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div>
+      <div class="card-title" style="margin:0">\u{1F9EB} Mapa de calor microbiologico</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px">Doble limite: <b>industria</b> (INVIMA / farmacopea) y <b>meta lab</b> (interno mas estricto). Auto-OOS si supera limite industria.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="micro-meses" onchange="loadMicroHeatmap()" style="padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:12px">
+        <option value="3">Ultimos 3 meses</option>
+        <option value="6">Ultimos 6 meses</option>
+        <option value="12" selected>Ultimos 12 meses</option>
+        <option value="24">Ultimos 24 meses</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="abrirModalNuevoResultadoMicro()">+ Registrar resultado</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadMicroHeatmap()">\u21bb</button>
+    </div>
+  </div>
+  <div id="micro-kpis" class="kpi-row" style="margin-bottom:14px"></div>
+  <div class="card">
+    <div style="overflow-x:auto">
+      <table id="micro-heatmap-tbl" style="font-size:12px;min-width:900px">
+        <thead id="micro-heatmap-thead"></thead>
+        <tbody id="micro-heatmap-tbody"><tr><td class="empty">Cargando matriz...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Ultimos resultados registrados</div>
+    <table>
+      <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>Analista</th></tr></thead>
+      <tbody id="micro-res-tbody"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SISTEMA DE AGUA -->
+<div id="tab-agua" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div>
+      <div class="card-title" style="margin:0">\u{1F4A7} Sistema de Agua (COC-PRO-008)</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px">Limites USP: pH 5.0-7.5 \u00b7 cond \u2264 1.3 \u00b5S/cm \u00b7 TOC \u2264 500 ppb \u00b7 micro \u2264 100 UFC/100mL</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" onclick="abrirModalNuevoAgua()">+ Registrar lectura</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadAguaRegistros()">\u21bb</button>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Punto</th><th>Tipo</th><th>pH</th><th>Cond.</th><th>TOC</th><th>Micro</th><th>Estado</th><th>Operador</th></tr></thead>
+      <tbody id="agua-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- OOS -->
+<div id="tab-oos" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div>
+      <div class="card-title" style="margin:0">\u26a0\ufe0f Out Of Specification (OOS)</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px">Workflow: lote a cuarentena \u2192 investigaci\u00f3n \u2192 causa ra\u00edz \u2192 aprobaci\u00f3n \u2192 cierre.</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <select id="oos-filtro" onchange="loadOOS()" style="padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:12px">
+        <option value="">Todos</option>
+        <option value="abierto" selected>Abiertos</option>
+        <option value="en_investigacion">En investigaci\u00f3n</option>
+        <option value="en_aprobacion">En aprobaci\u00f3n</option>
+        <option value="cerrado">Cerrados</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadOOS()">\u21bb</button>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Codigo</th><th>Origen</th><th>Lote</th><th>Producto</th><th>Parametro</th><th>Valor</th><th>Detectado</th><th>Estado</th><th>Acci\u00f3n</th></tr></thead>
+      <tbody id="oos-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal nuevo resultado micro -->
+<div class="modal-overlay" id="m-micro">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-micro')">&times;</button>
+    <div class="modal-title">Registrar resultado microbiol\u00f3gico</div>
+    <div class="form-group"><label>Producto</label><input id="m-micro-prod" placeholder="Ej: LBHA"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Lote</label><input id="m-micro-lote" placeholder="Ej: 261001"></div>
+      <div class="form-group"><label>Fecha analisis</label><input id="m-micro-fecha" type="date"></div>
+    </div>
+    <div class="form-group"><label>Microorganismo</label>
+      <select id="m-micro-org">
+        <option value="Mes\u00f3filos aerobios totales">Mes\u00f3filos aerobios totales</option>
+        <option value="Mohos y levaduras">Mohos y levaduras</option>
+        <option value="E. coli">E. coli</option>
+        <option value="Staphylococcus aureus">Staphylococcus aureus</option>
+        <option value="Pseudomonas aeruginosa">Pseudomonas aeruginosa</option>
+        <option value="Candida albicans">Candida albicans</option>
+        <option value="Burkholderia cepacia">Burkholderia cepacia</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Valor (UFC/g)</label><input id="m-micro-val" type="number" min="0" step="any"></div>
+      <div class="form-group"><label>O texto (ausencia)</label><input id="m-micro-txt" placeholder="ausencia, &lt;10"></div>
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="m-micro-obs" style="min-height:50px"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('m-micro')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarResultadoMicro()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nuevo agua -->
+<div class="modal-overlay" id="m-agua">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-agua')">&times;</button>
+    <div class="modal-title">Registrar lectura sistema de agua</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Punto muestreo</label><input id="m-agua-punto" placeholder="Loop1, POS-1"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="m-agua-tipo">
+          <option value="purificada" selected>Purificada</option>
+          <option value="potable">Potable</option>
+          <option value="destilada">Destilada</option>
+          <option value="wfi">WFI</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Fecha</label><input id="m-agua-fecha" type="date"></div>
+      <div class="form-group"><label>Hora</label><input id="m-agua-hora" type="time"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>pH</label><input id="m-agua-ph" type="number" step="0.01"></div>
+      <div class="form-group"><label>Cond. \u00b5S/cm</label><input id="m-agua-cond" type="number" step="0.001"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>TOC ppb</label><input id="m-agua-toc" type="number" step="0.1"></div>
+      <div class="form-group"><label>Micro UFC/ml</label><input id="m-agua-micro" type="number" step="0.1"></div>
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="m-agua-obs" style="min-height:50px"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('m-agua')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarLecturaAgua()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- /main -->
 
 <!-- ââ MODAL COMPLETAR TAREA âââââââââââââââââââââââââ -->
@@ -263,7 +417,7 @@ function fmtH(s){return s?s.substring(0,5):'â';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds=['tab-dash','tab-cron','tab-cc','tab-nc','tab-cal'];
+var _tabIds=['tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-oos'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -273,6 +427,220 @@ function goTab(id){
   else if(id==='tab-cc') loadCuarentena();
   else if(id==='tab-nc') loadNC();
   else if(id==='tab-cal') loadCal();
+  else if(id==='tab-micro') loadMicroHeatmap();
+  else if(id==='tab-agua') loadAguaRegistros();
+  else if(id==='tab-oos') loadOOS();
+}
+
+// === MICRO HEATMAP =====================================================
+async function loadMicroHeatmap(){
+  try{
+    var meses = (document.getElementById('micro-meses')||{value:12}).value;
+    var r = await fetch('/api/calidad/micro/heatmap?meses='+meses);
+    var d = await r.json();
+    // KPIs
+    var kpis = d.kpis || {};
+    var kbox = document.getElementById('micro-kpis');
+    var tasaOk = kpis.tasa_ok != null ? kpis.tasa_ok+'%' : '—';
+    kbox.innerHTML = ''+
+      '<div class="kpi-card"><div class="kpi-l">Resultados (ventana)</div><div class="kpi-v">'+(kpis.total_resultados||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="kpi-l" style="color:#fca5a5">Fuera industria</div><div class="kpi-v" style="color:#fca5a5">'+(kpis.total_fuera_industria||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="kpi-l" style="color:#fcd34d">Fuera meta lab</div><div class="kpi-v" style="color:#fcd34d">'+(kpis.total_fuera_meta||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="kpi-l" style="color:#34d399">Tasa OK</div><div class="kpi-v" style="color:#34d399">'+tasaOk+'</div></div>';
+    // Header heatmap
+    var thead = document.getElementById('micro-heatmap-thead');
+    var ths = '<tr><th style="text-align:left;background:#0f172a;position:sticky;left:0;z-index:1">Producto</th>';
+    (d.microorganismos||[]).forEach(function(m){
+      ths += '<th style="text-align:center;font-size:10px;writing-mode:vertical-rl;transform:rotate(180deg);min-width:30px;padding:6px 4px;">'+esc(m)+'</th>';
+    });
+    ths += '</tr>';
+    thead.innerHTML = ths;
+    // Cuerpo matriz
+    var tbody = document.getElementById('micro-heatmap-tbody');
+    if(!(d.matriz||[]).length){
+      tbody.innerHTML = '<tr><td class="empty">Sin resultados en la ventana. Click "+ Registrar resultado" para empezar.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.matriz.map(function(row){
+      var html = '<tr><td style="font-weight:700;background:#0f172a;position:sticky;left:0;padding:6px 10px">'+esc(row.producto)+'</td>';
+      row.cells.forEach(function(c){
+        var bg, color, txt='', title='';
+        if(c.estado==='sin_dato'){ bg='#1e293b'; color='#475569'; txt='—'; title='Sin datos en la ventana'; }
+        else if(c.estado==='ok'){ bg='#064e3b'; color='#34d399'; txt='✓'; title=c.n+' resultado(s) OK · ult: '+(c.ultima_fecha||'')+' valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
+        else if(c.estado==='fuera_meta'){ bg='#854d0e'; color='#fcd34d'; txt='⚠'; title=c.n_fuera_meta+'/'+c.n+' fuera meta · ult valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
+        else if(c.estado==='fuera_industria'){ bg='#7f1d1d'; color='#fca5a5'; txt='✘'; title=c.n_fuera_industria+'/'+c.n+' FUERA INDUSTRIA · ult valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
+        html += '<td style="background:'+bg+';color:'+color+';text-align:center;font-weight:700;font-size:14px;padding:8px;border:1px solid #0f172a;cursor:help" title="'+title.replace(/"/g,'&quot;')+'">'+txt+'</td>';
+      });
+      html += '</tr>';
+      return html;
+    }).join('');
+    // Lista ultimos resultados
+    var rr = await fetch('/api/calidad/micro/resultados');
+    var dd = await rr.json();
+    var rb = document.getElementById('micro-res-tbody');
+    var lst = (dd.resultados||[]).slice(0,30);
+    if(!lst.length){ rb.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados.</td></tr>'; return; }
+    rb.innerHTML = lst.map(function(p){
+      var estColor = {ok:'#34d399',fuera_meta:'#fcd34d',fuera_industria:'#fca5a5',observacion:'#94a3b8'}[p.estado] || '#94a3b8';
+      var oosLink = p.oos_id ? '<a href="#" onclick="event.preventDefault();goTab(\'tab-oos\')" style="color:#fca5a5">OOS</a>' : '';
+      return '<tr>'
+        +'<td>'+fmt(p.fecha_analisis)+'</td>'
+        +'<td>'+esc(p.lote)+'</td>'
+        +'<td>'+esc(p.producto_nombre)+'</td>'
+        +'<td>'+esc(p.microorganismo)+'</td>'
+        +'<td>'+(p.valor!=null?p.valor:esc(p.valor_texto||''))+' '+esc(p.unidad||'')+'</td>'
+        +'<td><span style="color:'+estColor+';font-weight:700">'+p.estado+'</span></td>'
+        +'<td>'+oosLink+'</td>'
+        +'<td>'+esc(p.analista||'')+'</td>'
+      +'</tr>';
+    }).join('');
+  }catch(e){
+    document.getElementById('micro-heatmap-tbody').innerHTML = '<tr><td class="empty">Error: '+esc(e.message)+'</td></tr>';
+  }
+}
+
+function abrirModalNuevoResultadoMicro(){
+  ['m-micro-prod','m-micro-lote','m-micro-val','m-micro-txt','m-micro-obs'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('m-micro-fecha').value = new Date().toISOString().slice(0,10);
+  openModal('m-micro');
+}
+
+async function guardarResultadoMicro(){
+  var body = {
+    producto_nombre: document.getElementById('m-micro-prod').value.trim(),
+    lote: document.getElementById('m-micro-lote').value.trim(),
+    fecha_analisis: document.getElementById('m-micro-fecha').value,
+    microorganismo: document.getElementById('m-micro-org').value,
+    valor: document.getElementById('m-micro-val').value || null,
+    valor_texto: document.getElementById('m-micro-txt').value || null,
+    observaciones: document.getElementById('m-micro-obs').value || null,
+  };
+  if(!body.producto_nombre || !body.lote){ alert('Producto y lote requeridos'); return; }
+  try{
+    var r = await fetch('/api/calidad/micro/resultados', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    var d = await r.json();
+    if(d.ok){
+      var msg = '✅ Guardado. Estado: '+d.estado;
+      if(d.oos_codigo) msg += '\\n\\n⚠ SE CREO '+d.oos_codigo+' AUTOMATICAMENTE — lote a cuarentena.';
+      alert(msg);
+      closeModal('m-micro');
+      loadMicroHeatmap();
+    } else { alert('Error: '+(d.error||'?')); }
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+// === SISTEMA DE AGUA ====================================================
+async function loadAguaRegistros(){
+  try{
+    var r = await fetch('/api/calidad/agua/registros');
+    var d = await r.json();
+    var tb = document.getElementById('agua-tbody');
+    var lst = d.registros || [];
+    if(!lst.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Sin registros. Click "+ Registrar lectura".</td></tr>'; return; }
+    tb.innerHTML = lst.map(function(r){
+      var estColor = {ok:'#34d399',alerta:'#fcd34d',fuera_spec:'#fca5a5'}[r.estado]||'#94a3b8';
+      return '<tr>'
+        +'<td>'+esc(r.fecha)+'</td>'
+        +'<td>'+(r.hora||'—')+'</td>'
+        +'<td><b>'+esc(r.punto_muestreo)+'</b></td>'
+        +'<td>'+esc(r.tipo_agua||'')+'</td>'
+        +'<td>'+(r.ph!=null?r.ph:'—')+'</td>'
+        +'<td>'+(r.conductividad_us_cm!=null?r.conductividad_us_cm:'—')+'</td>'
+        +'<td>'+(r.toc_ppb!=null?r.toc_ppb:'—')+'</td>'
+        +'<td>'+(r.microorganismos_ufc_ml!=null?r.microorganismos_ufc_ml:'—')+'</td>'
+        +'<td><span style="color:'+estColor+';font-weight:700;text-transform:uppercase;font-size:10px">'+r.estado+'</span></td>'
+        +'<td>'+esc(r.operador||'')+'</td>'
+      +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('agua-tbody').innerHTML = '<tr><td class="empty">Error: '+e.message+'</td></tr>'; }
+}
+
+function abrirModalNuevoAgua(){
+  ['m-agua-punto','m-agua-ph','m-agua-cond','m-agua-toc','m-agua-micro','m-agua-obs'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('m-agua-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('m-agua-hora').value = new Date().toTimeString().slice(0,5);
+  openModal('m-agua');
+}
+
+async function guardarLecturaAgua(){
+  var body = {
+    punto_muestreo: document.getElementById('m-agua-punto').value.trim(),
+    tipo_agua: document.getElementById('m-agua-tipo').value,
+    fecha: document.getElementById('m-agua-fecha').value,
+    hora: document.getElementById('m-agua-hora').value,
+    ph: document.getElementById('m-agua-ph').value || null,
+    conductividad_us_cm: document.getElementById('m-agua-cond').value || null,
+    toc_ppb: document.getElementById('m-agua-toc').value || null,
+    microorganismos_ufc_ml: document.getElementById('m-agua-micro').value || null,
+    observaciones: document.getElementById('m-agua-obs').value || null,
+  };
+  if(!body.punto_muestreo){ alert('Punto de muestreo requerido'); return; }
+  try{
+    var r = await fetch('/api/calidad/agua/registros', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      var msg = '✅ Registrado. Estado: '+d.estado;
+      if(d.warnings && d.warnings.length) msg += '\\n\\n⚠ '+d.warnings.join('; ');
+      alert(msg);
+      closeModal('m-agua');
+      loadAguaRegistros();
+    } else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+// === OOS ================================================================
+async function loadOOS(){
+  try{
+    var f = (document.getElementById('oos-filtro')||{value:''}).value;
+    var r = await fetch('/api/calidad/oos'+(f?'?estado='+f:''));
+    var d = await r.json();
+    var tb = document.getElementById('oos-tbody');
+    var lst = d.oos || [];
+    if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Sin OOS.</td></tr>'; return; }
+    tb.innerHTML = lst.map(function(o){
+      var estColor = {abierto:'#fca5a5',en_investigacion:'#fcd34d',en_aprobacion:'#a78bfa',cerrado:'#34d399',rechazado:'#94a3b8'}[o.estado]||'#94a3b8';
+      var btn = '';
+      if(o.estado==='abierto') btn = '<button class="btn btn-primary btn-sm" onclick="oosTransicion('+o.id+',&quot;en_investigacion&quot;)">Investigar</button>';
+      else if(o.estado==='en_investigacion') btn = '<button class="btn btn-primary btn-sm" onclick="oosCerrarConDatos('+o.id+')">Cerrar</button>';
+      return '<tr>'
+        +'<td><b>'+esc(o.codigo)+'</b></td>'
+        +'<td>'+esc(o.origen)+'</td>'
+        +'<td>'+esc(o.lote||'')+'</td>'
+        +'<td>'+esc(o.producto||'')+'</td>'
+        +'<td>'+esc(o.parametro||'')+'</td>'
+        +'<td>'+(o.valor_obtenido!=null?o.valor_obtenido:esc(o.valor_obtenido_texto||''))+'</td>'
+        +'<td>'+esc(o.fecha_deteccion)+'</td>'
+        +'<td><span style="color:'+estColor+';font-weight:700;text-transform:uppercase;font-size:10px">'+o.estado+'</span></td>'
+        +'<td>'+btn+'</td>'
+      +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('oos-tbody').innerHTML='<tr><td class="empty">Error: '+e.message+'</td></tr>'; }
+}
+
+async function oosTransicion(id, nuevo){
+  // Acepta tanto string directo como evento desde onclick HTML-encoded
+  try{
+    var r = await fetch('/api/calidad/oos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado: String(nuevo)})});
+    var d = await r.json();
+    if(d.ok){ loadOOS(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+async function oosCerrarConDatos(id){
+  var causa = prompt('Causa raiz identificada:');
+  if(!causa) return;
+  var disp = prompt('Disposicion (liberado/reprocesado/rechazado/destruido/reanalisis):', 'rechazado');
+  if(!disp) return;
+  try{
+    var r = await fetch('/api/calidad/oos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado:'cerrado', causa_raiz: causa, disposicion: disp})});
+    var d = await r.json();
+    if(d.ok){ alert('OOS cerrado'); loadOOS(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error de red: '+e.message); }
 }
 
 /* ââ DASHBOARD ââââââââââââââââââââââââââââââ */
