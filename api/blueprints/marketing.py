@@ -3690,8 +3690,8 @@ def mkt_workflow_aplicar_agente():
             c.execute("""
                 INSERT INTO marketing_campanas
                   (nombre, canal, tipo, estado, fecha_inicio, fecha_fin,
-                   sku_objetivo, objetivo_unidades, presupuesto, observaciones,
-                   creado_en)
+                   sku_objetivo, objetivo_unidades, presupuesto, notas,
+                   fecha_creacion)
                 VALUES (?, 'Influencer', 'Push', 'Planificada',
                         date('now'), date('now','+30 day'), ?, ?, ?, ?, ?)
             """, (nombre, sku,
