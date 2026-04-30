@@ -6922,6 +6922,221 @@ def admin_backfill_debug_page():
     return Response(html, mimetype="text/html")
 
 
+@bp.route("/admin/audit-inventario", methods=["GET"])
+def admin_audit_inventario():
+    """Auditoria completa del inventario: detecta drift, stocks negativos,
+    producciones legacy sin descontar, movimientos huerfanos.
+    Sebastian (29-abr-2026): "verifica todo".
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+
+    # ── 1. MPs con stock NEGATIVO (imposible — más salidas que entradas) ──
+    mps_negativos = []
+    try:
+        rows = c.execute("""
+            SELECT m.material_id, m.material_nombre,
+                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_calc,
+                   COUNT(*) as n_movs
+            FROM movimientos m
+            GROUP BY m.material_id
+            HAVING stock_calc < 0
+            ORDER BY stock_calc ASC
+            LIMIT 50
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        mps_negativos = [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        mps_negativos = [{'_err': str(e)}]
+
+    # ── 2. MEEs: drift entre maestro_mee.stock_actual y SUM(movimientos_mee) ──
+    mees_drift = []
+    try:
+        rows = c.execute("""
+            SELECT mm.codigo, mm.descripcion,
+                   COALESCE(mm.stock_actual, 0) as stock_persistido,
+                   COALESCE((
+                     SELECT SUM(CASE WHEN LOWER(tipo) IN ('entrada','recepcion') THEN cantidad
+                                     WHEN LOWER(tipo) IN ('salida','consumo') THEN -cantidad
+                                     ELSE 0 END)
+                     FROM movimientos_mee
+                     WHERE mee_codigo=mm.codigo
+                       AND COALESCE(anulado,0)=0
+                   ), 0) as stock_calc_movs
+            FROM maestro_mee mm
+            WHERE COALESCE(mm.estado,'')!='Inactivo'
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        all_mees = [dict(zip(cols, r)) for r in rows]
+        mees_drift = [
+            {**m, 'diferencia': round(m['stock_persistido'] - m['stock_calc_movs'], 0)}
+            for m in all_mees
+            if abs(m['stock_persistido'] - m['stock_calc_movs']) > 1
+        ]
+        mees_drift.sort(key=lambda x: abs(x['diferencia']), reverse=True)
+        mees_drift = mees_drift[:30]
+    except Exception as e:
+        mees_drift = [{'_err': str(e)}]
+
+    # ── 3. MEEs con stock NEGATIVO ──
+    mees_negativos = []
+    try:
+        rows = c.execute("""
+            SELECT codigo, descripcion, stock_actual, stock_minimo
+            FROM maestro_mee
+            WHERE COALESCE(stock_actual,0) < 0
+            ORDER BY stock_actual ASC LIMIT 30
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        mees_negativos = [dict(zip(cols, r)) for r in rows]
+    except Exception:
+        pass
+
+    # ── 4. Producciones LEGACY: estado='completado' SIN inventario_descontado_at ──
+    # Estas se completaron antes del fix de hoy y nunca descontaron stock.
+    legacy_sin_descontar = []
+    try:
+        rows = c.execute("""
+            SELECT id, producto, fecha_programada, lotes,
+                   COALESCE(cantidad_kg, 0) as kg
+            FROM produccion_programada
+            WHERE LOWER(COALESCE(estado,'')) = 'completado'
+              AND COALESCE(inventario_descontado_at, '') = ''
+            ORDER BY fecha_programada DESC LIMIT 50
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        legacy_sin_descontar = [dict(zip(cols, r)) for r in rows]
+    except Exception:
+        pass
+
+    # ── 5. Producciones EN PASADO sin completar (atrasadas) ──
+    atrasadas = []
+    try:
+        rows = c.execute("""
+            SELECT id, producto, fecha_programada,
+                   julianday('now') - julianday(fecha_programada) as dias_atraso
+            FROM produccion_programada
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+              AND fecha_programada < date('now','-1 day')
+            ORDER BY fecha_programada ASC LIMIT 30
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        atrasadas = [dict(zip(cols, r)) for r in rows]
+    except Exception:
+        pass
+
+    # ── 6. Movimientos sin operador ni proveedor (origenes oscuros) ──
+    movs_sin_origen = 0
+    try:
+        movs_sin_origen = c.execute("""
+            SELECT COUNT(*) FROM movimientos
+            WHERE COALESCE(operador,'')=''
+              AND COALESCE(proveedor,'')=''
+              AND COALESCE(observaciones,'')=''
+        """).fetchone()[0] or 0
+    except Exception:
+        pass
+
+    # ── 7. Resumen general ──
+    total_mps = total_mees = total_prods_act = 0
+    try:
+        total_mps = c.execute("SELECT COUNT(DISTINCT material_id) FROM movimientos WHERE COALESCE(material_id,'')!=''").fetchone()[0]
+    except Exception: pass
+    try:
+        total_mees = c.execute("SELECT COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'')!='Inactivo'").fetchone()[0]
+    except Exception: pass
+    try:
+        total_prods_act = c.execute(
+            "SELECT COUNT(*) FROM produccion_programada "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')"
+        ).fetchone()[0]
+    except Exception: pass
+
+    conn.close()
+
+    def _esc(s): return str(s or '').replace('<','&lt;').replace('>','&gt;')
+    def _num(v):
+        try: return f"{float(v or 0):,.0f}"
+        except: return str(v)
+
+    def _seccion(titulo, items, cols, color, hint=''):
+        if not items:
+            return f'<h2 style="color:#15803d">✅ {titulo}</h2><div class="empty">Sin anomalías.</div>'
+        body = f'<h2 style="color:{color}">⚠️ {titulo} ({len(items)})</h2>'
+        if hint: body += f'<div class="hint">{hint}</div>'
+        body += '<table><thead><tr>'
+        for k,_ in cols: body += f'<th>{k}</th>'
+        body += '</tr></thead><tbody>'
+        for it in items:
+            body += '<tr>'
+            for _, key in cols:
+                v = it.get(key, '')
+                cell = _num(v) if isinstance(v,(int,float)) else _esc(v)
+                body += f'<td>{cell}</td>'
+            body += '</tr>'
+        body += '</tbody></table>'
+        return body
+
+    html = ('''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Auditoría inventario</title>
+    <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1300px;margin:24px auto;padding:0 16px;color:#1e293b}
+    h1{font-size:22px;margin-bottom:6px}h2{font-size:15px;margin-top:28px;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
+    table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;margin-top:8px}
+    th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+    th{background:#f8fafc;font-weight:700;color:#475569;text-transform:uppercase;font-size:10px}
+    .empty{color:#94a3b8;font-style:italic;padding:14px;background:#fafaf9;border-radius:6px;margin-top:8px}
+    .hint{font-size:12px;color:#64748b;margin:6px 0;background:#fef3c7;padding:8px 12px;border-radius:6px;border-left:3px solid #f59e0b}
+    .resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px}
+    .kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px}
+    .kpi-v{font-size:22px;font-weight:800;color:#0f172a}
+    .kpi-l{font-size:11px;color:#64748b;text-transform:uppercase;margin-top:2px}
+    a{color:#0891b2}</style></head><body>
+    <a href="/admin" style="font-size:12px">&larr; admin</a>
+    <h1>🔍 Auditoría de Inventario</h1>
+    <p style="color:#64748b;font-size:13px">Detecta drift, stocks negativos, producciones legacy sin descontar, movimientos huérfanos.</p>
+    <div class="resumen">
+      <div class="kpi"><div class="kpi-v">'''+ _num(total_mps) +'''</div><div class="kpi-l">MPs con movimientos</div></div>
+      <div class="kpi"><div class="kpi-v">'''+ _num(total_mees) +'''</div><div class="kpi-l">MEEs activos</div></div>
+      <div class="kpi"><div class="kpi-v">'''+ _num(total_prods_act) +'''</div><div class="kpi-l">Producciones activas</div></div>
+      <div class="kpi"><div class="kpi-v" style="color:'''+ ('#dc2626' if movs_sin_origen>0 else '#15803d') +'''">'''+ _num(movs_sin_origen) +'''</div><div class="kpi-l">Movs sin origen</div></div>
+    </div>'''
+    + _seccion("MPs con stock NEGATIVO (más salidas que entradas)",
+        mps_negativos,
+        [("Código","material_id"),("Nombre","material_nombre"),
+         ("Stock calc (g)","stock_calc"),("# Movs","n_movs")],
+        '#dc2626',
+        "Stock calculado de movimientos es < 0. Indica que se descontó más de lo que entró. Posibles causas: producción duplicada, salida sin entrada previa, fórmula con cantidad mayor a lo recibido. Revisar kardex del MP en /planta.")
+    + _seccion("MEEs con DRIFT (stock_actual vs SUM movimientos_mee)",
+        mees_drift,
+        [("Código","codigo"),("Descripción","descripcion"),
+         ("Stock persistido","stock_persistido"),("Stock movs","stock_calc_movs"),
+         ("Diferencia","diferencia")],
+        '#f59e0b',
+        "El stock guardado en maestro_mee.stock_actual no coincide con la suma de movimientos_mee. Indica que algún endpoint actualizó stock_actual sin registrar movimiento, o vice-versa. Tolerancia ±1.")
+    + _seccion("MEEs con stock NEGATIVO",
+        mees_negativos,
+        [("Código","codigo"),("Descripción","descripcion"),
+         ("Stock actual","stock_actual"),("Stock mínimo","stock_minimo")],
+        '#dc2626')
+    + _seccion("Producciones LEGACY completadas SIN descontar inventario",
+        legacy_sin_descontar,
+        [("ID","id"),("Producto","producto"),("Fecha","fecha_programada"),
+         ("Lotes","lotes"),("kg","kg")],
+        '#a16207',
+        "Estas producciones se marcaron completadas antes del fix del 29-abr-2026 y NUNCA descontaron stock. Si las producciones fueron reales, el inventario actual está inflado. Decide caso por caso: revertir y re-completar con el flujo nuevo, o aceptar que ya pasaron.")
+    + _seccion("Producciones ATRASADAS (fecha pasada, sin completar)",
+        atrasadas,
+        [("ID","id"),("Producto","producto"),("Fecha","fecha_programada"),
+         ("Días atraso","dias_atraso")],
+        '#f59e0b',
+        "Producciones cuya fecha pasó hace >1 día y siguen 'programadas'. O bien se hicieron y no se marcaron completadas, o quedaron olvidadas. Revisar y completar/cancelar.")
+    + '</body></html>')
+
+    return Response(html, mimetype="text/html")
+
+
 @bp.route("/admin/influencers-limpieza", methods=["GET"])
 def admin_influencers_limpieza():
     """Lista filas dudosas en pagos_influencers para limpiarlas.
