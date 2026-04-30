@@ -2301,6 +2301,31 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # garantiza idempotencia (si se llama 2x, no descontar 2x).
         "ALTER TABLE produccion_programada ADD COLUMN inventario_descontado_at TEXT",
     ]),
+    (53, "marketing_influencers_metrics: histórico de followers/engagement (Fase 1 marketing)", [
+        # Sebastian (29-abr-2026): "que sea agencia de marketing tirando todo".
+        # Captura snapshots diarios de métricas desde socialblade + Instagram
+        # Graph API para mostrar tendencias, alertar caídas, y alimentar
+        # decisiones del agente estrategia.
+        """CREATE TABLE IF NOT EXISTS marketing_influencers_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            influencer_id INTEGER NOT NULL,
+            fecha TEXT NOT NULL,
+            seguidores INTEGER,
+            siguiendo INTEGER,
+            posts_total INTEGER,
+            engagement_rate REAL,
+            avg_likes INTEGER,
+            avg_comments INTEGER,
+            rank_global INTEGER,
+            grade TEXT,
+            fuente TEXT NOT NULL,
+            raw_json TEXT,
+            creado_en TEXT DEFAULT (datetime('now')),
+            UNIQUE(influencer_id, fecha, fuente)
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_inf_metrics_inf_fecha
+           ON marketing_influencers_metrics(influencer_id, fecha DESC)""",
+    ]),
 ]
 
 

@@ -3425,6 +3425,222 @@ def mkt_fix_pago_link():
         return jsonify({"ok": True, "action": "inserted"})
 
 
+def _fetch_socialblade_data(usuario_red):
+    """Scrape de socialblade.com/instagram/user/<usuario> para extraer
+    métricas públicas. Sebastian (29-abr-2026): "mira esta pagina quizas
+    sirva para todo los datos que carguen automatico".
+
+    Devuelve dict con: seguidores, siguiendo, posts_total, rank, grade,
+    avg_likes, engagement_rate (si están disponibles). Si la página no
+    existe o falla el scrape, devuelve None silenciosamente.
+
+    NO requiere API key — socialblade publica los datos de instagram públicos
+    sin auth. Respetamos User-Agent y rate limit (1 req cada 5s entre influencers).
+    """
+    if not usuario_red:
+        return None
+    # Limpiar @ del usuario si viene
+    usr = usuario_red.lstrip('@').strip().lower()
+    if not usr:
+        return None
+    url = f"https://socialblade.com/instagram/user/{usr}"
+    try:
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (compatible; HHA-Group-EOS/1.0; +https://hhagroup.co)',
+            'Accept': 'text/html,application/xhtml+xml',
+        })
+        with urllib.request.urlopen(req, timeout=10) as r:
+            html = r.read().decode('utf-8', errors='replace')
+    except Exception:
+        return None
+
+    # Parse minimal — buscar patrones del HTML público de socialblade
+    import re as _re
+    out = {'fuente': 'socialblade', 'usuario_red': usr}
+
+    # Followers: <div id="youtube-stats-header-followers"><p>Subscribers</p><span>...</span></div>
+    # Para Instagram el patrón típico:
+    # "Followers" cerca de un número grande
+    m = _re.search(r'>([\d,]+)<\/span>\s*<\/div>\s*<div[^>]*>\s*<p>Followers', html, _re.IGNORECASE)
+    if m:
+        try: out['seguidores'] = int(m.group(1).replace(',',''))
+        except Exception: pass
+    if 'seguidores' not in out:
+        # Fallback: buscar "X followers" en cualquier lugar
+        m = _re.search(r'([\d,]+)\s*Followers', html)
+        if m:
+            try: out['seguidores'] = int(m.group(1).replace(',',''))
+            except Exception: pass
+
+    # Following
+    m = _re.search(r'([\d,]+)\s*Following', html)
+    if m:
+        try: out['siguiendo'] = int(m.group(1).replace(',',''))
+        except Exception: pass
+
+    # Posts/Uploads
+    m = _re.search(r'([\d,]+)\s*(?:Uploads|Posts|Media)', html)
+    if m:
+        try: out['posts_total'] = int(m.group(1).replace(',',''))
+        except Exception: pass
+
+    # Grade (B+, A-, etc.)
+    m = _re.search(r'Grade[^<]*<[^>]+>([A-F][+-]?)', html, _re.IGNORECASE)
+    if m:
+        out['grade'] = m.group(1)
+
+    # Rank (number)
+    m = _re.search(r'Rank[^<]*<[^>]+>#?\s*([\d,]+)', html, _re.IGNORECASE)
+    if m:
+        try: out['rank_global'] = int(m.group(1).replace(',',''))
+        except Exception: pass
+
+    # Engagement rate
+    m = _re.search(r'Engagement\s*Rate[^<]*<[^>]+>([\d.]+)%?', html, _re.IGNORECASE)
+    if m:
+        try: out['engagement_rate'] = float(m.group(1))
+        except Exception: pass
+
+    # Average Likes
+    m = _re.search(r'(?:Avg|Average)\s*Likes[^<]*<[^>]+>([\d,]+)', html, _re.IGNORECASE)
+    if m:
+        try: out['avg_likes'] = int(m.group(1).replace(',',''))
+        except Exception: pass
+
+    # Si no extrajimos NADA, probablemente la página dio bot-block o cambió
+    if len(out) <= 2:  # solo 'fuente' y 'usuario_red'
+        return None
+
+    return out
+
+
+def _save_metrics_snapshot(conn, influencer_id, datos, fuente):
+    """Inserta o actualiza un snapshot de métricas en marketing_influencers_metrics.
+    UNIQUE(influencer_id, fecha, fuente) garantiza 1 snapshot por día por fuente."""
+    if not datos:
+        return False
+    import json as _json
+    fecha = __import__('datetime').date.today().isoformat()
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO marketing_influencers_metrics
+              (influencer_id, fecha, seguidores, siguiendo, posts_total,
+               engagement_rate, avg_likes, avg_comments, rank_global, grade,
+               fuente, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            influencer_id, fecha,
+            datos.get('seguidores'), datos.get('siguiendo'),
+            datos.get('posts_total'), datos.get('engagement_rate'),
+            datos.get('avg_likes'), datos.get('avg_comments'),
+            datos.get('rank_global'), datos.get('grade'),
+            fuente, _json.dumps(datos)
+        ))
+        # Actualizar también el campo seguidores en marketing_influencers (cache)
+        if datos.get('seguidores'):
+            conn.execute(
+                "UPDATE marketing_influencers SET seguidores=? WHERE id=?",
+                (datos['seguidores'], influencer_id)
+            )
+        if datos.get('engagement_rate'):
+            conn.execute(
+                "UPDATE marketing_influencers SET engagement_rate=? WHERE id=?",
+                (datos['engagement_rate'], influencer_id)
+            )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+
+
+@bp.route("/api/marketing/influencers/<int:iid>/refresh-metrics", methods=["POST"])
+def mkt_refresh_metrics_influencer(iid):
+    """Refresca métricas de un influencer puntual desde socialblade.
+    Body opcional: {fuerza_socialblade: true} para skipear cache de hoy.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    inf = conn.execute(
+        "SELECT id, nombre, usuario_red FROM marketing_influencers WHERE id=?", (iid,)
+    ).fetchone()
+    if not inf:
+        return jsonify({"error": "Influencer no encontrado"}), 404
+    if not inf['usuario_red']:
+        return jsonify({"error": "Influencer sin usuario_red — agregalo en editar"}), 400
+
+    datos = _fetch_socialblade_data(inf['usuario_red'])
+    if not datos:
+        return jsonify({
+            "ok": False,
+            "error": "Socialblade no devolvió datos — la cuenta puede no existir o el scrape falló.",
+            "usuario_red": inf['usuario_red'],
+        }), 200  # 200 con ok:false para que el frontend distinga
+    saved = _save_metrics_snapshot(conn, iid, datos, 'socialblade')
+    return jsonify({
+        "ok": saved,
+        "influencer": inf['nombre'],
+        "usuario_red": inf['usuario_red'],
+        "datos": datos,
+    })
+
+
+@bp.route("/api/marketing/refresh-all-metrics", methods=["POST"])
+def mkt_refresh_all_metrics():
+    """Refresca métricas de TODOS los influencers activos con usuario_red.
+    Solo admin. Lento (1 req cada 5s para respetar rate limit) — corre en background.
+    """
+    u, err, code = _admin_only()
+    if err: return err, code
+    conn = _db()
+    rows = conn.execute(
+        "SELECT id, nombre, usuario_red FROM marketing_influencers "
+        "WHERE COALESCE(usuario_red,'')!='' AND COALESCE(estado,'')!='Inactivo'"
+    ).fetchall()
+    if not rows:
+        return jsonify({"ok": True, "procesados": 0, "mensaje": "Sin influencers con usuario_red"})
+
+    import threading, time as _time
+    def _worker(infs):
+        from index import app as _app
+        with _app.app_context():
+            cn = _db()
+            for r in infs:
+                datos = _fetch_socialblade_data(r['usuario_red'])
+                if datos:
+                    _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
+                _time.sleep(5)  # rate limit ético
+    threading.Thread(target=_worker, args=(list(rows),), daemon=True).start()
+    return jsonify({
+        "ok": True,
+        "procesados_en_background": len(rows),
+        "mensaje": f"Refresh de {len(rows)} influencers iniciado en background. "
+                   f"Tomará ~{len(rows)*5}s. Revisa /api/marketing/influencers/<id>/metrics-history para ver resultados."
+    })
+
+
+@bp.route("/api/marketing/influencers/<int:iid>/metrics-history", methods=["GET"])
+def mkt_metrics_history(iid):
+    """Histórico de métricas de un influencer — últimos N días."""
+    u, err, code = _auth()
+    if err: return err, code
+    dias = int(request.args.get('dias', 90))
+    conn = _db()
+    rows = conn.execute("""
+        SELECT fecha, seguidores, siguiendo, posts_total, engagement_rate,
+               avg_likes, avg_comments, rank_global, grade, fuente
+        FROM marketing_influencers_metrics
+        WHERE influencer_id=? AND fecha >= date('now', ? || ' day')
+        ORDER BY fecha ASC
+    """, (iid, f'-{dias}')).fetchall()
+    return jsonify({
+        "influencer_id": iid,
+        "dias": dias,
+        "snapshots": [dict(r) for r in rows],
+        "count": len(rows),
+    })
+
+
 @bp.route("/api/marketing/agencia/audit", methods=["GET"])
 def mkt_agencia_audit():
     """Agencia tab: influencer scoring, portfolio audit, competition analysis, campaign proposals."""
