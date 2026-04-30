@@ -138,6 +138,7 @@ MODULOS_HTML = (
     "      <a class=\"mod-card\" href=\"/chat\"><span class=\"mod-icon\">&#x1F4AC;</span><span class=\"mod-name\">EOS Chat</span><span class=\"mod-sub\">WhatsApp interno &middot; asignar tareas</span></a>\n"
     "      <a class=\"mod-card\" href=\"/comunicacion\"><span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M9 12l2 2 4-4\"/><circle cx=\"12\" cy=\"12\" r=\"9\"/></svg></span><span class=\"mod-name\">Compromisos (legacy)</span><span class=\"mod-sub\">tareas RACI &middot; actas viejas</span></a>\n"
     "      <a class=\"mod-card\" href=\"/bienestar\"><span class=\"mod-icon\">&#x1F331;</span><span class=\"mod-name\">Bienestar</span><span class=\"mod-sub\">notif salud/permisos &middot; capacitación + autoexamen Claude</span></a>\n"
+    "      <a class=\"mod-card\" href=\"/compliance\"><span class=\"mod-icon\">&#x1F4CB;</span><span class=\"mod-name\">Compliance</span><span class=\"mod-sub\">cronogramas BPM &middot; CAPA &middot; hallazgos INVIMA</span></a>\n"
     "    </div>\n"
     "  </div>\n"
     "\n"

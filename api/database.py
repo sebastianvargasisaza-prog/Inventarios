@@ -2564,6 +2564,111 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_notif_app_dest ON notificaciones_app(destinatario, leido_at, creado_en DESC)",
         "CREATE INDEX IF NOT EXISTS idx_notif_app_tipo ON notificaciones_app(tipo, creado_en DESC)",
     ]),
+    (60, "compliance: cronogramas BPM + CAPA desviaciones + hallazgos abiertos", [
+        # Sebastian (30-abr-2026): basado en correos reales — cronogramas
+        # BPM atrasados (fumigacion 20%, ducha emergencia 25%), DESV-007
+        # cerrada por email, "tuberias aguas + areas rechazo" pendientes
+        # de cierre INVIMA. Modulo digital con alertas.
+        # ── Tabla 1: cronogramas_bpm ────────────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS cronogramas_bpm (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            frecuencia TEXT,
+            ejecuciones_year_objetivo INTEGER DEFAULT 12,
+            responsable TEXT,
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        # Seed con los cronogramas reales encontrados en Drive/correo
+        """INSERT OR IGNORE INTO cronogramas_bpm
+           (codigo, nombre, frecuencia, ejecuciones_year_objetivo, responsable) VALUES
+           ('ASG-PGM-001-C01', 'Fumigaciones Espagiria', 'Mensual', 10, 'aseguramiento'),
+           ('PRD-PRO-004-C01', 'Mantenimiento áreas y equipos', 'Mensual', 12, 'produccion'),
+           ('COC-PRO-011-C01', 'Muestreo microbiologico equipos/areas/personal', 'Mensual', 12, 'controlcalidad'),
+           ('RRH-PRO-007-C01', 'Capacitaciones personal', 'Trimestral', 4, 'recursoshumanos'),
+           ('PRD-PRO-004-C01-DUCHA', 'Ducha emergencia y lavaojos verificación mensual', 'Mensual', 12, 'aseguramiento')""",
+        """CREATE TABLE IF NOT EXISTS cronograma_ejecuciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cronograma_id INTEGER NOT NULL,
+            fecha_planeada TEXT NOT NULL,
+            fecha_real TEXT,
+            ejecutado_por TEXT,
+            evidencia_url TEXT,
+            observaciones TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','ejecutado','vencido','no_aplica')),
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (cronograma_id) REFERENCES cronogramas_bpm(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cron_ej_id ON cronograma_ejecuciones(cronograma_id, fecha_planeada)",
+        "CREATE INDEX IF NOT EXISTS idx_cron_ej_estado ON cronograma_ejecuciones(estado, fecha_planeada)",
+        # ── Tabla 2: capa_desviaciones (DESV-NNN) ──────────────────────────
+        """CREATE TABLE IF NOT EXISTS capa_desviaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            tipo TEXT NOT NULL CHECK(tipo IN ('desviacion','no_conformidad','queja','sugerencia')),
+            titulo TEXT NOT NULL,
+            descripcion TEXT,
+            producto_relacionado TEXT,
+            lote TEXT,
+            severidad TEXT NOT NULL DEFAULT 'media' CHECK(severidad IN ('alta','media','baja')),
+            fecha_apertura TEXT NOT NULL DEFAULT (date('now')),
+            fecha_objetivo TEXT,
+            fecha_cierre TEXT,
+            responsable TEXT,
+            accion_inmediata TEXT,
+            causa_raiz TEXT,
+            accion_correctiva TEXT,
+            accion_preventiva TEXT,
+            evidencia_url TEXT,
+            estado TEXT NOT NULL DEFAULT 'abierta'
+                CHECK(estado IN ('abierta','en_investigacion','en_implementacion','cerrada','cancelada')),
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_capa_estado ON capa_desviaciones(estado, fecha_apertura DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_capa_resp ON capa_desviaciones(responsable, estado)",
+        # ── Tabla 3: hallazgos (auditoría / INVIMA / autoinspección) ──────
+        """CREATE TABLE IF NOT EXISTS hallazgos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            origen TEXT NOT NULL CHECK(origen IN ('INVIMA','BPM_interna','autoinspeccion','auditoria_externa','queja_cliente','otro')),
+            titulo TEXT NOT NULL,
+            descripcion TEXT,
+            area TEXT,
+            severidad TEXT NOT NULL DEFAULT 'media' CHECK(severidad IN ('critico','mayor','menor','observacion')),
+            fecha_deteccion TEXT NOT NULL DEFAULT (date('now')),
+            fecha_limite TEXT,
+            fecha_cierre TEXT,
+            responsable TEXT,
+            accion_propuesta TEXT,
+            evidencia_cierre_url TEXT,
+            capa_relacionada_id INTEGER,
+            estado TEXT NOT NULL DEFAULT 'abierto'
+                CHECK(estado IN ('abierto','en_proceso','cerrado','rechazado')),
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (capa_relacionada_id) REFERENCES capa_desviaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_hall_estado ON hallazgos(estado, fecha_limite)",
+        "CREATE INDEX IF NOT EXISTS idx_hall_origen ON hallazgos(origen, severidad)",
+        # Seed con hallazgos abiertos reales de los correos:
+        """INSERT OR IGNORE INTO hallazgos
+           (codigo, origen, titulo, descripcion, area, severidad,
+            fecha_deteccion, fecha_limite, responsable, estado, creado_por) VALUES
+           ('HLZ-INV-001', 'INVIMA',
+            'Identificación tuberías sistema de aguas',
+            'Hallazgo abierto desde visita INVIMA — necesita levantamiento e identificación de todas las tuberías de aguas en planta.',
+            'Planta', 'mayor', '2026-04-15', '2026-05-01',
+            'luza.torresg', 'abierto', 'sebastian'),
+           ('HLZ-AI-001',  'autoinspeccion',
+            'Definir área Rechazos e ID Fabricación 3',
+            'Solicitud Laura (calidad) 29 abr — definir espacio en área gris/negra para almacenamiento de rechazos según COC-PRO-002.',
+            'Calidad', 'menor', '2026-04-29', '2026-05-15',
+            'aseguramiento.espagiria', 'en_proceso', 'aseguramiento.espagiria')""",
+    ]),
 ]
 
 

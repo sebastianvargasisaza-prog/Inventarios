@@ -180,6 +180,7 @@ from blueprints.chat import bp as chat_bp
 from blueprints.bienestar import bp as bienestar_bp
 from blueprints.mfa import bp as mfa_bp
 from blueprints.notif import bp as notif_bp
+from blueprints.compliance import bp as compliance_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -204,6 +205,7 @@ app.register_blueprint(chat_bp)
 app.register_blueprint(bienestar_bp)
 app.register_blueprint(mfa_bp)
 app.register_blueprint(notif_bp)
+app.register_blueprint(compliance_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
