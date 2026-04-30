@@ -1289,6 +1289,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#127919; Centro de Mando <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">live</span>
     </button>
+    <button id="prog-tab-presentaciones" onclick="switchProgTab('presentaciones')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#128230; Presentaciones
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5429,6 +5433,115 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-plano -->
 
+  <!-- ── ptab-presentaciones: catálogo de presentaciones por SKU (Fase 0) ── -->
+  <div id="ptab-presentaciones" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Presentaciones por Producto</h2>
+        <p style="color:#666;font-size:13px;margin:0">Sueros 30/15/10 mL · contornos 15/10 mL · maxlash 4.5 mL · blush 6 g · etc. — necesario para planear "produzcamos para 2 meses"</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="abrirNuevaPresentacion()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">+ Nueva presentación</button>
+        <button onclick="abrirAplicarPlantilla()" style="background:#1a4a7a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">&#127979; Aplicar plantilla por categoría</button>
+        <button onclick="cargarPresentaciones()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">&#x21bb; Actualizar</button>
+      </div>
+    </div>
+
+    <div id="pres-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px"></div>
+
+    <div id="pres-cobertura-banner" style="display:none;padding:10px 14px;border-radius:8px;background:#fef3c7;border:1px solid #fbbf24;color:#92400e;font-size:13px;margin-bottom:14px"></div>
+
+    <div id="pres-lista" style="display:grid;grid-template-columns:1fr;gap:10px"></div>
+
+    <!-- Modal Nueva Presentación -->
+    <div id="modal-pres-nueva" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:520px;max-width:92vw;max-height:88vh;overflow:auto">
+        <h3 style="margin:0 0 12px;color:#1a4a7a">+ Nueva presentación</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">Producto *</label>
+            <select id="pres-producto" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Categoría</label>
+            <select id="pres-categoria" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+              <option value="">— elegir —</option>
+              <option value="limpiador">Limpiador</option>
+              <option value="hidratante">Hidratante</option>
+              <option value="suero">Suero</option>
+              <option value="contorno_ojos">Contorno de ojos</option>
+              <option value="maxlash">Maxlash</option>
+              <option value="blush_balm">Blush balm</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Código presentación *</label>
+            <input id="pres-codigo" placeholder="ej. sue_30ml" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">Etiqueta visible *</label>
+            <input id="pres-etiqueta" placeholder="ej. Suero 30 mL" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Volumen (mL)</label>
+            <input id="pres-volumen" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Peso (g) — para sólidos</label>
+            <input id="pres-peso" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Código envase MEE</label>
+            <input id="pres-envase" placeholder="ej. ENV-AMBAR-30ML" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">SKU Shopify</label>
+            <input id="pres-sku" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">Notas</label>
+            <input id="pres-notas" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button onclick="cerrarPresModal()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="guardarPresentacion()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Aplicar Plantilla -->
+    <div id="modal-pres-plantilla" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
+        <h3 style="margin:0 0 12px;color:#1a4a7a">&#127979; Aplicar plantilla por categoría</h3>
+        <p style="color:#64748b;font-size:12px;margin:0 0 12px">Crea automáticamente las presentaciones default de la categoría para un producto. Ej: <b>suero</b> → 3 presentaciones (30/15/10 mL).</p>
+        <div style="display:grid;gap:10px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Producto *</label>
+            <select id="plt-producto" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Categoría *</label>
+            <select id="plt-categoria" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+              <option value="">— elegir —</option>
+              <option value="limpiador">Limpiador (1 presentación: 150 mL)</option>
+              <option value="hidratante">Hidratante (1: 50 mL airless)</option>
+              <option value="suero">Suero (3: 30/15/10 mL)</option>
+              <option value="contorno_ojos">Contorno ojos (2: 15 mL multipéptidos, 10 mL cafeína)</option>
+              <option value="maxlash">Maxlash (1: 4.5 mL)</option>
+              <option value="blush_balm">Blush balm (1: 6 g)</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="cerrarPlantillaModal()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="aplicarPlantilla()" style="background:#1a4a7a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Aplicar</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ptab-presentaciones -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6567,22 +6680,26 @@ async function ckMarcar(itemId, estado){
       var el_ck  = document.getElementById('ptab-checklist');
       var el_tk  = document.getElementById('ptab-tareas');
       var el_pln = document.getElementById('ptab-plano');
+      var el_pr  = document.getElementById('ptab-presentaciones');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
       if(el_ck)  el_ck.style.display  = tab==='checklist' ? 'block' : 'none';
       if(el_tk)  el_tk.style.display  = tab==='tareas'    ? 'block' : 'none';
       if(el_pln) el_pln.style.display = tab==='plano'     ? 'block' : 'none';
+      if(el_pr)  el_pr.style.display  = tab==='presentaciones' ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
       var btk  = document.getElementById('prog-tab-tareas');
       var bpln = document.getElementById('prog-tab-plano');
+      var bpr  = document.getElementById('prog-tab-presentaciones');
       if(bc)  { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
       if(bp)  { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
       if(bck) { bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
       if(btk) { btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
       if(bpln){ bpln.style.background= tab==='plano'  ? '#1a4a7a' : '#e2e8f0'; bpln.style.color= tab==='plano'  ? '#fff' : '#1a4a7a'; }
+      if(bpr) { bpr.style.background = tab==='presentaciones' ? '#0f766e' : '#e2e8f0'; bpr.style.color = tab==='presentaciones' ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -6606,6 +6723,10 @@ async function ckMarcar(itemId, estado){
         cmStartAutoRefresh();
       } else {
         cmStopAutoRefresh();
+      }
+      if(tab==='presentaciones'){
+        if(el_pr) el_pr.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarPresentaciones==='function') cargarPresentaciones();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -7249,6 +7370,169 @@ async function ckMarcar(itemId, estado){
       cargarTareasOperativas();
     } catch(e){ alert('Error: '+e.message); }
   }
+
+  // ── Fase 0: Presentaciones por Producto ──────────────────────────────
+  // Sebastian + Alejandro (30-abr-2026): suero 30/15/10mL, contornos 15/10mL,
+  // maxlash 4.5mL, blush 6g. Sin esto, planear "produzcamos para 2 meses"
+  // es ambiguo. UI lista + crea + aplica plantillas por categoría.
+  var _presProductos = [];
+
+  async function cargarPresentaciones(){
+    var lista = document.getElementById('pres-lista');
+    var kpis  = document.getElementById('pres-kpis');
+    var banner= document.getElementById('pres-cobertura-banner');
+    if(!lista) return;
+    lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r1 = await fetch('/api/planta/presentaciones');
+      var d1 = await r1.json();
+      var r2 = await fetch('/api/planta/presentaciones/productos-disponibles');
+      var d2 = await r2.json();
+      _presProductos = d2.productos || [];
+
+      // KPIs
+      var totalPres = (d1.presentaciones||[]).length;
+      var totalProd = _presProductos.length;
+      var prodConPres = _presProductos.filter(function(p){return (p.n_presentaciones||0)>0}).length;
+      var sinPres = totalProd - prodConPres;
+      var pct = totalProd ? Math.round(prodConPres/totalProd*100) : 0;
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Productos en BD</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+totalProd+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Con presentación</div><div style="font-size:24px;font-weight:800;color:#15803d">'+prodConPres+' <span style="font-size:13px;color:#64748b">('+pct+'%)</span></div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Sin presentación</div><div style="font-size:24px;font-weight:800;color:'+(sinPres?'#dc2626':'#15803d')+'">'+sinPres+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Total presentaciones</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+totalPres+'</div></div>';
+
+      if(sinPres > 0){
+        banner.style.display = 'block';
+        banner.innerHTML = '⚠ Hay <b>'+sinPres+' productos sin presentación</b> definida. Sin esto el sistema no puede sugerir tamaño de lote correcto. Usa "Aplicar plantilla" o "+ Nueva presentación" para completarlos.';
+      } else {
+        banner.style.display = 'none';
+      }
+
+      // Lista agrupada por producto
+      if(!totalProd){
+        lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">No hay productos en formula_headers</div>';
+        return;
+      }
+      var byProd = d1.por_producto || {};
+      var html = '';
+      _presProductos.forEach(function(prod){
+        var pres = byProd[prod.producto_nombre] || [];
+        var color = pres.length ? '#15803d' : '#dc2626';
+        var status = pres.length ? '✓ '+pres.length+' presentación'+(pres.length>1?'es':'') : '⚠ sin presentación';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+color+';border-radius:10px;padding:14px 16px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
+          +'<div><b style="color:#0f172a">'+_escHTML(prod.producto_nombre)+'</b> <span style="color:#64748b;font-size:12px;margin-left:6px">lote '+(prod.lote_size_kg||0)+' kg</span></div>'
+          +'<div style="font-size:12px;color:'+color+';font-weight:700">'+status+'</div>'
+          +'</div>';
+        if(pres.length){
+          html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">';
+          pres.forEach(function(p){
+            var vol = p.volumen_ml ? p.volumen_ml+' mL' : (p.peso_g ? p.peso_g+' g' : '');
+            html += '<div style="background:#f0fdf4;border:1px solid #86efac;color:#166534;padding:6px 10px;border-radius:6px;font-size:12px;display:flex;align-items:center;gap:6px">'
+              +'<b>'+_escHTML(p.etiqueta)+'</b>'
+              +(vol?'<span style="color:#64748b">·</span><span>'+vol+'</span>':'')
+              +(p.envase_codigo?'<span style="color:#64748b">·</span><span style="font-family:monospace;font-size:11px">'+_escHTML(p.envase_codigo)+'</span>':'')
+              +' <button onclick="eliminarPresentacion('+p.id+')" title="Eliminar" style="background:transparent;border:none;color:#dc2626;cursor:pointer;font-weight:700;padding:0 2px">×</button>'
+              +'</div>';
+          });
+          html += '</div>';
+        } else {
+          html += '<div style="margin-top:8px;display:flex;gap:6px"><button onclick="abrirAplicarPlantilla(\\''+_escAttr(prod.producto_nombre)+'\\')" style="background:#1a4a7a;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">🏭 Plantilla</button>'
+            +'<button onclick="abrirNuevaPresentacion(\\''+_escAttr(prod.producto_nombre)+'\\')" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Manual</button></div>';
+        }
+        html += '</div>';
+      });
+      lista.innerHTML = html;
+    } catch(e){
+      lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function _escAttr(s){ return (s==null?'':String(s)).replace(/'/g, "&#39;").replace(/"/g, '&quot;'); }
+
+  function _llenarSelectProductos(selId, valorPreset){
+    var sel = document.getElementById(selId);
+    if(!sel) return;
+    sel.innerHTML = '<option value="">— elegir producto —</option>'
+      + _presProductos.map(function(p){
+        var sel = (p.producto_nombre===valorPreset) ? ' selected' : '';
+        return '<option value="'+_escAttr(p.producto_nombre)+'"'+sel+'>'+_escHTML(p.producto_nombre)+'</option>';
+      }).join('');
+  }
+
+  function abrirNuevaPresentacion(productoPreset){
+    _llenarSelectProductos('pres-producto', productoPreset||'');
+    ['pres-categoria','pres-codigo','pres-etiqueta','pres-volumen','pres-peso','pres-envase','pres-sku','pres-notas'].forEach(function(id){
+      var el = document.getElementById(id); if(el) el.value = '';
+    });
+    var m = document.getElementById('modal-pres-nueva');
+    m.style.display = 'flex';
+  }
+  function cerrarPresModal(){ document.getElementById('modal-pres-nueva').style.display='none'; }
+
+  async function guardarPresentacion(){
+    var body = {
+      producto_nombre: (document.getElementById('pres-producto').value||'').trim(),
+      categoria: (document.getElementById('pres-categoria').value||'').trim(),
+      presentacion_codigo: (document.getElementById('pres-codigo').value||'').trim(),
+      etiqueta: (document.getElementById('pres-etiqueta').value||'').trim(),
+      volumen_ml: parseFloat(document.getElementById('pres-volumen').value)||null,
+      peso_g: parseFloat(document.getElementById('pres-peso').value)||null,
+      envase_codigo: (document.getElementById('pres-envase').value||'').trim(),
+      sku_shopify: (document.getElementById('pres-sku').value||'').trim(),
+      notas: (document.getElementById('pres-notas').value||'').trim(),
+    };
+    if(!body.producto_nombre){ alert('Producto requerido'); return; }
+    if(!body.presentacion_codigo){ alert('Código de presentación requerido'); return; }
+    if(!body.etiqueta){ alert('Etiqueta requerida'); return; }
+    try {
+      var r = await fetch('/api/planta/presentaciones', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      var d = await r.json().catch(function(){return {};});
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      cerrarPresModal();
+      _toast('Presentación creada', 1);
+      cargarPresentaciones();
+    } catch(e){ alert('Error de red: '+e.message); }
+  }
+
+  function abrirAplicarPlantilla(productoPreset){
+    _llenarSelectProductos('plt-producto', productoPreset||'');
+    document.getElementById('plt-categoria').value = '';
+    document.getElementById('modal-pres-plantilla').style.display = 'flex';
+  }
+  function cerrarPlantillaModal(){ document.getElementById('modal-pres-plantilla').style.display='none'; }
+
+  async function aplicarPlantilla(){
+    var prod = (document.getElementById('plt-producto').value||'').trim();
+    var cat  = (document.getElementById('plt-categoria').value||'').trim();
+    if(!prod || !cat){ alert('Producto y categoría requeridos'); return; }
+    try {
+      var r = await fetch('/api/planta/presentaciones/bulk-categoria', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prod, categoria: cat})
+      });
+      var d = await r.json().catch(function(){return {};});
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      cerrarPlantillaModal();
+      _toast('Plantilla aplicada · '+(d.total||0)+' presentaciones creadas', 1);
+      cargarPresentaciones();
+    } catch(e){ alert('Error de red: '+e.message); }
+  }
+
+  async function eliminarPresentacion(pid){
+    if(!confirm('¿Eliminar (desactivar) esta presentación?')) return;
+    try {
+      var r = await fetch('/api/planta/presentaciones/'+pid, {method:'DELETE'});
+      var d = await r.json().catch(function(){return {};});
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      cargarPresentaciones();
+    } catch(e){ alert('Error de red: '+e.message); }
+  }
+
   // Safe modal backdrop close — placed after all functions are defined
   (function(){
     var _m = document.getElementById('modal-programar');

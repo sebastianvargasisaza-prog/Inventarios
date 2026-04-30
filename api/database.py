@@ -2908,6 +2908,45 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_oos_lote ON calidad_oos(lote)",
         "CREATE INDEX IF NOT EXISTS idx_oos_producto ON calidad_oos(producto)",
     ]),
+    (62, "planta inteligente fase 0: presentaciones por SKU (suero 30/15/10mL, etc)", [
+        # Sebastian + Alejandro (30-abr-2026): "Sueros tienen varias presentaciones,
+        # vienen de 30ml, 10ml y 15mL... contornos de ojos: 15ml multipeptidos y
+        # retinal, cafeina 10mL... Maxlash 4.5mL... Blush balm 6g". Sin esto la
+        # planificacion "produzcamos suero para 2 meses" es ambigua.
+        #
+        # Tabla nueva, NO toca formula_headers. Una formula puede tener N
+        # presentaciones; cada una indica volumen, envase MEE asociado, y
+        # factor (gramos por unidad).
+        """CREATE TABLE IF NOT EXISTS producto_presentaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL,
+            categoria TEXT,
+            presentacion_codigo TEXT NOT NULL,
+            etiqueta TEXT NOT NULL,
+            volumen_ml REAL,
+            peso_g REAL,
+            envase_codigo TEXT,
+            factor_g_por_unidad REAL,
+            sku_shopify TEXT,
+            es_default INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT,
+            UNIQUE(producto_nombre, presentacion_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pp_producto ON producto_presentaciones(producto_nombre, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_sku ON producto_presentaciones(sku_shopify)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_envase ON producto_presentaciones(envase_codigo)",
+        # Seed de plantillas por categoria (Alejandro 30-abr-2026).
+        # producto_nombre vacio inicialmente — son plantillas que se
+        # asignan a productos especificos via UI. Permitimos producto_nombre=''
+        # con presentacion_codigo unico para plantilla generica.
+        # Nota: el seed real por producto se hace despues via endpoint cuando
+        # Alejandro asigne presentaciones a cada formula.
+        # Por ahora dejamos solo la estructura — seed de plantillas no aplica
+        # porque UNIQUE(producto, presentacion) requiere producto.
+    ]),
 ]
 
 

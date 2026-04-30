@@ -6923,3 +6923,235 @@ def tareas_operativas_crear():
     except Exception:
         pass
     return jsonify({'ok': True, 'tarea_id': tarea_id})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PLANTA INTELIGENTE — FASE 0: Presentaciones por SKU
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian + Alejandro (30-abr-2026): los productos tienen multiples
+# presentaciones (suero 30/15/10mL, contornos 15/10mL, maxlash 4.5mL,
+# blush balm 6g). Sin esto, "produzcamos suero para 2 meses" es ambiguo.
+# Esta tabla se llena via UI o bulk import. NO toca formula_headers.
+
+# Catalogo de categorias estandar con sus presentaciones default segun el
+# brief de Alejandro (30-abr-2026). Sirve como sugerencia al crear.
+PRESENTACIONES_DEFAULT_POR_CATEGORIA = {
+    'limpiador': [
+        {'codigo': 'lmp_150ml', 'etiqueta': 'Limpiador 150 mL', 'volumen_ml': 150,
+         'envase_codigo': '', 'notas': 'Plástico tapa rosca blanco'}
+    ],
+    'hidratante': [
+        {'codigo': 'hid_50ml', 'etiqueta': 'Hidratante 50 mL airless', 'volumen_ml': 50,
+         'envase_codigo': '', 'notas': 'Plástico airless'}
+    ],
+    'suero': [
+        {'codigo': 'sue_30ml', 'etiqueta': 'Suero 30 mL', 'volumen_ml': 30,
+         'envase_codigo': '', 'notas': ''},
+        {'codigo': 'sue_15ml', 'etiqueta': 'Suero 15 mL', 'volumen_ml': 15,
+         'envase_codigo': '', 'notas': ''},
+        {'codigo': 'sue_10ml', 'etiqueta': 'Suero 10 mL', 'volumen_ml': 10,
+         'envase_codigo': '', 'notas': ''},
+    ],
+    'contorno_ojos': [
+        {'codigo': 'co_15ml', 'etiqueta': 'Contorno 15 mL (multipéptidos/retinal)', 'volumen_ml': 15,
+         'envase_codigo': '', 'notas': 'Multipéptidos y retinal'},
+        {'codigo': 'co_10ml', 'etiqueta': 'Contorno 10 mL (cafeína)', 'volumen_ml': 10,
+         'envase_codigo': '', 'notas': 'Cafeína'},
+    ],
+    'maxlash': [
+        {'codigo': 'mx_45ml', 'etiqueta': 'Maxlash 4.5 mL', 'volumen_ml': 4.5,
+         'envase_codigo': '', 'notas': 'Suero cejas y pestañas'}
+    ],
+    'blush_balm': [
+        {'codigo': 'bb_6g', 'etiqueta': 'Blush Balm 6 g', 'volumen_ml': None,
+         'envase_codigo': '', 'notas': 'Peso 6g'}
+    ],
+}
+
+
+@bp.route('/api/planta/presentaciones', methods=['GET'])
+def planta_presentaciones_list():
+    """Lista presentaciones registradas. Querystring opcional:
+       ?producto=<nombre> filtra por producto exacto
+       ?categoria=<cat> filtra por categoria
+       ?activos=1 (default) solo activos
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    where = []
+    params = []
+    if request.args.get('producto'):
+        where.append('producto_nombre = ?')
+        params.append(request.args.get('producto').strip())
+    if request.args.get('categoria'):
+        where.append('categoria = ?')
+        params.append(request.args.get('categoria').strip())
+    if request.args.get('activos', '1') == '1':
+        where.append('activo = 1')
+    sql = "SELECT * FROM producto_presentaciones"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY producto_nombre, COALESCE(volumen_ml, 999) DESC, etiqueta"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # Resumen por producto
+    productos = {}
+    for it in items:
+        pn = it['producto_nombre'] or '(sin asignar)'
+        productos.setdefault(pn, []).append(it)
+    return jsonify({
+        'presentaciones': items,
+        'total': len(items),
+        'por_producto': productos,
+        'plantillas_default': PRESENTACIONES_DEFAULT_POR_CATEGORIA,
+    })
+
+
+@bp.route('/api/planta/presentaciones', methods=['POST'])
+def planta_presentaciones_crear():
+    """Crear presentacion individual.
+    Body: {producto_nombre*, categoria, presentacion_codigo*, etiqueta*,
+           volumen_ml, peso_g, envase_codigo, factor_g_por_unidad,
+           sku_shopify, es_default, notas}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    pcode = (d.get('presentacion_codigo') or '').strip()
+    etiqueta = (d.get('etiqueta') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    if not pcode:
+        return jsonify({'error': 'presentacion_codigo requerido'}), 400
+    if not etiqueta:
+        return jsonify({'error': 'etiqueta requerida'}), 400
+    conn = get_db(); c = conn.cursor()
+    try:
+        cur = c.execute("""
+            INSERT INTO producto_presentaciones
+              (producto_nombre, categoria, presentacion_codigo, etiqueta,
+               volumen_ml, peso_g, envase_codigo, factor_g_por_unidad,
+               sku_shopify, es_default, activo, notas, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))
+        """, (
+            producto,
+            (d.get('categoria') or '').strip() or None,
+            pcode, etiqueta,
+            d.get('volumen_ml'),
+            d.get('peso_g'),
+            (d.get('envase_codigo') or '').strip() or None,
+            d.get('factor_g_por_unidad'),
+            (d.get('sku_shopify') or '').strip() or None,
+            1 if d.get('es_default') else 0,
+            (d.get('notas') or '').strip() or None,
+        ))
+        conn.commit()
+        return jsonify({'ok': True, 'id': cur.lastrowid})
+    except sqlite3.IntegrityError as e:
+        return jsonify({'error': f'Presentación ya existe para este producto: {e}'}), 409
+
+
+@bp.route('/api/planta/presentaciones/<int:pid>', methods=['PUT', 'DELETE'])
+def planta_presentaciones_detail(pid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'DELETE':
+        # Soft delete (activo=0). No borramos para preservar referencias historicas.
+        c.execute("UPDATE producto_presentaciones SET activo=0, actualizado_en=datetime('now') WHERE id=?", (pid,))
+        conn.commit()
+        return jsonify({'ok': True})
+    # PUT
+    d = request.json or {}
+    campos = []
+    params = []
+    for col in ('etiqueta', 'categoria', 'volumen_ml', 'peso_g', 'envase_codigo',
+                'factor_g_por_unidad', 'sku_shopify', 'es_default', 'notas'):
+        if col in d:
+            campos.append(f'{col} = ?')
+            v = d[col]
+            if col in ('volumen_ml', 'peso_g', 'factor_g_por_unidad'):
+                v = float(v) if v not in (None, '') else None
+            elif col == 'es_default':
+                v = 1 if v else 0
+            elif isinstance(v, str):
+                v = v.strip() or None
+            params.append(v)
+    if not campos:
+        return jsonify({'error': 'Sin cambios'}), 400
+    campos.append("actualizado_en = datetime('now')")
+    params.append(pid)
+    c.execute(f"UPDATE producto_presentaciones SET {', '.join(campos)} WHERE id=?", params)
+    conn.commit()
+    return jsonify({'ok': True, 'updated': c.rowcount})
+
+
+@bp.route('/api/planta/presentaciones/bulk-categoria', methods=['POST'])
+def planta_presentaciones_bulk_categoria():
+    """Aplica las plantillas default de una categoria a un producto especifico.
+    Util para arrancar rapido — Alejandro elige producto + categoria y se
+    crean las N presentaciones default.
+    Body: {producto_nombre*, categoria*}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    categoria = (d.get('categoria') or '').strip().lower()
+    if not producto or not categoria:
+        return jsonify({'error': 'producto_nombre y categoria requeridos'}), 400
+    plantillas = PRESENTACIONES_DEFAULT_POR_CATEGORIA.get(categoria)
+    if not plantillas:
+        return jsonify({
+            'error': f'Categoria "{categoria}" no reconocida',
+            'categorias_validas': list(PRESENTACIONES_DEFAULT_POR_CATEGORIA.keys())
+        }), 400
+    conn = get_db(); c = conn.cursor()
+    creadas = []
+    for p in plantillas:
+        try:
+            cur = c.execute("""
+                INSERT INTO producto_presentaciones
+                  (producto_nombre, categoria, presentacion_codigo, etiqueta,
+                   volumen_ml, envase_codigo, es_default, activo, notas, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))
+            """, (
+                producto, categoria, p['codigo'], p['etiqueta'],
+                p['volumen_ml'], p.get('envase_codigo') or None,
+                1 if len(plantillas) == 1 else 0,
+                p.get('notas') or None,
+            ))
+            creadas.append({'id': cur.lastrowid, 'codigo': p['codigo']})
+        except sqlite3.IntegrityError:
+            # Ya existia — saltar silenciosamente
+            pass
+    conn.commit()
+    return jsonify({'ok': True, 'creadas': creadas, 'total': len(creadas)})
+
+
+@bp.route('/api/planta/presentaciones/productos-disponibles', methods=['GET'])
+def planta_presentaciones_productos_disponibles():
+    """Lista productos de formula_headers + cuántas presentaciones tienen ya."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT fh.producto_nombre,
+               fh.lote_size_kg,
+               (SELECT COUNT(*) FROM producto_presentaciones pp
+                WHERE pp.producto_nombre = fh.producto_nombre AND pp.activo=1) AS n_presentaciones
+        FROM formula_headers fh
+        ORDER BY fh.producto_nombre
+    """).fetchall()
+    items = []
+    for r in rows:
+        items.append({
+            'producto_nombre': r[0],
+            'lote_size_kg': r[1],
+            'n_presentaciones': r[2] or 0,
+        })
+    return jsonify({'productos': items, 'total': len(items)})
