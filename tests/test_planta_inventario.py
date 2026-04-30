@@ -495,6 +495,86 @@ def test_completar_y_revertir_no_deja_drift(app, db_clean):
     )
 
 
+def test_limpiar_drift_mee_alinea_stock_y_movs(app, db_clean):
+    """El endpoint limpiar-drift-mee inserta movimientos seed que alinean
+    SUM(movimientos_mee) con maestro_mee.stock_actual."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+
+    # Setup: 2 MEEs con drift (stock_actual=100, sin movimientos)
+    con = sqlite3.connect(db_path)
+    con.execute("DELETE FROM maestro_mee WHERE codigo IN ('TEST_DRIFT_A','TEST_DRIFT_B')")
+    con.execute("DELETE FROM movimientos_mee WHERE mee_codigo IN ('TEST_DRIFT_A','TEST_DRIFT_B')")
+    con.execute(
+        "INSERT INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
+        "VALUES ('TEST_DRIFT_A', 'Test drift A', 500, 'Activo')"
+    )
+    con.execute(
+        "INSERT INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
+        "VALUES ('TEST_DRIFT_B', 'Test drift B', 800, 'Activo')"
+    )
+    con.commit()
+    con.close()
+
+    # Verificar drift inicial
+    con = sqlite3.connect(db_path)
+    suma_a = con.execute(
+        "SELECT COALESCE(SUM(CASE WHEN LOWER(tipo)='entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos_mee WHERE mee_codigo='TEST_DRIFT_A'"
+    ).fetchone()[0]
+    assert suma_a == 0, "Setup: debería haber 0 movimientos antes"
+    con.close()
+
+    # Llamar endpoint de limpieza
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.post("/admin/audit-inventario/limpiar-drift-mee",
+                    json={}, headers={"Origin": "http://localhost"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    d = r.get_json()
+    assert d["ok"] is True
+    assert d["alineados"] >= 2  # nuestros 2 + posibles otros pre-existentes
+
+    # Verificar que ahora SUM = stock_actual
+    con = sqlite3.connect(db_path)
+    suma_a = con.execute(
+        "SELECT COALESCE(SUM(CASE WHEN LOWER(tipo)='entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos_mee WHERE mee_codigo='TEST_DRIFT_A'"
+    ).fetchone()[0]
+    suma_b = con.execute(
+        "SELECT COALESCE(SUM(CASE WHEN LOWER(tipo)='entrada' THEN cantidad ELSE -cantidad END),0) "
+        "FROM movimientos_mee WHERE mee_codigo='TEST_DRIFT_B'"
+    ).fetchone()[0]
+    con.close()
+    assert suma_a == 500
+    assert suma_b == 800
+
+    # Idempotente: llamar de nuevo no debe insertar más (drift ya 0)
+    r2 = client.post("/admin/audit-inventario/limpiar-drift-mee",
+                     json={}, headers={"Origin": "http://localhost"})
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    # No debe haber alineado nuestros 2 (ya estaban OK)
+    con = sqlite3.connect(db_path)
+    cnt_a = con.execute(
+        "SELECT COUNT(*) FROM movimientos_mee WHERE mee_codigo='TEST_DRIFT_A'"
+    ).fetchone()[0]
+    con.close()
+    assert cnt_a == 1  # solo el seed inicial, no se agregó otro
+
+
+def test_limpiar_drift_solo_admin(app, db_clean):
+    """Endpoint limpiar-drift-mee requiere admin."""
+    from .conftest import TEST_PASSWORD
+    user = app.test_client()
+    user.post("/login",
+              data={"username": "valentina", "password": TEST_PASSWORD},
+              headers={"Origin": "http://localhost"},
+              follow_redirects=False)
+    r = user.post("/admin/audit-inventario/limpiar-drift-mee",
+                  json={}, headers={"Origin": "http://localhost"})
+    assert r.status_code == 403
+
+
 def test_audit_endpoint_solo_admin(app, db_clean):
     """/admin/audit-inventario es solo admin."""
     from .conftest import TEST_PASSWORD

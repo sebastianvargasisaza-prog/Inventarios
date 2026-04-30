@@ -6922,6 +6922,65 @@ def admin_backfill_debug_page():
     return Response(html, mimetype="text/html")
 
 
+@bp.route("/admin/audit-inventario/limpiar-drift-mee", methods=["POST"])
+def admin_audit_limpiar_drift_mee():
+    """Backfill: para cada MEE donde stock_actual != SUM(movimientos_mee),
+    insertar un movimiento seed por la diferencia para alinear las dos
+    fuentes de verdad. NO cambia stock_actual — solo registra el log faltante.
+
+    Sebastian (29-abr-2026): muchos MEEs vienen de import inicial sin log.
+    Este endpoint limpia ese drift de una pasada.
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
+
+    # Calcular drift por MEE — misma query que el endpoint GET
+    rows = c.execute("""
+        SELECT mm.codigo,
+               COALESCE(mm.stock_actual, 0) as stock_persistido,
+               COALESCE((
+                 SELECT SUM(CASE WHEN LOWER(tipo) IN ('entrada','recepcion') THEN cantidad
+                                 WHEN LOWER(tipo) IN ('salida','consumo') THEN -cantidad
+                                 ELSE 0 END)
+                 FROM movimientos_mee
+                 WHERE mee_codigo=mm.codigo AND COALESCE(anulado,0)=0
+               ), 0) as stock_calc
+        FROM maestro_mee mm
+        WHERE COALESCE(mm.estado,'')!='Inactivo'
+    """).fetchall()
+
+    alineados = 0
+    detalle = []
+    for codigo, stock_persistido, stock_calc in rows:
+        diff = float(stock_persistido or 0) - float(stock_calc or 0)
+        if abs(diff) <= 1:
+            continue  # tolerancia: ya alineado
+        # Insertar movimiento seed por la diferencia
+        tipo = 'Entrada' if diff > 0 else 'Salida'
+        c.execute("""
+            INSERT INTO movimientos_mee
+              (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (codigo, tipo, abs(diff),
+              f'SEED inicial — alineación drift detectado en audit (diff={diff:+.0f})',
+              u, fecha_iso))
+        alineados += 1
+        detalle.append({'codigo': codigo, 'diff': round(diff, 0)})
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'alineados': alineados,
+        'mensaje': f'{alineados} MEEs alineados con movimientos seed.',
+        'detalle': detalle[:10],  # primeros 10 para no inflar response
+    })
+
+
 @bp.route("/admin/audit-inventario", methods=["GET"])
 def admin_audit_inventario():
     """Auditoria completa del inventario: detecta drift, stocks negativos,
@@ -7115,6 +7174,19 @@ def admin_audit_inventario():
          ("Diferencia","diferencia")],
         '#f59e0b',
         "El stock guardado en maestro_mee.stock_actual no coincide con la suma de movimientos_mee. Indica que algún endpoint actualizó stock_actual sin registrar movimiento, o vice-versa. Tolerancia ±1.")
+    + (f'''<button onclick="limpiarDriftMee()" style="background:#0891b2;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px">🔧 Limpiar drift de {len(mees_drift)} MEEs (insertar movimientos seed)</button>
+<script>
+async function limpiarDriftMee(){{
+  if(!confirm("Insertar movimientos seed para alinear los {len(mees_drift)} MEEs con drift?\\n\\nEsto SOLO alinea el log con la realidad actual — NO cambia el stock_actual. Operación segura."))return;
+  try {{
+    var r = await fetch("/admin/audit-inventario/limpiar-drift-mee",{{method:"POST",headers:{{"Content-Type":"application/json"}}}});
+    var d = await r.json();
+    if(!r.ok){{ alert("Error: "+(d.error||r.status)); return; }}
+    alert("✅ Alineados "+d.alineados+" MEEs. La página se va a recargar.");
+    location.reload();
+  }} catch(e){{ alert("Error de red: "+e.message); }}
+}}
+</script>''' if mees_drift else '')
     + _seccion("MEEs con stock NEGATIVO",
         mees_negativos,
         [("Código","codigo"),("Descripción","descripcion"),

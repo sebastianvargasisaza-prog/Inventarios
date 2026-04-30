@@ -2293,7 +2293,7 @@ def prog_completar_evento(evento_id):
                 c.execute("""
                     INSERT INTO movimientos_mee
                       (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
-                    VALUES (?, 'salida', ?, ?, ?, ?)
+                    VALUES (?, 'Salida', ?, ?, ?, ?)
                 """, (me['codigo'], me['cantidad_unidades'], obs_base, user, fecha_iso))
                 c.execute(
                     "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
@@ -2390,13 +2390,13 @@ def prog_revertir_completado(evento_id):
             rows_mee = c.execute("""
                 SELECT id, mee_codigo, cantidad
                 FROM movimientos_mee
-                WHERE tipo='salida' AND observaciones LIKE ?
+                WHERE LOWER(tipo)='salida' AND observaciones LIKE ?
             """, (f"{obs_filtro}%",)).fetchall()
             for mid, mee_cod, cant in rows_mee:
                 c.execute("""
                     INSERT INTO movimientos_mee
                       (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
-                    VALUES (?, 'entrada', ?, ?, ?, ?)
+                    VALUES (?, 'Entrada', ?, ?, ?, ?)
                 """, (mee_cod, cant,
                       f"REVERSIÓN producción completada — original mov_mee #{mid}",
                       user, fecha_iso))
@@ -2515,7 +2515,7 @@ def inventario_ajuste_manual():
             INSERT INTO movimientos_mee
               (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (codigo, 'entrada' if direccion == 'sumar' else 'salida',
+        """, (codigo, 'Entrada' if direccion == 'sumar' else 'Salida',
               cantidad, obs_full, user, fecha_iso))
     conn.commit()
     return jsonify({
