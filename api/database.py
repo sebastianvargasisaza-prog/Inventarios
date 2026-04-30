@@ -2348,6 +2348,61 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         """CREATE INDEX IF NOT EXISTS idx_inf_metrics_inf_fecha
            ON marketing_influencers_metrics(influencer_id, fecha DESC)""",
     ]),
+    (55, "planta: catalogo de areas fisicas + operarios + asignacion en produccion (post-INVIMA)", [
+        # Sebastian (30-abr-2026): INVIMA amplio el uso de salas. 4 quedaron
+        # MIXTAS (prod+env), 1 solo envasado, 2 con marmita (100ml y 250ml),
+        # 1 con manejo especial de alcoholes. Necesitamos asignar sala +
+        # operario por fase y rotar (Mayerlin fija en dispensacion).
+        """CREATE TABLE IF NOT EXISTS areas_planta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            nombre TEXT NOT NULL,
+            puede_producir INTEGER NOT NULL DEFAULT 0,
+            puede_envasar INTEGER NOT NULL DEFAULT 0,
+            marmita_ml INTEGER,
+            especial TEXT,
+            estado TEXT NOT NULL DEFAULT 'libre',
+            activo INTEGER NOT NULL DEFAULT 1,
+            orden INTEGER DEFAULT 0,
+            creado_en TEXT DEFAULT (datetime('now'))
+        )""",
+        # Seed con las 5 salas post-INVIMA (ver project_planta_crew_areas.md)
+        """INSERT OR IGNORE INTO areas_planta
+           (codigo, nombre, puede_producir, puede_envasar, marmita_ml, especial, orden) VALUES
+           ('PROD1', 'Produccion 1', 1, 1, NULL, 'alcoholes', 1),
+           ('ENV1',  'Envasado 1',   0, 1, NULL, NULL,        2),
+           ('PROD2', 'Produccion 2', 1, 1, 100,  NULL,        3),
+           ('PROD3', 'Produccion 3', 1, 1, 250,  NULL,        4),
+           ('PROD4', 'Produccion 4', 1, 1, NULL, NULL,        5)""",
+        """CREATE TABLE IF NOT EXISTS operarios_planta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            apellido TEXT,
+            rol_predeterminado TEXT,
+            fija_en_dispensacion INTEGER NOT NULL DEFAULT 0,
+            es_jefe_produccion INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_en TEXT DEFAULT (datetime('now'))
+        )""",
+        # Seed crew real abr-2026. Mayerlin fija dispensacion (regla dura).
+        # Sebastian Murillo es operario (NO el CEO Sebastian Vargas).
+        # Luis Enrique es jefe de produccion (no operario rotativo).
+        """INSERT OR IGNORE INTO operarios_planta
+           (nombre, apellido, rol_predeterminado, fija_en_dispensacion, es_jefe_produccion) VALUES
+           ('Mayerlin',     'Rivera',              'dispensacion',     1, 0),
+           ('Camilo',       'Garcia',              'acondicionamiento', 0, 0),
+           ('Milton',       'Sanabria',            'todero',           0, 0),
+           ('Sebastian',    'Murillo',             'envasado',         0, 0),
+           ('Luis Enrique', 'Dorronsoro Gamboa',   'jefe',             0, 1)""",
+        # Asignacion sala + operarios por fase en cada produccion programada.
+        # area_id NULL al crear la produccion; se asigna despues desde el plano.
+        "ALTER TABLE produccion_programada ADD COLUMN area_id INTEGER",
+        "ALTER TABLE produccion_programada ADD COLUMN operario_dispensacion_id INTEGER",
+        "ALTER TABLE produccion_programada ADD COLUMN operario_elaboracion_id INTEGER",
+        "ALTER TABLE produccion_programada ADD COLUMN operario_envasado_id INTEGER",
+        "ALTER TABLE produccion_programada ADD COLUMN operario_acondicionamiento_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_pp_area ON produccion_programada(area_id, fecha_programada)",
+    ]),
 ]
 
 
