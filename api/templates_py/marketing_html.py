@@ -1401,6 +1401,8 @@ async function hoyEjecutarTodos() {
     }
     const d = res.data || {};
     _hoyLog(`✓ ${ag.label}: ${d.titulo||'OK'}`);
+    // Cache para que "Aplicar" use este payload sin re-ejecutar
+    window._hoyUltimoOutput[ag.key] = d;
 
     // Extraer acciones útiles del agente
     let resumenAccion = null;
@@ -1467,11 +1469,49 @@ async function hoyVerDetalleAgente(key) {
   }
 }
 
+// Cache del último output de cada agente (para que hoyAplicarAgente lo
+// pase al workflow sin re-ejecutar el agente).
+window._hoyUltimoOutput = {};
+
 async function hoyAplicarAgente(key) {
-  // Workflow: convertir propuesta del agente en entidad real (Fase 3)
-  // Por ahora: ejecutar el agente y abrir su detalle. Fase 3 lo cierra.
-  _hoyLog(`📤 Aplicar ${key}: redirigiendo a detalle (workflow Fase 3 pending)`);
-  hoyVerDetalleAgente(key);
+  // Workflow Fase 3: convertir propuesta del agente en entidad real
+  if(!confirm(`Convertir las propuestas del agente "${key}" en entidades reales?\\n\\n` +
+              `Esto puede crear: campañas (Planificadas), briefs en Kanban, flags de reposición.\\n` +
+              `Es idempotente — no duplica si ya existen.`)) return;
+
+  // Si no tenemos cache, re-ejecutar el agente
+  let payload = window._hoyUltimoOutput[key];
+  if(!payload) {
+    _hoyLog(`📤 Re-ejecutando agente ${key} para obtener payload...`);
+    try {
+      const r0 = await fetch('/api/marketing/agentes/' + key, {method:'POST'});
+      payload = await r0.json();
+      window._hoyUltimoOutput[key] = payload;
+    } catch(e) {
+      _hoyLog(`❌ Error re-ejecutando: ${e.message}`);
+      return;
+    }
+  }
+
+  _hoyLog(`📤 Aplicando workflow ${key}...`);
+  try {
+    const r = await fetch('/api/marketing/workflow/aplicar-agente', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({agente: key, payload: payload})
+    });
+    const d = await r.json();
+    if(!r.ok) {
+      _hoyLog(`❌ Workflow ${key} falló: ${d.error || r.status}`);
+      alert('Error: ' + (d.error || r.status));
+      return;
+    }
+    _hoyLog(`✅ ${d.mensaje}`);
+    alert('✅ ' + d.mensaje);
+    hoyCargarResumen(); // refresh KPIs
+  } catch(e) {
+    _hoyLog(`❌ Error de red: ${e.message}`);
+  }
 }
 
 async function hoyRefreshMetricas() {

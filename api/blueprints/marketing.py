@@ -3641,6 +3641,167 @@ def mkt_metrics_history(iid):
     })
 
 
+@bp.route("/api/marketing/workflow/aplicar-agente", methods=["POST"])
+def mkt_workflow_aplicar_agente():
+    """Convierte el output de un agente en entidades reales — Fase 3 Marketing.
+
+    Sebastian (29-abr-2026): "auto genere calendario, estrategias y campañas".
+    Los agentes ya proponen — este endpoint EJECUTA: crea la campaña, agrega
+    al kanban, crea la solicitud de producción, etc.
+
+    Body: {
+      agente: 'estrategia' | 'oportunidad' | 'contenido_auto' | 'alerta_stock' |
+              'estacionalidad' | 'reorden',
+      payload: {...}  # output de la última ejecución del agente
+    }
+
+    Retorna detalle de qué se creó (campañas, briefs, solicitudes, etc.).
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    agente = (d.get('agente') or '').strip()
+    payload = d.get('payload') or {}
+    if not agente:
+        return jsonify({'error': 'agente requerido'}), 400
+
+    conn = _db()
+    c = conn.cursor()
+    creado = {'campanas': 0, 'briefs': 0, 'solicitudes_produccion': 0, 'detalle': []}
+    fecha_iso = datetime.now().isoformat(timespec='seconds')
+
+    # ── Workflow 1: oportunidad → crear campañas para SKUs detectados ──
+    if agente == 'oportunidad':
+        recomendaciones = payload.get('recomendaciones', [])[:5]  # top 5
+        for r in recomendaciones:
+            sku = r.get('sku')
+            if not sku:
+                continue
+            # Skip si ya hay una campaña activa para este SKU
+            ya = c.execute("""
+                SELECT id FROM marketing_campanas
+                WHERE sku_objetivo=? AND estado IN ('Planificada','Activa')
+                LIMIT 1
+            """, (sku,)).fetchone()
+            if ya:
+                creado['detalle'].append({'sku': sku, 'skip': 'ya tiene campaña activa'})
+                continue
+            nombre = f"Campaña {sku} — Oportunidad detectada"
+            c.execute("""
+                INSERT INTO marketing_campanas
+                  (nombre, canal, tipo, estado, fecha_inicio, fecha_fin,
+                   sku_objetivo, objetivo_unidades, presupuesto, observaciones,
+                   creado_en)
+                VALUES (?, 'Influencer', 'Push', 'Planificada',
+                        date('now'), date('now','+30 day'), ?, ?, ?, ?, ?)
+            """, (nombre, sku,
+                  max(int(r.get('stock', 0) * 0.5), 10),  # objetivo: vender 50% del stock
+                  500000,  # presupuesto base sugerido
+                  f"Auto-creada por agente oportunidad: {', '.join(r.get('razones', []))}",
+                  fecha_iso))
+            creado['campanas'] += 1
+            creado['detalle'].append({'sku': sku, 'campana_id': c.lastrowid, 'nombre': nombre})
+
+    # ── Workflow 2: contenido_auto → agregar piezas al kanban ──
+    elif agente == 'contenido_auto':
+        piezas = payload.get('piezas', [])
+        for p in piezas:
+            sku = p.get('sku')
+            caption = p.get('caption_instagram', '')
+            if not sku or not caption:
+                continue
+            try:
+                c.execute("""
+                    INSERT INTO marketing_contenido
+                      (tipo, plataforma, estado, caption, sku_objetivo,
+                       mensaje_principal)
+                    VALUES ('post', 'Instagram', 'Brief', ?, ?, ?)
+                """, (
+                    caption + "\n\n[Auto-generado por agente contenido_auto]",
+                    sku,
+                    f"Auto-generado para top SKU {sku}"
+                ))
+                creado['briefs'] += 1
+                creado['detalle'].append({'sku': sku, 'contenido_id': c.lastrowid})
+            except Exception as e:
+                creado['detalle'].append({'sku': sku, 'error': str(e)[:80]})
+
+    # ── Workflow 3: alerta_stock + estacionalidad → solicitudes de producción ──
+    elif agente in ('alerta_stock', 'estacionalidad'):
+        items = payload.get('alertas', [])
+        for it in items[:10]:  # top 10 más críticas
+            sku = it.get('sku')
+            if not sku:
+                continue
+            # Crear nota en marketing_campanas como flag (no creamos producción
+            # directa — eso es responsabilidad del módulo Planta).
+            nivel = it.get('nivel') or it.get('estado') or 'advertencia'
+            if nivel == 'ok':
+                continue
+            obs = (f"AUTO-FLAG por agente {agente}: SKU {sku} — "
+                   f"stock {it.get('stock', '?')}, "
+                   f"déficit {it.get('deficit', it.get('dias_cobertura_real', '?'))}. "
+                   f"Acción: {it.get('accion', 'Reposicionar')}")
+            ya = c.execute(
+                "SELECT id FROM marketing_campanas "
+                "WHERE sku_objetivo=? AND tipo='Reposición' AND estado='Planificada'",
+                (sku,)
+            ).fetchone()
+            if ya:
+                creado['detalle'].append({'sku': sku, 'skip': 'ya hay flag de reposición'})
+                continue
+            c.execute("""
+                INSERT INTO marketing_campanas
+                  (nombre, canal, tipo, estado, fecha_inicio, sku_objetivo,
+                   notas, fecha_creacion)
+                VALUES (?, 'Interno', 'Reposición', 'Planificada', date('now'),
+                        ?, ?, ?)
+            """, (f"FLAG Reposición {sku}", sku, obs, fecha_iso))
+            creado['solicitudes_produccion'] += 1
+            creado['detalle'].append({'sku': sku, 'flag_id': c.lastrowid})
+
+    # ── Workflow 4: estrategia (master) — crear campañas para SKUs en riesgo ──
+    elif agente == 'estrategia':
+        snapshot = payload.get('snapshot') or {}
+        for sku_info in (snapshot.get('skus_para_empujar') or [])[:3]:
+            sku = sku_info.get('sku')
+            if not sku:
+                continue
+            ya = c.execute("""
+                SELECT id FROM marketing_campanas
+                WHERE sku_objetivo=? AND estado IN ('Planificada','Activa')
+                LIMIT 1
+            """, (sku,)).fetchone()
+            if ya:
+                continue
+            c.execute("""
+                INSERT INTO marketing_campanas
+                  (nombre, canal, tipo, estado, fecha_inicio, fecha_fin,
+                   sku_objetivo, presupuesto, notas, fecha_creacion)
+                VALUES (?, 'Influencer', 'Push', 'Planificada',
+                        date('now'), date('now','+45 day'), ?, ?, ?, ?)
+            """, (f"Estrategia {sku} — empuje", sku, 700000,
+                  f"Auto-creada por agente estrategia: SKU detectado para empuje urgente",
+                  fecha_iso))
+            creado['campanas'] += 1
+            creado['detalle'].append({'sku': sku, 'campana_id': c.lastrowid})
+
+    else:
+        return jsonify({'error': f"Workflow no implementado para agente '{agente}'. "
+                                  f"Disponibles: oportunidad, contenido_auto, alerta_stock, "
+                                  f"estacionalidad, estrategia"}), 400
+
+    conn.commit()
+    creado['ok'] = True
+    creado['agente'] = agente
+    creado['mensaje'] = (
+        f"Workflow {agente}: {creado['campanas']} campaña(s), "
+        f"{creado['briefs']} brief(s), "
+        f"{creado['solicitudes_produccion']} flag(s) de reposición creados."
+    )
+    return jsonify(creado)
+
+
 @bp.route("/api/marketing/agencia/audit", methods=["GET"])
 def mkt_agencia_audit():
     """Agencia tab: influencer scoring, portfolio audit, competition analysis, campaign proposals."""
