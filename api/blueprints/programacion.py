@@ -2182,19 +2182,53 @@ def planta_actualizar_estado_area(area_id):
     return jsonify({'ok': True, 'id': area_id, 'estado': nuevo})
 
 
-@bp.route('/api/planta/operarios', methods=['GET'])
+@bp.route('/api/planta/operarios', methods=['GET', 'POST'])
 def planta_listar_operarios():
-    """Lista crew activo. Mayerlin fija dispensacion, Luis Enrique es jefe."""
+    """GET: lista crew activo (Mayerlin fija dispensación, Luis Enrique jefe).
+    POST: crea un nuevo operario. Solo admin (sebastian/alejandro).
+
+    Body POST:
+      nombre (req), apellido, rol_predeterminado (todero/envasado/
+      acondicionamiento/dispensacion/jefe), fija_en_dispensacion (bool),
+      es_jefe_produccion (bool).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT id, nombre, apellido, rol_predeterminado,
-               fija_en_dispensacion, es_jefe_produccion
-        FROM operarios_planta
-        WHERE activo=1
-        ORDER BY es_jefe_produccion DESC, fija_en_dispensacion DESC, nombre
-    """).fetchall()
+    user = (session.get('compras_user') or '').lower()
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        try:
+            from blueprints.compras import ADMIN_USERS as _ADMIN
+        except Exception:
+            _ADMIN = ('sebastian', 'alejandro')
+        if user not in {u.lower() for u in _ADMIN}:
+            return jsonify({'error': 'Solo admin crea operarios'}), 403
+        d = request.get_json(force=True, silent=True) or {}
+        nombre = (d.get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'error': 'nombre requerido'}), 400
+        rol = (d.get('rol_predeterminado') or 'todero').strip().lower()
+        if rol not in ('dispensacion', 'envasado', 'acondicionamiento', 'todero', 'jefe'):
+            rol = 'todero'
+        fija = 1 if d.get('fija_en_dispensacion') else 0
+        jefe = 1 if d.get('es_jefe_produccion') else 0
+        c.execute("""INSERT INTO operarios_planta
+            (nombre, apellido, rol_predeterminado, fija_en_dispensacion, es_jefe_produccion, activo)
+            VALUES (?,?,?,?,?,1)""",
+            (nombre, (d.get('apellido') or '').strip() or None, rol, fija, jefe))
+        conn.commit()
+        return jsonify({'ok': True, 'id': c.lastrowid}), 201
+
+    # GET: incluir tambien inactivos si admin lo pide via ?incluir_inactivos=1
+    incluir = request.args.get('incluir_inactivos') == '1'
+    sql = """SELECT id, nombre, apellido, rol_predeterminado,
+                    fija_en_dispensacion, es_jefe_produccion, activo
+             FROM operarios_planta"""
+    if not incluir:
+        sql += " WHERE activo=1"
+    sql += " ORDER BY activo DESC, es_jefe_produccion DESC, fija_en_dispensacion DESC, nombre"
+    rows = c.execute(sql).fetchall()
     out = [{
         'id': r[0],
         'nombre': r[1],
@@ -2203,8 +2237,62 @@ def planta_listar_operarios():
         'rol': r[3] or '',
         'fija_dispensacion': bool(r[4]),
         'es_jefe': bool(r[5]),
+        'activo': bool(r[6]),
     } for r in rows]
     return jsonify({'operarios': out, 'total': len(out)})
+
+
+@bp.route('/api/planta/operarios/<int:op_id>', methods=['PATCH', 'DELETE'])
+def planta_actualizar_operario(op_id):
+    """PATCH: edita campos del operario (nombre, apellido, rol, flags).
+    DELETE: soft delete — marca activo=0 (no borra historial de producciones).
+    Solo admin."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = (session.get('compras_user') or '').lower()
+    try:
+        from blueprints.compras import ADMIN_USERS as _ADMIN
+    except Exception:
+        _ADMIN = ('sebastian', 'alejandro')
+    if user not in {u.lower() for u in _ADMIN}:
+        return jsonify({'error': 'Solo admin edita operarios'}), 403
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'DELETE':
+        cur = c.execute("UPDATE operarios_planta SET activo=0 WHERE id=?", (op_id,))
+        conn.commit()
+        if cur.rowcount == 0:
+            return jsonify({'error': 'no encontrado'}), 404
+        return jsonify({'ok': True, 'id': op_id, 'desactivado': True})
+
+    # PATCH
+    d = request.get_json(force=True, silent=True) or {}
+    sets = []; params = []
+    if 'nombre' in d:
+        n = (d['nombre'] or '').strip()
+        if not n: return jsonify({'error': 'nombre vacio'}), 400
+        sets.append('nombre=?'); params.append(n)
+    if 'apellido' in d:
+        sets.append('apellido=?'); params.append((d['apellido'] or '').strip() or None)
+    if 'rol_predeterminado' in d:
+        rol = (d['rol_predeterminado'] or 'todero').strip().lower()
+        if rol not in ('dispensacion','envasado','acondicionamiento','todero','jefe'):
+            rol = 'todero'
+        sets.append('rol_predeterminado=?'); params.append(rol)
+    if 'fija_en_dispensacion' in d:
+        sets.append('fija_en_dispensacion=?'); params.append(1 if d['fija_en_dispensacion'] else 0)
+    if 'es_jefe_produccion' in d:
+        sets.append('es_jefe_produccion=?'); params.append(1 if d['es_jefe_produccion'] else 0)
+    if 'activo' in d:
+        sets.append('activo=?'); params.append(1 if d['activo'] else 0)
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(op_id)
+    cur = c.execute(f"UPDATE operarios_planta SET {', '.join(sets)} WHERE id=?", params)
+    conn.commit()
+    if cur.rowcount == 0:
+        return jsonify({'error': 'no encontrado'}), 404
+    return jsonify({'ok': True, 'id': op_id})
 
 
 @bp.route('/api/programacion/programar/<int:evento_id>/asignar', methods=['PATCH'])

@@ -5372,6 +5372,58 @@ function _renderProgramacion(d){
     <div id="plano-detalle" style="margin-top:18px;display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px"></div>
     <!-- Panel rotación operarios (Capa 4 visible aquí) -->
     <div id="plano-rotacion" style="margin-top:18px"></div>
+
+    <!-- Panel gestión de operarios (CRUD) -->
+    <div id="plano-crew-mgmt" style="margin-top:18px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <h3 style="margin:0;color:#1a4a7a;font-size:15px">👥 Gestión de operarios <span style="font-size:11px;color:#94a3b8;font-weight:500">(crear, editar, desactivar)</span></h3>
+        <button onclick="abrirModalNuevoOperario()" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">+ Nuevo operario</button>
+      </div>
+      <div id="crew-mgmt-tabla"></div>
+    </div>
+
+    <!-- Modal nuevo/editar operario -->
+    <div id="modal-operario" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.7);z-index:9999;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#fff;border-radius:12px;padding:22px 26px;width:440px;max-width:95vw">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 id="op-modal-title" style="margin:0;color:#1a4a7a;font-size:16px">Nuevo operario</h3>
+          <button onclick="cerrarModalOperario()" style="background:#f1f5f9;color:#475569;border:none;padding:5px 10px;border-radius:6px;font-size:14px;cursor:pointer">×</button>
+        </div>
+        <input type="hidden" id="op-id">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Nombre *</label>
+            <input id="op-nombre" type="text" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Apellido</label>
+            <input id="op-apellido" type="text" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Rol predeterminado</label>
+          <select id="op-rol" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            <option value="todero">Todero (rota todas las fases)</option>
+            <option value="dispensacion">Dispensación</option>
+            <option value="envasado">Envasado</option>
+            <option value="acondicionamiento">Acondicionamiento</option>
+            <option value="jefe">Jefe / Supervisor</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:14px;margin-bottom:14px">
+          <label style="font-size:12px;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input id="op-fija" type="checkbox"> Fijo en dispensación (no rota)
+          </label>
+          <label style="font-size:12px;color:#475569;cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input id="op-jefe" type="checkbox"> Es jefe de producción
+          </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button onclick="cerrarModalOperario()" style="background:#f1f5f9;color:#475569;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+          <button onclick="guardarOperario()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Guardar</button>
+        </div>
+      </div>
+    </div>
   </div><!-- /ptab-plano -->
 
 <script>
@@ -6590,6 +6642,7 @@ async function ckMarcar(itemId, estado){
       // Eventos recientes (timeline lateral)
       cargarTimelineEventos(d.eventos_recientes || []);
       cargarRotacionOperarios();
+      cargarTablaOperarios();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
@@ -6705,6 +6758,131 @@ async function ckMarcar(itemId, estado){
       } else {
         _toast('Error: '+(d.error||'desconocido'), 0);
       }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  // ── Gestion de operarios CRUD ────────────────────────────────────────
+  async function cargarTablaOperarios(){
+    var box = document.getElementById('crew-mgmt-tabla');
+    if(!box) return;
+    try{
+      var r = await fetch('/api/planta/operarios?incluir_inactivos=1');
+      var d = await r.json();
+      var ops = d.operarios || [];
+      if(!ops.length){
+        box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Sin operarios. Click "+ Nuevo operario".</div>';
+        return;
+      }
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+        '<thead><tr style="text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;background:#f8fafc">' +
+        '<th style="padding:8px">Nombre</th>' +
+        '<th style="padding:8px">Rol predeterminado</th>' +
+        '<th style="padding:8px;text-align:center">Flags</th>' +
+        '<th style="padding:8px;text-align:center">Estado</th>' +
+        '<th style="padding:8px;text-align:right">Acciones</th>' +
+        '</tr></thead><tbody>';
+      ops.forEach(function(o){
+        var flags = [];
+        if(o.fija_dispensacion) flags.push('🔒 fijo dispensación');
+        if(o.es_jefe) flags.push('⭐ jefe');
+        var estado = o.activo
+          ? '<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">ACTIVO</span>'
+          : '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">INACTIVO</span>';
+        var btnDelOrEnable = o.activo
+          ? '<button onclick="desactivarOperario('+o.id+',&quot;'+o.nombre_completo.replace(/"/g,'&quot;')+'&quot;)" style="background:#fee2e2;color:#991b1b;border:none;padding:5px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Desactivar</button>'
+          : '<button onclick="reactivarOperario('+o.id+')" style="background:#d1fae5;color:#065f46;border:none;padding:5px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">Reactivar</button>';
+        html += '<tr style="border-bottom:1px solid #f1f5f9">' +
+          '<td style="padding:8px;font-weight:600">'+_escHTML(o.nombre_completo)+'</td>' +
+          '<td style="padding:8px;color:#475569">'+_escHTML(o.rol||'todero')+'</td>' +
+          '<td style="padding:8px;text-align:center;font-size:11px;color:#64748b">'+(flags.join(' · ')||'—')+'</td>' +
+          '<td style="padding:8px;text-align:center">'+estado+'</td>' +
+          '<td style="padding:8px;text-align:right">' +
+            '<button onclick="abrirModalEditarOperario('+o.id+')" style="background:#dbeafe;color:#1e40af;border:none;padding:5px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Editar</button>' +
+            btnDelOrEnable +
+          '</td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+      box.innerHTML = html;
+    }catch(e){ box.innerHTML = '<div style="color:#dc2626">Error al cargar.</div>'; }
+  }
+
+  function abrirModalNuevoOperario(){
+    document.getElementById('op-modal-title').textContent = 'Nuevo operario';
+    document.getElementById('op-id').value = '';
+    document.getElementById('op-nombre').value = '';
+    document.getElementById('op-apellido').value = '';
+    document.getElementById('op-rol').value = 'todero';
+    document.getElementById('op-fija').checked = false;
+    document.getElementById('op-jefe').checked = false;
+    document.getElementById('modal-operario').style.display = 'flex';
+  }
+
+  async function abrirModalEditarOperario(id){
+    try{
+      var r = await fetch('/api/planta/operarios?incluir_inactivos=1');
+      var d = await r.json();
+      var op = (d.operarios||[]).find(function(o){ return o.id === id; });
+      if(!op){ _toast('No encontrado', 0); return; }
+      document.getElementById('op-modal-title').textContent = 'Editar: '+op.nombre_completo;
+      document.getElementById('op-id').value = op.id;
+      document.getElementById('op-nombre').value = op.nombre;
+      document.getElementById('op-apellido').value = op.apellido;
+      document.getElementById('op-rol').value = op.rol || 'todero';
+      document.getElementById('op-fija').checked = !!op.fija_dispensacion;
+      document.getElementById('op-jefe').checked = !!op.es_jefe;
+      document.getElementById('modal-operario').style.display = 'flex';
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  function cerrarModalOperario(){
+    document.getElementById('modal-operario').style.display = 'none';
+  }
+
+  async function guardarOperario(){
+    var id = document.getElementById('op-id').value;
+    var body = {
+      nombre: document.getElementById('op-nombre').value.trim(),
+      apellido: document.getElementById('op-apellido').value.trim(),
+      rol_predeterminado: document.getElementById('op-rol').value,
+      fija_en_dispensacion: document.getElementById('op-fija').checked,
+      es_jefe_produccion: document.getElementById('op-jefe').checked
+    };
+    if(!body.nombre){ _toast('Nombre requerido', 0); return; }
+    try{
+      var url = id ? '/api/planta/operarios/'+id : '/api/planta/operarios';
+      var method = id ? 'PATCH' : 'POST';
+      var r = await fetch(url, {method:method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      var d = await r.json();
+      if(d.ok){
+        _toast(id?'Operario actualizado':'Operario creado', 1);
+        cerrarModalOperario();
+        cargarTablaOperarios();
+        // Limpiar cache para que el próximo "Programar" lo incluya
+        _PLANTA_OPERARIOS = null;
+      }else{ _toast('Error: '+(d.error||'?'), 0); }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  async function desactivarOperario(id, nombre){
+    if(!confirm('¿Desactivar a '+nombre+'? No aparecerá en selectores nuevos pero el historial se preserva.')) return;
+    try{
+      var r = await fetch('/api/planta/operarios/'+id, {method:'DELETE'});
+      var d = await r.json();
+      if(d.ok){ _toast('Desactivado', 1); cargarTablaOperarios(); _PLANTA_OPERARIOS=null; }
+      else { _toast('Error', 0); }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  async function reactivarOperario(id){
+    try{
+      var r = await fetch('/api/planta/operarios/'+id, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({activo: true})
+      });
+      var d = await r.json();
+      if(d.ok){ _toast('Reactivado', 1); cargarTablaOperarios(); _PLANTA_OPERARIOS=null; }
+      else { _toast('Error', 0); }
     }catch(e){ _toast('Error de red', 0); }
   }
 
