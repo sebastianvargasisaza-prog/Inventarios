@@ -280,6 +280,10 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
 
     for sku_row in skus:
         producto, categoria, cadencia, cob_target, cob_min, cob_max, merma_pct, prioridad, lote_size_kg = sku_row
+        # Sebastian (30-abr-2026): "todo debe producirse con un margen de 20
+        # dias antes de que se agote" — usar 20d como umbral mínimo de
+        # disparo, anulando el cob_min de la config si era mayor.
+        cob_min = min(cob_min or 30, 20)
         if not lote_size_kg:
             log_lineas.append(f"   ⊘ {producto}: sin lote_size_kg en formula — saltado")
             continue
@@ -672,6 +676,494 @@ def auto_plan_ejecutar_ahora():
         return jsonify({'ok': True, 'mensaje': 'Auto-plan ejecutándose en background. Mira /api/auto-plan/runs en 30s.'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/auto-plan/asegurar-actualizado', methods=['POST'])
+def auto_plan_asegurar_actualizado():
+    """Sebastian (30-abr-2026): "que el cronograma sea de manera inteligente
+    osea montado desde shopify, necesidades reales, monte todo con la lógica
+    que hemos usado en calendario asi esta todo en la app".
+
+    Llamada al cargar /planta. Verifica si el último auto-plan run fue hace
+    más de N horas (default 12). Si sí, dispara generar+aplicar en BACKGROUND
+    sin bloquear el response. El frontend muestra el plan y se refresca solo
+    cuando el cron termina.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        max_horas = int(request.args.get('max_horas', 12))
+    except Exception:
+        max_horas = 12
+
+    conn = get_db(); c = conn.cursor()
+    last = c.execute("""
+        SELECT id, ejecutado_at,
+               CAST((julianday('now') - julianday(ejecutado_at)) * 24 AS INTEGER) AS horas
+        FROM auto_plan_runs
+        WHERE error IS NULL OR error = ''
+        ORDER BY id DESC LIMIT 1
+    """).fetchone()
+
+    if last and last[2] is not None and last[2] < max_horas:
+        return jsonify({
+            'ok': True,
+            'ejecutado': False,
+            'razon': f'Plan vigente · último run hace {last[2]}h',
+            'ultimo_run_at': last[1],
+        })
+
+    # Disparar en background
+    try:
+        from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario
+        from flask import current_app
+        import threading
+        threading.Thread(
+            target=ejecutar_auto_plan_diario,
+            args=(current_app._get_current_object(),),
+            daemon=True
+        ).start()
+        return jsonify({
+            'ok': True,
+            'ejecutado': True,
+            'mensaje': 'Auto-plan ejecutándose en background. El plan se actualizará en ~30 segundos.',
+            'ultimo_run_at': last[1] if last else None,
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@bp.route('/api/planta/plan-semanal-v2', methods=['GET'])
+def plan_semanal_v2():
+    """Sebastian (30-abr-2026): vista Semana siempre con datos.
+
+    Si BD tiene producciones programadas → muéstralas (origen='bd').
+    Si BD vacía → proyecta los próximos 14 días con el motor (origen='proyeccion').
+    Cada item lleva flag de origen para que la UI muestre badge "🔮 Proyectado".
+
+    Querystring: ?dias=14 (default)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 14))
+    except Exception:
+        dias = 14
+
+    conn = get_db(); c = conn.cursor()
+    fecha_desde = datetime.now().strftime('%Y-%m-%d')
+    fecha_hasta = (datetime.now() + timedelta(days=dias)).strftime('%Y-%m-%d')
+
+    # Producciones reales en BD
+    rows = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes, pp.estado,
+               ap.codigo as area_codigo, ap.nombre as area_nombre,
+               fh.lote_size_kg, fh.imagen_url, pp.cantidad_kg
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE pp.fecha_programada BETWEEN ? AND ?
+          AND pp.estado IN ('pendiente','en_proceso')
+        ORDER BY pp.fecha_programada ASC, pp.id ASC
+    """, (fecha_desde, fecha_hasta)).fetchall()
+
+    items_bd = []
+    for r in rows:
+        items_bd.append({
+            'origen': 'bd',
+            'produccion_id': r[0],
+            'producto': r[1],
+            'fecha_programada': r[2],
+            'lotes': r[3] or 1,
+            'estado': r[4],
+            'area_codigo': r[5],
+            'area_nombre': r[6],
+            'lote_size_kg': r[7],
+            'imagen_url': r[8],
+            'kg': r[9] or r[7] or 0,
+        })
+
+    items_proy = []
+    if not items_bd:
+        # BD vacía → proyectar
+        proy = _generar_proyeccion_lotes(c, max(1, dias // 30 + 1))
+        # Solo los próximos 'dias' días
+        from datetime import datetime as _dt2
+        fecha_limite = _dt2.now().date() + timedelta(days=dias)
+        for p in proy:
+            try:
+                f = _dt2.strptime(p['fecha'], '%Y-%m-%d').date()
+                if f > fecha_limite:
+                    continue
+            except Exception:
+                continue
+            # Buscar imagen del producto
+            img = c.execute(
+                "SELECT imagen_url FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                (p['producto'],)
+            ).fetchone()
+            items_proy.append({
+                'origen': 'proyeccion',
+                'produccion_id': None,  # aún no existe
+                'producto': p['producto'],
+                'fecha_programada': p['fecha'],
+                'lotes': 1,
+                'estado': 'sugerido',
+                'area_codigo': None,
+                'area_nombre': None,
+                'lote_size_kg': p['lote_kg'],
+                'imagen_url': img[0] if img else None,
+                'kg': p['kg_con_merma'],
+                'razon': f"Cadencia {p['cadencia_dias']}d" if p.get('cadencia_dias') else 'Auto por umbral',
+            })
+
+    items = items_bd + items_proy
+    items.sort(key=lambda x: x['fecha_programada'])
+
+    # Last run info
+    last_run = c.execute("""
+        SELECT ejecutado_at,
+               CAST((julianday('now') - julianday(ejecutado_at)) * 24 AS INTEGER) AS horas
+        FROM auto_plan_runs ORDER BY id DESC LIMIT 1
+    """).fetchone()
+
+    return jsonify({
+        'rango': {'desde': fecha_desde, 'hasta': fecha_hasta, 'dias': dias},
+        'items': items,
+        'kpis': {
+            'total': len(items),
+            'desde_bd': len(items_bd),
+            'proyectadas': len(items_proy),
+        },
+        'auto_plan_status': {
+            'ultimo_run_at': last_run[0] if last_run else None,
+            'horas_desde_run': last_run[1] if last_run and last_run[1] is not None else None,
+            'plan_vacio': len(items_bd) == 0,
+        },
+    })
+
+
+@bp.route('/api/planta/confirmar-proyeccion', methods=['POST'])
+def confirmar_proyeccion():
+    """Cuando el operario ve una proyección y la quiere persistir como
+    producción real, este endpoint la mete en produccion_programada.
+    Body: {producto, fecha_programada, lotes?, lote_size_kg?, kg?}"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    producto = (d.get('producto') or '').strip()
+    fecha = (d.get('fecha_programada') or '').strip()
+    if not producto or not fecha:
+        return jsonify({'error': 'producto y fecha_programada requeridos'}), 400
+    conn = get_db(); c = conn.cursor()
+    # Verificar duplicado
+    existing = c.execute("""
+        SELECT id FROM produccion_programada
+        WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+          AND date(fecha_programada)=date(?)
+          AND estado IN ('pendiente','en_proceso')
+    """, (producto, fecha)).fetchone()
+    if existing:
+        return jsonify({'ok': True, 'id': existing[0], 'ya_existia': True})
+    cur = c.execute("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
+        VALUES (?, ?, ?, 'pendiente', ?, 'confirmacion_manual', ?)
+    """, (
+        producto, fecha, int(d.get('lotes') or 1),
+        f'Confirmado desde proyección por {user} el {datetime.now().isoformat()}',
+        d.get('kg') or d.get('lote_size_kg') or 0,
+    ))
+    conn.commit()
+    return jsonify({'ok': True, 'id': cur.lastrowid, 'ya_existia': False})
+
+
+@bp.route('/api/planta/produccion/<int:prod_id>/eliminar-y-replanificar', methods=['POST'])
+def eliminar_y_replan(prod_id):
+    """Sebastian (30-abr-2026): "si ya la hicimos le demos eliminar, y ponga
+    otra alli automaticamente".
+
+    Elimina la producción y propone otra del MISMO producto en la próxima
+    fecha disponible según cadencia/cobertura.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    motivo = (d.get('motivo') or 'Eliminada manualmente').strip()
+    conn = get_db(); c = conn.cursor()
+
+    # Obtener datos de la producción antes de borrarla
+    pp = c.execute("""
+        SELECT producto, fecha_programada, lotes, cantidad_kg
+        FROM produccion_programada WHERE id=?
+    """, (prod_id,)).fetchone()
+    if not pp:
+        return jsonify({'error': 'Producción no existe'}), 404
+    producto, fecha_orig, lotes, kg = pp
+
+    # Marcar como cancelada (no eliminamos para no perder histórico)
+    c.execute("""
+        UPDATE produccion_programada SET
+          estado='cancelado',
+          observaciones=COALESCE(observaciones,'')||' | Cancelada por '||?||': '||?
+        WHERE id=?
+    """, (user, motivo, prod_id))
+
+    # Calcular próxima fecha sugerida según cadencia
+    cfg = c.execute("""
+        SELECT cadencia_dias, cobertura_target_dias, cobertura_min_dias, merma_pct
+        FROM sku_planeacion_config
+        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+    """, (producto,)).fetchone()
+    cadencia = cfg[0] if cfg else None
+    cob_target = cfg[1] if cfg else 60
+
+    velocidad, factor = _velocidad_total_producto(c, producto)
+    velocidad_proj = max(0.5, velocidad * factor)
+    stock_actual = _stock_actual_pt(c, producto)
+
+    # Si tiene cadencia → próxima = fecha_orig + cadencia
+    # Si no → cuando bajará bajo umbral 20d
+    from datetime import datetime as _dt2
+    fecha_orig_dt = _dt2.strptime(fecha_orig[:10], '%Y-%m-%d').date() if fecha_orig else _dt2.now().date()
+    if cadencia:
+        proxima = fecha_orig_dt + timedelta(days=cadencia)
+    else:
+        # Días hasta bajar de 20
+        dias_disp = max(0, (stock_actual / velocidad_proj) - 20)
+        proxima = _dt2.now().date() + timedelta(days=int(dias_disp))
+    # Asegurar L/M/V
+    while proxima.weekday() not in (0, 2, 4):
+        proxima += timedelta(days=1)
+
+    # Crear nueva producción sugerida
+    cur = c.execute("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
+        VALUES (?, ?, ?, 'pendiente', ?, 'replan_post_eliminacion', ?)
+    """, (
+        producto, proxima.isoformat(), lotes or 1,
+        f'Replanificada tras cancelación de id={prod_id}',
+        kg or 0,
+    ))
+    nuevo_id = cur.lastrowid
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'eliminado': prod_id,
+        'nueva_id': nuevo_id,
+        'nueva_fecha': proxima.isoformat(),
+        'producto': producto,
+        'mensaje': f'Producción cancelada · nueva sugerida para {proxima.isoformat()}',
+    })
+
+
+@bp.route('/api/planta/produccion/<int:prod_id>/editar-lote', methods=['POST'])
+def editar_lote(prod_id):
+    """Sebastian (30-abr-2026): "permita editar la cantidad del lote y
+    calcule todo".
+
+    Body: {cantidad_kg: float, lotes?: int}
+    Recalcula MP requerida + envases + costos al cambiar tamaño.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    nueva_kg = d.get('cantidad_kg')
+    if nueva_kg is None:
+        return jsonify({'error': 'cantidad_kg requerido'}), 400
+    nueva_kg = float(nueva_kg)
+    nuevos_lotes = int(d.get('lotes') or 1)
+    conn = get_db(); c = conn.cursor()
+
+    pp = c.execute(
+        "SELECT producto, lotes, cantidad_kg FROM produccion_programada WHERE id=?",
+        (prod_id,)
+    ).fetchone()
+    if not pp:
+        return jsonify({'error': 'Producción no existe'}), 404
+    producto, lotes_actuales, kg_actuales = pp
+
+    c.execute("""
+        UPDATE produccion_programada SET
+          cantidad_kg=?, lotes=?,
+          observaciones=COALESCE(observaciones,'')||' | Lote editado por '||?||' '||datetime('now')||': '||?||'kg→'||?||'kg'
+        WHERE id=?
+    """, (nueva_kg, nuevos_lotes, user, kg_actuales or 0, nueva_kg, prod_id))
+    conn.commit()
+
+    # Recalcular MP requerida + envases con el nuevo tamaño
+    fh = c.execute(
+        "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    lote_kg_base = (fh[0] if fh else 0) or 0
+    factor = nueva_kg / lote_kg_base if lote_kg_base else 1
+    items = c.execute("""
+        SELECT material_id, material_nombre, COALESCE(cantidad_g_por_lote,0)
+        FROM formula_items
+        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    mp_recalc = []
+    for mat_id, mat_nom, cant_g in items:
+        nueva_g = (cant_g or 0) * factor * nuevos_lotes
+        mp_recalc.append({'material_id': mat_id, 'material_nombre': mat_nom,
+                          'gramos_requeridos': round(nueva_g)})
+
+    # Envases recalculados
+    pres = c.execute("""
+        SELECT envase_codigo, factor_g_por_unidad, etiqueta
+        FROM producto_presentaciones
+        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND activo=1 AND es_default=1
+        LIMIT 1
+    """, (producto,)).fetchone()
+    envase_recalc = None
+    if pres and pres[1] and pres[1] > 0:
+        unidades = (nueva_kg * 1000 * nuevos_lotes) / pres[1]
+        envase_recalc = {
+            'envase_codigo': pres[0],
+            'etiqueta': pres[2],
+            'unidades_requeridas': int(unidades),
+        }
+
+    return jsonify({
+        'ok': True,
+        'produccion_id': prod_id,
+        'producto': producto,
+        'cantidad_kg_anterior': kg_actuales,
+        'cantidad_kg_nueva': nueva_kg,
+        'mp_recalculada': mp_recalc,
+        'envase_recalculado': envase_recalc,
+    })
+
+
+@bp.route('/api/planta/detectar-cambios-demanda', methods=['GET'])
+def detectar_cambios_demanda():
+    """Sebastian (30-abr-2026): "si algo debe modificarse que me diga de
+    manera inmediata aumento venta aparezca alli recomiendo mover a tal
+    día y este a otro deseas aceptar?".
+
+    Compara velocidad actual (últimos 14d) vs base (días 15-44 atrás).
+    Detecta SKUs con cambio significativo (>20% arriba o abajo).
+    Sugiere ajustes al calendario.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    skus_config = c.execute("""
+        SELECT producto_nombre FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+
+    cambios_detectados = []
+    for (producto,) in skus_config:
+        # Velocidad reciente (14d) vs base (15-44d atrás)
+        sku_rows = c.execute(
+            "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+            (producto,)
+        ).fetchall()
+        if not sku_rows:
+            continue
+        v_reciente_total = 0.0
+        v_base_total = 0.0
+        for (sku,) in sku_rows:
+            # Reciente
+            r = _ventas_diarias_por_sku(c, sku, dias=14)
+            if r:
+                v_reciente_total += sum(q for _, q in r) / 14.0
+            # Base (días 15-44)
+            r2 = c.execute("""
+                SELECT date(creado_en), sku_items
+                FROM animus_shopify_orders
+                WHERE creado_en BETWEEN date('now','-44 days') AND date('now','-15 days')
+                  AND sku_items IS NOT NULL
+            """).fetchall()
+            cant = 0
+            for fecha, sku_items_json in r2:
+                if not sku_items_json:
+                    continue
+                try:
+                    items = json.loads(sku_items_json) if isinstance(sku_items_json, str) else sku_items_json
+                except Exception:
+                    continue
+                for it in (items or []):
+                    if (it.get('sku') or '').strip() == sku:
+                        cant += float(it.get('cantidad') or it.get('quantity') or 0)
+            if cant > 0:
+                v_base_total += cant / 30.0
+        if v_base_total < 0.1 or v_reciente_total < 0.1:
+            continue
+        cambio_pct = ((v_reciente_total - v_base_total) / v_base_total) * 100
+        if abs(cambio_pct) < 20:
+            continue
+        # Cambio significativo
+        # Buscar próxima producción programada
+        prox = c.execute("""
+            SELECT id, fecha_programada FROM produccion_programada
+            WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+              AND fecha_programada >= date('now')
+              AND estado IN ('pendiente','en_proceso')
+            ORDER BY fecha_programada ASC LIMIT 1
+        """, (producto,)).fetchone()
+        recomendacion = ''
+        nueva_fecha = None
+        if cambio_pct > 0 and prox:
+            # Aumento: adelantar
+            try:
+                fp = datetime.strptime(prox[1][:10], '%Y-%m-%d').date()
+                # Adelantar tantos días como porcentaje × 0.3 (heurística)
+                dias_adelanto = min(14, int(cambio_pct * 0.2))
+                nueva_fecha = fp - timedelta(days=dias_adelanto)
+                while nueva_fecha.weekday() not in (0, 2, 4):
+                    nueva_fecha -= timedelta(days=1)
+                if nueva_fecha < datetime.now().date():
+                    nueva_fecha = datetime.now().date()
+                    while nueva_fecha.weekday() not in (0, 2, 4):
+                        nueva_fecha += timedelta(days=1)
+                recomendacion = f'Adelantar de {prox[1]} a {nueva_fecha.isoformat()}'
+            except Exception:
+                pass
+        cambios_detectados.append({
+            'producto': producto,
+            'velocidad_base': round(v_base_total, 2),
+            'velocidad_reciente': round(v_reciente_total, 2),
+            'cambio_pct': round(cambio_pct, 1),
+            'tipo': 'aumento' if cambio_pct > 0 else 'caida',
+            'severidad': 'alta' if abs(cambio_pct) > 50 else 'media',
+            'proxima_produccion_id': prox[0] if prox else None,
+            'proxima_fecha_actual': prox[1] if prox else None,
+            'fecha_sugerida': nueva_fecha.isoformat() if nueva_fecha else None,
+            'recomendacion': recomendacion,
+        })
+
+    return jsonify({
+        'cambios': cambios_detectados,
+        'total': len(cambios_detectados),
+    })
+
+
+@bp.route('/api/planta/produccion/<int:prod_id>/aceptar-recomendacion', methods=['POST'])
+def aceptar_recomendacion(prod_id):
+    """Acepta una recomendación de mover producción a otra fecha."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    nueva_fecha = (d.get('nueva_fecha') or '').strip()
+    if not nueva_fecha:
+        return jsonify({'error': 'nueva_fecha requerida'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE produccion_programada SET
+          fecha_programada=?,
+          observaciones=COALESCE(observaciones,'')||' | Movida por '||?||' a '||?||' (recomendación demanda)'
+        WHERE id=?
+    """, (nueva_fecha, user, nueva_fecha, prod_id))
+    conn.commit()
+    return jsonify({'ok': True, 'produccion_id': prod_id, 'nueva_fecha': nueva_fecha})
 
 
 @bp.route('/api/auto-plan/runs', methods=['GET'])

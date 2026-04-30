@@ -5882,9 +5882,9 @@ function _renderProgramacion(d){
       </div>
       <!-- Switcher de horizonte -->
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
-        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">Semana</button>
+        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
         <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 mes</button>
-        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">2 meses</button>
+        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:7px 14px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">2 meses</button>
         <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">3 meses</button>
         <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">6 meses</button>
         <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 año</button>
@@ -9054,10 +9054,69 @@ async function ckMarcar(itemId, estado){
   // ════════════════════════════════════════════════════════════════════════
   // PLAN V2 — Multi-horizonte (1sem / 1m / 2m / 3m / 6m / 1año)
   // ════════════════════════════════════════════════════════════════════════
-  var _PV2_HORIZONTE = '0.25';  // semana por default
+  // Sebastian (30-abr-2026): "monte dos meses según lo que dice shopify"
+  // → default 2 meses (con switcher para ver más / menos)
+  var _PV2_HORIZONTE = '2';
   var _PV2_DATA = null;
 
-  function planV2Init(){ planV2Cargar(); }
+  function planV2Init(){
+    // Sebastian (30-abr-2026): "monte todo automáticamente desde Shopify".
+    // Al abrir /planta verifica si el plan es viejo (>12h) y lo re-genera
+    // en background. La UI se refresca solo cuando termina (~30s).
+    fetch('/api/auto-plan/asegurar-actualizado?max_horas=12', {method:'POST'})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d.ejecutado){
+          _toast('🤖 Auto-Plan recalculando en background...', 1);
+          setTimeout(planV2Cargar, 35000); // refresh tras 35s
+        }
+      }).catch(function(){});
+    planV2Cargar();
+    planV2DetectarCambios();
+  }
+
+  async function planV2DetectarCambios(){
+    try {
+      var r = await fetch('/api/planta/detectar-cambios-demanda');
+      var d = await r.json();
+      var cambios = d.cambios || [];
+      var box = document.getElementById('pv2-comprar-ya');
+      if(!cambios.length) return;
+      // Renderizar banner de cambios encima del de "comprar ya"
+      var existing = document.getElementById('pv2-cambios-demanda');
+      if(existing) existing.remove();
+      var banner = document.createElement('div');
+      banner.id = 'pv2-cambios-demanda';
+      banner.style.cssText = 'background:linear-gradient(135deg,#fef3c7,#fde68a);border:2px solid #d97706;border-radius:12px;padding:14px 18px;margin-bottom:14px';
+      banner.innerHTML = '<h3 style="margin:0 0 8px;color:#92400e;font-size:14px">📈 '+cambios.length+' cambio(s) de demanda detectado(s)</h3>'
+        + '<div style="font-size:12px;color:#78350f;margin-bottom:8px">El sistema detectó que las ventas cambiaron significativamente. Revisa si ajustar el plan:</div>'
+        + cambios.map(function(c, i){
+          var icono = c.tipo === 'aumento' ? '📈' : '📉';
+          var color = c.tipo === 'aumento' ? '#dc2626' : '#0891b2';
+          return '<div style="background:#fff;border:1px solid #fbbf24;border-radius:8px;padding:10px 12px;margin-top:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
+            + '<div style="font-size:12px"><b>'+icono+' '+_escHTML(c.producto)+'</b> · <span style="color:'+color+';font-weight:700">'+(c.cambio_pct>0?'+':'')+c.cambio_pct+'%</span> ('+c.velocidad_base.toFixed(1)+'→'+c.velocidad_reciente.toFixed(1)+' u/d)<br><span style="color:#64748b;font-size:11px">'+_escHTML(c.recomendacion||'Sin recomendación específica')+'</span></div>'
+            + (c.fecha_sugerida && c.proxima_produccion_id
+              ? '<button onclick="aceptarRecomendacion('+c.proxima_produccion_id+',\\''+c.fecha_sugerida+'\\')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Aceptar</button>'
+              : '<span style="color:#94a3b8;font-size:11px">Sin acción</span>')
+            + '</div>';
+        }).join('');
+      box.parentNode.insertBefore(banner, box);
+    } catch(e){ /* silent */ }
+  }
+
+  async function aceptarRecomendacion(prodId, nuevaFecha){
+    if(!confirm('¿Mover esta producción a '+nuevaFecha+'?')) return;
+    try {
+      var r = await fetch('/api/planta/produccion/'+prodId+'/aceptar-recomendacion', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({nueva_fecha: nuevaFecha})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      _toast('✓ Producción movida', 1);
+      planV2Init();
+    } catch(e){ alert('Error: '+e.message); }
+  }
 
   function planV2Horizonte(meses){
     _PV2_HORIZONTE = meses;
@@ -9077,11 +9136,11 @@ async function ckMarcar(itemId, estado){
     var meses = parseFloat(_PV2_HORIZONTE);
     try {
       if(meses < 1){
-        // Semana → reusa plan-semanal existente con dias=14
-        var r = await fetch('/api/planta/plan-semanal?dias=14');
+        // Semana → plan-semanal-v2 (con fallback a proyección si BD vacía)
+        var r = await fetch('/api/planta/plan-semanal-v2?dias=14');
         var d = await r.json();
         _PV2_DATA = d;
-        planV2RenderSemana(d);
+        planV2RenderSemanaV2(d);
       } else {
         var r = await fetch('/api/planta/forecast?meses='+Math.round(meses));
         var d = await r.json();
@@ -9091,6 +9150,122 @@ async function ckMarcar(itemId, estado){
     } catch(e){
       vista.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e.message+'</div>';
     }
+  }
+
+  function planV2RenderSemanaV2(d){
+    var kpis = document.getElementById('pv2-kpis');
+    var k = d.kpis || {};
+    var status = d.auto_plan_status || {};
+    kpis.innerHTML = ''
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Próximas 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Confirmadas</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.desde_bd||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">🔮 Proyectadas</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.proyectadas||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(status.horas_desde_run<24?'#15803d':'#d97706')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Auto-Plan</div><div style="font-size:14px;font-weight:700;color:'+(status.horas_desde_run<24?'#15803d':'#d97706')+';margin-top:4px">'+(status.horas_desde_run!=null ? 'hace '+status.horas_desde_run+'h' : 'nunca corrió')+'</div></div>';
+
+    document.getElementById('pv2-comprar-ya').style.display = 'none';
+
+    var vista = document.getElementById('pv2-vista');
+    var items = d.items || [];
+
+    // Banner si todas son proyectadas
+    var banner = '';
+    if(k.desde_bd === 0 && k.proyectadas > 0){
+      banner = '<div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:10px;padding:14px 18px;margin-bottom:14px;color:#6b21a8;font-size:13px">'
+        +'<b>🔮 Plan proyectado automáticamente</b> · Se calculó desde Shopify + cadencias. '
+        +'Ejecuta <b>🔥 Auto-Plan AHORA</b> para confirmar y crear los registros, o haz click en cada producción para confirmarla individual.'
+        +'</div>';
+    } else if(k.desde_bd > 0 && k.proyectadas === 0 && status.horas_desde_run > 24){
+      banner = '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:10px;padding:14px 18px;margin-bottom:14px;color:#92400e;font-size:13px">'
+        +'⚠ El Auto-Plan no se ha ejecutado en '+status.horas_desde_run+'h. <b>Ejecuta AHORA</b> para refrescar con datos actuales de Shopify.'
+        +'</div>';
+    }
+
+    if(!items.length){
+      vista.innerHTML = banner + '<div style="background:#fef3c7;padding:30px;border-radius:10px;text-align:center;color:#92400e;font-size:14px">⚠ Sin producciones próximas. Ejecuta <b>Auto-Plan</b> para que el sistema calcule el plan desde Shopify.</div>';
+      return;
+    }
+
+    vista.innerHTML = banner + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">'
+      + items.map(function(it){
+        var esProy = it.origen === 'proyeccion';
+        var borderCol = esProy ? '#7c3aed' : '#e2e8f0';
+        var img = it.imagen_url
+          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
+          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,'+(esProy?'#7c3aed,#dc2626':'#0f766e,#0891b2')+');display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
+        var fechaTxt = '';
+        try { fechaTxt = new Date(it.fecha_programada+'T00:00:00').toLocaleDateString('es-CO',{weekday:'short',day:'numeric',month:'short'}); } catch(e){ fechaTxt = it.fecha_programada; }
+        var idAttr = it.produccion_id || 0;
+        return '<div data-prod-id="'+idAttr+'" data-producto="'+_escAttr(it.producto)+'" data-fecha="'+_escAttr(it.fecha_programada)+'" data-kg="'+(it.kg||0)+'" style="background:#fff;border:2px solid '+borderCol+';border-radius:10px;overflow:hidden;transition:transform .12s">'
+          + '<div onclick="' + (esProy ? 'confirmarProyeccion(this.parentNode)' : 'abrirPlanSemModal('+idAttr+')') + '" style="cursor:pointer">' + img + '</div>'
+          +'<div style="padding:10px 12px;position:relative">'
+          + (esProy ? '<div style="position:absolute;top:-12px;right:8px;background:#7c3aed;color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.5px">🔮 PROYECTADA</div>' : '')
+          +'<b style="color:#0f172a;font-size:13px">'+_escHTML(it.producto)+'</b>'
+          +'<div style="font-size:11px;color:#64748b;margin-top:2px;text-transform:capitalize">📅 '+_escHTML(fechaTxt)+' · '+(it.kg||0).toFixed(0)+'kg</div>'
+          + (esProy
+              ? '<div style="font-size:11px;color:#7c3aed;margin-top:6px;font-weight:600">👆 Click para confirmar</div>'
+              : (it.area_nombre ? '<div style="font-size:11px;color:#64748b;margin-top:4px">🏭 '+_escHTML(it.area_nombre)+'</div>' : '<div style="font-size:11px;color:#dc2626;margin-top:4px">⚠ Sin área asignada</div>'))
+          + (!esProy && idAttr ? '<div style="display:flex;gap:4px;margin-top:8px;border-top:1px solid #e5e7eb;padding-top:8px">'
+              +'<button onclick="event.stopPropagation();editarLoteModal('+idAttr+',\\''+_escAttr(it.producto)+'\\','+(it.kg||0)+')" style="flex:1;background:#fff;color:#0891b2;border:1px solid #0891b2;padding:5px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✏️ Editar lote</button>'
+              +'<button onclick="event.stopPropagation();eliminarYReplanificar('+idAttr+',\\''+_escAttr(it.producto)+'\\')" style="flex:1;background:#fff;color:#dc2626;border:1px solid #dc2626;padding:5px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">🗑 Eliminar</button>'
+              +'</div>' : '')
+          +'</div></div>';
+      }).join('')
+      +'</div>';
+  }
+
+  async function confirmarProyeccion(card){
+    var producto = card.dataset.producto;
+    var fecha = card.dataset.fecha;
+    var kg = parseFloat(card.dataset.kg) || 0;
+    if(!confirm('¿Confirmar producción de "'+producto+'" para '+fecha+'?\n\nSe creará en el calendario y aparecerá en Pre-flight.')) return;
+    try {
+      var r = await fetch('/api/planta/confirmar-proyeccion', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto: producto, fecha_programada: fecha, kg: kg})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'no se pudo confirmar')); return; }
+      _toast(d.ya_existia ? 'Ya estaba creada' : '✓ Producción confirmada', 1);
+      planV2Cargar();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  async function eliminarYReplanificar(prodId, producto){
+    var motivo = prompt('¿Por qué eliminas esta producción de "'+producto+'"?\n\n(El sistema propondrá automáticamente otra fecha en su lugar según cadencia)', 'Ya producida');
+    if(motivo === null) return;
+    try {
+      var r = await fetch('/api/planta/produccion/'+prodId+'/eliminar-y-replanificar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({motivo: motivo})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      _toast('✓ Eliminada · nueva sugerida para '+d.nueva_fecha, 1);
+      planV2Cargar();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  function editarLoteModal(prodId, producto, kgActual){
+    var nueva = prompt('Editar tamaño del lote para "'+producto+'"\n\nKg actuales: '+kgActual+'\n\nNuevo tamaño (kg):', kgActual);
+    if(nueva === null) return;
+    nueva = parseFloat(nueva);
+    if(isNaN(nueva) || nueva <= 0){ alert('Cantidad inválida'); return; }
+    fetch('/api/planta/produccion/'+prodId+'/editar-lote', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cantidad_kg: nueva})
+    }).then(function(r){return r.json();}).then(function(d){
+      if(!d.ok){ alert('Error: '+(d.error||'')); return; }
+      var msg = '✓ Lote actualizado a '+nueva+'kg';
+      if(d.envase_recalculado){
+        msg += '\nEnvases ahora: '+d.envase_recalculado.unidades_requeridas+' unidades';
+      }
+      if(d.mp_recalculada && d.mp_recalculada.length){
+        var top3 = d.mp_recalculada.slice(0,3).map(function(m){return m.material_nombre+': '+m.gramos_requeridos+'g'}).join('\n');
+        msg += '\n\nMP recalculada:\n'+top3;
+      }
+      alert(msg);
+      planV2Cargar();
+    });
   }
 
   function planV2RenderSemana(d){
