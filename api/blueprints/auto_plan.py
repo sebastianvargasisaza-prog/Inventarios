@@ -1761,6 +1761,258 @@ def planta_recomendaciones():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# DIAGNÓSTICO SKU — qué LEE el sistema crudo de Shopify para un producto
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "no lo veo en la app no veo que lo esté
+# calculando". Visibilidad total: cada número que el motor usa, expuesto.
+
+@bp.route('/api/planta/diagnostico-sku', methods=['GET'])
+def diagnostico_sku():
+    """Devuelve TODO lo que el sistema lee crudo para un producto:
+
+      - SKUs Shopify mapeados (SAH, SAH10...)
+      - Stock por SKU + total
+      - Pedidos últimos 30/60/90/365 días
+      - Velocidad calculada (con tendencia)
+      - Factor g/u que usa el motor
+      - Días de alcance hoy
+      - Lote típico histórico
+      - Datos crudos de las últimas N transacciones para verificar
+
+    Query params:
+      - producto: nombre exacto del producto
+      - listar: si '1' devuelve solo lista de productos disponibles
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    conn = get_db(); c = conn.cursor()
+
+    # Modo lista: solo nombres de productos
+    if request.args.get('listar') == '1':
+        rows = c.execute("""
+            SELECT producto_nombre, COALESCE(estado,'activo'), prioridad
+            FROM sku_planeacion_config
+            WHERE activo = 1
+            ORDER BY prioridad ASC, producto_nombre ASC
+        """).fetchall()
+        return jsonify({
+            'productos': [{'nombre': r[0], 'estado': r[1], 'prioridad': r[2]} for r in rows]
+        })
+
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'Falta param "producto"'}), 400
+
+    out = {
+        'producto': producto,
+        'fecha_analisis': datetime.now().isoformat(),
+        'timestamp_actual': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+    # 1) SKUs Shopify mapeados a este producto
+    skus_map = c.execute("""
+        SELECT sku, COALESCE(activo,1) FROM sku_producto_map
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+        ORDER BY sku
+    """, (producto,)).fetchall()
+    out['skus_mapeados'] = [{'sku': r[0], 'activo': bool(r[1])} for r in skus_map]
+    out['advertencias'] = []
+    if not skus_map:
+        out['advertencias'].append(f'⚠ No hay SKUs Shopify mapeados a este producto en sku_producto_map. Sin mapeo, NO se pueden leer ventas ni stock.')
+
+    # 2) Stock por SKU desde stock_pt
+    stock_detalle = []
+    stock_total = 0
+    for (sku, activo) in skus_map:
+        try:
+            rs = c.execute("""
+                SELECT lote_produccion, fecha_produccion, unidades_inicial,
+                       unidades_disponible, COALESCE(estado,'OK')
+                FROM stock_pt
+                WHERE sku = ?
+                ORDER BY fecha_produccion DESC
+            """, (sku,)).fetchall()
+        except Exception as e:
+            stock_detalle.append({'sku': sku, 'error': str(e), 'lotes': []})
+            continue
+        lotes_sku = []
+        total_sku = 0
+        for r in rs:
+            disp = int(r[3] or 0)
+            lotes_sku.append({
+                'lote': r[0],
+                'fecha': r[1],
+                'inicial': int(r[2] or 0),
+                'disponible': disp,
+                'estado': r[4],
+            })
+            if (r[4] or 'OK').upper() != 'AGOTADO':
+                total_sku += disp
+        stock_detalle.append({
+            'sku': sku,
+            'total_unidades': total_sku,
+            'lotes_count': len(lotes_sku),
+            'lotes': lotes_sku[:10],
+        })
+        stock_total += total_sku
+    out['stock_por_sku'] = stock_detalle
+    out['stock_total_unidades'] = stock_total
+
+    if stock_total == 0 and skus_map:
+        out['advertencias'].append('⚠ Stock = 0. Verifica que stock_pt tenga datos sincronizados con Shopify.')
+
+    # 3) Ventas últimos N días por SKU
+    ventas_por_periodo = {}
+    for dias in [30, 60, 90, 365]:
+        total_periodo = 0
+        detalle_sku = {}
+        for (sku, _) in skus_map:
+            ventas = _ventas_diarias_por_sku(c, sku, dias=dias)
+            unidades_sku = sum(q for _, q in ventas)
+            detalle_sku[sku] = {
+                'unidades': int(unidades_sku),
+                'dias_con_venta': len(ventas),
+                'velocidad_dia': round(unidades_sku / dias, 3) if dias > 0 else 0,
+            }
+            total_periodo += unidades_sku
+        ventas_por_periodo[f'{dias}d'] = {
+            'total_unidades': int(total_periodo),
+            'velocidad_promedio': round(total_periodo / dias, 3) if dias > 0 else 0,
+            'por_sku': detalle_sku,
+        }
+    out['ventas_por_periodo'] = ventas_por_periodo
+
+    # 4) Velocidad final con tendencia (lo que el motor usa)
+    velocidad, factor = _velocidad_total_producto(c, producto)
+    velocidad_proj = max(0.0, velocidad * factor)
+    out['velocidad_final'] = {
+        'velocidad_base': round(velocidad, 3),
+        'factor_tendencia': round(factor, 3),
+        'velocidad_ajustada': round(velocidad_proj, 3),
+        'unidades_por_dia': round(velocidad_proj, 2),
+        'unidades_por_semana': round(velocidad_proj * 7, 1),
+        'unidades_por_mes': round(velocidad_proj * 30, 1),
+    }
+
+    # 5) Factor g/u
+    factor_g = _factor_g_por_unidad(c, producto)
+    out['factor_g_por_unidad'] = factor_g
+
+    # 6) Días de alcance HOY (sin Calendar)
+    if velocidad_proj > 0.01:
+        dias_alcance = stock_total / velocidad_proj
+        out['dias_alcance_hoy'] = round(dias_alcance, 1)
+        out['fecha_stockout_proyectada'] = (datetime.now().date() + timedelta(days=int(dias_alcance))).isoformat()
+        margen = 20
+        if dias_alcance > margen:
+            dias_hasta_lote = int(dias_alcance - margen)
+            out['fecha_lote_recomendada'] = (datetime.now().date() + timedelta(days=dias_hasta_lote)).isoformat()
+            out['urgencia'] = 'OK · falta(n) ' + str(dias_hasta_lote) + 'd para programar'
+        else:
+            out['fecha_lote_recomendada'] = (datetime.now().date() + timedelta(days=2)).isoformat()
+            out['urgencia'] = 'URGENTE · stock alcanza ' + str(round(dias_alcance, 1)) + 'd, debió producirse hace ' + str(margen - int(dias_alcance)) + 'd'
+    else:
+        out['dias_alcance_hoy'] = None
+        out['urgencia'] = 'SIN VENTAS · velocidad ~0, no se planea'
+
+    # 7) Lote típico (mediana histórica Calendar > 14d)
+    eventos = _calendar_events_cached()
+    alias = _alias_calendar_for(c, producto)
+    fecha_pip = datetime.now().date() - timedelta(days=14)
+    kgs_hist = []
+    eventos_match = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+        if score < 60:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+        eventos_match.append({
+            'fecha': f.isoformat(),
+            'titulo': ev.get('titulo'),
+            'kg_parseado': kg,
+            'score_match': score,
+        })
+        if f < fecha_pip and kg:
+            kgs_hist.append(kg)
+
+    cfg_lote = c.execute("""
+        SELECT fh.lote_size_kg
+        FROM formula_headers fh
+        WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(?))
+    """, (producto,)).fetchone()
+    lote_default = (cfg_lote[0] if cfg_lote else None) or 30
+
+    if kgs_hist:
+        kgs_hist.sort()
+        lote_tipico = kgs_hist[len(kgs_hist)//2]
+    else:
+        lote_tipico = lote_default
+
+    out['lote'] = {
+        'lote_default_formula': lote_default,
+        'lote_tipico_historico': round(lote_tipico, 1),
+        'historico_kg_lista': kgs_hist[:10],
+        'eventos_calendar_match_count': len(eventos_match),
+        'eventos_calendar_match_top10': eventos_match[:10],
+    }
+
+    # 8) Cálculo de unidades por lote
+    out['unidades_por_lote'] = int((lote_tipico * 1000) / max(factor_g, 1))
+    out['dias_que_durara_lote'] = round((out['unidades_por_lote'] / velocidad_proj), 1) if velocidad_proj > 0 else None
+
+    # 9) Tabla de "ejemplo" para validar visualmente
+    out['ejemplo_calculo'] = [
+        f'1) Stock hoy = {stock_total} unidades (suma de {len(skus_map)} SKU{"s" if len(skus_map)!=1 else ""})',
+        f'2) Velocidad = {round(velocidad_proj,2)} u/día (de ventas Shopify últimos 30d)',
+        f'3) Días alcance = {out.get("dias_alcance_hoy", "N/A")} días',
+        f'4) Margen mínimo = 20 días antes de agotar',
+        f'5) Producir cuando alcance baje a margen',
+        f'6) Lote = {round(lote_tipico,1)} kg ÷ {factor_g} g/u = {out["unidades_por_lote"]} unidades',
+        f'7) Lote durará = {out.get("dias_que_durara_lote", "N/A")} días',
+    ]
+
+    # 10) Resumen de ÚLTIMOS pedidos Shopify (top 5) para verificar
+    try:
+        ultimos_pedidos = c.execute("""
+            SELECT date(creado_en), nombre, unidades_total, sku_items
+            FROM animus_shopify_orders
+            ORDER BY creado_en DESC LIMIT 20
+        """).fetchall()
+        match_pedidos = []
+        for fecha, nombre, _utot, sku_items_json in ultimos_pedidos:
+            if not sku_items_json:
+                continue
+            try:
+                items = json.loads(sku_items_json) if isinstance(sku_items_json, str) else sku_items_json
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk_pedido = (it.get('sku') or it.get('SKU') or '').strip()
+                if any(sk_pedido == m[0] for m in skus_map):
+                    match_pedidos.append({
+                        'fecha': fecha,
+                        'pedido': nombre,
+                        'sku': sk_pedido,
+                        'cantidad': it.get('cantidad') or it.get('quantity') or 0,
+                    })
+                    break
+            if len(match_pedidos) >= 10:
+                break
+        out['ultimos_10_pedidos_con_este_producto'] = match_pedidos
+    except Exception as e:
+        out['ultimos_10_pedidos_con_este_producto'] = {'error': str(e)}
+
+    return jsonify(out)
+
+
+# ════════════════════════════════════════════════════════════════════════
 # PLAN PURO SHOPIFY — vista por día (próximo lunes → viernes siguiente)
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "no tengas en cuenta el calendario, si tuvieras
@@ -1942,6 +2194,275 @@ def plan_semana_shopify():
             f'Distribución = {"L-V (5 días)" if distribuir_lv_completo else "L/M/V (3 días)"}',
             f'Límite = {LIMITE_POR_DIA} producción/día (área dispensación = Mayerlin)',
             'Orden = críticas primero, luego por días-alcance',
+        ],
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PLAN LARGO SHOPIFY — rolling forecast día-a-día (6 meses, 1 año)
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "quiero que automáticamente la app hoy reconozca
+# inventario en shopy cruce con ventas y sepa como produciremos 6 meses y
+# 1 año, es lo más importante. Lo primero es que el sistema reconozca qué
+# producir".
+
+@bp.route('/api/planta/plan-largo-shopify', methods=['GET'])
+def plan_largo_shopify():
+    """Rolling forecast SHOPIFY-only para 6 o 12 meses.
+
+    Para cada SKU activo simula día-a-día:
+      stock_dia = stock_inicial - velocidad * dias_transcurridos
+      Cuando stock_dia <= velocidad * 20 (margen) → programar producción
+        en el próximo L/M/V con cupo libre (1 SKU/día regla Mayerlin).
+      Tras producir: stock_dia += unidades_lote (efectivo al día siguiente).
+      Repetir hasta horizonte_dias.
+
+    Devuelve:
+      {
+        'horizonte_meses': 6 o 12,
+        'fecha_inicio': hoy,
+        'fecha_fin': hoy + N días,
+        'producciones': [
+          {fecha, producto, lote_kg, unidades_lote, motivo,
+           stock_antes, stock_despues, dia_semana, mes}
+        ],
+        'producciones_por_mes': {
+          '2026-05': [{producto, lote_kg, fecha}],
+          '2026-06': [...]
+        },
+        'producciones_por_sku': {
+          'Producto X': {
+            'total_lotes': 8, 'total_kg': 720,
+            'fechas': ['2026-05-04','2026-05-30',...]
+          }
+        },
+        'kpis': {
+          total_lotes, total_kg, productos_planeados,
+          dias_con_produccion, slots_libres,
+          alerta_capacidad: bool (si hay >1 SKU/día forzado)
+        },
+        'sin_ventas': [...] // SKUs descartados por velocidad ~0
+      }
+
+    Query params:
+      - meses: 6 o 12 (default 6)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    meses = max(1, min(24, int(request.args.get('meses', '6'))))
+    horizonte_dias = meses * 30
+    conn = get_db(); c = conn.cursor()
+
+    skus = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, spc.merma_pct, spc.prioridad,
+               fh.lote_size_kg, spc.estado
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+          AND COALESCE(spc.estado,'activo') NOT IN ('descontinuado','pausado')
+        ORDER BY spc.prioridad ASC
+    """).fetchall()
+
+    fecha_hoy = datetime.now().date()
+    margen_dias = 20  # Sebastián: producir 20d antes de agotar
+
+    # Reunir info por SKU primero
+    sku_info = []
+    sin_ventas = []
+    for sku_row in skus:
+        producto, cadencia_cfg, _merma, prioridad, lote_kg_default, estado = sku_row
+        velocidad, factor = _velocidad_total_producto(c, producto)
+        velocidad_proj = max(0.0, velocidad * factor)
+        stock_inicial = _stock_actual_pt(c, producto)
+        factor_g = _factor_g_por_unidad(c, producto)
+
+        # Lote típico desde histórico (mediana) o default
+        eventos_hist = _calendar_events_cached()
+        alias = _alias_calendar_for(c, producto)
+        kg_hist = []
+        for ev in eventos_hist:
+            try:
+                f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if f >= fecha_hoy - timedelta(days=14):
+                continue
+            score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+            if score < 60:
+                continue
+            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+            if kg:
+                kg_hist.append(kg)
+        if kg_hist:
+            kg_hist.sort()
+            lote_kg_use = kg_hist[len(kg_hist)//2]
+        else:
+            lote_kg_use = lote_kg_default or 30
+
+        unidades_lote = (lote_kg_use * 1000) / max(factor_g, 1)
+
+        # Si velocidad ~0 → no se planea
+        if velocidad_proj < 0.01:
+            sin_ventas.append({
+                'producto': producto,
+                'razon': 'Sin ventas detectadas en Shopify (velocidad < 0.01 u/día)',
+                'stock_inicial': int(stock_inicial),
+            })
+            continue
+
+        sku_info.append({
+            'producto': producto,
+            'velocidad': velocidad_proj,
+            'stock_inicial': stock_inicial,
+            'factor_g': factor_g,
+            'lote_kg': lote_kg_use,
+            'unidades_lote': unidades_lote,
+            'prioridad': prioridad or 50,
+        })
+
+    # ROLLING FORECAST: simular cada día del horizonte y programar lotes
+    # Estrategia: para cada SKU calcular las fechas en las que stock toca margen,
+    # luego asignar cada una al primer L/M/V con cupo libre.
+    LIMITE_POR_DIA = 1
+    cupo_por_dia = {}  # iso_fecha -> count
+
+    todas_producciones = []  # lista plana de {fecha, producto, lote_kg, ...}
+
+    # 1) Para cada SKU: identifica fechas-objetivo donde necesita lote
+    for s in sku_info:
+        velocidad = s['velocidad']
+        unidades_lote = s['unidades_lote']
+        stock = s['stock_inicial']
+        cursor_dia = 0  # días transcurridos desde hoy
+        n_lotes_sku = 0
+        max_lotes_sku = max(1, int((velocidad * horizonte_dias) / unidades_lote) + 2)
+
+        while cursor_dia <= horizonte_dias and n_lotes_sku < max_lotes_sku:
+            # ¿Cuántos días hasta que stock baje al margen?
+            dias_hasta_margen = max(0, int((stock - velocidad * margen_dias) / velocidad))
+            fecha_objetivo = fecha_hoy + timedelta(days=cursor_dia + dias_hasta_margen)
+            # Si la fecha ya pasó del horizonte, fin
+            if (fecha_objetivo - fecha_hoy).days > horizonte_dias:
+                break
+            # Buscar primer L/M/V con cupo desde fecha_objetivo
+            f_busqueda = max(fecha_objetivo, fecha_hoy + timedelta(days=2))
+            asignado = None
+            DIAS_VALIDOS_FALLBACK = (0, 1, 2, 3, 4)  # L-V completos
+            for _ in range(60):
+                if f_busqueda.weekday() in (0, 2, 4):  # L M V primero
+                    iso = f_busqueda.isoformat()
+                    if cupo_por_dia.get(iso, 0) < LIMITE_POR_DIA:
+                        asignado = f_busqueda
+                        break
+                f_busqueda += timedelta(days=1)
+            # Si no cupo en L/M/V → probar Ma/Ju
+            if asignado is None:
+                f_busqueda = max(fecha_objetivo, fecha_hoy + timedelta(days=2))
+                for _ in range(60):
+                    if f_busqueda.weekday() in DIAS_VALIDOS_FALLBACK:
+                        iso = f_busqueda.isoformat()
+                        if cupo_por_dia.get(iso, 0) < LIMITE_POR_DIA:
+                            asignado = f_busqueda
+                            break
+                    f_busqueda += timedelta(days=1)
+            if asignado is None:
+                # Forzar (alerta de capacidad)
+                asignado = max(fecha_objetivo, fecha_hoy + timedelta(days=2))
+                # Avanzar al primer día laborable
+                while asignado.weekday() not in DIAS_VALIDOS_FALLBACK:
+                    asignado += timedelta(days=1)
+
+            # Calcular stock antes (en fecha asignada) y después
+            dias_real = (asignado - fecha_hoy).days
+            stock_antes = max(0, stock - velocidad * (dias_real - cursor_dia))
+            stock_despues = stock_antes + unidades_lote
+
+            iso_asignado = asignado.isoformat()
+            cupo_por_dia[iso_asignado] = cupo_por_dia.get(iso_asignado, 0) + 1
+
+            todas_producciones.append({
+                'fecha': iso_asignado,
+                'producto': s['producto'],
+                'lote_kg': round(s['lote_kg'], 1),
+                'unidades_lote': int(unidades_lote),
+                'stock_antes': int(stock_antes),
+                'stock_despues': int(stock_despues),
+                'velocidad_dia': round(velocidad, 2),
+                'factor_g': s['factor_g'],
+                'dia_semana': ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'][asignado.weekday()],
+                'mes': asignado.strftime('%Y-%m'),
+                'forzado_capacidad': cupo_por_dia.get(iso_asignado, 0) > LIMITE_POR_DIA,
+                'motivo': f'Stock cae a margen 20d el {(fecha_hoy + timedelta(days=cursor_dia + dias_hasta_margen)).isoformat()}',
+            })
+
+            # Avanzar simulación: stock se reabastece, cursor avanza dias_real
+            stock = stock_despues
+            cursor_dia = dias_real + 1
+            n_lotes_sku += 1
+
+    # Ordenar por fecha
+    todas_producciones.sort(key=lambda p: (p['fecha'], p['producto']))
+
+    # Agrupar por mes
+    por_mes = {}
+    for p in todas_producciones:
+        por_mes.setdefault(p['mes'], []).append({
+            'producto': p['producto'],
+            'lote_kg': p['lote_kg'],
+            'fecha': p['fecha'],
+            'dia_semana': p['dia_semana'],
+        })
+
+    # Agrupar por SKU
+    por_sku = {}
+    for p in todas_producciones:
+        if p['producto'] not in por_sku:
+            por_sku[p['producto']] = {
+                'total_lotes': 0,
+                'total_kg': 0,
+                'fechas': [],
+                'velocidad_dia': p['velocidad_dia'],
+                'factor_g': p['factor_g'],
+            }
+        por_sku[p['producto']]['total_lotes'] += 1
+        por_sku[p['producto']]['total_kg'] += p['lote_kg']
+        por_sku[p['producto']]['fechas'].append(p['fecha'])
+
+    # KPIs
+    dias_unicos = set(p['fecha'] for p in todas_producciones)
+    forzados = sum(1 for p in todas_producciones if p.get('forzado_capacidad'))
+    kpis = {
+        'total_lotes': len(todas_producciones),
+        'total_kg': round(sum(p['lote_kg'] for p in todas_producciones), 1),
+        'productos_planeados': len(por_sku),
+        'productos_sin_ventas': len(sin_ventas),
+        'dias_con_produccion': len(dias_unicos),
+        'meses_cubiertos': len(por_mes),
+        'forzados_por_capacidad': forzados,
+        'alerta_capacidad': forzados > 0,
+        'promedio_lotes_por_mes': round(len(todas_producciones) / max(meses, 1), 1),
+    }
+
+    return jsonify({
+        'horizonte_meses': meses,
+        'horizonte_dias': horizonte_dias,
+        'fecha_inicio': fecha_hoy.isoformat(),
+        'fecha_fin': (fecha_hoy + timedelta(days=horizonte_dias)).isoformat(),
+        'producciones': todas_producciones,
+        'producciones_por_mes': por_mes,
+        'producciones_por_sku': por_sku,
+        'sin_ventas': sin_ventas,
+        'kpis': kpis,
+        'fecha_analisis': datetime.now().isoformat(),
+        'modo': 'shopify_rolling_forecast',
+        'reglas': [
+            f'Horizonte = {meses} meses ({horizonte_dias} días)',
+            'Stock inicial = Shopify · Velocidad = ventas Shopify 30d',
+            'Programar lote cuando stock cae a margen 20d',
+            'Tras producir: stock += unidades_lote (al día siguiente)',
+            'Asignación: L/M/V primero, luego Ma/Ju, 1 SKU/día (Mayerlin)',
+            'Lote típico = mediana histórica Calendar o default',
         ],
     })
 

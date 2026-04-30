@@ -5968,7 +5968,10 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">+ Nuevo producto</button>
-          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de la semana basado SOLO en Shopify, sin Calendar">🛒 Plan semana (Shopify)</button>
+          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Ver crudo qué LEE el sistema de Shopify para un producto">🔍 Diagnóstico SKU</button>
+          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de la semana basado SOLO en Shopify, sin Calendar">🛒 Semana</button>
+          <button onclick="planV2VerLargoShopify(6)" style="background:#10b981;color:#064e3b;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de los próximos 6 meses con Shopify">📆 6 meses</button>
+          <button onclick="planV2VerLargoShopify(12)" style="background:#06b6d4;color:#083344;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan del próximo año con Shopify">🗓️ 1 año</button>
           <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Excel</button>
           <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
         </div>
@@ -9371,6 +9374,198 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // 🔍 DIAGNÓSTICO SKU — lo que el sistema LEE crudo de Shopify
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2DiagnosticoSKU(){
+    // Paso 1: cargar lista de productos
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;text-align:center"><div style="font-size:32px">⏳</div><div style="margin-top:10px;color:#64748b">Cargando productos...</div></div>';
+    document.body.appendChild(modal);
+    try {
+      var r = await fetch('/api/planta/diagnostico-sku?listar=1');
+      var d = await r.json();
+      var prods = d.productos || [];
+      var html = '<div style="background:#fff;border-radius:12px;width:600px;max-width:96vw;max-height:90vh;overflow:auto;padding:24px">';
+      html += '<h3 style="margin:0 0 14px;color:#0f172a">🔍 Selecciona un producto a diagnosticar</h3>';
+      html += '<p style="color:#64748b;font-size:12px;margin:0 0 14px">Vamos a ver crudo lo que el sistema lee de Shopify para ese producto: SKUs mapeados, stock, ventas, velocidad, días de alcance.</p>';
+      html += '<input type="text" id="diagSkuFiltro" oninput="planV2DiagFiltrar()" placeholder="Filtrar..." style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;margin-bottom:10px">';
+      html += '<div id="diagSkuLista" style="max-height:50vh;overflow:auto">';
+      prods.forEach(function(p){
+        var col = p.estado === 'activo' ? '#0f172a' : '#94a3b8';
+        html += '<div class="diag-item" data-nombre="'+_escHTML((p.nombre||'').toLowerCase())+'" onclick="planV2DiagnosticoVer(\\''+_escHTML((p.nombre||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="padding:10px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;justify-content:space-between;color:'+col+'" onmouseover="this.style.background=\\'#f8fafc\\'" onmouseout="this.style.background=\\'#fff\\'">';
+        html += '<span><b>'+_escHTML(p.nombre)+'</b></span><span style="color:#64748b;font-size:11px">P'+(p.prioridad||'-')+' · '+_escHTML(p.estado||'')+'</span>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+      modal.innerHTML = html;
+    } catch(e){
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
+    }
+  }
+
+  function planV2DiagFiltrar(){
+    var q = (document.getElementById('diagSkuFiltro').value||'').toLowerCase();
+    var items = document.querySelectorAll('.diag-item');
+    items.forEach(function(it){
+      var n = it.getAttribute('data-nombre') || '';
+      it.style.display = (!q || n.indexOf(q) >= 0) ? '' : 'none';
+    });
+  }
+
+  async function planV2DiagnosticoVer(producto){
+    // Cierra modal anterior
+    document.querySelectorAll('div[style*="position:fixed"][style*="z-index:9999"]').forEach(function(m){m.remove();});
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:50px;text-align:center"><div style="font-size:42px">🔍</div><div style="margin-top:14px;color:#0f172a;font-size:16px;font-weight:700">Analizando "'+_escHTML(producto)+'"...</div></div>';
+    document.body.appendChild(modal);
+    try {
+      var r = await fetch('/api/planta/diagnostico-sku?producto='+encodeURIComponent(producto));
+      var d = await r.json();
+      if(d.error){ modal.remove(); alert('Error: '+d.error); return; }
+
+      var html = '<div style="background:#fff;border-radius:12px;width:1100px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px">';
+      html += '<div><h2 style="margin:0;color:#0f172a;font-size:22px">🔍 Diagnóstico: '+_escHTML(d.producto)+'</h2>';
+      html += '<p style="color:#64748b;font-size:11px;margin:4px 0 0">Análisis: '+_escHTML(d.timestamp_actual||'')+'</p></div>';
+      html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 14px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>';
+
+      // Advertencias
+      if((d.advertencias||[]).length){
+        html += '<div style="background:#fef2f2;border:1px solid #fca5a5;padding:12px;border-radius:8px;margin-bottom:16px">';
+        d.advertencias.forEach(function(a){
+          html += '<div style="color:#991b1b;font-size:12px;margin-bottom:4px">'+_escHTML(a)+'</div>';
+        });
+        html += '</div>';
+      }
+
+      // 1. SKUs mapeados
+      html += '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:#0f172a">1️⃣ SKUs Shopify mapeados a este producto</h4>';
+      var skus = d.skus_mapeados||[];
+      if(!skus.length){
+        html += '<div style="color:#dc2626;font-size:12px">⚠ NINGÚN SKU mapeado. Sin esto el sistema no puede leer Shopify.</div>';
+      } else {
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        skus.forEach(function(s){
+          html += '<span style="background:'+(s.activo?'#dbeafe':'#f1f5f9')+';color:'+(s.activo?'#1e3a8a':'#64748b')+';padding:6px 12px;border-radius:6px;font-family:monospace;font-weight:700">'+_escHTML(s.sku)+(s.activo?'':' (inactivo)')+'</span>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // 2. Stock por SKU
+      html += '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:#0f172a">2️⃣ Stock actual por SKU (tabla stock_pt)</h4>';
+      html += '<div style="font-size:24px;font-weight:800;color:#0f172a;margin-bottom:10px">'+_fmtMiles(d.stock_total_unidades||0)+' <span style="font-size:13px;font-weight:500;color:#64748b">unidades total</span></div>';
+      var stockSku = d.stock_por_sku||[];
+      stockSku.forEach(function(s){
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;margin-bottom:8px">';
+        html += '<div style="display:flex;justify-content:space-between;font-weight:700;color:#0f172a"><span>'+_escHTML(s.sku)+'</span><span>'+(s.total_unidades||0)+' u · '+(s.lotes_count||0)+' lote(s)</span></div>';
+        if((s.lotes||[]).length){
+          html += '<table style="width:100%;font-size:11px;margin-top:6px;border-collapse:collapse"><thead style="color:#64748b"><tr><th style="text-align:left;padding:3px">Lote</th><th style="text-align:left">Fecha</th><th style="text-align:right">Inicial</th><th style="text-align:right">Disponible</th><th>Estado</th></tr></thead><tbody>';
+          s.lotes.forEach(function(l){
+            var col = l.estado === 'AGOTADO' ? '#94a3b8' : '#0f172a';
+            html += '<tr style="color:'+col+'"><td style="padding:3px">'+_escHTML(l.lote||'')+'</td><td>'+_escHTML(l.fecha||'')+'</td><td style="text-align:right">'+l.inicial+'</td><td style="text-align:right;font-weight:700">'+l.disponible+'</td><td>'+_escHTML(l.estado)+'</td></tr>';
+          });
+          html += '</tbody></table>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // 3. Ventas por periodo
+      html += '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:#0f172a">3️⃣ Ventas Shopify por periodo</h4>';
+      var vp = d.ventas_por_periodo||{};
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">';
+      ['30d','60d','90d','365d'].forEach(function(p){
+        var pp = vp[p]||{};
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px"><div style="font-size:11px;color:#64748b">Últimos '+p+'</div><div style="font-size:22px;font-weight:800;color:#0f172a">'+_fmtMiles(pp.total_unidades||0)+'</div><div style="font-size:11px;color:#64748b">'+(pp.velocidad_promedio||0)+' u/día prom.</div></div>';
+      });
+      html += '</div></div>';
+
+      // 4. Velocidad final usada por motor
+      var vf = d.velocidad_final||{};
+      html += '<div style="background:#ecfdf5;border:2px solid #10b981;border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:#065f46">4️⃣ Velocidad que USA el motor (con tendencia)</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">';
+      html += '<div><div style="font-size:11px;color:#065f46">Base 30d</div><div style="font-size:18px;font-weight:800">'+(vf.velocidad_base||0)+' u/d</div></div>';
+      html += '<div><div style="font-size:11px;color:#065f46">Factor tendencia</div><div style="font-size:18px;font-weight:800">×'+(vf.factor_tendencia||1)+'</div></div>';
+      html += '<div><div style="font-size:11px;color:#065f46">Velocidad ajustada</div><div style="font-size:22px;font-weight:800;color:#047857">'+(vf.unidades_por_dia||0)+' u/d</div></div>';
+      html += '<div><div style="font-size:11px;color:#065f46">Por semana</div><div style="font-size:18px;font-weight:800">'+(vf.unidades_por_semana||0)+' u</div></div>';
+      html += '<div><div style="font-size:11px;color:#065f46">Por mes</div><div style="font-size:18px;font-weight:800">'+(vf.unidades_por_mes||0)+' u</div></div>';
+      html += '</div></div>';
+
+      // 5. Días de alcance + recomendación
+      var alc = d.dias_alcance_hoy;
+      var col = alc==null ? '#94a3b8' : (alc<20 ? '#dc2626' : (alc<40 ? '#f97316' : '#10b981'));
+      html += '<div style="background:'+col+'15;border:2px solid '+col+';border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:'+col+'">5️⃣ Días de alcance HOY</h4>';
+      html += '<div style="font-size:42px;font-weight:800;color:'+col+'">'+(alc==null?'—':alc+' días')+'</div>';
+      if(d.fecha_stockout_proyectada){
+        html += '<div style="font-size:13px;color:#0f172a">Stockout proyectado: <b>'+_escHTML(d.fecha_stockout_proyectada)+'</b></div>';
+      }
+      if(d.fecha_lote_recomendada){
+        html += '<div style="font-size:13px;color:#0f172a;margin-top:4px">Lote recomendado: <b>'+_escHTML(d.fecha_lote_recomendada)+'</b></div>';
+      }
+      html += '<div style="font-size:13px;color:'+col+';margin-top:6px;font-weight:700">'+_escHTML(d.urgencia||'')+'</div>';
+      html += '</div>';
+
+      // 6. Lote típico + factor g/u
+      var l = d.lote||{};
+      html += '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">';
+      html += '<h4 style="margin:0 0 10px;color:#0f172a">6️⃣ Lote y factor g/u</h4>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">';
+      html += '<div><div style="font-size:11px;color:#64748b">Factor g/u (motor)</div><div style="font-size:20px;font-weight:800">'+(d.factor_g_por_unidad||0)+' g</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Lote default fórmula</div><div style="font-size:20px;font-weight:800">'+(l.lote_default_formula||0)+' kg</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Lote típico (mediana)</div><div style="font-size:20px;font-weight:800">'+(l.lote_tipico_historico||0)+' kg</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Unidades por lote</div><div style="font-size:20px;font-weight:800;color:#0891b2">'+_fmtMiles(d.unidades_por_lote||0)+' u</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Lote durará</div><div style="font-size:20px;font-weight:800">'+(d.dias_que_durara_lote==null?'—':d.dias_que_durara_lote+' d')+'</div></div>';
+      html += '</div>';
+      if((l.historico_kg_lista||[]).length){
+        html += '<div style="margin-top:8px;font-size:11px;color:#64748b">Histórico Calendar (kg): '+l.historico_kg_lista.join(', ')+'</div>';
+      }
+      html += '</div>';
+
+      // 7. Cálculo paso a paso
+      html += '<div style="background:#1e293b;color:#e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px;font-family:monospace;font-size:12px">';
+      html += '<h4 style="margin:0 0 10px;color:#f8fafc;font-family:system-ui">7️⃣ Cálculo paso a paso</h4>';
+      (d.ejemplo_calculo||[]).forEach(function(line){
+        html += '<div style="margin-bottom:4px">'+_escHTML(line)+'</div>';
+      });
+      html += '</div>';
+
+      // 8. Últimos pedidos con este producto
+      var ult = d.ultimos_10_pedidos_con_este_producto||[];
+      if(ult.length || ult.error){
+        html += '<div style="background:#f8fafc;border-radius:8px;padding:14px">';
+        html += '<h4 style="margin:0 0 10px;color:#0f172a">8️⃣ Últimos pedidos Shopify con este producto</h4>';
+        if(ult.error){
+          html += '<div style="color:#dc2626;font-size:12px">Error: '+_escHTML(ult.error)+'</div>';
+        } else if(!ult.length){
+          html += '<div style="color:#64748b;font-size:12px">Sin pedidos recientes encontrados.</div>';
+        } else {
+          html += '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead style="background:#f1f5f9"><tr><th style="padding:6px;text-align:left">Fecha</th><th style="padding:6px;text-align:left">Pedido</th><th style="padding:6px;text-align:left">SKU</th><th style="padding:6px;text-align:right">Cantidad</th></tr></thead><tbody>';
+          ult.forEach(function(u){
+            html += '<tr style="border-top:1px solid #e2e8f0"><td style="padding:5px 6px">'+_escHTML(u.fecha||'')+'</td><td style="padding:5px 6px">'+_escHTML(u.pedido||'')+'</td><td style="padding:5px 6px;font-family:monospace">'+_escHTML(u.sku||'')+'</td><td style="padding:5px 6px;text-align:right;font-weight:700">'+(u.cantidad||0)+'</td></tr>';
+          });
+          html += '</tbody></table>';
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      modal.innerHTML = html;
+    } catch(e){
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
   // 🛒 Plan SOLO Shopify — vista por día (próximo lunes → viernes)
   // ════════════════════════════════════════════════════════════════════
   async function planV2VerSemanaShopify(){
@@ -9462,6 +9657,201 @@ async function ckMarcar(itemId, estado){
     } catch(e){
       modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 📆 Plan LARGO — 6 meses / 1 año Shopify rolling forecast
+  // ════════════════════════════════════════════════════════════════════
+  // Cache para CSV download
+  window._planLargoData = null;
+  async function planV2VerLargoShopify(meses){
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:50px;text-align:center"><div style="font-size:42px">⏳</div><div style="margin-top:14px;color:#0f172a;font-size:16px;font-weight:700">Calculando plan de '+meses+' meses...</div><div style="margin-top:6px;color:#64748b;font-size:12px">Simulando rolling forecast día-a-día</div></div>';
+    document.body.appendChild(modal);
+    try {
+      var r = await fetch('/api/planta/plan-largo-shopify?meses='+meses);
+      var d = await r.json();
+      if(d.error){ modal.remove(); alert('Error: '+d.error); return; }
+      window._planLargoData = d;
+      var k = d.kpis || {};
+      var porMes = d.producciones_por_mes || {};
+      var porSku = d.producciones_por_sku || {};
+      var sinVentas = d.sin_ventas || [];
+      var producciones = d.producciones || [];
+      var titulo = meses === 12 ? '🗓️ Plan 1 año' : '📆 Plan '+meses+' meses';
+      var bgGrad = meses === 12 ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'linear-gradient(135deg,#10b981,#059669)';
+
+      var html = '<div style="background:#fff;border-radius:12px;width:1300px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
+      // Header
+      html += '<div style="background:'+bgGrad+';color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:18px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">';
+      html += '<div><h2 style="margin:0;color:#fff;font-size:24px">'+titulo+' — SOLO Shopify</h2>';
+      html += '<p style="color:#cffafe;font-size:12px;margin:4px 0 0">Rolling forecast día-a-día · '+_escHTML(d.fecha_inicio)+' → '+_escHTML(d.fecha_fin)+'</p></div>';
+      html += '<div style="display:flex;gap:6px"><button onclick="planLargoCSV()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">📥 CSV</button>';
+      html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">Cerrar ✕</button></div>';
+      html += '</div></div>';
+
+      // KPIs
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">';
+      html += '<div style="background:#ecfdf5;padding:12px;border-radius:8px;border:1px solid #6ee7b7"><div style="font-size:11px;color:#065f46">Total lotes</div><div style="font-size:26px;font-weight:800;color:#047857">'+(k.total_lotes||0)+'</div></div>';
+      html += '<div style="background:#eff6ff;padding:12px;border-radius:8px;border:1px solid #93c5fd"><div style="font-size:11px;color:#1e3a8a">Total kg</div><div style="font-size:26px;font-weight:800;color:#1d4ed8">'+_fmtMiles(k.total_kg||0)+'</div></div>';
+      html += '<div style="background:#fdf4ff;padding:12px;border-radius:8px;border:1px solid #d8b4fe"><div style="font-size:11px;color:#581c87">SKUs planeados</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.productos_planeados||0)+'</div></div>';
+      html += '<div style="background:#fff7ed;padding:12px;border-radius:8px;border:1px solid #fdba74"><div style="font-size:11px;color:#7c2d12">Lotes/mes</div><div style="font-size:26px;font-weight:800;color:#ea580c">'+(k.promedio_lotes_por_mes||0)+'</div></div>';
+      html += '<div style="background:#f1f5f9;padding:12px;border-radius:8px"><div style="font-size:11px;color:#475569">Días con producción</div><div style="font-size:26px;font-weight:800;color:#1e293b">'+(k.dias_con_produccion||0)+'</div></div>';
+      if(k.alerta_capacidad){
+        html += '<div style="background:#fee2e2;padding:12px;border-radius:8px;border:1px solid #fca5a5"><div style="font-size:11px;color:#991b1b">⚠ Forzados (cap.)</div><div style="font-size:26px;font-weight:800;color:#dc2626">'+(k.forzados_por_capacidad||0)+'</div></div>';
+      }
+      if(k.productos_sin_ventas){
+        html += '<div style="background:#fef3c7;padding:12px;border-radius:8px;border:1px solid #fcd34d"><div style="font-size:11px;color:#92400e">Sin ventas</div><div style="font-size:26px;font-weight:800;color:#d97706">'+k.productos_sin_ventas+'</div></div>';
+      }
+      html += '</div>';
+
+      // Reglas
+      html += '<div style="background:#f0fdfa;border:1px solid #5eead4;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#134e4a">';
+      html += '<b>📐 Reglas aplicadas:</b><ul style="margin:6px 0 0 18px;padding:0">';
+      (d.reglas||[]).forEach(function(r){ html += '<li>'+_escHTML(r)+'</li>'; });
+      html += '</ul></div>';
+
+      // Tabs internas
+      html += '<div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #e2e8f0">';
+      html += '<button class="plLargo-tab" data-tab="mes" onclick="planLargoTab(\\'mes\\')" style="padding:8px 16px;border:none;background:#0891b2;color:#fff;font-weight:800;cursor:pointer;border-radius:6px 6px 0 0">📅 Por mes</button>';
+      html += '<button class="plLargo-tab" data-tab="sku" onclick="planLargoTab(\\'sku\\')" style="padding:8px 16px;border:none;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer;border-radius:6px 6px 0 0">📦 Por SKU</button>';
+      html += '<button class="plLargo-tab" data-tab="lista" onclick="planLargoTab(\\'lista\\')" style="padding:8px 16px;border:none;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer;border-radius:6px 6px 0 0">📋 Lista cronológica</button>';
+      if(sinVentas.length){
+        html += '<button class="plLargo-tab" data-tab="sin" onclick="planLargoTab(\\'sin\\')" style="padding:8px 16px;border:none;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer;border-radius:6px 6px 0 0">⚠ Sin ventas ('+sinVentas.length+')</button>';
+      }
+      html += '</div>';
+
+      // Vista por mes (default)
+      html += '<div id="plLargo-vista-mes">';
+      var meses_keys = Object.keys(porMes).sort();
+      if(!meses_keys.length){
+        html += '<div style="text-align:center;padding:40px;color:#94a3b8;background:#f8fafc;border-radius:8px">No hay producciones planeadas</div>';
+      } else {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">';
+        meses_keys.forEach(function(mk){
+          var lotes = porMes[mk] || [];
+          var totalKg = lotes.reduce(function(s,l){return s+(l.lote_kg||0);},0);
+          html += '<div style="background:#fff;border:2px solid #0891b2;border-radius:10px;overflow:hidden">';
+          html += '<div style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">Mes</div><div style="font-size:18px;font-weight:800">'+_escHTML(mk)+'</div><div style="font-size:11px;margin-top:2px">'+lotes.length+' lotes · '+_fmtMiles(Math.round(totalKg))+' kg</div></div>';
+          html += '<div style="padding:8px;max-height:300px;overflow:auto">';
+          lotes.forEach(function(l){
+            html += '<div style="background:#f8fafc;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:3px solid #0891b2;font-size:11px">';
+            html += '<b style="color:#0f172a">'+_escHTML(l.producto)+'</b>';
+            html += '<div style="color:#64748b">'+_escHTML(l.fecha)+' ('+_escHTML(l.dia_semana)+') · '+l.lote_kg+' kg</div>';
+            html += '</div>';
+          });
+          html += '</div></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Vista por SKU (oculta inicialmente)
+      html += '<div id="plLargo-vista-sku" style="display:none">';
+      var skus_sorted = Object.keys(porSku).sort(function(a,b){return porSku[b].total_lotes - porSku[a].total_lotes;});
+      if(!skus_sorted.length){
+        html += '<div style="text-align:center;padding:40px;color:#94a3b8">No hay SKUs planeados</div>';
+      } else {
+        html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+        html += '<thead style="background:#f1f5f9"><tr>';
+        html += '<th style="padding:10px;text-align:left">Producto</th>';
+        html += '<th style="padding:10px;text-align:right">Velocidad</th>';
+        html += '<th style="padding:10px;text-align:right">Lotes</th>';
+        html += '<th style="padding:10px;text-align:right">Total kg</th>';
+        html += '<th style="padding:10px;text-align:left">Fechas programadas</th>';
+        html += '</tr></thead><tbody>';
+        skus_sorted.forEach(function(sku){
+          var info = porSku[sku];
+          html += '<tr style="border-top:1px solid #e2e8f0">';
+          html += '<td style="padding:8px 10px"><b>'+_escHTML(sku)+'</b></td>';
+          html += '<td style="padding:8px 10px;text-align:right;font-family:monospace">'+(info.velocidad_dia||0)+' u/d</td>';
+          html += '<td style="padding:8px 10px;text-align:right;font-weight:700">'+info.total_lotes+'</td>';
+          html += '<td style="padding:8px 10px;text-align:right;font-family:monospace">'+_fmtMiles(Math.round(info.total_kg))+' kg</td>';
+          html += '<td style="padding:8px 10px;font-size:11px;color:#64748b">'+(info.fechas||[]).slice(0,8).join(' · ')+(info.fechas.length>8?' +'+(info.fechas.length-8)+' más':'')+'</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+
+      // Vista lista cronológica
+      html += '<div id="plLargo-vista-lista" style="display:none">';
+      if(!producciones.length){
+        html += '<div style="text-align:center;padding:40px;color:#94a3b8">No hay producciones</div>';
+      } else {
+        html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+        html += '<thead style="background:#f1f5f9"><tr>';
+        html += '<th style="padding:8px;text-align:left">Fecha</th>';
+        html += '<th style="padding:8px;text-align:left">Día</th>';
+        html += '<th style="padding:8px;text-align:left">Producto</th>';
+        html += '<th style="padding:8px;text-align:right">Lote</th>';
+        html += '<th style="padding:8px;text-align:right">Stock antes</th>';
+        html += '<th style="padding:8px;text-align:right">Stock después</th>';
+        html += '<th style="padding:8px;text-align:left">Motivo</th>';
+        html += '</tr></thead><tbody>';
+        producciones.forEach(function(p){
+          var col = p.forzado_capacidad ? '#dc2626' : '#0f172a';
+          html += '<tr style="border-top:1px solid #f1f5f9">';
+          html += '<td style="padding:6px 8px;font-family:monospace;color:'+col+'">'+_escHTML(p.fecha)+'</td>';
+          html += '<td style="padding:6px 8px;font-size:11px">'+_escHTML(p.dia_semana)+'</td>';
+          html += '<td style="padding:6px 8px"><b>'+_escHTML(p.producto)+'</b>'+(p.forzado_capacidad?' <span style="background:#fee2e2;color:#dc2626;padding:1px 5px;border-radius:3px;font-size:9px">⚠ FORZADO</span>':'')+'</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-family:monospace">'+p.lote_kg+' kg</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-family:monospace;color:#64748b">'+p.stock_antes+'</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-family:monospace;color:#15803d">'+p.stock_despues+'</td>';
+          html += '<td style="padding:6px 8px;font-size:11px;color:#64748b">'+_escHTML(p.motivo)+'</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+
+      // Vista sin ventas
+      if(sinVentas.length){
+        html += '<div id="plLargo-vista-sin" style="display:none">';
+        html += '<div style="background:#fef3c7;border:1px solid #fcd34d;padding:12px;border-radius:8px;margin-bottom:12px;color:#78350f;font-size:12px">Estos SKUs están activos pero sin ventas detectadas en Shopify (velocidad &lt; 0.01 u/día). El sistema NO los planeó. Considera marcarlos como descontinuados o revisar la conexión Shopify.</div>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#fef3c7"><tr><th style="padding:8px;text-align:left">Producto</th><th style="padding:8px;text-align:right">Stock</th><th style="padding:8px;text-align:left">Razón</th></tr></thead><tbody>';
+        sinVentas.forEach(function(s){
+          html += '<tr style="border-top:1px solid #fde68a"><td style="padding:6px 8px"><b>'+_escHTML(s.producto)+'</b></td><td style="padding:6px 8px;text-align:right">'+s.stock_inicial+'u</td><td style="padding:6px 8px;color:#78350f">'+_escHTML(s.razon)+'</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      html += '</div>';
+      modal.innerHTML = html;
+    } catch(e){
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
+    }
+  }
+
+  function planLargoTab(t){
+    ['mes','sku','lista','sin'].forEach(function(name){
+      var v = document.getElementById('plLargo-vista-'+name);
+      if(v) v.style.display = (name===t)?'block':'none';
+    });
+    var btns = document.querySelectorAll('.plLargo-tab');
+    btns.forEach(function(b){
+      var a = b.getAttribute('data-tab');
+      if(a===t){ b.style.background='#0891b2'; b.style.color='#fff'; }
+      else { b.style.background='#f1f5f9'; b.style.color='#475569'; }
+    });
+  }
+
+  function planLargoCSV(){
+    var d = window._planLargoData;
+    if(!d || !d.producciones){ alert('No hay datos cargados'); return; }
+    var rows = [['Fecha','Día','Producto','Lote_kg','Unidades','Stock_antes','Stock_después','Velocidad_día','Motivo','Forzado']];
+    d.producciones.forEach(function(p){
+      rows.push([p.fecha,p.dia_semana,p.producto,p.lote_kg,p.unidades_lote,p.stock_antes,p.stock_despues,p.velocidad_dia,(p.motivo||'').replace(/[\\n\\r,;]/g,' '),p.forzado_capacidad?'SI':'']);
+    });
+    var csv = rows.map(function(r){return r.map(function(c){var s=String(c==null?'':c);return /[,;"\\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',');}).join('\\n');
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plan_'+d.horizonte_meses+'meses_'+d.fecha_inicio+'.csv';
+    a.click();
   }
 
   async function recDescontinuar(producto){
