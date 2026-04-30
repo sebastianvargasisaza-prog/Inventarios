@@ -947,6 +947,72 @@ def mkt_influencers():
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 
+@bp.route("/api/marketing/influencers/duplicados", methods=["GET"])
+def mkt_influencers_duplicados():
+    """Detecta influencers que parecen duplicados (mismo nombre normalizado o
+    misma cuenta/cedula). Sebastian (30-abr-2026): jefferson reporta dobles."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, nombre, red_social, usuario_red, estado, cuenta_bancaria,
+               cedula_nit, email, tarifa,
+               (SELECT COUNT(*) FROM pagos_influencers WHERE influencer_id=marketing_influencers.id) as n_pagos
+        FROM marketing_influencers
+        ORDER BY nombre
+    """).fetchall()
+    items = [dict(zip([d[0] for d in c.description], r)) for r in rows]
+
+    def _norm(s):
+        if not s: return ''
+        return ''.join(ch.lower() for ch in str(s).strip() if ch.isalnum())
+
+    grupos = {}
+    for it in items:
+        key = _norm(it['nombre'])
+        if not key or len(key) < 3:
+            continue
+        grupos.setdefault(key, []).append(it)
+
+    duplicados = []
+    for key, grp in grupos.items():
+        if len(grp) > 1:
+            # Marcar el "mejor" (con mas pagos) para que Jefferson sepa cuál conservar
+            grp_sorted = sorted(grp, key=lambda x: (x['n_pagos'] or 0), reverse=True)
+            duplicados.append({
+                'nombre_normalizado': key,
+                'count': len(grp),
+                'sugerido_conservar': grp_sorted[0]['id'],
+                'rows': grp_sorted,
+            })
+
+    # Detectar también por cuenta_bancaria + cedula
+    grupos_cuenta = {}
+    for it in items:
+        cta = _norm(it.get('cuenta_bancaria'))
+        ced = _norm(it.get('cedula_nit'))
+        if cta and len(cta) >= 6:
+            grupos_cuenta.setdefault('cta:'+cta, []).append(it)
+        if ced and len(ced) >= 6:
+            grupos_cuenta.setdefault('ced:'+ced, []).append(it)
+    duplicados_datos = []
+    for key, grp in grupos_cuenta.items():
+        if len(grp) > 1:
+            tipo = 'cuenta bancaria' if key.startswith('cta:') else 'cedula/NIT'
+            duplicados_datos.append({
+                'tipo': tipo, 'valor': key.split(':',1)[1],
+                'count': len(grp), 'rows': grp,
+            })
+
+    return jsonify({
+        'duplicados_por_nombre': duplicados,
+        'duplicados_por_datos': duplicados_datos,
+        'total_grupos_nombre': len(duplicados),
+        'total_grupos_datos': len(duplicados_datos),
+    })
+
+
 @bp.route("/api/marketing/influencers/<int:iid>", methods=["GET", "PUT", "DELETE"])
 def mkt_influencer_detail(iid):
     u, err, code = _auth()
@@ -990,12 +1056,55 @@ def mkt_influencer_detail(iid):
             return jsonify({"ok": True})
 
         if request.method == "DELETE":
-            if u not in ADMIN_USERS:
-                return jsonify({"error": "Sin permiso"}), 403
-            c.execute("DELETE FROM marketing_campana_influencer WHERE influencer_id=?", (iid,))
+            # Sebastian (30-abr-2026): "jeferson dice que hay creadores dobles
+            # pero no le deja eliminarlos entonces pon una opcion de eliminar".
+            # Antes solo admin. Ahora marketing users pueden eliminar SI el
+            # influencer NO tiene pagos efectivos. Si tiene pagos → solo admin.
+            es_admin = u in ADMIN_USERS
+            try:
+                n_pagados = c.execute(
+                    "SELECT COUNT(*) FROM pagos_influencers WHERE influencer_id=? AND estado='Pagada'",
+                    (iid,)
+                ).fetchone()[0] or 0
+            except Exception:
+                n_pagados = 0
+            try:
+                n_sols = c.execute(
+                    "SELECT COUNT(*) FROM solicitudes_compra WHERE influencer_id=? AND estado='Pagada'",
+                    (iid,)
+                ).fetchone()[0] or 0
+            except Exception:
+                n_sols = 0
+            tiene_pagos = (n_pagados > 0) or (n_sols > 0)
+            if tiene_pagos and not es_admin:
+                return jsonify({
+                    "error": (f"Este influencer tiene {n_pagados} pago(s) y "
+                              f"{n_sols} solicitud(es) Pagadas vinculadas. "
+                              "Solo admin (Sebastián/Alejandro) puede borrarlo. "
+                              "Recomendacion: dale de baja en lugar de eliminar.")
+                }), 403
+            # Borrar TODO lo asociado al influencer
+            try:
+                c.execute("DELETE FROM marketing_campana_influencer WHERE influencer_id=?", (iid,))
+            except Exception:
+                pass
+            try:
+                # Pagos NO Pagados (Pendientes/Rechazados) → borrar
+                c.execute("DELETE FROM pagos_influencers WHERE influencer_id=? AND estado != 'Pagada'", (iid,))
+            except Exception:
+                pass
+            try:
+                # Solicitudes NO Pagadas → desvincular (solicitudes son del usuario solicitante, no del influencer)
+                c.execute("UPDATE solicitudes_compra SET influencer_id=NULL WHERE influencer_id=? AND estado != 'Pagada'", (iid,))
+            except Exception:
+                pass
+            try:
+                c.execute("DELETE FROM marketing_influencers_metrics WHERE influencer_id=?", (iid,))
+            except Exception:
+                pass
             c.execute("DELETE FROM marketing_influencers WHERE id=?", (iid,))
             conn.commit()
-            return jsonify({"ok": True})
+            return jsonify({"ok": True, "mensaje": "Influencer eliminado"})
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 

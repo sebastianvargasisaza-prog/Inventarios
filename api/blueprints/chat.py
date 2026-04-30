@@ -374,7 +374,9 @@ def chat_widget_js():
       }
       box.innerHTML = threads.map(function(t){
         var unread = t.no_leidos || t.unread_count || 0;
-        var nm = t.nombre || 'Sin nombre';
+        // Sebastian (29-abr-2026): mostrar siempre con quien hablas.
+        // El backend ya manda nombre_display con fallback al otro miembro.
+        var nm = t.nombre_display || t.nombre || (t.otros_miembros||[])[0] || 'Sin nombre';
         var pv = t.ultimo_mensaje_preview || '';
         var ts = _tiempoRel(t.ultimo_mensaje_en || t.creado_en);
         return '<div class="cw-thread'+(unread>0?' unread':'')+'" data-id="'+t.id+'">'+
@@ -398,7 +400,7 @@ def chat_widget_js():
   async function abrirConversacion(thread_id){
     ACTIVE_THREAD = thread_id;
     var t = (THREADS||[]).find(function(x){ return x.id === thread_id; });
-    document.getElementById('cw-conv-title').textContent = (t && t.nombre) || ('Hilo #'+thread_id);
+    document.getElementById('cw-conv-title').textContent = (t && (t.nombre_display || t.nombre)) || ('Hilo #'+thread_id);
     document.getElementById('cw-tlist').style.display = 'none';
     document.getElementById('cw-conv').style.display = 'flex';
     var msgsBox = document.getElementById('cw-msgs');
@@ -663,12 +665,32 @@ def chat_threads():
     """, (user, user, user)).fetchall()
     threads = []
     for r in rows:
+        tipo = r[1]
+        nombre_raw = (r[2] or '').strip()
+        otros = (r[9] or '').split(',') if r[9] else []
+        otros = [o for o in otros if o]
+        # Sebastian (29-abr-2026): "no sale con quien estoy hablando".
+        # 'directo' guarda nombre='' en BD; calculamos nombre_display aqui
+        # cayendo al otro miembro. Para grupos sin nombre, lista corta.
+        # Mantenemos 'nombre' raw para que /chat siga mapeando display_name.
+        if nombre_raw:
+            nombre_disp = nombre_raw
+        elif tipo == 'directo' and otros:
+            nombre_disp = otros[0]
+        elif tipo == 'broadcast':
+            nombre_disp = 'Todos · HHA Group'
+        elif otros:
+            nombre_disp = ', '.join(otros[:3]) + ('…' if len(otros) > 3 else '')
+        else:
+            nombre_disp = f'Hilo #{r[0]}'
         threads.append({
-            'id': r[0], 'tipo': r[1], 'nombre': r[2],
+            'id': r[0], 'tipo': tipo,
+            'nombre': nombre_raw,           # raw (puede ser '')
+            'nombre_display': nombre_disp,  # siempre con fallback
             'ultimo_mensaje_preview': r[3], 'ultimo_mensaje_en': r[4],
             'creado_por': r[5],
             'no_leidos': r[8] or 0,
-            'otros_miembros': (r[9] or '').split(',') if r[9] else [],
+            'otros_miembros': otros,
         })
     return jsonify({'threads': threads})
 

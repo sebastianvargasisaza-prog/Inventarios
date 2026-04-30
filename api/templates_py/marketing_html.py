@@ -435,6 +435,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <input class="search-box" id="inf-search" placeholder="Buscar nombre, @usuario, nicho..." oninput="loadInfluencers()">
+      <button class="btn btn-outline" onclick="abrirDuplicados()" title="Detectar creadores duplicados (mismo nombre o mismos datos bancarios)">&#x1F50D; Duplicados</button>
       <button class="btn btn-primary" onclick="openInfluencerModal()">+ Nuevo Influencer</button>
     </div>
   </div>
@@ -2297,7 +2298,8 @@ function renderInfluencersTable() {
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button>`
+        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button> `
+        +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencer(${r.id},'${ne}')" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
       +'</td>'
       +'</tr>';
     let expandedRows = '';
@@ -2423,6 +2425,119 @@ async function confirmarDarDeBaja() {
     showAlert('inf-alert',`Influencer dado de baja: ${motivo}`,'warning');
     loadInfluencers();
   } else showAlert('inf-alert', data.error||'Error','error');
+}
+
+// Sebastian (29-abr-2026): "jeferson dice que hay creadores dobles, pero no
+// le deja eliminarlos entonces pon una opcion de eliminar".
+async function eliminarInfluencer(id, nombre) {
+  const ok = confirm('¿ELIMINAR DEFINITIVAMENTE a "'+nombre+'"?\n\n'
+    +'Esto borra el influencer y sus pagos NO pagados/registros vinculados.\n'
+    +'Solo se permite si NO tiene pagos efectivamente realizados.\n\n'
+    +'(Si tiene pagos históricos, usa el botón ⛔ Dar de baja en su lugar.)');
+  if(!ok) return;
+  try {
+    const resp = await fetch('/api/marketing/influencers/'+id, {method:'DELETE'});
+    const data = await resp.json().catch(()=>({}));
+    if(resp.ok && (data.ok || data.deleted)) {
+      showAlert('inf-alert','Influencer "'+nombre+'" eliminado correctamente.','success');
+      loadInfluencers();
+    } else if(resp.status === 403) {
+      showAlert('inf-alert', (data.error||'No autorizado')+'. Usa ⛔ Dar de baja.', 'error');
+    } else {
+      showAlert('inf-alert', data.error || ('Error '+resp.status), 'error');
+    }
+  } catch(e) {
+    showAlert('inf-alert','Error de red: '+e.message,'error');
+  }
+}
+
+async function abrirDuplicados() {
+  const modalId = 'modal-duplicados';
+  let modal = document.getElementById(modalId);
+  if(!modal) {
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal';
+    modal.innerHTML = ''
+      +'<div class="modal-content" style="max-width:900px;">'
+      +'  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+      +'    <div class="modal-title">\u{1F50D} Posibles influencers duplicados</div>'
+      +'    <button class="btn btn-outline btn-sm" onclick="closeModal(\''+modalId+'\')">Cerrar</button>'
+      +'  </div>'
+      +'  <div id="dup-body" style="max-height:65vh;overflow:auto;font-size:13px;"></div>'
+      +'</div>';
+    document.body.appendChild(modal);
+  }
+  const body = document.getElementById('dup-body');
+  body.innerHTML = '<div style="padding:20px;color:#94a3b8;">Buscando duplicados…</div>';
+  modal.classList.add('open');
+  try {
+    const r = await fetch('/api/marketing/influencers/duplicados');
+    const d = await r.json();
+    const gN = d.duplicados_por_nombre || [];
+    const gD = d.duplicados_por_datos || [];
+    if(!gN.length && !gD.length) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#34d399;">✅ No se detectaron duplicados.</div>';
+      return;
+    }
+    let html = '';
+    const renderGrupo = (grupo, kind) => {
+      const items = grupo.rows || [];
+      // Sugerido conservar: backend lo manda en 'nombre'; en 'datos' calculamos aquí (más pagos)
+      let sug = grupo.sugerido_conservar;
+      if(!sug && items.length) {
+        const sorted = items.slice().sort((a,b)=>(b.n_pagos||0)-(a.n_pagos||0));
+        sug = sorted[0].id;
+      }
+      const titulo = kind==='nombre'
+        ? ('Nombre similar: <span style="color:#fcd34d">'+_escDup(grupo.nombre_normalizado||'?')+'</span>')
+        : ('Mismos '+_escDup(grupo.tipo||'datos')+': <span style="color:#fcd34d">'+_escDup(grupo.valor||'?')+'</span>');
+      let rows = items.map(it => {
+        const conservar = (it.id === sug);
+        const pagos = it.n_pagos || 0;
+        return '<tr style="'+(conservar?'background:#064e3b':'')+'">'
+          +'<td style="padding:6px 8px;">'+(conservar?'⭐ ':'')+_escDup(it.nombre||'')+(it.usuario_red?' <span style="color:#94a3b8">@'+_escDup(it.usuario_red)+'</span>':'')+'</td>'
+          +'<td style="padding:6px 8px;font-size:11px;color:#94a3b8;">'+_escDup(it.cedula_nit||'—')+' / '+_escDup(it.cuenta_bancaria||'—')+'</td>'
+          +'<td style="padding:6px 8px;text-align:center;">'+pagos+'</td>'
+          +'<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
+            +(conservar
+              ? '<span style="color:#34d399;font-size:11px;">conservar</span>'
+              : '<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerDup('+it.id+',\''+_escDup((it.nombre||'').replace(/\x27/g,'’'))+'\')">\u{1F5D1}️ Eliminar</button>')
+          +'</td>'
+        +'</tr>';
+      }).join('');
+      return '<div style="margin-bottom:18px;border:1px solid #334155;border-radius:8px;overflow:hidden;">'
+        +'<div style="padding:8px 12px;background:#1e293b;font-weight:600;">'+titulo+'</div>'
+        +'<table style="width:100%;border-collapse:collapse;">'
+        +'<thead><tr style="background:#0f172a;color:#94a3b8;font-size:11px;">'
+        +'<th style="padding:6px 8px;text-align:left;">Influencer</th>'
+        +'<th style="padding:6px 8px;text-align:left;">CC/NIT / Cuenta</th>'
+        +'<th style="padding:6px 8px;text-align:center;">Pagos</th>'
+        +'<th style="padding:6px 8px;text-align:right;">Acción</th>'
+        +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+    };
+    if(gN.length) {
+      html += '<div style="font-weight:600;color:#cbd5e1;margin-bottom:8px;">Por nombre similar ('+gN.length+')</div>';
+      html += gN.map(g => renderGrupo(g,'nombre')).join('');
+    }
+    if(gD.length) {
+      html += '<div style="font-weight:600;color:#cbd5e1;margin:14px 0 8px 0;">Por datos bancarios o cédula iguales ('+gD.length+')</div>';
+      html += gD.map(g => renderGrupo(g,'datos')).join('');
+    }
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<div style="padding:20px;color:#f87171;">Error: '+e.message+'</div>';
+  }
+}
+
+function _escDup(s){
+  return (s==null?'':String(s)).replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];});
+}
+
+async function eliminarInfluencerDup(id, nombre) {
+  await eliminarInfluencer(id, nombre);
+  // Refrescar el panel
+  setTimeout(abrirDuplicados, 400);
 }
 
 function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
