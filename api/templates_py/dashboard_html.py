@@ -1287,7 +1287,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </button>
     <button id="prog-tab-plano" onclick="switchProgTab('plano')"
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127981; Plano de planta
+      &#127919; Centro de Mando <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">live</span>
     </button>
   </div>
 
@@ -5130,25 +5130,33 @@ function _renderProgramacion(d){
     <div id="tareas-op-lista"></div>
   </div><!-- /ptab-tareas -->
 
-  <!-- ── ptab-plano: vista interactiva del layout de planta post-INVIMA ── -->
+  <!-- ── ptab-plano: Centro de Mando — vista live del layout post-INVIMA ── -->
   <div id="ptab-plano" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
       <div>
-        <h2 style="margin:0 0 4px;color:#1a4a7a">&#127981; Plano de planta &middot; <span style="font-size:13px;color:#64748b;font-weight:500">post-INVIMA abr-2026</span></h2>
-        <p style="color:#666;font-size:13px;margin:0">Click en una sala &rarr; ver producci&oacute;n asignada y cambiar estado (libre/sucia/limpiando).</p>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">🎯 Centro de Mando · <span style="font-size:11px;background:#dc2626;color:#fff;padding:2px 8px;border-radius:6px;letter-spacing:1px;text-transform:uppercase;vertical-align:middle">LIVE</span> <span style="font-size:13px;color:#64748b;font-weight:500;margin-left:6px">post-INVIMA abr-2026</span></h2>
+        <p style="color:#666;font-size:13px;margin:0">Estado operativo de planta en tiempo real · click una sala para iniciar/terminar producción y cambiar estado · auto-refresh cada 30s.</p>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <input type="date" id="plano-fecha" onchange="renderPlano()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-        <button onclick="renderPlano()" style="padding:6px 12px;background:#1a4a7a;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21BA; Refrescar</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="date" id="plano-fecha" onchange="renderCentroMando()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="cm-auto" checked> auto-refresh 30s
+        </label>
+        <button onclick="renderCentroMando()" style="padding:6px 12px;background:#1a4a7a;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Refrescar</button>
+        <span id="cm-last-update" style="font-size:10px;color:#94a3b8"></span>
       </div>
     </div>
+
+    <!-- KPIs en vivo -->
+    <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+
     <!-- Leyenda de estados -->
-    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:#475569">
       <span><span style="display:inline-block;width:14px;height:14px;background:#86efac;border:1px solid #16a34a;vertical-align:middle;margin-right:4px"></span>Libre</span>
-      <span><span style="display:inline-block;width:14px;height:14px;background:#fde68a;border:1px solid #ca8a04;vertical-align:middle;margin-right:4px"></span>Ocupada (con producción asignada)</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#fde68a;border:1px solid #ca8a04;vertical-align:middle;margin-right:4px"></span>Ocupada (producción en curso)</span>
       <span><span style="display:inline-block;width:14px;height:14px;background:#fca5a5;border:1px solid #b91c1c;vertical-align:middle;margin-right:4px"></span>Sucia</span>
       <span><span style="display:inline-block;width:14px;height:14px;background:#93c5fd;border:1px solid #1d4ed8;vertical-align:middle;margin-right:4px"></span>Limpiando</span>
-      <span><span style="display:inline-block;width:14px;height:14px;background:#e5e5e5;border:1px solid #94a3b8;vertical-align:middle;margin-right:4px"></span>No asignable (apoyo)</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#cbd5e1;border:1px dashed #6b7280;vertical-align:middle;margin-right:4px"></span>Apoyo asignable (Acond/Bodega · conteos cíclicos)</span>
     </div>
     <!-- SVG fiel al plano real ASG-PRO-006-A02 (post-INVIMA abr-2026).
          Layout aproximado: el edificio tiene forma irregular, salas
@@ -5196,12 +5204,13 @@ function _renderProgramacion(d){
           <rect x="20" y="175" width="160" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
           <text x="100" y="205" text-anchor="middle" font-size="11" fill="#475569">DUCHA</text>
         </g>
-        <!-- Almacenamiento materia prima (vertical, izquierda, grande) -->
-        <g class="rect-area" data-codigo="ALMP">
-          <rect x="20" y="240" width="160" height="240" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="100" y="345" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
-          <text x="100" y="362" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">MATERIA PRIMA</text>
-          <text x="100" y="382" text-anchor="middle" font-size="10" fill="#64748b">(bodega · apoyo)</text>
+        <!-- Almacenamiento materia prima (vertical, izquierda, grande) — ASIGNABLE conteos cíclicos -->
+        <g class="rect-area" data-codigo="ALMP" style="cursor:pointer">
+          <rect class="r" x="20" y="240" width="160" height="240" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
+          <text x="100" y="335" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
+          <text x="100" y="352" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">MATERIA PRIMA</text>
+          <text x="100" y="372" text-anchor="middle" font-size="9" fill="#64748b">conteos cíclicos</text>
+          <text class="status" x="100" y="395" text-anchor="middle" font-size="9" fill="#475569" font-weight="700">LIBRE</text>
         </g>
 
         <!-- ── COLUMNA CENTRO: dispensación, prod 2, prod 1 ─────────────── -->
@@ -5269,15 +5278,16 @@ function _renderProgramacion(d){
           <text x="720" y="278" text-anchor="middle" font-size="8" fill="#92400e">filtro PT</text>
         </g>
 
-        <!-- ── EXTREMO DERECHO: acondicionamiento PT (vertical alto) ────── -->
-        <g class="rect-area" data-codigo="ACOND">
-          <rect x="910" y="95" width="180" height="395" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="1000" y="240" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ACONDICIONA-</text>
-          <text x="1000" y="258" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">MIENTO DE</text>
-          <text x="1000" y="276" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PRODUCTO</text>
-          <text x="1000" y="294" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">TERMINADO</text>
-          <text x="1000" y="320" text-anchor="middle" font-size="10" fill="#64748b">(Camilo · su rol)</text>
-          <text x="1000" y="338" text-anchor="middle" font-size="9" fill="#94a3b8" font-style="italic">apoyo · no asignable</text>
+        <!-- ── EXTREMO DERECHO: acondicionamiento PT — ASIGNABLE ────── -->
+        <g class="rect-area" data-codigo="ACOND" style="cursor:pointer">
+          <rect class="r" x="910" y="95" width="180" height="395" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
+          <text x="1000" y="230" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ACONDICIONA-</text>
+          <text x="1000" y="248" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">MIENTO DE</text>
+          <text x="1000" y="266" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PRODUCTO</text>
+          <text x="1000" y="284" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">TERMINADO</text>
+          <text x="1000" y="305" text-anchor="middle" font-size="10" fill="#64748b">Camilo · rol predeterm.</text>
+          <text x="1000" y="322" text-anchor="middle" font-size="9" fill="#1d4ed8" font-style="italic">asignable · sale a producción</text>
+          <text class="status" x="1000" y="475" text-anchor="middle" font-size="10" fill="#475569" font-weight="700">LIBRE</text>
         </g>
 
         <!-- ── PRODUCCIÓN 3 (grande, abajo izquierda, con marmita 250) ──── -->
@@ -5289,12 +5299,13 @@ function _renderProgramacion(d){
           <text x="478" y="590" text-anchor="middle" font-size="11" fill="#0c4a6e" font-weight="600">marmita 250 ml &middot; prod + env</text>
           <text class="status" x="435" y="625" text-anchor="middle" font-size="11" fill="#16a34a" font-weight="700">LIBRE</text>
         </g>
-        <!-- Almacenamiento PT a la derecha de prod 3 -->
-        <g class="rect-area" data-codigo="ALMPT">
-          <rect x="680" y="510" width="220" height="130" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="790" y="565" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
-          <text x="790" y="583" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PT</text>
-          <text x="790" y="608" text-anchor="middle" font-size="10" fill="#64748b">(bodega · apoyo)</text>
+        <!-- Almacenamiento PT a la derecha de prod 3 — ASIGNABLE conteos cíclicos -->
+        <g class="rect-area" data-codigo="ALMPT" style="cursor:pointer">
+          <rect class="r" x="680" y="510" width="220" height="130" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
+          <text x="790" y="555" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
+          <text x="790" y="573" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PT</text>
+          <text x="790" y="595" text-anchor="middle" font-size="9" fill="#64748b">conteos cíclicos</text>
+          <text class="status" x="790" y="625" text-anchor="middle" font-size="9" fill="#475569" font-weight="700">LIBRE</text>
         </g>
         <!-- Material de envase (vertical extremo derecho, abajo) -->
         <g>
@@ -6475,71 +6486,132 @@ async function ckMarcar(itemId, estado){
       }
       if(tab==='plano'){
         if(el_pln) el_pln.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof renderPlano==='function') renderPlano();
+        if(typeof renderCentroMando==='function') renderCentroMando();
+        // arrancar auto-refresh si checkbox activo
+        cmStartAutoRefresh();
+      } else {
+        cmStopAutoRefresh();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
     }
   }
 
-  // ── Plano interactivo de planta (Capa 3) + rotacion (Capa 4) ────────────
-  async function renderPlano(){
+  // ── Centro de Mando (Capa 3+ live tracking) ─────────────────────────────
+  // Cache global del ultimo payload, sirve para el panel detalle al hacer click
+  var _CM_LAST = null;
+  var _CM_TIMER = null;
+
+  function cmStartAutoRefresh(){
+    if(_CM_TIMER) return;
+    var chk = document.getElementById('cm-auto');
+    if(!chk || !chk.checked) return;
+    _CM_TIMER = setInterval(function(){
+      if(document.getElementById('ptab-plano').style.display === 'none'){
+        cmStopAutoRefresh(); return;
+      }
+      var c = document.getElementById('cm-auto');
+      if(c && c.checked) renderCentroMando(true /*silent*/);
+    }, 30000);
+  }
+  function cmStopAutoRefresh(){
+    if(_CM_TIMER){ clearInterval(_CM_TIMER); _CM_TIMER = null; }
+  }
+
+  function _fmtMin(min){
+    if(min == null) return '';
+    if(min < 60) return min + ' min';
+    var h = Math.floor(min/60), m = min%60;
+    return h + 'h' + (m?(' '+m+'min'):'');
+  }
+
+  async function renderCentroMando(silent){
     var fechaInp = document.getElementById('plano-fecha');
     if(!fechaInp.value){ fechaInp.value = new Date().toISOString().slice(0,10); }
-    var fecha = fechaInp.value;
-    var qs = '?fecha=' + encodeURIComponent(fecha);
     try{
-      var r = await fetch('/api/planta/areas' + qs);
+      var r = await fetch('/api/planta/centro-mando');
       var d = await r.json();
-      var areas = d.areas || [];
-      // Mapa codigo → datos
+      _CM_LAST = d;
+      // Pintar KPIs
+      var kpiBox = document.getElementById('cm-kpis');
+      var k = d.kpis || {};
+      kpiBox.innerHTML = [
+        _kpiCard('🟡 Producciones AHORA', k.producciones_activas_ahora||0, k.producciones_activas_ahora>0?'#ca8a04':'#94a3b8'),
+        _kpiCard('✅ Terminadas hoy',     k.terminadas_hoy||0,             '#16a34a'),
+        _kpiCard('⏱ Cycle time prom',     k.cycle_time_promedio_min!=null?_fmtMin(k.cycle_time_promedio_min):'—', '#0f766e'),
+        _kpiCard('🟢 Salas libres',       k.salas_libres||0,               '#16a34a'),
+        _kpiCard('🔴 Salas sucias',       k.salas_sucias||0,               k.salas_sucias>0?'#b91c1c':'#94a3b8'),
+        _kpiCard('🟡 Salas ocupadas',     k.salas_ocupadas||0,             '#ca8a04'),
+      ].join('');
+      // Mapa codigo → area
       var mapa = {};
-      areas.forEach(function(a){ mapa[a.codigo] = a; });
-      // Pintar cada rect según estado
+      (d.areas||[]).forEach(function(a){ mapa[a.codigo] = a; });
+      // Pintar cada rect
       var ESTADO_COLORS = {
         libre:      {fill:'#86efac', stroke:'#16a34a', txt:'#16a34a'},
         ocupada:    {fill:'#fde68a', stroke:'#ca8a04', txt:'#92400e'},
         sucia:      {fill:'#fca5a5', stroke:'#b91c1c', txt:'#991b1b'},
         limpiando:  {fill:'#93c5fd', stroke:'#1d4ed8', txt:'#1e3a8a'}
       };
-      ['PROD1','PROD2','PROD3','PROD4','ENV1'].forEach(function(cod){
+      ['PROD1','PROD2','PROD3','PROD4','ENV1','ACOND','ALMP','ALMPT'].forEach(function(cod){
         var g = document.querySelector('[data-codigo="'+cod+'"]');
         if(!g) return;
         var rect = g.querySelector('rect.r');
         var lbl  = g.querySelector('text.status');
         var a    = mapa[cod];
         if(!a) return;
-        // Si tiene producciones asignadas hoy, override estado a 'ocupada' visualmente
         var estadoVisual = a.estado;
-        if(a.ocupada_por && a.ocupada_por.length) estadoVisual = 'ocupada';
+        // si tiene producciones en curso → ocupada
+        var enCurso = (a.ocupada_por||[]).filter(function(o){ return o.en_curso; });
+        if(enCurso.length) estadoVisual = 'ocupada';
         var col = ESTADO_COLORS[estadoVisual] || ESTADO_COLORS.libre;
-        rect.setAttribute('fill', col.fill);
-        rect.setAttribute('stroke', col.stroke);
+        if(rect){
+          rect.setAttribute('fill', col.fill);
+          rect.setAttribute('stroke', col.stroke);
+        }
         if(lbl){
           var txt = estadoVisual.toUpperCase();
-          if(a.ocupada_por && a.ocupada_por.length){
-            txt = a.ocupada_por.map(function(o){ return o.producto + (o.lotes>1?' x'+o.lotes:''); }).join(' · ');
+          if(enCurso.length){
+            var o = enCurso[0];
+            var quien = o.operario_elaboracion || o.operario_envasado || o.operario_dispensacion || o.operario_acondicionamiento || '';
+            txt = o.producto + (o.minutos_corridos!=null?' · ⏱'+_fmtMin(o.minutos_corridos):'') +
+                  (quien?(' · 🧑'+quien.split(' ')[0]):'');
           }
           lbl.textContent = txt;
           lbl.setAttribute('fill', col.txt);
         }
       });
-      // Click handler — abre detalle al lado
+      // Click handler
       document.querySelectorAll('[data-codigo]').forEach(function(g){
-        g.onclick = function(){
-          var cod = g.getAttribute('data-codigo');
-          mostrarDetalleSala(mapa[cod], fecha);
-        };
+        var cod = g.getAttribute('data-codigo');
+        if(!mapa[cod]) return;
+        g.onclick = function(){ mostrarDetalleSala(mapa[cod]); };
       });
-      // También cargar rotación operarios (Capa 4)
+      // Eventos recientes (timeline lateral)
+      cargarTimelineEventos(d.eventos_recientes || []);
       cargarRotacionOperarios();
+      var lu = document.getElementById('cm-last-update');
+      if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
-      console.error('renderPlano error:', e);
-      _toast('Error al cargar plano: '+e.message, 0);
+      if(!silent){ _toast('Error al cargar Centro de Mando: '+e.message, 0); }
     }
   }
 
-  function mostrarDetalleSala(a, fecha){
+  function _kpiCard(label, val, color){
+    return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;border-left:4px solid '+color+'">'+
+      '<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">'+label+'</div>'+
+      '<div style="font-size:22px;font-weight:800;color:'+color+';margin-top:2px">'+val+'</div>'+
+      '</div>';
+  }
+
+  function cargarTimelineEventos(evs){
+    var box = document.getElementById('plano-rotacion');
+    // En realidad pintaremos timeline + rotacion juntos en cargarRotacionOperarios
+    // (rotacion sigue debajo). Aqui guardamos el array y la rotacion lo merge.
+    window._CM_EVENTS = evs;
+  }
+
+  function mostrarDetalleSala(a){
     var box = document.getElementById('plano-detalle');
     if(!a){ box.style.display='none'; return; }
     box.style.display = 'block';
@@ -6548,14 +6620,40 @@ async function ckMarcar(itemId, estado){
     if(a.puede_envasar)  caps.push('Envasado');
     if(a.marmita_ml)     caps.push('Marmita ' + a.marmita_ml + ' ml');
     if(a.especial)       caps.push('Especial: ' + a.especial);
+    if(a.tipo === 'conteo_ciclico') caps.push('Conteos cíclicos');
+    if(a.tipo === 'apoyo_asignable') caps.push('Apoyo asignable');
     var ocupHTML = '';
     if(a.ocupada_por && a.ocupada_por.length){
-      ocupHTML = '<div style="margin-top:10px"><b>Producciones de '+fecha+':</b><ul style="margin:6px 0 0 18px;font-size:13px">' +
+      ocupHTML = '<div style="margin-top:12px"><b>Producciones asignadas / en curso:</b>' +
         a.ocupada_por.map(function(o){
-          return '<li>'+o.producto+' &middot; '+o.lotes+' lote(s) &middot; '+(o.kg||0)+' kg</li>';
-        }).join('') + '</ul></div>';
+          var ops = [];
+          if(o.operario_dispensacion)      ops.push('Disp: '+o.operario_dispensacion);
+          if(o.operario_elaboracion)       ops.push('Elab: '+o.operario_elaboracion);
+          if(o.operario_envasado)          ops.push('Env: '+o.operario_envasado);
+          if(o.operario_acondicionamiento) ops.push('Acon: '+o.operario_acondicionamiento);
+          var liveBadge = '';
+          if(o.en_curso){
+            liveBadge = '<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px;margin-left:6px;text-transform:uppercase">EN CURSO ⏱'+_fmtMin(o.minutos_corridos)+'</span>';
+          } else if(o.fin_real_at){
+            liveBadge = '<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;margin-left:6px">terminada</span>';
+          } else {
+            liveBadge = '<span style="background:#94a3b8;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;margin-left:6px">pendiente iniciar</span>';
+          }
+          // Botones iniciar/terminar
+          var btns = '';
+          if(!o.inicio_real_at){
+            btns = '<button onclick="cmIniciarProduccion('+o.produccion_id+')" style="background:#16a34a;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">▶ Iniciar producción</button>';
+          } else if(!o.fin_real_at){
+            btns = '<button onclick="cmTerminarProduccion('+o.produccion_id+')" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">⏹ Terminar producción</button>';
+          }
+          return '<div style="background:#f8fafc;border-radius:6px;padding:10px 14px;margin-top:8px;border-left:3px solid '+(o.en_curso?'#ca8a04':o.fin_real_at?'#16a34a':'#94a3b8')+'">' +
+            '<div><b>'+o.producto+'</b> · '+o.lotes+' lote(s) · '+(o.kg||0)+' kg' + liveBadge + '</div>' +
+            (ops.length?'<div style="font-size:11px;color:#64748b;margin-top:4px">'+ops.join(' · ')+'</div>':'') +
+            (btns?'<div style="margin-top:8px">'+btns+'</div>':'') +
+            '</div>';
+        }).join('') + '</div>';
     } else {
-      ocupHTML = '<div style="margin-top:10px;color:#16a34a;font-size:13px">✓ Sin producción asignada para '+fecha+'</div>';
+      ocupHTML = '<div style="margin-top:10px;color:#16a34a;font-size:13px">✓ Sin producción asignada</div>';
     }
     box.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
@@ -6571,6 +6669,29 @@ async function ckMarcar(itemId, estado){
       ocupHTML;
   }
 
+  async function cmIniciarProduccion(id){
+    if(!confirm('¿Iniciar la producción ahora? Quedará el contador corriendo.')) return;
+    try{
+      var r = await fetch('/api/programacion/programar/'+id+'/iniciar', {method:'POST'});
+      var d = await r.json();
+      if(d.ok){ _toast(d.ya_iniciada?'Ya estaba iniciada':'Producción iniciada · contador en marcha', 1); renderCentroMando(); }
+      else { _toast('Error: '+(d.error||'?'), 0); }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+  async function cmTerminarProduccion(id){
+    if(!confirm('¿Terminar la producción? La sala quedará en estado SUCIA esperando limpieza.')) return;
+    try{
+      var r = await fetch('/api/programacion/programar/'+id+'/terminar', {method:'POST'});
+      var d = await r.json();
+      if(d.ok){
+        var msg = d.ya_terminada ? 'Ya estaba terminada' : ('Producción terminada · cycle time: '+_fmtMin(d.cycle_time_min));
+        _toast(msg, 1);
+        renderCentroMando();
+      }
+      else { _toast('Error: '+(d.error||'?'), 0); }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
   async function cambiarEstadoSala(id, nuevo){
     try{
       var r = await fetch('/api/planta/areas/'+id+'/estado', {
@@ -6580,12 +6701,21 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(d.ok){
         _toast('Sala actualizada: '+nuevo, 1);
-        renderPlano();
+        renderCentroMando();
       } else {
         _toast('Error: '+(d.error||'desconocido'), 0);
       }
     }catch(e){ _toast('Error de red', 0); }
   }
+
+  // Toggle del checkbox auto-refresh
+  document.addEventListener('DOMContentLoaded', function(){
+    var chk = document.getElementById('cm-auto');
+    if(chk){ chk.addEventListener('change', function(){
+      if(this.checked) cmStartAutoRefresh();
+      else cmStopAutoRefresh();
+    });}
+  });
 
   // Capa 4: rotación operarios — pinta panel debajo del plano
   async function cargarRotacionOperarios(){

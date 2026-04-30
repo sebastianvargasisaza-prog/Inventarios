@@ -2495,6 +2495,55 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_users_mfa_enabled ON users_mfa(enabled)",
     ]),
+    (58, "planta: Centro de Mando — areas extra asignables (acond, bodegas) + tracking real inicio/fin + audit log", [
+        # Sebastian (30-abr-2026): "incluir bodega y materia prima recuerda
+        # que hay inventarios ciclicos para eso, entonces los puedes asignar
+        # tambien". Y: "cuando inician y terminan asi sabemos tiempos nos
+        # sirve de indicadores".
+        #
+        # Cambios:
+        # 1. areas_planta gana columna 'tipo' (produccion / conteo_ciclico /
+        #    apoyo_asignable) para distinguir uso. Default 'produccion'.
+        "ALTER TABLE areas_planta ADD COLUMN tipo TEXT NOT NULL DEFAULT 'produccion'",
+        # 2. Marcar las 5 salas existentes como tipo='produccion' explicito
+        "UPDATE areas_planta SET tipo='produccion' WHERE codigo IN ('PROD1','PROD2','PROD3','PROD4','ENV1')",
+        # 3. Agregar Acondicionamiento, Almacen MP, Almacen PT como asignables
+        #    para conteos ciclicos. Tienen puede_producir=0/puede_envasar=0
+        #    pero pueden tener un operario asignado (para conteo / movimientos).
+        """INSERT OR IGNORE INTO areas_planta
+           (codigo, nombre, puede_producir, puede_envasar, marmita_ml, especial, orden, tipo) VALUES
+           ('ACOND',  'Acondicionamiento PT',     0, 0, NULL, NULL, 6, 'apoyo_asignable'),
+           ('ALMP',   'Almacenamiento Mat.Prima', 0, 0, NULL, NULL, 7, 'conteo_ciclico'),
+           ('ALMPT',  'Almacenamiento PT',        0, 0, NULL, NULL, 8, 'conteo_ciclico')""",
+        # 4. produccion_programada gana columnas para tracking real inicio/fin.
+        #    inicio_real_at: cuando el operario aprieta "Iniciar producción".
+        #    fin_real_at:    cuando aprieta "Terminar".
+        #    Permite calcular cycle time real vs estimado para KPIs.
+        "ALTER TABLE produccion_programada ADD COLUMN inicio_real_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN fin_real_at TEXT",
+        # 5. area_eventos: log de TODO cambio de estado + iniciar/terminar.
+        #    Sirve para timeline de cada sala, KPIs (tiempo promedio prod por
+        #    SKU, tiempo de limpieza, ocupacion %, etc).
+        """CREATE TABLE IF NOT EXISTS area_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN
+                ('estado_cambio','iniciar_prod','terminar_prod',
+                 'inicio_limpieza','fin_limpieza','iniciar_conteo','terminar_conteo')),
+            estado_anterior TEXT,
+            estado_nuevo TEXT,
+            produccion_id INTEGER,
+            operario_id INTEGER,
+            usuario TEXT,
+            nota TEXT,
+            ts TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (area_id) REFERENCES areas_planta(id),
+            FOREIGN KEY (produccion_id) REFERENCES produccion_programada(id),
+            FOREIGN KEY (operario_id) REFERENCES operarios_planta(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_area_eventos_area_ts ON area_eventos(area_id, ts DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_area_eventos_prod ON area_eventos(produccion_id, ts)",
+    ]),
 ]
 
 
@@ -2526,6 +2575,16 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     }
     applied_count = 0
 
+    # Sebastian (30-abr-2026): hardening del runner — retries idempotentes
+    # tras fallas parciales. Se silencia "ya existe" en todas sus formas
+    # ("duplicate column name", "already exists", "index ... already exists")
+    # para que un commit subsiguiente que vuelve a aplicar la misma migracion
+    # despues de un fallo a mitad de camino pueda completarla.
+    BENIGN_PATTERNS = (
+        "duplicate column name",
+        "already exists",
+    )
+
     for version, description, stmts in MIGRATIONS:
         if version in applied:
             continue
@@ -2533,8 +2592,8 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
             try:
                 conn.execute(stmt)
             except Exception as exc:
-                # "duplicate column name" → columna ya existe (OK en idempotencia)
-                if "duplicate column name" not in str(exc).lower():
+                msg = str(exc).lower()
+                if not any(pat in msg for pat in BENIGN_PATTERNS):
                     raise RuntimeError(
                         f"Migración {version} falló en: {stmt!r}"
                     ) from exc

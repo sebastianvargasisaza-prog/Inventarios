@@ -2365,6 +2365,195 @@ def planta_historial_operarios():
     return jsonify({'operarios': list(result.values()), 'ventana_dias': 14})
 
 
+@bp.route('/api/programacion/programar/<int:evento_id>/iniciar', methods=['POST'])
+def prog_iniciar_produccion(evento_id):
+    """Operario aprieta 'Iniciar produccion' — graba inicio_real_at,
+    marca la sala asignada como 'ocupada' y registra evento en area_eventos.
+
+    Idempotente: si ya tiene inicio_real_at, retorna ok=False con el ts
+    existente — no sobreescribe (evita doble inicio accidental)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at
+                      FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
+    if not pp:
+        return jsonify({'error': 'produccion no existe'}), 404
+    if pp[3]:  # ya iniciada
+        return jsonify({'ok': True, 'ya_iniciada': True, 'inicio_real_at': pp[3]})
+    if pp[4]:  # ya terminada
+        return jsonify({'error': 'produccion ya terminada'}), 400
+    c.execute("UPDATE produccion_programada SET inicio_real_at=datetime('now') WHERE id=?", (evento_id,))
+    if pp[2]:  # tiene sala asignada → marcar ocupada
+        prev = c.execute("SELECT estado FROM areas_planta WHERE id=?", (pp[2],)).fetchone()
+        c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=?", (pp[2],))
+        c.execute("""INSERT INTO area_eventos
+            (area_id, tipo, estado_anterior, estado_nuevo, produccion_id, usuario, nota)
+            VALUES (?,?,?,?,?,?,?)""",
+            (pp[2], 'iniciar_prod', (prev[0] if prev else None), 'ocupada',
+             evento_id, user, f'inicio: {pp[1]}'))
+    conn.commit()
+    return jsonify({'ok': True, 'evento_id': evento_id})
+
+
+@bp.route('/api/programacion/programar/<int:evento_id>/terminar', methods=['POST'])
+def prog_terminar_produccion(evento_id):
+    """Operario aprieta 'Terminar' — graba fin_real_at, marca sala 'sucia'
+    (asume que despues de produccion siempre hay limpieza), registra evento.
+
+    Idempotente: si ya tiene fin_real_at, no sobreescribe."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at
+                      FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
+    if not pp:
+        return jsonify({'error': 'produccion no existe'}), 404
+    if pp[4]:
+        return jsonify({'ok': True, 'ya_terminada': True, 'fin_real_at': pp[4]})
+    if not pp[3]:
+        return jsonify({'error': 'produccion no ha iniciado'}), 400
+    c.execute("UPDATE produccion_programada SET fin_real_at=datetime('now') WHERE id=?", (evento_id,))
+    if pp[2]:
+        prev = c.execute("SELECT estado FROM areas_planta WHERE id=?", (pp[2],)).fetchone()
+        c.execute("UPDATE areas_planta SET estado='sucia' WHERE id=?", (pp[2],))
+        c.execute("""INSERT INTO area_eventos
+            (area_id, tipo, estado_anterior, estado_nuevo, produccion_id, usuario, nota)
+            VALUES (?,?,?,?,?,?,?)""",
+            (pp[2], 'terminar_prod', (prev[0] if prev else None), 'sucia',
+             evento_id, user, f'fin: {pp[1]} → sala sucia, espera limpieza'))
+    conn.commit()
+    # Calcular cycle time real
+    cycle = c.execute("""SELECT
+        CAST((julianday(fin_real_at) - julianday(inicio_real_at)) * 24 * 60 AS INTEGER) as min
+        FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
+    return jsonify({'ok': True, 'evento_id': evento_id,
+                    'cycle_time_min': cycle[0] if cycle else None})
+
+
+@bp.route('/api/planta/centro-mando', methods=['GET'])
+def planta_centro_mando():
+    """Endpoint agregado del Centro de Mando — devuelve TODO en una llamada
+    para que la UI haga UN fetch y pinte el tablero completo. Optimizado
+    para auto-refresh cada 30s.
+
+    Retorna:
+      areas: list[{id, codigo, nombre, tipo, estado, capacidades, ocupada_por[]}]
+        ocupada_por incluye produccion_id, producto, lotes, kg, operarios y
+        inicio_real_at + minutos_corridos para timer en vivo.
+      operarios_libres: list — quienes no estan en una produccion en curso.
+      kpis: produciones_activas_ahora, prods_terminadas_hoy,
+            cycle_time_promedio_min, salas_libres, salas_sucias.
+      eventos_recientes: ultimos 10 eventos para timeline lateral.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    hoy = date.today().isoformat()
+
+    # Areas con producciones activas (in progress: inicio_real_at NOT NULL,
+    # fin_real_at NULL)
+    areas = []
+    for r in conn.execute("""
+        SELECT id, codigo, nombre, tipo, puede_producir, puede_envasar,
+               marmita_ml, especial, estado, orden
+        FROM areas_planta WHERE activo=1 ORDER BY orden, id
+    """):
+        areas.append({
+            'id': r[0], 'codigo': r[1], 'nombre': r[2], 'tipo': r[3],
+            'puede_producir': bool(r[4]), 'puede_envasar': bool(r[5]),
+            'marmita_ml': r[6], 'especial': r[7],
+            'estado': r[8], 'orden': r[9],
+            'ocupada_por': [],
+        })
+    area_by_id = {a['id']: a for a in areas}
+    # Producciones en curso (no terminadas) — vienen siempre, las del dia mas
+    # las que se quedaron sin terminar (ocupando sala todavia)
+    for r in conn.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes, pp.estado,
+               pp.area_id, pp.inicio_real_at, pp.fin_real_at,
+               COALESCE(pp.lotes,1)*COALESCE(fh.lote_size_kg,0) as kg,
+               od.nombre || ' ' || COALESCE(od.apellido,'')  as op_disp,
+               oe.nombre || ' ' || COALESCE(oe.apellido,'')  as op_elab,
+               oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
+               oa.nombre || ' ' || COALESCE(oa.apellido,'')  as op_acon,
+               CAST((julianday('now') - julianday(pp.inicio_real_at)) * 24 * 60 AS INTEGER) as min_corridos
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto))
+        LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
+        LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
+        LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+        LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
+        WHERE pp.area_id IS NOT NULL
+          AND (pp.inicio_real_at IS NOT NULL AND pp.fin_real_at IS NULL
+               OR pp.fecha_programada=? AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado'))
+        ORDER BY pp.inicio_real_at DESC NULLS LAST
+    """, (hoy,)):
+        info = {
+            'produccion_id': r[0], 'producto': r[1], 'fecha': r[2],
+            'lotes': r[3], 'estado': r[4],
+            'inicio_real_at': r[6], 'fin_real_at': r[7], 'kg': r[8],
+            'minutos_corridos': r[13] if r[6] and not r[7] else None,
+            'operario_dispensacion':      (r[9]  or '').strip() or None,
+            'operario_elaboracion':       (r[10] or '').strip() or None,
+            'operario_envasado':          (r[11] or '').strip() or None,
+            'operario_acondicionamiento': (r[12] or '').strip() or None,
+            'en_curso': bool(r[6] and not r[7]),
+        }
+        a = area_by_id.get(r[5])
+        if a:
+            a['ocupada_por'].append(info)
+
+    # KPIs del dia
+    kpi_row = conn.execute("""
+        SELECT
+            SUM(CASE WHEN inicio_real_at IS NOT NULL AND fin_real_at IS NULL THEN 1 ELSE 0 END) as activas,
+            SUM(CASE WHEN DATE(fin_real_at)=? THEN 1 ELSE 0 END) as terminadas_hoy,
+            AVG(CASE WHEN DATE(fin_real_at)=?
+                     THEN (julianday(fin_real_at)-julianday(inicio_real_at))*24*60
+                     ELSE NULL END) as ct_prom_min
+        FROM produccion_programada
+        WHERE fecha_programada >= date('now','-30 day')
+    """, (hoy, hoy)).fetchone()
+    salas_libres = sum(1 for a in areas if a['estado'] == 'libre' and a['tipo']=='produccion')
+    salas_sucias = sum(1 for a in areas if a['estado'] == 'sucia')
+    salas_ocupadas = sum(1 for a in areas if a['estado'] == 'ocupada')
+
+    # Eventos recientes (ultimos 15)
+    eventos = []
+    for r in conn.execute("""
+        SELECT ev.tipo, ev.estado_anterior, ev.estado_nuevo,
+               ev.usuario, ev.nota, ev.ts,
+               ap.codigo, ap.nombre,
+               pp.producto
+        FROM area_eventos ev
+        LEFT JOIN areas_planta ap ON ap.id=ev.area_id
+        LEFT JOIN produccion_programada pp ON pp.id=ev.produccion_id
+        ORDER BY ev.ts DESC LIMIT 15
+    """):
+        eventos.append({
+            'tipo': r[0], 'de': r[1], 'a': r[2], 'usuario': r[3],
+            'nota': r[4], 'ts': r[5], 'area_codigo': r[6],
+            'area_nombre': r[7], 'producto': r[8],
+        })
+
+    return jsonify({
+        'areas': areas,
+        'kpis': {
+            'producciones_activas_ahora': kpi_row[0] or 0,
+            'terminadas_hoy': kpi_row[1] or 0,
+            'cycle_time_promedio_min': int(kpi_row[2]) if kpi_row[2] else None,
+            'salas_libres': salas_libres,
+            'salas_sucias': salas_sucias,
+            'salas_ocupadas': salas_ocupadas,
+        },
+        'eventos_recientes': eventos,
+        'fecha': hoy,
+    })
+
+
 @bp.route('/api/programacion/produccion-programada/listado', methods=['GET'])
 def listado_produccion_programada():
     """Lista todas las producciones programadas activas con su origen,
