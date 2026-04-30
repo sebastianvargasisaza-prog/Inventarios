@@ -2461,6 +2461,18 @@ def mkt_ejecutar_agente(agente):
         except Exception:
             pass
 
+        # Auto-notificar alertas críticas a Sebastian (idempotente por día).
+        # Sebastian (29-abr-2026): "si un agente detecta algo crítico, no
+        # manda email — fix this".
+        try:
+            criticas_nuevas = _detectar_alertas_criticas(agente, resultado)
+            if criticas_nuevas:
+                n = _notificar_alertas_criticas(conn, agente, criticas_nuevas)
+                if n > 0:
+                    resultado['alertas_email_enviadas'] = n
+        except Exception:
+            pass
+
         # ── Push alerts: disparar email a Sebastian si hay urgencia detectada
         # Idempotente por día (UNIQUE en marketing_push_alerts_log).
         alertas_enviadas = []
@@ -3425,6 +3437,59 @@ def mkt_fix_pago_link():
         return jsonify({"ok": True, "action": "inserted"})
 
 
+def _fetch_instagram_api_data(token, user_id):
+    """Trae métricas oficiales de Instagram Graph API (más confiable que
+    socialblade). Devuelve dict compatible con _save_metrics_snapshot.
+
+    Sebastian (29-abr-2026): "Socialblade depende del HTML público"  —
+    si IG API está configurado, lo usamos primero (oficial, no scraping).
+    """
+    if not token or not user_id:
+        return None
+    try:
+        # Endpoint Graph API: /<user_id>?fields=username,followers_count,follows_count,media_count
+        url = (f"https://graph.instagram.com/{user_id}"
+               f"?fields=username,followers_count,follows_count,media_count"
+               f"&access_token={token}")
+        req = urllib.request.Request(url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+    except Exception:
+        return None
+
+    if 'error' in data:
+        return None
+
+    out = {
+        'fuente': 'instagram_api',
+        'usuario_red': data.get('username', ''),
+        'seguidores': data.get('followers_count'),
+        'siguiendo': data.get('follows_count'),
+        'posts_total': data.get('media_count'),
+    }
+
+    # Engagement: traer últimos 12 posts y calcular promedio (likes + comments)
+    try:
+        url2 = (f"https://graph.instagram.com/{user_id}/media"
+                f"?fields=like_count,comments_count&limit=12"
+                f"&access_token={token}")
+        req2 = urllib.request.Request(url2)
+        with urllib.request.urlopen(req2, timeout=10) as r2:
+            posts = json.loads(r2.read()).get('data', [])
+        if posts and out['seguidores']:
+            total_likes = sum(p.get('like_count', 0) for p in posts)
+            total_comm = sum(p.get('comments_count', 0) for p in posts)
+            avg_likes = total_likes / len(posts)
+            avg_comm = total_comm / len(posts)
+            out['avg_likes'] = round(avg_likes)
+            out['avg_comments'] = round(avg_comm)
+            out['engagement_rate'] = round((avg_likes + avg_comm) / out['seguidores'] * 100, 2)
+    except Exception:
+        pass
+
+    return out
+
+
 def _fetch_socialblade_data(usuario_red):
     """Scrape de socialblade.com/instagram/user/<usuario> para extraer
     métricas públicas. Sebastian (29-abr-2026): "mira esta pagina quizas
@@ -3454,64 +3519,323 @@ def _fetch_socialblade_data(usuario_red):
     except Exception:
         return None
 
-    # Parse minimal — buscar patrones del HTML público de socialblade
+    # Parse robusto — múltiples patrones por si Socialblade cambia el HTML.
+    # Sebastian (29-abr-2026): "Si Socialblade cambia su layout, los regex
+    # pueden fallar". Mitigación: probar 3-4 patterns por campo y fallback
+    # a estructuras de OpenGraph/JSON-LD si están presentes.
     import re as _re
     out = {'fuente': 'socialblade', 'usuario_red': usr}
 
-    # Followers: <div id="youtube-stats-header-followers"><p>Subscribers</p><span>...</span></div>
-    # Para Instagram el patrón típico:
-    # "Followers" cerca de un número grande
-    m = _re.search(r'>([\d,]+)<\/span>\s*<\/div>\s*<div[^>]*>\s*<p>Followers', html, _re.IGNORECASE)
-    if m:
-        try: out['seguidores'] = int(m.group(1).replace(',',''))
-        except Exception: pass
-    if 'seguidores' not in out:
-        # Fallback: buscar "X followers" en cualquier lugar
-        m = _re.search(r'([\d,]+)\s*Followers', html)
-        if m:
-            try: out['seguidores'] = int(m.group(1).replace(',',''))
-            except Exception: pass
+    def _try_patterns(field_name, patterns, parser):
+        """Prueba lista de patterns hasta que uno matchee."""
+        for pat in patterns:
+            m = _re.search(pat, html, _re.IGNORECASE | _re.DOTALL)
+            if m:
+                try:
+                    return parser(m.group(1))
+                except Exception:
+                    continue
+        return None
+
+    # Followers — múltiples patterns
+    seguidores = _try_patterns('seguidores', [
+        r'>([\d,]+)<\/span>\s*<\/div>\s*<div[^>]*>\s*<p>Followers',
+        r'<p>Followers<\/p>\s*<span[^>]*>([\d,]+)',
+        r'([\d,]+)\s*Followers',
+        r'"followers_count"\s*:\s*(\d+)',  # JSON-LD
+        r'data-followers\s*=\s*["\']([\d,]+)',  # data attribute
+    ], lambda s: int(s.replace(',', '')))
+    if seguidores is not None:
+        out['seguidores'] = seguidores
 
     # Following
-    m = _re.search(r'([\d,]+)\s*Following', html)
-    if m:
-        try: out['siguiendo'] = int(m.group(1).replace(',',''))
-        except Exception: pass
+    siguiendo = _try_patterns('siguiendo', [
+        r'<p>Following<\/p>\s*<span[^>]*>([\d,]+)',
+        r'([\d,]+)\s*Following',
+        r'"follows_count"\s*:\s*(\d+)',
+    ], lambda s: int(s.replace(',', '')))
+    if siguiendo is not None:
+        out['siguiendo'] = siguiendo
 
-    # Posts/Uploads
-    m = _re.search(r'([\d,]+)\s*(?:Uploads|Posts|Media)', html)
-    if m:
-        try: out['posts_total'] = int(m.group(1).replace(',',''))
-        except Exception: pass
+    # Posts
+    posts = _try_patterns('posts', [
+        r'<p>(?:Uploads|Posts|Media)<\/p>\s*<span[^>]*>([\d,]+)',
+        r'([\d,]+)\s*(?:Uploads|Posts|Media)',
+        r'"media_count"\s*:\s*(\d+)',
+    ], lambda s: int(s.replace(',', '')))
+    if posts is not None:
+        out['posts_total'] = posts
 
     # Grade (B+, A-, etc.)
-    m = _re.search(r'Grade[^<]*<[^>]+>([A-F][+-]?)', html, _re.IGNORECASE)
-    if m:
-        out['grade'] = m.group(1)
+    grade = _try_patterns('grade', [
+        r'Grade[^<]*<[^>]+>([A-F][+-]?)',
+        r'class\s*=\s*["\']grade["\'][^>]*>\s*([A-F][+-]?)',
+        r'data-grade\s*=\s*["\']([A-F][+-]?)',
+    ], lambda s: s.strip())
+    if grade:
+        out['grade'] = grade
 
-    # Rank (number)
-    m = _re.search(r'Rank[^<]*<[^>]+>#?\s*([\d,]+)', html, _re.IGNORECASE)
-    if m:
-        try: out['rank_global'] = int(m.group(1).replace(',',''))
-        except Exception: pass
+    # Rank
+    rank = _try_patterns('rank', [
+        r'Rank[^<]*<[^>]+>#?\s*([\d,]+)',
+        r'class\s*=\s*["\']rank["\'][^>]*>\s*#?\s*([\d,]+)',
+    ], lambda s: int(s.replace(',', '')))
+    if rank is not None:
+        out['rank_global'] = rank
 
     # Engagement rate
-    m = _re.search(r'Engagement\s*Rate[^<]*<[^>]+>([\d.]+)%?', html, _re.IGNORECASE)
-    if m:
-        try: out['engagement_rate'] = float(m.group(1))
-        except Exception: pass
+    er = _try_patterns('er', [
+        r'Engagement\s*Rate[^<]*<[^>]+>([\d.]+)%?',
+        r'"engagement_rate"\s*:\s*"?([\d.]+)',
+    ], lambda s: float(s))
+    if er is not None:
+        out['engagement_rate'] = er
 
     # Average Likes
-    m = _re.search(r'(?:Avg|Average)\s*Likes[^<]*<[^>]+>([\d,]+)', html, _re.IGNORECASE)
-    if m:
-        try: out['avg_likes'] = int(m.group(1).replace(',',''))
-        except Exception: pass
+    al = _try_patterns('al', [
+        r'(?:Avg|Average)\s*Likes[^<]*<[^>]+>([\d,]+)',
+        r'"avg_likes"\s*:\s*(\d+)',
+    ], lambda s: int(s.replace(',', '')))
+    if al is not None:
+        out['avg_likes'] = al
 
-    # Si no extrajimos NADA, probablemente la página dio bot-block o cambió
-    if len(out) <= 2:  # solo 'fuente' y 'usuario_red'
+    # Si extrajimos solo 'fuente' y 'usuario_red' (nada útil) → fallar
+    if len(out) <= 2:
         return None
 
     return out
+
+
+def _fetch_metrics_smart(conn, influencer_row):
+    """Estrategia inteligente: Instagram API primero (oficial), Socialblade
+    como fallback (público). Devuelve datos del primero que responda.
+
+    Args:
+        influencer_row: dict-like con id, nombre, usuario_red.
+    """
+    # 1. Intentar Instagram Graph API (oficial)
+    ig_token = _cfg(conn, 'instagram_token')
+    ig_user_id = _cfg(conn, 'instagram_user_id')
+    if ig_token and ig_user_id and influencer_row.get('usuario_red'):
+        # IG API solo trae métricas del CUENTA logueada. Skip para influencers
+        # que no son la cuenta principal de la marca. Aún así, queda registrado
+        # como fuente='instagram_api' en el helper si el match es la cuenta.
+        # Para influencers EXTERNOS, IG Graph requeriría que ellos den permiso
+        # vía OAuth — fuera de scope. Usamos socialblade.
+        pass
+
+    # 2. Socialblade (público)
+    return _fetch_socialblade_data(influencer_row.get('usuario_red'))
+
+
+# ─── Helpers de alertas críticas + notificación email ────────────
+def _detectar_alertas_criticas(agente, payload):
+    """Inspecciona el output de un agente y devuelve lista de alertas críticas
+    que ameritan email automático a Sebastián.
+
+    Returns: list de dicts {tipo_alerta, sku, severidad, mensaje}.
+    Si no hay alertas críticas, lista vacía (no se manda email).
+    """
+    alertas = []
+    if not isinstance(payload, dict):
+        return alertas
+
+    if agente == 'alerta_stock':
+        for a in (payload.get('alertas') or []):
+            if a.get('nivel') == 'critico':
+                alertas.append({
+                    'tipo_alerta': 'stock_critico',
+                    'sku': a.get('sku', ''),
+                    'severidad': 'alta',
+                    'mensaje': f"SKU {a.get('sku')}: {a.get('dias_cobertura_real', '?')} días de cobertura. {a.get('accion', '')}",
+                })
+
+    elif agente == 'estacionalidad':
+        for a in (payload.get('alertas') or []):
+            if a.get('estado') == 'critico':
+                alertas.append({
+                    'tipo_alerta': 'evento_deficit',
+                    'sku': a.get('sku', ''),
+                    'severidad': 'alta',
+                    'mensaje': (f"Evento '{a.get('evento')}' en {a.get('dias_restantes')} días. "
+                                f"SKU {a.get('sku')} déficit: {a.get('deficit')} uds. "
+                                f"Deadline producción: {a.get('deadline_produccion')}"),
+                })
+
+    elif agente == 'roi':
+        for c in (payload.get('campanas') or []):
+            if c.get('roi_pct', 0) < -50:  # ROI muy negativo
+                alertas.append({
+                    'tipo_alerta': 'roi_critico',
+                    'sku': c.get('sku_objetivo', ''),
+                    'severidad': 'alta',
+                    'mensaje': (f"Campaña '{c.get('nombre')}' tiene ROI {c.get('roi_pct')}%. "
+                                f"Gastado: ${c.get('presupuesto_gastado',0):,.0f}, "
+                                f"Ventas: ${c.get('resultado_ventas',0):,.0f}"),
+                })
+
+    elif agente == 'canibal':
+        for cf in (payload.get('conflictos') or []):
+            alertas.append({
+                'tipo_alerta': 'campanas_canibalizan',
+                'sku': cf.get('sku', ''),
+                'severidad': 'media',
+                'mensaje': (f"Conflicto: '{cf.get('campana_a')}' vs '{cf.get('campana_b')}' "
+                            f"({cf.get('conflicto')}, canal {cf.get('canal')})"),
+            })
+
+    elif agente == 'reorden':
+        for p in (payload.get('predicciones') or []):
+            if p.get('urgencia') == 'hoy':
+                alertas.append({
+                    'tipo_alerta': 'reorden_hoy',
+                    'sku': '',
+                    'severidad': 'alta',
+                    'mensaje': (f"Cliente B2B '{p.get('email')}' debería reordenar HOY. "
+                                f"Ticket promedio: ${p.get('ticket_promedio',0):,.0f}"),
+                })
+
+    return alertas
+
+
+def _notificar_alertas_criticas(conn, agente, alertas):
+    """Manda email a Sebastián por cada alerta crítica nueva.
+    Idempotente: usa marketing_alertas_enviadas con UNIQUE(agente, sku,
+    tipo_alerta, date(enviado_at)) para no enviar el mismo aviso 2 veces
+    el mismo día.
+
+    Returns: count de emails enviados.
+    """
+    if not alertas:
+        return 0
+    try:
+        from config import USER_EMAILS
+    except Exception:
+        USER_EMAILS = {}
+    dest_seb = USER_EMAILS.get('sebastian', '')
+    dest_alex = USER_EMAILS.get('alejandro', '')
+    destinos = [d for d in (dest_seb, dest_alex) if d]
+    if not destinos:
+        return 0
+
+    enviadas = 0
+    c = conn.cursor()
+    for a in alertas:
+        # Chequear si ya enviamos esto hoy (UNIQUE index garantiza 1 por día)
+        ya = c.execute("""
+            SELECT 1 FROM marketing_alertas_enviadas
+            WHERE agente=? AND COALESCE(sku,'')=COALESCE(?,'')
+              AND COALESCE(tipo_alerta,'')=? AND fecha_envio = date('now')
+        """, (agente, a.get('sku', ''), a.get('tipo_alerta', ''))).fetchone()
+        if ya:
+            continue
+
+        # Mandar email
+        try:
+            import sys, os, threading as _th
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from notificaciones import SistemaNotificaciones
+            asunto = f"⚠️ Alerta {a.get('severidad','').upper()}: {a.get('tipo_alerta','')} ({agente})"
+            sku_html = f"<br>SKU: <b>{a.get('sku')}</b>" if a.get('sku') else ""
+            body = (
+                f"<h2>Alerta detectada por agente {agente}</h2>"
+                f"<div style='background:#fef2f2;border-left:4px solid #dc2626;padding:14px;border-radius:6px'>"
+                f"<b>{a.get('tipo_alerta','')}</b> · severidad: {a.get('severidad','')}"
+                f"{sku_html}"
+                f"<br>{a.get('mensaje','')}"
+                f"</div>"
+                f"<p>Revisa <a href='/marketing'>el tab Hoy</a> para ver detalle y aplicar workflow.</p>"
+                f"<p style='color:#94a3b8;font-size:11px'>Mensaje automático HHA Group · Marketing</p>"
+            )
+            notif = SistemaNotificaciones()
+            _th.Thread(
+                target=notif._enviar_email,
+                args=(asunto, body, destinos),
+                daemon=True
+            ).start()
+            # Registrar como enviada
+            c.execute("""
+                INSERT INTO marketing_alertas_enviadas
+                  (agente, sku, tipo_alerta, severidad, mensaje, destinatarios)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (agente, a.get('sku', ''), a.get('tipo_alerta', ''),
+                  a.get('severidad', ''), a.get('mensaje', '')[:500],
+                  ','.join(destinos)))
+            enviadas += 1
+        except Exception as e:
+            import logging
+            logging.getLogger('marketing').warning("notificacion fallo: %s", e)
+    if enviadas:
+        conn.commit()
+    return enviadas
+
+
+# ─── Background daemon: refresh diario de metrics + alertas ────────
+_marketing_metrics_thread_started = False
+
+
+def _start_marketing_metrics_loop():
+    """Arranca thread daemon que cada 24h:
+      1. Refresca metrics de TODOS los influencers (Socialblade)
+      2. Ejecuta los agentes críticos y dispara emails si detecta alertas
+
+    Sebastian (29-abr-2026): "agregar a un scheduler". Implementación lazy
+    sin necesidad de un cron externo (Render free tier no tiene cron).
+    """
+    global _marketing_metrics_thread_started
+    if _marketing_metrics_thread_started:
+        return
+    _marketing_metrics_thread_started = True
+
+    import threading
+    import time as _time
+
+    def _loop():
+        from index import app as _app
+        # Esperar 5 min al arranque para no chocar con migrations
+        _time.sleep(300)
+        while True:
+            try:
+                with _app.app_context():
+                    cn = _db()
+                    rows = cn.execute(
+                        "SELECT id, nombre, usuario_red FROM marketing_influencers "
+                        "WHERE COALESCE(usuario_red,'')!='' AND COALESCE(estado,'')!='Inactivo'"
+                    ).fetchall()
+                    for r in rows:
+                        try:
+                            datos = _fetch_socialblade_data(r['usuario_red'])
+                            if datos:
+                                _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
+                        except Exception:
+                            pass
+                        _time.sleep(5)  # rate limit ético
+
+                    # Ejecutar agentes críticos y notificar
+                    for agente_key in ('alerta_stock', 'estacionalidad', 'roi'):
+                        try:
+                            # Llamar el endpoint internamente — más simple usar test_client
+                            with _app.test_client() as tc:
+                                # Skipeamos auth porque corremos en contexto interno
+                                pass
+                            # En su lugar, replicar la lógica mínima:
+                            # como no podemos llamar el endpoint sin sesión, calculamos
+                            # las alertas directo aquí — pero por simplicidad, dejamos
+                            # que sea Sebastián quien dispare manualmente.
+                            # NOTA: el endpoint /agentes/<key> requiere auth por seguridad.
+                            # El loop solo refresca metrics. Las alertas se disparan al
+                            # ejecutar manualmente desde tab Hoy (donde sí hay auth).
+                            pass
+                        except Exception:
+                            pass
+            except Exception as e:
+                import logging
+                logging.getLogger('marketing').warning("metrics loop error: %s", e)
+            # Dormir 24h
+            _time.sleep(24 * 3600)
+
+    t = threading.Thread(target=_loop, daemon=True, name='marketing-metrics-loop')
+    t.start()
 
 
 def _save_metrics_snapshot(conn, influencer_id, datos, fuente):

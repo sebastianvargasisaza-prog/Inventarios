@@ -2301,6 +2301,28 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # garantiza idempotencia (si se llama 2x, no descontar 2x).
         "ALTER TABLE produccion_programada ADD COLUMN inventario_descontado_at TEXT",
     ]),
+    (54, "marketing_alertas_enviadas: tracking de alertas críticas notificadas (anti-spam email)", [
+        # Sebastian (29-abr-2026): cuando un agente detecta algo crítico,
+        # mandamos email — pero solo UNA vez por (agente, sku, fecha). Para
+        # evitar mandar el mismo aviso todos los días.
+        """CREATE TABLE IF NOT EXISTS marketing_alertas_enviadas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agente TEXT NOT NULL,
+            sku TEXT,
+            tipo_alerta TEXT,
+            severidad TEXT,
+            mensaje TEXT,
+            destinatarios TEXT,
+            fecha_envio TEXT NOT NULL DEFAULT (date('now')),
+            enviado_at TEXT DEFAULT (datetime('now'))
+        )""",
+        # UNIQUE como índice separado (SQLite no permite expresiones en
+        # UNIQUE inline pero SÍ en CREATE UNIQUE INDEX). Usamos fecha_envio
+        # (date solo) para garantizar 1 alerta por día por (agente,sku,tipo).
+        """CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_alerts_dia
+           ON marketing_alertas_enviadas(agente, COALESCE(sku,''), COALESCE(tipo_alerta,''), fecha_envio)""",
+        """CREATE INDEX IF NOT EXISTS idx_mkt_alerts_at ON marketing_alertas_enviadas(enviado_at DESC)""",
+    ]),
     (53, "marketing_influencers_metrics: histórico de followers/engagement (Fase 1 marketing)", [
         # Sebastian (29-abr-2026): "que sea agencia de marketing tirando todo".
         # Captura snapshots diarios de métricas desde socialblade + Instagram

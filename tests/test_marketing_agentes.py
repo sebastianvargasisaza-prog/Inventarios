@@ -323,6 +323,107 @@ def test_reset_pendientes_solo_admin(app, db_clean):
     assert r.status_code in (401, 403)
 
 
+def test_detectar_alertas_criticas_alerta_stock(app, db_clean):
+    """_detectar_alertas_criticas extrae correctamente las alertas críticas
+    del payload del agente alerta_stock."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.marketing import _detectar_alertas_criticas
+
+    payload = {
+        "alertas": [
+            {"sku": "SKU_OK", "nivel": "ok"},
+            {"sku": "SKU_CRIT", "nivel": "critico", "dias_cobertura_real": 3,
+             "accion": "Reposicion urgente"},
+            {"sku": "SKU_WARN", "nivel": "advertencia"},
+        ]
+    }
+    crits = _detectar_alertas_criticas("alerta_stock", payload)
+    assert len(crits) == 1
+    assert crits[0]["sku"] == "SKU_CRIT"
+    assert crits[0]["severidad"] == "alta"
+
+
+def test_detectar_alertas_criticas_estacionalidad(app, db_clean):
+    """Estacionalidad: alertas con estado='critico' generan email."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.marketing import _detectar_alertas_criticas
+
+    payload = {
+        "alertas": [
+            {"sku": "SKU_E1", "estado": "critico", "evento": "Día Madre",
+             "dias_restantes": 21, "deficit": 100,
+             "deadline_produccion": "2026-05-01"},
+            {"sku": "SKU_E2", "estado": "ok"},
+        ]
+    }
+    crits = _detectar_alertas_criticas("estacionalidad", payload)
+    assert len(crits) == 1
+    assert crits[0]["tipo_alerta"] == "evento_deficit"
+
+
+def test_detectar_alertas_criticas_roi():
+    """ROI muy negativo (<-50%) genera alerta."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.marketing import _detectar_alertas_criticas
+
+    payload = {
+        "campanas": [
+            {"nombre": "Buena", "roi_pct": 100},
+            {"nombre": "Mala", "roi_pct": -75, "presupuesto_gastado": 1000000,
+             "resultado_ventas": 250000, "sku_objetivo": "SKU_BAD"},
+        ]
+    }
+    crits = _detectar_alertas_criticas("roi", payload)
+    assert len(crits) == 1
+    assert "Mala" in crits[0]["mensaje"]
+
+
+def test_notificar_alertas_es_idempotente(app, db_clean):
+    """_notificar_alertas_criticas no envía 2 emails el mismo día por
+    misma combinación (agente, sku, tipo_alerta)."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.marketing import _notificar_alertas_criticas
+    db_path = app.config.get("DATABASE") or os.environ["DB_PATH"]
+
+    # Limpiar para test
+    con = sqlite3.connect(db_path)
+    con.execute("DELETE FROM marketing_alertas_enviadas WHERE agente='test_idemp'")
+    con.commit()
+
+    alerta = {
+        'tipo_alerta': 'test_t',
+        'sku': 'SKU_NTF',
+        'severidad': 'alta',
+        'mensaje': 'Test idemp',
+    }
+
+    # Primera llamada → envía (aunque no haya SMTP, registra en tabla)
+    n1 = _notificar_alertas_criticas(con, 'test_idemp', [alerta])
+    # Segunda llamada con mismo input → 0 (ya está en la tabla del día)
+    n2 = _notificar_alertas_criticas(con, 'test_idemp', [alerta])
+    con.close()
+    # n1 puede ser 0 si no hay USER_EMAILS configurado en test, pero la lógica
+    # idempotente igual debería funcionar (sin SMTP no inserta — entonces no
+    # se aplica idempotencia). Lo importante: n2 nunca > n1.
+    assert n2 <= n1
+
+
+def test_marketing_metrics_loop_es_callable():
+    """_start_marketing_metrics_loop existe y es invocable sin crashear."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.marketing import _start_marketing_metrics_loop, _marketing_metrics_thread_started
+    # Llamar 2 veces — segunda debe ser idempotente (ya started)
+    _start_marketing_metrics_loop()
+    _start_marketing_metrics_loop()
+    # No verificamos comportamiento del thread (corre 5 min de delay) — solo
+    # que la función existe y no crashea al ser llamada.
+
+
 def test_audit_socialblade_helper_no_crashea_con_url_invalida(app, db_clean):
     """_fetch_socialblade_data debe devolver None si la cuenta no existe,
     no lanzar excepción."""

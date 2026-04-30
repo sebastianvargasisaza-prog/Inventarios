@@ -207,6 +207,16 @@ _log.getLogger(__name__).info(
     "schema_migrations: %d versiones registradas", len(MIGRATIONS)
 )
 
+# Arrancar loops de background daemon (no bloqueantes).
+# Solo si NO estamos en modo testing (los tests no necesitan loops corriendo).
+if not app.config.get("TESTING"):
+    try:
+        from blueprints.marketing import _start_marketing_metrics_loop
+        _start_marketing_metrics_loop()
+        _log.getLogger(__name__).info("marketing-metrics-loop arrancado")
+    except Exception as _e:
+        _log.getLogger(__name__).warning("metrics-loop NO arrancó: %s", _e)
+
 
 
 @app.before_request
