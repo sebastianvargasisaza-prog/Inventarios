@@ -18,7 +18,7 @@ import urllib.request
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session, render_template_string
 
-from config import DB_PATH, ADMIN_USERS, USER_EMAILS, AREA_USERS
+from config import DB_PATH, ADMIN_USERS, USER_EMAILS, AREA_USERS, APP_BASE_URL
 from database import get_db
 
 
@@ -85,7 +85,7 @@ def _email_tarea_asignada(tarea_id, usuarios, rol, asignador):
             f'<td>{asignador or "sistema"}</td></tr>'
             '</table>'
             '<p style="margin-top:18px;">'
-            '<a href="https://inventarios-0363.onrender.com/comunicacion" '
+            f'<a href="{APP_BASE_URL}/comunicacion" '
             'style="background:#1c1917;color:#fff;padding:10px 20px;border-radius:6px;'
             'text-decoration:none;font-weight:600;display:inline-block;">'
             'Ver tarea →</a>'

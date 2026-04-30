@@ -45,6 +45,13 @@ PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 
+# URL pública canónica de la app. Se usa para construir links absolutos
+# en correos de notificación (asignación de tareas, etc.). Si la env var
+# falta, defaulteamos a app.eossuite.com (dominio oficial desde abr-2026).
+# El dominio antiguo inventarios-0363.onrender.com sigue funcionando como
+# backup pero NO debe aparecer hardcodeado en ninguna parte.
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://app.eossuite.com").rstrip("/")
+
 
 # Contraseñas plaintext conocidas que NUNCA deben usarse en producción.
 # validate_config() las detecta y emite un warning por cada usuario afectado.

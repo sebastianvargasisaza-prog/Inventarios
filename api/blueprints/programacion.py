@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, request, session
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
-from config import ADMIN_USERS
+from config import ADMIN_USERS, APP_BASE_URL
 
 bp = Blueprint('programacion', __name__)
 
@@ -5642,7 +5642,7 @@ def _notificar_tarea_operativa(tarea_id):
                 </table>
                 <div style="margin-top:18px;padding:12px 14px;background:#f0fdf4;border-left:3px solid #16a34a;border-radius:6px;color:#166534;font-size:13px">
                   Marca <b>Completar</b> en el modulo cuando termines:<br>
-                  <a href="https://inventarios-0363.onrender.com/inventarios" style="color:#0f766e;font-weight:600">Planta → Programación → Tareas operativas</a>
+                  <a href="{APP_BASE_URL}/inventarios" style="color:#0f766e;font-weight:600">Planta → Programación → Tareas operativas</a>
                 </div>
               </div>
               <div style="background:#f8fafc;padding:12px 22px;font-size:11px;color:#64748b;border-top:1px solid #e2e8f0">

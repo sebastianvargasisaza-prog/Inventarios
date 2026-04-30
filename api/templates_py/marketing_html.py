@@ -210,7 +210,8 @@ window.addEventListener('unhandledrejection', function(ev) {
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="tabs-bar">
-  <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F3AF; Dashboard</button>
+  <button class="tab-btn active" data-tab="hoy" onclick="switchTab('hoy')">&#x1F3AF; Hoy</button>
+  <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
   <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
   <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
   <button class="tab-btn" data-tab="pagos" onclick="switchTab('pagos')">&#x1F4B0; Mis Pagos &amp; Solicitudes</button>
@@ -221,7 +222,72 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: DASHBOARD -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-dashboard" class="tab-panel active">
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- TAB: HOY — Centro de ejecución (Fase 2/4 marketing)             -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="tab-hoy" class="tab-panel active">
+  <div class="actions-bar">
+    <div>
+      <div class="page-title">&#x1F3AF; Hoy — Centro de ejecución</div>
+      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Lo que la IA detecta + lo que requiere tu acción HOY · ejecuta agentes y aprueba con un click</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" onclick="hoyEjecutarTodos()">&#x26A1; Ejecutar todos los agentes</button>
+      <button class="btn btn-outline btn-sm" onclick="hoyCargarResumen()">&#x21BB; Refresh</button>
+    </div>
+  </div>
+
+  <!-- KPIs principales del día -->
+  <div id="hoy-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Influencers pendientes pago</div>
+      <div id="hoy-kpi-pend" style="font-size:24px;font-weight:800;color:#f59e0b;margin-top:4px">—</div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Eventos cosméticos próximos</div>
+      <div id="hoy-kpi-eventos" style="font-size:24px;font-weight:800;color:#a78bfa;margin-top:4px">—</div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">SKUs en riesgo (stock)</div>
+      <div id="hoy-kpi-riesgo" style="font-size:24px;font-weight:800;color:#dc2626;margin-top:4px">—</div>
+    </div>
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Campañas activas</div>
+      <div id="hoy-kpi-campanas" style="font-size:24px;font-weight:800;color:#34d399;margin-top:4px">—</div>
+    </div>
+  </div>
+
+  <!-- Acciones recomendadas (cards con botón "Aprobar y ejecutar") -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:700;color:#a78bfa">&#x1F916; Acciones recomendadas por la IA</div>
+      <button class="btn btn-outline btn-sm" onclick="hoyEjecutarTodos()" title="Ejecutar todos los agentes y refrescar">&#x21BB; Refrescar análisis</button>
+    </div>
+    <div id="hoy-acciones" style="display:flex;flex-direction:column;gap:10px">
+      <div style="color:#64748b;text-align:center;padding:20px;font-size:12px">Click "⚡ Ejecutar todos los agentes" arriba para iniciar.</div>
+    </div>
+  </div>
+
+  <!-- Refresh metrics socialblade (Fase 1) -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#34d399">&#x1F4E1; Auto-refresh datos de influencers (Socialblade)</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:2px">Trae seguidores, engagement rate, rank y grade de TODOS los influencers con usuario_red. ~5s por influencer.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="hoyRefreshMetricas()">&#x1F504; Refresh todos</button>
+    </div>
+    <div id="hoy-metrics-result" style="margin-top:6px;font-size:12px;color:#94a3b8"></div>
+  </div>
+
+  <!-- Log de ejecución -->
+  <div class="card">
+    <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">Log de ejecución</div>
+    <div id="hoy-log" style="font-family:monospace;font-size:11px;color:#64748b;max-height:200px;overflow-y:auto;background:#0a0a0b;border:1px solid #1e293b;border-radius:6px;padding:8px">Sin actividad reciente.</div>
+  </div>
+</div>
+
+<div id="tab-dashboard" class="tab-panel">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
       <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing — Dashboard</div>
@@ -1247,7 +1313,8 @@ function showSub(sub) {
 }
 
 function loadTab(name) {
-  if(name==='dashboard') loadDashboard();
+  if(name==='hoy') hoyCargarResumen();
+  else if(name==='dashboard') loadDashboard();
   else if(name==='campanas') loadCampanas();
   else if(name==='influencers') loadInfluencers();
   else if(name==='pagos') loadPagosInfluencers();
@@ -1256,6 +1323,173 @@ function loadTab(name) {
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); loadFeedbackStats(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB "HOY" — Centro de ejecución (Fase 2/4 marketing)
+// Sebastian (29-abr-2026): "centro de ejecución, agencia de marketing
+// con todos los agentes funcionando, tirando todo".
+// ═══════════════════════════════════════════════════════════════════
+
+function _hoyLog(msg) {
+  const el = document.getElementById('hoy-log');
+  if(!el) return;
+  const ts = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const line = `<div>[${ts}] ${_escHtml(msg)}</div>`;
+  if(el.textContent.trim() === 'Sin actividad reciente.') el.innerHTML = '';
+  el.innerHTML = line + el.innerHTML;
+}
+
+function _escHtml(s) {
+  return String(s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+}
+
+async function hoyCargarResumen() {
+  // KPIs rápidos
+  try {
+    const r = await fetch('/api/marketing/dashboard');
+    const d = await r.json();
+    document.getElementById('hoy-kpi-pend').textContent = d.kpis?.influencers_pendientes_pago ?? '0';
+    document.getElementById('hoy-kpi-eventos').textContent = d.kpis?.eventos_proximos ?? '0';
+    document.getElementById('hoy-kpi-riesgo').textContent = d.kpis?.skus_en_riesgo ?? '0';
+    document.getElementById('hoy-kpi-campanas').textContent = d.kpis?.campanas_activas ?? '0';
+  } catch(e) {
+    _hoyLog('Error cargando KPIs: ' + e.message);
+  }
+}
+
+async function hoyEjecutarTodos() {
+  _hoyLog('⚡ Ejecutando los 11 agentes en paralelo...');
+  const acc = document.getElementById('hoy-acciones');
+  acc.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px"><span class="spin"></span> Ejecutando agentes...</div>';
+
+  // Lista de agentes a ejecutar (orden de prioridad para mostrar)
+  const agentes = [
+    {key:'estrategia', label:'Estrategia (master)', icon:'🧠', color:'#7c3aed'},
+    {key:'alerta_stock', label:'Alerta Stock', icon:'📦', color:'#dc2626'},
+    {key:'estacionalidad', label:'Estacionalidad', icon:'📅', color:'#f59e0b'},
+    {key:'oportunidad', label:'Oportunidad', icon:'💡', color:'#0891b2'},
+    {key:'roi', label:'ROI', icon:'📊', color:'#16a34a'},
+    {key:'canibal', label:'Canibalización', icon:'⚠️', color:'#dc2626'},
+    {key:'reorden', label:'Reorden B2B', icon:'🔁', color:'#a78bfa'},
+    {key:'tendencias', label:'Tendencias', icon:'📈', color:'#34d399'},
+    {key:'pricing', label:'Pricing', icon:'💰', color:'#f59e0b'},
+    {key:'contenido_auto', label:'Contenido Auto', icon:'✍️', color:'#7c3aed'},
+    {key:'brief', label:'Brief', icon:'📋', color:'#0891b2'},
+  ];
+
+  const resultados = await Promise.all(agentes.map(async ag => {
+    try {
+      const r = await fetch('/api/marketing/agentes/' + ag.key, {method:'POST'});
+      if(!r.ok) return {agente:ag, error:`HTTP ${r.status}`};
+      const d = await r.json();
+      return {agente:ag, data:d};
+    } catch(e) {
+      return {agente:ag, error:e.message};
+    }
+  }));
+
+  // Construir cards de "acciones recomendadas" combinando resultados
+  let html = '';
+  let accionesCount = 0;
+
+  for(const res of resultados) {
+    const ag = res.agente;
+    if(res.error) {
+      _hoyLog(`❌ ${ag.label}: ${res.error}`);
+      continue;
+    }
+    const d = res.data || {};
+    _hoyLog(`✓ ${ag.label}: ${d.titulo||'OK'}`);
+
+    // Extraer acciones útiles del agente
+    let resumenAccion = null;
+    if(ag.key === 'estrategia') {
+      const k = d.kpis || {};
+      const items = [];
+      if(k.skus_en_riesgo > 0) items.push(`${k.skus_en_riesgo} SKU(s) en riesgo`);
+      if(k.skus_a_empujar > 0) items.push(`${k.skus_a_empujar} SKU(s) por empujar`);
+      if(k.eventos_en_60d > 0) items.push(`${k.eventos_en_60d} evento(s) cosmético(s) en 60d`);
+      if(items.length) resumenAccion = items.join(' · ');
+    } else if(ag.key === 'alerta_stock') {
+      const total = d.total || 0;
+      if(total > 0) resumenAccion = `${total} SKU(s) con stock crítico/advertencia`;
+    } else if(ag.key === 'estacionalidad') {
+      const c = d.criticos || 0;
+      if(c > 0) resumenAccion = `${c} SKU(s) en estado crítico para eventos próximos`;
+    } else if(ag.key === 'oportunidad') {
+      const t = d.total || 0;
+      if(t > 0) resumenAccion = `${t} SKU(s) con oportunidad de campaña`;
+    } else if(ag.key === 'roi') {
+      const cmp = (d.campanas||[]).filter(x => x.roi_pct < 0);
+      if(cmp.length) resumenAccion = `${cmp.length} campaña(s) con ROI negativo`;
+    } else if(ag.key === 'canibal') {
+      const c = (d.conflictos||[]).length;
+      if(c > 0) resumenAccion = `${c} conflicto(s) entre campañas`;
+    } else if(ag.key === 'reorden') {
+      const urg = (d.predicciones||[]).filter(p => p.urgencia==='hoy' || p.urgencia==='esta semana');
+      if(urg.length) resumenAccion = `${urg.length} cliente(s) B2B con reorden próxima`;
+    } else if(ag.key === 'contenido_auto') {
+      const p = (d.piezas||[]).length;
+      if(p > 0) resumenAccion = `${p} pieza(s) de contenido sugerida(s) para top SKUs`;
+    }
+
+    if(resumenAccion) {
+      accionesCount++;
+      html += `<div style="background:#0f172a;border:1px solid #334155;border-left:4px solid ${ag.color};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#f1f5f9">${ag.icon} ${_escHtml(ag.label)}</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:2px">${_escHtml(resumenAccion)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-outline btn-sm" onclick="hoyVerDetalleAgente('${ag.key}')" title="Ver detalle del análisis">👁 Ver</button>
+          <button class="btn btn-primary btn-sm" onclick="hoyAplicarAgente('${ag.key}')" title="Convertir propuesta en entidad real">✓ Aplicar</button>
+        </div>
+      </div>`;
+    }
+  }
+
+  if(accionesCount === 0) {
+    acc.innerHTML = '<div style="background:#064e3b;color:#34d399;padding:14px;border-radius:8px;text-align:center;font-size:13px">✅ Sin acciones críticas detectadas. Todo bajo control.</div>';
+  } else {
+    acc.innerHTML = `<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">${accionesCount} acción(es) detectada(s) por la IA · click ✓ Aplicar para ejecutar la propuesta</div>` + html;
+  }
+  _hoyLog(`✓ Análisis completo: ${accionesCount} accion(es) detectadas`);
+  hoyCargarResumen(); // refresh KPIs
+}
+
+async function hoyVerDetalleAgente(key) {
+  // Reusar tab Inteligencia → Agentes
+  switchTab('inteligencia');
+  if(typeof showSub === 'function') showSub('agentes');
+  if(typeof runAgente === 'function') {
+    setTimeout(() => runAgente(key), 300);
+  }
+}
+
+async function hoyAplicarAgente(key) {
+  // Workflow: convertir propuesta del agente en entidad real (Fase 3)
+  // Por ahora: ejecutar el agente y abrir su detalle. Fase 3 lo cierra.
+  _hoyLog(`📤 Aplicar ${key}: redirigiendo a detalle (workflow Fase 3 pending)`);
+  hoyVerDetalleAgente(key);
+}
+
+async function hoyRefreshMetricas() {
+  if(!confirm('Refrescar métricas (followers, engagement, rank) de TODOS los influencers desde Socialblade?\\n\\nTomará ~5s por influencer (rate limit ético). Corre en background.')) return;
+  const result = document.getElementById('hoy-metrics-result');
+  result.textContent = '⏳ Iniciando refresh...';
+  try {
+    const r = await fetch('/api/marketing/refresh-all-metrics', {method:'POST'});
+    const d = await r.json();
+    if(!r.ok) {
+      result.innerHTML = '<span style="color:#dc2626">❌ Error: ' + (d.error || r.status) + '</span>';
+      return;
+    }
+    result.innerHTML = `<span style="color:#34d399">✓ ${d.mensaje}</span>`;
+    _hoyLog(`📡 Refresh metrics iniciado: ${d.procesados_en_background} influencers`);
+  } catch(e) {
+    result.innerHTML = '<span style="color:#dc2626">❌ ' + e.message + '</span>';
+  }
 }
 
 // ─── Vista persistente de Estrategia ──────────────────────────────────
