@@ -3278,6 +3278,61 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_maquila_producto ON maquila_pedidos(producto_nombre, estado)",
         "CREATE INDEX IF NOT EXISTS idx_maquila_prod ON maquila_pedidos(produccion_id)",
     ]),
+    (68, "planta MRP: alias_calendar + log eventos + auto-area producciones", [
+        # Sebastian (30-abr-2026, ULTRATHINK): "en calendar dice kg, revisa
+        # bien y que sea perfecto, zero-error-enterprise". El motor MRP
+        # necesita match robusto producto↔evento Calendar, parser kg agresivo
+        # y auto-asignación de área.
+
+        # Alias del producto en Google Calendar (CSV de aliases)
+        # Ejemplo: SUERO HIDRATANTE AH 1.5% → "AH 1.5%, AH, Hidratante AH"
+        "ALTER TABLE sku_planeacion_config ADD COLUMN alias_calendar TEXT",
+
+        # Log de eventos de Calendar para auditoría/debug
+        """CREATE TABLE IF NOT EXISTS calendar_eventos_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            evento_id_externo TEXT,
+            titulo TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            descripcion TEXT,
+            kg_detectados REAL,
+            producto_matcheado TEXT,
+            score_match INTEGER,
+            estado TEXT NOT NULL DEFAULT 'leido'
+                CHECK(estado IN ('leido','matcheado','sin_match','conflicto','manual')),
+            notas TEXT,
+            ts_leido TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cal_log_estado ON calendar_eventos_log(estado, fecha)",
+        "CREATE INDEX IF NOT EXISTS idx_cal_log_producto ON calendar_eventos_log(producto_matcheado, fecha)",
+
+        # Seed de aliases razonables para los productos clave
+        # Sebastian + Alejandro: cadencias críticas Vit C y AH 1.5%
+        """UPDATE sku_planeacion_config SET alias_calendar = 'AH 1.5%, AH, Suero AH, Hidratante AH'
+            WHERE producto_nombre = 'SUERO HIDRATANTE AH 1.5%'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Vit C+B3, Vitamina C+B3, C+B3'
+            WHERE producto_nombre = 'SUERO ANTIOXIDANTE VITAMINA C+B3'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Vit C, Vitamina C, Suero Vit C'
+            WHERE producto_nombre = 'SUERO DE VITAMINA C+ FORMULA NUEVA'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Renova C10, C10, RENOVA C10'
+            WHERE producto_nombre = 'SUERO ANTIOXIDANTE RENOVA C10'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'BHA 2%, Limpiador BHA, BHA'
+            WHERE producto_nombre = 'LIMPIADOR FACIAL BHA 2%'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Iluminador Kojico, Kojico, Limpiador Kojico'
+            WHERE producto_nombre = 'LIMPIADOR ILUMINADOR ACIDO KOJICO'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Maxlash'
+            WHERE producto_nombre = 'MAXLASH'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Cafeina, Contorno Cafeina'
+            WHERE producto_nombre = 'CONTORNO DE CAFEINA'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Multipeptidos, Contorno Multi'
+            WHERE producto_nombre = 'CONTORNO DE OJOS MULTIPEPTIDOS'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'Retinaldehido Contorno, Contorno Retinal'
+            WHERE producto_nombre = 'CONTORNO DE OJOS RETINALDEHIDO 0.05%'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'AZ Hibrid, AZ HIBRID'
+            WHERE producto_nombre = 'AZ HIBRID CLEAR'""",
+        """UPDATE sku_planeacion_config SET alias_calendar = 'BHA Limpiador, Limpiador BHA, BHA'
+            WHERE producto_nombre = 'LIMPIADOR FACIAL BHA 2%'""",
+    ]),
     (66, "planta polish: perfil riesgo arrastre + auto_plan_cron_state + asistente acciones", [
         # Sebastian (30-abr-2026): "termina de hacer todo lo que falta entrégame
         # cuando ya sea perfecta" — piezas finales del módulo planta:

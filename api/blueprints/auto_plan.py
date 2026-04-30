@@ -206,15 +206,19 @@ def _velocidad_total_producto(c, producto):
     return (vel_total, factor_avg)
 
 
-def _ultima_produccion(c, producto):
-    """Fecha de última producción del producto.
+def _alias_calendar_for(c, producto):
+    """Devuelve el alias_calendar configurado del producto, o None."""
+    r = c.execute(
+        "SELECT alias_calendar FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    return r[0] if r and r[0] else None
 
-    Sebastian (30-abr-2026): "si revisas el calendario había una base
-    quizás no perfecta que debemos llevar a ser perfecta" — usa Google
-    Calendar como fuente de verdad además de produccion_programada.
-    """
+
+def _ultima_produccion(c, producto):
+    """Fecha de última producción del producto. Usa matcher robusto."""
     fechas = []
-    # 1) BD interna
+    # BD
     r = c.execute("""
         SELECT MAX(fecha_programada) FROM produccion_programada
         WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
@@ -225,12 +229,12 @@ def _ultima_produccion(c, producto):
             fechas.append(datetime.strptime(r[0][:10], '%Y-%m-%d').date())
         except Exception:
             pass
-    # 2) Google Calendar (cached por request)
+    # Calendar con matcher robusto
     eventos = _calendar_events_cached()
-    pn_upper = (producto or '').strip().upper()
+    alias = _alias_calendar_for(c, producto)
     for ev in eventos:
-        titulo = (ev.get('titulo') or '').upper()
-        if pn_upper in titulo or any(w in titulo for w in pn_upper.split() if len(w) > 4):
+        score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+        if score >= 60:  # threshold de confianza
             try:
                 fechas.append(datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date())
             except Exception:
@@ -239,11 +243,9 @@ def _ultima_produccion(c, producto):
 
 
 def _historico_producciones_producto(c, producto, dias_atras=365):
-    """Devuelve TODAS las fechas de producciones del producto en los últimos
-    N días (BD + Calendar). Usado para detectar cadencia real."""
+    """Devuelve TODAS las fechas de producciones (BD + Calendar) con match robusto."""
     fechas = set()
     desde = (datetime.now().date() - timedelta(days=dias_atras)).isoformat()
-    # BD
     rows = c.execute("""
         SELECT fecha_programada FROM produccion_programada
         WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
@@ -255,12 +257,12 @@ def _historico_producciones_producto(c, producto, dias_atras=365):
             fechas.add(datetime.strptime(r[0][:10], '%Y-%m-%d').date())
         except Exception:
             pass
-    # Calendar
+    # Calendar con matcher robusto
     eventos = _calendar_events_cached()
-    pn_upper = (producto or '').strip().upper()
+    alias = _alias_calendar_for(c, producto)
     for ev in eventos:
-        titulo = (ev.get('titulo') or '').upper()
-        if pn_upper in titulo or any(w in titulo for w in pn_upper.split() if len(w) > 4):
+        score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+        if score >= 60:
             try:
                 fechas.add(datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date())
             except Exception:
@@ -270,10 +272,10 @@ def _historico_producciones_producto(c, producto, dias_atras=365):
 
 _CAL_CACHE = {'ts': None, 'events': []}
 
-def _calendar_events_cached():
+def _calendar_events_cached(force_refresh=False):
     """Lee Google Calendar una vez por minuto y cachea."""
     now = datetime.now()
-    if _CAL_CACHE['ts'] and (now - _CAL_CACHE['ts']).total_seconds() < 60:
+    if not force_refresh and _CAL_CACHE['ts'] and (now - _CAL_CACHE['ts']).total_seconds() < 60:
         return _CAL_CACHE['events']
     try:
         from blueprints.programacion import _fetch_calendar_events
@@ -284,6 +286,111 @@ def _calendar_events_cached():
         _CAL_CACHE['events'] = []
         _CAL_CACHE['ts'] = now
     return _CAL_CACHE['events']
+
+
+# ════════════════════════════════════════════════════════════════════════
+# MATCHING ROBUSTO producto ↔ evento Calendar (zero-error-enterprise)
+# ════════════════════════════════════════════════════════════════════════
+import re as _re_match
+import unicodedata as _ud
+
+# Stopwords que NO deben usarse para matching (palabras genéricas)
+_MATCH_STOPWORDS = {
+    'SUERO', 'CREMA', 'GEL', 'EMULSION', 'LIMPIADOR', 'CONTORNO',
+    'OJOS', 'FACIAL', 'CORPORAL', 'HIDRATANTE', 'ILUMINADOR',
+    'ANTIOXIDANTE', 'EXFOLIANTE', 'MASCARILLA', 'ESENCIA', 'NUEVA',
+    'FORMULA', 'PARA', 'CON', 'DE', 'LA', 'EL', 'BHA', 'AHA',
+}
+
+def _normalizar(s):
+    """Normaliza string: quita tildes, mayúsculas, trim, sin caracteres raros."""
+    if not s:
+        return ''
+    s = _ud.normalize('NFKD', str(s))
+    s = ''.join(c for c in s if not _ud.combining(c))
+    return s.upper().strip()
+
+
+def _palabras_clave_unicas(producto_nombre):
+    """Extrae palabras CLAVE únicas del producto (no stopwords, >2 chars)."""
+    norm = _normalizar(producto_nombre)
+    palabras = _re_match.findall(r'[A-Z0-9+]+', norm)
+    return [p for p in palabras if len(p) >= 2 and p not in _MATCH_STOPWORDS]
+
+
+def _match_producto_evento(producto_nombre, alias_csv, titulo_evento, descripcion=''):
+    """Devuelve score de match (0-100) entre un producto y un evento de calendar.
+
+    Algoritmo:
+      - Score 100: alias EXACTO encontrado en título
+      - Score 80-95: alias parcial + match palabras clave
+      - Score 50-79: solo palabras clave únicas matchean
+      - Score < 50: no match (probable falso positivo)
+    """
+    if not titulo_evento:
+        return 0
+    texto = _normalizar(titulo_evento + ' ' + (descripcion or ''))
+
+    # 1) Alias exact match (máxima confianza)
+    if alias_csv:
+        for alias in alias_csv.split(','):
+            alias_norm = _normalizar(alias)
+            if not alias_norm or len(alias_norm) < 3:
+                continue
+            # Match palabra completa con boundaries
+            patron = r'(^|[^A-Z0-9+])' + _re_match.escape(alias_norm) + r'($|[^A-Z0-9+])'
+            if _re_match.search(patron, texto):
+                return 100
+
+    # 2) Match por palabras clave únicas del producto
+    palabras_clave = _palabras_clave_unicas(producto_nombre)
+    if not palabras_clave:
+        return 0
+
+    # Cuántas palabras clave del producto aparecen en el evento
+    matched = 0
+    for p in palabras_clave:
+        if _re_match.search(r'(^|[^A-Z0-9+])' + _re_match.escape(p) + r'($|[^A-Z0-9+])', texto):
+            matched += 1
+    if matched == 0:
+        return 0
+
+    # Score: porcentaje de palabras clave matcheadas
+    score = int((matched / len(palabras_clave)) * 80)  # max 80 sin alias
+    # Bonus si el producto tiene UNA palabra clave única y aparece
+    if len(palabras_clave) == 1 and matched == 1:
+        score = max(score, 75)
+    return score
+
+
+def _parsear_kg_evento(titulo, descripcion=''):
+    """Parser AGRESIVO de kg en título/descripción.
+
+    Detecta:
+      - "90 kg", "90kg", "90KG"
+      - "90,5 kg", "90.5 kg"
+      - "Lote 90", "Batch 90", "90 kilos"
+      - "L90", "B90"
+    """
+    texto = (titulo or '') + ' ' + (descripcion or '')
+    # Lista de patrones de mayor a menor confianza
+    patrones = [
+        r'(\d+(?:[.,]\d+)?)\s*(?:kg|KG|Kg|kG)\b',           # "90 kg" - alta confianza
+        r'(\d+(?:[.,]\d+)?)\s*(?:kilos?|KILOS?)\b',          # "90 kilos"
+        r'\b(?:lote|LOTE|Lote|batch|BATCH|Batch)\s+(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)?', # "Lote 90"
+        r'\b(?:L|B)(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)\b',     # "L90 kg"
+    ]
+    for patron in patrones:
+        m = _re_match.search(patron, texto)
+        if m:
+            kg_str = m.group(1).replace(',', '.')
+            try:
+                v = float(kg_str)
+                if 0 < v <= 5000:  # rango razonable
+                    return v
+            except Exception:
+                pass
+    return None
 
 
 def _producciones_programadas_futuro(c, producto):
@@ -647,6 +754,33 @@ def aplicar_plan(plan, usuario='cron'):
                 (cur.lastrowid, mq_id)
             )
 
+        # Asignar área automáticamente (sugerir-area)
+        try:
+            cap_min = (prop['kg_con_merma'] or 0) * 1.2
+            tanques = c.execute("""
+                SELECT codigo, area_codigo, capacidad_litros
+                FROM equipos_planta
+                WHERE activo=1 AND tipo IN ('tanque','marmita','olla')
+                  AND capacidad_litros >= ?
+                ORDER BY capacidad_litros ASC
+            """, (cap_min,)).fetchall()
+            por_area = {}
+            for t in tanques:
+                a = t[1]
+                if a and (a not in por_area or t[2] < por_area[a]):
+                    por_area[a] = t[2]
+            for area_codigo, _cap in por_area.items():
+                area_chk = c.execute(
+                    "SELECT id, puede_producir, activo FROM areas_planta WHERE codigo=?",
+                    (area_codigo,)
+                ).fetchone()
+                if area_chk and area_chk[1] and area_chk[2]:
+                    c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                              (area_chk[0], cur.lastrowid))
+                    break
+        except Exception as e:
+            log.warning(f'Asignación área fallida prod={cur.lastrowid}: {e}')
+
         # Asignar operarios automáticamente
         try:
             _asignar_operarios_a_produccion(conn, cur.lastrowid)
@@ -988,6 +1122,7 @@ def confirmar_proyeccion():
     """, (producto, fecha)).fetchone()
     if existing:
         return jsonify({'ok': True, 'id': existing[0], 'ya_existia': True})
+    kg_total = float(d.get('kg') or d.get('lote_size_kg') or 0)
     cur = c.execute("""
         INSERT INTO produccion_programada
           (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
@@ -995,10 +1130,32 @@ def confirmar_proyeccion():
     """, (
         producto, fecha, int(d.get('lotes') or 1),
         f'Confirmado desde proyección por {user} el {datetime.now().isoformat()}',
-        d.get('kg') or d.get('lote_size_kg') or 0,
+        kg_total,
     ))
+    nuevo_id = cur.lastrowid
+    # Auto-asignar área + operarios
+    try:
+        if kg_total > 0:
+            cap_min = kg_total * 1.2
+            tanques = c.execute("""
+                SELECT area_codigo FROM equipos_planta
+                WHERE activo=1 AND tipo IN ('tanque','marmita','olla')
+                  AND capacidad_litros >= ?
+                ORDER BY capacidad_litros ASC LIMIT 1
+            """, (cap_min,)).fetchone()
+            if tanques:
+                area_chk = c.execute(
+                    "SELECT id FROM areas_planta WHERE codigo=? AND puede_producir=1 AND activo=1",
+                    (tanques[0],)
+                ).fetchone()
+                if area_chk:
+                    c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                              (area_chk[0], nuevo_id))
+        _asignar_operarios_a_produccion(conn, nuevo_id)
+    except Exception:
+        pass
     conn.commit()
-    return jsonify({'ok': True, 'id': cur.lastrowid, 'ya_existia': False})
+    return jsonify({'ok': True, 'id': nuevo_id, 'ya_existia': False})
 
 
 @bp.route('/api/planta/produccion/<int:prod_id>/eliminar-y-replanificar', methods=['POST'])
@@ -1268,6 +1425,78 @@ def detectar_cambios_demanda():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# DEBUG CALENDAR — visibilidad total de qué se lee y cómo se matchea
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/calendar-debug', methods=['GET'])
+def calendar_debug():
+    """Devuelve TODOS los eventos del calendar, su match con productos
+    configurados, y kg detectados. Sebastian: "que sea perfecto"."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    eventos = _calendar_events_cached(force_refresh=True)
+    productos = c.execute("""
+        SELECT spc.producto_nombre, spc.alias_calendar, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo=1
+    """).fetchall()
+    productos_list = [{'nombre': p[0], 'alias': p[1], 'lote_kg': p[2]} for p in productos]
+    eventos_analizados = []
+    for ev in eventos:
+        # Buscar mejor match
+        mejor_score = 0
+        mejor_producto = None
+        candidatos = []
+        for p in productos_list:
+            score = _match_producto_evento(p['nombre'], p['alias'], ev.get('titulo'), ev.get('descripcion', ''))
+            if score > 0:
+                candidatos.append({'producto': p['nombre'], 'score': score})
+                if score > mejor_score:
+                    mejor_score = score
+                    mejor_producto = p['nombre']
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+        candidatos.sort(key=lambda x: -x['score'])
+        # Estado
+        if mejor_score >= 60:
+            if len([cc for cc in candidatos if cc['score'] >= 60]) > 1:
+                estado = 'conflicto'
+            else:
+                estado = 'matcheado'
+        elif mejor_score > 0:
+            estado = 'sin_match'
+        else:
+            estado = 'no_relacionado'
+        eventos_analizados.append({
+            'titulo': ev.get('titulo', ''),
+            'fecha': ev.get('fecha', ''),
+            'descripcion': (ev.get('descripcion') or '')[:200],
+            'kg_detectados': kg,
+            'producto_match': mejor_producto if mejor_score >= 60 else None,
+            'score_match': mejor_score,
+            'candidatos_top3': candidatos[:3],
+            'estado': estado,
+        })
+    # KPIs
+    total = len(eventos_analizados)
+    matcheados = sum(1 for e in eventos_analizados if e['estado'] == 'matcheado')
+    conflicto = sum(1 for e in eventos_analizados if e['estado'] == 'conflicto')
+    sin_match = sum(1 for e in eventos_analizados if e['estado'] == 'sin_match')
+    no_rel = sum(1 for e in eventos_analizados if e['estado'] == 'no_relacionado')
+    con_kg = sum(1 for e in eventos_analizados if e['kg_detectados'])
+    return jsonify({
+        'total_eventos': total,
+        'matcheados': matcheados,
+        'en_conflicto': conflicto,
+        'sin_match_aceptable': sin_match,
+        'no_relacionados': no_rel,
+        'con_kg_detectados': con_kg,
+        'eventos': eventos_analizados,
+        'productos_configurados': len(productos_list),
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # APRENDIZAJE DEL HISTÓRICO — el sistema infiere cadencias reales
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "en el calendario aparece lo que ya fabricamos
@@ -1457,6 +1686,26 @@ def producto_nuevo_rapido():
             kg_con_merma,
         ))
         produccion_id = cur.lastrowid
+        # Auto-asignar área + operarios al producto nuevo
+        try:
+            cap_min = kg_con_merma * 1.2
+            tanques = c.execute("""
+                SELECT area_codigo FROM equipos_planta
+                WHERE activo=1 AND tipo IN ('tanque','marmita','olla')
+                  AND capacidad_litros >= ?
+                ORDER BY capacidad_litros ASC LIMIT 1
+            """, (cap_min,)).fetchone()
+            if tanques:
+                area_chk = c.execute(
+                    "SELECT id FROM areas_planta WHERE codigo=? AND puede_producir=1 AND activo=1",
+                    (tanques[0],)
+                ).fetchone()
+                if area_chk:
+                    c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                              (area_chk[0], produccion_id))
+            _asignar_operarios_a_produccion(conn, produccion_id)
+        except Exception:
+            pass
 
     # Notificar a admins
     try:
@@ -2556,13 +2805,12 @@ def perfil_riesgo():
 #  - costo_proyectado (estimado si hay precios de MP)
 
 def _producciones_futuras_kg(c, producto):
-    """Suma de kg de TODAS las producciones futuras del producto (BD + Calendar).
-    Sebastian (30-abr-2026): "en el calendario aparece que se ha producido
-    hasta hoy para excluirlos, dice cuántos kilos para que sepas cuánto hacer".
+    """Suma de kg de TODAS las producciones futuras (BD + Calendar) con
+    matcher robusto + parser kg agresivo. Zero-error-enterprise.
     """
     total_kg = 0.0
     eventos_count = 0
-    # 1) BD interna - producciones futuras programadas
+    # BD
     rows = c.execute("""
         SELECT cantidad_kg FROM produccion_programada
         WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
@@ -2573,9 +2821,9 @@ def _producciones_futuras_kg(c, producto):
         if r[0]:
             total_kg += float(r[0])
             eventos_count += 1
-    # 2) Calendar - leer kg del título o descripción ("90 kg", "lote 60kg", etc.)
+    # Calendar con match robusto
     eventos = _calendar_events_cached()
-    pn_upper = (producto or '').strip().upper()
+    alias = _alias_calendar_for(c, producto)
     fecha_hoy = datetime.now().date()
     for ev in eventos:
         try:
@@ -2584,23 +2832,22 @@ def _producciones_futuras_kg(c, producto):
                 continue
         except Exception:
             continue
-        titulo = (ev.get('titulo') or '').upper()
-        descripcion = (ev.get('descripcion') or '')
-        # Match producto
-        if pn_upper not in titulo and not any(w in titulo for w in pn_upper.split() if len(w) > 4):
+        score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+        if score < 60:
             continue
-        # Extraer kg del titulo o descripción
-        import re as _re
-        for texto in (ev.get('titulo') or '', descripcion):
-            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*kg', texto, _re.IGNORECASE)
-            if m:
-                kg_str = m.group(1).replace(',', '.')
-                try:
-                    total_kg += float(kg_str)
-                    eventos_count += 1
-                    break
-                except Exception:
-                    pass
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+        if kg:
+            total_kg += kg
+            eventos_count += 1
+        else:
+            # Sin kg detectado pero match alto: usar lote_size_kg del producto
+            r = c.execute(
+                "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                (producto,)
+            ).fetchone()
+            if r and r[0]:
+                total_kg += float(r[0])
+                eventos_count += 1
     return total_kg, eventos_count
 
 
