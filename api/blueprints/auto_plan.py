@@ -1427,6 +1427,195 @@ def detectar_cambios_demanda():
 # ════════════════════════════════════════════════════════════════════════
 # DEBUG CALENDAR — visibilidad total de qué se lee y cómo se matchea
 # ════════════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════════════════
+# RECOMENDACIONES INTELIGENTES — la lógica clara
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "tenemos 30 SKUs, una venta diaria y un stock que
+# puedes ver en shopify, en calendar aparece cada cuanto los hago normalmente,
+# cuántos kilos, cuántos hice ya entre la semana pasada y esta que aún no
+# entran al inventario de Shopify · con esa lógica tú podrías decirme el
+# próximo lunes deberia producirse tal producto".
+
+def _proximo_dia_lmv(desde_fecha):
+    """Próximo L/M/V desde una fecha base."""
+    f = desde_fecha
+    while f.weekday() not in (0, 2, 4):
+        f += timedelta(days=1)
+    return f
+
+
+def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merma_pct, prioridad):
+    """LA función central. Para un SKU devuelve la recomendación completa.
+
+    Lógica:
+      1. Stock total = Shopify stock + Pipeline (calendar últimos 14d)
+                                     + Futuro programado (calendar/BD futuro)
+      2. Velocidad = ventas Shopify últimos 30d / 30
+      3. Días alcance = stock_total / velocidad
+      4. Si alcance > target+margen → OK no producir
+      5. Si alcance > margen → producir cuando falten margen días
+      6. Si alcance ≤ margen → URGENTE
+      7. Cadencia histórica de calendar > 14d atrás como referencia
+      8. Lote típico = mediana de kg en calendar histórico
+    """
+    fecha_hoy = datetime.now().date()
+    fecha_pipeline_inicio = fecha_hoy - timedelta(days=14)
+    margen_dias = 20  # Sebastian: producir 20d antes de agotar
+    cobertura_target = 60  # objetivo
+
+    # 1. Velocidad de venta (Shopify 30d con tendencia)
+    velocidad, factor = _velocidad_total_producto(c, producto)
+    velocidad_proj = max(0.01, velocidad * factor)
+
+    # 2. Stock actual (Shopify)
+    stock_shopify = _stock_actual_pt(c, producto)
+
+    # 3. Pipeline: producciones del calendar entre hoy-14d y hoy (ya hechas
+    #    pero aún no entran a Shopify)
+    eventos = _calendar_events_cached()
+    alias = _alias_calendar_for(c, producto)
+    factor_g = _factor_g_por_unidad(c, producto)
+    pipeline_kg = 0.0
+    futuro_kg = 0.0
+    historico_fechas = []
+    historico_kg_list = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+        if score < 60:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or lote_kg_default or 30
+        if fecha_pipeline_inicio <= f <= fecha_hoy:
+            # Pipeline (no entra aún a Shopify pero ya producido)
+            pipeline_kg += kg
+        elif f > fecha_hoy:
+            # Futuro programado
+            futuro_kg += kg
+        else:
+            # Histórico (>14d atrás)
+            historico_fechas.append(f)
+            historico_kg_list.append(kg)
+
+    # También leer producciones futuras de BD
+    bd_futuro = c.execute("""
+        SELECT cantidad_kg FROM produccion_programada
+        WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+          AND estado IN ('pendiente','en_proceso')
+          AND fecha_programada >= date('now')
+    """, (producto,)).fetchall()
+    bd_futuro_kg = sum(float(r[0] or 0) for r in bd_futuro)
+    futuro_kg += bd_futuro_kg
+
+    pipeline_unidades = (pipeline_kg * 1000) / max(factor_g, 1)
+    futuro_unidades = (futuro_kg * 1000) / max(factor_g, 1)
+    stock_total = stock_shopify + pipeline_unidades + futuro_unidades
+    dias_alcance = stock_total / velocidad_proj if velocidad_proj > 0 else 999
+
+    # 4. Cadencia y lote típico desde histórico calendar
+    cadencia_real = _calcular_cadencia_real(historico_fechas) if len(historico_fechas) >= 2 else None
+    lote_tipico_kg = sorted(historico_kg_list)[len(historico_kg_list)//2] if historico_kg_list else (lote_kg_default or 30)
+
+    # 5. Recomendación
+    if dias_alcance > cobertura_target + margen_dias:
+        urgencia = 'innecesaria'
+        fecha_proxima = None
+        razon = f'Stock cubre {dias_alcance:.0f}d (objetivo {cobertura_target}d). No urgente.'
+    elif dias_alcance > margen_dias:
+        # Producir cuando falten margen días
+        dias_hasta = max(2, int(dias_alcance - margen_dias))
+        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=dias_hasta))
+        urgencia = 'baja' if dias_alcance > 30 else 'media'
+        razon = f'Stock alcanza {dias_alcance:.0f}d. Producir antes de bajar a margen 20d.'
+    elif dias_alcance > 7:
+        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=2))
+        urgencia = 'alta'
+        razon = f'Stock alcanza solo {dias_alcance:.0f}d (margen mínimo 20d). Producir esta semana.'
+    else:
+        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=1))
+        urgencia = 'critica'
+        razon = f'STOCK CRÍTICO · solo {dias_alcance:.0f}d. Producir ya.'
+
+    # Considerar cadencia: si hace mucho que no se produce y aún hay stock, igual
+    # programar pronto (consistencia)
+    if cadencia_real and historico_fechas:
+        ultima = max(historico_fechas)
+        dias_desde_ultima = (fecha_hoy - ultima).days
+        if dias_desde_ultima > cadencia_real * 1.2 and urgencia == 'innecesaria':
+            urgencia = 'baja'
+            fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=7))
+            razon = f'{dias_desde_ultima}d desde última producción (cadencia {cadencia_real}d). Ya toca por consistencia.'
+
+    return {
+        'producto': producto,
+        'velocidad_dia': round(velocidad_proj, 2),
+        'stock_shopify': int(stock_shopify),
+        'pipeline_kg': round(pipeline_kg, 1),
+        'pipeline_unidades': int(pipeline_unidades),
+        'futuro_kg': round(futuro_kg, 1),
+        'futuro_unidades': int(futuro_unidades),
+        'stock_total_unidades': int(stock_total),
+        'dias_alcance': round(dias_alcance, 1),
+        'cadencia_historica_dias': cadencia_real,
+        'cadencia_configurada': cadencia_cfg,
+        'lote_tipico_kg': round(lote_tipico_kg, 1),
+        'lote_kg_default': lote_kg_default,
+        'producciones_historicas': len(historico_fechas),
+        'ultima_produccion': max(historico_fechas).isoformat() if historico_fechas else None,
+        'fecha_proxima': fecha_proxima.isoformat() if fecha_proxima else None,
+        'fecha_proxima_dia_semana': fecha_proxima.strftime('%A') if fecha_proxima else None,
+        'urgencia': urgencia,
+        'razon': razon,
+        'factor_g': factor_g,
+    }
+
+
+@bp.route('/api/planta/recomendaciones', methods=['GET'])
+def planta_recomendaciones():
+    """Devuelve recomendaciones inteligentes por SKU.
+    Sebastian: "tú podrías decirme el próximo lunes deberia producirse tal producto"."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    skus = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, spc.merma_pct, spc.prioridad,
+               fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+        ORDER BY spc.prioridad ASC
+    """).fetchall()
+    recomendaciones = []
+    for sku_row in skus:
+        producto, cadencia, merma, prioridad, lote_kg = sku_row
+        try:
+            rec = _calcular_recomendacion_sku(c, producto, lote_kg, cadencia, merma, prioridad)
+            recomendaciones.append(rec)
+        except Exception as e:
+            log.warning(f'Recomendación fallida {producto}: {e}')
+
+    # Ordenar por urgencia (critica → alta → media → baja → innecesaria)
+    orden_urg = {'critica': 0, 'alta': 1, 'media': 2, 'baja': 3, 'innecesaria': 4}
+    recomendaciones.sort(key=lambda r: (orden_urg.get(r['urgencia'], 5), r.get('fecha_proxima') or '9999'))
+
+    # KPIs
+    kpis = {
+        'total': len(recomendaciones),
+        'criticas': sum(1 for r in recomendaciones if r['urgencia'] == 'critica'),
+        'altas': sum(1 for r in recomendaciones if r['urgencia'] == 'alta'),
+        'medias': sum(1 for r in recomendaciones if r['urgencia'] == 'media'),
+        'bajas': sum(1 for r in recomendaciones if r['urgencia'] == 'baja'),
+        'innecesarias': sum(1 for r in recomendaciones if r['urgencia'] == 'innecesaria'),
+    }
+    return jsonify({
+        'recomendaciones': recomendaciones,
+        'kpis': kpis,
+        'fecha_analisis': datetime.now().isoformat(),
+    })
+
+
 @bp.route('/api/planta/calendar-eventos-plan', methods=['GET'])
 def calendar_eventos_plan():
     """Devuelve eventos del Google Calendar que el motor MRP matchea con

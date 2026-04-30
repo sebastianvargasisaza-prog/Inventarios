@@ -5988,6 +5988,9 @@ function _renderProgramacion(d){
     <!-- KPIs siempre visibles -->
     <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- 🎯 RECOMENDACIONES INTELIGENTES — siempre visible arriba -->
+    <div id="pv2-recomendaciones-wrap" style="margin-bottom:16px"></div>
+
     <!-- Sección: Comprar AHORA (urgentes por lead time) -->
     <div id="pv2-comprar-ya" style="display:none;margin-bottom:16px"></div>
 
@@ -9290,6 +9293,83 @@ async function ckMarcar(itemId, estado){
     planV2DetectarCambios();
     planV2CargarCobertura();
     planV2CargarCalendarStatus();
+    planV2CargarRecomendaciones();
+  }
+
+  async function planV2CargarRecomendaciones(){
+    var box = document.getElementById('pv2-recomendaciones-wrap');
+    if(!box) return;
+    box.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8">🧠 Calculando recomendaciones inteligentes...</div>';
+    try {
+      var r = await fetch('/api/planta/recomendaciones');
+      var d = await r.json();
+      var recs = d.recomendaciones || [];
+      var k = d.kpis || {};
+      // Solo mostrar las que requieren acción (no innecesarias) por defecto
+      var accionables = recs.filter(function(x){return x.urgencia !== 'innecesaria'});
+      var resumen = '';
+      if(k.criticas) resumen += '<span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">🚨 '+k.criticas+' CRÍTICAS</span>';
+      if(k.altas) resumen += '<span style="background:#d97706;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">⚠ '+k.altas+' altas</span>';
+      if(k.medias) resumen += '<span style="background:#0891b2;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;margin-right:6px">'+k.medias+' medias</span>';
+      if(k.bajas) resumen += '<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-right:6px">'+k.bajas+' bajas</span>';
+      if(k.innecesarias) resumen += '<span style="background:#15803d;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600">✓ '+k.innecesarias+' OK</span>';
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">'
+        +'<div style="background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
+        +'<div><h3 style="margin:0;color:#fff;font-size:16px">🧠 Recomendaciones Inteligentes</h3><div style="font-size:11px;color:#cbd5e1;margin-top:2px">Stock Shopify + Pipeline (Calendar 14d) + Velocidad ventas → fecha óptima</div></div>'
+        +'<div>'+resumen+'</div>'
+        +'</div>';
+      if(!accionables.length){
+        html += '<div style="padding:30px;text-align:center;color:#15803d;font-size:14px">✅ Todos los SKUs cubiertos · ningún producto requiere acción inmediata</div>';
+      } else {
+        html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+          +'<thead style="background:#f9fafb;border-bottom:2px solid #e5e7eb"><tr>'
+          +'<th style="padding:10px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Stock</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Pipeline</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Total</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Días</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cadencia</th>'
+          +'<th style="padding:10px 8px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lote típ.</th>'
+          +'<th style="padding:10px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Recomendación</th>'
+          +'</tr></thead><tbody>';
+        accionables.forEach(function(r){
+          var urgCol = {critica:'#dc2626',alta:'#d97706',media:'#0891b2',baja:'#7c3aed'}[r.urgencia] || '#64748b';
+          var fechaTxt = '—';
+          if(r.fecha_proxima){
+            try {
+              var dia = new Date(r.fecha_proxima+'T00:00:00').toLocaleDateString('es-CO',{weekday:'short',day:'numeric',month:'short'});
+              fechaTxt = dia;
+            } catch(e){ fechaTxt = r.fecha_proxima; }
+          }
+          html += '<tr style="border-top:1px solid #f1f5f9;background:'+(r.urgencia==='critica'?'#fef2f2':r.urgencia==='alta'?'#fffbeb':'#fff')+'">'
+            +'<td style="padding:8px 12px"><b style="color:#0f172a">'+_escHTML(r.producto)+'</b><br><span style="font-size:10px;color:#64748b">'+r.velocidad_dia+' u/día</span></td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace">'+r.stock_shopify+'</td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;color:#0891b2;font-weight:600">'+(r.pipeline_unidades>0?'+'+r.pipeline_unidades:'—')+'<br><span style="font-size:9px;color:#64748b">'+r.pipeline_kg+'kg</span></td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:700">'+r.stock_total_unidades+'</td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:800;color:'+urgCol+'">'+r.dias_alcance+'d</td>'
+            +'<td style="padding:8px;text-align:right;font-size:11px;color:#64748b">'+(r.cadencia_historica_dias?r.cadencia_historica_dias+'d hist':r.cadencia_configurada?r.cadencia_configurada+'d cfg':'—')+'</td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;font-size:11px">'+r.lote_tipico_kg+'kg</td>'
+            +'<td style="padding:8px 12px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="background:'+urgCol+';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:800;text-transform:uppercase">'+r.urgencia+'</span><b style="color:#0f172a;font-size:12px;text-transform:capitalize">'+_escHTML(fechaTxt)+'</b></div><div style="font-size:11px;color:#475569;margin-top:4px">'+_escHTML(r.razon)+'</div></td>'
+            +'</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      // Sección de los OK (colapsable)
+      var oks = recs.filter(function(x){return x.urgencia==='innecesaria'});
+      if(oks.length){
+        html += '<details style="border-top:1px solid #e5e7eb;padding:8px 16px"><summary style="cursor:pointer;color:#15803d;font-size:12px;font-weight:600">✅ '+oks.length+' SKUs cubiertos (no requieren acción)</summary>'
+          +'<div style="margin-top:8px;font-size:11px;color:#64748b;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px">';
+        oks.forEach(function(r){
+          html += '<div style="background:#f0fdf4;padding:5px 8px;border-radius:4px;border-left:3px solid #15803d">'
+            +'<b>'+_escHTML(r.producto)+'</b><br><span style="color:#166534">stock '+r.dias_alcance+'d · '+r.stock_total_unidades+'u total</span></div>';
+        });
+        html += '</div></details>';
+      }
+      html += '</div>';
+      box.innerHTML = html;
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
   }
 
   async function planV2CargarCalendarStatus(){
@@ -9423,6 +9503,7 @@ async function ckMarcar(itemId, estado){
     });
     planV2Cargar();
     planV2CargarCobertura();
+    // Recomendaciones siempre las mismas (no dependen de horizonte)
   }
 
   async function planV2Cargar(){
