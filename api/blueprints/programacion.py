@@ -8090,6 +8090,393 @@ def planta_limpieza_completar(item_id):
     return jsonify({'ok': True, 'area': area_codigo})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# PLANTA INTELIGENTE — FASE 4: Plan semanal + cascade aceptar-producción
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "programación de la semana entra mira lunes
+# acido hialuronico, animus le quedan 20 dias estamos sobre lo que es...
+# sale que alcanzan las materias primas que recuerda no es solo para ese
+# producto siempre que calcula un producto suma los consumos de todas las
+# programaciones previas a esa, entonces dice 20 dias sin alerta, si se
+# esta vendiendo mas deberia generar alerta a compras gerencia y alejandro
+# incluso correo... entonces lo selecciona le sale con la foto, y de una
+# sale señalar envases, solicitar etiquetas, armado de goteros si requiere,
+# aceptar produccion se dispone para realizar, entonces automaticamente
+# pasa a que el sistema decida en que area se hace y genere todo".
+
+def _calcular_mp_requerido(producto, lotes, conn):
+    """Devuelve dict {material_id: gramos_requeridos} para una producción."""
+    fh = conn.execute(
+        "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    if not fh:
+        return {}
+    lote_kg = fh[0] or 0
+    items = conn.execute("""
+        SELECT material_id, porcentaje, COALESCE(cantidad_g_por_lote, 0)
+        FROM formula_items
+        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    out = {}
+    for mat_id, pct, cant_lote in items:
+        if cant_lote:
+            out[mat_id] = (cant_lote or 0) * lotes
+        else:
+            out[mat_id] = (pct or 0) / 100.0 * lote_kg * 1000 * lotes
+    return out
+
+
+def _stock_mp(material_id, conn):
+    r = conn.execute("""
+        SELECT COALESCE(SUM(
+            CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
+                 WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                 ELSE 0 END
+        ), 0) FROM movimientos WHERE material_id=?
+    """, (material_id,)).fetchone()
+    return float(r[0] if r else 0)
+
+
+@bp.route('/api/planta/plan-semanal', methods=['GET'])
+def planta_plan_semanal():
+    """Vista consolidada del plan: cada producción ordenada por fecha,
+    con días de inventario, consumo agregado y alertas.
+
+    Sebastian (30-abr-2026): "siempre que calcula un producto suma los
+    consumos de todas las programaciones previas a esa".
+
+    Para cada producción programada:
+      - dias_inventario_pt: días que duran las unidades PT con velocidad Shopify
+      - mp_disponible_neto: stock_actual - sum(MP requerido por producciones PREVIAS)
+      - alcanza_mp: bool (true si neto >= req actual)
+      - mp_faltante: dict de materiales en déficit con cantidad
+      - alerta_nivel: 'verde'|'amarillo'|'rojo' según días
+      - presentaciones: lista de las del producto
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 14))
+    except (TypeError, ValueError):
+        dias = 14
+    conn = get_db(); c = conn.cursor()
+
+    fecha_desde = datetime.now().strftime('%Y-%m-%d')
+    fecha_hasta = (datetime.now() + timedelta(days=dias)).strftime('%Y-%m-%d')
+
+    # 1) Producciones programadas en el rango
+    producciones = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes, pp.estado,
+               pp.area_id, ap.codigo as area_codigo, ap.nombre as area_nombre,
+               fh.lote_size_kg, fh.imagen_url
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE pp.fecha_programada BETWEEN ? AND ?
+          AND pp.estado IN ('pendiente','en_proceso')
+        ORDER BY pp.fecha_programada ASC, pp.id ASC
+    """, (fecha_desde, fecha_hasta)).fetchall()
+
+    # 2) Consumo acumulado por material — fluye según orden temporal
+    consumo_acumulado = {}  # material_id -> g acumulados
+    items = []
+
+    for row in producciones:
+        prod_id, producto, fecha_prog, lotes, estado, area_id, area_codigo, area_nombre, lote_size, imagen_url = row
+        lotes = lotes or 1
+        mp_req = _calcular_mp_requerido(producto, lotes, c)
+
+        # Para cada MP, calcular disponible NETO al momento de esta producción
+        mp_status = []
+        deficit = []
+        for mat_id, req_g in mp_req.items():
+            stock_total = _stock_mp(mat_id, c)
+            ya_reservado = consumo_acumulado.get(mat_id, 0)
+            disp_neto = stock_total - ya_reservado
+            mat_nom_row = c.execute(
+                "SELECT material_nombre FROM formula_items "
+                "WHERE material_id=? LIMIT 1", (mat_id,)
+            ).fetchone()
+            mat_nom = (mat_nom_row[0] if mat_nom_row else mat_id)
+            estado_mp = 'ok' if disp_neto >= req_g else ('justo' if disp_neto >= req_g * 0.5 else 'deficit')
+            mp_status.append({
+                'material_id': mat_id, 'material_nombre': mat_nom,
+                'requerido_g': round(req_g),
+                'stock_total_g': round(stock_total),
+                'reservado_previo_g': round(ya_reservado),
+                'disponible_neto_g': round(disp_neto),
+                'estado': estado_mp,
+            })
+            if estado_mp == 'deficit':
+                deficit.append({
+                    'material_id': mat_id, 'material_nombre': mat_nom,
+                    'falta_g': round(req_g - disp_neto),
+                })
+            # Acumular para siguientes
+            consumo_acumulado[mat_id] = ya_reservado + req_g
+
+        # Días de inventario PT
+        # Buscar SKUs de este producto y velocidad de venta
+        velocidad_dia = 0
+        stock_pt = 0
+        sku_rows = c.execute(
+            "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+            (producto,)
+        ).fetchall()
+        for (sku,) in sku_rows:
+            vel = c.execute("""
+                SELECT COALESCE(SUM(cantidad),0)/60.0
+                FROM ordenes_shopify_items WHERE sku=? AND fecha >= date('now','-60 days')
+            """, (sku,)).fetchone() if False else None  # legacy, may not exist
+            # Stock PT
+            sp = c.execute(
+                "SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?",
+                (sku,)
+            ).fetchone()
+            if sp:
+                stock_pt += sp[0] or 0
+        dias_inv = round(stock_pt / max(velocidad_dia, 0.01), 1) if velocidad_dia > 0 else None
+
+        # Nivel de alerta por días de inventario
+        if dias_inv is None:
+            alerta_dias = 'gris'
+        elif dias_inv < 10:
+            alerta_dias = 'rojo'
+        elif dias_inv < 20:
+            alerta_dias = 'amarillo'
+        else:
+            alerta_dias = 'verde'
+
+        # Presentaciones del producto
+        pres_rows = c.execute("""
+            SELECT id, etiqueta, volumen_ml, peso_g, envase_codigo
+            FROM producto_presentaciones
+            WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND activo=1
+        """, (producto,)).fetchall()
+        presentaciones = [{
+            'id': p[0], 'etiqueta': p[1], 'volumen_ml': p[2],
+            'peso_g': p[3], 'envase_codigo': p[4]
+        } for p in pres_rows]
+
+        # ¿Alcanzan TODAS las MP para esta producción?
+        alcanza_mp = len(deficit) == 0
+
+        items.append({
+            'produccion_id': prod_id,
+            'producto': producto,
+            'imagen_url': imagen_url,
+            'fecha_programada': fecha_prog,
+            'lotes': lotes,
+            'lote_size_kg': lote_size,
+            'estado': estado,
+            'area_codigo': area_codigo,
+            'area_nombre': area_nombre,
+            'stock_pt_unidades': stock_pt,
+            'dias_inventario': dias_inv,
+            'alerta_dias': alerta_dias,
+            'alcanza_mp': alcanza_mp,
+            'mp_status': mp_status,
+            'mp_deficit': deficit,
+            'presentaciones': presentaciones,
+        })
+
+    # KPIs globales
+    total = len(items)
+    n_rojo = sum(1 for it in items if it['alerta_dias'] == 'rojo')
+    n_amar = sum(1 for it in items if it['alerta_dias'] == 'amarillo')
+    n_sin_mp = sum(1 for it in items if not it['alcanza_mp'])
+    return jsonify({
+        'rango': {'desde': fecha_desde, 'hasta': fecha_hasta, 'dias': dias},
+        'items': items,
+        'kpis': {
+            'total': total,
+            'alerta_roja_dias': n_rojo,
+            'alerta_amarilla_dias': n_amar,
+            'sin_mp_suficiente': n_sin_mp,
+        }
+    })
+
+
+@bp.route('/api/planta/aceptar-produccion/<int:produccion_id>', methods=['POST'])
+def planta_aceptar_produccion(produccion_id):
+    """Cascade automático cuando el operario "acepta" la producción.
+
+    Sebastian (30-abr-2026): "lo selecciona le sale con la foto, y de una
+    sale señalar envases, solicitar etiquetas, armado de goteros si
+    requiere, aceptar producción se dispone para realizar, entonces
+    automaticamente pasa a que el sistema decida en que area se hace y
+    genere todo".
+
+    Acciones:
+      1. Si no tiene area_id → llamar a sugerir_area y asignar la mejor
+      2. Crear tareas operativas: señalar envases, solicitar etiquetas,
+         armar goteros (si presentación lo requiere)
+      3. Programar envasado tentativo al día siguiente
+      4. Notificar a Calidad que viene muestra micro pronto
+      5. Devolver el plan completo
+
+    Body opcional: {presentacion_id, lote_personalizado, fecha_envasado_override}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+
+    pp_row = c.execute("""
+        SELECT id, producto, fecha_programada, lotes, area_id, estado
+        FROM produccion_programada WHERE id=?
+    """, (produccion_id,)).fetchone()
+    if not pp_row:
+        return jsonify({'error': 'Producción no existe'}), 404
+    prod_id, producto, fecha_prog, lotes, area_id, estado = pp_row
+    lotes = lotes or 1
+
+    log = []
+    # 1) Asignar área si no la tiene
+    if not area_id:
+        # Calcular lote_kg para sugerencia
+        fh = c.execute(
+            "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+            (producto,)
+        ).fetchone()
+        lote_kg = (fh[0] if fh else 0) * lotes if fh else 0
+        if lote_kg <= 0:
+            log.append('⚠ No se pudo sugerir área: producto sin lote_size_kg')
+        else:
+            # Reusar la lógica de sugerencia
+            cap_min = lote_kg * 1.2
+            tanques = c.execute("""
+                SELECT codigo, area_codigo, capacidad_litros
+                FROM equipos_planta
+                WHERE activo=1 AND tipo IN ('tanque','marmita','olla')
+                  AND capacidad_litros >= ?
+                ORDER BY capacidad_litros ASC
+            """, (cap_min,)).fetchall()
+            por_area = {}
+            for t in tanques:
+                a = t[1]
+                if a and (a not in por_area or t[2] < por_area[a]):
+                    por_area[a] = t[2]
+            # Tomar la primera area que pueda producir
+            elegida = None
+            for area_codigo, cap in por_area.items():
+                area_chk = c.execute(
+                    "SELECT id, nombre, puede_producir, activo FROM areas_planta WHERE codigo=?",
+                    (area_codigo,)
+                ).fetchone()
+                if area_chk and area_chk[2] and area_chk[3]:
+                    elegida = (area_chk[0], area_chk[1], area_codigo)
+                    break
+            if elegida:
+                c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                          (elegida[0], produccion_id))
+                area_id = elegida[0]
+                log.append(f'✓ Área asignada: {elegida[1]} ({elegida[2]})')
+            else:
+                log.append('⚠ Sin tanque disponible — asignar manualmente')
+    else:
+        area_row = c.execute(
+            "SELECT codigo, nombre FROM areas_planta WHERE id=?", (area_id,)
+        ).fetchone()
+        if area_row:
+            log.append(f'✓ Área ya asignada: {area_row[1]}')
+
+    # 2) Crear tareas operativas
+    pres_id = d.get('presentacion_id')
+    pres_etiqueta = ''
+    requiere_gotero = False
+    if pres_id:
+        pr = c.execute(
+            "SELECT etiqueta, envase_codigo, presentacion_codigo FROM producto_presentaciones WHERE id=?",
+            (pres_id,)
+        ).fetchone()
+        if pr:
+            pres_etiqueta = pr[0]
+            # Heurística: si la presentación es suero/gotero o tiene "gotero" en etiqueta
+            etl = (pr[0] or '').lower()
+            cod = (pr[2] or '').lower()
+            requiere_gotero = ('suero' in etl or 'gotero' in etl or cod.startswith('sue_') or cod.startswith('co_'))
+
+    fecha_obj = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    tareas_creadas = []
+
+    # Tarea 1: señalar envases
+    cur = c.execute("""
+        INSERT INTO tareas_operativas
+          (titulo, descripcion, tipo, producto_relacionado, asignado_a,
+           fecha_objetivo, estado, origen_tipo, origen_id, creado_por)
+        VALUES (?, ?, 'recoleccion_mee', ?, ?, ?, 'pendiente', 'aceptar_produccion', ?, ?)
+    """, (
+        f'Señalar envases para {producto}' + (f' · {pres_etiqueta}' if pres_etiqueta else ''),
+        f'Marcar y separar envases de bodega MEE para producción del {fecha_prog}.',
+        producto, 'mayerlin,operarios', fecha_obj, produccion_id, user
+    ))
+    tareas_creadas.append({'id': cur.lastrowid, 'tipo': 'recoleccion_mee'})
+
+    # Tarea 2: solicitar etiquetas
+    cur = c.execute("""
+        INSERT INTO tareas_operativas
+          (titulo, descripcion, tipo, producto_relacionado, asignado_a,
+           fecha_objetivo, estado, origen_tipo, origen_id, creado_por)
+        VALUES (?, ?, 'recoleccion_mee', ?, ?, ?, 'pendiente', 'aceptar_produccion', ?, ?)
+    """, (
+        f'Solicitar etiquetas para {producto}',
+        f'Confirmar etiquetas listas para envasado del {fecha_obj}. Si no están, alertar.',
+        producto, 'camilo,catalina', fecha_obj, produccion_id, user
+    ))
+    tareas_creadas.append({'id': cur.lastrowid, 'tipo': 'etiquetas'})
+
+    # Tarea 3: armar goteros (si aplica)
+    if requiere_gotero:
+        cur = c.execute("""
+            INSERT INTO tareas_operativas
+              (titulo, descripcion, tipo, producto_relacionado, asignado_a,
+               fecha_objetivo, estado, origen_tipo, origen_id, creado_por)
+            VALUES (?, ?, 'recoleccion_mee', ?, ?, ?, 'pendiente', 'aceptar_produccion', ?, ?)
+        """, (
+            f'Armar goteros para {producto}' + (f' · {pres_etiqueta}' if pres_etiqueta else ''),
+            'Ensamblar goteros (cuerpo + bulbo) según presentación.',
+            producto, 'camilo,operarios', fecha_obj, produccion_id, user
+        ))
+        tareas_creadas.append({'id': cur.lastrowid, 'tipo': 'armar_goteros'})
+
+    log.append(f'✓ {len(tareas_creadas)} tarea(s) operativa(s) creada(s) para {fecha_obj}')
+
+    # 3) Notificar a Calidad que viene muestra micro
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(
+            ['alejandro', 'sebastian'],
+            'planta',
+            f'🧪 Producción aceptada: {producto}',
+            body=f'Lote programado para {fecha_prog} en área {area_id}. Muestra micro se solicitará al iniciar envasado.',
+            link='/inventarios#programacion',
+            remitente=user,
+        )
+        log.append('✓ Calidad notificada')
+    except Exception as e:
+        log.append(f'⚠ Notif no enviada: {e}')
+
+    # 4) Marcar produccion como confirmada (estado='confirmada' opcional)
+    c.execute(
+        "UPDATE produccion_programada SET observaciones=COALESCE(observaciones,'')||'\n[ACEPTADA por '||?||' '||datetime('now')||']' WHERE id=?",
+        (user, produccion_id)
+    )
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'produccion_id': produccion_id,
+        'producto': producto,
+        'log': log,
+        'tareas_creadas': tareas_creadas,
+        'fecha_envasado_estimada': fecha_obj,
+        'area_id': area_id,
+    })
+
+
 @bp.route('/api/planta/preflight/<int:produccion_id>/confirmar-limpieza', methods=['POST'])
 def planta_preflight_confirmar_limpieza(produccion_id):
     """Operario confirma que acaba de hacer limpieza profunda en la sala

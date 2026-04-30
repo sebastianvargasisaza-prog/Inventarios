@@ -1301,6 +1301,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#128679; Pre-flight
     </button>
+    <button id="prog-tab-plansem" onclick="switchProgTab('plansem')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 2px 6px rgba(14,165,233,.3)">
+      &#128197; Plan Semanal
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5627,6 +5631,38 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-preflight -->
 
+  <!-- ── ptab-plansem: Plan Semanal con consumo agregado + cascade aceptar (Fase 4) ── -->
+  <div id="ptab-plansem" style="display:none">
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#fff">&#128197; Plan Semanal Inteligente</h2>
+        <p style="color:#cffafe;font-size:13px;margin:0">Producciones próximas con días de inventario, consumo agregado y MP. Acepta y el sistema dispara todo automático.</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <select id="ps-dias" onchange="cargarPlanSemanal()" style="padding:8px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;font-size:12px;font-weight:600">
+          <option value="7">Próximos 7 días</option>
+          <option value="14" selected>Próximos 14 días</option>
+          <option value="20">Próximos 20 días</option>
+          <option value="30">Próximos 30 días</option>
+        </select>
+        <button onclick="cargarPlanSemanal()" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21bb; Actualizar</button>
+      </div>
+    </div>
+
+    <div id="ps-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px"></div>
+
+    <div id="ps-alertas" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:#991b1b"></div>
+
+    <div id="ps-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px"></div>
+
+    <!-- Modal detalle producción -->
+    <div id="modal-plansem" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#fff;border-radius:14px;width:780px;max-width:96vw;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+        <div id="ps-modal-content"></div>
+      </div>
+    </div>
+  </div><!-- /ptab-plansem -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6768,6 +6804,7 @@ async function ckMarcar(itemId, estado){
       var el_pr  = document.getElementById('ptab-presentaciones');
       var el_eq  = document.getElementById('ptab-equipos');
       var el_pf  = document.getElementById('ptab-preflight');
+      var el_ps  = document.getElementById('ptab-plansem');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
@@ -6777,6 +6814,7 @@ async function ckMarcar(itemId, estado){
       if(el_pr)  el_pr.style.display  = tab==='presentaciones' ? 'block' : 'none';
       if(el_eq)  el_eq.style.display  = tab==='equipos'   ? 'block' : 'none';
       if(el_pf)  el_pf.style.display  = tab==='preflight' ? 'block' : 'none';
+      if(el_ps)  el_ps.style.display  = tab==='plansem'   ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -6793,6 +6831,7 @@ async function ckMarcar(itemId, estado){
       if(beq) { beq.style.background = tab==='equipos' ? '#7c3aed' : '#e2e8f0'; beq.style.color = tab==='equipos' ? '#fff' : '#1a4a7a'; }
       var bpf = document.getElementById('prog-tab-preflight');
       if(bpf) { bpf.style.background = tab==='preflight' ? '#dc2626' : '#e2e8f0'; bpf.style.color = tab==='preflight' ? '#fff' : '#1a4a7a'; }
+      // Plan Semanal: gradient siempre activo (es el botón hero)
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -6828,6 +6867,10 @@ async function ckMarcar(itemId, estado){
       if(tab==='preflight'){
         if(el_pf) el_pf.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarPreflightLista==='function') cargarPreflightLista();
+      }
+      if(tab==='plansem'){
+        if(el_ps) el_ps.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarPlanSemanal==='function') cargarPlanSemanal();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -7905,6 +7948,169 @@ async function ckMarcar(itemId, estado){
       // Refrescar el modal
       abrirPreflightModal(prodId);
     } catch(e){ alert('Error: '+e.message); }
+  }
+
+  // ── Fase 4: Plan Semanal con flujo guiado completo ───────────────────
+  // Sebastian (30-abr-2026): "tenemos algo maravilloso allí en planta...
+  // entonces lo selecciona le sale con la foto, y de una sale señalar
+  // envases, solicitar etiquetas, armado de goteros si requiere, aceptar
+  // producción se dispone para realizar, entonces automáticamente pasa a
+  // que el sistema decida en que área se hace y genere todo".
+  var _PS_DATA = null;
+
+  async function cargarPlanSemanal(){
+    var grid = document.getElementById('ps-grid');
+    var kpis = document.getElementById('ps-kpis');
+    var alertasBox = document.getElementById('ps-alertas');
+    if(!grid) return;
+    var dias = (document.getElementById('ps-dias')||{value:14}).value;
+    grid.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px;grid-column:1/-1">Cargando plan semanal...</div>';
+    try {
+      var r = await fetch('/api/planta/plan-semanal?dias='+dias);
+      var d = await r.json();
+      _PS_DATA = d;
+      // KPIs
+      var k = d.kpis || {};
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_roja_dias?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;10</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_roja_dias?'#dc2626':'#15803d')+'">'+(k.alerta_roja_dias||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_amarilla_dias?'#d97706':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;20</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_amarilla_dias?'#d97706':'#15803d')+'">'+(k.alerta_amarilla_dias||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.sin_mp_suficiente?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Sin MP suficiente</div><div style="font-size:26px;font-weight:800;color:'+(k.sin_mp_suficiente?'#dc2626':'#15803d')+'">'+(k.sin_mp_suficiente||0)+'</div></div>';
+
+      // Banner de alertas críticas
+      var critic = (d.items||[]).filter(function(it){return it.alerta_dias==='rojo' || !it.alcanza_mp});
+      if(critic.length){
+        alertasBox.style.display = 'block';
+        alertasBox.innerHTML = '<b>⚠ '+critic.length+' producción(es) con alerta crítica:</b><br>'
+          + critic.slice(0,5).map(function(c){
+            var ico = !c.alcanza_mp ? '🔴 sin MP' : '⏰ '+c.dias_inventario+'d';
+            return '· <b>'+_escHTML(c.producto)+'</b> ('+_escHTML(c.fecha_programada)+') '+ico;
+          }).join('<br>');
+      } else {
+        alertasBox.style.display = 'none';
+      }
+
+      // Cards
+      var items = d.items || [];
+      if(!items.length){
+        grid.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;grid-column:1/-1;background:#f8fafc;border-radius:10px">Sin producciones programadas en el rango.</div>';
+        return;
+      }
+      grid.innerHTML = items.map(function(it){
+        var diasCol = it.alerta_dias==='rojo' ? '#dc2626' : (it.alerta_dias==='amarillo'?'#d97706':(it.alerta_dias==='verde'?'#15803d':'#94a3b8'));
+        var diasTxt = it.dias_inventario===null ? '—' : it.dias_inventario+'d';
+        var mpCol = it.alcanza_mp ? '#15803d' : '#dc2626';
+        var mpTxt = it.alcanza_mp ? '✓ MP listas' : '✗ Faltan '+(it.mp_deficit||[]).length+' MP';
+        var img = it.imagen_url
+          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:120px;object-fit:cover;border-radius:8px 8px 0 0" alt="">'
+          : '<div style="width:100%;height:120px;background:linear-gradient(135deg,#1a4a7a,#0891b2);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px">📦</div>';
+        var pres = (it.presentaciones||[]).slice(0,2).map(function(p){
+          return '<span style="background:#f0f9ff;color:#0369a1;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600">'+_escHTML(p.etiqueta)+'</span>';
+        }).join(' ');
+        return '<div onclick="abrirPlanSemModal('+it.produccion_id+')" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s" onmouseover="this.style.transform=\\'translateY(-2px)\\';this.style.boxShadow=\\'0 8px 20px rgba(0,0,0,.1)\\'" onmouseout="this.style.transform=\\'\\';this.style.boxShadow=\\'\\'">'
+          + img
+          +'<div style="padding:12px 14px">'
+          +'<div style="font-weight:800;color:#0f172a;font-size:14px;margin-bottom:4px">'+_escHTML(it.producto)+'</div>'
+          +'<div style="font-size:12px;color:#64748b;margin-bottom:8px">📅 '+_escHTML(it.fecha_programada)+' · '+(it.lotes||1)+' lote(s) · '+(it.lote_size_kg||0)+'kg</div>'
+          +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+pres+'</div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">'
+          +'<div style="background:'+diasCol+'15;border:1px solid '+diasCol+'40;color:'+diasCol+';padding:6px 8px;border-radius:6px;text-align:center;font-size:11px;font-weight:700">⏰ '+diasTxt+'</div>'
+          +'<div style="background:'+mpCol+'15;border:1px solid '+mpCol+'40;color:'+mpCol+';padding:6px 8px;border-radius:6px;text-align:center;font-size:11px;font-weight:700">'+mpTxt+'</div>'
+          +'</div>'
+          +(it.area_nombre?'<div style="font-size:11px;color:#64748b">🏭 '+_escHTML(it.area_nombre)+'</div>':'<div style="font-size:11px;color:#dc2626;font-weight:600">⚠ Sin área asignada</div>')
+          +'</div></div>';
+      }).join('');
+    } catch(e){
+      grid.innerHTML = '<div style="color:#dc2626;padding:14px;grid-column:1/-1">Error: '+e.message+'</div>';
+    }
+  }
+
+  function abrirPlanSemModal(prodId){
+    if(!_PS_DATA) return;
+    var item = (_PS_DATA.items||[]).find(function(x){return x.produccion_id===prodId});
+    if(!item) return;
+    var modal = document.getElementById('modal-plansem');
+    var box = document.getElementById('ps-modal-content');
+    var diasCol = item.alerta_dias==='rojo' ? '#dc2626' : (item.alerta_dias==='amarillo'?'#d97706':(item.alerta_dias==='verde'?'#15803d':'#94a3b8'));
+    var img = item.imagen_url
+      ? '<img src="'+_escAttr(item.imagen_url)+'" style="width:100%;height:200px;object-fit:cover" alt="">'
+      : '<div style="width:100%;height:200px;background:linear-gradient(135deg,#1a4a7a,#0891b2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:80px">📦</div>';
+
+    var mpHtml = '';
+    if(item.mp_status && item.mp_status.length){
+      mpHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><thead><tr style="background:#f1f5f9"><th style="padding:6px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">MP</th><th style="padding:6px 10px;text-align:right;font-size:10px;color:#475569">Req</th><th style="padding:6px 10px;text-align:right;font-size:10px;color:#475569">Stock</th><th style="padding:6px 10px;text-align:right;font-size:10px;color:#475569">Reservado</th><th style="padding:6px 10px;text-align:right;font-size:10px;color:#475569">Neto</th></tr></thead><tbody>';
+      item.mp_status.forEach(function(m){
+        var c = m.estado==='ok'?'#15803d':(m.estado==='justo'?'#d97706':'#dc2626');
+        mpHtml += '<tr style="border-top:1px solid #e2e8f0"><td style="padding:5px 10px"><span style="color:'+c+';font-weight:700">'+(m.estado==='ok'?'✓':m.estado==='justo'?'⚠':'✗')+'</span> '+_escHTML(m.material_nombre)+'</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:monospace">'+m.requerido_g.toLocaleString()+'g</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:monospace;color:#64748b">'+m.stock_total_g.toLocaleString()+'g</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:monospace;color:#94a3b8">-'+m.reservado_previo_g.toLocaleString()+'g</td>'
+          +'<td style="padding:5px 10px;text-align:right;font-family:monospace;font-weight:700;color:'+c+'">'+m.disponible_neto_g.toLocaleString()+'g</td></tr>';
+      });
+      mpHtml += '</tbody></table>';
+    }
+
+    var presOptions = '<option value="">— elegir presentación —</option>'
+      + (item.presentaciones||[]).map(function(p){
+        var vol = p.volumen_ml?p.volumen_ml+' mL':(p.peso_g?p.peso_g+' g':'');
+        return '<option value="'+p.id+'">'+_escHTML(p.etiqueta)+(vol?' · '+vol:'')+'</option>';
+      }).join('');
+
+    box.innerHTML = img
+      +'<div style="padding:18px 22px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px;margin-bottom:14px">'
+      +'<div><h2 style="margin:0;color:#0f172a;font-size:20px">'+_escHTML(item.producto)+'</h2><div style="font-size:13px;color:#64748b;margin-top:2px">📅 '+_escHTML(item.fecha_programada)+' · '+(item.lotes||1)+' lote(s) de '+(item.lote_size_kg||0)+'kg</div></div>'
+      +'<button onclick="cerrarPlanSemModal()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button>'
+      +'</div>'
+      // Estado actual
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">'
+      +'<div style="background:'+diasCol+'15;border:1px solid '+diasCol+'40;border-radius:8px;padding:10px"><div style="font-size:10px;color:'+diasCol+';text-transform:uppercase;font-weight:700">Días inventario</div><div style="font-size:20px;font-weight:800;color:'+diasCol+';margin-top:2px">'+(item.dias_inventario===null?'—':item.dias_inventario+'d')+'</div></div>'
+      +'<div style="background:'+(item.alcanza_mp?'#f0fdf4':'#fef2f2')+';border:1px solid '+(item.alcanza_mp?'#86efac':'#fecaca')+';border-radius:8px;padding:10px"><div style="font-size:10px;color:'+(item.alcanza_mp?'#15803d':'#dc2626')+';text-transform:uppercase;font-weight:700">MP</div><div style="font-size:14px;font-weight:800;color:'+(item.alcanza_mp?'#15803d':'#dc2626')+';margin-top:2px">'+(item.alcanza_mp?'✓ Alcanzan':'✗ Faltan '+(item.mp_deficit||[]).length)+'</div></div>'
+      +'<div style="background:'+(item.area_nombre?'#f1f5f9':'#fef3c7')+';border:1px solid '+(item.area_nombre?'#cbd5e1':'#fbbf24')+';border-radius:8px;padding:10px"><div style="font-size:10px;color:'+(item.area_nombre?'#475569':'#92400e')+';text-transform:uppercase;font-weight:700">Área</div><div style="font-size:14px;font-weight:800;color:'+(item.area_nombre?'#0f172a':'#92400e')+';margin-top:2px">'+(item.area_nombre||'⚠ Sin asignar')+'</div></div>'
+      +'</div>'
+      // MP detalle
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:14px">'
+      +'<h4 style="margin:0 0 4px;color:#0f172a;font-size:13px">📊 Materias Primas (consumo agregado)</h4>'
+      +'<p style="font-size:11px;color:#64748b;margin:0 0 4px">"Reservado" = MP comprometido por producciones programadas ANTES de esta. Neto = lo que realmente queda.</p>'
+      + mpHtml
+      +'</div>'
+      // Presentación + Aceptar
+      +'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:8px">'
+      +'<h4 style="margin:0 0 10px;color:#166534;font-size:14px">✅ Aceptar y disparar producción</h4>'
+      +'<p style="margin:0 0 10px;font-size:12px;color:#475569">Al aceptar, el sistema:<br>· asigna área (si no la tiene)<br>· crea tareas: señalar envases, solicitar etiquetas'+(item.presentaciones&&item.presentaciones.length?', armar goteros (si aplica)':'')+'<br>· programa envasado mañana<br>· notifica a Calidad para muestra micro</p>'
+      +'<label style="font-size:11px;color:#64748b;font-weight:600">Presentación a producir</label>'
+      +'<select id="ps-pres" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;margin-bottom:10px">'+presOptions+'</select>'
+      +'<button onclick="aceptarProduccion('+item.produccion_id+')" style="width:100%;background:#15803d;color:#fff;border:none;padding:12px;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer">✅ ACEPTAR PRODUCCIÓN</button>'
+      +'</div>'
+      +'<div id="ps-resultado"></div>'
+      +'</div>';
+    modal.style.display = 'flex';
+  }
+  function cerrarPlanSemModal(){ document.getElementById('modal-plansem').style.display='none'; }
+
+  async function aceptarProduccion(prodId){
+    var presSel = document.getElementById('ps-pres');
+    var presId = presSel ? parseInt(presSel.value) : null;
+    var resBox = document.getElementById('ps-resultado');
+    resBox.innerHTML = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;text-align:center;color:#64748b;margin-top:10px">Disparando cascade...</div>';
+    try {
+      var r = await fetch('/api/planta/aceptar-produccion/'+prodId, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({presentacion_id: presId})
+      });
+      var d = await r.json();
+      if(!r.ok){ resBox.innerHTML='<div style="color:#dc2626;padding:14px;background:#fef2f2;border-radius:8px;margin-top:10px">'+(d.error||'Error')+'</div>'; return; }
+      resBox.innerHTML = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-top:10px">'
+        +'<h4 style="margin:0 0 8px;color:#166534">✅ Producción aceptada</h4>'
+        +'<ul style="margin:0;padding-left:18px;font-size:12px;color:#1e293b">'
+        + (d.log||[]).map(function(l){ return '<li>'+_escHTML(l)+'</li>'; }).join('')
+        + '</ul>'
+        +'<div style="margin-top:8px;font-size:12px;color:#64748b">Envasado tentativo: <b>'+_escHTML(d.fecha_envasado_estimada)+'</b> · '+(d.tareas_creadas||[]).length+' tarea(s) creada(s)</div>'
+        +'<div style="margin-top:10px"><a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'preflight\\');return false" style="color:#0891b2;font-weight:700;text-decoration:none">→ Ver Pre-flight</a> · <a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'tareas\\');return false" style="color:#0891b2;font-weight:700;text-decoration:none">→ Ver Tareas operativas</a></div>'
+        +'</div>';
+      // Refrescar plan después de unos segundos
+      setTimeout(cargarPlanSemanal, 2000);
+    } catch(e){ resBox.innerHTML='<div style="color:#dc2626;padding:14px;margin-top:10px">Error de red: '+e.message+'</div>'; }
   }
 
   // Safe modal backdrop close — placed after all functions are defined
