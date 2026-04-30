@@ -2619,6 +2619,206 @@ def planta_listo_producir(producto):
     })
 
 
+# ─── Actividades por operario en sala (turnos con timer) ──────────────────
+@bp.route('/api/planta/areas/<int:area_id>/actividades', methods=['GET', 'POST'])
+def planta_actividades_sala(area_id):
+    """GET: lista actividades de la sala (filtro ?activas=1 → solo en curso).
+    POST: inicia un turno de un operario en esta sala.
+       body: operario_id (req), tipo (req), descripcion (opt), produccion_id (opt)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(force=True, silent=True) or {}
+        try:
+            op_id = int(d.get('operario_id') or 0)
+        except (TypeError, ValueError):
+            op_id = 0
+        if not op_id:
+            return jsonify({'error': 'operario_id requerido'}), 400
+        tipo = (d.get('tipo') or 'produccion').strip().lower()
+        if tipo not in ('produccion','dispensacion','envasado','acondicionamiento',
+                        'conteo_ciclico','limpieza','mantenimiento','otro'):
+            tipo = 'otro'
+        # Verificar operario existe
+        op_row = c.execute("SELECT nombre, apellido FROM operarios_planta WHERE id=? AND activo=1",
+                           (op_id,)).fetchone()
+        if not op_row:
+            return jsonify({'error': 'operario no existe o inactivo'}), 400
+        # Si ya hay un turno activo del mismo operario en cualquier sala, lo cerramos primero
+        # (un operario no puede estar en 2 salas a la vez)
+        previo = c.execute("""SELECT id, area_id FROM actividades_sala
+                              WHERE operario_id=? AND fin_at IS NULL""",
+                           (op_id,)).fetchone()
+        cerrado_previo = None
+        if previo:
+            prev_id, prev_area = previo
+            c.execute("""UPDATE actividades_sala
+                SET fin_at=datetime('now'),
+                    duracion_min=CAST((julianday(datetime('now'))-julianday(inicio_at))*24*60 AS INTEGER)
+                WHERE id=?""", (prev_id,))
+            cerrado_previo = {'actividad_id': prev_id, 'area_id': prev_area}
+        # Insertar actividad nueva
+        c.execute("""INSERT INTO actividades_sala
+            (area_id, operario_id, tipo, descripcion, produccion_id, creado_por)
+            VALUES (?,?,?,?,?,?)""",
+            (area_id, op_id, tipo,
+             (d.get('descripcion') or '').strip() or None,
+             d.get('produccion_id') or None, user))
+        new_id = c.lastrowid
+        # Cambiar estado de la sala a 'ocupada' si no lo estaba
+        c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=? AND estado='libre'", (area_id,))
+        # Log evento
+        try:
+            c.execute("""INSERT INTO area_eventos
+                (area_id, tipo, estado_anterior, estado_nuevo, produccion_id, operario_id, usuario, nota)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (area_id, 'iniciar_prod', 'libre', 'ocupada',
+                 d.get('produccion_id'), op_id, user,
+                 f'turno {tipo} de {op_row[0]}'))
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'actividad_id': new_id,
+            'cerrado_previo': cerrado_previo,
+            'operario': (op_row[0] + ' ' + (op_row[1] or '')).strip(),
+        }), 201
+
+    # GET — actividades de la sala
+    solo_activas = request.args.get('activas') == '1'
+    sql = """SELECT a.id, a.operario_id, a.tipo, a.descripcion, a.produccion_id,
+                    a.inicio_at, a.fin_at, a.duracion_min, a.observaciones,
+                    op.nombre, op.apellido,
+                    pp.producto,
+                    CAST((julianday('now')-julianday(a.inicio_at))*24*60 AS INTEGER) as min_corridos
+             FROM actividades_sala a
+             LEFT JOIN operarios_planta op ON op.id = a.operario_id
+             LEFT JOIN produccion_programada pp ON pp.id = a.produccion_id
+             WHERE a.area_id=?"""
+    params = [area_id]
+    if solo_activas:
+        sql += " AND a.fin_at IS NULL"
+    sql += " ORDER BY a.inicio_at DESC LIMIT 50"
+    rows = c.execute(sql, params).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            'id': r[0], 'operario_id': r[1], 'tipo': r[2],
+            'descripcion': r[3], 'produccion_id': r[4],
+            'inicio_at': r[5], 'fin_at': r[6],
+            'duracion_min': r[7] if r[6] else r[12],
+            'en_curso': r[6] is None,
+            'observaciones': r[8],
+            'operario_nombre': ((r[9] or '') + ' ' + (r[10] or '')).strip(),
+            'producto': r[11],
+            'minutos_corridos': r[12] if not r[6] else None,
+        })
+    return jsonify({'actividades': out, 'area_id': area_id})
+
+
+@bp.route('/api/planta/actividades/<int:act_id>/terminar', methods=['POST'])
+def planta_actividad_terminar(act_id):
+    """Cierra el turno de un operario. Calcula duracion_min."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(force=True, silent=True) or {}
+    obs = (d.get('observaciones') or '').strip() or None
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""SELECT id, area_id, operario_id, fin_at FROM actividades_sala
+                       WHERE id=?""", (act_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'actividad no existe'}), 404
+    if row[3]:
+        return jsonify({'ok': True, 'ya_cerrada': True})
+    c.execute("""UPDATE actividades_sala
+        SET fin_at=datetime('now'),
+            duracion_min=CAST((julianday(datetime('now'))-julianday(inicio_at))*24*60 AS INTEGER),
+            observaciones=COALESCE(?, observaciones)
+        WHERE id=?""", (obs, act_id))
+    # Si no quedan actividades activas en la sala → marcar libre o sucia
+    pendientes = c.execute(
+        "SELECT COUNT(*) FROM actividades_sala WHERE area_id=? AND fin_at IS NULL",
+        (row[1],)
+    ).fetchone()[0]
+    if pendientes == 0:
+        # Si la sala estaba ocupada, pasarla a sucia (necesita limpieza)
+        c.execute("""UPDATE areas_planta SET estado='sucia'
+                     WHERE id=? AND estado='ocupada'""", (row[1],))
+        try:
+            c.execute("""INSERT INTO area_eventos
+                (area_id, tipo, estado_anterior, estado_nuevo, operario_id, usuario, nota)
+                VALUES (?,?,?,?,?,?,?)""",
+                (row[1], 'terminar_prod', 'ocupada', 'sucia',
+                 row[2], user, 'ultimo turno cerrado'))
+        except Exception:
+            pass
+    conn.commit()
+    cycle = c.execute("SELECT duracion_min FROM actividades_sala WHERE id=?", (act_id,)).fetchone()
+    return jsonify({'ok': True, 'duracion_min': cycle[0] if cycle else None})
+
+
+@bp.route('/api/planta/actividades/kpis', methods=['GET'])
+def planta_actividades_kpis():
+    """KPIs agregados de actividades para indicadores. Filtros:
+       ?desde=YYYY-MM-DD  ?hasta=YYYY-MM-DD  (default: ultimos 30 dias)"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    desde = request.args.get('desde') or ''
+    hasta = request.args.get('hasta') or ''
+    if not desde:
+        desde = (date.today() - timedelta(days=30)).isoformat()
+    if not hasta:
+        hasta = date.today().isoformat()
+    conn = get_db()
+    # Total min por operario
+    rows_op = conn.execute("""
+        SELECT op.nombre, op.apellido,
+               COUNT(*) as turnos,
+               SUM(COALESCE(a.duracion_min, 0)) as min_total
+        FROM actividades_sala a
+        LEFT JOIN operarios_planta op ON op.id = a.operario_id
+        WHERE a.fin_at IS NOT NULL
+          AND DATE(a.inicio_at) >= ? AND DATE(a.inicio_at) <= ?
+        GROUP BY a.operario_id
+        ORDER BY min_total DESC
+    """, (desde, hasta)).fetchall()
+    por_operario = [{
+        'operario': ((r[0] or '') + ' ' + (r[1] or '')).strip(),
+        'turnos': r[2] or 0,
+        'min_total': r[3] or 0,
+        'horas': round((r[3] or 0)/60, 1),
+    } for r in rows_op]
+    # Total min por tipo
+    rows_t = conn.execute("""
+        SELECT tipo, COUNT(*) as turnos, SUM(COALESCE(duracion_min,0)) as mins
+        FROM actividades_sala
+        WHERE fin_at IS NOT NULL
+          AND DATE(inicio_at) >= ? AND DATE(inicio_at) <= ?
+        GROUP BY tipo
+        ORDER BY mins DESC
+    """, (desde, hasta)).fetchall()
+    por_tipo = [{
+        'tipo': r[0], 'turnos': r[1] or 0,
+        'horas': round((r[2] or 0)/60, 1),
+    } for r in rows_t]
+    # Activas ahora
+    activas = conn.execute(
+        "SELECT COUNT(*) FROM actividades_sala WHERE fin_at IS NULL"
+    ).fetchone()[0]
+    return jsonify({
+        'desde': desde, 'hasta': hasta,
+        'por_operario': por_operario,
+        'por_tipo': por_tipo,
+        'turnos_activos_ahora': activas,
+    })
+
+
 @bp.route('/api/planta/centro-mando', methods=['GET'])
 def planta_centro_mando():
     """Endpoint agregado del Centro de Mando — devuelve TODO en una llamada

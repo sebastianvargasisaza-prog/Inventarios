@@ -2713,6 +2713,32 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )""",
         "CREATE INDEX IF NOT EXISTS idx_eos_leads_estado ON eos_leads(estado, creado_en DESC)",
+        # ── Tabla 6: actividades_sala (turno operario por sala) ─────────────
+        # Sebastian (30-abr-2026): "asignar operarios, hora inicio + fin por
+        # actividad, asi medimos indicadores". Granularidad por OPERARIO
+        # (no solo por produccion entera) — permite ver cuanto trabajo
+        # cada operario en cada fase/sala.
+        """CREATE TABLE IF NOT EXISTS actividades_sala (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_id INTEGER NOT NULL,
+            operario_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN
+                ('produccion','dispensacion','envasado','acondicionamiento',
+                 'conteo_ciclico','limpieza','mantenimiento','otro')),
+            descripcion TEXT,
+            produccion_id INTEGER,
+            inicio_at TEXT NOT NULL DEFAULT (datetime('now')),
+            fin_at TEXT,
+            duracion_min INTEGER,
+            observaciones TEXT,
+            creado_por TEXT,
+            FOREIGN KEY (area_id) REFERENCES areas_planta(id),
+            FOREIGN KEY (operario_id) REFERENCES operarios_planta(id),
+            FOREIGN KEY (produccion_id) REFERENCES produccion_programada(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_act_area_inicio ON actividades_sala(area_id, inicio_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_act_operario ON actividades_sala(operario_id, inicio_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_act_prod ON actividades_sala(produccion_id)",
         # Seed con hallazgos abiertos reales de los correos:
         """INSERT OR IGNORE INTO hallazgos
            (codigo, origen, titulo, descripcion, area, severidad,

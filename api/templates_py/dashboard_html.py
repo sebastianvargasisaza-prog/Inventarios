@@ -6779,7 +6779,143 @@ async function ckMarcar(itemId, estado){
         '</div>'+
       '</div>'+
       '<div style="font-size:13px;color:#475569;margin-top:8px">'+caps.join(' · ')+'</div>'+
-      ocupHTML;
+      ocupHTML +
+      // Sección turnos de operarios (con timer + iniciar/terminar)
+      '<div id="cm-turnos-'+a.id+'" style="margin-top:14px;padding:12px;background:#fefce8;border:1px solid #fde68a;border-radius:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+          '<b style="color:#854d0e;font-size:13px">🧑‍🏭 Turnos de operarios en esta sala</b>' +
+          '<button onclick="abrirIniciarTurno('+a.id+')" style="background:#16a34a;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Iniciar turno</button>' +
+        '</div>' +
+        '<div id="cm-turnos-list-'+a.id+'" style="font-size:12px"><div style="color:#94a3b8;text-align:center;padding:10px">Cargando turnos...</div></div>' +
+      '</div>';
+    cargarTurnosSala(a.id);
+  }
+
+  async function cargarTurnosSala(area_id){
+    var box = document.getElementById('cm-turnos-list-'+area_id);
+    if(!box) return;
+    try{
+      var r = await fetch('/api/planta/areas/'+area_id+'/actividades');
+      var d = await r.json();
+      var acts = d.actividades || [];
+      var activas = acts.filter(function(x){ return x.en_curso; });
+      var cerradas = acts.filter(function(x){ return !x.en_curso; }).slice(0, 5);
+      var html = '';
+      if(activas.length){
+        html += '<div style="margin-bottom:8px"><b style="font-size:11px;color:#854d0e;text-transform:uppercase;letter-spacing:.5px">⏱ En curso ahora</b></div>';
+        html += activas.map(function(t){
+          var icon = {produccion:'🏭',dispensacion:'⚖',envasado:'📦',acondicionamiento:'🎁',conteo_ciclico:'📊',limpieza:'🧹',mantenimiento:'🔧',otro:'📋'}[t.tipo]||'📋';
+          return '<div style="background:#fff;border-left:3px solid #ca8a04;padding:8px 10px;margin-bottom:6px;border-radius:0 6px 6px 0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<div style="flex:1;min-width:140px">' +
+              '<div style="font-weight:600;color:#0f172a">'+icon+' <b>'+t.operario_nombre+'</b> · <span style="color:#64748b">'+t.tipo+'</span></div>' +
+              (t.descripcion?'<div style="font-size:11px;color:#64748b;margin-top:2px">'+t.descripcion+'</div>':'') +
+              '<div style="font-size:11px;color:#ca8a04;font-weight:700;margin-top:3px">⏱ '+_fmtMin(t.minutos_corridos)+' transcurridos</div>' +
+            '</div>' +
+            '<button onclick="terminarTurno('+t.id+','+area_id+')" style="background:#dc2626;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⏹ Terminar</button>' +
+          '</div>';
+        }).join('');
+      } else {
+        html += '<div style="color:#94a3b8;text-align:center;padding:6px;font-style:italic">Nadie trabajando ahora — click "+ Iniciar turno"</div>';
+      }
+      if(cerradas.length){
+        html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #fde68a"><b style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Últimos turnos cerrados</b></div>';
+        html += cerradas.map(function(t){
+          var icon = {produccion:'🏭',dispensacion:'⚖',envasado:'📦',acondicionamiento:'🎁',conteo_ciclico:'📊',limpieza:'🧹',mantenimiento:'🔧',otro:'📋'}[t.tipo]||'📋';
+          return '<div style="font-size:11px;color:#475569;padding:4px 8px;background:#f8fafc;border-radius:4px;margin-top:3px;display:flex;justify-content:space-between">' +
+            '<span>'+icon+' '+t.operario_nombre+' · '+t.tipo+'</span>' +
+            '<span style="color:#64748b">⏱ '+_fmtMin(t.duracion_min)+'</span>' +
+          '</div>';
+        }).join('');
+      }
+      box.innerHTML = html;
+    }catch(e){ box.innerHTML = '<div style="color:#dc2626;font-size:12px">Error al cargar turnos</div>'; }
+  }
+
+  async function abrirIniciarTurno(area_id){
+    // Cargar operarios para selector
+    if(!_PLANTA_OPERARIOS) await _mpCargarCatalogos();
+    var ops = (_PLANTA_OPERARIOS||[]).filter(function(o){ return !o.es_jefe; });
+    if(!ops.length){ _toast('Sin operarios activos', 0); return; }
+    var opSel = ops.map(function(o){ return '<option value="'+o.id+'">'+o.nombre_completo+'</option>'; }).join('');
+    var modal = document.getElementById('modal-turno');
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = 'modal-turno';
+      modal.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:99999;align-items:center;justify-content:center;padding:20px';
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px 22px;max-width:420px;width:100%">' +
+        '<h3 style="color:#1a4a7a;font-size:16px;margin-bottom:14px">⏱ Iniciar turno operario</h3>' +
+        '<input type="hidden" id="tn-area">' +
+        '<label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Operario *</label>' +
+        '<select id="tn-op" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;margin-bottom:10px">'+opSel+'</select>' +
+        '<label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Tipo de actividad *</label>' +
+        '<select id="tn-tipo" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;margin-bottom:10px">' +
+          '<option value="produccion">🏭 Producción</option>' +
+          '<option value="dispensacion">⚖ Dispensación</option>' +
+          '<option value="envasado">📦 Envasado</option>' +
+          '<option value="acondicionamiento">🎁 Acondicionamiento</option>' +
+          '<option value="conteo_ciclico">📊 Conteo cíclico</option>' +
+          '<option value="limpieza">🧹 Limpieza</option>' +
+          '<option value="mantenimiento">🔧 Mantenimiento</option>' +
+          '<option value="otro">📋 Otro</option>' +
+        '</select>' +
+        '<label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:3px">Descripción (opcional)</label>' +
+        '<textarea id="tn-descr" rows="2" placeholder="Ej: lote LBHA-261001, turno A" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;margin-bottom:14px"></textarea>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button id="tn-cancel" style="background:#e2e8f0;color:#475569;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>' +
+          '<button id="tn-save" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">▶ Iniciar</button>' +
+        '</div>' +
+      '</div>';
+      document.body.appendChild(modal);
+      document.getElementById('tn-cancel').onclick = function(){
+        document.getElementById('modal-turno').style.display='none';
+      };
+      document.getElementById('tn-save').onclick = iniciarTurno;
+    } else {
+      document.getElementById('tn-op').innerHTML = opSel;
+      modal.style.display = 'flex';
+    }
+    document.getElementById('tn-area').value = area_id;
+    document.getElementById('tn-descr').value = '';
+  }
+
+  async function iniciarTurno(){
+    var area_id = document.getElementById('tn-area').value;
+    var body = {
+      operario_id: parseInt(document.getElementById('tn-op').value),
+      tipo: document.getElementById('tn-tipo').value,
+      descripcion: document.getElementById('tn-descr').value
+    };
+    try{
+      var r = await fetch('/api/planta/areas/'+area_id+'/actividades', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      var d = await r.json();
+      if(d.ok){
+        if(d.cerrado_previo){ _toast('Turno previo de '+d.operario+' cerrado en otra sala', 1); }
+        else { _toast('Turno iniciado: '+d.operario, 1); }
+        document.getElementById('modal-turno').style.display = 'none';
+        cargarTurnosSala(area_id);
+        renderCentroMando();
+      } else { _toast('Error: '+(d.error||'?'), 0); }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  async function terminarTurno(act_id, area_id){
+    var obs = prompt('Observaciones del turno (opcional):', '');
+    if(obs === null) return; // canceló
+    try{
+      var r = await fetch('/api/planta/actividades/'+act_id+'/terminar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({observaciones: obs || null})
+      });
+      var d = await r.json();
+      if(d.ok){
+        _toast('Turno cerrado · ' + (d.duracion_min!=null ? _fmtMin(d.duracion_min) : ''), 1);
+        cargarTurnosSala(area_id);
+        renderCentroMando();
+      } else { _toast('Error: '+(d.error||'?'), 0); }
+    }catch(e){ _toast('Error de red', 0); }
   }
 
   async function cmIniciarProduccion(id){
