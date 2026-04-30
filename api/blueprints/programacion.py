@@ -7739,6 +7739,357 @@ def planta_preflight(produccion_id):
     })
 
 
+# ════════════════════════════════════════════════════════════════════════
+# PLANTA INTELIGENTE — FASE 3: Triggers automáticos
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian + Alejandro (30-abr-2026):
+#  D. Envasado iniciado → muestra micro automática (deadline 5 días)
+#  F. Resultado micro ok → entra a cola de liberación 1-2/día
+#  C. Scheduler limpieza profunda L-Ma-J-V rotando 9 áreas
+
+@bp.route('/api/planta/envasado/iniciar', methods=['POST'])
+def planta_envasado_iniciar():
+    """Operario marca el inicio de envasado. Triggers automáticos:
+       1. Crea registro produccion_envasado
+       2. Crea muestra micro pendiente con deadline = ahora + 5 días
+       3. Crea entrada en cola_liberacion estado='esperando_micro'
+
+    Body: {produccion_id*, lote*, presentacion_id?, presentacion_etiqueta?,
+           unidades_planeadas?, envase_codigo?}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    prod_id = d.get('produccion_id')
+    lote = (d.get('lote') or '').strip()
+    if not prod_id or not lote:
+        return jsonify({'error': 'produccion_id y lote requeridos'}), 400
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute(
+        "SELECT producto FROM produccion_programada WHERE id=?", (prod_id,)
+    ).fetchone()
+    if not pp:
+        return jsonify({'error': 'Producción no existe'}), 404
+    producto = pp[0]
+    pres_etiqueta = (d.get('presentacion_etiqueta') or '').strip()
+    pres_id = d.get('presentacion_id')
+    if pres_id and not pres_etiqueta:
+        pr = c.execute(
+            "SELECT etiqueta, envase_codigo FROM producto_presentaciones WHERE id=?",
+            (pres_id,)
+        ).fetchone()
+        if pr:
+            pres_etiqueta = pr[0]
+            if not d.get('envase_codigo'):
+                d['envase_codigo'] = pr[1]
+    # 1) Crear envasado
+    cur = c.execute("""
+        INSERT INTO produccion_envasado
+          (produccion_id, producto_nombre, lote, presentacion_id,
+           presentacion_etiqueta, unidades_planeadas, envase_codigo,
+           iniciado_por, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'en_proceso')
+    """, (prod_id, producto, lote, pres_id, pres_etiqueta or None,
+          d.get('unidades_planeadas'),
+          (d.get('envase_codigo') or None),
+          user))
+    envasado_id = cur.lastrowid
+    # 2) Crear muestra micro pendiente con deadline 5 días
+    deadline = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    # Insertamos un registro "marcador" (sin valor todavía) por cada microorganismo
+    # estandar — pero para no inflar la BD, creamos UN solo marcador con
+    # microorganismo='pendiente' que CC actualiza luego con cada análisis.
+    try:
+        cur2 = c.execute("""
+            INSERT INTO calidad_micro_resultados
+              (lote, producto, microorganismo, valor, estado, fecha_analisis,
+               envasado_id, deadline_resultado)
+            VALUES (?, ?, 'pendiente_recoleccion', NULL, 'pendiente', ?, ?, ?)
+        """, (lote, producto, fecha_hoy, envasado_id, deadline))
+        muestra_id = cur2.lastrowid
+        c.execute("UPDATE produccion_envasado SET muestra_micro_id=? WHERE id=?",
+                  (muestra_id, envasado_id))
+    except Exception as e:
+        # Si la columna no existe (esquema viejo), silenciar — el envasado igual
+        # se crea, solo no se linkea muestra micro.
+        muestra_id = None
+    # 3) Cola de liberación
+    c.execute("""
+        INSERT INTO cola_liberacion
+          (envasado_id, producto_nombre, lote, presentacion_etiqueta,
+           unidades, fecha_envasado, fecha_min_liberacion, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'esperando_micro')
+    """, (envasado_id, producto, lote, pres_etiqueta or None,
+          d.get('unidades_planeadas'), fecha_hoy, deadline))
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'envasado_id': envasado_id,
+        'muestra_micro_id': muestra_id,
+        'deadline_resultado': deadline,
+        'mensaje': f'Envasado iniciado. Muestra micro pendiente — deadline {deadline} (5 días).',
+    })
+
+
+@bp.route('/api/planta/envasado/<int:envasado_id>/terminar', methods=['POST'])
+def planta_envasado_terminar(envasado_id):
+    """Operario marca fin de envasado. Body opcional: {unidades_envasadas, notas}"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    cur = c.execute("""
+        UPDATE produccion_envasado SET
+          estado='terminado',
+          terminado_at=datetime('now'),
+          terminado_por=?,
+          unidades_envasadas=COALESCE(?, unidades_envasadas),
+          notas=COALESCE(?, notas)
+        WHERE id=? AND estado='en_proceso'
+    """, (user, d.get('unidades_envasadas'), d.get('notas'), envasado_id))
+    if cur.rowcount == 0:
+        return jsonify({'error': 'Envasado no encontrado o ya terminado'}), 404
+    # Actualizar unidades en cola_liberacion si llegan
+    if d.get('unidades_envasadas') is not None:
+        c.execute(
+            "UPDATE cola_liberacion SET unidades=? WHERE envasado_id=?",
+            (d.get('unidades_envasadas'), envasado_id)
+        )
+    conn.commit()
+    return jsonify({'ok': True, 'envasado_id': envasado_id})
+
+
+@bp.route('/api/planta/cola-liberacion', methods=['GET'])
+def planta_cola_liberacion():
+    """Lista la cola de liberación. Querystring:
+       ?estado=esperando_micro|listo_revisar|liberado|rechazado|todas (default activas)"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    estado = (request.args.get('estado') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    where = []
+    params = []
+    if estado in ('esperando_micro', 'listo_revisar', 'liberado', 'rechazado', 'reanalisis'):
+        where.append("estado=?"); params.append(estado)
+    elif estado != 'todas':
+        # default: solo activas (no liberadas/rechazadas)
+        where.append("estado IN ('esperando_micro','listo_revisar','reanalisis')")
+    sql = "SELECT * FROM cola_liberacion"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_min_liberacion ASC, id ASC"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # Marcar listos_revisar los que ya pasaron deadline (auto-promoción)
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    for it in items:
+        if it['estado'] == 'esperando_micro' and (it.get('fecha_min_liberacion') or '') <= fecha_hoy:
+            c.execute(
+                "UPDATE cola_liberacion SET estado='listo_revisar' WHERE id=?",
+                (it['id'],)
+            )
+            it['estado'] = 'listo_revisar'
+            it['_auto_promovido'] = True
+    conn.commit()
+    return jsonify({
+        'items': items,
+        'total': len(items),
+        'listos_hoy': sum(1 for it in items if it['estado'] == 'listo_revisar'),
+        'esperando': sum(1 for it in items if it['estado'] == 'esperando_micro'),
+    })
+
+
+@bp.route('/api/planta/cola-liberacion/<int:item_id>/disposicion', methods=['POST'])
+def planta_cola_liberacion_disposicion(item_id):
+    """QC/Alejandro decide la disposición del lote tras revisar el resultado micro.
+    Body: {disposicion: 'aprobado'|'rechazado'|'reanalizar', notas?}"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    disposicion = (d.get('disposicion') or '').strip()
+    if disposicion not in ('aprobado', 'rechazado', 'reanalizar'):
+        return jsonify({'error': 'disposicion debe ser aprobado/rechazado/reanalizar'}), 400
+    estado_nuevo = {
+        'aprobado': 'liberado',
+        'rechazado': 'rechazado',
+        'reanalizar': 'reanalisis',
+    }[disposicion]
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE cola_liberacion SET
+          disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now'),
+          notas=COALESCE(?, notas)
+        WHERE id=?
+    """, (disposicion, estado_nuevo, user, d.get('notas'), item_id))
+    conn.commit()
+    return jsonify({'ok': True, 'estado': estado_nuevo})
+
+
+@bp.route('/api/planta/limpieza-profunda/calendario', methods=['GET'])
+def planta_limpieza_calendario():
+    """Lista programación de limpieza profunda. Querystring: ?dias=20 (default)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 20))
+    except (TypeError, ValueError):
+        dias = 20
+    fecha_desde = datetime.now().strftime('%Y-%m-%d')
+    fecha_hasta = (datetime.now() + timedelta(days=dias)).strftime('%Y-%m-%d')
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT lpc.*, ap.nombre as area_nombre
+        FROM limpieza_profunda_calendario lpc
+        LEFT JOIN areas_planta ap ON ap.codigo = lpc.area_codigo
+        WHERE lpc.fecha BETWEEN ? AND ?
+        ORDER BY lpc.fecha ASC, lpc.area_codigo
+    """, (fecha_desde, fecha_hasta)).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # Cobertura de áreas: cuántas áreas tuvieron limpieza en los últimos 14d
+    cobertura = c.execute("""
+        SELECT area_codigo, MAX(fecha) as ultima
+        FROM limpieza_profunda_calendario
+        WHERE estado='completada' AND fecha >= date('now','-14 days')
+        GROUP BY area_codigo
+    """).fetchall()
+    return jsonify({
+        'items': items,
+        'rango': {'desde': fecha_desde, 'hasta': fecha_hasta, 'dias': dias},
+        'cobertura_14d': {r[0]: r[1] for r in cobertura},
+    })
+
+
+@bp.route('/api/planta/limpieza-profunda/generar', methods=['POST'])
+def planta_limpieza_generar():
+    """Genera cronograma rotativo L-Ma-J-V para los próximos N días.
+    Brief K (Alejandro): rotar L-Ma-J-V cubriendo las 9 áreas, idealmente
+    el área que se produjo el día anterior.
+
+    Body: {dias?: int (default 20), reset?: bool (borrar pendientes y regenerar)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    try:
+        dias = int(d.get('dias', 20))
+    except (TypeError, ValueError):
+        dias = 20
+    conn = get_db(); c = conn.cursor()
+
+    if d.get('reset'):
+        c.execute(
+            "DELETE FROM limpieza_profunda_calendario WHERE estado='programada' AND fecha >= date('now')"
+        )
+
+    # Obtener orden de rotación según última limpieza por área
+    ultimas = c.execute("""
+        SELECT codigo, ultima_limpieza_profunda
+        FROM areas_planta
+        WHERE codigo IN ({})
+    """.format(','.join('?' for _ in _AREAS_LIMPIEZA_PROFUNDA)),
+        _AREAS_LIMPIEZA_PROFUNDA
+    ).fetchall()
+    # Mapear código → días desde última limpieza (-1 si nunca)
+    dias_por_area = {}
+    for cod, ult in ultimas:
+        if ult:
+            try:
+                last = datetime.fromisoformat((ult or '').split('.')[0].replace('T', ' '))
+                dias_por_area[cod] = (datetime.now() - last).days
+            except Exception:
+                dias_por_area[cod] = 999
+        else:
+            dias_por_area[cod] = 999
+    # Cola priorizada: las que llevan más sin limpiar primero
+    cola = sorted(_AREAS_LIMPIEZA_PROFUNDA, key=lambda x: dias_por_area.get(x, 999), reverse=True)
+
+    creadas = []
+    skipped = []
+    today = datetime.now().date()
+    for offset in range(dias + 1):
+        fecha = today + timedelta(days=offset)
+        # Limpieza profunda solo L-Ma-J-V (excluye Mié=2, Sáb=5, Dom=6)
+        if fecha.weekday() in (2, 5, 6):
+            continue
+        fecha_str = fecha.strftime('%Y-%m-%d')
+        # Buscar área que se produjo el día anterior (preferencia)
+        prev_str = (fecha - timedelta(days=1)).strftime('%Y-%m-%d')
+        prev_area = c.execute("""
+            SELECT ap.codigo
+            FROM produccion_programada pp
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            WHERE date(pp.fecha_programada) = ? AND ap.codigo IN ({})
+            ORDER BY pp.id DESC LIMIT 1
+        """.format(','.join('?' for _ in _AREAS_LIMPIEZA_PROFUNDA)),
+            [prev_str, *_AREAS_LIMPIEZA_PROFUNDA]
+        ).fetchone()
+        if prev_area and prev_area[0] in cola:
+            elegida = prev_area[0]
+            razon = f'Producción ayer en {elegida}'
+            cola.remove(elegida)
+            cola.append(elegida)  # mover al final para rotación
+        else:
+            elegida = cola[0]
+            razon = f'Más antigua sin limpieza ({dias_por_area.get(elegida, 999)}d)'
+            cola.append(cola.pop(0))
+        try:
+            c.execute("""
+                INSERT INTO limpieza_profunda_calendario
+                  (fecha, area_codigo, estado, generado_por, razon_asignacion)
+                VALUES (?, ?, 'programada', ?, ?)
+            """, (fecha_str, elegida, user, razon))
+            creadas.append({'fecha': fecha_str, 'area': elegida, 'razon': razon})
+        except sqlite3.IntegrityError:
+            skipped.append({'fecha': fecha_str, 'area': elegida, 'motivo': 'ya existe'})
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'creadas': creadas,
+        'skipped': skipped,
+        'total_creadas': len(creadas),
+    })
+
+
+@bp.route('/api/planta/limpieza-profunda/<int:item_id>/completar', methods=['POST'])
+def planta_limpieza_completar(item_id):
+    """Operario marca limpieza completada. Actualiza también
+    areas_planta.ultima_limpieza_profunda."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT area_codigo FROM limpieza_profunda_calendario WHERE id=?", (item_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Item no existe'}), 404
+    area_codigo = row[0]
+    c.execute("""
+        UPDATE limpieza_profunda_calendario SET
+          estado='completada', terminado_at=datetime('now'), terminado_por=?,
+          notas=COALESCE(?, notas)
+        WHERE id=?
+    """, (user, d.get('notas'), item_id))
+    c.execute(
+        "UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now') WHERE codigo=?",
+        (area_codigo,)
+    )
+    c.execute("""
+        INSERT INTO area_eventos (area_id, tipo, usuario, nota)
+        SELECT id, 'fin_limpieza', ?, ? FROM areas_planta WHERE codigo=?
+    """, (user, d.get('notas') or 'Limpieza profunda programada', area_codigo))
+    conn.commit()
+    return jsonify({'ok': True, 'area': area_codigo})
+
+
 @bp.route('/api/planta/preflight/<int:produccion_id>/confirmar-limpieza', methods=['POST'])
 def planta_preflight_confirmar_limpieza(produccion_id):
     """Operario confirma que acaba de hacer limpieza profunda en la sala

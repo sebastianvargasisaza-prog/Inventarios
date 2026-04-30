@@ -212,6 +212,15 @@ VALUES
     ('TP-PRD-001', 'Tapadora Electroneumática', 'FAB_FLOAT', 'Envasado según necesidad', 'tapadora', '', NULL, NULL)"""
 
 
+# Seed de cronograma de limpieza profunda (Sebastian + Alejandro 30-abr-2026,
+# brief K). Rotación L-Ma-J-V de las 9 áreas obligatorias. Vacío al inicio —
+# se llena vía scheduler /api/planta/limpieza-profunda/generar.
+_AREAS_LIMPIEZA_PROFUNDA = (
+    'FAB1', 'FAB2', 'FAB3', 'ENV1', 'ENV2',
+    'DISP', 'LAV', 'ESC1', 'ALMP'
+)
+
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (1, "baseline — sistema de migraciones instalado", []),
     (2, "maestro_mps: proveedor_preferido", [
@@ -3123,6 +3132,92 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Multi-row INSERT idempotente. Si Alejandro corrige el Excel mas
         # adelante, se puede re-ejecutar sin duplicar (UNIQUE codigo+ubicacion).
         _SEED_EQUIPOS_PLANTA_SQL,
+    ]),
+    (64, "planta inteligente fase 3: envasado→micro 5d, cola liberación, scheduler limpieza", [
+        # Sebastian + Alejandro (30-abr-2026, brief D/F/C):
+        #  D. Envío de muestra micro al INICIAR envasado (tarda 5 días)
+        #  F. Liberación 1-2 productos/día tras esperar el resultado
+        #  C. Rotación limpieza profunda L-Ma-J-V con preferencia al área
+        #     que se produjo el día anterior
+        # Tres tablas + columnas en calidad_micro_resultados (link a evento).
+
+        # 1) produccion_envasado: cada vez que un operario marca "iniciar envasado"
+        #    se crea un registro. Permite linkear lote PT con muestra micro.
+        """CREATE TABLE IF NOT EXISTS produccion_envasado (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produccion_id INTEGER NOT NULL,
+            producto_nombre TEXT NOT NULL,
+            lote TEXT NOT NULL,
+            presentacion_id INTEGER,
+            presentacion_etiqueta TEXT,
+            unidades_planeadas INTEGER,
+            unidades_envasadas INTEGER,
+            envase_codigo TEXT,
+            iniciado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            iniciado_por TEXT,
+            terminado_at TEXT,
+            terminado_por TEXT,
+            estado TEXT NOT NULL DEFAULT 'en_proceso'
+                CHECK(estado IN ('en_proceso','terminado','cancelado')),
+            muestra_micro_id INTEGER,
+            notas TEXT,
+            FOREIGN KEY (produccion_id) REFERENCES produccion_programada(id),
+            FOREIGN KEY (presentacion_id) REFERENCES producto_presentaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pe_estado ON produccion_envasado(estado, iniciado_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_pe_lote ON produccion_envasado(lote, producto_nombre)",
+        "CREATE INDEX IF NOT EXISTS idx_pe_micro ON produccion_envasado(muestra_micro_id)",
+
+        # 2) cola_liberacion: lote PT esperando liberación QC (post-micro 5d).
+        """CREATE TABLE IF NOT EXISTS cola_liberacion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            envasado_id INTEGER,
+            producto_nombre TEXT NOT NULL,
+            lote TEXT NOT NULL,
+            presentacion_etiqueta TEXT,
+            unidades INTEGER,
+            fecha_envasado TEXT NOT NULL,
+            fecha_min_liberacion TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'esperando_micro'
+                CHECK(estado IN ('esperando_micro','listo_revisar','liberado','rechazado','reanalisis')),
+            micro_resultado_id INTEGER,
+            disposicion TEXT
+                CHECK(disposicion IS NULL OR disposicion IN ('aprobado','rechazado','reanalizar')),
+            aprobado_por TEXT,
+            aprobado_at TEXT,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (envasado_id) REFERENCES produccion_envasado(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cl_estado ON cola_liberacion(estado, fecha_min_liberacion)",
+        "CREATE INDEX IF NOT EXISTS idx_cl_producto ON cola_liberacion(producto_nombre, lote)",
+
+        # 3) limpieza_profunda_calendario: programación rotativa L-Ma-J-V.
+        """CREATE TABLE IF NOT EXISTS limpieza_profunda_calendario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            area_codigo TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'programada'
+                CHECK(estado IN ('programada','en_proceso','completada','cancelada','reagendada')),
+            asignado_a TEXT,
+            iniciado_at TEXT,
+            terminado_at TEXT,
+            iniciado_por TEXT,
+            terminado_por TEXT,
+            generado_por TEXT NOT NULL DEFAULT 'auto',
+            razon_asignacion TEXT,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(fecha, area_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_lpc_fecha ON limpieza_profunda_calendario(fecha, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_lpc_area ON limpieza_profunda_calendario(area_codigo, fecha DESC)",
+
+        # 4) Link bidireccional desde calidad_micro_resultados a envasado
+        # (no FK estricta para no romper si la tabla ya tiene datos sin envasado_id).
+        "ALTER TABLE calidad_micro_resultados ADD COLUMN envasado_id INTEGER",
+        "ALTER TABLE calidad_micro_resultados ADD COLUMN deadline_resultado TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_cmr_envasado ON calidad_micro_resultados(envasado_id)",
     ]),
 ]
 
