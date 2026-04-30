@@ -36,112 +36,267 @@ def chat_widget_js():
         return Response("// no auth", mimetype="application/javascript")
     # No cachear el widget JS — Sebastian (29-abr-2026): los browsers
     # cacheaban version vieja con bugs y costaba forzar Ctrl+F5.
-    js = """
+    # Inyectar user actual en el JS para que el widget sepa "soy yo"
+    me = session.get('compras_user', '')
+    js_prefix = "var __CW_ME = " + repr(me).replace("'", '"') + ";\n"
+    js = js_prefix + r"""
 (function(){
-  // No inyectar en /chat (seria recursivo) ni en /login
   var p = window.location.pathname;
   if (p === '/chat' || p === '/login' || p === '/logout') return;
-  // Idempotente: si ya esta cargado, no re-cargar
   if (window.__chatWidgetLoaded) return;
   window.__chatWidgetLoaded = true;
 
-  // ── Sebastian (30-abr-2026): "el chat flotante sigue sin servir" ──────
-  // El iframe embed era frágil — fallaba por CSP, cookies SameSite, cache
-  // o cualquier otra razón que dejaba el panel en blanco. Solución: el
-  // FAB ahora abre /chat directo en pestaña nueva. Más simple, más
-  // confiable. Mantenemos badge unread + toast + ping (que sí funcionaban).
+  // ── Sebastian (30-abr-2026): chat flotante REAL — panel desplegable
+  // tipo Messenger. Lista de hilos + visor de mensajes inline + envío.
+  // Si el panel falla por cualquier motivo, "Abrir completo →" lleva a /chat.
 
-  // Crear estilos
   var s = document.createElement('style');
-  s.textContent = '\\
-    #cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s;text-decoration:none}\\
-    #cw-fab:hover{transform:scale(1.08);background:#6d28d9}\\
-    #cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}\\
-    #cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}\\
-    @keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}\\
-  ';
+  s.textContent = ''+
+    '#cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
+    '#cw-fab:hover{transform:scale(1.08);background:#6d28d9}'+
+    '#cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}'+
+    '#cw-panel{position:fixed;bottom:84px;right:20px;width:380px;max-width:94vw;height:540px;max-height:78vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:9998;display:none;flex-direction:column;overflow:hidden;border:1px solid #e2e8f0;font-family:Segoe UI,sans-serif}'+
+    '#cw-head{background:#7c3aed;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px}'+
+    '#cw-head a{color:#e9d5ff;font-size:11px;font-weight:400;text-decoration:none}'+
+    '#cw-head a:hover{color:#fff;text-decoration:underline}'+
+    '#cw-body{flex:1;overflow:hidden;display:flex;flex-direction:column}'+
+    '#cw-tlist{overflow-y:auto;flex:1}'+
+    '.cw-thread{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;align-items:flex-start;gap:8px;transition:background .15s}'+
+    '.cw-thread:hover{background:#f8fafc}'+
+    '.cw-thread.unread{background:#faf5ff;border-left:3px solid #7c3aed}'+
+    '.cw-thread .nm{font-size:13px;font-weight:600;color:#0f172a;line-height:1.3}'+
+    '.cw-thread .pv{font-size:11px;color:#64748b;line-height:1.4;margin-top:2px}'+
+    '.cw-thread .ts{font-size:10px;color:#94a3b8;white-space:nowrap;margin-left:auto}'+
+    '.cw-thread .uc{background:#dc2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px}'+
+    '#cw-conv{display:none;flex-direction:column;height:100%}'+
+    '#cw-conv-head{background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;color:#0f172a;display:flex;align-items:center;gap:6px}'+
+    '#cw-back{background:none;border:none;color:#7c3aed;cursor:pointer;font-size:16px;padding:0}'+
+    '#cw-msgs{overflow-y:auto;flex:1;padding:10px;background:#f8fafc}'+
+    '.cw-m{max-width:80%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.4;margin-bottom:6px;word-wrap:break-word}'+
+    '.cw-m.own{background:#7c3aed;color:#fff;margin-left:auto}'+
+    '.cw-m.other{background:#fff;color:#0f172a;border:1px solid #e2e8f0}'+
+    '.cw-m .who{font-size:10px;font-weight:600;color:#7c3aed;margin-bottom:2px}'+
+    '.cw-m.own .who{color:#e9d5ff}'+
+    '#cw-inp{display:flex;gap:6px;padding:8px;border-top:1px solid #e2e8f0;background:#fff}'+
+    '#cw-text{flex:1;border:1px solid #cbd5e1;border-radius:18px;padding:7px 12px;font-size:13px;font-family:inherit;outline:none}'+
+    '#cw-text:focus{border-color:#7c3aed}'+
+    '#cw-send{background:#7c3aed;color:#fff;border:none;border-radius:18px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer}'+
+    '#cw-send:hover{background:#6d28d9}'+
+    '#cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}'+
+    '@keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}'+
+    '.cw-empty{text-align:center;color:#94a3b8;padding:30px 14px;font-size:13px}';
   document.head.appendChild(s);
 
-  // Crear FAB como <a target="_blank"> — abre /chat en pestaña nueva.
-  // Sin iframe, sin panel, sin posibles fallas de embed.
-  var fab = document.createElement('a');
+  var fab = document.createElement('button');
   fab.id = 'cw-fab';
-  fab.href = '/chat';
-  fab.target = '_blank';
-  fab.rel = 'noopener';
-  fab.title = 'EOS Chat (abre en pestaña nueva)';
-  fab.innerHTML = '\\u{1F4AC}<span id="cw-badge" style="display:none">0</span>';
-  // Al abrir, limpiar badge inmediatamente (UX optimista)
-  fab.addEventListener('click', function(){
-    var b = document.getElementById('cw-badge');
-    if (b) { b.style.display = 'none'; b.textContent = '0'; }
-  });
+  fab.title = 'EOS Chat';
+  fab.innerHTML = '\u{1F4AC}<span id="cw-badge">0</span>';
   document.body.appendChild(fab);
 
-  // Helper para uso desde el toast (abre /chat en nueva tab también)
-  window.__cwTogglePanel = function(){
-    window.open('/chat', '_blank', 'noopener');
+  var panel = document.createElement('div');
+  panel.id = 'cw-panel';
+  panel.innerHTML = ''+
+    '<div id="cw-head"><span>\u{1F4AC} EOS Chat</span><a href="/chat" target="_blank">Abrir completo →</a></div>'+
+    '<div id="cw-body">'+
+      '<div id="cw-tlist"><div class="cw-empty">Cargando...</div></div>'+
+      '<div id="cw-conv">'+
+        '<div id="cw-conv-head"><button id="cw-back">←</button><span id="cw-conv-title"></span></div>'+
+        '<div id="cw-msgs"></div>'+
+        '<div id="cw-inp"><input id="cw-text" placeholder="Escribe..." autocomplete="off"><button id="cw-send">Enviar</button></div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(panel);
+
+  var ACTIVE_THREAD = null;
+  var THREADS = [];
+  var ME = (typeof __CW_ME !== 'undefined') ? __CW_ME : '';
+
+  fab.onclick = function(e){
+    e.stopPropagation();
+    if (panel.style.display === 'flex') {
+      panel.style.display = 'none';
+    } else {
+      panel.style.display = 'flex';
+      cargarThreads();
+    }
+  };
+  document.addEventListener('click', function(e){
+    if (panel.style.display === 'flex' && !panel.contains(e.target) && e.target !== fab) {
+      panel.style.display = 'none';
+    }
+  });
+
+  document.getElementById('cw-back').onclick = function(){
+    document.getElementById('cw-conv').style.display = 'none';
+    document.getElementById('cw-tlist').style.display = 'block';
+    ACTIVE_THREAD = null;
+    cargarThreads();
   };
 
-  // Polling cada 15s para detectar mensajes nuevos
+  document.getElementById('cw-send').onclick = enviarMensaje;
+  document.getElementById('cw-text').addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensaje(); }
+  });
+
+  function _esc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function _tiempoRel(iso){
+    if(!iso) return '';
+    var d = new Date(iso.replace(' ','T')+'Z');
+    var diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'ahora';
+    if (diff < 3600) return Math.floor(diff/60) + 'm';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h';
+    return Math.floor(diff/86400) + 'd';
+  }
+
+  async function cargarThreads(){
+    var box = document.getElementById('cw-tlist');
+    try {
+      var r = await fetch('/api/chat/threads');
+      var d = await r.json();
+      var threads = d.threads || [];
+      THREADS = threads;
+      if (!threads.length) {
+        box.innerHTML = '<div class="cw-empty">Sin conversaciones aún. Abre el chat completo para iniciar una.</div>';
+        return;
+      }
+      box.innerHTML = threads.map(function(t){
+        var unread = t.no_leidos || t.unread_count || 0;
+        var nm = t.nombre || 'Sin nombre';
+        var pv = t.ultimo_mensaje_preview || '';
+        var ts = _tiempoRel(t.ultimo_mensaje_en || t.creado_en);
+        return '<div class="cw-thread'+(unread>0?' unread':'')+'" data-id="'+t.id+'">'+
+          '<div style="flex:1;min-width:0">'+
+            '<div class="nm">'+_esc(nm)+(unread>0?'<span class="uc">'+unread+'</span>':'')+'</div>'+
+            (pv?'<div class="pv">'+_esc(pv.substring(0,80))+'</div>':'')+
+          '</div>'+
+          '<div class="ts">'+ts+'</div>'+
+        '</div>';
+      }).join('');
+      // Wire click
+      box.querySelectorAll('.cw-thread').forEach(function(el){
+        el.onclick = function(){ abrirConversacion(parseInt(el.dataset.id)); };
+      });
+      box.style.display = 'block';
+    } catch(e) {
+      box.innerHTML = '<div class="cw-empty">Error al cargar.</div>';
+    }
+  }
+
+  async function abrirConversacion(thread_id){
+    ACTIVE_THREAD = thread_id;
+    var t = (THREADS||[]).find(function(x){ return x.id === thread_id; });
+    document.getElementById('cw-conv-title').textContent = (t && t.nombre) || ('Hilo #'+thread_id);
+    document.getElementById('cw-tlist').style.display = 'none';
+    document.getElementById('cw-conv').style.display = 'flex';
+    var msgsBox = document.getElementById('cw-msgs');
+    msgsBox.innerHTML = '<div class="cw-empty">Cargando...</div>';
+    try {
+      var r = await fetch('/api/chat/threads/'+thread_id+'/messages?limit=40');
+      var d = await r.json();
+      var msgs = d.messages || [];
+      if (!msgs.length) {
+        msgsBox.innerHTML = '<div class="cw-empty">Sin mensajes — empieza la conversación.</div>';
+      } else {
+        msgsBox.innerHTML = msgs.map(function(m){
+          var own = (m.sender||'').toLowerCase() === (ME||'').toLowerCase();
+          return '<div class="cw-m '+(own?'own':'other')+'">'+
+            (own?'':'<div class="who">'+_esc(m.sender)+'</div>')+
+            _esc(m.contenido||'')+
+          '</div>';
+        }).join('');
+        msgsBox.scrollTop = msgsBox.scrollHeight;
+      }
+      // Marcar leído
+      fetch('/api/chat/threads/'+thread_id+'/leer', {method:'POST'}).catch(function(){});
+      checkUnread();
+    } catch(e) {
+      msgsBox.innerHTML = '<div class="cw-empty">Error.</div>';
+    }
+  }
+
+  async function enviarMensaje(){
+    if (!ACTIVE_THREAD) return;
+    var inp = document.getElementById('cw-text');
+    var txt = (inp.value || '').trim();
+    if (!txt) return;
+    inp.value = '';
+    try {
+      var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/messages', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({contenido: txt, tipo_mensaje: 'texto'})
+      });
+      if (r.ok) {
+        // Recargar mensajes
+        abrirConversacion(ACTIVE_THREAD);
+      }
+    } catch(e){}
+  }
+
+  // Polling unread + refresh cuando panel abierto
   var lastTotal = 0;
-  var soundOn = true;
   function checkUnread(){
     fetch('/api/chat/unread-summary').then(function(r){return r.json();}).then(function(d){
       var total = d.total || 0;
       var b = document.getElementById('cw-badge');
       if (b) {
-        if (total > 0) {
-          b.textContent = total > 99 ? '99+' : total;
-          b.style.display = 'flex';
-        } else {
-          b.style.display = 'none';
-        }
+        if (total > 0) { b.textContent = total > 99 ? '99+' : total; b.style.display = 'flex'; }
+        else b.style.display = 'none';
       }
-      // Toast cuando hay mensajes nuevos (no estamos viendo el chat ahora)
       if (total > lastTotal && lastTotal > 0) {
         var nuevo = total - lastTotal;
-        showToast('\\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
+        showToast('\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
                   'Click para abrir el chat');
-        if (soundOn) playPing();
+        try {
+          var ctx = new (window.AudioContext || window.webkitAudioContext)();
+          var osc = ctx.createOscillator(); var gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+          osc.start(); osc.stop(ctx.currentTime + 0.2);
+        } catch(e){}
       }
       lastTotal = total;
+      // Si panel abierto y no estoy en una conv, recargar lista
+      if (panel.style.display === 'flex' && !ACTIVE_THREAD) cargarThreads();
+      // Si en una conv, recargar sus mensajes
+      if (panel.style.display === 'flex' && ACTIVE_THREAD) {
+        fetch('/api/chat/threads/'+ACTIVE_THREAD+'/messages?limit=40').then(function(r){return r.json();}).then(function(d){
+          var msgs = d.messages || [];
+          var box = document.getElementById('cw-msgs');
+          if (!box) return;
+          var prevScroll = box.scrollTop;
+          var atBottom = (box.scrollHeight - prevScroll - box.clientHeight) < 50;
+          box.innerHTML = msgs.map(function(m){
+            var own = (m.sender||'').toLowerCase() === (ME||'').toLowerCase();
+            return '<div class="cw-m '+(own?'own':'other')+'">'+
+              (own?'':'<div class="who">'+_esc(m.sender)+'</div>')+_esc(m.contenido||'')+'</div>';
+          }).join('');
+          if (atBottom) box.scrollTop = box.scrollHeight;
+        }).catch(function(){});
+      }
     }).catch(function(){});
   }
 
   function showToast(titulo, sub){
-    // Quitar toast anterior si existe
     var prev = document.getElementById('cw-toast');
     if (prev) prev.remove();
     var t = document.createElement('div');
     t.id = 'cw-toast';
     t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+titulo+'</div><div style="font-size:11px;color:#cbd5e1">'+sub+'</div>';
     t.onclick = function(){
-      // Click en toast abre el panel desplegable (no pestaña nueva)
-      if (window.__cwTogglePanel) window.__cwTogglePanel(true);
+      if (panel.style.display !== 'flex') { panel.style.display = 'flex'; cargarThreads(); }
       t.remove();
     };
     document.body.appendChild(t);
     setTimeout(function(){ if (t.parentNode) t.remove(); }, 6000);
   }
 
-  function playPing(){
-    try {
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-      osc.start(); osc.stop(ctx.currentTime + 0.2);
-    } catch(e){}
-  }
-
-  // Primer check inmediato + polling 15s
   checkUnread();
-  setInterval(checkUnread, 15000);
+  setInterval(checkUnread, 12000);
 })();
 """
     resp = Response(js, mimetype="application/javascript")
