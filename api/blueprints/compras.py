@@ -2256,8 +2256,54 @@ def pagar_oc(numero_oc):
                    WHERE numero_oc=?""",
                 (nuevo_estado, usuario_actual, fecha_pago, medio,
                  comprobante_imagen, numero_oc))
-    # Sync solicitudes_compra estado → Pagada so it leaves the pending list
-    cur.execute("UPDATE solicitudes_compra SET estado='Pagada' WHERE numero_oc=? AND estado='Aprobada'", (numero_oc,))
+    # Sync solicitudes_compra estado → Pagada so it leaves the pending list.
+    # Sebastian (30-abr-2026): bulletproof fix — antes el WHERE filtraba por
+    # estado='Aprobada' y si la SOL estaba en otro estado (ej. Pendiente
+    # despues de un flujo abortado, o ya Pagada por sync previo) NO se
+    # actualizaba y quedaba pegada en la lista. Ahora actualizamos cualquier
+    # estado != 'Pagada' al pagar la OC vinculada.
+    cur.execute(
+        "UPDATE solicitudes_compra SET estado='Pagada' "
+        "WHERE numero_oc=? AND estado != 'Pagada'",
+        (numero_oc,)
+    )
+    # Push notif in-app al solicitante (Jefferson en este caso) para que sepa
+    # que su pago se procesó. Sebastian (30-abr-2026): "tampoco le estara
+    # notificando a el, revisa si pueden llegar a marketing o como seria".
+    try:
+        sol_notif = cur.execute(
+            "SELECT numero, solicitante, valor FROM solicitudes_compra "
+            "WHERE numero_oc=? LIMIT 1", (numero_oc,)
+        ).fetchone()
+        if sol_notif:
+            from blueprints.notif import push_notif
+            sol_num_n, solicitante_n, valor_n = sol_notif
+            destinatario = (solicitante_n or '').lower().strip()
+            if destinatario:
+                push_notif(
+                    destinatario, 'oc_estado',
+                    f'✅ Pago procesado: {sol_num_n}',
+                    body=f'OC {numero_oc} pagada por ${(valor_n or monto or 0):,.0f} · medio {medio}',
+                    link='/marketing',
+                    remitente=usuario_actual,
+                    importante=True
+                )
+                # Tambien notif a otros usuarios de marketing para visibilidad
+                # (Daniela suele ver, etc) — non-blocking, best effort.
+                try:
+                    from blueprints.marketing import MARKETING_USERS as _MK
+                except Exception:
+                    _MK = ()
+                for _u in (_MK or ()):
+                    if _u.lower() != destinatario:
+                        push_notif(_u.lower(), 'oc_estado',
+                                   f'💸 Pago procesado a {sol_num_n}',
+                                   body=f'OC {numero_oc} pagada · ${(valor_n or monto or 0):,.0f}',
+                                   link='/marketing', remitente=usuario_actual)
+    except Exception as _e:
+        __import__('logging').getLogger('compras').warning(
+            'push_notif Pagada SOL fallo OC %s: %s', numero_oc, _e
+        )
     # Sync marketing payment status:
     # 1. Si ya existe un row en pagos_influencers para esta OC → marcar Pagada
     #    SIEMPRE (sin importar categoria — la existencia del row es señal

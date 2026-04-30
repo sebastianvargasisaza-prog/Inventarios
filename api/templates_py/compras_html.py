@@ -2959,7 +2959,10 @@ async function loadSolicitudes(){
 }
 async function loadInfluencers(){
   try{
-    var r=await fetch('/api/solicitudes-compra?categoria=Influencer%2FMarketing+Digital');
+    // Sebastian (30-abr-2026): cache-bust con timestamp para evitar que el
+    // browser sirva una respuesta vieja despues de pagar.
+    var r=await fetch('/api/solicitudes-compra?categoria=Influencer%2FMarketing+Digital&_t='+Date.now(),
+      {cache:'no-store'});
     var d=await r.json();
     INFLUENCERS=d.solicitudes||[];
   }catch(e){ INFLUENCERS=[]; }
@@ -3302,8 +3305,10 @@ function renderInfluencers(){
         loadInfluencers();
         return;
       }
-      _toast('✅ Pagado: '+ocNum+' — Jefferson recibirá email', 1);
-      loadInfluencers();
+      _toast('✅ Pagado: '+ocNum+' — Jefferson recibirá email + notif in-app', 1);
+      // Sebastian (30-abr-2026): "le doy pagar no desaparece" — bulletproof
+      // refresh: esperar la recarga y forzar fresh fetch (no cache).
+      try { await loadInfluencers(); } catch(_){}
     } catch(e){ alert('Error de red: '+e.message); }
   };
 
