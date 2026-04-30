@@ -182,6 +182,7 @@ from blueprints.mfa import bp as mfa_bp
 from blueprints.notif import bp as notif_bp
 from blueprints.compliance import bp as compliance_bp
 from blueprints.comercial import bp as comercial_bp
+from blueprints.auto_plan import bp as auto_plan_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -208,6 +209,7 @@ app.register_blueprint(mfa_bp)
 app.register_blueprint(notif_bp)
 app.register_blueprint(compliance_bp)
 app.register_blueprint(comercial_bp)
+app.register_blueprint(auto_plan_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
@@ -226,6 +228,13 @@ if not app.config.get("TESTING"):
         _log.getLogger(__name__).info("marketing-metrics-loop arrancado")
     except Exception as _e:
         _log.getLogger(__name__).warning("metrics-loop NO arrancó: %s", _e)
+    # Sebastian (30-abr-2026): cron auto-plan diario 07:00 L-V.
+    # Solo arranca si AUTO_PLAN_CRON_ENABLED=1 en env (Render).
+    try:
+        from blueprints.auto_plan_jobs import iniciar_cron as _iniciar_auto_plan
+        _iniciar_auto_plan(app)
+    except Exception as _e:
+        _log.getLogger(__name__).warning("auto-plan-cron NO arrancó: %s", _e)
 
 
 

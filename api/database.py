@@ -3219,6 +3219,171 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE calidad_micro_resultados ADD COLUMN deadline_resultado TEXT",
         "CREATE INDEX IF NOT EXISTS idx_cmr_envasado ON calidad_micro_resultados(envasado_id)",
     ]),
+    (65, "planta auto-plan: configs SKU/MP/email/conteo + log runs", [
+        # Sebastian (30-abr-2026): "Vitamina C mensual, suero AH 90 días para
+        # 90 días, lotes típicos 90kg, MP mínimo 30d ideal 60d, envases mínimo
+        # 3 meses (China lead 180d)... usa toda tu capacidad para que quede
+        # perfecto, debe ser la herramienta más avanzada del mundo".
+        # L/M/V producir, Ma/Ju acondicionar/envasar/conteo cíclico, 7am L-V.
+
+        # 1) Config por SKU: cadencia + cobertura + merma + presentación default
+        """CREATE TABLE IF NOT EXISTS sku_planeacion_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL UNIQUE,
+            categoria TEXT,
+            cadencia_dias INTEGER,
+            cobertura_target_dias INTEGER NOT NULL DEFAULT 60,
+            cobertura_max_dias INTEGER NOT NULL DEFAULT 90,
+            cobertura_min_dias INTEGER NOT NULL DEFAULT 30,
+            merma_pct REAL NOT NULL DEFAULT 5.0,
+            prioridad INTEGER NOT NULL DEFAULT 5,
+            presentacion_default_id INTEGER,
+            activo INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            actualizado_en TEXT,
+            FOREIGN KEY (presentacion_default_id) REFERENCES producto_presentaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_spc_activo ON sku_planeacion_config(activo, prioridad)",
+
+        # 2) Config lead-time MP/envases por proveedor
+        """CREATE TABLE IF NOT EXISTS mp_lead_time_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id TEXT NOT NULL,
+            material_nombre TEXT,
+            proveedor_principal TEXT,
+            lead_time_dias INTEGER NOT NULL DEFAULT 14,
+            buffer_dias INTEGER NOT NULL DEFAULT 30,
+            cobertura_min_dias INTEGER NOT NULL DEFAULT 30,
+            cobertura_ideal_dias INTEGER NOT NULL DEFAULT 60,
+            origen TEXT NOT NULL DEFAULT 'local'
+                CHECK(origen IN ('local','nacional','china','usa','europa','otro')),
+            es_envase INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1,
+            actualizado_en TEXT,
+            UNIQUE(material_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mlt_origen ON mp_lead_time_config(origen, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_mlt_envase ON mp_lead_time_config(es_envase, activo)",
+
+        # 3) Emails por rol — la app envía notificaciones a estos correos
+        """CREATE TABLE IF NOT EXISTS email_destinatarios_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rol TEXT NOT NULL UNIQUE,
+            nombre TEXT,
+            email TEXT NOT NULL,
+            recibe_resumen_diario INTEGER NOT NULL DEFAULT 1,
+            recibe_alertas_criticas INTEGER NOT NULL DEFAULT 1,
+            recibe_compras_aprob INTEGER NOT NULL DEFAULT 0,
+            recibe_calidad INTEGER NOT NULL DEFAULT 0,
+            recibe_agenda_personal INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1,
+            actualizado_en TEXT
+        )""",
+        # Seed con roles esperados (email '' hasta que Sebastian los configure)
+        """INSERT OR IGNORE INTO email_destinatarios_config
+           (rol, nombre, email, recibe_resumen_diario, recibe_alertas_criticas, recibe_compras_aprob, recibe_calidad, recibe_agenda_personal) VALUES
+           ('ceo', 'Sebastián Vargas', '', 1, 1, 0, 0, 0),
+           ('gerencia_produccion', 'Alejandro', '', 1, 1, 0, 1, 0),
+           ('compras', 'Catalina', '', 1, 0, 1, 0, 0),
+           ('jefe_planta', 'Luis Enrique', '', 1, 1, 0, 0, 1),
+           ('operario_dispensacion', 'Mayerlin Rivera', '', 0, 0, 0, 0, 1),
+           ('operario_envasado', 'Sebastián Murillo', '', 0, 0, 0, 0, 1),
+           ('operario_acondicionamiento', 'Camilo García', '', 0, 0, 0, 0, 1),
+           ('operario_todero', 'Milton Sanabria', '', 0, 0, 0, 0, 1)""",
+
+        # 4) Log de ejecuciones del auto-plan (para debug + auditoría)
+        """CREATE TABLE IF NOT EXISTS auto_plan_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ejecutado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ejecutado_por TEXT NOT NULL DEFAULT 'cron',
+            tipo TEXT NOT NULL DEFAULT 'auto'
+                CHECK(tipo IN ('auto','manual','dry_run')),
+            horizonte_dias INTEGER NOT NULL DEFAULT 60,
+            producciones_creadas INTEGER NOT NULL DEFAULT 0,
+            compras_creadas INTEGER NOT NULL DEFAULT 0,
+            alertas_criticas INTEGER NOT NULL DEFAULT 0,
+            emails_enviados INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            payload_json TEXT,
+            duracion_ms INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_apr_fecha ON auto_plan_runs(ejecutado_at DESC)",
+
+        # 5) Conteo cíclico ABC (Sebastian: "días de asignación de inventario
+        # cíclico, si alguna duda de materia prima generar alerta revisar")
+        """CREATE TABLE IF NOT EXISTS conteo_ciclico_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id TEXT NOT NULL UNIQUE,
+            categoria_abc TEXT NOT NULL DEFAULT 'C'
+                CHECK(categoria_abc IN ('A','B','C')),
+            frecuencia_dias INTEGER NOT NULL DEFAULT 90,
+            ultimo_conteo_fecha TEXT,
+            ultimo_conteo_diferencia REAL,
+            requiere_validacion INTEGER NOT NULL DEFAULT 0,
+            actualizado_en TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS conteo_ciclico_calendario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            material_id TEXT NOT NULL,
+            material_nombre TEXT,
+            categoria_abc TEXT,
+            asignado_a TEXT,
+            stock_esperado_g REAL,
+            stock_real_g REAL,
+            diferencia_g REAL,
+            estado TEXT NOT NULL DEFAULT 'programado'
+                CHECK(estado IN ('programado','contado','con_diferencia','cerrado','reprogramado')),
+            iniciado_at TEXT,
+            terminado_at TEXT,
+            iniciado_por TEXT,
+            terminado_por TEXT,
+            notas TEXT,
+            generado_por TEXT NOT NULL DEFAULT 'auto',
+            UNIQUE(fecha, material_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ccc_fecha ON conteo_ciclico_calendario(fecha, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_ccc_material ON conteo_ciclico_calendario(material_id, fecha DESC)",
+
+        # 6) Seed inicial de cadencias por SKU según brief Sebastian + Alejandro.
+        # Vit C cada 30d, Suero AH cada 90d para 90d cobertura, lote típico 90kg.
+        # Otros sueros 60d, sólidos (blush/maxlash) 90d, limpiadores/hidratantes
+        # auto por umbral (sin cadencia fija).
+        """INSERT OR IGNORE INTO sku_planeacion_config
+           (producto_nombre, categoria, cadencia_dias, cobertura_target_dias, cobertura_max_dias, cobertura_min_dias, merma_pct, prioridad, notas) VALUES
+           ('SUERO ANTIOXIDANTE VITAMINA C+B3',     'suero_vit_c', 30, 60, 90, 30, 10.0, 1, 'Vit C oxida — cadencia mensual'),
+           ('SUERO DE VITAMINA C+ FORMULA NUEVA',   'suero_vit_c', 30, 60, 90, 30, 10.0, 1, 'Vit C oxida — cadencia mensual'),
+           ('SUERO ANTIOXIDANTE RENOVA C10',        'suero_vit_c', 30, 60, 90, 30, 10.0, 1, 'Vit C oxida — cadencia mensual'),
+           ('SUERO HIDRATANTE AH 1.5%',             'suero_ah', 90, 90, 120, 60, 5.0, 1, 'Lote típico 90kg, cobertura 90d'),
+           ('SUERO ILUMINADOR TRX',                 'suero', NULL, 60, 90, 30, 5.0, 3, 'Auto por umbral'),
+           ('SUERO MULTIPEPTIDOS',                  'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO TRIACTIVE RETINOID NAD+',        'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO DE NIACINAMIDA 5% FORMULA NUEVA','suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO DE RETINALDEHIDO 0.05%',         'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO AZ + B3',                        'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO EXFOLIANTE NOVA PHA',            'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('SUERO ILUMINADOR AHA+AH.',             'suero', NULL, 60, 90, 30, 5.0, 4, 'Lote pequeño 1kg — revisar'),
+           ('Suero Exfoliante BHA 2%',              'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('Suero RETINAL +',                      'suero', NULL, 60, 90, 30, 5.0, 3, NULL),
+           ('LIMPIADOR FACIAL BHA 2%',              'limpiador', NULL, 60, 90, 30, 3.0, 2, 'Auto por umbral'),
+           ('LIMPIADOR FACIAL HIDRATANTE',          'limpiador', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('LIMPIADOR ILUMINADOR ACIDO KOJICO',    'limpiador', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('EMULSION LIMPIADORA',                  'limpiador', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('EMULSION HIDRATANTE  B3+BHA',          'hidratante', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('EMULSION HIDRATANTE ANTIOXIDANTE',     'hidratante', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('EMULSION HIDRATANTE ILUMINADORA',      'hidratante', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('GEL HIDRATANTE',                       'hidratante', NULL, 60, 90, 30, 3.0, 2, NULL),
+           ('CREMA CORPORAL RENOVA BODY',           'crema_corporal', NULL, 60, 90, 30, 3.0, 3, NULL),
+           ('CREMA DE UREA',                        'crema_corporal', NULL, 60, 90, 30, 3.0, 3, NULL),
+           ('CONTORNO DE OJOS MULTIPEPTIDOS',       'contorno', 60, 60, 90, 30, 5.0, 2, NULL),
+           ('CONTORNO DE CAFEINA',                  'contorno', 60, 60, 90, 30, 5.0, 2, NULL),
+           ('CONTORNO DE OJOS RETINALDEHIDO 0.05%', 'contorno', 60, 60, 90, 30, 5.0, 2, NULL),
+           ('MAXLASH',                              'maxlash', 90, 90, 120, 60, 8.0, 4, 'Sólido — lote pequeño'),
+           ('MASCARILLA HIDRATANTE',                'mascarilla', NULL, 60, 90, 30, 3.0, 4, NULL),
+           ('AZ HIBRID CLEAR',                      'esencia', NULL, 60, 90, 30, 3.0, 3, NULL),
+           ('ESENCIA DE CENTELLA ASIATICA',         'esencia', NULL, 60, 90, 30, 3.0, 3, NULL),
+           ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
+    ]),
 ]
 
 
