@@ -473,6 +473,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </select>
       <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
       <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Detectar y corregir comprobantes que dicen Espagiria pero deberian decir ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:6px 10px;">&#x1F527; Fix legacy ANIMUS</button>
+      <button onclick="cleanupHistoricoImportado()" title="Marcar como Pagada los registros 'Pago histórico importado' que están atrapados en Pendiente" style="background:#dc2626;color:white;border:1px solid #b91c1c;font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:700;">&#x1F9F9; Limpiar histórico importado</button>
     </div>
   </div>
 
@@ -1948,6 +1949,37 @@ async function deleteCampana(id, nombre) {
 // ─── PAGOS REALIZADOS — vista cronológica para Marketing ───────────────────
 let _PAGOS_INF_CACHE = [];
 
+async function cleanupHistoricoImportado() {
+  try {
+    var r = await fetch('/api/marketing/pagos-historico-cleanup', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({})  // dry-run
+    });
+    var d = await r.json();
+    if (!r.ok) { alert('Error: '+(d.error||r.status)); return; }
+    if (!d.total) {
+      alert('✓ Sin pagos históricos atrapados en Pendiente.');
+      return;
+    }
+    var lista = d.candidatos.slice(0,15).map(function(x){
+      return '  · '+(x.influencer_nombre||'(sin nombre)')+' $'+Number(x.valor||0).toLocaleString('es-CO')+' ['+(x.fecha||'')+']';
+    }).join('\n');
+    if (d.total > 15) lista += '\n  ... y '+(d.total-15)+' más';
+    if (!confirm('Vas a marcar '+d.total+' pagos históricos como Pagada (dejar de aparecer en Pendientes):\n\n'+lista+'\n\n¿Confirmar?')) return;
+    var r2 = await fetch('/api/marketing/pagos-historico-cleanup', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirm: true})
+    });
+    var d2 = await r2.json();
+    if (d2.ok) {
+      alert('✓ '+d2.actualizados+' pagos históricos marcados como Pagada');
+      if (typeof loadPagosInfluencers === 'function') loadPagosInfluencers();
+    } else {
+      alert('Error: '+(d2.error||'?'));
+    }
+  } catch(e) { alert('Error de red: '+e.message); }
+}
+
 async function bulkRegenerarLegacy() {
   // Paso 1: dry_run para listar candidatos
   let drylist;
@@ -2221,19 +2253,18 @@ async function loadInfluencers() {
       ? `<span style="color:#94a3b8;">${r.banco}</span><br><span style="font-size:11px;color:#64748b;">${r.cuenta_bancaria||'\u2014'}</span>`
       : '<span style="color:#475569;">Sin datos</span>';
     let estadoBadge;
+    // Sebastian (30-abr-2026): badges compactos solo-\u00edcono con tooltip,
+    // antes el texto "Al d\u00eda" se romp\u00eda en 2 l\u00edneas en columnas estrechas.
+    // El color comunica el estado, hover muestra el detalle.
     if(r.tiene_pendiente) {
-      // Solicitud activa esperando que Sebastian autorice y pague
-      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Solicitud creada \u2014 esperando que Sebasti\u00e1n la autorice y pague">\u23f3 Esperando pago</span>';
+      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
     } else if(r.toca_pagar) {
-      // Ciclo de pago vencido y no hay solicitud activa \u2014 Jefferson debe SOLICITAR (no pagar)
       const dias = r.dias_desde_ultimo_pago || 0;
-      estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;" title="Hace '+dias+' dias del ultimo pago. Ciclo: '+r.ciclo_pago+' \u2014 click \ud83d\udcb8 Solicitar para crear cuenta de cobro">\ud83d\udccc Toca solicitar</span>';
+      estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Toca solicitar \u2014 hace '+dias+' d\u00edas del \u00faltimo pago (ciclo '+r.ciclo_pago+'). Click \ud83d\udcb8 Solicitar pago para crear cuenta de cobro">\ud83d\udccc</span>';
     } else if(r.pagos_count>0) {
-      // Tiene al menos un pago confirmado (OC pagada)
-      estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">\u2713 Al d\u00eda</span>';
+      estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Al d\u00eda \u2014 '+(r.pagos_count||0)+' pago(s) confirmado(s)">\u2713</span>';
     } else {
-      // Sin actividad relevante: no badge (decision Sebastian 2026-04-28)
-      estadoBadge = '';
+      estadoBadge = '<span style="color:#475569;font-size:11px;" title="Sin actividad de pago a\u00fan">\u2014</span>';
     }
     const ne = (r.nombre||'').replace(/'/g,"\\'");
     const be = (r.banco||'').replace(/'/g,"\\'");

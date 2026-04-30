@@ -3054,6 +3054,46 @@ def mkt_atribucion_influencers():
         pass
 
 
+@bp.route("/api/marketing/pagos-historico-cleanup", methods=["POST"])
+def mkt_pagos_historico_cleanup():
+    """Marca como Pagada los pagos_influencers con concepto 'Pago histórico
+    importado' que están en estado Pendiente. Sebastian (30-abr-2026):
+    "esos pendientes con histórico importado deberían organizarse" — eran
+    pagos legacy que se importaron desde Excel cuando arrancó el sistema,
+    pero quedaron en Pendiente artificialmente. Solo admin."""
+    u, err, code = _admin_only()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    confirm = body.get('confirm') is True
+    conn = _db(); c = conn.cursor()
+    try:
+        cands = c.execute("""SELECT id, influencer_nombre, valor, fecha, concepto
+                              FROM pagos_influencers
+                              WHERE estado='Pendiente'
+                                AND (LOWER(COALESCE(concepto,'')) LIKE '%histórico%'
+                                  OR LOWER(COALESCE(concepto,'')) LIKE '%historico%'
+                                  OR LOWER(COALESCE(concepto,'')) LIKE '%importado%')""").fetchall()
+        cands = [dict(r) if hasattr(r, 'keys') else
+                 {'id': r[0], 'influencer_nombre': r[1], 'valor': r[2],
+                  'fecha': r[3], 'concepto': r[4]} for r in cands]
+        if not confirm:
+            return jsonify({
+                'dry_run': True,
+                'total': len(cands),
+                'candidatos': cands,
+                'mensaje': f'{len(cands)} pagos histórico importado en Pendiente. POST {{"confirm":true}} para marcar Pagada.'
+            })
+        ids = [int(x['id']) for x in cands]
+        if ids:
+            placeholders = ','.join('?'*len(ids))
+            c.execute(f"UPDATE pagos_influencers SET estado='Pagada' WHERE id IN ({placeholders})", ids)
+            conn.commit()
+        return jsonify({'ok': True, 'actualizados': len(ids)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.route("/api/marketing/pagos-influencers", methods=["GET"])
 def mkt_pagos_influencers_list():
     """Lista cronológica de pagos a influencers con comprobante PDF asociado.
