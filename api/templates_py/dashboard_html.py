@@ -1285,6 +1285,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#127919; Tareas operativas <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span>
     </button>
+    <button id="prog-tab-plano" onclick="switchProgTab('plano')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#127981; Plano de planta
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5126,6 +5130,131 @@ function _renderProgramacion(d){
     <div id="tareas-op-lista"></div>
   </div><!-- /ptab-tareas -->
 
+  <!-- ── ptab-plano: vista interactiva del layout de planta post-INVIMA ── -->
+  <div id="ptab-plano" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#127981; Plano de planta &middot; <span style="font-size:13px;color:#64748b;font-weight:500">post-INVIMA abr-2026</span></h2>
+        <p style="color:#666;font-size:13px;margin:0">Click en una sala &rarr; ver producci&oacute;n asignada y cambiar estado (libre/sucia/limpiando).</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input type="date" id="plano-fecha" onchange="renderPlano()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <button onclick="renderPlano()" style="padding:6px 12px;background:#1a4a7a;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21BA; Refrescar</button>
+      </div>
+    </div>
+    <!-- Leyenda de estados -->
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569">
+      <span><span style="display:inline-block;width:14px;height:14px;background:#86efac;border:1px solid #16a34a;vertical-align:middle;margin-right:4px"></span>Libre</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#fde68a;border:1px solid #ca8a04;vertical-align:middle;margin-right:4px"></span>Ocupada (con producción asignada)</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#fca5a5;border:1px solid #b91c1c;vertical-align:middle;margin-right:4px"></span>Sucia</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#93c5fd;border:1px solid #1d4ed8;vertical-align:middle;margin-right:4px"></span>Limpiando</span>
+      <span><span style="display:inline-block;width:14px;height:14px;background:#e5e5e5;border:1px solid #94a3b8;vertical-align:middle;margin-right:4px"></span>No asignable (apoyo)</span>
+    </div>
+    <!-- SVG dibujado a mano basado en el plano real ASG-PRO-006-A02 -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:18px;overflow-x:auto">
+      <svg id="plano-svg" viewBox="0 0 1000 600" style="width:100%;max-width:1000px;height:auto;font-family:Segoe UI,sans-serif">
+        <!-- Fila superior: dispensación + envasados -->
+        <g class="rect-area" data-codigo="DISP">
+          <rect x="20" y="20" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="110" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2937">Zona Dispensación</text>
+          <text x="110" y="75" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · no asignable)</text>
+        </g>
+        <g class="rect-area" data-codigo="ENV1" style="cursor:pointer">
+          <rect class="r" x="220" y="20" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="310" y="50" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Envasado 1</text>
+          <text x="310" y="70" text-anchor="middle" font-size="10" fill="#475569">solo envasado</text>
+          <text class="status" x="310" y="125" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <g class="rect-area" data-codigo="PROD4" style="cursor:pointer">
+          <rect class="r" x="420" y="20" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="510" y="50" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 4</text>
+          <text x="510" y="70" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="510" y="125" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <g class="rect-area" data-codigo="PIP">
+          <rect x="620" y="20" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="710" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2937">Producto en Proceso</text>
+          <text x="710" y="75" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · no asignable)</text>
+        </g>
+        <g class="rect-area" data-codigo="ACOND">
+          <rect x="820" y="20" width="160" height="240" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="900" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Acondicionamiento</text>
+          <text x="900" y="140" text-anchor="middle" font-size="11" fill="#475569">PT</text>
+          <text x="900" y="160" text-anchor="middle" font-size="10" fill="#64748b">(apoyo)</text>
+        </g>
+        <!-- Fila central: almacenamiento MP + producción 1, 2, 3 + control calidad -->
+        <g class="rect-area" data-codigo="ALMP">
+          <rect x="20" y="160" width="180" height="180" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="110" y="240" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Almacenamiento</text>
+          <text x="110" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Materia Prima</text>
+          <text x="110" y="280" text-anchor="middle" font-size="10" fill="#64748b">(bodega)</text>
+        </g>
+        <g class="rect-area" data-codigo="PROD1" style="cursor:pointer">
+          <rect class="r" x="220" y="160" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="310" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 1</text>
+          <text x="310" y="210" text-anchor="middle" font-size="10" fill="#7c2d12">⚠ ALCOHOLES</text>
+          <text x="310" y="225" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="310" y="265" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <g class="rect-area" data-codigo="PROD2" style="cursor:pointer">
+          <rect class="r" x="420" y="160" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="510" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 2</text>
+          <text x="510" y="210" text-anchor="middle" font-size="10" fill="#0c4a6e">🔥 marmita 100ml</text>
+          <text x="510" y="225" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="510" y="265" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <g class="rect-area" data-codigo="QC">
+          <rect x="620" y="160" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="710" y="215" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Control de Calidad</text>
+          <text x="710" y="235" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · QC)</text>
+        </g>
+        <!-- Fila inferior: producción 3 + almacenamiento PT -->
+        <g class="rect-area" data-codigo="PROD3" style="cursor:pointer">
+          <rect class="r" x="220" y="300" width="380" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="410" y="335" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Producción 3</text>
+          <text x="410" y="358" text-anchor="middle" font-size="11" fill="#0c4a6e">🔥 marmita 250ml &middot; prod + env</text>
+          <text class="status" x="410" y="402" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <g class="rect-area" data-codigo="ALMPT">
+          <rect x="620" y="300" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="710" y="355" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Almacenamiento PT</text>
+          <text x="710" y="375" text-anchor="middle" font-size="10" fill="#64748b">(bodega)</text>
+        </g>
+        <!-- Servicios (parte de abajo) -->
+        <g>
+          <rect x="20" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="80" y="478" text-anchor="middle" font-size="11" fill="#475569">Lavado utensilios</text>
+        </g>
+        <g>
+          <rect x="160" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="220" y="478" text-anchor="middle" font-size="11" fill="#475569">Esclusas</text>
+        </g>
+        <g>
+          <rect x="300" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="360" y="478" text-anchor="middle" font-size="11" fill="#475569">Comedor</text>
+        </g>
+        <g>
+          <rect x="440" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="500" y="478" text-anchor="middle" font-size="11" fill="#475569">Cocineta</text>
+        </g>
+        <g>
+          <rect x="580" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="640" y="478" text-anchor="middle" font-size="11" fill="#475569">Lockers + Baños</text>
+        </g>
+        <g>
+          <rect x="720" y="450" width="200" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
+          <text x="820" y="478" text-anchor="middle" font-size="11" fill="#475569">Recepción material envase</text>
+        </g>
+        <!-- Leyenda dentro del SVG -->
+        <text x="500" y="540" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">Salas asignables: PROD1 PROD2 PROD3 PROD4 ENV1 — click para detalle</text>
+      </svg>
+    </div>
+    <!-- Panel detalle al lado: producciones del día por sala -->
+    <div id="plano-detalle" style="margin-top:18px;display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px"></div>
+    <!-- Panel rotación operarios (Capa 4 visible aquí) -->
+    <div id="plano-rotacion" style="margin-top:18px"></div>
+  </div><!-- /ptab-plano -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6199,23 +6328,27 @@ async function ckMarcar(itemId, estado){
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   function switchProgTab(tab){
     try {
-      var el_c  = document.getElementById('ptab-centro');
-      var el_p  = document.getElementById('ptab-plan');
-      var el_ck = document.getElementById('ptab-checklist');
-      var el_tk = document.getElementById('ptab-tareas');
+      var el_c   = document.getElementById('ptab-centro');
+      var el_p   = document.getElementById('ptab-plan');
+      var el_ck  = document.getElementById('ptab-checklist');
+      var el_tk  = document.getElementById('ptab-tareas');
+      var el_pln = document.getElementById('ptab-plano');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
-      el_c.style.display = tab==='centro' ? 'block' : 'none';
-      el_p.style.display = tab==='plan'   ? 'block' : 'none';
-      if(el_ck) el_ck.style.display = tab==='checklist' ? 'block' : 'none';
-      if(el_tk) el_tk.style.display = tab==='tareas' ? 'block' : 'none';
-      var bc  = document.getElementById('prog-tab-centro');
-      var bp  = document.getElementById('prog-tab-plan');
-      var bck = document.getElementById('prog-tab-checklist');
-      var btk = document.getElementById('prog-tab-tareas');
-      if(bc) { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
-      if(bp) { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
-      if(bck){ bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
-      if(btk){ btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
+      el_c.style.display  = tab==='centro' ? 'block' : 'none';
+      el_p.style.display  = tab==='plan'   ? 'block' : 'none';
+      if(el_ck)  el_ck.style.display  = tab==='checklist' ? 'block' : 'none';
+      if(el_tk)  el_tk.style.display  = tab==='tareas'    ? 'block' : 'none';
+      if(el_pln) el_pln.style.display = tab==='plano'     ? 'block' : 'none';
+      var bc   = document.getElementById('prog-tab-centro');
+      var bp   = document.getElementById('prog-tab-plan');
+      var bck  = document.getElementById('prog-tab-checklist');
+      var btk  = document.getElementById('prog-tab-tareas');
+      var bpln = document.getElementById('prog-tab-plano');
+      if(bc)  { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
+      if(bp)  { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
+      if(bck) { bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
+      if(btk) { btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
+      if(bpln){ bpln.style.background= tab==='plano'  ? '#1a4a7a' : '#e2e8f0'; bpln.style.color= tab==='plano'  ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -6223,19 +6356,166 @@ async function ckMarcar(itemId, estado){
       if(tab==='checklist'){
         if(el_ck) el_ck.scrollIntoView({behavior:'smooth', block:'start'});
         cargarChecklistResumen();
-        // Iniciar auto-refresh con el valor del select (default 60s)
         var sel = document.getElementById('ck-autorefresh');
         if(sel && typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(sel.value);
       } else {
-        // Detener auto-refresh al salir del tab checklist
         if(typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(0);
       }
       if(tab==='tareas'){
         if(el_tk) el_tk.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarTareasOperativas==='function') cargarTareasOperativas();
       }
+      if(tab==='plano'){
+        if(el_pln) el_pln.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof renderPlano==='function') renderPlano();
+      }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
+    }
+  }
+
+  // ── Plano interactivo de planta (Capa 3) + rotacion (Capa 4) ────────────
+  async function renderPlano(){
+    var fechaInp = document.getElementById('plano-fecha');
+    if(!fechaInp.value){ fechaInp.value = new Date().toISOString().slice(0,10); }
+    var fecha = fechaInp.value;
+    var qs = '?fecha=' + encodeURIComponent(fecha);
+    try{
+      var r = await fetch('/api/planta/areas' + qs);
+      var d = await r.json();
+      var areas = d.areas || [];
+      // Mapa codigo → datos
+      var mapa = {};
+      areas.forEach(function(a){ mapa[a.codigo] = a; });
+      // Pintar cada rect según estado
+      var ESTADO_COLORS = {
+        libre:      {fill:'#86efac', stroke:'#16a34a', txt:'#16a34a'},
+        ocupada:    {fill:'#fde68a', stroke:'#ca8a04', txt:'#92400e'},
+        sucia:      {fill:'#fca5a5', stroke:'#b91c1c', txt:'#991b1b'},
+        limpiando:  {fill:'#93c5fd', stroke:'#1d4ed8', txt:'#1e3a8a'}
+      };
+      ['PROD1','PROD2','PROD3','PROD4','ENV1'].forEach(function(cod){
+        var g = document.querySelector('[data-codigo="'+cod+'"]');
+        if(!g) return;
+        var rect = g.querySelector('rect.r');
+        var lbl  = g.querySelector('text.status');
+        var a    = mapa[cod];
+        if(!a) return;
+        // Si tiene producciones asignadas hoy, override estado a 'ocupada' visualmente
+        var estadoVisual = a.estado;
+        if(a.ocupada_por && a.ocupada_por.length) estadoVisual = 'ocupada';
+        var col = ESTADO_COLORS[estadoVisual] || ESTADO_COLORS.libre;
+        rect.setAttribute('fill', col.fill);
+        rect.setAttribute('stroke', col.stroke);
+        if(lbl){
+          var txt = estadoVisual.toUpperCase();
+          if(a.ocupada_por && a.ocupada_por.length){
+            txt = a.ocupada_por.map(function(o){ return o.producto + (o.lotes>1?' x'+o.lotes:''); }).join(' · ');
+          }
+          lbl.textContent = txt;
+          lbl.setAttribute('fill', col.txt);
+        }
+      });
+      // Click handler — abre detalle al lado
+      document.querySelectorAll('[data-codigo]').forEach(function(g){
+        g.onclick = function(){
+          var cod = g.getAttribute('data-codigo');
+          mostrarDetalleSala(mapa[cod], fecha);
+        };
+      });
+      // También cargar rotación operarios (Capa 4)
+      cargarRotacionOperarios();
+    }catch(e){
+      console.error('renderPlano error:', e);
+      _toast('Error al cargar plano: '+e.message, 0);
+    }
+  }
+
+  function mostrarDetalleSala(a, fecha){
+    var box = document.getElementById('plano-detalle');
+    if(!a){ box.style.display='none'; return; }
+    box.style.display = 'block';
+    var caps = [];
+    if(a.puede_producir) caps.push('Producción');
+    if(a.puede_envasar)  caps.push('Envasado');
+    if(a.marmita_ml)     caps.push('Marmita ' + a.marmita_ml + ' ml');
+    if(a.especial)       caps.push('Especial: ' + a.especial);
+    var ocupHTML = '';
+    if(a.ocupada_por && a.ocupada_por.length){
+      ocupHTML = '<div style="margin-top:10px"><b>Producciones de '+fecha+':</b><ul style="margin:6px 0 0 18px;font-size:13px">' +
+        a.ocupada_por.map(function(o){
+          return '<li>'+o.producto+' &middot; '+o.lotes+' lote(s) &middot; '+(o.kg||0)+' kg</li>';
+        }).join('') + '</ul></div>';
+    } else {
+      ocupHTML = '<div style="margin-top:10px;color:#16a34a;font-size:13px">✓ Sin producción asignada para '+fecha+'</div>';
+    }
+    box.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
+        '<h3 style="margin:0;color:#1a4a7a">🏭 '+a.nombre+' <span style="font-size:12px;color:#64748b;font-weight:500">('+a.codigo+')</span></h3>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+          ['libre','sucia','limpiando','ocupada'].map(function(est){
+            var current = a.estado===est;
+            return '<button onclick="cambiarEstadoSala('+a.id+',\\''+est+'\\')" style="padding:5px 10px;border:1px solid '+(current?'#1a4a7a':'#cbd5e1')+';background:'+(current?'#1a4a7a':'#fff')+';color:'+(current?'#fff':'#475569')+';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase">'+est+'</button>';
+          }).join('') +
+        '</div>'+
+      '</div>'+
+      '<div style="font-size:13px;color:#475569;margin-top:8px">'+caps.join(' · ')+'</div>'+
+      ocupHTML;
+  }
+
+  async function cambiarEstadoSala(id, nuevo){
+    try{
+      var r = await fetch('/api/planta/areas/'+id+'/estado', {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({estado: nuevo})
+      });
+      var d = await r.json();
+      if(d.ok){
+        _toast('Sala actualizada: '+nuevo, 1);
+        renderPlano();
+      } else {
+        _toast('Error: '+(d.error||'desconocido'), 0);
+      }
+    }catch(e){ _toast('Error de red', 0); }
+  }
+
+  // Capa 4: rotación operarios — pinta panel debajo del plano
+  async function cargarRotacionOperarios(){
+    var box = document.getElementById('plano-rotacion');
+    if(!box) return;
+    try{
+      var r = await fetch('/api/planta/operarios/historial');
+      var d = await r.json();
+      var ops = d.operarios || [];
+      if(!ops.length){
+        box.innerHTML = '';
+        return;
+      }
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px">' +
+        '<h3 style="margin:0 0 10px;color:#1a4a7a;font-size:15px">👥 Rotación de operarios <span style="font-size:11px;color:#64748b;font-weight:500">(últimos '+(d.ventana_dias||14)+' días)</span></h3>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead>' +
+          '<tr style="text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0">' +
+            '<th style="padding:6px 4px">Operario</th>' +
+            '<th style="padding:6px 4px;text-align:center">Disp</th>' +
+            '<th style="padding:6px 4px;text-align:center">Elab</th>' +
+            '<th style="padding:6px 4px;text-align:center">Env</th>' +
+            '<th style="padding:6px 4px;text-align:center">Acon</th>' +
+            '<th style="padding:6px 4px">Sugerencia</th>' +
+          '</tr></thead><tbody>';
+      ops.forEach(function(op){
+        var f = op.fases || {};
+        var rotar = op.sugerir_rotar
+          ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;font-weight:700">⚠ rotar — '+op.dias_en_fase+' días en '+op.fase_acumulada+'</span>'
+          : '<span style="color:#16a34a">✓ ok</span>';
+        function _cell(n){ return '<td style="padding:6px 4px;text-align:center;color:'+(n?'#0f172a':'#cbd5e1')+';font-weight:'+(n?'700':'400')+'">'+(n||0)+'</td>'; }
+        html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 4px;font-weight:600">'+op.nombre+' '+(op.apellido||'')+'</td>' +
+          _cell(f.dispensacion) + _cell(f.elaboracion) + _cell(f.envasado) + _cell(f.acondicionamiento) +
+          '<td style="padding:6px 4px">'+rotar+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      box.innerHTML = html;
+    }catch(e){
+      box.innerHTML = '';
     }
   }
 
