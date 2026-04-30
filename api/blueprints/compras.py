@@ -193,43 +193,129 @@ def _notificar_solicitante_email(dest_email, asunto, body_html):
 
 @bp.route('/api/dashboard-stats')
 def dashboard_stats():
+    """Dashboard stats. Sebastian (30-abr-2026): los paneles 'Vencimientos
+    próximos', 'Top 5 MPs' y 'Estado general de lotes' aparecían vacíos —
+    el cálculo dependía del campo estado_lote que NO se mantiene
+    automáticamente. Fix: calcular los estados dinámicamente desde
+    fecha_vencimiento, y soportar variantes de tipo de movimiento.
+    """
     from datetime import date
     hoy = date.today().isoformat()
     conn = get_db(); c = conn.cursor()
 
-    # Vencimientos por mes (próximos 6 meses)
+    # Soporta 'Entrada', 'Ingreso', 'Ajuste', 'Devolucion' como entradas;
+    # 'Salida', 'Consumo' como salidas.
+    SUMA_STOCK = (
+        "SUM(CASE "
+        "WHEN tipo IN ('Entrada','Ingreso','Ajuste','Devolucion','Devolución') THEN cantidad "
+        "WHEN tipo IN ('Salida','Consumo') THEN -cantidad "
+        "ELSE 0 END)"
+    )
+    FILTRO_ENTRADA = "tipo IN ('Entrada','Ingreso','Ajuste','Devolucion','Devolución')"
+
+    # ── Vencimientos próximos 6 meses ─────────────────────────────────────
+    # Calculo a nivel LOTE — agrupar entradas por (material_id, lote) y
+    # restar consumos, mostrar solo lotes con stock_restante > 0 con
+    # fecha_vencimiento en próximos 180 dias.
     venc_por_mes = {}
-    c.execute("""SELECT fecha_vencimiento, COUNT(*) as n, SUM(cantidad) as total_g
-                 FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL
-                 AND fecha_vencimiento >= ? AND fecha_vencimiento <= date(?, '+180 days')
-                 GROUP BY substr(fecha_vencimiento,1,7) ORDER BY fecha_vencimiento""", (hoy, hoy))
-    for row in c.fetchall():
-        if row[0]:
-            mes = str(row[0])[:7]
-            venc_por_mes[mes] = {'lotes': row[1], 'kg': round((row[2] or 0)/1000, 1)}
+    try:
+        c.execute(f"""
+            WITH lote_stock AS (
+              SELECT material_id, lote,
+                     MIN(fecha_vencimiento) as venc,
+                     {SUMA_STOCK} as stock_restante_g
+              FROM movimientos
+              WHERE lote IS NOT NULL AND lote != ''
+              GROUP BY material_id, lote
+              HAVING stock_restante_g > 0
+            )
+            SELECT venc, COUNT(*) as n, SUM(stock_restante_g) as total_g
+            FROM lote_stock
+            WHERE venc IS NOT NULL AND venc >= ? AND venc <= date(?, '+180 days')
+            GROUP BY substr(venc, 1, 7)
+            ORDER BY venc
+        """, (hoy, hoy))
+        for row in c.fetchall():
+            if row[0]:
+                mes = str(row[0])[:7]
+                venc_por_mes[mes] = {'lotes': row[1], 'kg': round((row[2] or 0)/1000, 1)}
+    except Exception as e:
+        # Fallback simple si la query agrupada falla
+        try:
+            c.execute(f"""
+                SELECT fecha_vencimiento, COUNT(*) as n, SUM(cantidad) as total_g
+                FROM movimientos
+                WHERE {FILTRO_ENTRADA}
+                  AND fecha_vencimiento IS NOT NULL
+                  AND fecha_vencimiento >= ?
+                  AND fecha_vencimiento <= date(?, '+180 days')
+                GROUP BY substr(fecha_vencimiento, 1, 7)
+            """, (hoy, hoy))
+            for row in c.fetchall():
+                if row[0]:
+                    mes = str(row[0])[:7]
+                    venc_por_mes[mes] = {'lotes': row[1], 'kg': round((row[2] or 0)/1000, 1)}
+        except Exception:
+            pass
 
-    # Alertas de reabastecimiento: MPs bajo mínimo
-    c.execute("""SELECT COUNT(*) FROM maestro_mps m
-                 LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
-                            FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
-                 WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo""")
-    mps_bajo_minimo = c.fetchone()[0] or 0
+    # ── Alertas reabastecimiento: MPs bajo mínimo ─────────────────────────
+    try:
+        c.execute(f"""SELECT COUNT(*) FROM maestro_mps m
+                     LEFT JOIN (SELECT material_id, {SUMA_STOCK} as stock
+                                FROM movimientos GROUP BY material_id) s
+                       ON m.codigo_mp=s.material_id
+                     WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo""")
+        mps_bajo_minimo = c.fetchone()[0] or 0
+    except Exception:
+        mps_bajo_minimo = 0
 
-    # Lotes vencidos / críticos / próximos
-    c.execute("""SELECT estado_lote, COUNT(*) FROM movimientos WHERE tipo='Entrada' AND estado_lote IN ('VENCIDO','CRITICO','PROXIMO')
-                 GROUP BY estado_lote""")
-    estados = {r[0]: r[1] for r in c.fetchall()}
+    # ── Estado general de lotes — CALCULADO desde fecha_vencimiento ──────
+    # No depender de estado_lote (campo desactualizado). Calcular por:
+    #   VENCIDO: fecha_vencimiento < hoy AND stock > 0
+    #   CRITICO: 0-30 dias
+    #   PROXIMO: 31-90 dias
+    estados = {'VENCIDO': 0, 'CRITICO': 0, 'PROXIMO': 0}
+    try:
+        c.execute(f"""
+            WITH lote_stock AS (
+              SELECT material_id, lote, MIN(fecha_vencimiento) as venc,
+                     {SUMA_STOCK} as stock_g
+              FROM movimientos
+              WHERE lote IS NOT NULL AND lote != '' AND fecha_vencimiento IS NOT NULL
+              GROUP BY material_id, lote
+              HAVING stock_g > 0
+            )
+            SELECT
+              SUM(CASE WHEN venc < date('now') THEN 1 ELSE 0 END) as vencidos,
+              SUM(CASE WHEN venc >= date('now') AND venc <= date('now','+30 days') THEN 1 ELSE 0 END) as criticos,
+              SUM(CASE WHEN venc > date('now','+30 days') AND venc <= date('now','+90 days') THEN 1 ELSE 0 END) as proximos
+            FROM lote_stock
+        """)
+        r = c.fetchone()
+        if r:
+            estados = {'VENCIDO': r[0] or 0, 'CRITICO': r[1] or 0, 'PROXIMO': r[2] or 0}
+    except Exception:
+        pass
 
-    # Top 5 MPs por stock actual
-    c.execute("""SELECT material_id, material_nombre,
-                        SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
-                 FROM movimientos GROUP BY material_id, material_nombre
-                 HAVING stock > 0 ORDER BY stock DESC LIMIT 5""")
-    top_stock = [{'codigo': r[0], 'nombre': r[1], 'kg': round(r[2]/1000, 1)} for r in c.fetchall()]
+    # ── Top 5 MPs por stock actual ────────────────────────────────────────
+    top_stock = []
+    try:
+        c.execute(f"""SELECT material_id, material_nombre, {SUMA_STOCK} as stock
+                     FROM movimientos
+                     GROUP BY material_id, material_nombre
+                     HAVING stock > 0
+                     ORDER BY stock DESC LIMIT 5""")
+        top_stock = [{'codigo': r[0], 'nombre': r[1], 'kg': round((r[2] or 0)/1000, 1)}
+                     for r in c.fetchall()]
+    except Exception:
+        pass
 
-    # Stock total en kg
-    c.execute("SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos")
-    stock_total_g = c.fetchone()[0] or 0
+    # ── Stock total en kg ─────────────────────────────────────────────────
+    try:
+        c.execute(f"SELECT {SUMA_STOCK} FROM movimientos")
+        stock_total_g = c.fetchone()[0] or 0
+    except Exception:
+        stock_total_g = 0
 
     return jsonify({
         'vencimientos_por_mes': venc_por_mes,

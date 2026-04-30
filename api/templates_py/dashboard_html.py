@@ -5150,6 +5150,9 @@ function _renderProgramacion(d){
     <!-- KPIs en vivo -->
     <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- KPIs actividades operarios (turnos, horas) -->
+    <div id="cm-act-kpis" style="margin-bottom:14px"></div>
+
     <!-- Leyenda de estados -->
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:#475569">
       <span><span style="display:inline-block;width:14px;height:14px;background:#86efac;border:1px solid #16a34a;vertical-align:middle;margin-right:4px"></span>Libre</span>
@@ -6703,6 +6706,7 @@ async function ckMarcar(itemId, estado){
       cargarTimelineEventos(d.eventos_recientes || []);
       cargarRotacionOperarios();
       cargarTablaOperarios();
+      cargarKpisActividades();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
@@ -7090,6 +7094,57 @@ async function ckMarcar(itemId, estado){
       else cmStopAutoRefresh();
     });}
   });
+
+  // KPIs de actividades (turnos, horas por operario, por tipo)
+  async function cargarKpisActividades(){
+    var box = document.getElementById('cm-act-kpis');
+    if(!box) return;
+    try{
+      var r = await fetch('/api/planta/actividades/kpis');
+      var d = await r.json();
+      var op = d.por_operario || [];
+      var tp = d.por_tipo || [];
+      var html = '';
+      // Card resumen turnos activos ahora
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">' +
+          '<b style="color:#1a4a7a;font-size:14px">⏱ Turnos operarios</b>' +
+          '<span style="font-size:11px;color:#64748b">📅 ' + (d.desde||'') + ' → ' + (d.hasta||'') + ' · Activos ahora: <b style="color:'+(d.turnos_activos_ahora>0?'#ca8a04':'#94a3b8')+'">' + (d.turnos_activos_ahora||0) + '</b></span>' +
+        '</div>';
+      if(op.length){
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px"><div>';
+        html += '<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Por operario</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+        op.forEach(function(o){
+          var hrs = o.horas;
+          var bar = Math.min(100, Math.round(hrs * 5));  // visual rough scale
+          html += '<tr style="border-bottom:1px solid #f1f5f9">' +
+            '<td style="padding:4px 0;font-weight:600">'+_escHTML(o.operario)+'</td>' +
+            '<td style="padding:4px 0;color:#64748b;text-align:right">'+o.turnos+' turno'+(o.turnos===1?'':'s')+'</td>' +
+            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#0f766e">'+hrs+'h</td>' +
+            '</tr>';
+        });
+        html += '</table></div><div>';
+        html += '<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Por tipo de actividad</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+        var iconos = {produccion:'🏭',dispensacion:'⚖',envasado:'📦',acondicionamiento:'🎁',conteo_ciclico:'📊',limpieza:'🧹',mantenimiento:'🔧',otro:'📋'};
+        tp.forEach(function(t){
+          html += '<tr style="border-bottom:1px solid #f1f5f9">' +
+            '<td style="padding:4px 0">'+(iconos[t.tipo]||'📋')+' '+t.tipo+'</td>' +
+            '<td style="padding:4px 0;color:#64748b;text-align:right">'+t.turnos+' turno'+(t.turnos===1?'':'s')+'</td>' +
+            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#0f766e">'+t.horas+'h</td>' +
+            '</tr>';
+        });
+        html += '</table></div></div>';
+      } else {
+        html += '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px;font-style:italic">' +
+          'Aún sin turnos cerrados en los últimos 30 días — inicia un turno desde cualquier sala para empezar a medir.' +
+          '</div>';
+      }
+      html += '</div>';
+      box.innerHTML = html;
+    }catch(e){ box.innerHTML = ''; }
+  }
 
   // Capa 4: rotación operarios — pinta panel debajo del plano
   async function cargarRotacionOperarios(){
