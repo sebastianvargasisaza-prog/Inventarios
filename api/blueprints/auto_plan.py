@@ -1192,6 +1192,236 @@ def detectar_cambios_demanda():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# APRENDIZAJE DEL HISTÓRICO — el sistema infiere cadencias reales
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "en el calendario aparece lo que ya fabricamos
+# es decir esos podrías usarlo como universo para el futuro y arrancar
+# colocando lo que no hemos producido".
+#
+# Lee TODAS las producciones histórias (produccion_programada estado
+# completado/en_proceso + Google Calendar) y deriva:
+#   - Cadencia real (mediana de intervalos entre lotes)
+#   - Última fecha de producción
+#   - Productos NUEVOS sin histórico → arrancan como "primer lote"
+
+def _calcular_cadencia_real(fechas):
+    """Dada una lista de fechas (date objects), calcula intervalos en días
+    y devuelve la mediana."""
+    if len(fechas) < 2:
+        return None
+    fechas_ordenadas = sorted(fechas)
+    intervalos = []
+    for i in range(1, len(fechas_ordenadas)):
+        delta = (fechas_ordenadas[i] - fechas_ordenadas[i-1]).days
+        if delta > 0:
+            intervalos.append(delta)
+    if not intervalos:
+        return None
+    intervalos.sort()
+    n = len(intervalos)
+    if n % 2 == 0:
+        return (intervalos[n//2 - 1] + intervalos[n//2]) // 2
+    return intervalos[n // 2]
+
+
+@bp.route('/api/auto-plan/aprender-historico', methods=['GET'])
+def aprender_historico():
+    """Analiza producciones histórias (BD + Google Calendar) y deriva
+    cadencias reales. Devuelve comparación con la config actual.
+
+    Querystring: ?meses_atras=12 (default — cuánto histórico considerar)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        meses_atras = int(request.args.get('meses_atras', 12))
+    except Exception:
+        meses_atras = 12
+
+    conn = get_db(); c = conn.cursor()
+    fecha_desde = (datetime.now() - timedelta(days=meses_atras * 30)).date()
+
+    # 1. Producciones desde produccion_programada (BD interna)
+    rows_bd = c.execute("""
+        SELECT producto, fecha_programada, lotes, estado, cantidad_kg
+        FROM produccion_programada
+        WHERE date(fecha_programada) >= ?
+          AND estado IN ('completado','en_proceso','pendiente')
+          AND producto IS NOT NULL
+        ORDER BY producto, fecha_programada
+    """, (fecha_desde.isoformat(),)).fetchall()
+
+    # Acumular fechas por producto
+    fechas_por_producto = {}
+    for prod, fecha, lotes, estado, kg in rows_bd:
+        try:
+            f = datetime.strptime(fecha[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        key = (prod or '').strip().upper()
+        if not key:
+            continue
+        fechas_por_producto.setdefault(key, {'nombre_real': prod, 'fechas': [],
+                                              'lotes_total': 0, 'kg_total': 0})
+        fechas_por_producto[key]['fechas'].append(f)
+        fechas_por_producto[key]['lotes_total'] += (lotes or 1)
+        fechas_por_producto[key]['kg_total'] += (kg or 0)
+
+    # 2. Producciones desde Google Calendar (eventos con producto en el título)
+    try:
+        from blueprints.programacion import _fetch_calendar_events
+        cal_events = _fetch_calendar_events(days_ahead=0) or []
+        # _fetch_calendar_events devuelve eventos futuros, pero podemos
+        # ampliar para incluir el pasado. Si no, usamos solo BD.
+    except Exception:
+        cal_events = []
+
+    # Cargar productos en formula_headers para detectar nuevos
+    productos_formula = c.execute("""
+        SELECT producto_nombre, lote_size_kg FROM formula_headers
+    """).fetchall()
+    productos_formula_set = {(p[0] or '').strip().upper(): {'nombre': p[0], 'lote_kg': p[1]}
+                             for p in productos_formula if p[0]}
+
+    # 3. Cargar config actual
+    configs = c.execute("""
+        SELECT producto_nombre, cadencia_dias, cobertura_target_dias, merma_pct
+        FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+    config_por_producto = {(c[0] or '').strip().upper(): {
+        'cadencia': c[1], 'target': c[2], 'merma': c[3]
+    } for c in configs}
+
+    # 4. Análisis por producto
+    aprendizaje = []
+    productos_con_historico = set()
+    for key, info in fechas_por_producto.items():
+        productos_con_historico.add(key)
+        cadencia_real = _calcular_cadencia_real(info['fechas'])
+        cfg = config_por_producto.get(key, {})
+        cadencia_config = cfg.get('cadencia')
+        ultima = max(info['fechas']) if info['fechas'] else None
+        primera = min(info['fechas']) if info['fechas'] else None
+        # Diferencia entre real vs config
+        diferencia = None
+        if cadencia_real and cadencia_config:
+            diferencia = cadencia_real - cadencia_config
+        # Recomendación
+        recomendar_cambiar = False
+        if cadencia_real and (not cadencia_config or abs((cadencia_real or 0) - (cadencia_config or 0)) > 7):
+            recomendar_cambiar = True
+        aprendizaje.append({
+            'producto': info['nombre_real'],
+            'lotes_historicos': len(info['fechas']),
+            'lotes_total_unidades': info['lotes_total'],
+            'kg_total': round(info['kg_total'], 1),
+            'primera_produccion': primera.isoformat() if primera else None,
+            'ultima_produccion': ultima.isoformat() if ultima else None,
+            'dias_desde_ultima': (datetime.now().date() - ultima).days if ultima else None,
+            'cadencia_real_dias': cadencia_real,
+            'cadencia_configurada': cadencia_config,
+            'diferencia_dias': diferencia,
+            'recomendar_actualizar': recomendar_cambiar,
+            'tiene_config': key in config_por_producto,
+            'tiene_formula': key in productos_formula_set,
+        })
+
+    # 5. Productos NUEVOS (en formula_headers pero sin histórico)
+    productos_nuevos = []
+    for key, info in productos_formula_set.items():
+        if key not in productos_con_historico:
+            cfg = config_por_producto.get(key, {})
+            productos_nuevos.append({
+                'producto': info['nombre'],
+                'lote_kg': info['lote_kg'],
+                'tiene_config': key in config_por_producto,
+                'cadencia_configurada': cfg.get('cadencia'),
+                'sugerencia': 'Producir primer lote pronto — sin histórico',
+            })
+
+    return jsonify({
+        'fecha_analisis': datetime.now().isoformat(),
+        'meses_atras': meses_atras,
+        'aprendizaje': sorted(aprendizaje, key=lambda x: -(x.get('lotes_historicos') or 0)),
+        'productos_nuevos': productos_nuevos,
+        'kpis': {
+            'productos_con_historico': len(aprendizaje),
+            'productos_nuevos_sin_historico': len(productos_nuevos),
+            'recomendaciones_actualizar': sum(1 for a in aprendizaje if a['recomendar_actualizar']),
+            'total_lotes_analizados': sum(a['lotes_historicos'] for a in aprendizaje),
+        },
+    })
+
+
+@bp.route('/api/auto-plan/aplicar-aprendizaje', methods=['POST'])
+def aplicar_aprendizaje():
+    """Toma las cadencias detectadas del histórico y actualiza la config.
+    Body: {productos: [{producto, cadencia_real_dias}, ...]}
+    O sin body para aplicar TODAS las recomendaciones.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    productos_a_aplicar = d.get('productos')
+
+    conn = get_db(); c = conn.cursor()
+
+    if not productos_a_aplicar:
+        # Modo sin lista: tomar todas las recomendaciones del análisis
+        from flask import url_for
+        analisis = aprender_historico()
+        if hasattr(analisis, 'get_json'):
+            data = analisis.get_json()
+        else:
+            data = analisis[0].get_json() if isinstance(analisis, tuple) else {}
+        productos_a_aplicar = []
+        for a in (data.get('aprendizaje') or []):
+            if a.get('recomendar_actualizar') and a.get('cadencia_real_dias'):
+                productos_a_aplicar.append({
+                    'producto': a['producto'],
+                    'cadencia_real_dias': a['cadencia_real_dias'],
+                })
+
+    actualizados = []
+    for it in productos_a_aplicar:
+        producto = (it.get('producto') or '').strip()
+        cadencia = it.get('cadencia_real_dias')
+        if not producto or not cadencia:
+            continue
+        # Verificar si tiene config
+        existing = c.execute(
+            "SELECT id, cadencia_dias FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND activo=1",
+            (producto,)
+        ).fetchone()
+        if existing:
+            c.execute("""
+                UPDATE sku_planeacion_config SET
+                  cadencia_dias=?, actualizado_en=datetime('now'),
+                  notas=COALESCE(notas,'')||' · Aprendido del histórico '||date('now')
+                WHERE id=?
+            """, (int(cadencia), existing[0]))
+            actualizados.append({'producto': producto, 'cadencia_anterior': existing[1],
+                                  'cadencia_nueva': cadencia, 'accion': 'actualizado'})
+        else:
+            # Crear config nueva con cadencia detectada
+            c.execute("""
+                INSERT INTO sku_planeacion_config
+                  (producto_nombre, cadencia_dias, cobertura_target_dias,
+                   cobertura_min_dias, merma_pct, prioridad, activo, notas)
+                VALUES (?, ?, 60, 20, 5.0, 3, 1, ?)
+            """, (producto, int(cadencia),
+                  f'Auto-creado desde histórico {datetime.now().date()}'))
+            actualizados.append({'producto': producto, 'cadencia_anterior': None,
+                                  'cadencia_nueva': cadencia, 'accion': 'creado'})
+
+    conn.commit()
+    return jsonify({
+        'ok': True, 'actualizados': actualizados, 'total': len(actualizados),
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # MAQUILA INTELIGENTE — clientes + pedidos integrados al motor del Plan
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "Kelly Guerra compra productos para marca de ella

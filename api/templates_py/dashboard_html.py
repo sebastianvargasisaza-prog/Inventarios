@@ -5749,6 +5749,7 @@ function _renderProgramacion(d){
       <button id="ap-stab-skus" onclick="apSwitchSubtab('skus')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128230; Cadencias por SKU</button>
       <button id="ap-stab-mp" onclick="apSwitchSubtab('mp')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128230; Lead times MP/envases</button>
       <button id="ap-stab-emails" onclick="apSwitchSubtab('emails')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128231; Emails</button>
+      <button id="ap-stab-aprendizaje" onclick="apSwitchSubtab('aprendizaje')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#fbbf24,#dc2626);color:#fff">&#129504; Aprendizaje hist.</button>
       <button id="ap-stab-runs" onclick="apSwitchSubtab('runs')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128221; Histórico runs</button>
     </div>
 
@@ -5777,6 +5778,19 @@ function _renderProgramacion(d){
       <div id="ap-emails-tabla"></div>
     </div>
 
+    <div id="ap-sub-aprendizaje" style="display:none">
+      <div style="background:linear-gradient(135deg,#fef3c7,#fbbf24);color:#78350f;padding:14px 18px;border-radius:10px;margin-bottom:14px">
+        <h3 style="margin:0 0 4px;color:#78350f;font-size:15px">🧠 Aprendizaje del histórico</h3>
+        <p style="margin:0;font-size:12px;color:#7c2d12">El sistema lee TODAS las producciones reales (Google Calendar + BD) y deriva las cadencias REALES de cada producto. Ya no tienes que configurar manualmente.</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button onclick="apAnalizarHistorico()" style="background:#dc2626;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">🧠 Analizar histórico</button>
+        <button onclick="apAplicarAprendizaje()" style="background:#15803d;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">✅ Aplicar TODAS las recomendaciones</button>
+      </div>
+      <div id="ap-aprendizaje-content" style="text-align:center;padding:30px;color:#94a3b8">
+        Pulsa <b>🧠 Analizar histórico</b> para que el sistema descubra las cadencias reales.
+      </div>
+    </div>
     <div id="ap-sub-runs" style="display:none">
       <p style="color:#64748b;font-size:13px">Las últimas 30 ejecuciones del cron auto-plan.</p>
       <div id="ap-runs-tabla"></div>
@@ -8709,19 +8723,121 @@ async function ckMarcar(itemId, estado){
 
   function apSwitchSubtab(t){
     _AP_SUBTAB = t;
-    ['resumen','skus','mp','emails','runs'].forEach(function(s){
+    ['resumen','skus','mp','emails','aprendizaje','runs'].forEach(function(s){
       var div = document.getElementById('ap-sub-'+s);
       var btn = document.getElementById('ap-stab-'+s);
       if(div) div.style.display = (s===t) ? 'block' : 'none';
       if(btn){
-        btn.style.background = (s===t) ? '#7c3aed' : '#e2e8f0';
-        btn.style.color      = (s===t) ? '#fff' : '#475569';
+        if(s==='aprendizaje'){
+          btn.style.background = (s===t) ? '#dc2626' : 'linear-gradient(135deg,#fbbf24,#dc2626)';
+          btn.style.color = '#fff';
+        } else {
+          btn.style.background = (s===t) ? '#7c3aed' : '#e2e8f0';
+          btn.style.color      = (s===t) ? '#fff' : '#475569';
+        }
       }
     });
     if(t==='skus') apCargarSkus();
     if(t==='mp') apCargarMp();
     if(t==='emails') apCargarEmails();
     if(t==='runs') apCargarRuns();
+    if(t==='aprendizaje') apAnalizarHistorico();
+  }
+
+  // 🧠 Aprendizaje del histórico
+  async function apAnalizarHistorico(){
+    var box = document.getElementById('ap-aprendizaje-content');
+    box.style.padding = '20px';
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">🧠 Analizando histórico de 12 meses...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/aprender-historico?meses_atras=12');
+      var d = await r.json();
+      var k = d.kpis || {};
+      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Productos con histórico</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.productos_con_historico||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Productos NUEVOS</div><div style="font-size:26px;font-weight:800;color:#d97706">'+(k.productos_nuevos_sin_historico||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Recomendaciones</div><div style="font-size:26px;font-weight:800;color:#dc2626">'+(k.recomendaciones_actualizar||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Lotes analizados</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.total_lotes_analizados||0)+'</div></div>'
+        +'</div>';
+
+      var aprend = d.aprendizaje || [];
+      if(aprend.length){
+        html += '<h3 style="color:#0f172a;margin:14px 0 8px">📊 Cadencias detectadas vs configuradas</h3>';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+        html += '<thead style="background:#f9fafb"><tr>'
+          +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+          +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lotes hist.</th>'
+          +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Última prod.</th>'
+          +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cadencia REAL</th>'
+          +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Configurada</th>'
+          +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Diferencia</th>'
+          +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Acción</th>'
+          +'</tr></thead><tbody>';
+        aprend.forEach(function(a){
+          var rowBg = a.recomendar_actualizar ? '#fef3c7' : '#fff';
+          var difCol = !a.diferencia_dias ? '#94a3b8' : (Math.abs(a.diferencia_dias)>14?'#dc2626':(Math.abs(a.diferencia_dias)>7?'#d97706':'#15803d'));
+          html += '<tr style="border-top:1px solid #f1f5f9;background:'+rowBg+'">'
+            +'<td style="padding:7px 10px"><b>'+_escHTML(a.producto)+'</b></td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace">'+a.lotes_historicos+'</td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(a.ultima_produccion||'—')+(a.dias_desde_ultima!=null?' (hace '+a.dias_desde_ultima+'d)':'')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(a.cadencia_real_dias?a.cadencia_real_dias+'d':'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:#64748b">'+(a.cadencia_configurada?a.cadencia_configurada+'d':'auto')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+difCol+';font-weight:700">'+(a.diferencia_dias!=null?(a.diferencia_dias>0?'+':'')+a.diferencia_dias+'d':'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:center">'+(a.recomendar_actualizar
+              ? '<button onclick="apAplicarUna(\\''+_escAttr(a.producto)+'\\','+a.cadencia_real_dias+')" style="background:#15803d;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✓ Adoptar</button>'
+              : '<span style="color:#94a3b8;font-size:11px">OK</span>')+'</td>'
+            +'</tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      var nuevos = d.productos_nuevos || [];
+      if(nuevos.length){
+        html += '<h3 style="color:#0f172a;margin:18px 0 8px">🆕 Productos nuevos (sin histórico)</h3>';
+        html += '<p style="color:#64748b;font-size:12px;margin:0 0 8px">Estos productos están en formula_headers pero NUNCA se han producido. El sistema los pondrá como "primer lote" en el plan.</p>';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:12px">';
+        nuevos.forEach(function(p){
+          html += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9">'
+            +'<span><b>'+_escHTML(p.producto)+'</b> · lote '+(p.lote_kg||0)+'kg</span>'
+            +'<span style="color:#d97706;font-size:11px">→ '+_escHTML(p.sugerencia||'producir pronto')+'</span>'
+            +'</div>';
+        });
+        html += '</div>';
+      }
+
+      box.style.padding = '0';
+      box.innerHTML = html;
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function apAplicarUna(producto, cadencia){
+    if(!confirm('¿Adoptar cadencia REAL de '+cadencia+'d para "'+producto+'"?')) return;
+    try {
+      var r = await fetch('/api/auto-plan/aplicar-aprendizaje', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({productos:[{producto: producto, cadencia_real_dias: cadencia}]})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      _toast('✓ Cadencia adoptada', 1);
+      apAnalizarHistorico();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  async function apAplicarAprendizaje(){
+    if(!confirm('¿Aplicar TODAS las recomendaciones de cadencia detectadas del histórico?\n\nLas cadencias actualmente configuradas serán reemplazadas con las REALES.')) return;
+    try {
+      var r = await fetch('/api/auto-plan/aplicar-aprendizaje', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      _toast('✓ '+d.total+' cadencias actualizadas', 1);
+      apAnalizarHistorico();
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   async function apPreview(){
