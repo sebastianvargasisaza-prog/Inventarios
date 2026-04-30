@@ -229,16 +229,178 @@ def _notif_admin_in_app(plan, resultado):
         log.warning(f'notif in-app fallo: {e}')
 
 
+def _aprender_historico_y_notificar(app):
+    """Sebastian (30-abr-2026): "que cada lunes se dispare automático,
+    pero siempre debe avisar si va a mover algo".
+
+    Lee histórico → detecta cadencias REALES distintas a las configuradas.
+    NO aplica cambios automáticamente — crea notificación in-app a admins
+    para que ellos decidan adoptar o no.
+    """
+    try:
+        from database import get_db
+        from blueprints.notif import push_notif_multi
+        c = get_db().cursor()
+        # Reusar la lógica del endpoint aprender_historico calculando inline
+        from blueprints.auto_plan import _calcular_cadencia_real
+        from datetime import datetime as _dt, timedelta as _td
+
+        fecha_desde = (_dt.now() - _td(days=365)).date()
+        rows = c.execute("""
+            SELECT producto, fecha_programada FROM produccion_programada
+            WHERE date(fecha_programada) >= ?
+              AND estado IN ('completado','en_proceso','pendiente')
+              AND producto IS NOT NULL
+            ORDER BY producto, fecha_programada
+        """, (fecha_desde.isoformat(),)).fetchall()
+        fechas_por_prod = {}
+        for prod, fecha in rows:
+            try:
+                f = _dt.strptime((fecha or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            key = (prod or '').strip().upper()
+            if not key:
+                continue
+            fechas_por_prod.setdefault(key, {'nombre': prod, 'fechas': []})
+            fechas_por_prod[key]['fechas'].append(f)
+
+        configs = c.execute("""
+            SELECT UPPER(TRIM(producto_nombre)), cadencia_dias FROM sku_planeacion_config
+            WHERE activo=1
+        """).fetchall()
+        config_map = {r[0]: r[1] for r in configs}
+
+        recomendaciones = []
+        for key, info in fechas_por_prod.items():
+            cadencia_real = _calcular_cadencia_real(info['fechas'])
+            cadencia_cfg = config_map.get(key)
+            if cadencia_real and (not cadencia_cfg or abs(cadencia_real - (cadencia_cfg or 0)) > 7):
+                recomendaciones.append({
+                    'producto': info['nombre'],
+                    'cadencia_real': cadencia_real,
+                    'cadencia_configurada': cadencia_cfg,
+                })
+
+        if recomendaciones:
+            push_notif_multi(
+                ['sebastian', 'alejandro'], 'planta',
+                f'🧠 Aprendizaje: {len(recomendaciones)} cadencia(s) cambian',
+                body='El sistema detectó cadencias REALES distintas a las configuradas. Revisa en Auto-Plan → 🧠 Aprendizaje histórico para confirmar.',
+                link='/inventarios#programacion',
+                remitente='AUTO-PLAN',
+                importante=True,
+            )
+            log.info(f'[auto-plan] {len(recomendaciones)} recomendaciones de cadencia notificadas')
+    except Exception as e:
+        log.warning(f'aprender_historico fallo: {e}')
+
+
+def _detectar_cambios_demanda_con_margen(conn):
+    """Sebastian (30-abr-2026): "debes permitirte márgenes pues si se vendió
+    10 más el fin de semana aún alcanza con el margen 20 días antes de que
+    se acabe... debe ser flexible estricto".
+
+    Solo alerta si el cambio de velocidad ROMPE el margen 20d. Si subió pero
+    aún alcanza para 25d, no alerta.
+    """
+    cambios_criticos = []
+    try:
+        from blueprints.auto_plan import _ventas_diarias_por_sku, _stock_actual_pt
+        from database import get_db
+        c = conn.cursor()
+        rows = c.execute("SELECT producto_nombre FROM sku_planeacion_config WHERE activo=1").fetchall()
+        for (producto,) in rows:
+            sku_rows = c.execute(
+                "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                (producto,)
+            ).fetchall()
+            v_reciente = 0.0
+            for (sku,) in sku_rows:
+                r = _ventas_diarias_por_sku(c, sku, dias=14)
+                if r:
+                    v_reciente += sum(q for _, q in r) / 14.0
+            if v_reciente <= 0:
+                continue
+            stock = _stock_actual_pt(c, producto)
+            dias_alcance = stock / max(v_reciente, 0.01) if v_reciente > 0 else 999
+            # Buscar próxima producción
+            prox = c.execute("""
+                SELECT id, fecha_programada FROM produccion_programada
+                WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+                  AND estado IN ('pendiente','en_proceso')
+                  AND fecha_programada >= date('now')
+                ORDER BY fecha_programada ASC LIMIT 1
+            """, (producto,)).fetchone()
+            from datetime import datetime as _dt2
+            if prox:
+                try:
+                    fp = _dt2.strptime(prox[1][:10], '%Y-%m-%d').date()
+                    dias_hasta_prox = (fp - _dt2.now().date()).days
+                except Exception:
+                    continue
+            else:
+                dias_hasta_prox = 999
+            # Regla: alerta solo si se va a romper margen 20d antes de la próxima prod
+            # alcance_proyectado = dias_alcance - dias_hasta_prox  (cuánto sobra al llegar la próxima)
+            # Si alcance_proyectado < 20 → ALERTA (no aguantamos el margen)
+            margen_proyectado = dias_alcance - dias_hasta_prox
+            if margen_proyectado < 20 and prox:
+                cambios_criticos.append({
+                    'producto': producto,
+                    'stock_actual': stock,
+                    'velocidad_dia': round(v_reciente, 2),
+                    'dias_alcance_actual': round(dias_alcance, 1),
+                    'proxima_prod_fecha': prox[1],
+                    'dias_hasta_prox': dias_hasta_prox,
+                    'margen_proyectado': round(margen_proyectado, 1),
+                    'severidad': 'critica' if margen_proyectado < 5 else ('alta' if margen_proyectado < 12 else 'media'),
+                    'mensaje': f'Stock alcanza {dias_alcance:.0f}d, próxima prod en {dias_hasta_prox}d → margen {margen_proyectado:.0f}d (mínimo 20d)',
+                })
+    except Exception as e:
+        log.warning(f'detectar_cambios_margen fallo: {e}')
+    return cambios_criticos
+
+
 def ejecutar_auto_plan_diario(app):
-    """Función llamada por el cron. Genera + aplica + envía emails + notif in-app."""
+    """Función llamada por el cron. Genera + aplica + envía emails + notif in-app.
+
+    Sebastian (30-abr-2026): cada lunes 7am — primero APRENDE del histórico
+    (notifica si encuentra cadencias distintas), después ejecuta el plan.
+    """
     with app.app_context():
         log.info('[auto-plan-cron] Iniciando ejecución diaria...')
+        # 1) Aprender del histórico (NO auto-aplica, solo notifica)
+        try:
+            _aprender_historico_y_notificar(app)
+        except Exception as e:
+            log.warning(f'aprender_historico fallo silencioso: {e}')
+
         try:
             from blueprints.auto_plan import generar_plan, aplicar_plan
             from database import get_db
 
             plan = generar_plan(horizonte_dias=60, tipo='auto', usuario='cron')
             resultado = aplicar_plan(plan, usuario='cron')
+
+            # 2) Detectar cambios críticos con margen 20d
+            try:
+                cambios_margen = _detectar_cambios_demanda_con_margen(get_db())
+                if cambios_margen:
+                    from blueprints.notif import push_notif_multi
+                    crit = sum(1 for x in cambios_margen if x['severidad']=='critica')
+                    push_notif_multi(
+                        ['sebastian','alejandro'], 'planta',
+                        f'🚨 {len(cambios_margen)} producto(s) rompen margen 20d',
+                        body=f'{crit} críticos. El stock se acabará antes de la próxima producción. Revisa en /planta.',
+                        link='/inventarios#programacion',
+                        remitente='AUTO-PLAN',
+                        importante=True,
+                    )
+                    plan['cambios_margen_criticos'] = cambios_margen
+            except Exception as e:
+                log.warning(f'cambios_margen fallo: {e}')
+
             _notif_admin_in_app(plan, resultado)
 
             # Cargar configs de email

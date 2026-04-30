@@ -589,8 +589,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="formulas" class="tab-content">
-    <h2>&#129514; Formulas Maestras de Produccion</h2>
-    <p style="color:#666;margin-bottom:18px;">Define la receta de cada producto. Al registrar una produccion, las MPs se descuentan automaticamente del inventario.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
+      <h2 style="margin:0">&#129514; Formulas Maestras de Produccion</h2>
+      <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
+    </div>
+    <p style="color:#666;margin-bottom:18px;">Define la receta de cada producto. Al registrar una produccion, las MPs se descuentan automaticamente del inventario. Para <b>lanzamientos nuevos</b> usa "🚀 Lanzar producto nuevo" — crea fórmula + config + (opcional) primera producción prioritaria.</p>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:22px;">
       <h3 style="margin-bottom:12px;">Nueva Formula / Editar Existente</h3>
       <div style="display:grid;grid-template-columns:1fr 200px;gap:12px;">
@@ -5715,6 +5718,68 @@ function _renderProgramacion(d){
         <div id="ps-modal-content"></div>
       </div>
     </div>
+
+    <!-- Modal nuevo producto rápido -->
+    <div id="modal-nuevo-producto" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:12px;padding:24px;width:520px;max-width:92vw;max-height:90vh;overflow:auto">
+        <h3 style="margin:0 0 8px;color:#0f766e;font-size:18px">🆕 Nuevo producto / lanzamiento</h3>
+        <p style="color:#64748b;font-size:12px;margin:0 0 14px">Crea fórmula + config de planeación + (opcional) primera producción prioritaria.</p>
+        <div style="display:grid;gap:10px">
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Nombre del producto *</label>
+            <input id="np-nombre" placeholder="ej. SUERO COLAGENO XX" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;text-transform:uppercase">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Tamaño lote (kg) *</label>
+              <input id="np-lote" type="number" step="0.1" placeholder="ej. 30" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Categoría</label>
+              <select id="np-categoria" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+                <option value="">— elegir —</option>
+                <option value="suero">Suero</option>
+                <option value="suero_vit_c">Suero Vit C</option>
+                <option value="suero_ah">Suero Ác. Hialurónico</option>
+                <option value="contorno">Contorno ojos</option>
+                <option value="hidratante">Hidratante</option>
+                <option value="limpiador">Limpiador</option>
+                <option value="esencia">Esencia</option>
+                <option value="crema_corporal">Crema corporal</option>
+                <option value="mascarilla">Mascarilla</option>
+                <option value="maxlash">Maxlash</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Cadencia (días, vacío = auto)</label>
+              <input id="np-cadencia" type="number" placeholder="ej. 60" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Merma %</label>
+              <input id="np-merma" type="number" step="0.1" value="5" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            </div>
+          </div>
+          <div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 12px;color:#78350f;font-size:12px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input id="np-prioritario" type="checkbox" style="width:auto">
+              <span><b>🔥 Programar primera producción ya (prioritario)</b></span>
+            </label>
+            <div id="np-prio-detalle" style="display:none;margin-top:8px">
+              <label style="font-size:11px;color:#92400e;font-weight:600">Fecha objetivo</label>
+              <input id="np-fecha" type="date" style="width:100%;padding:7px;border:1px solid #fbbf24;border-radius:5px;font-size:13px">
+              <label style="font-size:11px;color:#92400e;font-weight:600;margin-top:6px;display:block">Lotes</label>
+              <input id="np-lotes" type="number" min="1" value="1" style="width:100%;padding:7px;border:1px solid #fbbf24;border-radius:5px;font-size:13px">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+          <button onclick="document.getElementById('modal-nuevo-producto').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:9px 18px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="guardarNuevoProducto()" style="background:#0f766e;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:800;cursor:pointer">✓ Crear producto</button>
+        </div>
+      </div>
+    </div>
   </div><!-- /ptab-plansem -->
 
   <!-- ── ptab-autoplan: Auto-Plan Maestro (IA · cron diario 7am) ── -->
@@ -5902,10 +5967,12 @@ function _renderProgramacion(d){
           <p style="margin:4px 0 0;color:#cffafe;font-size:13px">Producciones · MP · Envases · Capacidad — todo proyectado por horizonte</p>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Descargar Excel</button>
+          <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">+ Nuevo producto</button>
+          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Excel</button>
           <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
         </div>
       </div>
+      <div id="pv2-cobertura" style="margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.12);border-radius:8px;font-size:12px;color:#cffafe">📊 Cargando cobertura SKUs...</div>
       <!-- Switcher de horizonte -->
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
         <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
@@ -9209,18 +9276,75 @@ async function ckMarcar(itemId, estado){
 
   function planV2Init(){
     // Sebastian (30-abr-2026): "monte todo automáticamente desde Shopify".
-    // Al abrir /planta verifica si el plan es viejo (>12h) y lo re-genera
-    // en background. La UI se refresca solo cuando termina (~30s).
     fetch('/api/auto-plan/asegurar-actualizado?max_horas=12', {method:'POST'})
       .then(function(r){return r.json();})
       .then(function(d){
         if(d.ejecutado){
           _toast('🤖 Auto-Plan recalculando en background...', 1);
-          setTimeout(planV2Cargar, 35000); // refresh tras 35s
+          setTimeout(planV2Cargar, 35000);
         }
       }).catch(function(){});
     planV2Cargar();
     planV2DetectarCambios();
+    planV2CargarCobertura();
+  }
+
+  async function planV2CargarCobertura(){
+    var box = document.getElementById('pv2-cobertura');
+    if(!box) return;
+    try {
+      var r = await fetch('/api/planta/kpi-cobertura');
+      var d = await r.json();
+      var pct = d.cobertura_pct || 0;
+      var icon = pct >= 90 ? '✅' : (pct >= 60 ? '⚠️' : '🔴');
+      var col = pct >= 90 ? '#10b981' : (pct >= 60 ? '#fbbf24' : '#fca5a5');
+      box.innerHTML = '<span style="color:'+col+';font-weight:800">'+icon+' '+pct+'% cobertura</span> · '
+        +'<b>'+d.en_plan_futuro+' / '+d.total_skus+' SKUs</b> con producción futura programada · '
+        +(d.sin_plan && d.sin_plan.length ? '<span style="color:#fca5a5">'+d.sin_plan.length+' SIN plan: '+_escHTML(d.sin_plan.slice(0,3).join(', '))+(d.sin_plan.length>3?'…':'')+'</span>' : '<span style="color:#10b981">Todos los SKUs cubiertos</span>');
+    } catch(e){ /* silent */ }
+  }
+
+  function abrirNuevoProducto(){
+    ['np-nombre','np-lote','np-cadencia','np-fecha','np-lotes'].forEach(function(id){var e=document.getElementById(id); if(e) e.value=(id==='np-merma'?'5':(id==='np-lotes'?'1':''));});
+    document.getElementById('np-merma').value = '5';
+    document.getElementById('np-categoria').value = '';
+    document.getElementById('np-prioritario').checked = false;
+    document.getElementById('np-prio-detalle').style.display = 'none';
+    document.getElementById('modal-nuevo-producto').style.display = 'flex';
+    // Listener checkbox
+    var chk = document.getElementById('np-prioritario');
+    chk.onchange = function(){
+      document.getElementById('np-prio-detalle').style.display = chk.checked ? 'block' : 'none';
+    };
+  }
+
+  async function guardarNuevoProducto(){
+    var body = {
+      producto_nombre: (document.getElementById('np-nombre').value||'').trim().toUpperCase(),
+      lote_size_kg: parseFloat(document.getElementById('np-lote').value),
+      categoria: document.getElementById('np-categoria').value || null,
+      cadencia_dias: parseInt(document.getElementById('np-cadencia').value) || null,
+      merma_pct: parseFloat(document.getElementById('np-merma').value) || 5,
+      prioritario: document.getElementById('np-prioritario').checked,
+      fecha_primera_prod: document.getElementById('np-fecha').value || null,
+      lotes_inicial: parseInt(document.getElementById('np-lotes').value) || 1,
+    };
+    if(!body.producto_nombre){ alert('Nombre requerido'); return; }
+    if(!body.lote_size_kg || body.lote_size_kg <= 0){ alert('Tamaño lote requerido'); return; }
+    try {
+      var r = await fetch('/api/planta/producto-nuevo', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      document.getElementById('modal-nuevo-producto').style.display='none';
+      var msg = '✓ '+body.producto_nombre+' creado';
+      if(d.produccion_creada_id) msg += ' (producción #'+d.produccion_creada_id+')';
+      _toast(msg, 1);
+      planV2Cargar();
+      planV2CargarCobertura();
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   async function planV2DetectarCambios(){

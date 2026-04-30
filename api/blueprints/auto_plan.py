@@ -1224,6 +1224,159 @@ def _calcular_cadencia_real(fechas):
     return intervalos[n // 2]
 
 
+@bp.route('/api/planta/kpi-cobertura', methods=['GET'])
+def kpi_cobertura_skus():
+    """Sebastian (30-abr-2026): "dime cuántos productos están en el plan
+    para saber que sí están todos los SKU".
+
+    Compara productos en formula_headers vs productos con producciones
+    futuras programadas. Detecta gaps.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    productos_total = c.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE producto_nombre IS NOT NULL"
+    ).fetchall()
+    productos_total_set = {(p[0] or '').strip().upper() for p in productos_total if p[0]}
+
+    productos_en_plan = c.execute("""
+        SELECT DISTINCT UPPER(TRIM(producto)) FROM produccion_programada
+        WHERE estado IN ('pendiente','en_proceso')
+          AND fecha_programada >= date('now')
+    """).fetchall()
+    productos_en_plan_set = {p[0] for p in productos_en_plan if p[0]}
+
+    productos_con_config = c.execute("""
+        SELECT UPPER(TRIM(producto_nombre)) FROM sku_planeacion_config WHERE activo=1
+    """).fetchall()
+    productos_config_set = {p[0] for p in productos_con_config if p[0]}
+
+    # Productos que están en formula pero NO en plan
+    sin_plan = []
+    for p in productos_total:
+        if p[0] and (p[0].strip().upper() not in productos_en_plan_set):
+            sin_plan.append(p[0])
+
+    return jsonify({
+        'total_skus': len(productos_total_set),
+        'en_plan_futuro': len(productos_en_plan_set),
+        'con_config': len(productos_config_set),
+        'sin_plan': sorted(sin_plan),
+        'cobertura_pct': round(len(productos_en_plan_set) / max(1, len(productos_total_set)) * 100, 1),
+    })
+
+
+@bp.route('/api/planta/producto-nuevo', methods=['POST'])
+def producto_nuevo_rapido():
+    """Sebastian (30-abr-2026): "debe permitir adicionar nuevos productos
+    porque se vienen lanzamientos... lo palancamos desde área científica
+    pero debe existir en producción también por si se necesita programar
+    algo de manera prioritaria".
+
+    Crea de un solo click:
+      1. Entrada en formula_headers (sin items)
+      2. sku_planeacion_config con cadencia=null (auto por umbral)
+      3. Opcionalmente programa una producción inicial prioritaria
+
+    Body: {producto_nombre*, lote_size_kg*, categoria?, cadencia_dias?,
+           merma_pct?, fecha_primera_prod?, lotes_inicial?,
+           prioritario? (boolean)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    lote_kg = d.get('lote_size_kg')
+    if not producto or not lote_kg:
+        return jsonify({'error': 'producto_nombre y lote_size_kg requeridos'}), 400
+    lote_kg = float(lote_kg)
+    conn = get_db(); c = conn.cursor()
+
+    # 1. formula_headers
+    existing_fh = c.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    if not existing_fh:
+        c.execute("""
+            INSERT INTO formula_headers (producto_nombre, lote_size_kg, unidad_base_g)
+            VALUES (?, ?, 1.0)
+        """, (producto, lote_kg))
+        log_msg_fh = 'fórmula creada'
+    else:
+        log_msg_fh = 'fórmula ya existía'
+
+    # 2. sku_planeacion_config
+    existing_cfg = c.execute(
+        "SELECT id FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    if not existing_cfg:
+        c.execute("""
+            INSERT INTO sku_planeacion_config
+              (producto_nombre, categoria, cadencia_dias, cobertura_target_dias,
+               cobertura_min_dias, cobertura_max_dias, merma_pct, prioridad,
+               activo, notas)
+            VALUES (?, ?, ?, 60, 20, 90, ?, 2, 1, ?)
+        """, (
+            producto, d.get('categoria'), d.get('cadencia_dias'),
+            float(d.get('merma_pct') or 5.0),
+            f'Creado por {user} el {datetime.now().date()} (lanzamiento)',
+        ))
+        log_msg_cfg = 'config creada'
+    else:
+        log_msg_cfg = 'config ya existía'
+
+    # 3. Producción inicial prioritaria (opcional)
+    produccion_id = None
+    if d.get('prioritario') or d.get('fecha_primera_prod'):
+        from datetime import datetime as _dt2
+        fecha_obj = (d.get('fecha_primera_prod') or '').strip()
+        if not fecha_obj:
+            # Próximo L/M/V
+            fobj = _dt2.now().date() + timedelta(days=2)
+            while fobj.weekday() not in (0, 2, 4):
+                fobj += timedelta(days=1)
+            fecha_obj = fobj.isoformat()
+        merma = float(d.get('merma_pct') or 5.0)
+        kg_con_merma = lote_kg * (1 + merma / 100.0)
+        cur = c.execute("""
+            INSERT INTO produccion_programada
+              (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
+            VALUES (?, ?, ?, 'pendiente', ?, 'producto_nuevo_lanzamiento', ?)
+        """, (
+            producto, fecha_obj, int(d.get('lotes_inicial') or 1),
+            f'PRODUCTO NUEVO · creado por {user} · {("prioritario" if d.get("prioritario") else "primera producción")}',
+            kg_con_merma,
+        ))
+        produccion_id = cur.lastrowid
+
+    # Notificar a admins
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(
+            ['sebastian', 'alejandro'], 'planta',
+            f'🆕 Producto nuevo: {producto}',
+            body=f'Lote {lote_kg}kg · creado por {user}' + (f' · 1ra producción {fecha_obj}' if produccion_id else ''),
+            link='/inventarios#programacion',
+            remitente=user,
+        )
+    except Exception:
+        pass
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'producto': producto,
+        'formula': log_msg_fh,
+        'config': log_msg_cfg,
+        'produccion_creada_id': produccion_id,
+        'mensaje': f'✓ {producto} agregado al sistema',
+    })
+
+
 @bp.route('/api/auto-plan/aprender-historico', methods=['GET'])
 def aprender_historico():
     """Analiza producciones histórias (BD + Google Calendar) y deriva
