@@ -45,72 +45,43 @@ def chat_widget_js():
   if (window.__chatWidgetLoaded) return;
   window.__chatWidgetLoaded = true;
 
+  // ── Sebastian (30-abr-2026): "el chat flotante sigue sin servir" ──────
+  // El iframe embed era frágil — fallaba por CSP, cookies SameSite, cache
+  // o cualquier otra razón que dejaba el panel en blanco. Solución: el
+  // FAB ahora abre /chat directo en pestaña nueva. Más simple, más
+  // confiable. Mantenemos badge unread + toast + ping (que sí funcionaban).
+
   // Crear estilos
   var s = document.createElement('style');
   s.textContent = '\\
-    #cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s}\\
-    #cw-fab:hover{transform:scale(1.08)}\\
+    #cw-fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#7c3aed;color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 4px 16px rgba(124,58,237,.4);z-index:9998;display:flex;align-items:center;justify-content:center;transition:transform .15s;text-decoration:none}\\
+    #cw-fab:hover{transform:scale(1.08);background:#6d28d9}\\
     #cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}\\
     #cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}\\
     @keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}\\
-    #cw-panel{position:fixed;bottom:90px;right:20px;width:480px;max-width:calc(100vw - 30px);height:720px;max-height:calc(100vh - 130px);background:#fff;border:1px solid #e7e5e4;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.3);z-index:9997;display:none;flex-direction:column;overflow:hidden}\\
-    #cw-panel.open{display:flex;animation:cwSlide .25s ease-out}\\
-    #cw-panel iframe{flex:1;border:none;background:#fff;width:100%;height:100%}\\
-    #cw-panel-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#7c3aed;color:#fff;font-size:13px;font-weight:700;flex-shrink:0}\\
-    #cw-panel-actions{display:flex;gap:6px;align-items:center}\\
-    #cw-panel-actions button,#cw-panel-actions a{background:transparent;border:none;color:#fff;font-size:14px;cursor:pointer;padding:2px 6px;line-height:1;text-decoration:none;border-radius:4px}\\
-    #cw-panel-actions button:hover,#cw-panel-actions a:hover{background:rgba(255,255,255,.18)}\\
   ';
   document.head.appendChild(s);
 
-  // Crear FAB
-  var fab = document.createElement('button');
+  // Crear FAB como <a target="_blank"> — abre /chat en pestaña nueva.
+  // Sin iframe, sin panel, sin posibles fallas de embed.
+  var fab = document.createElement('a');
   fab.id = 'cw-fab';
-  fab.title = 'EOS Chat (clic = abrir/cerrar, Esc = cerrar)';
+  fab.href = '/chat';
+  fab.target = '_blank';
+  fab.rel = 'noopener';
+  fab.title = 'EOS Chat (abre en pestaña nueva)';
   fab.innerHTML = '\\u{1F4AC}<span id="cw-badge" style="display:none">0</span>';
-  fab.onclick = function(){ togglePanel(); };
+  // Al abrir, limpiar badge inmediatamente (UX optimista)
+  fab.addEventListener('click', function(){
+    var b = document.getElementById('cw-badge');
+    if (b) { b.style.display = 'none'; b.textContent = '0'; }
+  });
   document.body.appendChild(fab);
 
-  // Crear panel desplegable con iframe en modo embed
-  var panel = document.createElement('div');
-  panel.id = 'cw-panel';
-  panel.innerHTML =
-    '<div id="cw-panel-hdr">'
-      +'\\u{1F4AC} EOS Chat'
-      +'<div id="cw-panel-actions">'
-        +'<button id="cw-reload" title="Recargar chat (refresca cache)">\\u21BB</button>'
-        +'<a id="cw-open-tab" href="/chat" target="_blank" title="Abrir en pestaña nueva">\\u2197</a>'
-        +'<button id="cw-panel-close" title="Cerrar (Esc)">\\u00D7</button>'
-      +'</div>'
-    +'</div>'
-    +'<iframe id="cw-iframe" src="" allow="autoplay"></iframe>';
-  document.body.appendChild(panel);
-  document.getElementById('cw-panel-close').onclick = function(){ togglePanel(false); };
-  document.getElementById('cw-reload').onclick = function(e){
-    e.stopPropagation();
-    var iframe = document.getElementById('cw-iframe');
-    iframe.src = '/chat?embed=1&t=' + Date.now();
+  // Helper para uso desde el toast (abre /chat en nueva tab también)
+  window.__cwTogglePanel = function(){
+    window.open('/chat', '_blank', 'noopener');
   };
-  document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && panel.classList.contains('open')) togglePanel(false);
-  });
-
-  function togglePanel(force){
-    var open = (typeof force === 'boolean') ? force : !panel.classList.contains('open');
-    if (open) {
-      var iframe = document.getElementById('cw-iframe');
-      // ?embed=1 + timestamp fuerza recarga fresh cada apertura (evita cache stale)
-      iframe.src = '/chat?embed=1&t=' + Date.now();
-      panel.classList.add('open');
-      // Limpiar badge al abrir
-      var b = document.getElementById('cw-badge');
-      if (b) { b.style.display = 'none'; b.textContent = '0'; }
-    } else {
-      panel.classList.remove('open');
-    }
-  }
-  // Exponer para uso desde toast click
-  window.__cwTogglePanel = togglePanel;
 
   // Polling cada 15s para detectar mensajes nuevos
   var lastTotal = 0;
