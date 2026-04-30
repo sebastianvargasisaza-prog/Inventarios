@@ -9292,14 +9292,17 @@ async function ckMarcar(itemId, estado){
   async function planV2CargarCobertura(){
     var box = document.getElementById('pv2-cobertura');
     if(!box) return;
+    var meses = parseFloat(_PV2_HORIZONTE);
+    var dias = meses < 1 ? 14 : Math.round(meses * 30);
     try {
-      var r = await fetch('/api/planta/kpi-cobertura');
+      var r = await fetch('/api/planta/kpi-cobertura?dias='+dias);
       var d = await r.json();
       var pct = d.cobertura_pct || 0;
       var icon = pct >= 90 ? '✅' : (pct >= 60 ? '⚠️' : '🔴');
       var col = pct >= 90 ? '#10b981' : (pct >= 60 ? '#fbbf24' : '#fca5a5');
-      box.innerHTML = '<span style="color:'+col+';font-weight:800">'+icon+' '+pct+'% cobertura</span> · '
-        +'<b>'+d.en_plan_futuro+' / '+d.total_skus+' SKUs</b> con producción futura programada · '
+      var horizonteLabel = meses < 1 ? 'semana' : (meses+(meses===1?' mes':' meses'));
+      box.innerHTML = '<span style="color:'+col+';font-weight:800">'+icon+' '+pct+'% cobertura ('+horizonteLabel+')</span> · '
+        +'<b>'+d.en_plan+' / '+d.total_skus+' SKUs</b> con producción en el horizonte (BD + Google Calendar) · '
         +(d.sin_plan && d.sin_plan.length ? '<span style="color:#fca5a5">'+d.sin_plan.length+' SIN plan: '+_escHTML(d.sin_plan.slice(0,3).join(', '))+(d.sin_plan.length>3?'…':'')+'</span>' : '<span style="color:#10b981">Todos los SKUs cubiertos</span>');
     } catch(e){ /* silent */ }
   }
@@ -9398,6 +9401,7 @@ async function ckMarcar(itemId, estado){
       b.style.color = act ? '#0f766e' : '#fff';
     });
     planV2Cargar();
+    planV2CargarCobertura();
   }
 
   async function planV2Cargar(){

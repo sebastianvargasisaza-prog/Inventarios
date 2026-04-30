@@ -207,7 +207,14 @@ def _velocidad_total_producto(c, producto):
 
 
 def _ultima_produccion(c, producto):
-    """Fecha de última producción (programada o real) del producto."""
+    """Fecha de última producción del producto.
+
+    Sebastian (30-abr-2026): "si revisas el calendario había una base
+    quizás no perfecta que debemos llevar a ser perfecta" — usa Google
+    Calendar como fuente de verdad además de produccion_programada.
+    """
+    fechas = []
+    # 1) BD interna
     r = c.execute("""
         SELECT MAX(fecha_programada) FROM produccion_programada
         WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
@@ -215,13 +222,68 @@ def _ultima_produccion(c, producto):
     """, (producto,)).fetchone()
     if r and r[0]:
         try:
-            return datetime.fromisoformat(r[0]).date()
+            fechas.append(datetime.strptime(r[0][:10], '%Y-%m-%d').date())
         except Exception:
+            pass
+    # 2) Google Calendar (cached por request)
+    eventos = _calendar_events_cached()
+    pn_upper = (producto or '').strip().upper()
+    for ev in eventos:
+        titulo = (ev.get('titulo') or '').upper()
+        if pn_upper in titulo or any(w in titulo for w in pn_upper.split() if len(w) > 4):
             try:
-                return datetime.strptime(r[0][:10], '%Y-%m-%d').date()
+                fechas.append(datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date())
             except Exception:
-                return None
-    return None
+                pass
+    return max(fechas) if fechas else None
+
+
+def _historico_producciones_producto(c, producto, dias_atras=365):
+    """Devuelve TODAS las fechas de producciones del producto en los últimos
+    N días (BD + Calendar). Usado para detectar cadencia real."""
+    fechas = set()
+    desde = (datetime.now().date() - timedelta(days=dias_atras)).isoformat()
+    # BD
+    rows = c.execute("""
+        SELECT fecha_programada FROM produccion_programada
+        WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+          AND estado IN ('completado','en_proceso','pendiente')
+          AND date(fecha_programada) >= ?
+    """, (producto, desde)).fetchall()
+    for r in rows:
+        try:
+            fechas.add(datetime.strptime(r[0][:10], '%Y-%m-%d').date())
+        except Exception:
+            pass
+    # Calendar
+    eventos = _calendar_events_cached()
+    pn_upper = (producto or '').strip().upper()
+    for ev in eventos:
+        titulo = (ev.get('titulo') or '').upper()
+        if pn_upper in titulo or any(w in titulo for w in pn_upper.split() if len(w) > 4):
+            try:
+                fechas.add(datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date())
+            except Exception:
+                pass
+    return sorted(fechas)
+
+
+_CAL_CACHE = {'ts': None, 'events': []}
+
+def _calendar_events_cached():
+    """Lee Google Calendar una vez por minuto y cachea."""
+    now = datetime.now()
+    if _CAL_CACHE['ts'] and (now - _CAL_CACHE['ts']).total_seconds() < 60:
+        return _CAL_CACHE['events']
+    try:
+        from blueprints.programacion import _fetch_calendar_events
+        result = _fetch_calendar_events(days_ahead=180) or {}
+        _CAL_CACHE['events'] = result.get('events') or []
+        _CAL_CACHE['ts'] = now
+    except Exception:
+        _CAL_CACHE['events'] = []
+        _CAL_CACHE['ts'] = now
+    return _CAL_CACHE['events']
 
 
 def _producciones_programadas_futuro(c, producto):
@@ -1243,23 +1305,50 @@ def kpi_cobertura_skus():
     """Sebastian (30-abr-2026): "dime cuántos productos están en el plan
     para saber que sí están todos los SKU".
 
-    Compara productos en formula_headers vs productos con producciones
-    futuras programadas. Detecta gaps.
+    Querystring: ?dias=14|30|60|90|180|365 — calcula cobertura sobre el
+    horizonte solicitado. La cobertura considera producción en BD +
+    Google Calendar.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 60))
+    except Exception:
+        dias = 60
     conn = get_db(); c = conn.cursor()
     productos_total = c.execute(
         "SELECT producto_nombre FROM formula_headers WHERE producto_nombre IS NOT NULL"
     ).fetchall()
     productos_total_set = {(p[0] or '').strip().upper() for p in productos_total if p[0]}
 
-    productos_en_plan = c.execute("""
+    fecha_limite = (datetime.now() + timedelta(days=dias)).strftime('%Y-%m-%d')
+
+    # Producciones en BD dentro del horizonte
+    productos_en_plan_bd = c.execute("""
         SELECT DISTINCT UPPER(TRIM(producto)) FROM produccion_programada
         WHERE estado IN ('pendiente','en_proceso')
           AND fecha_programada >= date('now')
-    """).fetchall()
-    productos_en_plan_set = {p[0] for p in productos_en_plan if p[0]}
+          AND fecha_programada <= date(?)
+    """, (fecha_limite,)).fetchall()
+    productos_en_plan_set = {p[0] for p in productos_en_plan_bd if p[0]}
+
+    # Sumar Google Calendar
+    eventos_cal = _calendar_events_cached()
+    fecha_hoy = datetime.now().date()
+    fecha_top = fecha_hoy + timedelta(days=dias)
+    for ev in eventos_cal:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            if f < fecha_hoy or f > fecha_top:
+                continue
+        except Exception:
+            continue
+        titulo = (ev.get('titulo') or '').upper()
+        # Match contra productos
+        for prod_upper in productos_total_set:
+            palabras = [w for w in prod_upper.split() if len(w) > 4]
+            if prod_upper in titulo or any(w in titulo for w in palabras):
+                productos_en_plan_set.add(prod_upper)
 
     productos_con_config = c.execute("""
         SELECT UPPER(TRIM(producto_nombre)) FROM sku_planeacion_config WHERE activo=1
@@ -1273,8 +1362,10 @@ def kpi_cobertura_skus():
             sin_plan.append(p[0])
 
     return jsonify({
+        'horizonte_dias': dias,
         'total_skus': len(productos_total_set),
-        'en_plan_futuro': len(productos_en_plan_set),
+        'en_plan': len(productos_en_plan_set),
+        'en_plan_futuro': len(productos_en_plan_set),  # back-compat
         'con_config': len(productos_config_set),
         'sin_plan': sorted(sin_plan),
         'cobertura_pct': round(len(productos_en_plan_set) / max(1, len(productos_total_set)) * 100, 1),
@@ -2464,12 +2555,121 @@ def perfil_riesgo():
 #  - alertas_capacidad
 #  - costo_proyectado (estimado si hay precios de MP)
 
-def _generar_proyeccion_lotes(c, horizonte_meses):
-    """Genera proyección de lotes para los próximos N meses considerando
-    cadencias + velocidad + tendencia. NO crea registros, solo proyecta.
+def _producciones_futuras_kg(c, producto):
+    """Suma de kg de TODAS las producciones futuras del producto (BD + Calendar).
+    Sebastian (30-abr-2026): "en el calendario aparece que se ha producido
+    hasta hoy para excluirlos, dice cuántos kilos para que sepas cuánto hacer".
+    """
+    total_kg = 0.0
+    eventos_count = 0
+    # 1) BD interna - producciones futuras programadas
+    rows = c.execute("""
+        SELECT cantidad_kg FROM produccion_programada
+        WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+          AND estado IN ('pendiente','en_proceso')
+          AND fecha_programada >= date('now')
+    """, (producto,)).fetchall()
+    for r in rows:
+        if r[0]:
+            total_kg += float(r[0])
+            eventos_count += 1
+    # 2) Calendar - leer kg del título o descripción ("90 kg", "lote 60kg", etc.)
+    eventos = _calendar_events_cached()
+    pn_upper = (producto or '').strip().upper()
+    fecha_hoy = datetime.now().date()
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            if f < fecha_hoy:
+                continue
+        except Exception:
+            continue
+        titulo = (ev.get('titulo') or '').upper()
+        descripcion = (ev.get('descripcion') or '')
+        # Match producto
+        if pn_upper not in titulo and not any(w in titulo for w in pn_upper.split() if len(w) > 4):
+            continue
+        # Extraer kg del titulo o descripción
+        import re as _re
+        for texto in (ev.get('titulo') or '', descripcion):
+            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*kg', texto, _re.IGNORECASE)
+            if m:
+                kg_str = m.group(1).replace(',', '.')
+                try:
+                    total_kg += float(kg_str)
+                    eventos_count += 1
+                    break
+                except Exception:
+                    pass
+    return total_kg, eventos_count
 
-    Sebastian (30-abr-2026): "el calendario está limpio porque todos los
-    lotes caían el mismo día" — distribuir en L/M/V con cupo máx 2/día.
+
+def _factor_g_por_unidad(c, producto):
+    """Devuelve el factor g/unidad de la presentación default. Fallback 30g."""
+    r = c.execute("""
+        SELECT factor_g_por_unidad, peso_g, volumen_ml FROM producto_presentaciones
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) AND activo=1
+        ORDER BY es_default DESC, id ASC LIMIT 1
+    """, (producto,)).fetchone()
+    if r:
+        if r[0] and r[0] > 0:
+            return float(r[0])
+        if r[1] and r[1] > 0:
+            return float(r[1])
+        if r[2] and r[2] > 0:
+            return float(r[2])  # asumir densidad 1
+    return 30.0  # default razonable para sueros
+
+
+def _calcular_demanda_suministro(c, producto, dias_horizonte=60):
+    """Lógica MRP: demanda proyectada vs suministro disponible.
+
+    Sebastian (30-abr-2026): "sabemos cuanto se vende y cuanto se necesita
+    por shopify, en el calendario aparece que se ha producido hasta hoy
+    para excluirlos... dice cuantos kilos para que sepas cuanto hacer".
+
+    Returns:
+        dict con velocidad, stock, producciones_futuras_kg/unidades,
+        demanda, suministro_total, deficit, cubierto_hasta_dias
+    """
+    velocidad, factor = _velocidad_total_producto(c, producto)
+    velocidad_proj = velocidad * factor
+    if velocidad_proj <= 0:
+        velocidad_proj = 0.5  # fallback conservador
+    stock_actual = _stock_actual_pt(c, producto)
+    prod_kg, prod_count = _producciones_futuras_kg(c, producto)
+    factor_g = _factor_g_por_unidad(c, producto)
+    # Convertir kg producidos a unidades equivalentes
+    suministro_futuro_unidades = (prod_kg * 1000) / max(factor_g, 1)
+    suministro_total = stock_actual + suministro_futuro_unidades
+    demanda = velocidad_proj * dias_horizonte
+    cubierto_hasta_dias = suministro_total / max(velocidad_proj, 0.01)
+    return {
+        'velocidad_dia': velocidad_proj,
+        'stock_actual_unid': stock_actual,
+        'producciones_futuras_kg': round(prod_kg, 1),
+        'producciones_futuras_count': prod_count,
+        'suministro_futuro_unidades': round(suministro_futuro_unidades, 0),
+        'suministro_total_unidades': round(suministro_total, 0),
+        'demanda_unidades': round(demanda, 0),
+        'deficit_unidades': round(max(0, demanda - suministro_total), 0),
+        'cubierto_hasta_dias': round(cubierto_hasta_dias, 1),
+        'factor_g': factor_g,
+    }
+
+
+def _generar_proyeccion_lotes(c, horizonte_meses):
+    """Genera proyección de lotes con LÓGICA MRP REAL.
+
+    Sebastian (30-abr-2026): "la lógica seria sabemos cuanto se vende y
+    cuanto se necesita por shopify, en el calendario aparece que se ha
+    producido hasta hoy para excluirlos".
+
+    Para cada SKU:
+      1. Calcula demanda (velocidad × cobertura objetivo)
+      2. Resta suministro existente (stock + producciones futuras BD + Calendar)
+      3. Si déficit > 0 O cubierto_hasta_dias < margen → programar lote(s)
+      4. Si ya está cubierto → SKIP (no duplicar)
     """
     proyeccion = []
     skus = c.execute("""
@@ -2484,13 +2684,12 @@ def _generar_proyeccion_lotes(c, horizonte_meses):
     fecha_hoy = datetime.now().date()
     fecha_fin = fecha_hoy + timedelta(days=horizonte_meses * 30)
     LOTES_MAX_POR_DIA = 2
+    MARGEN_DIAS = 20  # Sebastian: producir 20d antes de agotar
     lotes_por_fecha = {}  # ISO → count
 
     def _ajustar_a_lmv_disponible(fecha_base):
-        """Devuelve la próxima fecha L/M/V (lunes=0, miércoles=2, viernes=4)
-        con cupo disponible. Considera BD + proyección en memoria."""
         f = fecha_base
-        for _ in range(60):  # máx 60 intentos
+        for _ in range(120):
             while f.weekday() not in (0, 2, 4):
                 f += timedelta(days=1)
             iso = f.isoformat()
@@ -2508,72 +2707,82 @@ def _generar_proyeccion_lotes(c, horizonte_meses):
         return f
 
     for producto, cadencia, cob_target, cob_min, merma, lote_kg, prioridad in skus:
-        velocidad, factor = _velocidad_total_producto(c, producto)
-        velocidad_proj = velocidad * factor
-        if velocidad_proj <= 0:
-            velocidad_proj = 0.5  # fallback conservador
-        stock_actual = _stock_actual_pt(c, producto)
-        ultima_prod = _ultima_produccion(c, producto)
+        # ── LÓGICA MRP ──
+        info = _calcular_demanda_suministro(c, producto, dias_horizonte=horizonte_meses * 30)
+        velocidad_proj = info['velocidad_dia']
+        cubierto_hasta = info['cubierto_hasta_dias']
+        suministro_total = info['suministro_total_unidades']
+        demanda = info['demanda_unidades']
+        cob_target_efectivo = cob_target or 60
+        margen_minimo = cob_min or MARGEN_DIAS
 
-        if cadencia:
-            # Cadencia: primer lote desde última (o hoy + offset por prioridad)
-            if ultima_prod:
-                siguiente_base = ultima_prod + timedelta(days=cadencia)
+        # ¿Está YA cubierto por calendar/BD para todo el horizonte?
+        if info['producciones_futuras_count'] > 0 and cubierto_hasta >= (horizonte_meses * 30 - margen_minimo):
+            # Ya hay suficientes producciones programadas
+            continue
+
+        factor_g = info['factor_g']
+        unidades_por_lote = (lote_kg * 1000) / max(factor_g, 1)
+
+        # Calcular lotes necesarios
+        unidades_faltan = max(0, demanda - suministro_total)
+        lotes_a_programar = int((unidades_faltan / max(unidades_por_lote, 1)) + 0.5)
+
+        # Fallback si NO hay velocidad (sin datos Shopify) o NO hay déficit:
+        # programar según CADENCIA configurada — Sebastian: "monte todo
+        # automáticamente, no quiero ver el calendario vacío".
+        if cadencia and lotes_a_programar == 0:
+            # Cuántos lotes caben en el horizonte según cadencia
+            lotes_por_cadencia = max(1, int((horizonte_meses * 30) / cadencia))
+            lotes_a_programar = lotes_por_cadencia
+        elif lotes_a_programar == 0 and horizonte_meses >= 2:
+            # Sin cadencia y sin déficit: al menos 1 lote por SKU en 2m+
+            lotes_a_programar = 1
+
+        if lotes_a_programar == 0:
+            continue
+
+        # Fecha del primer lote
+        ultima_prod = _ultima_produccion(c, producto)
+        if ultima_prod and cadencia:
+            # Próximo según cadencia desde la última real
+            dias_desde_ult = (fecha_hoy - ultima_prod).days
+            if dias_desde_ult >= cadencia:
+                # Ya tocaba — programar pronto
+                dias_offset = max(2, (prioridad or 3))
             else:
-                # Sin histórico: distribuir según prioridad para no concentrar
-                offset_dias = max(2, (prioridad or 3) * 3)
-                siguiente_base = fecha_hoy + timedelta(days=offset_dias)
-            siguiente = _ajustar_a_lmv_disponible(max(siguiente_base, fecha_hoy + timedelta(days=2)))
-            while siguiente <= fecha_fin:
-                iso = siguiente.isoformat()
-                lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
-                proyeccion.append({
-                    'producto': producto,
-                    'fecha': iso,
-                    'mes': siguiente.strftime('%Y-%m'),
-                    'lote_kg': lote_kg,
-                    'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
-                    'velocidad_dia': velocidad_proj,
-                    'tipo': 'cadencia',
-                    'cadencia_dias': cadencia,
-                })
-                # Próximo según cadencia
-                siguiente_base = siguiente + timedelta(days=cadencia)
-                siguiente = _ajustar_a_lmv_disponible(siguiente_base)
+                dias_offset = max(2, cadencia - dias_desde_ult)
+        elif cubierto_hasta > margen_minimo:
+            dias_offset = max(2, int(cubierto_hasta - margen_minimo))
         else:
-            # Auto por umbral: cuándo bajará bajo cob_min
-            stock_proj = stock_actual
-            cursor_dia = fecha_hoy + timedelta(days=max(2, (prioridad or 3) * 2))
-            ultimo_lote_fecha = None
-            while cursor_dia <= fecha_fin:
-                # Avanzar stock_proj hasta cursor_dia
-                dias_caminar = 7
-                stock_proj -= velocidad_proj * dias_caminar
-                dias_restantes = stock_proj / max(velocidad_proj, 0.01)
-                if dias_restantes < (cob_min or 20):
-                    fecha_lote = _ajustar_a_lmv_disponible(cursor_dia)
-                    if fecha_lote > fecha_fin:
-                        break
-                    # Evitar producir 2 veces seguidas en pocos días
-                    if ultimo_lote_fecha and (fecha_lote - ultimo_lote_fecha).days < 21:
-                        cursor_dia += timedelta(days=14)
-                        continue
-                    iso = fecha_lote.isoformat()
-                    lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
-                    proyeccion.append({
-                        'producto': producto,
-                        'fecha': iso,
-                        'mes': fecha_lote.strftime('%Y-%m'),
-                        'lote_kg': lote_kg,
-                        'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
-                        'velocidad_dia': velocidad_proj,
-                        'tipo': 'umbral',
-                        'cadencia_dias': None,
-                    })
-                    unidades_a_producir = velocidad_proj * (cob_target or 60)
-                    stock_proj += unidades_a_producir
-                    ultimo_lote_fecha = fecha_lote
-                cursor_dia += timedelta(days=dias_caminar)
+            # Distribuir según prioridad para no saturar fecha_hoy
+            dias_offset = max(2, (prioridad or 3) * 2)
+
+        fecha_base = fecha_hoy + timedelta(days=dias_offset)
+        siguiente = _ajustar_a_lmv_disponible(fecha_base)
+        intervalo = cadencia if cadencia else max(int(unidades_por_lote / max(velocidad_proj, 0.5)), 14)
+
+        for n_lote in range(lotes_a_programar):
+            if siguiente > fecha_fin:
+                break
+            iso = siguiente.isoformat()
+            lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
+            proyeccion.append({
+                'producto': producto,
+                'fecha': iso,
+                'mes': siguiente.strftime('%Y-%m'),
+                'lote_kg': lote_kg,
+                'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
+                'velocidad_dia': velocidad_proj,
+                'tipo': 'mrp',
+                'cadencia_dias': cadencia,
+                'razon_mrp': f'demanda {demanda:.0f}u, suministro {suministro_total:.0f}u, déficit {unidades_faltan:.0f}u',
+                'lote_num': n_lote + 1,
+                'lotes_total_planeados': lotes_a_programar,
+                'mrp_info': info,
+            })
+            siguiente = _ajustar_a_lmv_disponible(siguiente + timedelta(days=intervalo))
+
     return sorted(proyeccion, key=lambda x: x['fecha'])
 
 
