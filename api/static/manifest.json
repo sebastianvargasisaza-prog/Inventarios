@@ -63,6 +63,20 @@
       "description": "Producción + checklist pre-producción",
       "url": "/programacion",
       "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Planta · Auto-Plan",
+      "short_name": "Planta",
+      "description": "Auto-Plan IA · Pre-flight · Plan Semanal · Centro de Mando",
+      "url": "/inventarios#programacion",
+      "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Mi Agenda Hoy",
+      "short_name": "Mi Día",
+      "description": "Tareas operativas asignadas para hoy",
+      "url": "/inventarios#programacion?tab=tareas",
+      "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192"}]
     }
   ]
 }

@@ -3,14 +3,61 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
+<meta name="theme-color" content="#7c3aed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="EOS Planta">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <title>Planta - Espagiria Laboratorios</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos11">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<script>
+// PWA: registrar service worker (Sebastian 30-abr-2026: "y si haz lo del mobil")
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('/static/sw.js').catch(function(e){console.log('SW reg fail',e);});
+  });
+}
+</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; padding:20px; }
 .container { max-width:1400px; margin:0 auto; background:white; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,0.3); overflow:hidden; }
+
+/* ── Mobile/tablet (Sebastian 30-abr-2026: "haz lo del mobil") ── */
+@media (max-width: 768px) {
+  body { padding:6px; }
+  .container { border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+  .header { padding:14px 12px; }
+  .header h1 { font-size:1.3em; }
+  .tab-content { padding:12px 10px; }
+  .tab-button { font-size:0.78em; padding:10px 8px; min-width:auto; }
+  .grid { grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; }
+  .card { padding:12px; }
+  .card p { font-size:1.4em; }
+  /* Tablas se vuelven scrollables horizontal */
+  .table-wrap, [style*="overflow-x:auto"] { -webkit-overflow-scrolling:touch; }
+  .table { font-size:0.78em; }
+  .table th, .table td { padding:6px 8px; }
+  /* Reducir padding de modales */
+  .modal-bk > div, [class*="modal"] > div { padding:14px !important; max-height:92vh; }
+  /* Touch targets más grandes */
+  button, .btn, [onclick] { min-height:38px; }
+  input, select, textarea { font-size:16px !important; /* evita zoom iOS */ }
+}
+@media (max-width: 480px) {
+  /* Tabs de programación más compactos */
+  [id^="prog-tab-"] { padding:6px 10px !important; font-size:11px !important; }
+  /* Stack vertical default en grids de 2 columnas */
+  [style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important; }
+  [style*="grid-template-columns:repeat(4"] { grid-template-columns:repeat(2,1fr) !important; }
+}
+/* Safe area para iPhone notch */
+@supports (padding: max(0px)) {
+  body { padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
+}
 .header { background:#2B7A78; color:white; padding:25px; text-align:center; }
 .header h1 { font-size:1.8em; margin-bottom:6px; }
 .tabs { display:flex; background:#f5f5f5; border-bottom:2px solid #ddd; overflow-x:auto; }
