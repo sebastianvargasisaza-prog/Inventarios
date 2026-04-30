@@ -3305,7 +3305,7 @@ function renderInfluencers(){
         loadInfluencers();
         return;
       }
-      _toast('✅ Pagado: '+ocNum+' — Jefferson recibirá email + notif in-app', 1);
+      alert('✅ Pagado: '+ocNum+' — Jefferson recibirá email + notif in-app');
       // Sebastian (30-abr-2026): "le doy pagar no desaparece" — bulletproof
       // refresh: esperar la recarga y forzar fresh fetch (no cache).
       try { await loadInfluencers(); } catch(_){}
@@ -3324,7 +3324,7 @@ function renderInfluencers(){
       var raw = await r.text();
       var d = null; try { d = JSON.parse(raw); } catch(_){}
       if(!r.ok){ alert('Error '+r.status+': '+ (d&&d.error || raw.substring(0,200))); return; }
-      _toast('Rechazada', 1);
+      alert('Rechazada');
       loadInfluencers();
     } catch(e){ alert('Error de red: '+e.message); }
   };
