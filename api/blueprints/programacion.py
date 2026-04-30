@@ -2521,6 +2521,104 @@ def prog_terminar_produccion(evento_id):
                     'cycle_time_min': cycle[0] if cycle else None})
 
 
+@bp.route('/api/planta/listo-producir/<path:producto>', methods=['GET'])
+def planta_listo_producir(producto):
+    """Semaforo de insumos para una produccion programada.
+
+    Sebastian (30-abr-2026): "respuesta inmediata" — quiere ver de un
+    vistazo si una produccion tiene todos los MPs disponibles antes
+    de programarla. Antes era email "URGENTE confirmacion insumos".
+
+    Query params:
+        lotes: int (default 1) — para calcular requerimiento total
+                (cantidad_mp = porcentaje * lote_size_kg * lotes * 1000g/kg)
+
+    Devuelve para cada material:
+        codigo_mp, nombre, requerido_g, disponible_g, status
+        (✅ ok / ⚠ justo / ❌ deficit)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        lotes = int(request.args.get('lotes', 1))
+    except (TypeError, ValueError):
+        lotes = 1
+    conn = get_db(); c = conn.cursor()
+
+    # Buscar formula y lote_size
+    fh = c.execute(
+        "SELECT producto_nombre, lote_size_kg, unidad_base_g "
+        "FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    if not fh:
+        return jsonify({'error': 'producto no tiene formula registrada',
+                        'items': []}), 404
+    nombre_fh, lote_kg, unidad_g = fh
+    # cantidad total en g = lote_kg * 1000 * lotes
+    total_g = (lote_kg or 0) * 1000 * max(1, lotes)
+
+    items = c.execute("""
+        SELECT fi.material_id, fi.material_nombre, fi.porcentaje,
+               COALESCE(fi.cantidad_g_por_lote, 0) as cant_lote_g
+        FROM formula_items fi
+        WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?))
+        ORDER BY fi.porcentaje DESC
+    """, (nombre_fh,)).fetchall()
+
+    out = []
+    deficit_count = 0; justo_count = 0
+    for mat_id, mat_nom, pct, cant_lote_g in items:
+        # requerido_g: preferir cantidad_g_por_lote si está, si no calcular % * total
+        if cant_lote_g and cant_lote_g > 0:
+            req_g = cant_lote_g * lotes
+        else:
+            req_g = (pct or 0) / 100.0 * total_g
+
+        # Disponible en bodega = SUM movimientos por material
+        disp = c.execute("""
+            SELECT COALESCE(SUM(
+                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
+                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                     ELSE 0 END
+            ), 0) FROM movimientos WHERE material_id=?
+        """, (mat_id,)).fetchone()
+        disp_g = float(disp[0] if disp else 0)
+
+        # Status
+        if disp_g >= req_g:
+            status = 'ok'
+        elif disp_g >= req_g * 0.5:
+            status = 'justo'; justo_count += 1
+        else:
+            status = 'deficit'; deficit_count += 1
+
+        out.append({
+            'codigo_mp': mat_id,
+            'nombre': mat_nom,
+            'porcentaje': pct,
+            'requerido_g': round(req_g),
+            'disponible_g': round(disp_g),
+            'status': status,
+            'faltante_g': max(0, round(req_g - disp_g)),
+        })
+
+    return jsonify({
+        'producto': nombre_fh,
+        'lote_size_kg': lote_kg,
+        'lotes': lotes,
+        'total_g': round(total_g),
+        'items': out,
+        'resumen': {
+            'total': len(out),
+            'ok': len(out) - justo_count - deficit_count,
+            'justo': justo_count,
+            'deficit': deficit_count,
+            'listo': deficit_count == 0,
+        }
+    })
+
+
 @bp.route('/api/planta/centro-mando', methods=['GET'])
 def planta_centro_mando():
     """Endpoint agregado del Centro de Mando — devuelve TODO en una llamada

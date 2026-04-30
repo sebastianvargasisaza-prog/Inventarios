@@ -6334,7 +6334,12 @@ async function ckMarcar(itemId, estado){
       </div>
       <div style="margin-bottom:14px">
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Número de lotes</label>
-        <input id="mp-lotes" type="number" min="1" value="1" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+        <input id="mp-lotes" type="number" min="1" value="1" oninput="cargarSemaforoInsumos()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
+      </div>
+      <!-- Semáforo de insumos — alimentado por /api/planta/listo-producir -->
+      <div id="mp-semaforo" style="margin-bottom:14px;display:none">
+        <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">🚦 Insumos requeridos</label>
+        <div id="mp-semaforo-content" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:#fafafa;font-size:12px"></div>
       </div>
       <div style="margin-bottom:14px">
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Observaciones (opcional)</label>
@@ -6482,11 +6487,66 @@ async function ckMarcar(itemId, estado){
     // Cargar catalogos solo la primera vez
     if(_PLANTA_AREAS===null) await _mpCargarCatalogos();
     _mpPoblarSelectores();
+    // Cargar semáforo de insumos
+    cargarSemaforoInsumos();
     // Listener para re-chequear conflicto cuando cambia fecha
     var fInp = document.getElementById('mp-fecha');
     if(!fInp._planta_listener){
       fInp.addEventListener('change', mpChequearConflictoSala);
       fInp._planta_listener = true;
+    }
+  }
+
+  async function cargarSemaforoInsumos(){
+    var producto = document.getElementById('mp-producto').value;
+    var lotes = parseInt(document.getElementById('mp-lotes').value) || 1;
+    var box = document.getElementById('mp-semaforo');
+    var content = document.getElementById('mp-semaforo-content');
+    if(!producto){ box.style.display='none'; return; }
+    box.style.display = 'block';
+    content.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:8px">⏳ Calculando...</div>';
+    try{
+      var r = await fetch('/api/planta/listo-producir/'+encodeURIComponent(producto)+'?lotes='+lotes);
+      if(!r.ok){
+        if(r.status === 404){
+          content.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:8px">📋 Sin fórmula registrada para este producto</div>';
+        } else {
+          content.innerHTML = '<div style="color:#dc2626">Error al consultar insumos</div>';
+        }
+        return;
+      }
+      var d = await r.json();
+      var resumen = d.resumen || {};
+      var headerColor = resumen.deficit > 0 ? '#dc2626' : resumen.justo > 0 ? '#d97706' : '#16a34a';
+      var headerLabel = resumen.deficit > 0 ? '❌ Faltan insumos críticos' : resumen.justo > 0 ? '⚠ Stock justo' : '✅ Listo para producir';
+      var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">' +
+        '<b style="color:'+headerColor+';font-size:13px">'+headerLabel+'</b>' +
+        '<span style="font-size:10px;color:#64748b">'+resumen.ok+' OK · '+resumen.justo+' justo · '+resumen.deficit+' déficit · '+resumen.total+' MPs</span>' +
+        '</div>';
+      // Mostrar primero deficit, luego justo, luego ok
+      var orden = {'deficit':0, 'justo':1, 'ok':2};
+      var sorted = (d.items||[]).slice().sort(function(a,b){ return (orden[a.status]||9) - (orden[b.status]||9); });
+      // Solo mostrar los problemáticos por defecto
+      var problematicos = sorted.filter(function(x){ return x.status !== 'ok'; });
+      if(!problematicos.length){
+        html += '<div style="color:#16a34a;font-size:12px;text-align:center;padding:6px">Todos los '+resumen.total+' MPs disponibles ✓</div>';
+      } else {
+        html += problematicos.slice(0,8).map(function(it){
+          var icon = it.status==='deficit'?'❌':it.status==='justo'?'⚠':'✓';
+          var color = it.status==='deficit'?'#dc2626':it.status==='justo'?'#d97706':'#16a34a';
+          var fmt = function(g){ return Math.round(g).toLocaleString('es-CO')+' g'; };
+          return '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px">' +
+            '<span>'+icon+' <b>'+_escHTML(it.nombre)+'</b></span>' +
+            '<span style="color:'+color+';font-family:monospace">'+fmt(it.disponible_g)+' / '+fmt(it.requerido_g)+(it.faltante_g>0?' <b>(falta '+fmt(it.faltante_g)+')</b>':'')+'</span>' +
+            '</div>';
+        }).join('');
+        if(problematicos.length > 8){
+          html += '<div style="text-align:center;font-size:10px;color:#94a3b8;margin-top:4px">+ '+(problematicos.length-8)+' más</div>';
+        }
+      }
+      content.innerHTML = html;
+    }catch(e){
+      content.innerHTML = '<div style="color:#dc2626">Error de red</div>';
     }
   }
   function cerrarModalProgramar() {
