@@ -7248,140 +7248,80 @@ async function ckMarcar(itemId, estado){
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   function switchProgTab(tab){
     try {
-      var el_c   = document.getElementById('ptab-centro');
-      var el_p   = document.getElementById('ptab-plan');
-      var el_ck  = document.getElementById('ptab-checklist');
-      var el_tk  = document.getElementById('ptab-tareas');
-      var el_pln = document.getElementById('ptab-plano');
-      var el_pr  = document.getElementById('ptab-presentaciones');
-      var el_eq  = document.getElementById('ptab-equipos');
-      var el_pf  = document.getElementById('ptab-preflight');
-      var el_ps  = document.getElementById('ptab-plansem');
-      var el_ap  = document.getElementById('ptab-autoplan');
-      var el_cc  = document.getElementById('ptab-conteo');
-      // Nuevas pestañas (4 únicas)
-      var el_pv2 = document.getElementById('ptab-planv2');
-      var el_asg = document.getElementById('ptab-asignacion');
-      var el_cfg = document.getElementById('ptab-config');
-      if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
-      // Defensa: ocultar TODOS los divs ptab-* dentro de #programacion
+      // Mapeo tab → ID del div objetivo
+      var TAB_TO_DIV = {
+        'planv2': 'ptab-planv2',
+        'asignacion': 'ptab-asignacion',
+        'mando': 'ptab-plano',
+        'autoplan': 'ptab-autoplan',
+        'config': 'ptab-config',
+        'maquila': 'ptab-maquila',
+        // Compat con flujos viejos
+        'presentaciones': 'ptab-presentaciones',
+        'equipos': 'ptab-equipos',
+        'preflight': 'ptab-preflight',
+        'plansem': 'ptab-plansem',
+        'conteo': 'ptab-conteo',
+        'centro': 'ptab-centro',
+        'plan': 'ptab-plan',
+        'checklist': 'ptab-checklist',
+        'tareas': 'ptab-tareas',
+        'plano': 'ptab-plano',
+      };
+      // Ocultar TODOS los ptab-* dentro de #programacion
       var prog = document.getElementById('programacion');
       if(prog){
         var todos = prog.querySelectorAll('[id^="ptab-"]');
         todos.forEach(function(div){ div.style.display = 'none'; });
       }
-      // 4 pestañas oficiales: planv2 / asignacion / mando / autoplan / config
-      if(tab==='planv2')      { if(el_pv2) el_pv2.style.display = 'block'; }
-      else if(tab==='asignacion') { if(el_asg) el_asg.style.display = 'block'; }
-      else if(tab==='mando')      { if(el_pln) el_pln.style.display = 'block'; }
-      else if(tab==='autoplan')   { if(el_ap)  el_ap.style.display  = 'block'; }
-      else if(tab==='config')     { if(el_cfg) el_cfg.style.display = 'block'; }
-      else if(tab==='maquila')    { var elMq=document.getElementById('ptab-maquila'); if(elMq) elMq.style.display='block'; if(typeof maquilaInit==='function') maquilaInit(); }
-      // Compatibilidad con sub-tabs antiguos invocados desde Configuración
-      else if(tab==='presentaciones') { if(el_pr) el_pr.style.display='block'; }
-      else if(tab==='equipos')        { if(el_eq) el_eq.style.display='block'; }
-      else if(tab==='preflight')      { if(el_pf) el_pf.style.display='block'; }
-      else if(tab==='plansem')        { if(el_ps) el_ps.style.display='block'; }
-      else if(tab==='conteo')         { if(el_cc) el_cc.style.display='block'; }
-      else if(tab==='centro')         { el_c.style.display='block'; }
-      else if(tab==='plan')           { el_p.style.display='block'; }
-      else if(tab==='checklist')      { if(el_ck) el_ck.style.display='block'; }
-      else if(tab==='tareas')         { if(el_tk) el_tk.style.display='block'; }
-      else if(tab==='plano')          { if(el_pln) el_pln.style.display='block'; }
-      var bc   = document.getElementById('prog-tab-centro');
-      var bp   = document.getElementById('prog-tab-plan');
-      var bck  = document.getElementById('prog-tab-checklist');
-      var btk  = document.getElementById('prog-tab-tareas');
-      var bpln = document.getElementById('prog-tab-plano');
-      var bpr  = document.getElementById('prog-tab-presentaciones');
-      if(bc)  { bc.style.background  = tab==='centro' ? '#1a4a7a' : '#e2e8f0'; bc.style.color  = tab==='centro' ? '#fff' : '#1a4a7a'; }
-      if(bp)  { bp.style.background  = tab==='plan'   ? '#1a4a7a' : '#e2e8f0'; bp.style.color  = tab==='plan'   ? '#fff' : '#1a4a7a'; }
-      if(bck) { bck.style.background = tab==='checklist' ? '#15803d' : '#e2e8f0'; bck.style.color = tab==='checklist' ? '#fff' : '#1a4a7a'; }
-      if(btk) { btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
-      if(bpln){ bpln.style.background= tab==='plano'  ? '#1a4a7a' : '#e2e8f0'; bpln.style.color= tab==='plano'  ? '#fff' : '#1a4a7a'; }
-      if(bpr) { bpr.style.background = tab==='presentaciones' ? '#0f766e' : '#e2e8f0'; bpr.style.color = tab==='presentaciones' ? '#fff' : '#1a4a7a'; }
-      var beq = document.getElementById('prog-tab-equipos');
-      if(beq) { beq.style.background = tab==='equipos' ? '#7c3aed' : '#e2e8f0'; beq.style.color = tab==='equipos' ? '#fff' : '#1a4a7a'; }
-      var bpf = document.getElementById('prog-tab-preflight');
-      if(bpf) { bpf.style.background = tab==='preflight' ? '#dc2626' : '#e2e8f0'; bpf.style.color = tab==='preflight' ? '#fff' : '#1a4a7a'; }
-      var bcc = document.getElementById('prog-tab-conteo');
-      if(bcc) { bcc.style.background = tab==='conteo' ? '#0f766e' : '#e2e8f0'; bcc.style.color = tab==='conteo' ? '#fff' : '#1a4a7a'; }
-      // 4 pestañas oficiales: estilos
-      var bpv2 = document.getElementById('prog-tab-planv2');
-      var basg = document.getElementById('prog-tab-asignacion');
-      var bmando = document.getElementById('prog-tab-mando');
-      var bcfg = document.getElementById('prog-tab-config');
-      var bap2 = document.getElementById('prog-tab-autoplan');
-      function gradActivo(elem, gradient){ if(!elem) return; elem.style.background = gradient; elem.style.color='#fff'; }
-      function gradInactivo(elem){ if(!elem) return; elem.style.background='#e2e8f0'; elem.style.color='#1a4a7a'; elem.style.boxShadow=''; }
-      if(tab==='planv2'){ gradActivo(bpv2,'linear-gradient(135deg,#0f766e,#0891b2)'); bpv2.style.boxShadow='0 3px 10px rgba(8,145,178,.35)'; } else gradInactivo(bpv2);
-      if(tab==='asignacion'){ gradActivo(basg,'#0f766e'); } else gradInactivo(basg);
-      if(tab==='mando'){ gradActivo(bmando,'#1a4a7a'); } else gradInactivo(bmando);
-      if(tab==='autoplan'){ gradActivo(bap2,'linear-gradient(135deg,#7c3aed,#dc2626)'); bap2.style.boxShadow='0 3px 10px rgba(124,58,237,.4)'; } else gradInactivo(bap2);
-      if(tab==='config'){ gradActivo(bcfg,'#1f2937'); } else gradInactivo(bcfg);
-      var bmq = document.getElementById('prog-tab-maquila');
-      if(tab==='maquila'){ gradActivo(bmq,'linear-gradient(135deg,#1a4a7a,#0891b2)'); } else gradInactivo(bmq);
-      if(tab==='plan'){
-        el_p.scrollIntoView({behavior:'smooth', block:'start'});
-        if(!_planLoaded) cargarPlanificacion(60);
+      // Mostrar el div objetivo
+      var targetId = TAB_TO_DIV[tab];
+      if(targetId){
+        var elT = document.getElementById(targetId);
+        if(elT){
+          elT.style.display = 'block';
+        } else {
+          console.warn('switchProgTab: div '+targetId+' no encontrado');
+        }
       }
-      if(tab==='checklist'){
-        if(el_ck) el_ck.scrollIntoView({behavior:'smooth', block:'start'});
+      // Hooks específicos por tab — cada uno se invoca solo si la función existe
+      if(tab==='maquila' && typeof maquilaInit==='function') maquilaInit();
+      if(tab==='checklist' && typeof cargarChecklistResumen==='function'){
         cargarChecklistResumen();
         var sel = document.getElementById('ck-autorefresh');
         if(sel && typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(sel.value);
-      } else {
-        if(typeof ckSetAutoRefresh==='function') ckSetAutoRefresh(0);
-      }
-      if(tab==='tareas'){
-        if(el_tk) el_tk.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarTareasOperativas==='function') cargarTareasOperativas();
-      }
-      if(tab==='plano'){
-        if(el_pln) el_pln.scrollIntoView({behavior:'smooth', block:'start'});
+      } else if(typeof ckSetAutoRefresh==='function'){ ckSetAutoRefresh(0); }
+      if(tab==='tareas' && typeof cargarTareasOperativas==='function') cargarTareasOperativas();
+      if(tab==='plano' || tab==='mando'){
         if(typeof renderCentroMando==='function') renderCentroMando();
-        // arrancar auto-refresh si checkbox activo
-        cmStartAutoRefresh();
-      } else {
-        cmStopAutoRefresh();
+        if(typeof cmStartAutoRefresh==='function') cmStartAutoRefresh();
+      } else if(typeof cmStopAutoRefresh==='function'){ cmStopAutoRefresh(); }
+      if(tab==='presentaciones' && typeof cargarPresentaciones==='function') cargarPresentaciones();
+      if(tab==='equipos' && typeof cargarEquipos==='function') cargarEquipos();
+      if(tab==='preflight' && typeof cargarPreflightLista==='function') cargarPreflightLista();
+      if(tab==='plansem' && typeof cargarPlanSemanal==='function') cargarPlanSemanal();
+      if(tab==='autoplan' && typeof apInit==='function') apInit();
+      if(tab==='conteo' && typeof cargarConteoCalendario==='function') cargarConteoCalendario();
+      if(tab==='plan' && typeof cargarPlanificacion==='function' && !window._planLoaded){
+        cargarPlanificacion(60);
       }
-      if(tab==='presentaciones'){
-        if(el_pr) el_pr.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarPresentaciones==='function') cargarPresentaciones();
+      // Estilos botones — los 6 oficiales
+      function _bg(id, activeStyle, activeClass){
+        var b = document.getElementById(id);
+        if(!b) return;
+        if(activeClass){ b.style.background = activeStyle; b.style.color='#fff'; b.style.boxShadow='0 3px 10px rgba(0,0,0,.2)'; }
+        else { b.style.background='#e2e8f0'; b.style.color='#1a4a7a'; b.style.boxShadow=''; }
       }
-      if(tab==='equipos'){
-        if(el_eq) el_eq.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarEquipos==='function') cargarEquipos();
-      }
-      if(tab==='preflight'){
-        if(el_pf) el_pf.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarPreflightLista==='function') cargarPreflightLista();
-      }
-      if(tab==='plansem'){
-        if(el_ps) el_ps.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarPlanSemanal==='function') cargarPlanSemanal();
-      }
-      if(tab==='autoplan'){
-        if(el_ap) el_ap.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof apInit==='function') apInit();
-      }
-      if(tab==='conteo'){
-        if(el_cc) el_cc.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cargarConteoCalendario==='function') cargarConteoCalendario();
-      }
-      // === Nuevas 4 pestañas oficiales ===
-      if(tab==='planv2'){
-        if(el_pv2) el_pv2.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof planV2Init==='function') planV2Init();
-      }
-      if(tab==='asignacion'){
-        if(el_asg) el_asg.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof asigInit==='function') asigInit();
-      }
-      if(tab==='config'){
-        if(el_cfg) el_cfg.scrollIntoView({behavior:'smooth', block:'start'});
-        if(typeof cfgInit==='function') cfgInit();
-      }
+      _bg('prog-tab-planv2',     'linear-gradient(135deg,#0f766e,#0891b2)', tab==='planv2');
+      _bg('prog-tab-asignacion', '#0f766e',                                  tab==='asignacion');
+      _bg('prog-tab-mando',      '#1a4a7a',                                  tab==='mando');
+      _bg('prog-tab-autoplan',   'linear-gradient(135deg,#7c3aed,#dc2626)',  tab==='autoplan');
+      _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#0891b2)', tab==='maquila');
+      _bg('prog-tab-config',     '#1f2937',                                  tab==='config');
+      // === Hooks de inicialización para las 4 pestañas oficiales ===
+      if(tab==='planv2' && typeof planV2Init==='function') planV2Init();
+      if(tab==='asignacion' && typeof asigInit==='function') asigInit();
+      if(tab==='config' && typeof cfgInit==='function') cfgInit();
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
     }
