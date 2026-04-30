@@ -201,6 +201,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       <option value="reciente">🆕 Más reciente arriba</option>
       <option value="antiguo">📜 Más antiguo arriba</option>
     </select>
+    <button onclick="limpiarSolsNoPagadas()" style="margin-left:auto;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Eliminar SOLs Influencer/Marketing/CC NO pagadas (preserva las Pagadas)">🧹 Limpiar no-pagadas</button>
   </div>
   <div id="pills-influencer-help" style="font-size:11px;color:#64748b;padding:0 4px 8px;"></div>
   <div id="pills-influencer" class="pills"></div>
@@ -2957,6 +2958,45 @@ async function loadSolicitudes(){
   }catch(e){ SOLIC=[]; }
   renderSolicitudes();
 }
+// Limpiar SOLs influencer/CC NO pagadas — dry-run primero
+window.limpiarSolsNoPagadas = async function(){
+  try{
+    var r = await fetch('/api/compras/influencer/limpiar-no-pagadas', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({})  // sin confirm = dry-run
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    if(d.a_borrar === 0){
+      alert('✓ Nada que limpiar — no hay SOLs Influencer/Marketing/CC sin pagar.');
+      return;
+    }
+    var lista = d.candidatos.slice(0, 30).map(function(x){
+      var nm = x.beneficiario || x.solicitante || '(sin nombre)';
+      var v = x.valor>0 ? ' $'+Number(x.valor).toLocaleString('es-CO') : '';
+      return '  · '+x.numero+' '+nm+v+' ['+x.estado+']';
+    }).join('\\n');
+    if(d.a_borrar > 30) lista += '\\n  ... y '+(d.a_borrar-30)+' más';
+    var msg = 'Vas a ELIMINAR '+d.a_borrar+' SOLs Influencer/Marketing/CC sin pagar.\\n\\n'+lista;
+    if(d.omitidos_por_pagos>0){
+      msg += '\\n\\n('+d.omitidos_por_pagos+' omitidas porque tienen pagos efectivos — quedan intactas)';
+    }
+    msg += '\\n\\n¿Confirmar eliminación PERMANENTE?';
+    if(!confirm(msg)) return;
+    var r2 = await fetch('/api/compras/influencer/limpiar-no-pagadas', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirm: true})
+    });
+    var d2 = await r2.json();
+    if(d2.ok){
+      alert('✓ Eliminadas '+d2.total_eliminados+' solicitudes. ('+d2.omitidos_por_pagos+' preservadas con pago)');
+      loadInfluencers();
+    } else {
+      alert('Error: '+(d2.error||'?'));
+    }
+  }catch(e){ alert('Error de red: '+e.message); }
+};
+
 async function loadInfluencers(){
   try{
     // Sebastian (30-abr-2026): cache-bust con timestamp para evitar que el

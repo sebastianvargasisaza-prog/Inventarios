@@ -401,6 +401,142 @@ def generar_oc_automatica():
     }), 201
 
 # ── MÓDULO COMPRAS ──────────────────────────────────────────────────────────
+@bp.route('/api/compras/influencer/limpiar-no-pagadas', methods=['GET', 'POST'])
+def limpiar_influencer_no_pagadas():
+    """Limpia SOLs/OCs de Influencer/Marketing/CC que NO se han pagado.
+
+    Sebastian (30-abr-2026): "elimíname todo lo que quedó en influencers
+    de compras que ya no son para pagar no se de donde salieron".
+
+    Modo dry-run (default): GET o POST sin {confirm:true} → devuelve
+    la lista de candidatos sin borrar nada. Para revisar antes.
+
+    Modo real: POST {confirm:true} → ejecuta borrado.
+    Solo admin (sebastian/alejandro).
+
+    Borra:
+      - SOL con categoria influencer/marketing/cuenta_de_cobro
+        Y estado IN ('Pendiente','Aprobada','Rechazada')  ← NO 'Pagada'
+        Y la OC vinculada NO tiene pagos efectivos.
+      - OC vinculada (si no esta pagada) + sus items + pagos_influencers
+        Pendientes (preserva los Pagados, son historial).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = (session.get('compras_user') or '').lower()
+    if user not in {a.lower() for a in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    confirm = payload.get('confirm') is True
+
+    conn = get_db(); c = conn.cursor()
+    sols = c.execute("""
+        SELECT numero, solicitante, valor, estado, numero_oc, categoria,
+               observaciones, fecha
+        FROM solicitudes_compra
+        WHERE (LOWER(COALESCE(categoria,'')) LIKE '%influencer%'
+               OR LOWER(COALESCE(categoria,'')) LIKE '%marketing%'
+               OR LOWER(COALESCE(categoria,'')) LIKE '%cuenta de cobro%')
+          AND estado IN ('Pendiente','Aprobada','Rechazada')
+        ORDER BY numero DESC
+    """).fetchall()
+
+    candidatos = []
+    for s in sols:
+        numero, solicitante, valor, estado, oc_num, cat, obs, fecha = s
+        razon_skip = None
+        n_pagos_oc = 0
+        n_pagos_inf_pagados = 0
+        if oc_num:
+            try:
+                n_pagos_oc = c.execute(
+                    "SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=?", (oc_num,)
+                ).fetchone()[0] or 0
+            except sqlite3.OperationalError:
+                n_pagos_oc = 0
+            try:
+                n_pagos_inf_pagados = c.execute(
+                    "SELECT COUNT(*) FROM pagos_influencers WHERE numero_oc=? AND estado='Pagada'",
+                    (oc_num,)
+                ).fetchone()[0] or 0
+            except sqlite3.OperationalError:
+                n_pagos_inf_pagados = 0
+            if n_pagos_oc > 0 or n_pagos_inf_pagados > 0:
+                razon_skip = f'OC {oc_num} tiene {n_pagos_oc} pagos_oc + {n_pagos_inf_pagados} pagos_inf Pagados'
+
+        # Extraer beneficiario de obs si existe
+        benef = ''
+        if obs:
+            import re as _re
+            m = _re.search(r'BENEFICIARIO:\s*([^|]+)', obs, _re.IGNORECASE)
+            if m: benef = m.group(1).strip()
+
+        candidatos.append({
+            'numero': numero,
+            'solicitante': solicitante,
+            'beneficiario': benef,
+            'valor': valor or 0,
+            'estado': estado,
+            'numero_oc': oc_num,
+            'fecha': fecha,
+            'categoria': cat,
+            'safe_to_delete': razon_skip is None,
+            'razon_skip': razon_skip,
+        })
+
+    elegibles = [x for x in candidatos if x['safe_to_delete']]
+    omitidos = [x for x in candidatos if not x['safe_to_delete']]
+
+    if not confirm:
+        return jsonify({
+            'dry_run': True,
+            'total_candidatos': len(candidatos),
+            'a_borrar': len(elegibles),
+            'omitidos_por_pagos': len(omitidos),
+            'candidatos': elegibles,
+            'omitidos': omitidos,
+            'mensaje': f'Dry-run. {len(elegibles)} se borrarian, {len(omitidos)} omitidos por tener pagos. POST con {{"confirm":true}} para ejecutar.',
+        })
+
+    # Modo confirm — borrar
+    eliminados = []
+    for cand in elegibles:
+        numero = cand['numero']
+        oc_num = cand['numero_oc']
+        # Borrar pagos_influencers Pendiente (preservar Pagada en otra OC, no aplica aqui)
+        if oc_num:
+            try:
+                c.execute("DELETE FROM pagos_influencers WHERE numero_oc=? AND estado != 'Pagada'", (oc_num,))
+            except sqlite3.OperationalError:
+                pass
+            # Borrar items
+            try:
+                c.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+            except sqlite3.OperationalError:
+                pass
+            # Borrar OC si no esta pagada
+            try:
+                c.execute("DELETE FROM ordenes_compra WHERE numero_oc=? AND estado != 'Pagada'", (oc_num,))
+            except sqlite3.OperationalError:
+                pass
+        # Borrar SOL items + SOL
+        try:
+            c.execute("DELETE FROM solicitudes_compra_items WHERE numero_solicitud=?", (numero,))
+        except sqlite3.OperationalError:
+            pass
+        c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero,))
+        eliminados.append(numero)
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'eliminados': eliminados,
+        'total_eliminados': len(eliminados),
+        'omitidos_por_pagos': len(omitidos),
+    })
+
+
 @bp.route('/api/solicitudes-compra/<numero>', methods=['DELETE'])
 def eliminar_solicitud(numero):
     """Elimina una solicitud de compra y limpia OC asociada cuando aplica.
