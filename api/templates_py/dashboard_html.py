@@ -1352,7 +1352,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button id="prog-tab-conteo"></button>
   </div>
 
-  <div id="ptab-centro">
+  <div id="ptab-centro" style="display:none">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
     <div>
       <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
@@ -7175,21 +7175,12 @@ async function ckMarcar(itemId, estado){
       var el_asg = document.getElementById('ptab-asignacion');
       var el_cfg = document.getElementById('ptab-config');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
-      // Hide TODOS los antiguos por default
-      el_c.style.display  = 'none';
-      el_p.style.display  = 'none';
-      if(el_ck)  el_ck.style.display  = 'none';
-      if(el_tk)  el_tk.style.display  = 'none';
-      if(el_pln) el_pln.style.display = 'none';
-      if(el_pr)  el_pr.style.display  = 'none';
-      if(el_eq)  el_eq.style.display  = 'none';
-      if(el_pf)  el_pf.style.display  = 'none';
-      if(el_ps)  el_ps.style.display  = 'none';
-      if(el_ap)  el_ap.style.display  = 'none';
-      if(el_cc)  el_cc.style.display  = 'none';
-      if(el_pv2) el_pv2.style.display = 'none';
-      if(el_asg) el_asg.style.display = 'none';
-      if(el_cfg) el_cfg.style.display = 'none';
+      // Defensa: ocultar TODOS los divs ptab-* dentro de #programacion
+      var prog = document.getElementById('programacion');
+      if(prog){
+        var todos = prog.querySelectorAll('[id^="ptab-"]');
+        todos.forEach(function(div){ div.style.display = 'none'; });
+      }
       // 4 pestañas oficiales: planv2 / asignacion / mando / autoplan / config
       if(tab==='planv2')      { if(el_pv2) el_pv2.style.display = 'block'; }
       else if(tab==='asignacion') { if(el_asg) el_asg.style.display = 'block'; }
