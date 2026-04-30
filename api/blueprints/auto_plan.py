@@ -1466,7 +1466,7 @@ def _clasificar_estado_sku(c, producto, velocidad_dia, ultima_prod_calendar):
     return 'activo', None
 
 
-def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merma_pct, prioridad):
+def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merma_pct, prioridad, ignorar_calendar=False):
     """LA función central. Para un SKU devuelve la recomendación completa.
 
     Lógica:
@@ -1479,6 +1479,10 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
       6. Si alcance ≤ margen → URGENTE
       7. Cadencia histórica de calendar > 14d atrás como referencia
       8. Lote típico = mediana de kg en calendar histórico
+
+    Si ignorar_calendar=True: NO suma pipeline_kg ni futuro_kg de Calendar
+    al stock_total (solo BD futuro). Sebastian (30-abr-2026): "no tengas en
+    cuenta el calendario, si tuvieras que producir ya según Shopify".
     """
     fecha_hoy = datetime.now().date()
     fecha_pipeline_inicio = fecha_hoy - timedelta(days=14)
@@ -1533,7 +1537,18 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
 
     pipeline_unidades = (pipeline_kg * 1000) / max(factor_g, 1)
     futuro_unidades = (futuro_kg * 1000) / max(factor_g, 1)
-    stock_total = stock_shopify + pipeline_unidades + futuro_unidades
+    if ignorar_calendar:
+        # Solo BD futuro cuenta (lo que Sebastián confirmó manualmente),
+        # ignoramos pipeline (Calendar últimos 14d) y futuro de Calendar.
+        bd_futuro_unidades = (bd_futuro_kg * 1000) / max(factor_g, 1)
+        stock_total = stock_shopify + bd_futuro_unidades
+        # Para reportar al frontend con valores limpios:
+        pipeline_kg = 0.0
+        pipeline_unidades = 0
+        futuro_kg = bd_futuro_kg
+        futuro_unidades = int(bd_futuro_unidades)
+    else:
+        stock_total = stock_shopify + pipeline_unidades + futuro_unidades
     dias_alcance = stock_total / velocidad_proj if velocidad_proj > 0 else 999
 
     # 4. Cadencia y lote típico desde histórico calendar
@@ -1650,9 +1665,14 @@ def actualizar_estado_sku(sku_id):
 @bp.route('/api/planta/recomendaciones', methods=['GET'])
 def planta_recomendaciones():
     """Devuelve recomendaciones inteligentes por SKU.
-    Sebastian: "tú podrías decirme el próximo lunes deberia producirse tal producto"."""
+    Sebastian: "tú podrías decirme el próximo lunes deberia producirse tal producto".
+
+    Query param ?ignorar_calendar=1 → modo "puro Shopify": ignora pipeline+futuro
+    de Calendar al sumar stock_total. Útil cuando el Calendar no es confiable.
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    ignorar_cal = request.args.get('ignorar_calendar', '0') in ('1', 'true', 'yes')
     conn = get_db(); c = conn.cursor()
     skus = c.execute("""
         SELECT spc.producto_nombre, spc.cadencia_dias, spc.merma_pct, spc.prioridad,
@@ -1666,7 +1686,7 @@ def planta_recomendaciones():
     for sku_row in skus:
         producto, cadencia, merma, prioridad, lote_kg = sku_row
         try:
-            rec = _calcular_recomendacion_sku(c, producto, lote_kg, cadencia, merma, prioridad)
+            rec = _calcular_recomendacion_sku(c, producto, lote_kg, cadencia, merma, prioridad, ignorar_calendar=ignorar_cal)
             recomendaciones.append(rec)
         except Exception as e:
             log.warning(f'Recomendación fallida {producto}: {e}')
@@ -1730,11 +1750,199 @@ def planta_recomendaciones():
         'recomendaciones': recomendaciones,
         'kpis': kpis,
         'fecha_analisis': datetime.now().isoformat(),
+        'modo': 'shopify_puro' if ignorar_cal else 'completo',
+        'ignorar_calendar': ignorar_cal,
         'distribucion': {
             'patron': 'L-V (5 días)' if distribuir_lv_completo else 'L/M/V (3 días)',
             'razon': f'{accionables_count} producciones accionables → ' + ('alta carga, distribución 5 días' if distribuir_lv_completo else 'carga normal, L/M/V suficiente'),
             'limite_por_dia': LIMITE_POR_DIA,
         },
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PLAN PURO SHOPIFY — vista por día (próximo lunes → viernes siguiente)
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "no tengas en cuenta el calendario, si tuvieras
+# que producir ya, según Shopify inventario y ventas dime cómo lo harías
+# aquí, qué iría el próximo lunes, martes, miércoles etc".
+
+@bp.route('/api/planta/plan-semana-shopify', methods=['GET'])
+def plan_semana_shopify():
+    """Plan de la próxima semana basado SOLO en Shopify (stock + ventas), ignorando Calendar.
+
+    Devuelve:
+      {
+        'semana_inicio': 'YYYY-MM-DD' (próximo lunes),
+        'semana_fin':    'YYYY-MM-DD' (viernes siguiente),
+        'dias': [
+          {
+            'fecha': 'YYYY-MM-DD', 'nombre_dia': 'lunes', 'orden_dia': 0,
+            'producciones': [
+              {producto, lote_kg, velocidad_dia, stock_actual, dias_alcance,
+               urgencia, razon, factor_g, dias_que_durara_lote}
+            ]
+          }, ...
+        ],
+        'sin_fecha': [...],   // recomendaciones que caen >7d (no esta semana)
+        'kpis': {...}
+      }
+
+    Query params:
+      - semanas: int (default 1) → cuántas semanas planear (1, 2, 4)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    semanas = max(1, min(8, int(request.args.get('semanas', '1'))))
+    conn = get_db(); c = conn.cursor()
+
+    skus = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, spc.merma_pct, spc.prioridad,
+               fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+        ORDER BY spc.prioridad ASC
+    """).fetchall()
+
+    # Calcular recomendaciones IGNORANDO Calendar
+    recs = []
+    for sku_row in skus:
+        producto, cadencia, merma, prioridad, lote_kg = sku_row
+        try:
+            r = _calcular_recomendacion_sku(c, producto, lote_kg, cadencia, merma, prioridad, ignorar_calendar=True)
+            recs.append(r)
+        except Exception as e:
+            log.warning(f'plan-semana-shopify recomendación fallida {producto}: {e}')
+
+    # Solo accionables (urgencia que requiere producir)
+    accionables = [r for r in recs if r.get('urgencia') in ('critica', 'alta', 'media', 'baja')]
+
+    # Distribución: si >3 accionables/semana → L-V, si <=3 → L/M/V
+    distribuir_lv_completo = len(accionables) > 3 * semanas
+    DIAS_PRODUCCION = (0, 1, 2, 3, 4) if distribuir_lv_completo else (0, 2, 4)
+
+    fecha_hoy = datetime.now().date()
+    # Próximo lunes (si hoy es lunes y son antes de las 12, hoy mismo; si no, lunes siguiente)
+    dias_a_lunes = (7 - fecha_hoy.weekday()) % 7
+    if dias_a_lunes == 0:
+        # Hoy es lunes
+        proximo_lunes = fecha_hoy
+    else:
+        proximo_lunes = fecha_hoy + timedelta(days=dias_a_lunes)
+
+    semana_fin = proximo_lunes + timedelta(days=(7 * semanas) - 3)  # Viernes de la última semana
+
+    # Construir slots disponibles en la(s) semana(s)
+    slots = []
+    f = proximo_lunes
+    for _ in range(7 * semanas):
+        if f.weekday() in DIAS_PRODUCCION:
+            slots.append(f)
+        f += timedelta(days=1)
+
+    # Ordenar accionables por urgencia + días alcance ascendente (más urgente primero)
+    orden_urg = {'critica': 0, 'alta': 1, 'media': 2, 'baja': 3}
+    accionables.sort(key=lambda r: (orden_urg.get(r['urgencia'], 9), float(r.get('dias_alcance') or 9999)))
+
+    # Asignar 1 producción por slot (regla: 1 producto/día por área dispensación)
+    LIMITE_POR_DIA = 1
+    asignados_por_dia = {s.isoformat(): [] for s in slots}
+    sin_slot = []
+
+    for r in accionables:
+        # Días hasta que sea necesario producir (margen 20d)
+        dias_hasta = max(0, int(r.get('dias_alcance', 30)) - 20)
+        fecha_ideal = fecha_hoy + timedelta(days=dias_hasta)
+
+        # Buscar primer slot >= fecha_ideal con cupo
+        asignado = False
+        for s in slots:
+            if s < fecha_ideal:
+                continue
+            if len(asignados_por_dia[s.isoformat()]) < LIMITE_POR_DIA:
+                # Calcular cuánto durará el lote producido (para decidir cadencia)
+                lote_kg_use = r.get('lote_tipico_kg') or r.get('lote_kg_default') or 30
+                factor_g = r.get('factor_g') or 30
+                velocidad = max(0.01, r.get('velocidad_dia') or 0.01)
+                unidades_lote = (lote_kg_use * 1000) / max(factor_g, 1)
+                dias_que_durara = int(unidades_lote / velocidad)
+                asignados_por_dia[s.isoformat()].append({
+                    'producto': r['producto'],
+                    'lote_kg': round(lote_kg_use, 1),
+                    'velocidad_dia': r['velocidad_dia'],
+                    'stock_actual': r.get('stock_shopify', 0),
+                    'dias_alcance': r['dias_alcance'],
+                    'urgencia': r['urgencia'],
+                    'razon': r['razon'],
+                    'factor_g': factor_g,
+                    'dias_que_durara_lote': dias_que_durara,
+                    'unidades_lote': int(unidades_lote),
+                })
+                asignado = True
+                break
+        if not asignado:
+            # No cupo en la semana → fuera
+            sin_slot.append({
+                'producto': r['producto'],
+                'lote_kg': round(r.get('lote_tipico_kg') or r.get('lote_kg_default') or 30, 1),
+                'dias_alcance': r['dias_alcance'],
+                'urgencia': r['urgencia'],
+                'razon': 'No hay cupo en la(s) semana(s) planeada(s). Programar después.',
+                'fecha_proxima_estimada': r.get('fecha_proxima'),
+            })
+
+    # Construir respuesta por día
+    nombres_dia = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+    dias_out = []
+    f = proximo_lunes
+    for _ in range(7 * semanas):
+        es_dia_prod = f.weekday() in DIAS_PRODUCCION
+        producciones = asignados_por_dia.get(f.isoformat(), [])
+        # Solo incluir días con producciones o días de producción aunque vacíos
+        if es_dia_prod:
+            dias_out.append({
+                'fecha': f.isoformat(),
+                'nombre_dia': nombres_dia[f.weekday()],
+                'orden_dia': f.weekday(),
+                'es_dia_produccion': True,
+                'producciones': producciones,
+                'producciones_count': len(producciones),
+            })
+        f += timedelta(days=1)
+
+    # KPIs
+    kpis = {
+        'total_recs': len(recs),
+        'accionables': len(accionables),
+        'criticas': sum(1 for r in accionables if r['urgencia'] == 'critica'),
+        'altas': sum(1 for r in accionables if r['urgencia'] == 'alta'),
+        'medias': sum(1 for r in accionables if r['urgencia'] == 'media'),
+        'bajas': sum(1 for r in accionables if r['urgencia'] == 'baja'),
+        'asignadas_semana': sum(len(d['producciones']) for d in dias_out),
+        'sin_cupo': len(sin_slot),
+        'slots_disponibles': len(slots),
+    }
+
+    return jsonify({
+        'semana_inicio': proximo_lunes.isoformat(),
+        'semana_fin': semana_fin.isoformat(),
+        'semanas': semanas,
+        'patron_distribucion': 'L-V (5 días)' if distribuir_lv_completo else 'L/M/V (3 días)',
+        'dias': dias_out,
+        'sin_slot': sin_slot,
+        'kpis': kpis,
+        'fecha_analisis': datetime.now().isoformat(),
+        'modo': 'shopify_puro_sin_calendar',
+        'reglas': [
+            'Stock = Shopify (NO suma Calendar pipeline ni futuro)',
+            'Velocidad = ventas Shopify últimos 30d',
+            'Margen mínimo = 20d antes de agotar',
+            f'Distribución = {"L-V (5 días)" if distribuir_lv_completo else "L/M/V (3 días)"}',
+            f'Límite = {LIMITE_POR_DIA} producción/día (área dispensación = Mayerlin)',
+            'Orden = críticas primero, luego por días-alcance',
+        ],
     })
 
 

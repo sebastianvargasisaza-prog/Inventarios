@@ -5968,6 +5968,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">+ Nuevo producto</button>
+          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de la semana basado SOLO en Shopify, sin Calendar">🛒 Plan semana (Shopify)</button>
           <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Excel</button>
           <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
         </div>
@@ -9367,6 +9368,100 @@ async function ckMarcar(itemId, estado){
       modal.innerHTML = html;
       document.body.appendChild(modal);
     } catch(e){ alert('Error: '+e.message); }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 🛒 Plan SOLO Shopify — vista por día (próximo lunes → viernes)
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2VerSemanaShopify(){
+    // Pregunta cuántas semanas
+    var semanasStr = prompt('¿Cuántas semanas planear?\\n(1 = solo próxima semana, 2 = dos semanas, 4 = mes completo)', '1');
+    if(semanasStr === null) return;
+    var semanas = Math.max(1, Math.min(8, parseInt(semanasStr) || 1));
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center"><div style="font-size:32px">⏳</div><div style="margin-top:10px;color:#64748b">Calculando plan SOLO con Shopify...</div></div>';
+    document.body.appendChild(modal);
+    try {
+      var r = await fetch('/api/planta/plan-semana-shopify?semanas='+semanas);
+      var d = await r.json();
+      if(d.error){ modal.remove(); alert('Error: '+d.error); return; }
+      var k = d.kpis || {};
+      var dias = d.dias || [];
+      var sin = d.sin_slot || [];
+      var urgCol = {critica:'#dc2626',alta:'#f97316',media:'#eab308',baja:'#3b82f6'};
+      var urgEmoji = {critica:'🔴',alta:'🟠',media:'🟡',baja:'🔵'};
+      var html = '<div style="background:#fff;border-radius:12px;width:1100px;max-width:96vw;max-height:90vh;overflow:auto;padding:24px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px">';
+      html += '<div><h2 style="margin:0;color:#0f172a;font-size:22px">🛒 Plan de la semana — SOLO Shopify</h2>';
+      html += '<p style="color:#64748b;font-size:12px;margin:6px 0 0">Sin tener en cuenta el Calendar. Stock = Shopify · Velocidad = ventas 30d · Margen = 20d</p>';
+      html += '<p style="color:#0f172a;font-size:13px;margin:8px 0 0"><b>Semana del '+_escHTML(d.semana_inicio)+' al '+_escHTML(d.semana_fin)+'</b> · '+_escHTML(d.patron_distribucion)+' · '+(d.semanas||1)+' semana(s)</p></div>';
+      html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>';
+      // KPIs
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:18px">';
+      html += '<div style="background:#f1f5f9;padding:10px;border-radius:8px"><div style="font-size:11px;color:#64748b">Asignadas</div><div style="font-size:22px;font-weight:800;color:#0f172a">'+(k.asignadas_semana||0)+'</div></div>';
+      html += '<div style="background:#fee2e2;padding:10px;border-radius:8px"><div style="font-size:11px;color:#991b1b">🔴 Críticas</div><div style="font-size:22px;font-weight:800;color:#dc2626">'+(k.criticas||0)+'</div></div>';
+      html += '<div style="background:#fed7aa;padding:10px;border-radius:8px"><div style="font-size:11px;color:#9a3412">🟠 Altas</div><div style="font-size:22px;font-weight:800;color:#f97316">'+(k.altas||0)+'</div></div>';
+      html += '<div style="background:#fef3c7;padding:10px;border-radius:8px"><div style="font-size:11px;color:#854d0e">🟡 Medias</div><div style="font-size:22px;font-weight:800;color:#eab308">'+(k.medias||0)+'</div></div>';
+      html += '<div style="background:#e0e7ff;padding:10px;border-radius:8px"><div style="font-size:11px;color:#3730a3">🔵 Bajas</div><div style="font-size:22px;font-weight:800;color:#3b82f6">'+(k.bajas||0)+'</div></div>';
+      if(k.sin_cupo){
+        html += '<div style="background:#fce7f3;padding:10px;border-radius:8px"><div style="font-size:11px;color:#9d174d">⚠ Sin cupo</div><div style="font-size:22px;font-weight:800;color:#be185d">'+k.sin_cupo+'</div></div>';
+      }
+      html += '</div>';
+      // Reglas usadas
+      html += '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#78350f">';
+      html += '<b>📐 Reglas aplicadas:</b><ul style="margin:6px 0 0 18px;padding:0">';
+      (d.reglas||[]).forEach(function(r){ html += '<li>'+_escHTML(r)+'</li>'; });
+      html += '</ul></div>';
+      // Tabla por día
+      if(!dias.length){
+        html += '<div style="text-align:center;padding:40px;color:#94a3b8;background:#f8fafc;border-radius:8px">No hay días de producción en el rango</div>';
+      } else {
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">';
+        dias.forEach(function(dia){
+          var bgHeader = dia.producciones_count > 0 ? 'linear-gradient(135deg,#0f766e,#0891b2)' : '#94a3b8';
+          html += '<div style="background:#fff;border:2px solid '+(dia.producciones_count>0?'#0f766e':'#e2e8f0')+';border-radius:10px;overflow:hidden">';
+          html += '<div style="background:'+bgHeader+';color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">'+_escHTML(dia.nombre_dia)+'</div><div style="font-size:16px;font-weight:800">'+_escHTML(dia.fecha)+'</div><div style="font-size:11px;margin-top:2px">'+dia.producciones_count+' producci'+(dia.producciones_count===1?'ón':'ones')+'</div></div>';
+          if(dia.producciones_count === 0){
+            html += '<div style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;font-style:italic">— día libre —</div>';
+          } else {
+            html += '<div style="padding:8px">';
+            dia.producciones.forEach(function(p){
+              var col = urgCol[p.urgencia] || '#64748b';
+              var emo = urgEmoji[p.urgencia] || '⚪';
+              html += '<div style="border-left:4px solid '+col+';background:#f8fafc;padding:8px 10px;margin-bottom:6px;border-radius:0 6px 6px 0">';
+              html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">';
+              html += '<div style="flex:1"><b style="color:#0f172a;font-size:13px">'+_escHTML(p.producto)+'</b>';
+              html += '<div style="font-size:11px;color:#64748b;margin-top:2px">'+p.lote_kg+' kg → '+p.unidades_lote+' u · durará ~'+p.dias_que_durara_lote+'d</div></div>';
+              html += '<span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:800">'+emo+' '+p.urgencia.toUpperCase()+'</span>';
+              html += '</div>';
+              html += '<div style="font-size:10px;color:#475569;margin-top:4px">📦 Stock '+p.stock_actual+'u · 📈 '+p.velocidad_dia+' u/día · ⏰ alcance '+p.dias_alcance+'d</div>';
+              html += '<div style="font-size:11px;color:#334155;margin-top:4px;font-style:italic">"'+_escHTML(p.razon)+'"</div>';
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      // Sin cupo (overflow)
+      if(sin.length){
+        html += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px;margin-top:14px"><b style="color:#991b1b">⚠ Sin cupo en la(s) semana(s) — '+sin.length+' SKUs</b>';
+        html += '<p style="font-size:12px;color:#7f1d1d;margin:6px 0">Estos productos tienen necesidad pero no caben con 1/día. Considera planear más semanas o desbloquear más slots.</p>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px"><thead style="background:#fee2e2"><tr><th style="padding:6px;text-align:left">Producto</th><th style="padding:6px;text-align:right">Lote</th><th style="padding:6px;text-align:right">Días alcance</th><th style="padding:6px;text-align:left">Urgencia</th></tr></thead><tbody>';
+        sin.forEach(function(s){
+          var col = urgCol[s.urgencia] || '#64748b';
+          html += '<tr style="border-top:1px solid #fee2e2"><td style="padding:5px 6px"><b>'+_escHTML(s.producto)+'</b></td><td style="padding:5px 6px;text-align:right">'+s.lote_kg+' kg</td><td style="padding:5px 6px;text-align:right">'+s.dias_alcance+'d</td><td style="padding:5px 6px"><span style="color:'+col+';font-weight:700">'+s.urgencia.toUpperCase()+'</span></td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+      html += '</div>';
+      modal.innerHTML = html;
+    } catch(e){
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
+    }
   }
 
   async function recDescontinuar(producto){
