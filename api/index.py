@@ -177,6 +177,8 @@ from blueprints.contabilidad import bp as contabilidad_bp
 from blueprints.programacion import bp as programacion_bp
 from blueprints.admin import bp as admin_bp
 from blueprints.chat import bp as chat_bp
+from blueprints.bienestar import bp as bienestar_bp
+from blueprints.mfa import bp as mfa_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -198,6 +200,8 @@ app.register_blueprint(contabilidad_bp)
 app.register_blueprint(programacion_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(chat_bp)
+app.register_blueprint(bienestar_bp)
+app.register_blueprint(mfa_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
@@ -399,6 +403,7 @@ def _unhandled_exception(e):
 
 
 @app.route('/api/health')
+@app.route('/healthz')          # alias estandar para uptime monitors (Pingdom, UptimeRobot, Better Stack)
 def health_check():
     """Health check completo — usado por Render, load balancers y monitoreo externo.
     No requiere autenticacion — es publico por diseno.

@@ -2403,6 +2403,96 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE produccion_programada ADD COLUMN operario_acondicionamiento_id INTEGER",
         "CREATE INDEX IF NOT EXISTS idx_pp_area ON produccion_programada(area_id, fecha_programada)",
     ]),
+    (56, "rh: notificaciones empleados (salud, permisos, citas, enfermedades) + capacitaciones con auto-examen Claude", [
+        # Sebastian (30-abr-2026): "falta modulo de notificaciones donde los
+        # empleados notifiquen estado de salud, soliciten permisos, citas,
+        # enfermedades... y modulo de educacion: jefe asigna videos, operario
+        # ve, hace autoexamen Claude, da nota, suma a historial reinducciones".
+        #
+        # Tabla 1: notificaciones_empleados
+        # Empleados (operarios, admin, todos) crean entradas. Tipo y estado
+        # gobiernan el flujo. Adjuntos opcionales (URL imagen incapacidad,
+        # cita, etc.) en adjunto_url. notificado_a: lista coma-separada de
+        # usernames a quienes notificar (ej. "sebastian,luis_enrique" para
+        # gerencia + jefe planta).
+        """CREATE TABLE IF NOT EXISTS notificaciones_empleados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_username TEXT NOT NULL,
+            empleado_nombre TEXT,
+            tipo TEXT NOT NULL CHECK(tipo IN
+                ('salud','permiso','cita_medica','enfermedad','licencia','otro')),
+            asunto TEXT NOT NULL,
+            descripcion TEXT,
+            fecha_inicio TEXT,
+            fecha_fin TEXT,
+            adjunto_url TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','aprobada','rechazada','vista')),
+            notificado_a TEXT,
+            comentario_jefe TEXT,
+            resuelto_por TEXT,
+            resuelto_en TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_notif_emp_user ON notificaciones_empleados(empleado_username, creado_en DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_notif_emp_estado ON notificaciones_empleados(estado, tipo)",
+        # Tabla 2: capacitaciones (asignacion + material)
+        # El jefe asigna recurso (video URL, PDF, descripcion, NotebookLM URL)
+        # con un titulo y nivel_dificultad. nota_minima default 70.
+        """CREATE TABLE IF NOT EXISTS capacitaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL,
+            descripcion TEXT,
+            material_tipo TEXT CHECK(material_tipo IN
+                ('video','pdf','notebooklm','articulo','otro')),
+            material_url TEXT,
+            material_notas TEXT,
+            asignado_a TEXT NOT NULL,
+            asignado_por TEXT NOT NULL,
+            fecha_asignacion TEXT NOT NULL DEFAULT (datetime('now')),
+            fecha_limite TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','en_curso','completada','reprobada','vencida')),
+            nota_minima INTEGER DEFAULT 70,
+            nota_obtenida INTEGER,
+            intentos INTEGER DEFAULT 0,
+            completada_en TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_capac_user ON capacitaciones(asignado_a, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_capac_fecha ON capacitaciones(fecha_limite)",
+        # Tabla 3: capacitaciones_intentos (cada autoexamen es un intento)
+        # preguntas_json: array de preguntas generadas por Claude
+        # respuestas_json: array de respuestas del operario
+        # evaluacion_json: feedback por pregunta + nota global
+        """CREATE TABLE IF NOT EXISTS capacitaciones_intentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            capacitacion_id INTEGER NOT NULL,
+            empleado_username TEXT NOT NULL,
+            preguntas_json TEXT NOT NULL,
+            respuestas_json TEXT,
+            evaluacion_json TEXT,
+            nota INTEGER,
+            iniciado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            terminado_en TEXT,
+            FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cap_int_cap ON capacitaciones_intentos(capacitacion_id, empleado_username)",
+    ]),
+    (57, "users_mfa: TOTP de 2 factores (Google Authenticator) — Sebastian 30-abr-2026", [
+        """CREATE TABLE IF NOT EXISTS users_mfa (
+            username           TEXT PRIMARY KEY,
+            secret             TEXT NOT NULL,
+            enabled            INTEGER NOT NULL DEFAULT 0,
+            backup_code_hash   TEXT,
+            created_at         TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            enabled_at         TEXT,
+            last_used_at       TEXT,
+            disabled_at        TEXT,
+            FOREIGN KEY (username) REFERENCES users_passwords(username) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_users_mfa_enabled ON users_mfa(enabled)",
+    ]),
 ]
 
 
