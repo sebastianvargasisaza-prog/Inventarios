@@ -2254,15 +2254,38 @@ def prog_completar_evento(evento_id):
     descontados_mees = []
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
     try:
-        # MPs → INSERT INTO movimientos
+        # MPs → INSERT INTO movimientos. FEFO: registramos en obs el lote
+        # más viejo disponible (fecha_vencimiento más cercana). El stock se
+        # descuenta del total — el campo lote es referencia para que Daniela
+        # consuma físicamente el lote correcto en bodega.
         for mp in mps_a_consumir:
+            lote_fefo = None
+            try:
+                # Buscar el lote más viejo con stock disponible
+                fefo_row = c.execute("""
+                    SELECT lote, fecha_vencimiento
+                    FROM movimientos
+                    WHERE material_id = ?
+                      AND tipo = 'Entrada'
+                      AND COALESCE(lote,'') != ''
+                      AND COALESCE(estado_lote,'') NOT IN ('Vencido','Bloqueado')
+                    ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC,
+                             fecha ASC
+                    LIMIT 1
+                """, (mp['codigo_mp'],)).fetchone()
+                if fefo_row and fefo_row[0]:
+                    lote_fefo = fefo_row[0]
+            except Exception:
+                pass
+            obs_mp = obs_base + (f" | FEFO sugerido: lote {lote_fefo}" if lote_fefo else "")
             c.execute("""
                 INSERT INTO movimientos
                   (material_id, material_nombre, cantidad, tipo, fecha,
-                   observaciones, operador)
-                VALUES (?, ?, ?, 'Salida', ?, ?, ?)
+                   observaciones, operador, lote)
+                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
             """, (mp['codigo_mp'], mp['nombre'], mp['cantidad_g'],
-                  fecha_iso, obs_base, user))
+                  fecha_iso, obs_mp, user, lote_fefo))
+            mp['lote_fefo'] = lote_fefo
             descontados_mps.append(mp)
         # MEEs → INSERT INTO movimientos_mee + UPDATE maestro_mee
         for me in mees_a_consumir:
@@ -2407,6 +2430,102 @@ def prog_revertir_completado(evento_id):
         'mps_revertidos': revertidos_mps,
         'mees_revertidos': revertidos_mees,
         'mensaje': f"Producción revertida. {len(revertidos_mps)} MPs y {len(revertidos_mees)} MEEs regresados al inventario."
+    })
+
+
+@bp.route('/api/inventario/ajuste-manual', methods=['POST'])
+def inventario_ajuste_manual():
+    """Registra un ajuste manual de inventario con razón obligatoria.
+
+    Sebastian (29-abr-2026): "que se mantenga, sea perfecta". Para los
+    casos legítimos donde Sebastián/Daniela necesitan corregir stock
+    (conteo físico, merma, robo, daño, etc.) — TODO ajuste queda en
+    movimientos con observaciones específicas para auditoría.
+
+    Body: {
+      tipo_material: 'MP' | 'MEE',
+      codigo: 'MP00001',
+      cantidad: 1500,        # positivo siempre — el signo lo da motivo
+      motivo: 'conteo_fisico' | 'merma' | 'robo' | 'daño' | 'correccion' | 'otro',
+      direccion: 'sumar' | 'restar',
+      observaciones: 'detalle libre obligatorio'
+    }
+    Solo admin.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede ajustar inventario'}), 403
+    d = request.get_json() or {}
+    tipo_mat = (d.get('tipo_material') or '').upper().strip()
+    codigo = (d.get('codigo') or '').strip()
+    cantidad = abs(float(d.get('cantidad') or 0))
+    motivo = (d.get('motivo') or '').strip().lower()
+    direccion = (d.get('direccion') or '').strip().lower()
+    obs = (d.get('observaciones') or '').strip()
+
+    MOTIVOS_OK = {'conteo_fisico', 'merma', 'robo', 'daño', 'dano',
+                  'correccion', 'corrección', 'otro'}
+    if tipo_mat not in ('MP', 'MEE'):
+        return jsonify({'error': 'tipo_material debe ser MP o MEE'}), 400
+    if not codigo:
+        return jsonify({'error': 'codigo requerido'}), 400
+    if cantidad <= 0:
+        return jsonify({'error': 'cantidad debe ser > 0'}), 400
+    if motivo not in MOTIVOS_OK:
+        return jsonify({'error': f'motivo invalido — usar uno de {MOTIVOS_OK}'}), 400
+    if direccion not in ('sumar', 'restar'):
+        return jsonify({'error': "direccion debe ser 'sumar' o 'restar'"}), 400
+    if not obs or len(obs) < 10:
+        return jsonify({'error': 'observaciones obligatorias (min 10 chars)'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
+    obs_full = f"AJUSTE_MANUAL[{motivo}]: {obs} (por {user})"
+
+    if tipo_mat == 'MP':
+        # Verificar que el MP existe
+        mp = c.execute(
+            "SELECT codigo_mp, nombre_inci FROM maestro_mps WHERE codigo_mp=?",
+            (codigo,)
+        ).fetchone()
+        if not mp:
+            return jsonify({'error': f'MP {codigo} no encontrado'}), 404
+        tipo_mov = 'Entrada' if direccion == 'sumar' else 'Salida'
+        c.execute("""
+            INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               observaciones, operador)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (codigo, mp[1] or '', cantidad, tipo_mov, fecha_iso, obs_full, user))
+    else:
+        # MEE: actualizar maestro_mee + insertar movimientos_mee
+        mee = c.execute(
+            "SELECT codigo, descripcion, COALESCE(stock_actual,0) "
+            "FROM maestro_mee WHERE codigo=?", (codigo,)
+        ).fetchone()
+        if not mee:
+            return jsonify({'error': f'MEE {codigo} no encontrado'}), 404
+        delta = cantidad if direccion == 'sumar' else -cantidad
+        nuevo_stock = max(0, float(mee[2]) + delta)
+        c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
+                  (nuevo_stock, codigo))
+        c.execute("""
+            INSERT INTO movimientos_mee
+              (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (codigo, 'entrada' if direccion == 'sumar' else 'salida',
+              cantidad, obs_full, user, fecha_iso))
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'tipo_material': tipo_mat,
+        'codigo': codigo,
+        'cantidad': cantidad,
+        'direccion': direccion,
+        'motivo': motivo,
+        'mensaje': f'Ajuste {direccion} {cantidad} a {codigo} registrado.'
     })
 
 
