@@ -70,6 +70,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 <div class="tabs">
   <button class="tabbtn on" data-pane="mis-notif" onclick="switchPane('mis-notif')">📩 Mis Notificaciones</button>
   <button class="tabbtn" data-pane="mis-cap" onclick="switchPane('mis-cap')">🎓 Mis Capacitaciones</button>
+  <button class="tabbtn" data-pane="trimestral" onclick="switchPane('trimestral')">🏆 Empleado destacado</button>
   <button class="tabbtn" data-pane="bandeja" id="tn-bandeja" style="display:none" onclick="switchPane('bandeja')">📊 Bandeja jefe</button>
 </div>
 
@@ -125,6 +126,28 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
   <h3 style="font-size:15px;color:#1a4a7a;margin-bottom:10px">🎓 Mis capacitaciones asignadas</h3>
   <p style="color:#64748b;font-size:12px;margin-bottom:14px">Tu jefe te asigna material (videos, PDFs, NotebookLM). Revisa, haz el autoexamen y obtén tu nota. Las completadas suman a tu historial RH.</p>
   <div id="lista-mis-cap"></div>
+</div>
+
+<!-- PANE: Empleado destacado trimestral -->
+<div id="pane-trimestral" class="pane">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <h3 style="font-size:15px;color:#1a4a7a">🏆 Ranking trimestral con métricas objetivas</h3>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="tri-year" onchange="cargarTrimestral()" style="width:auto"></select>
+      <select id="tri-quarter" onchange="cargarTrimestral()" style="width:auto">
+        <option value="1">Q1 (ene-mar)</option>
+        <option value="2">Q2 (abr-jun)</option>
+        <option value="3">Q3 (jul-sep)</option>
+        <option value="4">Q4 (oct-dic)</option>
+      </select>
+    </div>
+  </div>
+  <p style="color:#64748b;font-size:12px;margin-bottom:14px">
+    Score = capacitaciones aprobadas × 25 + nota_prom × 0.4 + tareas × 5 +
+    producciones × 4 − desviaciones_pendientes × 10. Sebastian (30-abr-2026):
+    "trimestral, no mensual — mensual se vuelve costumbre".
+  </p>
+  <div id="trimestral-content"></div>
 </div>
 
 <!-- PANE: Bandeja jefe (admin/jefes) -->
@@ -210,7 +233,70 @@ function switchPane(p){
   document.querySelectorAll('.tabbtn').forEach(function(b){ b.classList.toggle('on', b.dataset.pane===p); });
   if(p==='mis-notif')   cargarMisNotif();
   if(p==='mis-cap')     cargarMisCap();
+  if(p==='trimestral')  cargarTrimestral();
   if(p==='bandeja')     cargarBandeja();
+}
+
+async function cargarTrimestral(){
+  // Llenar selectors si vacios
+  var yr = document.getElementById('tri-year');
+  if(!yr.options.length){
+    var thisYear = new Date().getFullYear();
+    for(var y=thisYear; y>=thisYear-2; y--){
+      var op = document.createElement('option'); op.value=y; op.textContent=y; yr.appendChild(op);
+    }
+    yr.value = thisYear;
+    var thisQ = Math.floor((new Date().getMonth())/3) + 1;
+    document.getElementById('tri-quarter').value = thisQ;
+  }
+  var year = yr.value;
+  var q = document.getElementById('tri-quarter').value;
+  var box = document.getElementById('trimestral-content');
+  box.innerHTML = '<div class="empty">⏳ Calculando...</div>';
+  try{
+    var r = await fetch('/api/bienestar/empleado-trimestral?year='+year+'&quarter='+q);
+    var d = await r.json();
+    var rk = d.ranking || [];
+    if(!rk.length){ box.innerHTML='<div class="empty">Sin datos para este trimestre.</div>'; return; }
+    var dest = rk.find(function(x){return x.destacado;});
+    var html = '';
+    if(dest && dest.score > 0){
+      html += '<div style="background:linear-gradient(135deg,#fbbf24,#d97706);color:#fff;padding:24px;border-radius:14px;text-align:center;margin-bottom:18px;box-shadow:0 8px 24px rgba(217,119,6,.3)">' +
+        '<div style="font-size:13px;text-transform:uppercase;letter-spacing:2px;font-weight:700;margin-bottom:6px">🏆 Empleado destacado · '+_esc(d.rango)+'</div>' +
+        '<div style="font-size:32px;font-weight:800;margin:8px 0">'+_esc(dest.nombre_completo)+'</div>' +
+        '<div style="font-size:18px;font-weight:600">Score: '+dest.score+' pts</div>' +
+        '<div style="font-size:12px;margin-top:10px;opacity:.9">'+
+          dest.capacitaciones_aprobadas+' capacitaciones · '+dest.tareas_completadas+' tareas · '+dest.producciones+' producciones'+
+        '</div>' +
+      '</div>';
+    }
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">' +
+      '<thead><tr style="background:#1a4a7a;color:#fff">' +
+      '<th style="padding:10px;text-align:left">#</th>' +
+      '<th style="padding:10px;text-align:left">Operario</th>' +
+      '<th style="padding:10px;text-align:center">Capac.</th>' +
+      '<th style="padding:10px;text-align:center">Nota prom.</th>' +
+      '<th style="padding:10px;text-align:center">Tareas</th>' +
+      '<th style="padding:10px;text-align:center">Producciones</th>' +
+      '<th style="padding:10px;text-align:center">Desv. abiertas</th>' +
+      '<th style="padding:10px;text-align:right">Score</th>' +
+      '</tr></thead><tbody>';
+    rk.forEach(function(p,i){
+      var rowBg = i===0 ? '#fef3c7' : i===1 ? '#f1f5f9' : i===2 ? '#fed7aa' : '#fff';
+      html += '<tr style="background:'+rowBg+';border-bottom:1px solid #e2e8f0">' +
+        '<td style="padding:8px;font-weight:700;color:#0f766e">'+(i+1)+(i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'')+'</td>' +
+        '<td style="padding:8px;font-weight:600">'+_esc(p.nombre_completo)+'</td>' +
+        '<td style="padding:8px;text-align:center">'+p.capacitaciones_aprobadas+'</td>' +
+        '<td style="padding:8px;text-align:center;color:#0f766e">'+p.nota_promedio+'</td>' +
+        '<td style="padding:8px;text-align:center">'+p.tareas_completadas+'</td>' +
+        '<td style="padding:8px;text-align:center">'+p.producciones+'</td>' +
+        '<td style="padding:8px;text-align:center;color:'+(p.desviaciones_pendientes>0?'#dc2626':'#94a3b8')+'">'+p.desviaciones_pendientes+'</td>' +
+        '<td style="padding:8px;text-align:right;font-weight:800;color:'+(p.score>50?'#16a34a':p.score>0?'#0f766e':'#94a3b8')+'">'+p.score+'</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+    box.innerHTML = html;
+  }catch(e){ box.innerHTML='<div class="empty">Error al cargar.</div>'; }
 }
 
 function _esc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];}); }

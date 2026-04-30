@@ -322,6 +322,126 @@ def calificar_intento(int_id):
     })
 
 
+@bp.route('/api/bienestar/empleado-trimestral', methods=['GET'])
+def empleado_trimestral():
+    """Ranking trimestral de empleados con métricas objetivas:
+      - Capacitaciones aprobadas (con peso)
+      - Tareas operativas completadas (de tareas_operativas)
+      - Cero desviaciones atribuidas (capa_desviaciones.responsable)
+      - Asistencia (placeholder — requeriria modulo asistencia)
+
+    Sebastian (30-abr-2026): "que la estrategia vuelva mas como trimestral,
+    mensual se vuelve costumbre".
+
+    Query params:
+        year, quarter (1-4). Default: trimestre actual.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date
+    today = date.today()
+    year = int(request.args.get('year', today.year))
+    q = int(request.args.get('quarter', (today.month - 1) // 3 + 1))
+    if q < 1 or q > 4:
+        return jsonify({'error': 'quarter debe ser 1-4'}), 400
+    q_start = date(year, (q - 1) * 3 + 1, 1)
+    q_end_month = q * 3 + 1 if q < 4 else 1
+    q_end_year = year if q < 4 else year + 1
+    q_end = date(q_end_year, q_end_month, 1)
+    conn = get_db()
+
+    # Lista de operarios + jefe (excepto admins/gerencia)
+    operarios = conn.execute("""
+        SELECT id, nombre, apellido FROM operarios_planta
+        WHERE activo=1 AND es_jefe_produccion=0
+    """).fetchall()
+    # Username derivado: lower(nombre) si no hay alias
+    ranking = []
+    for op in operarios:
+        op_id, nombre, apellido = op
+        usr = (nombre or '').lower().strip()
+        # Capacitaciones completadas
+        try:
+            cap_aprob = conn.execute("""
+                SELECT COUNT(*), COALESCE(AVG(nota_obtenida), 0)
+                FROM bienestar_capacitaciones
+                WHERE asignado_a=? AND estado='completada'
+                  AND completada_en >= ? AND completada_en < ?
+            """, (usr, q_start.isoformat(), q_end.isoformat())).fetchone()
+            cap_count, cap_avg = (cap_aprob[0] or 0, cap_aprob[1] or 0)
+        except Exception:
+            cap_count, cap_avg = 0, 0
+        # Tareas operativas completadas
+        try:
+            tareas = conn.execute("""
+                SELECT COUNT(*) FROM tareas_operativas
+                WHERE LOWER(asignado_a) LIKE ? AND estado='completada'
+                  AND DATE(creado_en) >= ? AND DATE(creado_en) < ?
+            """, (f'%{usr}%', q_start.isoformat(), q_end.isoformat())).fetchone()
+            tareas_count = tareas[0] or 0
+        except Exception:
+            tareas_count = 0
+        # Desviaciones atribuidas (las que tienen este user como responsable
+        # y no se han cerrado a tiempo) — penaliza
+        try:
+            desv = conn.execute("""
+                SELECT COUNT(*) FROM capa_desviaciones
+                WHERE responsable=? AND estado IN ('abierta','en_investigacion','en_implementacion')
+                  AND DATE(fecha_apertura) >= ? AND DATE(fecha_apertura) < ?
+            """, (usr, q_start.isoformat(), q_end.isoformat())).fetchone()
+            desv_count = desv[0] or 0
+        except Exception:
+            desv_count = 0
+        # Producciones donde aparece como operario (cualquier fase)
+        try:
+            prods = conn.execute("""
+                SELECT COUNT(*) FROM produccion_programada
+                WHERE (operario_dispensacion_id=? OR operario_elaboracion_id=?
+                       OR operario_envasado_id=? OR operario_acondicionamiento_id=?)
+                  AND fin_real_at IS NOT NULL
+                  AND DATE(fin_real_at) >= ? AND DATE(fin_real_at) < ?
+            """, (op_id, op_id, op_id, op_id,
+                  q_start.isoformat(), q_end.isoformat())).fetchone()
+            prods_count = prods[0] or 0
+        except Exception:
+            prods_count = 0
+
+        # Score ponderado:
+        #   capacitaciones aprobadas: 25 pts c/u, hasta 50
+        #   nota promedio: 0.4 * promedio
+        #   tareas: 5 pts c/u hasta 30
+        #   producciones terminadas: 4 pts c/u hasta 30
+        #   desviaciones abiertas atribuidas: -10 pts c/u
+        score = 0
+        score += min(50, cap_count * 25)
+        score += round(cap_avg * 0.4)
+        score += min(30, tareas_count * 5)
+        score += min(30, prods_count * 4)
+        score -= desv_count * 10
+
+        ranking.append({
+            'operario_id': op_id,
+            'nombre_completo': (nombre + ' ' + (apellido or '')).strip(),
+            'capacitaciones_aprobadas': cap_count,
+            'nota_promedio': round(cap_avg),
+            'tareas_completadas': tareas_count,
+            'producciones': prods_count,
+            'desviaciones_pendientes': desv_count,
+            'score': score,
+        })
+
+    ranking.sort(key=lambda x: x['score'], reverse=True)
+    if ranking:
+        ranking[0]['destacado'] = True
+
+    return jsonify({
+        'year': year, 'quarter': q,
+        'rango': f'{q_start.isoformat()} → {q_end.isoformat()}',
+        'ranking': ranking,
+        'total_operarios': len(ranking),
+    })
+
+
 @bp.route('/api/bienestar/historial/<usuario>', methods=['GET'])
 def historial_capacitaciones(usuario):
     """Historial completo de capacitaciones de un usuario. Visible por el

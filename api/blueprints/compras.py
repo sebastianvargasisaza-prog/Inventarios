@@ -3252,23 +3252,67 @@ def rechazar_oc(numero_oc):
         _sol_nombre = (_sr[0] if _sr else '').lower().strip()
         _sol_email_directo = (_sr[1] if _sr and len(_sr) > 1 else '').strip()
     conn.commit()
+
+    # Sebastian (30-abr-2026): si el motivo sugiere "ya pagamos", buscar el CE
+    # asociado para incluir referencia y cerrar el ciclo informativo.
+    _motivo_lower = (motivo or '').lower()
+    _ya_pagada = any(k in _motivo_lower for k in ['ya pag', 'pagada', 'duplicada', 'duplicado'])
+    _ce_info = ''
+    _ce_codigo = None
+    if _ya_pagada or 'ya' in _motivo_lower and 'pag' in _motivo_lower:
+        try:
+            ce_row = cur.execute(
+                "SELECT codigo, fecha, monto FROM comprobantes_pago "
+                "WHERE numero_oc=? OR observaciones LIKE ? ORDER BY id DESC LIMIT 1",
+                (numero_oc, f'%{numero_oc}%')
+            ).fetchone()
+            if ce_row:
+                _ce_codigo, _ce_fecha, _ce_monto = ce_row
+                _ce_info = (f'<div style="background:#d1fae5;border-left:4px solid #16a34a;'
+                            f'padding:12px 16px;border-radius:0 6px 6px 0;margin-top:12px">'
+                            f'<b>\u2713 Esta OC ya estaba pagada:</b> CE {_ce_codigo} '
+                            f'del {_ce_fecha} por ${_ce_monto:,.0f}'
+                            f'</div>')
+        except Exception:
+            pass
+
     # Email destino: primero el email directo de la solicitud, luego el mapa USER_EMAILS
     _dest_email = _sol_email_directo or USER_EMAILS.get(_sol_nombre, '')
     if sol and _dest_email:
         _asunto_r = f'OC rechazada \u2014 {numero_oc}'
+        _accion = 'Tu solicitud volvio a estado <em>Pendiente</em>. Puedes corregirla y reenviarla desde el sistema.'
+        if _ce_codigo:
+            _accion = (f'No necesitas reenviar la solicitud \u2014 el pago ya esta registrado '
+                       f'(CE {_ce_codigo}). Si tienes dudas, abre /compras \u2192 Comprobantes.')
         _body_r = (
             '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
             '<div style="background:#fee2e2;padding:20px;border-radius:8px;border-left:4px solid #dc2626;">'
             '<h2 style="color:#991b1b;">Orden de compra rechazada</h2>'
             f'<p>La OC <strong>{numero_oc}</strong> asociada a tu solicitud fue rechazada.</p>'
             f'<p><strong>Motivo:</strong> {motivo}</p>'
-            '<p>Tu solicitud volvio a estado <em>Pendiente</em>. '
-            'Puedes corregirla y reenviarla desde el sistema.</p>'
+            f'{_ce_info}'
+            f'<p style="margin-top:14px">{_accion}</p>'
             '<p style="color:#6b7280;font-size:12px;">Compras HHA \u2014 Espagiria</p>'
             '</div></body></html>'
         )
         _notificar_solicitante_email(_dest_email, _asunto_r, _body_r)
-    return jsonify({'ok': True, 'estado': 'Rechazada', 'motivo': motivo})
+
+    # Push notif in-app al solicitante tambi\u00e9n
+    if sol and _sol_nombre:
+        try:
+            from blueprints.notif import push_notif
+            cuerpo = motivo
+            if _ce_codigo:
+                cuerpo += f' \u00b7 \u2713 Ya pagada con CE {_ce_codigo}'
+            push_notif(_sol_nombre, 'oc_estado',
+                       f'OC {numero_oc} rechazada',
+                       body=cuerpo[:160], link='/compras#mis-sol',
+                       remitente=usuario_actual,
+                       importante=not _ya_pagada)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'estado': 'Rechazada', 'motivo': motivo,
+                    'ce_codigo': _ce_codigo, 'ya_pagada': bool(_ce_codigo)})
 
 @bp.route('/api/compras/buscar-remision/<remision_code>')
 def buscar_remision(remision_code):
