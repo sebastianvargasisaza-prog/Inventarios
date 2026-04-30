@@ -124,6 +124,9 @@ def notificacion_resolver(nid):
         return jsonify({'error': 'estado invalido'}), 400
     coment = (d.get('comentario_jefe') or '').strip() or None
     conn = get_db(); c = conn.cursor()
+    # Buscar empleado para notificarle el resultado
+    fila = c.execute("""SELECT empleado_username, asunto FROM notificaciones_empleados
+                        WHERE id=?""", (nid,)).fetchone()
     cur = c.execute("""UPDATE notificaciones_empleados
         SET estado=?, comentario_jefe=COALESCE(?, comentario_jefe),
             resuelto_por=?, resuelto_en=datetime('now')
@@ -131,6 +134,20 @@ def notificacion_resolver(nid):
     conn.commit()
     if cur.rowcount == 0:
         return jsonify({'error': 'no encontrada'}), 404
+    # Push notif in-app al empleado
+    if fila:
+        try:
+            from blueprints.notif import push_notif
+            emp_user, asunto = fila
+            label = {'aprobada':'✅ aprobada','rechazada':'❌ rechazada','vista':'👁 vista'}.get(nuevo, nuevo)
+            push_notif(
+                emp_user, 'notif_resuelta',
+                f'Tu solicitud "{asunto}" fue {label}',
+                body=(coment[:120] if coment else None),
+                link='/bienestar', remitente=user
+            )
+        except Exception:
+            pass
     return jsonify({'ok': True, 'id': nid, 'estado': nuevo})
 
 
@@ -166,8 +183,24 @@ def capacitaciones_handler():
              asignado_a, user,
              (d.get('fecha_limite') or '').strip() or None,
              int(d.get('nota_minima') or 70)))
+        new_id = c.lastrowid
         conn.commit()
-        return jsonify({'ok': True, 'id': c.lastrowid}), 201
+        # Notif in-app al operario asignado
+        try:
+            from blueprints.notif import push_notif
+            cuerpo = f'Material: {material_tipo}'
+            if d.get('fecha_limite'):
+                cuerpo += f' · 📅 hasta {d.get("fecha_limite")}'
+            push_notif(
+                asignado_a, 'capacitacion',
+                f'Capacitación asignada: {titulo}',
+                body=cuerpo,
+                link='/bienestar',
+                remitente=user, importante=True
+            )
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'id': new_id}), 201
 
     # GET — segun rol: empleado solo ve las suyas, jefe ve todas
     where = []; params = []

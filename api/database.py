@@ -2544,6 +2544,26 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_area_eventos_area_ts ON area_eventos(area_id, ts DESC)",
         "CREATE INDEX IF NOT EXISTS idx_area_eventos_prod ON area_eventos(produccion_id, ts)",
     ]),
+    (59, "notif app: sistema unificado de alertas in-app (campana 🔔 + dropdown + badge)", [
+        # Sebastian (30-abr-2026): "asignacion de tareas con alerta al usuario
+        # en la app" — sistema centralizado de notificaciones in-app que
+        # reemplaza polling fragmentado y emails. Todos los modulos pueden
+        # llamar a push_notif() para dejar avisos a usuarios.
+        """CREATE TABLE IF NOT EXISTS notificaciones_app (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            destinatario TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            body TEXT,
+            link TEXT,
+            remitente TEXT,
+            importante INTEGER NOT NULL DEFAULT 0,
+            leido_at TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_notif_app_dest ON notificaciones_app(destinatario, leido_at, creado_en DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_notif_app_tipo ON notificaciones_app(tipo, creado_en DESC)",
+    ]),
 ]
 
 

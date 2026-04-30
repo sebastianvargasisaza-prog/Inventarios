@@ -6206,6 +6206,31 @@ def _notificar_tarea_operativa(tarea_id):
                 return
             (_id, titulo, descripcion, tipo, asignado_a, fecha_obj,
              cantidad, mee_codigo, producto, creado_por) = row
+            # Push notif in-app a cada asignado (ANTES del email — feedback inmediato)
+            try:
+                from blueprints.notif import push_notif_multi
+                lista = []
+                if asignado_a:
+                    raw = [t.strip().lower() for t in str(asignado_a).split(',') if t.strip()]
+                    GROUP_ALIASES = {'operarios': ['mayerlin','camilo','milton','sebastian_murillo']}
+                    for tok in raw:
+                        if tok in GROUP_ALIASES:
+                            lista.extend(GROUP_ALIASES[tok])
+                        else:
+                            lista.append(tok)
+                if lista:
+                    cuerpo = (descripcion or '')[:140]
+                    if fecha_obj:
+                        cuerpo += f' · 📅 {fecha_obj}'
+                    push_notif_multi(
+                        lista, 'tarea_asignada', f'Tarea: {titulo}',
+                        body=cuerpo,
+                        link='/inventarios#tareas',
+                        remitente=(creado_por or 'sistema'),
+                        importante=bool(fecha_obj)
+                    )
+            except Exception as _e:
+                logger.warning('push_notif tarea_operativa fallo: %s', _e)
             emails = _resolver_emails_asignados(asignado_a)
             if not emails:
                 return  # nadie con email configurado, no hay nada que enviar

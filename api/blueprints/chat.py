@@ -376,6 +376,34 @@ def chat_messages(thread_id):
         """, (msg_id, thread_id, user))
         conn.commit()
 
+        # Push notif in-app a TODOS los miembros del hilo (excepto el sender).
+        # Tipo: chat_msg (genérico) o chat_mencion (importante) si fue @mencionado.
+        try:
+            from blueprints.notif import push_notif
+            miembros = c.execute("""
+                SELECT username FROM chat_thread_members
+                WHERE thread_id=? AND username != ?
+            """, (thread_id, user)).fetchall()
+            # Datos del thread para mostrar nombre
+            t_row = c.execute("SELECT nombre FROM chat_threads WHERE id=?", (thread_id,)).fetchone()
+            t_nombre = t_row[0] if t_row else f'hilo #{thread_id}'
+            preview_short = (contenido[:120]) if tipo=='texto' else f'[{tipo}]'
+            for (m,) in miembros:
+                if not m: continue
+                m_low = m.lower()
+                es_mencion = m_low in {x.lower() for x in (valid_mentions or [])}
+                push_notif(
+                    m_low,
+                    'chat_mencion' if es_mencion else 'chat_msg',
+                    (f'@{user} te mencionó' if es_mencion else f'{user} en {t_nombre}'),
+                    body=preview_short,
+                    link=f'/chat?thread={thread_id}',
+                    remitente=user,
+                    importante=es_mencion
+                )
+        except Exception as _e:
+            logger.warning('push_notif chat fallo: %s', _e)
+
         # Email solo a los mencionados (no a todos los miembros).
         # Sebastian (29-abr-2026): asi en grupos grandes no se spamea
         # cuando alguien escribe algo no relevante para todos.

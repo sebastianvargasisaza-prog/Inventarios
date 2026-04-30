@@ -179,6 +179,7 @@ from blueprints.admin import bp as admin_bp
 from blueprints.chat import bp as chat_bp
 from blueprints.bienestar import bp as bienestar_bp
 from blueprints.mfa import bp as mfa_bp
+from blueprints.notif import bp as notif_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -202,6 +203,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(bienestar_bp)
 app.register_blueprint(mfa_bp)
+app.register_blueprint(notif_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente
@@ -284,7 +286,8 @@ def _inject_chat_widget(response):
         body = response.get_data(as_text=True)
         if '</body>' not in body:
             return response
-        snippet = '<script src="/api/chat/widget.js" async></script>'
+        snippet = ('<script src="/api/chat/widget.js" async></script>'
+                   '<script src="/api/notif/widget.js" async></script>')
         # Usar rsplit (último </body>) para evitar inyectar dentro de strings JS
         # como w.document.write('<html><body>...</body></html>') que aparece
         # en compras_html.py / recepcion_html.py / salida_html.py.
