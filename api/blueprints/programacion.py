@@ -7397,3 +7397,369 @@ def planta_sugerir_area():
             f'({sugerencias[0]["tanque"]["capacidad_litros"]:.0f}L).'
         ),
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PLANTA INTELIGENTE — FASE 2: Motor de Gates (Pre-Flight Checks)
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "programado un producto dice donde como, le dice
+# inteligentemente area sucia confirmar limpieza confirmar tal y tal cosa".
+# Antes de iniciar produccion, se corren N validaciones automaticas y se
+# devuelve qué falta. Cada gate tiene status (ok/warn/blocker), mensaje y
+# accion sugerida.
+
+def _gate_sala_asignada(produccion, conn):
+    """Gate: la producción tiene un área asignada."""
+    if not produccion['area_id']:
+        return {
+            'gate': 'sala_asignada',
+            'status': 'blocker',
+            'titulo': 'Sala sin asignar',
+            'mensaje': 'Esta producción no tiene un área asignada. Usa "Sugerir área" o asigna manualmente.',
+            'accion': 'asignar_area',
+        }
+    area = conn.execute(
+        "SELECT codigo, nombre, estado, puede_producir, activo FROM areas_planta WHERE id=?",
+        (produccion['area_id'],)
+    ).fetchone()
+    if not area:
+        return {'gate': 'sala_asignada', 'status': 'blocker',
+                'titulo': 'Sala inválida', 'mensaje': f'area_id={produccion["area_id"]} no existe',
+                'accion': 'asignar_area'}
+    if not area[4]:
+        return {'gate': 'sala_asignada', 'status': 'blocker',
+                'titulo': 'Sala desactivada',
+                'mensaje': f'{area[1]} está desactivada en areas_planta',
+                'accion': 'asignar_area'}
+    if not area[3]:
+        return {'gate': 'sala_asignada', 'status': 'warn',
+                'titulo': 'Sala no es de producción',
+                'mensaje': f'{area[1]} no tiene puede_producir=1 (es área de apoyo)',
+                'accion': None}
+    return {
+        'gate': 'sala_asignada',
+        'status': 'ok',
+        'titulo': f'Sala: {area[1]}',
+        'mensaje': f'Estado actual: {area[2]}',
+        'accion': None,
+        'meta': {'area_codigo': area[0], 'area_nombre': area[1], 'estado': area[2]},
+    }
+
+
+def _gate_sala_libre(produccion, conn):
+    """Gate: la sala no está ocupada por OTRA producción en curso."""
+    if not produccion['area_id']:
+        return None  # Sin sala no aplica este check
+    area = conn.execute(
+        "SELECT codigo, nombre, estado FROM areas_planta WHERE id=?",
+        (produccion['area_id'],)
+    ).fetchone()
+    if not area:
+        return None
+    estado = area[2] or 'libre'
+    if estado == 'libre':
+        return {'gate': 'sala_libre', 'status': 'ok',
+                'titulo': 'Sala libre', 'mensaje': 'Sin producción en curso',
+                'accion': None}
+    if estado == 'mantenimiento':
+        return {'gate': 'sala_libre', 'status': 'blocker',
+                'titulo': 'Sala en mantenimiento',
+                'mensaje': f'{area[1]} marcada en mantenimiento — espera o cambia de sala',
+                'accion': 'cambiar_estado'}
+    if estado == 'ocupada':
+        # Buscar qué producción tiene en curso
+        otra = conn.execute("""
+            SELECT id, producto FROM produccion_programada
+            WHERE area_id=? AND id != ? AND estado IN ('en_proceso','pendiente')
+              AND inicio_real_at IS NOT NULL AND fin_real_at IS NULL
+            LIMIT 1
+        """, (produccion['area_id'], produccion['id'])).fetchone()
+        if otra:
+            return {'gate': 'sala_libre', 'status': 'blocker',
+                    'titulo': 'Sala ocupada',
+                    'mensaje': f'Producción en curso: {otra[1]} (id {otra[0]})',
+                    'accion': 'esperar_o_cambiar'}
+    return {'gate': 'sala_libre', 'status': 'warn',
+            'titulo': f'Estado sala: {estado}',
+            'mensaje': 'Verifica el estado antes de iniciar',
+            'accion': None}
+
+
+def _gate_sala_limpia(produccion, conn):
+    """Gate: la sala tuvo limpieza profunda en los últimos 7 días.
+    Sebastian (30-abr-2026): "area sucia confirmar limpieza"."""
+    if not produccion['area_id']:
+        return None
+    area = conn.execute("""
+        SELECT codigo, nombre, requiere_limpieza_profunda, ultima_limpieza_profunda
+        FROM areas_planta WHERE id=?
+    """, (produccion['area_id'],)).fetchone()
+    if not area or not area[2]:
+        # No requiere limpieza profunda → ok
+        return {'gate': 'sala_limpia', 'status': 'ok',
+                'titulo': 'Limpieza N/A',
+                'mensaje': 'Esta área no requiere limpieza profunda registrada',
+                'accion': None}
+    # Buscar último evento de limpieza en area_eventos
+    last_evt = conn.execute("""
+        SELECT ts FROM area_eventos
+        WHERE area_id=? AND tipo IN ('fin_limpieza','inicio_limpieza')
+        ORDER BY ts DESC LIMIT 1
+    """, (produccion['area_id'],)).fetchone()
+    last_iso = (last_evt[0] if last_evt else None) or area[3]
+    if not last_iso:
+        return {'gate': 'sala_limpia', 'status': 'warn',
+                'titulo': 'Sin registro de limpieza profunda',
+                'mensaje': 'No hay evidencia de limpieza profunda — confirma antes de iniciar',
+                'accion': 'confirmar_limpieza'}
+    try:
+        from datetime import datetime as _dt
+        last_dt = _dt.fromisoformat((last_iso or '').replace('Z', '').split('.')[0].replace('T', ' ').strip())
+        dias = (_dt.now() - last_dt).days
+    except Exception:
+        return {'gate': 'sala_limpia', 'status': 'warn',
+                'titulo': 'Fecha de limpieza inválida',
+                'mensaje': last_iso, 'accion': 'confirmar_limpieza'}
+    if dias <= 7:
+        return {'gate': 'sala_limpia', 'status': 'ok',
+                'titulo': f'Limpieza hace {dias}d',
+                'mensaje': f'Última limpieza profunda: {last_iso[:16]}',
+                'accion': None}
+    if dias <= 14:
+        return {'gate': 'sala_limpia', 'status': 'warn',
+                'titulo': f'Limpieza hace {dias}d (>7d)',
+                'mensaje': 'Considera una limpieza profunda antes de iniciar',
+                'accion': 'confirmar_limpieza'}
+    return {'gate': 'sala_limpia', 'status': 'blocker',
+            'titulo': f'Limpieza hace {dias}d (>14d)',
+            'mensaje': 'Limpieza profunda obligatoria antes de iniciar',
+            'accion': 'confirmar_limpieza'}
+
+
+def _gate_mp_disponibles(produccion, conn):
+    """Gate: hay suficientes MP para el lote.
+    Reusa la lógica de listo-producir."""
+    producto = produccion['producto']
+    lotes = produccion['lotes'] or 1
+    fh = conn.execute(
+        "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    if not fh:
+        return {'gate': 'mp_disponibles', 'status': 'warn',
+                'titulo': 'Producto sin fórmula',
+                'mensaje': f'"{producto}" no tiene fórmula registrada',
+                'accion': 'crear_formula'}
+    items = conn.execute("""
+        SELECT fi.material_id, fi.material_nombre, fi.porcentaje,
+               COALESCE(fi.cantidad_g_por_lote, 0) as cant_lote_g
+        FROM formula_items fi
+        WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    if not items:
+        return {'gate': 'mp_disponibles', 'status': 'warn',
+                'titulo': 'Fórmula sin items',
+                'mensaje': 'La fórmula no tiene materiales registrados',
+                'accion': 'completar_formula'}
+    deficit = []
+    justo = []
+    for mat_id, mat_nom, pct, cant_lote_g in items:
+        req_g = (cant_lote_g or 0) * lotes if cant_lote_g else (pct or 0) / 100.0 * (fh[0] or 0) * 1000 * lotes
+        disp = conn.execute("""
+            SELECT COALESCE(SUM(
+                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
+                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                     ELSE 0 END
+            ), 0) FROM movimientos WHERE material_id=?
+        """, (mat_id,)).fetchone()
+        disp_g = float(disp[0] if disp else 0)
+        if disp_g < req_g:
+            if disp_g >= req_g * 0.5:
+                justo.append({'codigo': mat_id, 'nombre': mat_nom,
+                              'requerido_g': round(req_g), 'disponible_g': round(disp_g)})
+            else:
+                deficit.append({'codigo': mat_id, 'nombre': mat_nom,
+                                'requerido_g': round(req_g), 'disponible_g': round(disp_g),
+                                'faltante_g': round(req_g - disp_g)})
+    if deficit:
+        return {'gate': 'mp_disponibles', 'status': 'blocker',
+                'titulo': f'Faltan {len(deficit)} MP',
+                'mensaje': f'{len(deficit)} materiales en déficit · ' + ', '.join(d['nombre'] for d in deficit[:3]),
+                'accion': 'crear_tareas_compra',
+                'meta': {'deficit': deficit, 'justo': justo}}
+    if justo:
+        return {'gate': 'mp_disponibles', 'status': 'warn',
+                'titulo': f'{len(justo)} MP justos',
+                'mensaje': f'{len(justo)} materiales con stock <100% del requerido (≥50%)',
+                'accion': None,
+                'meta': {'justo': justo}}
+    return {'gate': 'mp_disponibles', 'status': 'ok',
+            'titulo': 'MP suficientes',
+            'mensaje': f'{len(items)} materiales disponibles',
+            'accion': None}
+
+
+def _gate_envases_listos(produccion, conn):
+    """Gate: hay envases (MEE) suficientes para la presentación elegida."""
+    producto = produccion['producto']
+    # Buscar presentaciones del producto
+    pres = conn.execute("""
+        SELECT presentacion_codigo, etiqueta, envase_codigo, factor_g_por_unidad
+        FROM producto_presentaciones
+        WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND activo=1
+    """, (producto,)).fetchall()
+    if not pres:
+        return {'gate': 'envases_listos', 'status': 'warn',
+                'titulo': 'Sin presentaciones',
+                'mensaje': f'"{producto}" no tiene presentaciones definidas (Fase 0)',
+                'accion': 'definir_presentaciones'}
+    # Para esta version: si hay presentación con envase_codigo, buscar stock en maestro_mee
+    items_pres = []
+    falta_envase = []
+    for p_code, etiqueta, env_code, factor in pres:
+        if not env_code:
+            items_pres.append({'presentacion': etiqueta, 'envase': None,
+                               'mensaje': 'Sin código de envase asignado'})
+            continue
+        # Buscar stock en maestro_mee
+        mee = conn.execute(
+            "SELECT stock_actual, nombre FROM maestro_mee WHERE codigo=?", (env_code,)
+        ).fetchone()
+        stock = (mee[0] if mee else 0) or 0
+        nombre_mee = (mee[1] if mee else '') or env_code
+        items_pres.append({'presentacion': etiqueta, 'envase': env_code,
+                           'envase_nombre': nombre_mee, 'stock': stock})
+        if stock <= 0:
+            falta_envase.append(f'{etiqueta} ({env_code})')
+    if falta_envase:
+        return {'gate': 'envases_listos', 'status': 'warn',
+                'titulo': f'Stock 0 en {len(falta_envase)} envase(s)',
+                'mensaje': ', '.join(falta_envase[:3]),
+                'accion': 'verificar_stock_mee',
+                'meta': {'items': items_pres}}
+    return {'gate': 'envases_listos', 'status': 'ok',
+            'titulo': f'{len(pres)} presentación(es) OK',
+            'mensaje': 'Envases con stock disponible',
+            'accion': None,
+            'meta': {'items': items_pres}}
+
+
+def _gate_operarios(produccion, conn):
+    """Gate: hay operarios asignados (al menos elaboración)."""
+    asignados = []
+    if produccion['operario_dispensacion_id']:
+        asignados.append('dispensación')
+    if produccion['operario_elaboracion_id']:
+        asignados.append('elaboración')
+    if produccion['operario_envasado_id']:
+        asignados.append('envasado')
+    if produccion['operario_acondicionamiento_id']:
+        asignados.append('acondicionamiento')
+    if not asignados:
+        return {'gate': 'operarios', 'status': 'blocker',
+                'titulo': 'Sin operarios asignados',
+                'mensaje': 'Asigna al menos un operario por fase',
+                'accion': 'asignar_operarios'}
+    if 'elaboración' not in asignados:
+        return {'gate': 'operarios', 'status': 'warn',
+                'titulo': f'{len(asignados)}/4 fases con operario',
+                'mensaje': 'Falta operario para elaboración',
+                'accion': 'asignar_operarios'}
+    return {'gate': 'operarios', 'status': 'ok',
+            'titulo': f'{len(asignados)}/4 fases asignadas',
+            'mensaje': ', '.join(asignados),
+            'accion': None}
+
+
+@bp.route('/api/planta/preflight/<int:produccion_id>', methods=['GET'])
+def planta_preflight(produccion_id):
+    """Motor de gates pre-flight.
+
+    Sebastian (30-abr-2026): "programado un producto dice donde como,
+    le dice inteligentemente area sucia confirmar limpieza confirmar
+    tal y tal cosa". Devuelve checks ordenados (blockers primero) con
+    status (ok/warn/blocker), mensaje y acción sugerida.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute("""
+        SELECT id, producto, fecha_programada, lotes, estado, area_id,
+               operario_dispensacion_id, operario_elaboracion_id,
+               operario_envasado_id, operario_acondicionamiento_id,
+               inicio_real_at, fin_real_at, cantidad_kg
+        FROM produccion_programada WHERE id=?
+    """, (produccion_id,)).fetchone()
+    if not pp:
+        return jsonify({'error': 'Producción no existe'}), 404
+    cols = ['id', 'producto', 'fecha_programada', 'lotes', 'estado', 'area_id',
+            'operario_dispensacion_id', 'operario_elaboracion_id',
+            'operario_envasado_id', 'operario_acondicionamiento_id',
+            'inicio_real_at', 'fin_real_at', 'cantidad_kg']
+    produccion = dict(zip(cols, pp))
+
+    gates = []
+    for fn in (_gate_sala_asignada, _gate_sala_libre, _gate_sala_limpia,
+               _gate_mp_disponibles, _gate_envases_listos, _gate_operarios):
+        try:
+            g = fn(produccion, c)
+            if g:
+                gates.append(g)
+        except Exception as e:
+            gates.append({'gate': fn.__name__, 'status': 'warn',
+                          'titulo': 'Error en check', 'mensaje': str(e), 'accion': None})
+
+    # Resumen general
+    n_block = sum(1 for g in gates if g['status'] == 'blocker')
+    n_warn  = sum(1 for g in gates if g['status'] == 'warn')
+    n_ok    = sum(1 for g in gates if g['status'] == 'ok')
+    if n_block:
+        listo = False
+        veredicto = f'⛔ NO PUEDE INICIAR — {n_block} bloqueante(s)'
+    elif n_warn:
+        listo = True
+        veredicto = f'⚠ Puede iniciar con precaución — {n_warn} advertencia(s)'
+    else:
+        listo = True
+        veredicto = '✅ Listo para iniciar'
+    # Ordenar: blockers primero, luego warns, luego ok
+    orden = {'blocker': 0, 'warn': 1, 'ok': 2}
+    gates.sort(key=lambda g: orden.get(g['status'], 3))
+
+    return jsonify({
+        'produccion_id': produccion_id,
+        'producto': produccion['producto'],
+        'estado': produccion['estado'],
+        'lotes': produccion['lotes'],
+        'fecha_programada': produccion['fecha_programada'],
+        'gates': gates,
+        'resumen': {'ok': n_ok, 'warn': n_warn, 'blocker': n_block, 'total': len(gates)},
+        'listo': listo,
+        'veredicto': veredicto,
+    })
+
+
+@bp.route('/api/planta/preflight/<int:produccion_id>/confirmar-limpieza', methods=['POST'])
+def planta_preflight_confirmar_limpieza(produccion_id):
+    """Operario confirma que acaba de hacer limpieza profunda en la sala
+    asociada a esta producción. Registra evento + actualiza
+    areas_planta.ultima_limpieza_profunda."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    nota = (d.get('nota') or '').strip() or 'Limpieza profunda confirmada vía preflight'
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute(
+        "SELECT area_id FROM produccion_programada WHERE id=?", (produccion_id,)
+    ).fetchone()
+    if not pp or not pp[0]:
+        return jsonify({'error': 'Producción sin área asignada'}), 400
+    area_id = pp[0]
+    c.execute("UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now') WHERE id=?", (area_id,))
+    c.execute("""
+        INSERT INTO area_eventos (area_id, tipo, produccion_id, usuario, nota)
+        VALUES (?, 'fin_limpieza', ?, ?, ?)
+    """, (area_id, produccion_id, user, nota))
+    conn.commit()
+    return jsonify({'ok': True, 'mensaje': 'Limpieza profunda registrada'})

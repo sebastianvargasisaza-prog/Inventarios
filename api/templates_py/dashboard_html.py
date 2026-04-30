@@ -1297,6 +1297,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#127981; Equipos
     </button>
+    <button id="prog-tab-preflight" onclick="switchProgTab('preflight')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#128679; Pre-flight
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5597,6 +5601,32 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-equipos -->
 
+  <!-- ── ptab-preflight: gates pre-flight antes de iniciar producción (Fase 2) ── -->
+  <div id="ptab-preflight" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#128679; Pre-flight de Producción</h2>
+        <p style="color:#666;font-size:13px;margin:0">Antes de iniciar, el sistema valida 6 condiciones: sala asignada, sala libre, sala limpia, MP suficientes, envases listos y operarios. Bloqueantes en rojo.</p>
+      </div>
+      <button onclick="cargarPreflightLista()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">&#x21bb; Actualizar</button>
+    </div>
+
+    <div id="pf-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>
+
+    <div id="pf-lista"></div>
+
+    <!-- Modal detalle preflight -->
+    <div id="modal-preflight" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:680px;max-width:94vw;max-height:90vh;overflow:auto">
+        <div id="pf-modal-header"></div>
+        <div id="pf-modal-gates"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;border-top:1px solid #e2e8f0;padding-top:12px">
+          <button onclick="cerrarPreflightModal()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ptab-preflight -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6737,6 +6767,7 @@ async function ckMarcar(itemId, estado){
       var el_pln = document.getElementById('ptab-plano');
       var el_pr  = document.getElementById('ptab-presentaciones');
       var el_eq  = document.getElementById('ptab-equipos');
+      var el_pf  = document.getElementById('ptab-preflight');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
@@ -6745,6 +6776,7 @@ async function ckMarcar(itemId, estado){
       if(el_pln) el_pln.style.display = tab==='plano'     ? 'block' : 'none';
       if(el_pr)  el_pr.style.display  = tab==='presentaciones' ? 'block' : 'none';
       if(el_eq)  el_eq.style.display  = tab==='equipos'   ? 'block' : 'none';
+      if(el_pf)  el_pf.style.display  = tab==='preflight' ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -6759,6 +6791,8 @@ async function ckMarcar(itemId, estado){
       if(bpr) { bpr.style.background = tab==='presentaciones' ? '#0f766e' : '#e2e8f0'; bpr.style.color = tab==='presentaciones' ? '#fff' : '#1a4a7a'; }
       var beq = document.getElementById('prog-tab-equipos');
       if(beq) { beq.style.background = tab==='equipos' ? '#7c3aed' : '#e2e8f0'; beq.style.color = tab==='equipos' ? '#fff' : '#1a4a7a'; }
+      var bpf = document.getElementById('prog-tab-preflight');
+      if(bpf) { bpf.style.background = tab==='preflight' ? '#dc2626' : '#e2e8f0'; bpf.style.color = tab==='preflight' ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -6790,6 +6824,10 @@ async function ckMarcar(itemId, estado){
       if(tab==='equipos'){
         if(el_eq) el_eq.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarEquipos==='function') cargarEquipos();
+      }
+      if(tab==='preflight'){
+        if(el_pf) el_pf.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarPreflightLista==='function') cargarPreflightLista();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -7727,6 +7765,146 @@ async function ckMarcar(itemId, estado){
       });
       box.innerHTML = html;
     } catch(e){ box.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+  }
+
+  // ── Fase 2: Pre-flight (motor de gates) ──────────────────────────────
+  // Sebastian (30-abr-2026): "programado un producto dice donde como, le dice
+  // inteligentemente area sucia confirmar limpieza confirmar tal y tal cosa".
+  async function cargarPreflightLista(){
+    var lista = document.getElementById('pf-lista');
+    var kpis  = document.getElementById('pf-kpis');
+    if(!lista) return;
+    lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando producciones próximas...</div>';
+    try {
+      // Reusar /api/programar para obtener producciones próximas
+      var r = await fetch('/api/programacion/programar?dias=14');
+      var d = await r.json();
+      var eventos = d.eventos || d.items || [];
+      // Filtrar las que tienen produccion_id (de produccion_programada local)
+      var producciones = eventos.filter(function(e){return e.id && e.estado!=='completado' && e.estado!=='cancelado'});
+
+      // Para cada produccion, llamar a /preflight (paralelo limit 5)
+      var conGates = [];
+      for(var i=0;i<producciones.length;i+=5){
+        var batch = producciones.slice(i, i+5);
+        var res = await Promise.all(batch.map(function(p){
+          return fetch('/api/planta/preflight/'+p.id).then(function(r){return r.json()}).catch(function(){return null});
+        }));
+        res.forEach(function(pf, idx){
+          if(pf && pf.gates) conGates.push(Object.assign({}, batch[idx], {preflight: pf}));
+        });
+      }
+
+      // KPIs
+      var nListos = conGates.filter(function(p){return p.preflight.listo && p.preflight.resumen.warn===0}).length;
+      var nWarn   = conGates.filter(function(p){return p.preflight.listo && p.preflight.resumen.warn>0}).length;
+      var nBlock  = conGates.filter(function(p){return !p.preflight.listo}).length;
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #6b7280;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total programadas</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+conGates.length+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Listas para iniciar</div><div style="font-size:24px;font-weight:800;color:#15803d">'+nListos+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Con advertencias</div><div style="font-size:24px;font-weight:800;color:#d97706">'+nWarn+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Bloqueadas</div><div style="font-size:24px;font-weight:800;color:#dc2626">'+nBlock+'</div></div>';
+
+      if(!conGates.length){
+        lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px;background:#f8fafc;border-radius:10px">Sin producciones programadas próximas (14d).</div>';
+        return;
+      }
+
+      var html = '';
+      conGates.forEach(function(p){
+        var pf = p.preflight;
+        var color = pf.resumen.blocker>0 ? '#dc2626' : (pf.resumen.warn>0 ? '#d97706' : '#15803d');
+        var badge = pf.resumen.blocker>0 ? '⛔ BLOQUEADA' : (pf.resumen.warn>0 ? '⚠ Con advertencias' : '✅ LISTA');
+        html += '<div onclick="abrirPreflightModal('+p.id+')" style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+color+';border-radius:10px;padding:14px 18px;margin-bottom:10px;cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center" onmouseover="this.style.background=\\'#f8fafc\\'" onmouseout="this.style.background=\\'#fff\\'">'
+          +'<div>'
+          +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="color:#0f172a;font-size:14px">'+_escHTML(p.titulo||p.producto||'Producción '+p.id)+'</b>'
+          +'<span style="background:'+color+'22;color:'+color+';font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px">'+badge+'</span></div>'
+          +'<div style="font-size:12px;color:#64748b;margin-top:4px">📅 '+_escHTML(p.fecha_inicio||p.fecha_programada||'')+(p.lotes?' · '+p.lotes+' lote(s)':'')+'</div>'
+          +'<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'
+          +pf.gates.map(function(g){
+            var col = g.status==='blocker'?'#dc2626':(g.status==='warn'?'#d97706':'#15803d');
+            var ic  = g.status==='blocker'?'⛔':(g.status==='warn'?'⚠':'✓');
+            return '<span style="background:'+col+'18;color:'+col+';padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600">'+ic+' '+_escHTML(g.titulo)+'</span>';
+          }).join('')
+          +'</div></div>'
+          +'<div style="text-align:right;color:'+color+';font-size:24px">→</div>'
+          +'</div>';
+      });
+      lista.innerHTML = html;
+    } catch(e){
+      lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function abrirPreflightModal(prodId){
+    var modal = document.getElementById('modal-preflight');
+    var hdr = document.getElementById('pf-modal-header');
+    var body = document.getElementById('pf-modal-gates');
+    hdr.innerHTML = '<div style="color:#94a3b8">Cargando...</div>';
+    body.innerHTML = '';
+    modal.style.display = 'flex';
+    try {
+      var r = await fetch('/api/planta/preflight/'+prodId);
+      var pf = await r.json();
+      var color = pf.resumen.blocker>0?'#dc2626':(pf.resumen.warn>0?'#d97706':'#15803d');
+      hdr.innerHTML = '<div style="margin-bottom:14px">'
+        +'<h3 style="margin:0 0 4px;color:'+color+';font-size:16px">'+_escHTML(pf.veredicto)+'</h3>'
+        +'<div style="font-size:13px;color:#475569"><b>'+_escHTML(pf.producto||'')+'</b> · '+(pf.lotes||1)+' lote(s) · 📅 '+_escHTML(pf.fecha_programada||'')+'</div>'
+        +'<div style="font-size:11px;color:#64748b;margin-top:4px">Producción ID '+pf.produccion_id+' · estado: '+_escHTML(pf.estado||'')+'</div>'
+        +'</div>';
+      body.innerHTML = pf.gates.map(function(g){
+        var col = g.status==='blocker'?'#dc2626':(g.status==='warn'?'#d97706':'#15803d');
+        var bg  = g.status==='blocker'?'#fef2f2':(g.status==='warn'?'#fffbeb':'#f0fdf4');
+        var ic  = g.status==='blocker'?'⛔':(g.status==='warn'?'⚠':'✅');
+        var meta = '';
+        if(g.meta && g.meta.deficit){
+          meta = '<ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:#475569">'
+            + g.meta.deficit.map(function(m){ return '<li>'+_escHTML(m.nombre)+': falta '+m.faltante_g+'g</li>'; }).join('')
+            + '</ul>';
+        } else if(g.meta && g.meta.items){
+          meta = '<ul style="margin:6px 0 0;padding-left:18px;font-size:12px;color:#475569">'
+            + g.meta.items.map(function(it){
+                var s = it.stock!=null ? ' · stock '+it.stock : '';
+                return '<li>'+_escHTML(it.presentacion)+(it.envase?' · '+_escHTML(it.envase):'')+s+'</li>';
+              }).join('')
+            + '</ul>';
+        }
+        var btn = '';
+        if(g.accion === 'confirmar_limpieza'){
+          btn = '<button onclick="confirmarLimpiezaPF('+prodId+')" style="margin-top:8px;background:'+col+';color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🧹 Confirmar limpieza profunda</button>';
+        } else if(g.accion === 'asignar_area'){
+          btn = '<div style="margin-top:8px;font-size:11px;color:#64748b">→ Ve a Centro de Mando para asignar área</div>';
+        } else if(g.accion === 'crear_tareas_compra'){
+          btn = '<div style="margin-top:8px;font-size:11px;color:#64748b">→ Catalina puede ver el déficit en /compras</div>';
+        }
+        return '<div style="background:'+bg+';border:1px solid '+col+'33;border-left:4px solid '+col+';border-radius:8px;padding:12px 14px;margin-bottom:8px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:6px">'
+          +'<div><b style="color:'+col+'">'+ic+' '+_escHTML(g.titulo)+'</b><div style="font-size:12px;color:#475569;margin-top:2px">'+_escHTML(g.mensaje||'')+'</div></div>'
+          +'<span style="font-family:monospace;color:#94a3b8;font-size:10px">'+_escHTML(g.gate)+'</span>'
+          +'</div>'
+          + meta + btn
+          +'</div>';
+      }).join('');
+    } catch(e){
+      body.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+  function cerrarPreflightModal(){ document.getElementById('modal-preflight').style.display='none'; }
+
+  async function confirmarLimpiezaPF(prodId){
+    var nota = prompt('Nota de la limpieza (opcional):', '');
+    if(nota===null) return;
+    try {
+      var r = await fetch('/api/planta/preflight/'+prodId+'/confirmar-limpieza', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({nota: nota||''})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      _toast('Limpieza profunda registrada', 1);
+      // Refrescar el modal
+      abrirPreflightModal(prodId);
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   // Safe modal backdrop close — placed after all functions are defined
