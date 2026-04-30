@@ -9297,7 +9297,7 @@ async function ckMarcar(itemId, estado){
   }
 
   async function recDescontinuar(producto){
-    var razon = prompt('¿Por qué descontinuar "'+producto+'"?\n(El sistema dejará de programar producción para este SKU)', 'Ya no se produce');
+    var razon = prompt('¿Por qué descontinuar "'+producto+'"?\\n(El sistema dejará de programar producción para este SKU)', 'Ya no se produce');
     if(razon === null) return;
     try {
       var r1 = await fetch('/api/auto-plan/configs/sku');
