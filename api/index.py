@@ -271,7 +271,14 @@ def _inject_chat_widget(response):
         if '</body>' not in body:
             return response
         snippet = '<script src="/api/chat/widget.js" async></script>'
-        body = body.replace('</body>', snippet + '</body>', 1)
+        # Usar rsplit (último </body>) para evitar inyectar dentro de strings JS
+        # como w.document.write('<html><body>...</body></html>') que aparece
+        # en compras_html.py / recepcion_html.py / salida_html.py.
+        # Sebastian (29-abr-2026): el replace original con count=1 reemplazaba
+        # el PRIMER </body> que estaba en string literal JS, rompiendo todo
+        # el script de /compras.
+        idx = body.rfind('</body>')
+        body = body[:idx] + snippet + body[idx:]
         response.set_data(body)
         # Refrescar Content-Length
         response.headers['Content-Length'] = str(len(response.get_data()))
