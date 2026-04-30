@@ -1305,6 +1305,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 2px 6px rgba(14,165,233,.3)">
       &#128197; Plan Semanal
     </button>
+    <button id="prog-tab-autoplan" onclick="switchProgTab('autoplan')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 2px 8px rgba(124,58,237,.4)">
+      &#129302; Auto-Plan
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5663,6 +5667,122 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-plansem -->
 
+  <!-- ── ptab-autoplan: Auto-Plan Maestro (IA · cron diario 7am) ── -->
+  <div id="ptab-autoplan" style="display:none">
+    <div style="background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;padding:20px 24px;border-radius:12px;margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0 0 4px;color:#fff;font-size:22px">&#129302; Auto-Plan Maestro</h2>
+          <p style="margin:0;color:#fde2e4;font-size:13px;line-height:1.5">
+            La planta más avanzada del mundo, <b>generada por Claude</b>. Cada lunes a las 7am el sistema:<br>
+            <span style="font-size:12px">→ proyecta demanda con tendencia · → propone producciones (L/M/V) · → crea SOLs anticipadas (China 180d, local 14d) · → programa conteos cíclicos (Ma/Ju) · → notifica por email</span>
+          </p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button onclick="apPreview()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">&#128270; Preview (dry-run)</button>
+          <button onclick="apEjecutar()" style="background:#fff;color:#7c3aed;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">&#128293; Ejecutar AHORA</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sub-tabs -->
+    <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-bottom:8px;flex-wrap:wrap">
+      <button id="ap-stab-resumen" onclick="apSwitchSubtab('resumen')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">&#128202; Plan generado</button>
+      <button id="ap-stab-skus" onclick="apSwitchSubtab('skus')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128230; Cadencias por SKU</button>
+      <button id="ap-stab-mp" onclick="apSwitchSubtab('mp')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128230; Lead times MP/envases</button>
+      <button id="ap-stab-emails" onclick="apSwitchSubtab('emails')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128231; Emails</button>
+      <button id="ap-stab-runs" onclick="apSwitchSubtab('runs')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#475569">&#128221; Histórico runs</button>
+    </div>
+
+    <div id="ap-sub-resumen">
+      <div id="ap-status-banner" style="display:none;padding:12px 16px;border-radius:8px;margin-bottom:14px;font-size:13px"></div>
+      <div id="ap-resumen-content" style="text-align:center;padding:40px;color:#94a3b8">
+        Pulsa <b>🔍 Preview</b> o <b>🔥 Ejecutar AHORA</b> para ver el plan generado.
+      </div>
+    </div>
+
+    <div id="ap-sub-skus" style="display:none">
+      <p style="color:#64748b;font-size:13px">Configura cadencia, cobertura y merma por producto. Cadencia=null significa "auto por umbral" (producir cuando bajen de cobertura mínima).</p>
+      <div id="ap-skus-tabla"></div>
+    </div>
+
+    <div id="ap-sub-mp" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <p style="color:#64748b;font-size:13px;margin:0">Lead time + buffer por material. Envases de China = 180d lead. Local = 14d.</p>
+        <button onclick="apMpNuevo()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button>
+      </div>
+      <div id="ap-mp-tabla"></div>
+    </div>
+
+    <div id="ap-sub-emails" style="display:none">
+      <p style="color:#64748b;font-size:13px">Configura los correos de los roles. El sistema enviará emails automáticos (resumen diario, alertas, compras, agenda).</p>
+      <div id="ap-emails-tabla"></div>
+    </div>
+
+    <div id="ap-sub-runs" style="display:none">
+      <p style="color:#64748b;font-size:13px">Las últimas 30 ejecuciones del cron auto-plan.</p>
+      <div id="ap-runs-tabla"></div>
+    </div>
+
+    <!-- Modal MP -->
+    <div id="modal-mp-cfg" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
+        <h3 style="margin:0 0 12px;color:#0f766e">📦 Material — lead time + buffer</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">ID material *</label>
+            <input id="mp-id" placeholder="ej. NIA-001" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">Nombre</label>
+            <input id="mp-nombre" placeholder="ej. Niacinamida" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Origen</label>
+            <select id="mp-origen" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+              <option value="local">Local (Colombia)</option>
+              <option value="nacional">Nacional</option>
+              <option value="china">China</option>
+              <option value="usa">USA</option>
+              <option value="europa">Europa</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">¿Es envase?</label>
+            <select id="mp-envase" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+              <option value="0">No</option><option value="1">Sí</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Lead time (días)</label>
+            <input id="mp-lead" type="number" value="14" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Buffer (días)</label>
+            <input id="mp-buffer" type="number" value="30" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Cobertura mín (días)</label>
+            <input id="mp-cobmin" type="number" value="30" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Cobertura ideal (días)</label>
+            <input id="mp-cobideal" type="number" value="60" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:11px;color:#64748b;font-weight:600">Proveedor principal</label>
+            <input id="mp-prov" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button onclick="document.getElementById('modal-mp-cfg').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="apMpGuardar()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ptab-autoplan -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6805,6 +6925,7 @@ async function ckMarcar(itemId, estado){
       var el_eq  = document.getElementById('ptab-equipos');
       var el_pf  = document.getElementById('ptab-preflight');
       var el_ps  = document.getElementById('ptab-plansem');
+      var el_ap  = document.getElementById('ptab-autoplan');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
@@ -6815,6 +6936,7 @@ async function ckMarcar(itemId, estado){
       if(el_eq)  el_eq.style.display  = tab==='equipos'   ? 'block' : 'none';
       if(el_pf)  el_pf.style.display  = tab==='preflight' ? 'block' : 'none';
       if(el_ps)  el_ps.style.display  = tab==='plansem'   ? 'block' : 'none';
+      if(el_ap)  el_ap.style.display  = tab==='autoplan'  ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -6871,6 +6993,10 @@ async function ckMarcar(itemId, estado){
       if(tab==='plansem'){
         if(el_ps) el_ps.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarPlanSemanal==='function') cargarPlanSemanal();
+      }
+      if(tab==='autoplan'){
+        if(el_ap) el_ap.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof apInit==='function') apInit();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -8111,6 +8237,384 @@ async function ckMarcar(itemId, estado){
       // Refrescar plan después de unos segundos
       setTimeout(cargarPlanSemanal, 2000);
     } catch(e){ resBox.innerHTML='<div style="color:#dc2626;padding:14px;margin-top:10px">Error de red: '+e.message+'</div>'; }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Auto-Plan Maestro · Sebastian: "la herramienta más avanzada del mundo"
+  // Cron L-V 7am · genera producciones + compras + conteos + emails
+  // ════════════════════════════════════════════════════════════════════════
+  var _AP_SUBTAB = 'resumen';
+  var _AP_PLAN = null;
+
+  function apInit(){
+    apSwitchSubtab(_AP_SUBTAB);
+  }
+
+  function apSwitchSubtab(t){
+    _AP_SUBTAB = t;
+    ['resumen','skus','mp','emails','runs'].forEach(function(s){
+      var div = document.getElementById('ap-sub-'+s);
+      var btn = document.getElementById('ap-stab-'+s);
+      if(div) div.style.display = (s===t) ? 'block' : 'none';
+      if(btn){
+        btn.style.background = (s===t) ? '#7c3aed' : '#e2e8f0';
+        btn.style.color      = (s===t) ? '#fff' : '#475569';
+      }
+    });
+    if(t==='skus') apCargarSkus();
+    if(t==='mp') apCargarMp();
+    if(t==='emails') apCargarEmails();
+    if(t==='runs') apCargarRuns();
+  }
+
+  async function apPreview(){
+    var content = document.getElementById('ap-resumen-content');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#7c3aed">🤖 Generando plan...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/preview?dias=60');
+      var d = await r.json();
+      _AP_PLAN = d;
+      apRenderPlan(d, false);
+    } catch(e){
+      content.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function apEjecutar(){
+    if(!confirm('¿Ejecutar Auto-Plan AHORA?\n\nEl sistema CREARÁ producciones, SOLs de compra y conteos cíclicos según las cadencias y stock actual. Si hay emails configurados, los enviará.')) return;
+    var content = document.getElementById('ap-resumen-content');
+    content.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626">🔥 Ejecutando auto-plan + creando registros...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/aplicar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({dias: 60})
+      });
+      var d = await r.json();
+      if(!r.ok){ content.innerHTML='<div style="color:#dc2626;padding:20px">'+(d.error||'Error')+'</div>'; return; }
+      var banner = document.getElementById('ap-status-banner');
+      banner.style.display='block';
+      banner.style.background = '#f0fdf4';
+      banner.style.border = '1px solid #86efac';
+      banner.style.color = '#166534';
+      banner.innerHTML = '<b>✅ Auto-Plan aplicado</b> · '
+        +(d.resultado.producciones_creadas||[]).length+' producciones creadas · '
+        +(d.resultado.compras_creadas||[]).length+' SOLs creadas · '
+        +(d.resultado.conteos_creados||[]).length+' conteos programados';
+      // Cargar el plan completo para mostrar
+      apRenderPlan({
+        producciones_propuestas: d.plan.producciones_propuestas,
+        compras_propuestas: d.plan.compras_propuestas,
+        conteos_propuestos: d.plan.conteos_propuestos,
+        alertas: d.plan.alertas,
+        log: d.plan.log,
+      }, true);
+    } catch(e){
+      content.innerHTML='<div style="color:#dc2626;padding:20px">Error de red: '+e.message+'</div>';
+    }
+  }
+
+  function apRenderPlan(d, aplicado){
+    var content = document.getElementById('ap-resumen-content');
+    content.style.padding = '0';
+    content.style.textAlign = 'left';
+    content.style.color = 'inherit';
+    var prods = d.producciones_propuestas || [];
+    var compras = d.compras_propuestas || [];
+    var conteos = d.conteos_propuestos || [];
+    var alertas = d.alertas || [];
+
+    // KPIs
+    var nCrit = alertas.filter(function(a){return a.severidad==='critica'}).length;
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">'
+      +'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px"><div style="font-size:11px;color:#166534;text-transform:uppercase;font-weight:700">Producciones</div><div style="font-size:30px;font-weight:800;color:#15803d">'+prods.length+'</div></div>'
+      +'<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:10px;padding:14px"><div style="font-size:11px;color:#92400e;text-transform:uppercase;font-weight:700">SOLs auto</div><div style="font-size:30px;font-weight:800;color:#92400e">'+compras.length+'</div></div>'
+      +'<div style="background:'+(nCrit?'#fef2f2':'#f0fdf4')+';border:1px solid '+(nCrit?'#fecaca':'#86efac')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:'+(nCrit?'#7f1d1d':'#166534')+';text-transform:uppercase;font-weight:700">Alertas críticas</div><div style="font-size:30px;font-weight:800;color:'+(nCrit?'#dc2626':'#15803d')+'">'+nCrit+'</div></div>'
+      +'<div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:10px;padding:14px"><div style="font-size:11px;color:#6b21a8;text-transform:uppercase;font-weight:700">Conteos cíclicos</div><div style="font-size:30px;font-weight:800;color:#7c3aed">'+conteos.length+'</div></div>'
+      +'</div>';
+
+    // Alertas críticas
+    if(alertas.length){
+      html += '<h3 style="color:#0f172a;margin:0 0 8px;font-size:14px">⚠ Alertas</h3>';
+      html += alertas.map(function(a){
+        var c = a.severidad==='critica' ? '#dc2626' : '#d97706';
+        return '<div style="background:'+c+'15;border-left:3px solid '+c+';padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px"><b style="color:'+c+'">'+_escHTML(a.titulo||'')+'</b></div>';
+      }).join('');
+    }
+
+    // Producciones
+    html += '<h3 style="color:#0f172a;margin:18px 0 8px;font-size:14px">📅 Producciones propuestas ('+prods.length+')</h3>';
+    if(!prods.length){
+      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin producciones nuevas — todo dentro de cobertura ✓</div>';
+    } else {
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th><th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lote</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Razón</th></tr></thead><tbody>';
+      prods.forEach(function(p){
+        html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 10px;font-family:monospace">'+_escHTML(p.fecha_programada)+'</td><td style="padding:7px 10px"><b>'+_escHTML(p.producto)+'</b><br><span style="color:#64748b;font-size:10px">cad '+(p.razon||'')+'</span></td><td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(p.kg_con_merma||0).toFixed(0)+'kg</td><td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.razon||'')+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    // Compras
+    html += '<h3 style="color:#0f172a;margin:18px 0 8px;font-size:14px">🛒 Compras automáticas ('+compras.length+')</h3>';
+    if(!compras.length){
+      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin compras nuevas — MP suficientes</div>';
+    } else {
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th><th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cantidad</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Origen</th><th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Urgencia</th></tr></thead><tbody>';
+      compras.forEach(function(c){
+        var urgCol = c.urgencia==='critica'?'#dc2626':(c.urgencia==='alta'?'#d97706':'#0891b2');
+        html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 10px"><b>'+_escHTML(c.material_nombre)+'</b></td><td style="padding:7px 10px;text-align:right;font-family:monospace">'+(c.cantidad_a_pedir_g/1000).toFixed(2)+'kg</td><td style="padding:7px 10px;font-size:11px">'+_escHTML(c.origen)+' · '+c.lead_time_dias+'d</td><td style="padding:7px 10px;text-align:center"><span style="background:'+urgCol+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+c.urgencia.toUpperCase()+'</span></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    // Conteos cíclicos
+    if(conteos.length){
+      html += '<h3 style="color:#0f172a;margin:18px 0 8px;font-size:14px">📋 Conteos cíclicos (Ma/Ju)</h3>';
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;font-size:12px">'
+        + conteos.slice(0,10).map(function(c){
+          return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span><b>'+_escHTML(c.fecha)+'</b> · '+_escHTML(c.material_nombre||'')+' <span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:6px;font-size:10px">'+_escHTML(c.categoria_abc||'C')+'</span></span><span style="color:#64748b;font-size:10px">'+_escHTML(c.asignado_a||'')+'</span></div>';
+        }).join('')
+        +'</div>';
+    }
+
+    // Log
+    if(d.log){
+      html += '<details style="margin-top:18px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:600">📜 Log generación</summary>'
+        +'<pre style="background:#0f172a;color:#cbd5e1;padding:14px;border-radius:8px;font-size:11px;overflow:auto;max-height:280px;margin-top:8px">'+ _escHTML(d.log.join('\n')) +'</pre></details>';
+    }
+
+    content.innerHTML = html;
+  }
+
+  async function apCargarSkus(){
+    var box = document.getElementById('ap-skus-tabla');
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/configs/sku');
+      var d = await r.json();
+      var rows = d.configs || [];
+      box.innerHTML = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Categoría</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cadencia (d)</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cob. target</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cob. min</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Merma %</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lote kg</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Prio</th>'
+        +'</tr></thead><tbody>'
+        + rows.map(function(c){
+          return '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:6px 10px"><b>'+_escHTML(c.producto_nombre)+'</b></td>'
+            +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.categoria||'')+'</td>'
+            +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="cadencia_dias" onblur="apSkuUpdate(this)">'+(c.cadencia_dias===null?'auto':c.cadencia_dias)+'</td>'
+            +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="cobertura_target_dias" onblur="apSkuUpdate(this)">'+c.cobertura_target_dias+'</td>'
+            +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="cobertura_min_dias" onblur="apSkuUpdate(this)">'+c.cobertura_min_dias+'</td>'
+            +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="merma_pct" onblur="apSkuUpdate(this)">'+c.merma_pct+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;color:#64748b">'+(c.lote_size_kg||'—')+'</td>'
+            +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="prioridad" onblur="apSkuUpdate(this)">'+c.prioridad+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>'
+        +'<p style="font-size:11px;color:#64748b;margin-top:8px">💡 Click en cualquier celda para editar. Tab/blur guarda. Cadencia="auto" deja que el sistema decida por umbral.</p>';
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function apSkuUpdate(el){
+    var id = el.dataset.id;
+    var col = el.dataset.col;
+    var val = el.textContent.trim();
+    if(col==='cadencia_dias' && (val==='auto' || val==='' || val==='null')) val = null;
+    else val = parseFloat(val);
+    if(val !== null && isNaN(val)) return;
+    try {
+      var body = {}; body[col] = val;
+      var r = await fetch('/api/auto-plan/configs/sku/'+id, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if(r.ok) el.style.background = '#dcfce7'; else el.style.background = '#fee2e2';
+      setTimeout(function(){el.style.background='';}, 800);
+    } catch(e){ el.style.background = '#fee2e2'; }
+  }
+
+  async function apCargarMp(){
+    var box = document.getElementById('ap-mp-tabla');
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/configs/mp');
+      var d = await r.json();
+      var rows = d.configs || [];
+      if(!rows.length){
+        box.innerHTML = '<div style="background:#fef3c7;border:1px solid #fbbf24;padding:14px;border-radius:8px;color:#92400e">⚠ No hay materiales con lead time configurado. El auto-plan usará defaults (lead 14d, buffer 30d, origen local). Para envases de China, configúralos aquí con lead 180d.</div>';
+        return;
+      }
+      box.innerHTML = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">ID</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Origen</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lead</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Buffer</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cob min</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cob ideal</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Proveedor</th>'
+        +'</tr></thead><tbody>'
+        + rows.map(function(c){
+          var origenColor = c.origen==='china'?'#dc2626':(c.origen==='local'?'#15803d':'#0891b2');
+          return '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+_escHTML(c.material_id)+(c.es_envase?' 📦':'')+'</td>'
+            +'<td style="padding:6px 10px"><b>'+_escHTML(c.material_nombre||'')+'</b></td>'
+            +'<td style="padding:6px 10px"><span style="background:'+origenColor+'22;color:'+origenColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+_escHTML(c.origen)+'</span></td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.lead_time_dias+'d</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.buffer_dias+'d</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.cobertura_min_dias+'d</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.cobertura_ideal_dias+'d</td>'
+            +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.proveedor_principal||'—')+'</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function apMpNuevo(){
+    ['mp-id','mp-nombre','mp-prov'].forEach(function(id){document.getElementById(id).value=''});
+    document.getElementById('mp-origen').value='local';
+    document.getElementById('mp-envase').value='0';
+    document.getElementById('mp-lead').value='14';
+    document.getElementById('mp-buffer').value='30';
+    document.getElementById('mp-cobmin').value='30';
+    document.getElementById('mp-cobideal').value='60';
+    document.getElementById('modal-mp-cfg').style.display='flex';
+  }
+
+  async function apMpGuardar(){
+    var body = {
+      material_id: document.getElementById('mp-id').value.trim(),
+      material_nombre: document.getElementById('mp-nombre').value.trim(),
+      origen: document.getElementById('mp-origen').value,
+      es_envase: parseInt(document.getElementById('mp-envase').value),
+      lead_time_dias: parseInt(document.getElementById('mp-lead').value),
+      buffer_dias: parseInt(document.getElementById('mp-buffer').value),
+      cobertura_min_dias: parseInt(document.getElementById('mp-cobmin').value),
+      cobertura_ideal_dias: parseInt(document.getElementById('mp-cobideal').value),
+      proveedor_principal: document.getElementById('mp-prov').value.trim(),
+    };
+    if(!body.material_id){ alert('ID material requerido'); return; }
+    try {
+      var r = await fetch('/api/auto-plan/configs/mp', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      document.getElementById('modal-mp-cfg').style.display='none';
+      _toast('Material configurado', 1);
+      apCargarMp();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  async function apCargarEmails(){
+    var box = document.getElementById('ap-emails-tabla');
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/configs/emails');
+      var d = await r.json();
+      var rows = d.configs || [];
+      box.innerHTML = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Rol</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Nombre</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Email</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Resumen</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Alertas</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Compras</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Calidad</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Agenda</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase"></th>'
+        +'</tr></thead><tbody>'
+        + rows.map(function(c){
+          var ck = function(v,k){return '<input type="checkbox" '+(v?'checked':'')+' onchange="apEmailToggle(\\''+c.rol+'\\',\\''+k+'\\',this.checked)">';};
+          return '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+_escHTML(c.rol)+'</td>'
+            +'<td style="padding:6px 10px"><b>'+_escHTML(c.nombre||'')+'</b></td>'
+            +'<td style="padding:6px 10px"><input type="email" value="'+_escAttr(c.email||'')+'" placeholder="email@dominio.com" data-rol="'+c.rol+'" onblur="apEmailUpdate(this)" style="width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;background:'+(c.email?'#f0fdf4':'#fef2f2')+'"></td>'
+            +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_resumen_diario,'recibe_resumen_diario')+'</td>'
+            +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_alertas_criticas,'recibe_alertas_criticas')+'</td>'
+            +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_compras_aprob,'recibe_compras_aprob')+'</td>'
+            +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_calidad,'recibe_calidad')+'</td>'
+            +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_agenda_personal,'recibe_agenda_personal')+'</td>'
+            +'<td style="padding:6px 10px;text-align:center"><button onclick="apEmailTest(\\''+_escAttr(c.email||'')+'\\')" '+(c.email?'':'disabled')+' style="background:#0891b2;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;'+(c.email?'':'opacity:.4')+'">📧 Test</button></td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  async function apEmailUpdate(input){
+    try {
+      var r = await fetch('/api/auto-plan/configs/emails', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({rol: input.dataset.rol, email: input.value.trim()})
+      });
+      if(r.ok){ input.style.background = input.value.trim() ? '#f0fdf4' : '#fef2f2'; }
+    } catch(e){}
+  }
+
+  async function apEmailToggle(rol, key, val){
+    var body = {rol: rol}; body[key] = val ? 1 : 0;
+    try { await fetch('/api/auto-plan/configs/emails', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); } catch(e){}
+  }
+
+  function apEmailTest(email){
+    if(!email) return;
+    alert('La función "test email" se conecta cuando el cron esté armado en producción. Por ahora, el email se prueba con el botón "Ejecutar AHORA" del Auto-Plan.');
+  }
+
+  async function apCargarRuns(){
+    var box = document.getElementById('ap-runs-tabla');
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/auto-plan/runs');
+      var d = await r.json();
+      var rows = d.runs || [];
+      if(!rows.length){
+        box.innerHTML = '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">El auto-plan aún no se ha ejecutado. Pulsa "🔥 Ejecutar AHORA" arriba para hacer la primera corrida.</div>';
+        return;
+      }
+      box.innerHTML = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+        +'<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Fecha/hora</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Por</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Tipo</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Producciones</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Compras</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Alertas</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Emails</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Tiempo</th>'
+        +'</tr></thead><tbody>'
+        + rows.map(function(c){
+          var tipoColor = c.tipo==='auto'?'#7c3aed':(c.tipo==='manual'?'#0891b2':'#64748b');
+          return '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+_escHTML((c.ejecutado_at||'').substring(0,19))+'</td>'
+            +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.ejecutado_por)+'</td>'
+            +'<td style="padding:6px 10px"><span style="background:'+tipoColor+'22;color:'+tipoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+_escHTML(c.tipo)+'</span></td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.producciones_creadas+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.compras_creadas+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace;color:'+(c.alertas_criticas>0?'#dc2626':'#64748b')+';font-weight:'+(c.alertas_criticas>0?'700':'400')+'">'+c.alertas_criticas+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+(c.emails_enviados||0)+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;font-family:monospace;font-size:11px;color:#64748b">'+(c.duracion_ms||0)+'ms</td>'
+            +'</tr>';
+        }).join('')
+        +'</tbody></table></div>';
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
   }
 
   // Safe modal backdrop close — placed after all functions are defined
