@@ -12,7 +12,32 @@ CHAT_HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Chat — EOS</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos11">
-<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<script>(function(){
+  try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}
+  // Embed mode: si ?embed=1 (cargado desde widget flotante en panel pequeño)
+  // ajustar el layout para que quepa bien sin scroll horizontal.
+  try{
+    if(window.location.search.indexOf('embed=1')>=0){
+      document.documentElement.classList.add('embed-mode');
+    }
+  }catch(e){}
+})();</script>
+<style>
+/* Embed mode (cargado en panel flotante 480x720) */
+html.embed-mode body{height:auto}
+html.embed-mode .sidebar{width:160px;height:100%}
+html.embed-mode .me-bar .btn-icon[href="/modulos"]{display:none}
+html.embed-mode .me-name{font-size:12px}
+html.embed-mode .tabs-bar{padding:6px 8px;font-size:11px}
+html.embed-mode .tab-pill{padding:3px 8px;font-size:11px}
+html.embed-mode .thread-item{padding:8px 10px}
+html.embed-mode .thread-name{font-size:12px}
+html.embed-mode .thread-preview{font-size:11px;display:none}
+html.embed-mode .ch-name{font-size:13px}
+html.embed-mode .composer{padding:8px 10px}
+html.embed-mode .msgs-wrap{padding:10px}
+html.embed-mode .msg{max-width:88%}
+</style>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;color:#e8e8ea;height:100vh;overflow:hidden}
@@ -727,29 +752,23 @@ function _menInsert(uname, ta){
   ta.focus();
 }
 
-// Teclas en composer: navegar + seleccionar suggest, o enviar
-var _composerKeydownOriginal = window.composerKeydown;
-window.composerKeydown = function(e){
-  if(_menSuggest){
-    var items = _menSuggest.querySelectorAll('.item');
-    if(e.key === 'ArrowDown'){ e.preventDefault(); _menSelectItem(Math.min(_menSuggestSel+1, items.length-1)); return; }
-    if(e.key === 'ArrowUp'){ e.preventDefault(); _menSelectItem(Math.max(0, _menSuggestSel-1)); return; }
-    if(e.key === 'Enter' || e.key === 'Tab'){
-      e.preventDefault();
-      var sel = items[_menSuggestSel];
-      if(sel) _menInsert(sel.dataset.uname, document.getElementById('composer'));
-      return;
-    }
-    if(e.key === 'Escape'){ e.preventDefault(); cerrarMenSuggest(); return; }
+// Listener separado en el composer para teclas del autocomplete (NO wrap
+// del composerKeydown global — eso rompia el chat en algunos navegadores).
+// Se agrega cuando el composer existe y solo intercepta cuando hay suggest abierto.
+document.addEventListener('keydown', function(e){
+  var ta = document.getElementById('composer');
+  if(!ta || e.target !== ta) return;
+  if(!_menSuggest) return;  // dejar pasar al onkeydown="composerKeydown(...)" original
+  var items = _menSuggest.querySelectorAll('.item');
+  if(e.key === 'ArrowDown'){ e.preventDefault(); e.stopPropagation(); _menSelectItem(Math.min(_menSuggestSel+1, items.length-1)); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); e.stopPropagation(); _menSelectItem(Math.max(0, _menSuggestSel-1)); }
+  else if(e.key === 'Enter' || e.key === 'Tab'){
+    e.preventDefault(); e.stopPropagation();
+    var sel = items[_menSuggestSel];
+    if(sel) _menInsert(sel.dataset.uname, ta);
   }
-  if(_composerKeydownOriginal) return _composerKeydownOriginal(e);
-};
-
-// Resetear cache de miembros cuando se cambia de thread
-var _abrirThreadOriginal = window.abrirThread;
-if(_abrirThreadOriginal){
-  window.abrirThread = function(tid){ _menMembers = []; cerrarMenSuggest(); return _abrirThreadOriginal(tid); };
-}
+  else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); cerrarMenSuggest(); }
+}, true); // captura: corre antes que onkeydown inline
 
 // ─── Fase 3: Busqueda global de mensajes ──────────────────────────────
 var _searchTimer = null;
