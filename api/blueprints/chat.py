@@ -327,3 +327,120 @@ def chat_agregar_miembros(thread_id):
             added += 1
     conn.commit()
     return jsonify({'ok': True, 'agregados': added})
+
+
+@bp.route('/api/chat/threads/<int:thread_id>/asignar-tarea', methods=['POST'])
+def chat_asignar_tarea(thread_id):
+    """Crear tarea_operativa desde el chat + insertar mensaje tipo 'tarea'
+    linkeado a la tarea + notificar por email a los asignados.
+
+    Sebastian (29-abr-2026): Fase 2 del chat — asignacion de tareas inline.
+
+    Body: {titulo, descripcion, asignado_a (csv), fecha_objetivo (YYYY-MM-DD)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    # Verificar membresia
+    member = c.execute(
+        "SELECT 1 FROM chat_thread_members WHERE thread_id=? AND username=?",
+        (thread_id, user)
+    ).fetchone()
+    if not member:
+        return jsonify({'error': 'No eres miembro de este chat'}), 403
+
+    d = request.json or {}
+    titulo = (d.get('titulo') or '').strip()
+    descripcion = (d.get('descripcion') or '').strip()
+    asignado_a = (d.get('asignado_a') or '').strip()
+    fecha_obj = (d.get('fecha_objetivo') or '').strip()
+
+    if not titulo:
+        return jsonify({'error': 'titulo requerido'}), 400
+    if not asignado_a:
+        return jsonify({'error': 'asignado_a requerido (csv: usuario1,usuario2)'}), 400
+
+    # 1. Crear la tarea operativa
+    try:
+        cur = c.execute("""
+            INSERT INTO tareas_operativas
+              (titulo, descripcion, tipo, asignado_a, fecha_objetivo, estado,
+               origen_tipo, origen_id, creado_por)
+            VALUES (?, ?, 'chat_asignacion', ?, ?, 'pendiente',
+                    'chat', ?, ?)
+        """, (titulo, descripcion or titulo, asignado_a, fecha_obj or '',
+              thread_id, user))
+        tarea_id = cur.lastrowid
+    except Exception as e:
+        return jsonify({'error': f'Error creando tarea: {e}'}), 500
+
+    # 2. Insertar mensaje en el chat tipo='tarea' linkeado a la tarea
+    contenido = f"📋 {titulo}"
+    if fecha_obj:
+        contenido += f"  ·  ⏰ {fecha_obj}"
+    contenido += f"  ·  → {asignado_a}"
+    cur2 = c.execute("""
+        INSERT INTO chat_messages
+          (thread_id, sender, contenido, tipo_mensaje, tarea_operativa_id)
+        VALUES (?, ?, ?, 'tarea', ?)
+    """, (thread_id, user, contenido, tarea_id))
+    msg_id = cur2.lastrowid
+
+    # 3. Update thread metadata (igual que en POST messages normal)
+    preview = f"[tarea] {titulo[:100]}"
+    c.execute("""
+        UPDATE chat_threads SET
+          ultimo_mensaje_id=?, ultimo_mensaje_en=datetime('now'),
+          ultimo_mensaje_preview=?
+        WHERE id=?
+    """, (msg_id, preview, thread_id))
+    c.execute("""
+        UPDATE chat_thread_members SET ultimo_leido_id=?
+        WHERE thread_id=? AND username=?
+    """, (msg_id, thread_id, user))
+    conn.commit()
+
+    # 4. Notificar por email a los asignados (no-bloqueante)
+    try:
+        import sys, os, threading
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from notificaciones import SistemaNotificaciones
+        from config import USER_EMAILS
+        destinos = []
+        for asig in asignado_a.split(','):
+            asig_clean = asig.strip().lower()
+            email = USER_EMAILS.get(asig_clean, '')
+            if email:
+                destinos.append(email)
+        if destinos:
+            asunto = f"📋 Nueva tarea asignada: {titulo[:80]}"
+            body = (
+                f"<h2>Nueva tarea desde el chat EOS</h2>"
+                f"<p><b>{user}</b> te asignó:</p>"
+                f"<div style='background:#f5f5f4;padding:14px;border-radius:8px;border-left:4px solid #7c3aed'>"
+                f"<b>{titulo}</b>"
+                + (f"<br><i>{descripcion}</i>" if descripcion and descripcion != titulo else "")
+                + (f"<br>⏰ <b>Fecha objetivo:</b> {fecha_obj}" if fecha_obj else "")
+                + f"<br>👥 <b>Asignados:</b> {asignado_a}"
+                + f"</div>"
+                + f"<p>Revisa la tarea en <a href='/chat'>el chat</a> o en /planta → Tareas Operativas.</p>"
+                + f"<p style='color:#94a3b8;font-size:11px'>Mensaje automatico HHA Group · EOS</p>"
+            )
+            notif = SistemaNotificaciones()
+            threading.Thread(
+                target=notif._enviar_email,
+                args=(asunto, body, destinos),
+                daemon=True
+            ).start()
+    except Exception as _e:
+        # Falla silenciosa — el chat no debe bloquearse por email
+        import logging
+        logging.getLogger('chat').warning("Email asignacion tarea fallo: %s", _e)
+
+    return jsonify({
+        'ok': True,
+        'tarea_id': tarea_id,
+        'message_id': msg_id,
+        'mensaje': f'Tarea creada y asignada a {asignado_a}'
+    })

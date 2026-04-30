@@ -152,6 +152,7 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
       </div>
       <div class="msgs-wrap" id="msgs-wrap"></div>
       <div class="composer">
+        <button class="send-btn" id="task-btn" onclick="abrirModalTarea()" title="Asignar tarea (crea tarea operativa + email a asignados)" style="background:#a16207;flex-shrink:0">📋</button>
         <textarea class="composer-input" id="composer" rows="1" placeholder="Escribe un mensaje..." onkeydown="composerKeydown(event)" oninput="autoresize(this)"></textarea>
         <button class="send-btn" id="send-btn" onclick="enviarMensaje()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
       </div>
@@ -161,6 +162,42 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
 </div>
 
 <!-- Modal nuevo chat -->
+<!-- Modal: Asignar tarea desde el chat -->
+<div class="modal-bg" id="modal-tarea">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3>📋 Asignar tarea</h3>
+      <button class="btn-icon" onclick="cerrarModalTarea()">&times;</button>
+    </div>
+    <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400e;line-height:1.5">
+      Crea una <b>tarea operativa</b> visible en /planta. El asignado recibe email automático.
+      Aparece como card en este chat.
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Título *</label>
+      <input id="tarea-titulo" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px" placeholder="Ej. Sacar 100 envases para serigrafía">
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Descripción</label>
+      <textarea id="tarea-desc" rows="2" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px;resize:vertical" placeholder="Detalle opcional..."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Asignar a *</label>
+        <select id="tarea-asignado" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px"></select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Fecha objetivo</label>
+        <input type="date" id="tarea-fecha" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;margin-top:4px;font-size:13px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="tab-pill" onclick="cerrarModalTarea()">Cancelar</button>
+      <button class="tab-pill on" onclick="crearTareaChat()" style="background:#a16207;color:#fff;border-color:#a16207">📋 Asignar y notificar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-nuevo">
   <div class="modal-box">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -363,10 +400,27 @@ async function cargarMensajes(thread_id, append){
       var mine = (m.sender||'') === ME;
       var senderHtml = (!mine && (ACTIVE_THREAD_TIPO!=='directo')) ? '<div class="sender-name">'+_esc(m.sender)+'</div>' : '';
       var hora = d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
-      html += '<div class="msg'+(mine?' mine':'')+'"><div>'+
-        '<div class="bubble">'+senderHtml+_esc(m.contenido).replace(/\n/g,'<br>')+'</div>'+
-        '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
-        '</div></div>';
+      // Render especial para mensajes tipo 'tarea': card con accion completar
+      if(m.tipo_mensaje === 'tarea' && m.tarea_operativa_id){
+        var tareaCard = '<div style="background:#fff7ed;border:1px solid #fdba74;border-left:4px solid #f59e0b;border-radius:10px;padding:12px 14px;margin:4px 0;max-width:380px">'+
+          '<div style="font-size:11px;color:#92400e;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📋 Tarea asignada</div>'+
+          '<div style="font-size:13px;color:#1c1917;line-height:1.4">'+_esc(m.contenido)+'</div>'+
+          '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
+            '<button onclick="completarTareaChat('+m.tarea_operativa_id+')" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Completar</button>'+
+            '<a href="/planta#tareas" target="_blank" style="background:#f5f5f4;color:#44403c;text-decoration:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600">Ver en /planta</a>'+
+          '</div>'+
+        '</div>';
+        html += '<div class="msg'+(mine?' mine':'')+'"><div>'+
+          senderHtml +
+          tareaCard +
+          '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
+          '</div></div>';
+      } else {
+        html += '<div class="msg'+(mine?' mine':'')+'"><div>'+
+          '<div class="bubble">'+senderHtml+_esc(m.contenido).replace(/\n/g,'<br>')+'</div>'+
+          '<div class="bubble-meta">'+hora+(mine?' · ✓':'')+'</div>'+
+          '</div></div>';
+      }
     });
     if(!msgs.length) html = '<div style="text-align:center;padding:60px 20px;color:#a8a29e;font-size:13px">Sin mensajes aún. ¡Sé el primero en escribir!</div>';
     wrap.innerHTML = html;
@@ -490,6 +544,64 @@ async function crearNuevoChat(){
 
 // Cargar usuarios al inicio (para mostrar nombres en threads)
 cargarUsuarios();
+
+// ─── Asignación de tareas desde el chat (Fase 2) ────────────────────────
+function abrirModalTarea(){
+  if(!ACTIVE_THREAD){ alert('Abre un chat primero.'); return; }
+  // Llenar dropdown de asignados con la lista de USERS
+  var sel = document.getElementById('tarea-asignado');
+  sel.innerHTML = '<option value="">— Selecciona —</option>'
+    + USERS.filter(function(u){ return u.username !== ME; })
+           .map(function(u){ return '<option value="'+_esc(u.username)+'">'+_esc(u.username)+'</option>'; }).join('');
+  document.getElementById('tarea-titulo').value = '';
+  document.getElementById('tarea-desc').value = '';
+  document.getElementById('tarea-fecha').value = '';
+  document.getElementById('modal-tarea').classList.add('on');
+  setTimeout(function(){ document.getElementById('tarea-titulo').focus(); }, 50);
+}
+
+function cerrarModalTarea(){
+  document.getElementById('modal-tarea').classList.remove('on');
+}
+
+async function crearTareaChat(){
+  var titulo = document.getElementById('tarea-titulo').value.trim();
+  var descripcion = document.getElementById('tarea-desc').value.trim();
+  var asignado_a = document.getElementById('tarea-asignado').value;
+  var fecha_objetivo = document.getElementById('tarea-fecha').value;
+  if(!titulo){ alert('Escribe un título.'); return; }
+  if(!asignado_a){ alert('Selecciona a quién asignar.'); return; }
+  try {
+    var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/asignar-tarea',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({titulo:titulo, descripcion:descripcion,
+                            asignado_a:asignado_a, fecha_objetivo:fecha_objetivo})
+    });
+    var raw = await r.text();
+    var d = null; try { d = JSON.parse(raw); } catch(_){}
+    if(!r.ok){ alert('Error: '+ (d&&d.error || raw.substring(0,200))); return; }
+    cerrarModalTarea();
+    await cargarMensajes(ACTIVE_THREAD);
+    cargarThreads();
+  } catch(e){ alert('Error de red: '+e.message); }
+}
+
+// Marcar tarea como completada desde el card del chat
+async function completarTareaChat(tareaId){
+  var obs = prompt('Observaciones de cierre (opcional):', '');
+  if(obs === null) return;
+  try {
+    var r = await fetch('/api/tareas-operativas/'+tareaId+'/completar',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({observaciones: obs||''})
+    });
+    var raw = await r.text();
+    var d = null; try { d = JSON.parse(raw); } catch(_){}
+    if(!r.ok){ alert('Error: '+(d&&d.error || raw.substring(0,200))); return; }
+    alert('✓ Tarea completada');
+    await cargarMensajes(ACTIVE_THREAD);
+  } catch(e){ alert('Error: '+e.message); }
+}
 </script>
 
 </body>
