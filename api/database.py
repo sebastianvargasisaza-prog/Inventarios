@@ -3278,6 +3278,16 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "CREATE INDEX IF NOT EXISTS idx_maquila_producto ON maquila_pedidos(producto_nombre, estado)",
         "CREATE INDEX IF NOT EXISTS idx_maquila_prod ON maquila_pedidos(produccion_id)",
     ]),
+    (69, "planta: estado SKU + descontinuados auto-detectados", [
+        # Sebastian (30-abr-2026): "estos en rojo ya no los producimos varias
+        # cosas". Necesidad: marcar SKUs como descontinuados/sin_ventas para
+        # que el motor NO los siga programando como críticos.
+        "ALTER TABLE sku_planeacion_config ADD COLUMN estado TEXT NOT NULL DEFAULT 'activo'",
+        "ALTER TABLE sku_planeacion_config ADD COLUMN descontinuado_at TEXT",
+        "ALTER TABLE sku_planeacion_config ADD COLUMN descontinuado_por TEXT",
+        "ALTER TABLE sku_planeacion_config ADD COLUMN razon_estado TEXT",
+        # Estados validos: activo, sin_ventas, baja_rotacion, descontinuado, pausado, nuevo
+    ]),
     (68, "planta MRP: alias_calendar + log eventos + auto-area producciones", [
         # Sebastian (30-abr-2026, ULTRATHINK): "en calendar dice kg, revisa
         # bien y que sea perfecto, zero-error-enterprise". El motor MRP

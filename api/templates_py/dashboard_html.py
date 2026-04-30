@@ -9296,6 +9296,37 @@ async function ckMarcar(itemId, estado){
     planV2CargarRecomendaciones();
   }
 
+  async function recDescontinuar(producto){
+    var razon = prompt('¿Por qué descontinuar "'+producto+'"?\n(El sistema dejará de programar producción para este SKU)', 'Ya no se produce');
+    if(razon === null) return;
+    try {
+      var r1 = await fetch('/api/auto-plan/configs/sku');
+      var d1 = await r1.json();
+      var cfg = (d1.configs||[]).find(function(x){return (x.producto_nombre||'').trim().toUpperCase() === producto.trim().toUpperCase();});
+      if(!cfg){ alert('SKU no encontrado'); return; }
+      var r = await fetch('/api/planta/sku/'+cfg.id+'/estado', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({estado:'descontinuado', razon: razon})
+      });
+      if(r.ok){ _toast('✓ '+producto+' descontinuado', 1); planV2CargarRecomendaciones(); }
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  async function recReactivar(producto){
+    if(!confirm('¿Reactivar "'+producto+'"? El sistema volverá a programarlo.')) return;
+    try {
+      var r1 = await fetch('/api/auto-plan/configs/sku');
+      var d1 = await r1.json();
+      var cfg = (d1.configs||[]).find(function(x){return (x.producto_nombre||'').trim().toUpperCase() === producto.trim().toUpperCase();});
+      if(!cfg){ alert('SKU no encontrado'); return; }
+      var r = await fetch('/api/planta/sku/'+cfg.id+'/estado', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({estado:'activo'})
+      });
+      if(r.ok){ _toast('✓ '+producto+' reactivado', 1); planV2CargarRecomendaciones(); }
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
   async function planV2CargarRecomendaciones(){
     var box = document.getElementById('pv2-recomendaciones-wrap');
     if(!box) return;
@@ -9305,18 +9336,27 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       var recs = d.recomendaciones || [];
       var k = d.kpis || {};
-      // Solo mostrar las que requieren acción (no innecesarias) por defecto
-      var accionables = recs.filter(function(x){return x.urgencia !== 'innecesaria'});
+      // Filtrar: SOLO mostrar accionables (críticas, altas, medias, bajas) y OK
+      // Sin_ventas / baja_rotacion / inactivo van colapsados al final
+      var accionables = recs.filter(function(x){return ['critica','alta','media','baja'].indexOf(x.urgencia) >= 0;});
+      var inactivos = recs.filter(function(x){return ['sin_ventas','baja_rotacion','inactivo'].indexOf(x.urgencia) >= 0;});
       var resumen = '';
       if(k.criticas) resumen += '<span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">🚨 '+k.criticas+' CRÍTICAS</span>';
       if(k.altas) resumen += '<span style="background:#d97706;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">⚠ '+k.altas+' altas</span>';
       if(k.medias) resumen += '<span style="background:#0891b2;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;margin-right:6px">'+k.medias+' medias</span>';
       if(k.bajas) resumen += '<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-right:6px">'+k.bajas+' bajas</span>';
-      if(k.innecesarias) resumen += '<span style="background:#15803d;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600">✓ '+k.innecesarias+' OK</span>';
+      if(k.innecesarias) resumen += '<span style="background:#15803d;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-right:6px">✓ '+k.innecesarias+' OK</span>';
+      var inact = (k.sin_ventas||0)+(k.baja_rotacion||0)+(k.inactivos||0);
+      if(inact) resumen += '<span style="background:#475569;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600">⊗ '+inact+' inactivos</span>';
+      var distInfo = d.distribucion || {};
+      var distrChip = distInfo.patron ? '<div style="font-size:10px;color:#94a3b8;margin-top:6px">📅 Distribución: <b>'+distInfo.patron+'</b> · '+(distInfo.razon||'')+'</div>' : '';
       var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">'
-        +'<div style="background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
+        +'<div style="background:linear-gradient(135deg,#1e293b,#0f172a);color:#fff;padding:14px 18px">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'
         +'<div><h3 style="margin:0;color:#fff;font-size:16px">🧠 Recomendaciones Inteligentes</h3><div style="font-size:11px;color:#cbd5e1;margin-top:2px">Stock Shopify + Pipeline (Calendar 14d) + Velocidad ventas → fecha óptima</div></div>'
         +'<div>'+resumen+'</div>'
+        +'</div>'
+        + distrChip
         +'</div>';
       if(!accionables.length){
         html += '<div style="padding:30px;text-align:center;color:#15803d;font-size:14px">✅ Todos los SKUs cubiertos · ningún producto requiere acción inmediata</div>';
@@ -9349,12 +9389,12 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:800;color:'+urgCol+'">'+r.dias_alcance+'d</td>'
             +'<td style="padding:8px;text-align:right;font-size:11px;color:#64748b">'+(r.cadencia_historica_dias?r.cadencia_historica_dias+'d hist':r.cadencia_configurada?r.cadencia_configurada+'d cfg':'—')+'</td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-size:11px">'+r.lote_tipico_kg+'kg</td>'
-            +'<td style="padding:8px 12px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="background:'+urgCol+';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:800;text-transform:uppercase">'+r.urgencia+'</span><b style="color:#0f172a;font-size:12px;text-transform:capitalize">'+_escHTML(fechaTxt)+'</b></div><div style="font-size:11px;color:#475569;margin-top:4px">'+_escHTML(r.razon)+'</div></td>'
+            +'<td style="padding:8px 12px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="background:'+urgCol+';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:800;text-transform:uppercase">'+r.urgencia+'</span><b style="color:#0f172a;font-size:12px;text-transform:capitalize">'+_escHTML(fechaTxt)+'</b></div><div style="font-size:11px;color:#475569;margin-top:4px">'+_escHTML(r.razon)+'</div><div style="margin-top:6px"><button onclick="recDescontinuar(\\''+_escAttr(r.producto)+'\\')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer">⊗ Descontinuar</button></div></td>'
             +'</tr>';
         });
         html += '</tbody></table></div>';
       }
-      // Sección de los OK (colapsable)
+      // Sección OK (colapsable)
       var oks = recs.filter(function(x){return x.urgencia==='innecesaria'});
       if(oks.length){
         html += '<details style="border-top:1px solid #e5e7eb;padding:8px 16px"><summary style="cursor:pointer;color:#15803d;font-size:12px;font-weight:600">✅ '+oks.length+' SKUs cubiertos (no requieren acción)</summary>'
@@ -9362,6 +9402,19 @@ async function ckMarcar(itemId, estado){
         oks.forEach(function(r){
           html += '<div style="background:#f0fdf4;padding:5px 8px;border-radius:4px;border-left:3px solid #15803d">'
             +'<b>'+_escHTML(r.producto)+'</b><br><span style="color:#166534">stock '+r.dias_alcance+'d · '+r.stock_total_unidades+'u total</span></div>';
+        });
+        html += '</div></details>';
+      }
+      // Sección INACTIVOS / SIN VENTAS / DESCONTINUADOS (colapsada)
+      if(inactivos.length){
+        html += '<details style="border-top:1px solid #e5e7eb;padding:8px 16px;background:#f8fafc"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:600">⊗ '+inactivos.length+' SKUs inactivos / sin ventas (no se programa producción)</summary>'
+          +'<div style="margin-top:8px;font-size:11px;color:#64748b">';
+        inactivos.forEach(function(r){
+          var label = r.urgencia==='sin_ventas'?'sin ventas':(r.urgencia==='baja_rotacion'?'baja rotación':r.estado_sku||r.urgencia);
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:6px 10px;border-radius:5px;border-left:3px solid #94a3b8;margin-bottom:4px">'
+            +'<div><b>'+_escHTML(r.producto)+'</b><br><span style="color:#94a3b8;font-size:10px">'+_escHTML(label)+' · '+_escHTML(r.razon||'')+'</span></div>'
+            +'<button onclick="recReactivar(\\''+_escAttr(r.producto)+'\\')" style="background:#fff;color:#15803d;border:1px solid #15803d;padding:3px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer">↻ Reactivar</button>'
+            +'</div>';
         });
         html += '</div></details>';
       }

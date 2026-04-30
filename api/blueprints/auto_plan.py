@@ -1444,6 +1444,28 @@ def _proximo_dia_lmv(desde_fecha):
     return f
 
 
+def _clasificar_estado_sku(c, producto, velocidad_dia, ultima_prod_calendar):
+    """Clasifica el SKU automáticamente:
+       - sin_ventas: 0 ventas en 90 días Y sin produccion calendar reciente
+       - baja_rotacion: velocidad < 0.05 u/día (prácticamente no se vende)
+       - activo: caso normal
+    Sebastian: "estos en rojo ya no los producimos varias cosas".
+    """
+    # Si la velocidad es prácticamente 0 (< 0.05/día = menos de 1.5 unid/mes)
+    # Y no se produjo en últimos 60 días en calendar → sin_ventas
+    fecha_hoy = datetime.now().date()
+    if velocidad_dia < 0.05:
+        if ultima_prod_calendar:
+            dias_desde = (fecha_hoy - ultima_prod_calendar).days
+            if dias_desde > 90:
+                return 'sin_ventas', f'Velocidad {velocidad_dia:.3f} u/día y no producido en {dias_desde}d'
+            else:
+                return 'baja_rotacion', f'Velocidad muy baja {velocidad_dia:.3f} u/día (rotación lenta)'
+        else:
+            return 'sin_ventas', f'Velocidad {velocidad_dia:.3f} u/día y nunca producido en Calendar'
+    return 'activo', None
+
+
 def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merma_pct, prioridad):
     """LA función central. Para un SKU devuelve la recomendación completa.
 
@@ -1518,25 +1540,47 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
     cadencia_real = _calcular_cadencia_real(historico_fechas) if len(historico_fechas) >= 2 else None
     lote_tipico_kg = sorted(historico_kg_list)[len(historico_kg_list)//2] if historico_kg_list else (lote_kg_default or 30)
 
-    # 5. Recomendación
-    if dias_alcance > cobertura_target + margen_dias:
-        urgencia = 'innecesaria'
+    # 4.5. Estado del SKU (descontinuado / sin_ventas / activo)
+    estado_db = c.execute(
+        "SELECT estado, razon_estado FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)
+    ).fetchone()
+    estado_actual = (estado_db[0] if estado_db else 'activo') or 'activo'
+    ultima_prod_cal = max(historico_fechas) if historico_fechas else None
+    # Si está marcado como descontinuado/pausado por el usuario, respetarlo
+    if estado_actual in ('descontinuado', 'pausado'):
+        urgencia = 'inactivo'
         fecha_proxima = None
-        razon = f'Stock cubre {dias_alcance:.0f}d (objetivo {cobertura_target}d). No urgente.'
-    elif dias_alcance > margen_dias:
-        # Producir cuando falten margen días
-        dias_hasta = max(2, int(dias_alcance - margen_dias))
-        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=dias_hasta))
-        urgencia = 'baja' if dias_alcance > 30 else 'media'
-        razon = f'Stock alcanza {dias_alcance:.0f}d. Producir antes de bajar a margen 20d.'
-    elif dias_alcance > 7:
-        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=2))
-        urgencia = 'alta'
-        razon = f'Stock alcanza solo {dias_alcance:.0f}d (margen mínimo 20d). Producir esta semana.'
+        razon = f'{estado_actual.upper()} · ' + (estado_db[1] if estado_db and estado_db[1] else 'Marcado por usuario')
     else:
-        fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=1))
-        urgencia = 'critica'
-        razon = f'STOCK CRÍTICO · solo {dias_alcance:.0f}d. Producir ya.'
+        # Auto-clasificar
+        nuevo_estado, razon_auto = _clasificar_estado_sku(c, producto, velocidad_proj, ultima_prod_cal)
+        if nuevo_estado == 'sin_ventas':
+            urgencia = 'sin_ventas'
+            fecha_proxima = None
+            razon = razon_auto
+        elif nuevo_estado == 'baja_rotacion' and stock_total > 50:
+            urgencia = 'baja_rotacion'
+            fecha_proxima = None
+            razon = f'{razon_auto}. Stock {stock_total:.0f}u suficiente.'
+        # 5. Recomendación normal
+        elif dias_alcance > cobertura_target + margen_dias:
+            urgencia = 'innecesaria'
+            fecha_proxima = None
+            razon = f'Stock cubre {dias_alcance:.0f}d (objetivo {cobertura_target}d). No urgente.'
+        elif dias_alcance > margen_dias:
+            dias_hasta = max(2, int(dias_alcance - margen_dias))
+            fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=dias_hasta))
+            urgencia = 'baja' if dias_alcance > 30 else 'media'
+            razon = f'Stock alcanza {dias_alcance:.0f}d. Producir antes de bajar a margen 20d.'
+        elif dias_alcance > 7:
+            fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=2))
+            urgencia = 'alta'
+            razon = f'Stock alcanza solo {dias_alcance:.0f}d (margen mínimo 20d). Producir esta semana.'
+        else:
+            fecha_proxima = _proximo_dia_lmv(fecha_hoy + timedelta(days=1))
+            urgencia = 'critica'
+            razon = f'STOCK CRÍTICO · solo {dias_alcance:.0f}d. Producir ya.'
 
     # Considerar cadencia: si hace mucho que no se produce y aún hay stock, igual
     # programar pronto (consistencia)
@@ -1569,7 +1613,38 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
         'urgencia': urgencia,
         'razon': razon,
         'factor_g': factor_g,
+        'estado_sku': estado_actual,
     }
+
+
+@bp.route('/api/planta/sku/<int:sku_id>/estado', methods=['POST'])
+def actualizar_estado_sku(sku_id):
+    """Marca un SKU como descontinuado/pausado/activo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    nuevo = (d.get('estado') or '').strip()
+    if nuevo not in ('activo', 'descontinuado', 'pausado'):
+        return jsonify({'error': 'estado inválido'}), 400
+    razon = (d.get('razon') or '').strip() or None
+    conn = get_db(); c = conn.cursor()
+    if nuevo == 'activo':
+        c.execute("""
+            UPDATE sku_planeacion_config SET estado='activo',
+              descontinuado_at=NULL, descontinuado_por=NULL, razon_estado=NULL,
+              actualizado_en=datetime('now')
+            WHERE id=?
+        """, (sku_id,))
+    else:
+        c.execute("""
+            UPDATE sku_planeacion_config SET estado=?,
+              descontinuado_at=datetime('now'), descontinuado_por=?, razon_estado=?,
+              actualizado_en=datetime('now')
+            WHERE id=?
+        """, (nuevo, user, razon, sku_id))
+    conn.commit()
+    return jsonify({'ok': True, 'estado': nuevo})
 
 
 @bp.route('/api/planta/recomendaciones', methods=['GET'])
@@ -1596,9 +1671,48 @@ def planta_recomendaciones():
         except Exception as e:
             log.warning(f'Recomendación fallida {producto}: {e}')
 
-    # Ordenar por urgencia (critica → alta → media → baja → innecesaria)
-    orden_urg = {'critica': 0, 'alta': 1, 'media': 2, 'baja': 3, 'innecesaria': 4}
-    recomendaciones.sort(key=lambda r: (orden_urg.get(r['urgencia'], 5), r.get('fecha_proxima') or '9999'))
+    # Sebastian (30-abr-2026): "ideal una producción por día, si hay semanas
+    # donde puede ser L-M-V mejor, depende de cómo de" — distribución
+    # inteligente: si hay >3 lotes urgentes/semana → distribuir L-V (5 días);
+    # si <=3 → L/M/V (3 días).
+    accionables_count = sum(1 for r in recomendaciones if r['urgencia'] in ('critica', 'alta', 'media'))
+    distribuir_lv_completo = accionables_count > 3
+    DIAS_PRODUCCION = (0, 1, 2, 3, 4) if distribuir_lv_completo else (0, 2, 4)
+
+    # Re-distribuir fechas de las accionables para no saturar
+    fechas_ocupadas_count = {}
+    LIMITE_POR_DIA = 1
+    fecha_hoy = datetime.now().date()
+
+    def _proximo_dia_disponible(desde, dias_validos):
+        f = max(desde, fecha_hoy + timedelta(days=2))
+        for _ in range(60):
+            while f.weekday() not in dias_validos:
+                f += timedelta(days=1)
+            iso = f.isoformat()
+            if fechas_ocupadas_count.get(iso, 0) < LIMITE_POR_DIA:
+                return f
+            f += timedelta(days=1)
+        return f
+
+    # Ordenar por urgencia
+    orden_urg = {'critica': 0, 'alta': 1, 'media': 2, 'baja': 3, 'innecesaria': 4,
+                 'sin_ventas': 5, 'baja_rotacion': 5, 'inactivo': 5}
+    recomendaciones.sort(key=lambda r: (orden_urg.get(r['urgencia'], 6), -float(r.get('dias_alcance') or 9999)))
+
+    # Re-asignar fechas próximas para los accionables (críticos primero)
+    for r in recomendaciones:
+        if r['urgencia'] not in ('critica', 'alta', 'media', 'baja') or not r.get('fecha_proxima'):
+            continue
+        try:
+            fecha_orig = datetime.strptime(r['fecha_proxima'], '%Y-%m-%d').date()
+        except Exception:
+            fecha_orig = fecha_hoy + timedelta(days=2)
+        nueva = _proximo_dia_disponible(fecha_orig, DIAS_PRODUCCION)
+        r['fecha_proxima'] = nueva.isoformat()
+        r['fecha_proxima_dia_semana'] = nueva.strftime('%A')
+        iso = nueva.isoformat()
+        fechas_ocupadas_count[iso] = fechas_ocupadas_count.get(iso, 0) + 1
 
     # KPIs
     kpis = {
@@ -1608,11 +1722,19 @@ def planta_recomendaciones():
         'medias': sum(1 for r in recomendaciones if r['urgencia'] == 'media'),
         'bajas': sum(1 for r in recomendaciones if r['urgencia'] == 'baja'),
         'innecesarias': sum(1 for r in recomendaciones if r['urgencia'] == 'innecesaria'),
+        'sin_ventas': sum(1 for r in recomendaciones if r['urgencia'] == 'sin_ventas'),
+        'baja_rotacion': sum(1 for r in recomendaciones if r['urgencia'] == 'baja_rotacion'),
+        'inactivos': sum(1 for r in recomendaciones if r['urgencia'] == 'inactivo'),
     }
     return jsonify({
         'recomendaciones': recomendaciones,
         'kpis': kpis,
         'fecha_analisis': datetime.now().isoformat(),
+        'distribucion': {
+            'patron': 'L-V (5 días)' if distribuir_lv_completo else 'L/M/V (3 días)',
+            'razon': f'{accionables_count} producciones accionables → ' + ('alta carga, distribución 5 días' if distribuir_lv_completo else 'carga normal, L/M/V suficiente'),
+            'limite_por_dia': LIMITE_POR_DIA,
+        },
     })
 
 
