@@ -557,7 +557,7 @@ function renderUsersList(){
   list.innerHTML = USERS.map(function(u){
     var sel = SELECTED_USERS.indexOf(u.username) >= 0;
     var color = avatarColor(u.username);
-    return '<div class="user-row'+(sel?' selected':'')+'" onclick="toggleUser(\\''+u.username+'\\')">'+
+    return '<div class="user-row'+(sel?' selected':'')+'" onclick="toggleUser(\''+u.username+'\')">'+
       '<div class="t-avatar'+(u.estado==='conectado'?' online':'')+'" style="background:'+color+';width:32px;height:32px;font-size:11px">'+inicial(u.username)+'</div>'+
       '<div class="u-name">'+_esc(u.display_name)+'</div>'+
       '<div class="u-status '+(u.estado==='conectado'?'online':'offline')+'">'+
@@ -793,9 +793,9 @@ function onSearchInput(val){
       results.forEach(function(m){
         var threadLabel = m.thread_tipo === 'directo' ? '@'+_esc(m.sender) :
                           (m.thread_nombre || (m.thread_tipo==='broadcast'?'Todos':'Grupo'));
-        html += '<div onclick="abrirThread('+m.thread_id+');document.getElementById(\\'search-input\\').value=\\'\\';onSearchInput(\\'\\');" '+
+        html += '<div onclick="abrirThread('+m.thread_id+');document.getElementById(\'search-input\').value=\'\';onSearchInput(\'\');" '+
           'style="padding:10px 14px;border-bottom:1px solid #f5f5f4;cursor:pointer" '+
-          'onmouseover="this.style.background=\\'#fafaf9\\'" onmouseout="this.style.background=\\'\\'">'+
+          'onmouseover="this.style.background=\'#fafaf9\'" onmouseout="this.style.background=\'\'">'+
           '<div style="font-size:11px;color:#7c3aed;font-weight:700">'+_esc(threadLabel)+' · '+_esc(m.sender)+'</div>'+
           '<div style="font-size:13px;color:#1c1917;margin-top:2px">'+_esc(m.contenido.substring(0,120))+'</div>'+
           '<div style="font-size:10px;color:#a8a29e;margin-top:2px">'+(m.creado_en||'').substring(0,16)+'</div>'+
