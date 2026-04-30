@@ -56,9 +56,10 @@ def chat_widget_js():
     '#cw-fab:hover{transform:scale(1.08);background:#6d28d9}'+
     '#cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}'+
     '#cw-panel{position:fixed;bottom:84px;right:20px;width:380px;max-width:94vw;height:540px;max-height:78vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);z-index:9998;display:none;flex-direction:column;overflow:hidden;border:1px solid #e2e8f0;font-family:Segoe UI,sans-serif}'+
-    '#cw-head{background:#7c3aed;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px}'+
-    '#cw-head a{color:#e9d5ff;font-size:11px;font-weight:400;text-decoration:none}'+
-    '#cw-head a:hover{color:#fff;text-decoration:underline}'+
+    '#cw-head{background:#7c3aed;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px;gap:6px}'+
+    '#cw-head .actions{display:flex;align-items:center;gap:8px}'+
+    '#cw-head a,#cw-head button{color:#e9d5ff;font-size:11px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);border:none;padding:4px 8px;border-radius:6px;cursor:pointer}'+
+    '#cw-head a:hover,#cw-head button:hover{color:#fff;background:rgba(255,255,255,.25)}'+
     '#cw-body{flex:1;overflow:hidden;display:flex;flex-direction:column}'+
     '#cw-tlist{overflow-y:auto;flex:1}'+
     '.cw-thread{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:flex;align-items:flex-start;gap:8px;transition:background .15s}'+
@@ -71,6 +72,23 @@ def chat_widget_js():
     '#cw-conv{display:none;flex-direction:column;height:100%}'+
     '#cw-conv-head{background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;color:#0f172a;display:flex;align-items:center;gap:6px}'+
     '#cw-back{background:none;border:none;color:#7c3aed;cursor:pointer;font-size:16px;padding:0}'+
+    '#cw-task-btn{margin-left:auto;background:#16a34a;color:#fff;border:none;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600}'+
+    '#cw-task-btn:hover{background:#15803d}'+
+    '#cw-new{display:none;flex-direction:column;height:100%}'+
+    '#cw-new-head{background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#0f172a}'+
+    '#cw-new-body{flex:1;overflow-y:auto;padding:10px}'+
+    '.cw-user{padding:8px 12px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:4px;border:1px solid transparent}'+
+    '.cw-user:hover{background:#faf5ff;border-color:#e9d5ff}'+
+    '.cw-user.selected{background:#ede9fe;border-color:#7c3aed}'+
+    '.cw-user .dot{width:8px;height:8px;border-radius:50%;background:#94a3b8}'+
+    '.cw-user.online .dot{background:#16a34a}'+
+    '.cw-user .nm{flex:1;font-size:13px;color:#0f172a}'+
+    '.cw-user .est{font-size:10px;color:#94a3b8}'+
+    '#cw-new-actions{padding:10px;border-top:1px solid #e2e8f0;background:#fff;display:flex;gap:6px}'+
+    '#cw-task-modal{position:absolute;inset:0;background:rgba(255,255,255,.97);z-index:5;padding:14px;display:none;flex-direction:column;overflow-y:auto}'+
+    '#cw-task-modal h4{font-size:14px;color:#0f172a;margin-bottom:10px}'+
+    '#cw-task-modal label{font-size:11px;font-weight:600;color:#64748b;display:block;margin-top:8px;margin-bottom:3px}'+
+    '#cw-task-modal input,#cw-task-modal textarea{width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:inherit}'+
     '#cw-msgs{overflow-y:auto;flex:1;padding:10px;background:#f8fafc}'+
     '.cw-m{max-width:80%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.4;margin-bottom:6px;word-wrap:break-word}'+
     '.cw-m.own{background:#7c3aed;color:#fff;margin-left:auto}'+
@@ -96,13 +114,48 @@ def chat_widget_js():
   var panel = document.createElement('div');
   panel.id = 'cw-panel';
   panel.innerHTML = ''+
-    '<div id="cw-head"><span>\u{1F4AC} EOS Chat</span><a href="/chat" target="_blank">Abrir completo →</a></div>'+
-    '<div id="cw-body">'+
+    '<div id="cw-head"><span>\u{1F4AC} EOS Chat</span>'+
+      '<div class="actions">'+
+        '<button id="cw-new-btn" title="Nueva conversación">+ Nueva</button>'+
+        '<a href="/chat" target="_blank">Abrir →</a>'+
+      '</div></div>'+
+    '<div id="cw-body" style="position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column">'+
       '<div id="cw-tlist"><div class="cw-empty">Cargando...</div></div>'+
       '<div id="cw-conv">'+
-        '<div id="cw-conv-head"><button id="cw-back">←</button><span id="cw-conv-title"></span></div>'+
+        '<div id="cw-conv-head"><button id="cw-back">←</button><span id="cw-conv-title" style="flex:1"></span><button id="cw-task-btn" title="Asignar tarea desde este chat">+ Tarea</button></div>'+
         '<div id="cw-msgs"></div>'+
         '<div id="cw-inp"><input id="cw-text" placeholder="Escribe..." autocomplete="off"><button id="cw-send">Enviar</button></div>'+
+      '</div>'+
+      '<div id="cw-new">'+
+        '<div id="cw-new-head"><button id="cw-new-back" style="background:none;border:none;color:#7c3aed;cursor:pointer;font-size:16px;padding:0">←</button>'+
+          '<span style="flex:1">Nueva conversación</span></div>'+
+        '<div style="padding:10px;border-bottom:1px solid #e2e8f0;background:#fafafa">'+
+          '<div style="display:flex;gap:6px;margin-bottom:6px">'+
+            '<label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">'+
+              '<input type="radio" name="cw-tipo" value="directo" checked> 1-a-1</label>'+
+            '<label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">'+
+              '<input type="radio" name="cw-tipo" value="grupo"> Grupo</label>'+
+          '</div>'+
+          '<input id="cw-new-name" type="text" placeholder="Nombre del grupo (opcional para 1-a-1)" style="display:none;width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;margin-bottom:6px">'+
+          '<input id="cw-new-search" type="text" placeholder="Buscar usuario..." style="width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">'+
+        '</div>'+
+        '<div id="cw-new-body"></div>'+
+        '<div id="cw-new-actions">'+
+          '<span id="cw-new-count" style="flex:1;font-size:11px;color:#64748b;align-self:center">0 seleccionados</span>'+
+          '<button id="cw-new-cancel" style="background:#e2e8f0;color:#475569;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
+          '<button id="cw-new-create" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="cw-task-modal">'+
+        '<h4>📋 Asignar tarea desde este chat</h4>'+
+        '<label>Título</label><input id="cw-task-titulo" type="text" placeholder="Qué hay que hacer">'+
+        '<label>Descripción</label><textarea id="cw-task-descr" rows="3" placeholder="Detalles..."></textarea>'+
+        '<label>Asignar a (usernames separados por coma)</label><input id="cw-task-asign" type="text" placeholder="ej: mayerlin,camilo">'+
+        '<label>Fecha objetivo (opcional)</label><input id="cw-task-fecha" type="date">'+
+        '<div style="display:flex;gap:6px;margin-top:14px;justify-content:flex-end">'+
+          '<button id="cw-task-cancel" style="background:#e2e8f0;color:#475569;border:none;padding:7px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Cancelar</button>'+
+          '<button id="cw-task-save" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Crear tarea</button>'+
+        '</div>'+
       '</div>'+
     '</div>';
   document.body.appendChild(panel);
@@ -137,6 +190,164 @@ def chat_widget_js():
   document.getElementById('cw-text').addEventListener('keydown', function(e){
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensaje(); }
   });
+
+  // ── Nueva conversación ────────────────────────────────────────────
+  var SELECTED_USERS = new Set();
+  var ALL_USERS = [];
+
+  document.getElementById('cw-new-btn').onclick = function(e){
+    e.stopPropagation();
+    abrirNuevaConv();
+  };
+  document.getElementById('cw-new-back').onclick = function(){
+    document.getElementById('cw-new').style.display = 'none';
+    document.getElementById('cw-tlist').style.display = 'block';
+  };
+  document.getElementById('cw-new-cancel').onclick = function(){
+    document.getElementById('cw-new').style.display = 'none';
+    document.getElementById('cw-tlist').style.display = 'block';
+    SELECTED_USERS.clear();
+  };
+  document.getElementById('cw-new-create').onclick = crearNuevaConv;
+  document.getElementById('cw-new-search').addEventListener('input', renderListaUsuarios);
+  document.querySelectorAll('input[name="cw-tipo"]').forEach(function(rb){
+    rb.addEventListener('change', function(){
+      var tipo = document.querySelector('input[name="cw-tipo"]:checked').value;
+      document.getElementById('cw-new-name').style.display = (tipo==='grupo') ? 'block' : 'none';
+      // Si pasamos a 1-a-1, mantener solo 1 seleccionado
+      if (tipo==='directo' && SELECTED_USERS.size > 1){
+        var first = Array.from(SELECTED_USERS)[0];
+        SELECTED_USERS.clear();
+        SELECTED_USERS.add(first);
+      }
+      renderListaUsuarios();
+    });
+  });
+
+  async function abrirNuevaConv(){
+    document.getElementById('cw-tlist').style.display = 'none';
+    document.getElementById('cw-conv').style.display = 'none';
+    document.getElementById('cw-new').style.display = 'flex';
+    document.getElementById('cw-new-search').value = '';
+    document.getElementById('cw-new-name').value = '';
+    document.querySelector('input[name="cw-tipo"][value="directo"]').checked = true;
+    document.getElementById('cw-new-name').style.display = 'none';
+    SELECTED_USERS.clear();
+    var body = document.getElementById('cw-new-body');
+    body.innerHTML = '<div class="cw-empty">Cargando usuarios...</div>';
+    try{
+      var r = await fetch('/api/chat/users');
+      var d = await r.json();
+      ALL_USERS = d.users || [];
+      renderListaUsuarios();
+    }catch(e){ body.innerHTML = '<div class="cw-empty">Error.</div>'; }
+  }
+
+  function renderListaUsuarios(){
+    var q = (document.getElementById('cw-new-search').value || '').toLowerCase();
+    var body = document.getElementById('cw-new-body');
+    var tipo = document.querySelector('input[name="cw-tipo"]:checked').value;
+    var lista = ALL_USERS.filter(function(u){
+      if (!q) return true;
+      return (u.username||'').toLowerCase().indexOf(q) >= 0 || (u.display_name||'').toLowerCase().indexOf(q) >= 0;
+    });
+    if (!lista.length){ body.innerHTML = '<div class="cw-empty">Sin coincidencias.</div>'; return; }
+    body.innerHTML = lista.map(function(u){
+      var sel = SELECTED_USERS.has(u.username);
+      return '<div class="cw-user '+(u.estado==='conectado'?'online':'')+(sel?' selected':'')+'" data-u="'+_esc(u.username)+'">'+
+        '<span class="dot"></span>'+
+        '<span class="nm">'+_esc(u.display_name||u.username)+'</span>'+
+        '<span class="est">'+u.estado+'</span>'+
+        (sel?'<span style="color:#7c3aed;font-weight:700">✓</span>':'')+
+      '</div>';
+    }).join('');
+    body.querySelectorAll('.cw-user').forEach(function(el){
+      el.onclick = function(){
+        var u = el.getAttribute('data-u');
+        if (tipo === 'directo'){
+          SELECTED_USERS.clear();
+          SELECTED_USERS.add(u);
+        } else {
+          if (SELECTED_USERS.has(u)) SELECTED_USERS.delete(u);
+          else SELECTED_USERS.add(u);
+        }
+        renderListaUsuarios();
+        document.getElementById('cw-new-count').textContent = SELECTED_USERS.size + ' seleccionado'+(SELECTED_USERS.size===1?'':'s');
+      };
+    });
+    document.getElementById('cw-new-count').textContent = SELECTED_USERS.size + ' seleccionado'+(SELECTED_USERS.size===1?'':'s');
+  }
+
+  async function crearNuevaConv(){
+    if (!SELECTED_USERS.size){ alert('Selecciona al menos un usuario'); return; }
+    var tipo = document.querySelector('input[name="cw-tipo"]:checked').value;
+    var miembros = Array.from(SELECTED_USERS);
+    var nombre = '';
+    if (tipo === 'grupo'){
+      nombre = document.getElementById('cw-new-name').value.trim();
+      if (!nombre){ alert('Pon un nombre al grupo'); return; }
+      if (miembros.length < 2){ alert('Un grupo necesita al menos 2 personas'); return; }
+    }
+    try{
+      var r = await fetch('/api/chat/threads', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({tipo: tipo, miembros: miembros, nombre: nombre})
+      });
+      var d = await r.json();
+      if (d.thread_id){
+        document.getElementById('cw-new').style.display = 'none';
+        SELECTED_USERS.clear();
+        // Refrescar lista en cache primero
+        await cargarThreads();
+        // Buscar el thread y abrirlo
+        var t = (THREADS||[]).find(function(x){ return x.id === d.thread_id; });
+        if (!t) {
+          // Si no aparece, crear manualmente uno mínimo y abrir
+          THREADS.push({id: d.thread_id, nombre: nombre || (tipo==='directo' ? miembros[0] : 'Nuevo grupo')});
+        }
+        abrirConversacion(d.thread_id);
+      } else {
+        alert('Error: '+(d.error || 'no se pudo crear'));
+      }
+    }catch(e){ alert('Error de red'); }
+  }
+
+  // ── Asignar tarea desde el chat ─────────────────────────────────
+  document.getElementById('cw-task-btn').onclick = function(){
+    if (!ACTIVE_THREAD) return;
+    document.getElementById('cw-task-titulo').value = '';
+    document.getElementById('cw-task-descr').value = '';
+    document.getElementById('cw-task-asign').value = '';
+    document.getElementById('cw-task-fecha').value = '';
+    document.getElementById('cw-task-modal').style.display = 'flex';
+  };
+  document.getElementById('cw-task-cancel').onclick = function(){
+    document.getElementById('cw-task-modal').style.display = 'none';
+  };
+  document.getElementById('cw-task-save').onclick = async function(){
+    var titulo = document.getElementById('cw-task-titulo').value.trim();
+    var asign = document.getElementById('cw-task-asign').value.trim();
+    if (!titulo){ alert('Título requerido'); return; }
+    if (!asign){ alert('Asigna a al menos 1 usuario'); return; }
+    try{
+      var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/asignar-tarea', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          titulo: titulo,
+          descripcion: document.getElementById('cw-task-descr').value,
+          asignado_a: asign,
+          fecha_objetivo: document.getElementById('cw-task-fecha').value || null
+        })
+      });
+      var d = await r.json();
+      if (d.ok || d.tarea_id){
+        document.getElementById('cw-task-modal').style.display = 'none';
+        abrirConversacion(ACTIVE_THREAD);  // refrescar mensajes — incluye el msg tipo 'tarea'
+      } else {
+        alert('Error: '+(d.error || 'no se creó'));
+      }
+    }catch(e){ alert('Error de red'); }
+  };
 
   function _esc(s){ return (s==null?'':String(s)).replace(/[<>&"']/g, function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
