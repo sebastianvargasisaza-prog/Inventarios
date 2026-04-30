@@ -7349,6 +7349,308 @@ def admin_influencers_limpieza_post():
     return jsonify({"ok": True, "eliminadas": n})
 
 
+@bp.route("/admin/influencers-reset-pendientes", methods=["POST"])
+def admin_influencers_reset_pendientes():
+    """LIMPIA todos los pagos pendientes de influencers (Pendiente / Aprobada).
+    Sebastian (29-abr-2026): "elimina todo eso, no hay nada pendiente, solo
+    he pagado los que se han pagado".
+
+    NO toca: pagos_influencers en estado='Pagada', OCs ya pagadas, marketing_influencers.
+    SÍ borra: SOL Pendiente/Aprobada (cat Influencer/CC), OCs vinculadas en
+    estado Borrador/Aprobada/Autorizada, pagos_influencers en estado Pendiente.
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    eliminado = {'pagos_influencers': 0, 'solicitudes_compra': 0, 'ordenes_compra': 0}
+
+    # 1. Pagos influencers en estado Pendiente
+    c.execute("DELETE FROM pagos_influencers WHERE LOWER(COALESCE(estado,''))='pendiente'")
+    eliminado['pagos_influencers'] = c.rowcount
+
+    # 2. SOL Pendiente/Aprobada con cat Influencer/CC
+    sol_nums = c.execute("""
+        SELECT numero, COALESCE(numero_oc,'') FROM solicitudes_compra
+        WHERE categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+          AND LOWER(COALESCE(estado,'')) IN ('pendiente','aprobada')
+    """).fetchall()
+
+    # 3. OCs vinculadas que NO estén pagadas
+    oc_nums_a_borrar = []
+    for sol_num, oc_num in sol_nums:
+        if oc_num:
+            oc_estado = c.execute(
+                "SELECT estado FROM ordenes_compra WHERE numero_oc=?", (oc_num,)
+            ).fetchone()
+            if oc_estado and oc_estado[0] not in ('Pagada','Recibida','Parcial'):
+                oc_nums_a_borrar.append(oc_num)
+
+    # Borrar items de OCs
+    for oc_num in oc_nums_a_borrar:
+        c.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+    if oc_nums_a_borrar:
+        placeholders = ','.join('?' * len(oc_nums_a_borrar))
+        c.execute(
+            f"DELETE FROM ordenes_compra WHERE numero_oc IN ({placeholders})",
+            oc_nums_a_borrar
+        )
+        eliminado['ordenes_compra'] = c.rowcount
+
+    # Borrar SOLs (las que estaban Pendiente/Aprobada)
+    if sol_nums:
+        placeholders = ','.join('?' * len(sol_nums))
+        c.execute(
+            f"DELETE FROM solicitudes_compra_items WHERE numero IN ({placeholders})",
+            [s[0] for s in sol_nums]
+        )
+        c.execute(
+            f"DELETE FROM solicitudes_compra WHERE numero IN ({placeholders})",
+            [s[0] for s in sol_nums]
+        )
+        eliminado['solicitudes_compra'] = c.rowcount
+
+    conn.commit(); conn.close()
+    return jsonify({
+        'ok': True,
+        'eliminado': eliminado,
+        'mensaje': f"Limpieza completa: {eliminado['pagos_influencers']} pagos, "
+                   f"{eliminado['solicitudes_compra']} SOLs, "
+                   f"{eliminado['ordenes_compra']} OCs eliminadas."
+    })
+
+
+@bp.route("/admin/influencers-bulk-import", methods=["POST"])
+def admin_influencers_bulk_import():
+    """Endpoint público para cargar lote de pagos pendientes — recibe JSON.
+    Body: {influencers: [{nombre, telefono, ciudad, costo, fecha_pub, concepto?, paquete?}, ...]}
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    d = request.get_json() or {}
+    items = d.get('influencers') or []
+    if not items:
+        return jsonify({'error': 'influencers[] requerido'}), 400
+    return _do_bulk_import(items, u)
+
+
+def _do_bulk_import(items, usuario):
+    """Lógica compartida: carga lote de pagos pendientes de influencers."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    creados = []
+    skipped = []
+
+    for it in items:
+        nombre = (it.get('nombre') or '').strip()
+        telefono = (it.get('telefono') or '').strip()
+        ciudad = (it.get('ciudad') or '').strip()
+        costo_raw = it.get('costo') or 0
+        fecha_pub = (it.get('fecha_pub') or '').strip()
+        concepto = (it.get('concepto') or '').strip() or f'Pago contenido {fecha_pub}'
+        es_paquete = bool(it.get('paquete'))
+
+        if not nombre:
+            continue
+        # Si es paquete, costo=0 (pago en producto, no efectivo)
+        try:
+            costo = 0 if es_paquete else float(str(costo_raw).replace('.','').replace(',','.').replace('$',''))
+        except Exception:
+            costo = 0
+
+        # 1. Upsert influencer
+        existing = c.execute(
+            "SELECT id FROM marketing_influencers "
+            "WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) "
+            "  AND COALESCE(telefono,'')=? LIMIT 1",
+            (nombre, telefono)
+        ).fetchone()
+        if existing:
+            inf_id = existing[0]
+            # Actualizar ciudad si vacía
+            if ciudad:
+                c.execute(
+                    "UPDATE marketing_influencers SET ciudad=COALESCE(NULLIF(ciudad,''),?) WHERE id=?",
+                    (ciudad, inf_id)
+                )
+        else:
+            c.execute("""
+                INSERT INTO marketing_influencers
+                  (nombre, red_social, telefono, ciudad, tarifa, estado, fecha_registro)
+                VALUES (?, 'Instagram', ?, ?, ?, 'Activo', date('now'))
+            """, (nombre, telefono, ciudad, costo))
+            inf_id = c.lastrowid
+
+        # Idempotencia: skip si ya hay SOL/OC para este influencer+fecha+monto
+        ya = c.execute("""
+            SELECT numero FROM solicitudes_compra
+            WHERE influencer_id=?
+              AND ABS(COALESCE(valor,0) - ?) < 1
+              AND fecha_requerida=?
+              AND categoria='Cuenta de Cobro'
+            LIMIT 1
+        """, (inf_id, costo, fecha_pub)).fetchone()
+        if ya:
+            skipped.append({'nombre': nombre, 'razon': f'ya existe SOL {ya[0]}'})
+            continue
+
+        # 2. Generar número SOL único
+        prefix = f"SOL-{__import__('datetime').date.today().year}-"
+        last = c.execute(
+            "SELECT numero FROM solicitudes_compra WHERE numero LIKE ? "
+            "ORDER BY numero DESC LIMIT 1", (f"{prefix}%",)
+        ).fetchone()
+        if last:
+            try: seq = int(last[0].split('-')[-1]) + 1
+            except: seq = 1
+        else:
+            seq = 1
+        sol_num = f"{prefix}{seq:04d}"
+        oc_num = sol_num.replace('SOL', 'OC')
+
+        # Observaciones tipo cuenta de cobro
+        obs_parts = [f"BENEFICIARIO: {nombre}"]
+        if telefono: obs_parts.append(f"CELULAR: {telefono}")
+        if ciudad:   obs_parts.append(f"CIUDAD: {ciudad}")
+        obs_parts.append(f"CONCEPTO: {concepto}")
+        if es_paquete:
+            obs_parts.append("VALOR: PAQUETE (pago en producto)")
+        else:
+            obs_parts.append(f"VALOR: ${costo:,.0f}")
+        observaciones = " | ".join(obs_parts)
+
+        # 3. INSERT SOL Aprobada
+        c.execute("""
+            INSERT INTO solicitudes_compra
+              (numero, fecha, estado, solicitante, urgencia, observaciones,
+               area, empresa, categoria, tipo, valor, influencer_id,
+               fecha_requerida, numero_oc)
+            VALUES (?, date('now'), 'Aprobada', 'jefferson', 'Normal', ?,
+                    'Marketing', 'ANIMUS', 'Cuenta de Cobro', 'Servicio',
+                    ?, ?, ?, ?)
+        """, (sol_num, observaciones, costo, inf_id, fecha_pub, oc_num))
+
+        # 4. INSERT OC Aprobada
+        c.execute("""
+            INSERT INTO ordenes_compra
+              (numero_oc, fecha, estado, proveedor, observaciones,
+               creado_por, categoria, valor_total)
+            VALUES (?, date('now'), 'Aprobada', ?, ?, ?, 'Cuenta de Cobro', ?)
+        """, (oc_num, nombre, observaciones, usuario, costo))
+
+        # 5. INSERT pagos_influencers Pendiente
+        try:
+            c.execute("""
+                INSERT INTO pagos_influencers
+                  (influencer_id, influencer_nombre, valor, fecha, estado,
+                   concepto, numero_oc, fecha_publicacion)
+                VALUES (?, ?, ?, date('now'), 'Pendiente', ?, ?, ?)
+            """, (inf_id, nombre, int(costo), concepto, oc_num, fecha_pub))
+        except sqlite3.OperationalError:
+            pass
+
+        creados.append({
+            'nombre': nombre, 'sol': sol_num, 'oc': oc_num,
+            'costo': costo, 'fecha_pub': fecha_pub
+        })
+
+    conn.commit(); conn.close()
+    return jsonify({
+        'ok': True,
+        'creados': len(creados),
+        'skipped': len(skipped),
+        'detalle': creados,
+        'mensaje': f"{len(creados)} pagos pendientes cargados ({len(skipped)} duplicados omitidos)."
+    })
+
+
+@bp.route("/admin/influencers-cargar-29abr", methods=["GET", "POST"])
+def admin_influencers_cargar_29abr():
+    """Endpoint específico que carga los 16 influencers reales del foto que
+    Sebastian compartió el 29-abr-2026. GET muestra UI con botón. POST ejecuta.
+    Sebastian (29-abr-2026): "esta foto tiene a los que realmente les debo".
+    """
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS:
+        return Response("403", status=403)
+
+    INFLUENCERS_29ABR = [
+        {"nombre": "Maria Camila Soto",     "telefono": "3114902203", "ciudad": "Cali",        "costo": 1000000, "fecha_pub": "2026-04-09", "concepto": "Video 9 abril"},
+        {"nombre": "Sara",                   "telefono": "3225947384", "ciudad": "Cali",        "costo": 250000,  "fecha_pub": "2026-04-10", "concepto": "Video 10 abril"},
+        {"nombre": "Val sierra",             "telefono": "3235483884", "ciudad": "Cali",        "costo": 2500000, "fecha_pub": "2026-04-15", "concepto": "Video 15 abril"},
+        {"nombre": "Stiven sants",           "telefono": "3206927531", "ciudad": "Cali",        "costo": 500000,  "fecha_pub": "2026-04-16", "concepto": "Video 16 abril"},
+        {"nombre": "Camila Camico Torres",   "telefono": "3213784157", "ciudad": "Bogota",      "costo": 450000,  "fecha_pub": "2026-04-17", "concepto": "Rutina + lip"},
+        {"nombre": "Luisa Alejandra Hoyos",  "telefono": "3113425220", "ciudad": "Pereira",     "costo": 160000,  "fecha_pub": "2026-04-19", "concepto": "Video 19 abril"},
+        {"nombre": "Maria Camila Soto",     "telefono": "3114902203", "ciudad": "Cali",        "costo": 0,       "fecha_pub": "2026-04-20", "concepto": "Paquete (producto)", "paquete": True},
+        {"nombre": "Valeria Osorno",         "telefono": "3216410959", "ciudad": "Medellin",    "costo": 450000,  "fecha_pub": "2026-04-21", "concepto": "Video 21 abril"},
+        {"nombre": "Samira Kure",            "telefono": "3053336443", "ciudad": "Cali",        "costo": 400000,  "fecha_pub": "2026-04-22", "concepto": "Video 22 abril"},
+        {"nombre": "Angie Aguilar",          "telefono": "3102657782", "ciudad": "Bogota",      "costo": 390000,  "fecha_pub": "2026-04-22", "concepto": "Video 22 abril"},
+        {"nombre": "Leidy Diana Hidalgo Perea","telefono":"3004924796","ciudad": "Bello",       "costo": 420000,  "fecha_pub": "2026-04-23", "concepto": "Rutina"},
+        {"nombre": "Laura Moscot Guerra",    "telefono": "3232427839", "ciudad": "Chia",        "costo": 330000,  "fecha_pub": "2026-04-24", "concepto": "Dos videos - P"},
+        {"nombre": "Angela Rios",            "telefono": "3148405917", "ciudad": "Pereira",     "costo": 300000,  "fecha_pub": "2026-04-25", "concepto": "Video 25 abril"},
+        {"nombre": "Tatiana Gonzalez",       "telefono": "3006598291", "ciudad": "Armenia",     "costo": 200000,  "fecha_pub": "2026-04-26", "concepto": "Video 26 abril"},
+        {"nombre": "Monssa",                 "telefono": "3156127301", "ciudad": "Bucaramanga", "costo": 250000,  "fecha_pub": "2026-04-27", "concepto": "Video 27 abril"},
+        {"nombre": "Camila Correal",         "telefono": "3135660143", "ciudad": "Armenia",     "costo": 300000,  "fecha_pub": "2026-04-27", "concepto": "Video 27 abril"},
+    ]
+
+    if request.method == "GET":
+        total = sum(i["costo"] for i in INFLUENCERS_29ABR)
+        rows_html = ""
+        for i in INFLUENCERS_29ABR:
+            cost = "PAQUETE" if i.get("paquete") else f"${i['costo']:,.0f}"
+            rows_html += (f"<tr><td>{i['nombre']}</td><td>{i['ciudad']}</td>"
+                          f"<td>{i['telefono']}</td><td>{cost}</td>"
+                          f"<td>{i['fecha_pub']}</td><td>{i['concepto']}</td></tr>")
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+        <title>Cargar influencers 29abr</title>
+        <style>body{{font-family:-apple-system,Segoe UI,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px;color:#1e293b}}
+        h1{{font-size:20px}}table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:14px}}
+        th,td{{padding:6px 10px;text-align:left;border-bottom:1px solid #f1f5f9}}
+        th{{background:#f8fafc;font-weight:700;color:#475569;text-transform:uppercase;font-size:10px}}
+        button{{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px}}
+        button.danger{{background:#dc2626}}
+        .total{{font-size:16px;font-weight:800;color:#0f172a;margin:12px 0}}
+        .warn{{background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;border-radius:6px;margin:14px 0;font-size:13px}}
+        a{{color:#0891b2}}</style></head><body>
+        <a href="/admin">&larr; admin</a>
+        <h1>📋 Cargar pagos pendientes 29-abr-2026</h1>
+        <div class="warn">
+          <b>⚠️ Pasos:</b><br>
+          1. Click <b>🧹 Limpiar pendientes actuales</b> (borra los que estaban duplicados o ficticios).<br>
+          2. Click <b>📤 Cargar los 16</b> (crea SOL + OC + pago pendiente para cada uno).<br>
+          3. Ve a <code>/compras → tab Influencers</code> y cada uno aparece listo para pagar con un click.
+        </div>
+        <p>Lista de influencers a cargar (datos del foto que enviaste):</p>
+        <div class="total">Total a pagar: ${total:,.0f} COP (15 con valor + 1 paquete)</div>
+        <table><thead><tr><th>Nombre</th><th>Ciudad</th><th>Teléfono</th><th>Costo</th><th>Fecha pub</th><th>Concepto</th></tr></thead>
+        <tbody>{rows_html}</tbody></table>
+        <div style="margin-top:24px">
+          <button class="danger" onclick="limpiar()">🧹 Limpiar pendientes actuales</button>
+          <button onclick="cargar()">📤 Cargar los 16</button>
+        </div>
+        <div id="result" style="margin-top:18px"></div>
+        <script>
+        async function limpiar(){{
+          if(!confirm('Borrar TODOS los pagos pendientes/aprobados de influencers actuales? (No toca los ya pagados)')) return;
+          var r = await fetch('/admin/influencers-reset-pendientes',{{method:'POST'}});
+          var d = await r.json();
+          document.getElementById('result').innerHTML = '<pre>'+JSON.stringify(d,null,2)+'</pre>';
+        }}
+        async function cargar(){{
+          if(!confirm('Cargar los 16 influencers como pagos Aprobados pendientes de pago?')) return;
+          var r = await fetch('/admin/influencers-cargar-29abr',{{method:'POST'}});
+          var d = await r.json();
+          document.getElementById('result').innerHTML = '<pre>'+JSON.stringify(d,null,2)+'</pre>';
+        }}
+        </script></body></html>"""
+        return Response(html, mimetype="text/html")
+
+    # POST: ejecuta el bulk import con la lista hardcoded — llamamos
+    # directo a la función helper que hace el trabajo (no via fetch).
+    return _do_bulk_import(INFLUENCERS_29ABR, u)
+
+
 @bp.route("/admin/influencers-hoy", methods=["GET"])
 def admin_influencers_hoy():
     """Diagnostico rapido: que paso con influencers hoy.
