@@ -710,6 +710,284 @@ def test_completar_descuenta_y_audit_no_reporta_anomalia(app, db_clean):
         )
 
 
+def test_fefo_consume_lote_mas_viejo_primero(app, db_clean):
+    """FEFO real: si hay 2 lotes de un MP, consume PRIMERO el más cercano
+    a vencer. Cada movimiento de Salida lleva el lote real consumido."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_FEFO_REAL_1"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_FR1", "MP fr1", 500, 0),
+    ])
+
+    # 2 lotes con distintas fechas de vencimiento
+    con = sqlite3.connect(db_path)
+    cu = con.cursor()
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_NUEVO', '2027-12-31', 'OK')",
+        ("MP_FR1", "MP fr1", 1000)
+    )
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-02-01', 'L_VIEJO', '2026-08-30', 'OK')",
+        ("MP_FR1", "MP fr1", 1000)
+    )
+    con.commit()
+    con.close()
+
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    # Debe haber UNA salida con lote=L_VIEJO (el que vence más pronto), 500g
+    con = sqlite3.connect(db_path)
+    salidas = con.execute(
+        "SELECT lote, cantidad FROM movimientos "
+        "WHERE material_id='MP_FR1' AND tipo='Salida' ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert len(salidas) == 1
+    assert salidas[0][0] == "L_VIEJO"
+    assert salidas[0][1] == 500
+
+
+def test_fefo_distribuye_entre_varios_lotes(app, db_clean):
+    """Si un solo lote no alcanza, FEFO distribuye el consumo entre lotes
+    en orden de vencimiento. Genera UN movimiento de Salida POR LOTE."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_FEFO_DISTRIB"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_FRD", "MP frd", 1500, 0),  # consume 1500g/lote
+    ])
+
+    # 3 lotes — el primero tiene 700g, el segundo 600g, el tercero 5000g
+    con = sqlite3.connect(db_path)
+    cu = con.cursor()
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_A', '2026-06-30', 'OK')",
+        ("MP_FRD", "MP frd", 700)
+    )
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-02-01', 'L_B', '2026-09-30', 'OK')",
+        ("MP_FRD", "MP frd", 600)
+    )
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-03-01', 'L_C', '2027-12-31', 'OK')",
+        ("MP_FRD", "MP frd", 5000)
+    )
+    con.commit()
+    con.close()
+
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    # Distribución FEFO: 700 de L_A + 600 de L_B + 200 de L_C = 1500g total
+    con = sqlite3.connect(db_path)
+    salidas = con.execute(
+        "SELECT lote, cantidad FROM movimientos "
+        "WHERE material_id='MP_FRD' AND tipo='Salida' ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert len(salidas) == 3
+    assert salidas[0] == ("L_A", 700.0)
+    assert salidas[1] == ("L_B", 600.0)
+    assert salidas[2] == ("L_C", 200.0)
+    # Stock total final = 4800 (700+600+5000-1500)
+    assert _stock_actual(db_path, "MP_FRD") == 4800
+
+
+def test_fefo_excluye_lotes_vencidos_y_bloqueados(app, db_clean):
+    """FEFO ignora lotes con estado_lote='Vencido' o 'Bloqueado' aunque
+    tengan stock — esos NO deben consumirse."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_FEFO_EXCL"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_FRE", "MP fre", 800, 0),
+    ])
+
+    # Lote VENCIDO con 1000g + Lote OK con 1000g
+    con = sqlite3.connect(db_path)
+    cu = con.cursor()
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_VENC', '2025-01-01', 'Vencido')",
+        ("MP_FRE", "MP fre", 1000)
+    )
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-02-01', 'L_OK', '2027-12-31', 'OK')",
+        ("MP_FRE", "MP fre", 1000)
+    )
+    con.commit()
+    con.close()
+
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 200
+
+    # Solo debe haber consumido del lote OK
+    con = sqlite3.connect(db_path)
+    salidas = con.execute(
+        "SELECT lote, cantidad FROM movimientos "
+        "WHERE material_id='MP_FRE' AND tipo='Salida' ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert len(salidas) == 1
+    assert salidas[0] == ("L_OK", 800.0)
+
+
+def test_fefo_remainder_sin_lote_si_lotes_no_alcanzan(app, db_clean):
+    """Si los lotes con trazabilidad no alcanzan, el remainder se descuenta
+    sin lote (lote=NULL) — indica stock legacy."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_FEFO_REMAIN"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_FRR", "MP frr", 1200, 0),
+    ])
+
+    # 1 lote con 500g + 5000g sin lote (legacy seed)
+    con = sqlite3.connect(db_path)
+    cu = con.cursor()
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_X', '2027-01-01', 'OK')",
+        ("MP_FRR", "MP frr", 500)
+    )
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01')",
+        ("MP_FRR", "MP frr", 5000)  # sin lote
+    )
+    con.commit()
+    con.close()
+
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                    headers={"Origin": "http://localhost"})
+    assert r.status_code == 200
+
+    con = sqlite3.connect(db_path)
+    salidas = con.execute(
+        "SELECT lote, cantidad FROM movimientos "
+        "WHERE material_id='MP_FRR' AND tipo='Salida' ORDER BY id"
+    ).fetchall()
+    con.close()
+    assert len(salidas) == 2
+    # 500 del lote
+    assert salidas[0] == ("L_X", 500.0)
+    # 700 sin lote
+    assert salidas[1][0] is None
+    assert salidas[1][1] == 700.0
+
+
+def test_fefo_revertir_restaura_stock_por_lote(app, db_clean):
+    """Al revertir una producción FEFO, el stock por LOTE debe quedar
+    igual al estado pre-completar (movimientos compensatorios con lote)."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    producto = "TEST_FEFO_REV"
+    _setup_producto_con_formula(db_path, producto, lote_kg=10, mps=[
+        ("MP_FRREV", "MP frrev", 800, 0),
+    ])
+
+    con = sqlite3.connect(db_path)
+    cu = con.cursor()
+    cu.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_REV', '2027-01-01', 'OK')",
+        ("MP_FRREV", "MP frrev", 2000)
+    )
+    con.commit()
+    con.close()
+
+    pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=1)
+    client = app.test_client()
+    _set_admin_session(client)
+
+    # Completar → consume 800g del lote L_REV
+    client.post(f"/api/programacion/programar/{pid}/completar", json={},
+                headers={"Origin": "http://localhost"})
+    # Stock por lote L_REV ahora = 1200 (2000-800)
+    con = sqlite3.connect(db_path)
+    stock_lote = con.execute(
+        "SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) "
+        "FROM movimientos WHERE material_id='MP_FRREV' AND lote='L_REV'"
+    ).fetchone()[0]
+    con.close()
+    assert stock_lote == 1200
+
+    # Revertir → stock por lote L_REV vuelve a 2000
+    r = client.post(f"/api/programacion/programar/{pid}/revertir-completado",
+                    json={}, headers={"Origin": "http://localhost"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    con = sqlite3.connect(db_path)
+    stock_lote = con.execute(
+        "SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) "
+        "FROM movimientos WHERE material_id='MP_FRREV' AND lote='L_REV'"
+    ).fetchone()[0]
+    con.close()
+    assert stock_lote == 2000  # restaurado al lote correcto
+
+
+def test_stock_por_lote_endpoint(app, db_clean):
+    """El endpoint /api/planta/stock-por-lote/<cod> devuelve lotes ordenados
+    FEFO con stock vivo por lote y total."""
+    db_path = app.config.get("DATABASE") or __import__("os").environ["DB_PATH"]
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, activo) "
+        "VALUES ('MP_LOTES', 'MP lotes', 'MP lotes', 'MP', 1)"
+    )
+    con.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES ('MP_LOTES', 'MP lotes', 800, 'Entrada', '2026-01-01', 'L1', '2027-12-31', 'OK')"
+    )
+    con.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
+        "fecha, lote, fecha_vencimiento, estado_lote) "
+        "VALUES ('MP_LOTES', 'MP lotes', 500, 'Entrada', '2026-01-01', 'L2', '2026-06-30', 'OK')"
+    )
+    con.commit()
+    con.close()
+
+    client = app.test_client()
+    _set_admin_session(client)
+    r = client.get("/api/planta/stock-por-lote/MP_LOTES")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["codigo_mp"] == "MP_LOTES"
+    assert d["total_g"] == 1300
+    # FEFO: L2 primero (vence 2026-06, antes que L1 en 2027-12)
+    assert d["lotes"][0]["lote"] == "L2"
+    assert d["lotes"][0]["stock_g"] == 500
+    assert d["lotes"][1]["lote"] == "L1"
+    assert d["lotes"][1]["stock_g"] == 800
+
+
 def test_audit_endpoint_solo_admin(app, db_clean):
     """/admin/audit-inventario es solo admin."""
     from .conftest import TEST_PASSWORD

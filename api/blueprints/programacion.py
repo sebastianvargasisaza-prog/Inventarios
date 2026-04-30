@@ -2132,6 +2132,67 @@ def borrar_produccion_programada(evento_id):
     })
 
 
+def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
+    """Distribuye una cantidad a descontar entre lotes activos siguiendo FEFO
+    (First-Expired-First-Out): consume primero del lote con fecha_vencimiento
+    más cercana, luego del siguiente, etc.
+
+    Sebastian (29-abr-2026): "FEFO perfecto". Antes el descuento era global
+    (anotaba el lote sugerido en obs pero no era estricto). Ahora el descuento
+    es POR LOTE: cada movimiento de Salida lleva el codigo del lote del que
+    realmente se está consumiendo.
+
+    Returns: lista de dicts [{lote, cantidad, fecha_vencimiento, sin_lote}, ...]
+    Si la suma de stock por lotes < cantidad_a_descontar, el remainder se
+    devuelve con sin_lote=True (consumo de stock sin trazabilidad de lote —
+    suele indicar drift del inventario o entradas históricas sin lote).
+    """
+    if cantidad_a_descontar <= 0:
+        return []
+
+    # Stock disponible por lote: SUM(Entradas con lote) - SUM(Salidas con lote)
+    # Excluye lotes Vencidos/Bloqueados (no se debe consumir).
+    rows = c.execute("""
+        SELECT lote, fecha_vencimiento,
+               SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_lote
+        FROM movimientos
+        WHERE material_id = ?
+          AND COALESCE(lote, '') != ''
+          AND COALESCE(estado_lote, '') NOT IN ('Vencido','Bloqueado','Rechazado')
+        GROUP BY lote, fecha_vencimiento
+        HAVING stock_lote > 0
+        ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC,
+                 lote ASC
+    """, (codigo_mp,)).fetchall()
+
+    distribucion = []
+    restante = float(cantidad_a_descontar)
+    for lote, fv, stock_lote in rows:
+        if restante <= 0:
+            break
+        toma = min(float(stock_lote), restante)
+        distribucion.append({
+            'lote': lote,
+            'cantidad': round(toma, 2),
+            'fecha_vencimiento': fv,
+            'sin_lote': False,
+        })
+        restante -= toma
+
+    # Si aún queda cantidad por descontar, viene de stock sin lote (entradas
+    # históricas sin trazabilidad). Lo registramos sin lote para mantener
+    # consistencia del stock total.
+    if restante > 0.01:
+        distribucion.append({
+            'lote': None,
+            'cantidad': round(restante, 2),
+            'fecha_vencimiento': None,
+            'sin_lote': True,
+        })
+
+    return distribucion
+
+
 @bp.route('/api/programacion/programar/<int:evento_id>/completar', methods=['POST'])
 def prog_completar_evento(evento_id):
     """Marca una produccion como completada Y descuenta inventario.
@@ -2254,38 +2315,31 @@ def prog_completar_evento(evento_id):
     descontados_mees = []
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
     try:
-        # MPs → INSERT INTO movimientos. FEFO: registramos en obs el lote
-        # más viejo disponible (fecha_vencimiento más cercana). El stock se
-        # descuenta del total — el campo lote es referencia para que Daniela
-        # consuma físicamente el lote correcto en bodega.
+        # MPs → FEFO REAL: distribuir el consumo entre lotes según fecha
+        # de vencimiento (más cercano primero). Cada lote genera su propio
+        # movimiento de Salida con cantidad específica. Si la suma de stock
+        # por lote no alcanza, el remainder se registra sin lote (legacy).
         for mp in mps_a_consumir:
-            lote_fefo = None
-            try:
-                # Buscar el lote más viejo con stock disponible
-                fefo_row = c.execute("""
-                    SELECT lote, fecha_vencimiento
-                    FROM movimientos
-                    WHERE material_id = ?
-                      AND tipo = 'Entrada'
-                      AND COALESCE(lote,'') != ''
-                      AND COALESCE(estado_lote,'') NOT IN ('Vencido','Bloqueado')
-                    ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC,
-                             fecha ASC
-                    LIMIT 1
-                """, (mp['codigo_mp'],)).fetchone()
-                if fefo_row and fefo_row[0]:
-                    lote_fefo = fefo_row[0]
-            except Exception:
-                pass
-            obs_mp = obs_base + (f" | FEFO sugerido: lote {lote_fefo}" if lote_fefo else "")
-            c.execute("""
-                INSERT INTO movimientos
-                  (material_id, material_nombre, cantidad, tipo, fecha,
-                   observaciones, operador, lote)
-                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
-            """, (mp['codigo_mp'], mp['nombre'], mp['cantidad_g'],
-                  fecha_iso, obs_mp, user, lote_fefo))
-            mp['lote_fefo'] = lote_fefo
+            distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
+            mp['distribucion_fefo'] = []
+            for d in distrib:
+                lote_fragment = d['lote'] or '(sin lote — stock legacy)'
+                obs_mp = (obs_base +
+                          f" | FEFO lote: {lote_fragment}" +
+                          (f" (vence {d['fecha_vencimiento']})" if d['fecha_vencimiento'] else ""))
+                c.execute("""
+                    INSERT INTO movimientos
+                      (material_id, material_nombre, cantidad, tipo, fecha,
+                       observaciones, operador, lote)
+                    VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                      fecha_iso, obs_mp, user, d['lote']))
+                mp['distribucion_fefo'].append({
+                    'lote': d['lote'],
+                    'cantidad_g': d['cantidad'],
+                    'fecha_vencimiento': d['fecha_vencimiento'],
+                    'sin_lote': d['sin_lote'],
+                })
             descontados_mps.append(mp)
         # MEEs → INSERT INTO movimientos_mee + UPDATE maestro_mee
         for me in mees_a_consumir:
@@ -2370,20 +2424,26 @@ def prog_revertir_completado(evento_id):
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
     try:
         # Reversión de MPs: insertar movimientos de Entrada compensatorios
+        # PRESERVANDO el lote (FEFO reverso — cada lote consumido vuelve
+        # a su lote de origen para que el stock por-lote quede coherente).
         rows = c.execute("""
-            SELECT id, material_id, material_nombre, cantidad
+            SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
             FROM movimientos
             WHERE tipo='Salida' AND observaciones LIKE ?
         """, (f"{obs_filtro}%",)).fetchall()
-        for mid, cod, nom, cant in rows:
+        for mid, cod, nom, cant, lote, fv in rows:
             c.execute("""
                 INSERT INTO movimientos
                   (material_id, material_nombre, cantidad, tipo, fecha,
-                   observaciones, operador)
-                VALUES (?, ?, ?, 'Entrada', ?, ?, ?)
+                   observaciones, operador, lote, fecha_vencimiento)
+                VALUES (?, ?, ?, 'Entrada', ?, ?, ?, ?, ?)
             """, (cod, nom, cant, fecha_iso,
-                  f"REVERSIÓN producción completada — original mov #{mid}", user))
-            revertidos_mps.append({'codigo_mp': cod, 'nombre': nom, 'cantidad_g': cant})
+                  f"REVERSIÓN producción completada — original mov #{mid}",
+                  user, lote, fv))
+            revertidos_mps.append({
+                'codigo_mp': cod, 'nombre': nom,
+                'cantidad_g': cant, 'lote': lote,
+            })
 
         # Reversión de MEEs: insertar movimientos_mee de entrada + UPDATE stock
         try:

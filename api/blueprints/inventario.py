@@ -4580,6 +4580,88 @@ def planta_kardex(codigo_mp):
     })
 
 
+@bp.route('/api/planta/stock-por-lote/<codigo_mp>', methods=['GET'])
+def planta_stock_por_lote(codigo_mp):
+    """Stock detallado por lote de un MP (FEFO view).
+
+    Sebastian (29-abr-2026): "FEFO perfecto". Endpoint que muestra el
+    stock vivo por lote — cuántos gramos quedan de cada lote, ordenado
+    por fecha de vencimiento (más cercano primero). Útil para que
+    operarios sepan exactamente de qué lote sacar al consumir.
+
+    Returns: {
+        codigo_mp, nombre,
+        lotes: [{lote, fecha_vencimiento, estado, stock_g, dias_a_vencer}, ...],
+        sin_lote_g: <stock que entró sin lote>,
+        total_g: <stock total>
+    }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    mp = c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_comercial, nombre_inci, codigo_mp) "
+        "FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,)
+    ).fetchone()
+    if not mp:
+        return jsonify({'error': f'MP {codigo_mp} no existe'}), 404
+
+    # Stock por lote (Entradas - Salidas con lote)
+    rows = c.execute("""
+        SELECT lote, fecha_vencimiento, estado_lote,
+               SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g,
+               MIN(fecha) as primera_entrada
+        FROM movimientos
+        WHERE material_id = ?
+          AND COALESCE(lote,'') != ''
+        GROUP BY lote, fecha_vencimiento, estado_lote
+        HAVING stock_g > 0
+        ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC, lote ASC
+    """, (codigo_mp,)).fetchall()
+
+    from datetime import date
+    hoy = date.today()
+    lotes = []
+    total_con_lote = 0.0
+    for lote, fv, estado, stock_g, primera in rows:
+        dias_a_vencer = None
+        if fv:
+            try:
+                fv_date = date.fromisoformat(fv[:10])
+                dias_a_vencer = (fv_date - hoy).days
+            except Exception:
+                pass
+        lotes.append({
+            'lote': lote,
+            'fecha_vencimiento': fv,
+            'estado_lote': estado or 'OK',
+            'stock_g': round(float(stock_g), 2),
+            'dias_a_vencer': dias_a_vencer,
+            'primera_entrada': primera,
+        })
+        total_con_lote += float(stock_g)
+
+    # Stock sin lote (entradas legacy / sin trazabilidad)
+    sin_lote_row = c.execute("""
+        SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        FROM movimientos
+        WHERE material_id = ?
+          AND COALESCE(lote,'') = ''
+    """, (codigo_mp,)).fetchone()
+    sin_lote_g = round(float(sin_lote_row[0] or 0), 2)
+
+    total_g = round(total_con_lote + sin_lote_g, 2)
+    return jsonify({
+        'codigo_mp': mp[0],
+        'nombre': mp[1],
+        'lotes': lotes,
+        'sin_lote_g': sin_lote_g,
+        'total_g': total_g,
+        'total_lotes_activos': len(lotes),
+    })
+
+
 @bp.route('/api/planta/valoracion-inventario', methods=['GET'])
 def planta_valoracion_inventario():
     """Valoración total del inventario FIFO de todas las MPs activas.
