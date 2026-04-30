@@ -51,45 +51,33 @@ def chat_widget_js():
     #cw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:22px;height:22px;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}\\
     #cw-toast{position:fixed;bottom:90px;right:20px;background:#1e293b;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:9999;max-width:320px;font-size:13px;cursor:pointer;animation:cwSlide .3s ease-out;border-left:4px solid #7c3aed}\\
     @keyframes cwSlide{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}\\
-    #cw-panel{position:fixed;bottom:90px;right:20px;width:380px;max-width:calc(100vw - 40px);height:560px;max-height:calc(100vh - 130px);background:#fff;border:1px solid #e7e5e4;border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.25);z-index:9997;display:none;flex-direction:column;overflow:hidden}\\
-    #cw-panel.open{display:flex}\\
-    #cw-panel iframe{flex:1;border:none;background:#fafaf9}\\
-    #cw-panel-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#7c3aed;color:#fff;font-size:13px;font-weight:700}\\
-    #cw-panel-close{background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0;line-height:1}\\
   ';
   document.head.appendChild(s);
 
   // Crear FAB
   var fab = document.createElement('button');
   fab.id = 'cw-fab';
-  fab.title = 'EOS Chat — clic para abrir / Esc para cerrar';
+  fab.title = 'EOS Chat — abrir en pestaña nueva';
   fab.innerHTML = '\\u{1F4AC}<span id="cw-badge" style="display:none">0</span>';
-  fab.onclick = function(){ togglePanel(); };
-  document.body.appendChild(fab);
-
-  // Crear panel embebido
-  var panel = document.createElement('div');
-  panel.id = 'cw-panel';
-  panel.innerHTML = '<div id="cw-panel-hdr">\\u{1F4AC} EOS Chat <button id="cw-panel-close">\\u00D7</button></div><iframe id="cw-iframe" src="" allow="autoplay"></iframe>';
-  document.body.appendChild(panel);
-  document.getElementById('cw-panel-close').onclick = function(){ togglePanel(false); };
-  document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && panel.classList.contains('open')) togglePanel(false);
-  });
-
-  function togglePanel(force){
-    var open = (typeof force === 'boolean') ? force : !panel.classList.contains('open');
-    if (open) {
-      var iframe = document.getElementById('cw-iframe');
-      if (!iframe.src || iframe.src === window.location.origin + '/') iframe.src = '/chat';
-      panel.classList.add('open');
-      // Limpiar badge cuando abre el panel
+  // Sebastian (29-abr-2026): el iframe embebido tenia bugs de layout
+  // (chat completo no cabia en panel pequeño). Mas confiable: abrir en
+  // pestaña nueva — funciona 100% sin choques de CSS/CSP.
+  // Usar window.open con un nombre fijo asi reusa la misma ventana si
+  // ya esta abierta en lugar de abrir muchas pestañas duplicadas.
+  fab.onclick = function(){
+    var w = window.open('/chat', 'eos-chat',
+      'width=420,height=720,menubar=no,toolbar=no,status=no,location=no');
+    if (w) {
+      w.focus();
+      // Limpiar badge cuando abre
       var b = document.getElementById('cw-badge');
       if (b) { b.style.display = 'none'; b.textContent = '0'; }
     } else {
-      panel.classList.remove('open');
+      // Si pop-ups bloqueados, fallback a pestaña nueva
+      window.open('/chat', '_blank');
     }
-  }
+  };
+  document.body.appendChild(fab);
 
   // Polling cada 15s para detectar mensajes nuevos
   var lastTotal = 0;
@@ -106,8 +94,8 @@ def chat_widget_js():
           b.style.display = 'none';
         }
       }
-      // Toast solo si subio el contador y el panel esta cerrado
-      if (total > lastTotal && !panel.classList.contains('open') && lastTotal > 0) {
+      // Toast cuando hay mensajes nuevos (no estamos viendo el chat ahora)
+      if (total > lastTotal && lastTotal > 0) {
         var nuevo = total - lastTotal;
         showToast('\\u{1F4AC} ' + nuevo + ' mensaje' + (nuevo>1?'s':'') + ' nuevo' + (nuevo>1?'s':''),
                   'Click para abrir el chat');
@@ -124,7 +112,12 @@ def chat_widget_js():
     var t = document.createElement('div');
     t.id = 'cw-toast';
     t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+titulo+'</div><div style="font-size:11px;color:#cbd5e1">'+sub+'</div>';
-    t.onclick = function(){ togglePanel(true); t.remove(); };
+    t.onclick = function(){
+      // Click en toast abre /chat en pestaña nueva
+      var w = window.open('/chat', 'eos-chat', 'width=420,height=720');
+      if (w) w.focus(); else window.open('/chat', '_blank');
+      t.remove();
+    };
     document.body.appendChild(t);
     setTimeout(function(){ if (t.parentNode) t.remove(); }, 6000);
   }
