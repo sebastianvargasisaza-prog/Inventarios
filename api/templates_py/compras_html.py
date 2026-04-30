@@ -4880,12 +4880,16 @@ async function loadPorPagar(){
     if(directos.length){
       dirWrap.style.display = 'block';
       dirEl.innerHTML = directos.map(function(o){
-        return '<div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;padding:12px;">'+
+        var prov = (o.proveedor||'').trim();
+        var esIncompleta = (!prov || prov.toLowerCase()==='por definir' || !(o.valor_total>0));
+        return '<div style="background:#fffbeb;border:2px solid '+(esIncompleta?'#dc2626':'#f59e0b')+';border-radius:10px;padding:12px;">'+
           '<div style="font-weight:700;font-family:monospace;color:#92400e;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
-          '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
+          '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#78350f;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
-          '<div style="font-size:18px;font-weight:800;color:#059669;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          '<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+          '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#059669')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
+          (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
+          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
           '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
@@ -4900,15 +4904,19 @@ async function loadPorPagar(){
     } else {
       mercEl.innerHTML = fisicas.map(function(o){
         var estCol = o.estado==='Parcial' ? '#d97706' : '#16a34a';
-        return '<div style="background:#fff;border:1px solid #d1d5db;border-radius:10px;padding:12px;">'+
+        var prov = (o.proveedor||'').trim();
+        var esIncompleta = (!prov || prov.toLowerCase()==='por definir' || !(o.valor_total>0));
+        return '<div style="background:#fff;border:1px solid '+(esIncompleta?'#dc2626':'#d1d5db')+';border-radius:10px;padding:12px;">'+
           '<div style="display:flex;justify-content:space-between;align-items:center;">'+
             '<div style="font-weight:700;font-family:monospace;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
             '<span style="background:'+estCol+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+_esc(o.estado)+'</span>'+
           '</div>'+
-          '<div style="font-size:13px;color:#1e293b;margin-top:4px;">'+_esc(o.proveedor||'(sin proveedor)')+'</div>'+
+          '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
-          '<div style="font-size:18px;font-weight:800;color:#1e293b;margin-top:8px;">'+_money(o.valor_total)+'</div>'+
-          '<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>'+
+          '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
+          (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
+          (esIncompleta?'<button class="btn" style="padding:6px 10px;font-size:12px;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:6px;cursor:pointer;font-weight:700;" onclick="repararOC(\\''+_esc(o.numero_oc)+'\\')" title="Sincronizar proveedor y valor desde la solicitud asociada">&#x1F527; Reparar</button>':'<button class="btn bs" style="flex:1;padding:6px 10px;font-size:12px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;" onclick="payOC(\\''+_esc(o.numero_oc)+'\\')">&#x1F4B5; Pagar</button>')+
           '<button class="btn" style="padding:6px 10px;font-size:12px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:6px;cursor:pointer;font-weight:700;" onclick="rechazarPorPagar(\\''+_esc(o.numero_oc)+'\\')" title="Devolver a la SOL de origen">&#10005; Rechazar</button></div>'+
         '</div>';
       }).join('');
@@ -4936,6 +4944,24 @@ async function rechazarPorPagar(numOC){
     alert('OC '+numOC+' rechazada. La solicitud de origen volvió a estado Pendiente.');
     if(typeof loadPorPagar==='function') loadPorPagar();
     if(typeof loadOCs==='function') loadOCs();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+
+// Sebastian (29-abr-2026): cuando una OC sale "Por definir / $0" pero la
+// solicitud sí tiene valor (caso 0119), este botón fuerza la sincronización.
+async function repararOC(numOC){
+  try{
+    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/reparar-desde-solicitud', {
+      method:'POST', headers:{'Content-Type':'application/json'}
+    });
+    var d = await r.json().catch(function(){return {};});
+    if(!r.ok){ alert('No se pudo reparar: '+(d.error||r.status)); return; }
+    if(d.reparada){
+      alert('OC '+numOC+' reparada. Datos actualizados desde la solicitud.');
+    } else {
+      alert(d.mensaje||'Sin cambios.');
+    }
+    if(typeof loadPorPagar==='function') loadPorPagar();
   }catch(e){ alert('Error de red: '+e.message); }
 }
 

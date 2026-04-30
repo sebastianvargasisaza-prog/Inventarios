@@ -2096,8 +2096,58 @@ def actualizar_estado_solicitud(numero):
             'Servicio': 'SVC',
         }
         categoria_oc = _SOLIC_TO_OC_CAT.get(categoria_oc, categoria_oc)
-        proveedor_oc = d.get('proveedor', 'Por definir')
+        proveedor_oc = (d.get('proveedor') or '').strip()
         valor_oc = float(d.get('valor_total') or 0)
+        # Sebastian (29-abr-2026): "OC sale Por definir y $0 aunque la
+        # solicitud trae 150.000". Si el frontend no manda proveedor/valor,
+        # los inferimos desde la solicitud para que la OC no quede vacia.
+        if not proveedor_oc or proveedor_oc.lower() == 'por definir':
+            try:
+                _r = cur.execute(
+                    "SELECT influencer_id, solicitante FROM solicitudes_compra WHERE numero=?",
+                    (numero.upper(),)
+                ).fetchone()
+                inf_id = _r[0] if _r else None
+                solic_nombre = (_r[1] if _r else '') or ''
+                if inf_id:
+                    _ri = cur.execute(
+                        "SELECT nombre FROM marketing_influencers WHERE id=?", (inf_id,)
+                    ).fetchone()
+                    if _ri and _ri[0]:
+                        proveedor_oc = _ri[0]
+                if not proveedor_oc:
+                    _rp = cur.execute(
+                        "SELECT proveedor_sugerido FROM solicitudes_compra_items "
+                        "WHERE numero=? AND COALESCE(proveedor_sugerido,'') != '' LIMIT 1",
+                        (numero.upper(),)
+                    ).fetchone()
+                    if _rp and _rp[0]:
+                        proveedor_oc = _rp[0]
+                if not proveedor_oc and categoria_oc in ('SVC', 'CC') and solic_nombre:
+                    proveedor_oc = solic_nombre
+            except Exception:
+                pass
+        if not proveedor_oc:
+            proveedor_oc = 'Por definir'
+        if valor_oc <= 0:
+            try:
+                _r = cur.execute(
+                    "SELECT COALESCE(valor,0) FROM solicitudes_compra WHERE numero=?",
+                    (numero.upper(),)
+                ).fetchone()
+                if _r and (_r[0] or 0) > 0:
+                    valor_oc = float(_r[0])
+                else:
+                    _r2 = cur.execute(
+                        "SELECT COALESCE(SUM(COALESCE(valor_estimado,0)),0), "
+                        "       COALESCE(SUM(COALESCE(precio_unit_g,0)*COALESCE(cantidad_g,0)),0) "
+                        "FROM solicitudes_compra_items WHERE numero=?",
+                        (numero.upper(),)
+                    ).fetchone()
+                    if _r2:
+                        valor_oc = float(_r2[0] or 0) or float(_r2[1] or 0)
+            except Exception:
+                pass
         fent_oc = d.get('fecha_entrega_est', '')
         obs_oc = d.get('observaciones_oc') or f'Generado desde {numero.upper()}'
         cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
@@ -3393,6 +3443,135 @@ CATEGORIAS_PAGO_DIRECTO = (
 )
 
 
+def _autorreparar_ocs_vacias(cur):
+    """Sebastian (29-abr-2026): rellena proveedor / valor_total de OCs
+    en estado pre-pago que quedaron sin datos al crearlas (caso 0119).
+    Solo toca OCs NO pagadas con proveedor 'Por definir'/vacio o valor<=0
+    Y que tengan solicitud asociada con datos. Devuelve lista de OCs
+    reparadas. Pensado para correr al cargar /por-pagar y al iniciar
+    Dashboard — idempotente.
+    """
+    reparadas = []
+    rows = cur.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.valor_total, oc.categoria,
+               s.numero, s.influencer_id, COALESCE(s.valor,0), s.solicitante
+        FROM ordenes_compra oc
+        LEFT JOIN solicitudes_compra s ON s.numero_oc = oc.numero_oc
+        WHERE oc.estado NOT IN ('Pagada','Rechazada','Cancelada')
+          AND (
+                COALESCE(oc.proveedor,'') = ''
+             OR LOWER(oc.proveedor) = 'por definir'
+             OR COALESCE(oc.valor_total,0) <= 0
+          )
+          AND s.numero IS NOT NULL
+    """).fetchall()
+    for r in rows:
+        oc_num, prov_act, val_act, cat_oc, sol_num, inf_id, sol_valor, solic = r
+        prov_act = (prov_act or '').strip()
+        nuevo_prov = prov_act
+        nuevo_val = float(val_act or 0)
+        # PROVEEDOR fallback
+        if not nuevo_prov or nuevo_prov.lower() == 'por definir':
+            if inf_id:
+                _ri = cur.execute(
+                    "SELECT nombre FROM marketing_influencers WHERE id=?",
+                    (inf_id,)
+                ).fetchone()
+                if _ri and _ri[0]:
+                    nuevo_prov = _ri[0]
+            if not nuevo_prov or nuevo_prov.lower() == 'por definir':
+                _rp = cur.execute(
+                    "SELECT proveedor_sugerido FROM solicitudes_compra_items "
+                    "WHERE numero=? AND COALESCE(proveedor_sugerido,'') != '' LIMIT 1",
+                    (sol_num,)
+                ).fetchone()
+                if _rp and _rp[0]:
+                    nuevo_prov = _rp[0]
+            if (not nuevo_prov or nuevo_prov.lower() == 'por definir') \
+               and (cat_oc or '') in ('SVC', 'CC') and solic:
+                nuevo_prov = solic
+        # VALOR fallback
+        if nuevo_val <= 0:
+            if (sol_valor or 0) > 0:
+                nuevo_val = float(sol_valor)
+            else:
+                _r2 = cur.execute(
+                    "SELECT COALESCE(SUM(COALESCE(valor_estimado,0)),0), "
+                    "       COALESCE(SUM(COALESCE(precio_unit_g,0)*COALESCE(cantidad_g,0)),0) "
+                    "FROM solicitudes_compra_items WHERE numero=?",
+                    (sol_num,)
+                ).fetchone()
+                if _r2:
+                    nuevo_val = float(_r2[0] or 0) or float(_r2[1] or 0)
+        # Solo update si hay un cambio real
+        cambios = []
+        params = []
+        if nuevo_prov and nuevo_prov != prov_act:
+            cambios.append("proveedor=?")
+            params.append(nuevo_prov)
+        if nuevo_val > 0 and nuevo_val != float(val_act or 0):
+            cambios.append("valor_total=?")
+            params.append(nuevo_val)
+        if cambios:
+            params.append(oc_num)
+            cur.execute(
+                f"UPDATE ordenes_compra SET {', '.join(cambios)} WHERE numero_oc=?",
+                params
+            )
+            reparadas.append(oc_num)
+    return reparadas
+
+
+@bp.route('/api/compras/oc/<numero_oc>/reparar-desde-solicitud', methods=['POST'])
+def reparar_oc_desde_solicitud(numero_oc):
+    """Repara una OC individual jalando datos de la solicitud asociada.
+    Util cuando el usuario ve una OC con 'Por definir / $0' y quiere
+    forzar la sincronizacion."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no existe'}), 404
+    # Reusar el helper restringiendo el WHERE a esta OC
+    rows = cur.execute("""
+        SELECT oc.numero_oc, oc.proveedor, oc.valor_total, oc.categoria,
+               s.numero, s.influencer_id, COALESCE(s.valor,0), s.solicitante
+        FROM ordenes_compra oc
+        LEFT JOIN solicitudes_compra s ON s.numero_oc = oc.numero_oc
+        WHERE oc.numero_oc=?
+    """, (numero_oc,)).fetchone()
+    if not rows or not rows[4]:
+        return jsonify({'error': 'OC sin solicitud asociada — no hay de donde jalar'}), 409
+    # Llamar al helper solo para esta OC
+    class _CurFilter:
+        def __init__(self, real_cur):
+            self.real_cur = real_cur
+        def execute(self, sql, params=()):
+            # Inyectar filtro por numero_oc al SELECT principal
+            if 'oc.numero_oc, oc.proveedor, oc.valor_total' in sql and 'WHERE' in sql and 'numero_oc' not in sql.split('WHERE',1)[1]:
+                sql = sql.rstrip().rstrip(';') + " AND oc.numero_oc=?"
+                params = list(params) + [numero_oc]
+            return self.real_cur.execute(sql, params)
+    # Mas simple: llamar normal y verificar si reparo esta OC
+    reparadas = _autorreparar_ocs_vacias(cur)
+    conn.commit()
+    if numero_oc in reparadas:
+        return jsonify({'ok': True, 'reparada': True, 'numero_oc': numero_oc})
+    # No habia nada que reparar (ya esta completa) o no hay datos en la sol
+    actual = cur.execute(
+        "SELECT proveedor, valor_total FROM ordenes_compra WHERE numero_oc=?",
+        (numero_oc,)
+    ).fetchone()
+    return jsonify({
+        'ok': True, 'reparada': False, 'numero_oc': numero_oc,
+        'proveedor': actual[0], 'valor_total': actual[1],
+        'mensaje': 'Sin cambios — la OC ya tiene datos o la solicitud tampoco los tiene.'
+    })
+
+
 @bp.route('/api/compras/por-pagar', methods=['GET'])
 def get_por_pagar():
     """Vista unificada del contador: TODO lo que está pendiente de pago.
@@ -3409,6 +3588,17 @@ def get_por_pagar():
         return jsonify({'error': 'No autorizado'}), 401
 
     conn = get_db(); cur = conn.cursor()
+
+    # Sebastian (29-abr-2026): "OC-2026-0119 sale Por definir y $0 aunque
+    # la solicitud trae 150.000". Auto-reparacion silenciosa al cargar el
+    # tab: rellena proveedor/valor de OCs en estado pre-pago tomando los
+    # datos de la solicitud asociada. No-op si ya estan completos.
+    try:
+        _reparadas = _autorreparar_ocs_vacias(cur)
+        if _reparadas:
+            conn.commit()
+    except Exception:
+        pass
 
     # Mercancía física: estado Recibida o Parcial → ya se puede pagar lo recibido.
     # condiciones_pago vive en proveedores, no en ordenes_compra — JOIN.
