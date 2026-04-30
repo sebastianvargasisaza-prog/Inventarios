@@ -3219,6 +3219,65 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE calidad_micro_resultados ADD COLUMN deadline_resultado TEXT",
         "CREATE INDEX IF NOT EXISTS idx_cmr_envasado ON calidad_micro_resultados(envasado_id)",
     ]),
+    (66, "planta polish: perfil riesgo arrastre + auto_plan_cron_state + asistente acciones", [
+        # Sebastian (30-abr-2026): "termina de hacer todo lo que falta entrégame
+        # cuando ya sea perfecta" — piezas finales del módulo planta:
+        # 1. Perfil de riesgo por producto (color/pigmento/viscosidad) para
+        #    detectar arrastre crítico (pigmento → claro = limpieza obligatoria)
+        # 2. Estado del cron (start/stop desde UI sin tocar env vars)
+        # 3. Log de acciones del asistente Claude
+        """CREATE TABLE IF NOT EXISTS producto_perfil_riesgo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL UNIQUE,
+            tiene_pigmento INTEGER NOT NULL DEFAULT 0,
+            color_descripcion TEXT,
+            es_acido INTEGER NOT NULL DEFAULT 0,
+            requiere_asepsia_extra INTEGER NOT NULL DEFAULT 0,
+            riesgo_arrastre_pct INTEGER NOT NULL DEFAULT 5,
+            notas TEXT,
+            actualizado_en TEXT
+        )""",
+        # Seed con perfiles conocidos (Sebastian, brief notas presentaciones)
+        """INSERT OR IGNORE INTO producto_perfil_riesgo
+           (producto_nombre, tiene_pigmento, color_descripcion, es_acido, requiere_asepsia_extra, riesgo_arrastre_pct, notas) VALUES
+           ('MAXLASH',                              1, 'negro/oscuro', 0, 1, 90, 'Pigmento intenso — limpieza profunda obligatoria después'),
+           ('CONTORNO DE OJOS RETINALDEHIDO 0.05%', 0, 'amarillo claro', 0, 1, 30, 'Retinaldehído — sensible a luz/oxidación'),
+           ('SUERO DE RETINALDEHIDO 0.05%',         0, 'amarillo claro', 0, 1, 30, 'Retinaldehído — sensible a luz/oxidación'),
+           ('Suero RETINAL +',                      0, 'amarillo claro', 0, 1, 30, 'Retinaldehído — sensible a luz/oxidación'),
+           ('SUERO ANTIOXIDANTE VITAMINA C+B3',     0, 'transparente/amarillo', 1, 0, 20, 'Vit C oxida — proteger de luz'),
+           ('SUERO DE VITAMINA C+ FORMULA NUEVA',   0, 'transparente/amarillo', 1, 0, 20, 'Vit C oxida'),
+           ('SUERO ANTIOXIDANTE RENOVA C10',        0, 'transparente/amarillo', 1, 0, 20, 'Vit C oxida'),
+           ('SUERO EXFOLIANTE NOVA PHA',            0, 'transparente', 1, 0, 25, 'Ácido — controlar pH'),
+           ('Suero Exfoliante BHA 2%',              0, 'transparente', 1, 0, 25, 'BHA ácido'),
+           ('LIMPIADOR FACIAL BHA 2%',              0, 'transparente', 1, 0, 20, 'BHA ácido'),
+           ('LIMPIADOR ILUMINADOR ACIDO KOJICO',    0, 'transparente claro', 1, 0, 25, 'Ácido kójico'),
+           ('SUERO HIDRATANTE AH 1.5%',             0, 'transparente', 0, 0, 5, 'Sin riesgo arrastre relevante')""",
+
+        """CREATE TABLE IF NOT EXISTS auto_plan_cron_state (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            habilitado INTEGER NOT NULL DEFAULT 0,
+            activado_por TEXT,
+            activado_at TEXT,
+            ultima_ejecucion_at TEXT,
+            proxima_ejecucion_at TEXT,
+            errores_consecutivos INTEGER NOT NULL DEFAULT 0,
+            notas TEXT
+        )""",
+        "INSERT OR IGNORE INTO auto_plan_cron_state (id, habilitado) VALUES (1, 0)",
+
+        """CREATE TABLE IF NOT EXISTS asistente_acciones_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL DEFAULT (datetime('now')),
+            usuario TEXT NOT NULL,
+            pregunta TEXT,
+            tool_invocado TEXT,
+            tool_args TEXT,
+            tool_resultado TEXT,
+            exitoso INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_aal_ts ON asistente_acciones_log(ts DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_aal_usuario ON asistente_acciones_log(usuario, ts DESC)",
+    ]),
     (65, "planta auto-plan: configs SKU/MP/email/conteo + log runs", [
         # Sebastian (30-abr-2026): "Vitamina C mensual, suero AH 90 días para
         # 90 días, lotes típicos 90kg, MP mínimo 30d ideal 60d, envases mínimo

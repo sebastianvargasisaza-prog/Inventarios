@@ -203,8 +203,34 @@ def _html_agenda_operario(operario, agenda_dia):
 # Job principal del cron
 # ───────────────────────────────────────────────────────────────────────
 
+def _notif_admin_in_app(plan, resultado):
+    """Notifica a admins via push_notif_multi cuando hay actividad."""
+    try:
+        from blueprints.notif import push_notif_multi
+        n_prod = len(resultado.get('producciones_creadas', []))
+        n_compras = len(resultado.get('compras_creadas', []))
+        n_alertas = len(plan.get('alertas', []))
+        if not (n_prod or n_compras or n_alertas):
+            return
+        titulo = f'🤖 Auto-Plan ejecutado · {n_prod} prods, {n_compras} SOLs'
+        body = f'Plan generado a las {datetime.now().strftime("%H:%M")}.'
+        if n_alertas:
+            body += f' ⚠ {n_alertas} alerta(s) crítica(s).'
+        push_notif_multi(
+            ['sebastian', 'alejandro', 'catalina'],
+            'planta',
+            titulo,
+            body=body,
+            link='/inventarios#programacion',
+            remitente='AUTO-PLAN',
+            importante=(n_alertas > 0),
+        )
+    except Exception as e:
+        log.warning(f'notif in-app fallo: {e}')
+
+
 def ejecutar_auto_plan_diario(app):
-    """Función llamada por el cron. Genera + aplica + envía emails."""
+    """Función llamada por el cron. Genera + aplica + envía emails + notif in-app."""
     with app.app_context():
         log.info('[auto-plan-cron] Iniciando ejecución diaria...')
         try:
@@ -213,6 +239,7 @@ def ejecutar_auto_plan_diario(app):
 
             plan = generar_plan(horizonte_dias=60, tipo='auto', usuario='cron')
             resultado = aplicar_plan(plan, usuario='cron')
+            _notif_admin_in_app(plan, resultado)
 
             # Cargar configs de email
             conn = get_db(); c = conn.cursor()
@@ -287,30 +314,64 @@ def _segundos_hasta_proximo_cron():
     return max(60, int(delta))
 
 
+def _cron_habilitado_en_db(app):
+    """Lee auto_plan_cron_state.habilitado desde la DB."""
+    with app.app_context():
+        try:
+            from database import get_db
+            r = get_db().execute(
+                "SELECT habilitado FROM auto_plan_cron_state WHERE id=1"
+            ).fetchone()
+            return bool(r[0]) if r else False
+        except Exception:
+            return False
+
+
 def _loop_cron(app):
-    """Loop infinito del cron. Duerme hasta el próximo 7am L-V y ejecuta."""
+    """Loop infinito del cron. Duerme hasta el próximo 7am L-V y ejecuta.
+    Verifica auto_plan_cron_state.habilitado en cada ciclo."""
     log.info('[auto-plan-cron] Loop iniciado')
     import time as time_mod
     while True:
         secs = _segundos_hasta_proximo_cron()
         log.info(f'[auto-plan-cron] Durmiendo {secs}s hasta próxima ejecución')
         time_mod.sleep(secs)
+        # Verificar que sigue habilitado en DB antes de ejecutar
+        if not _cron_habilitado_en_db(app):
+            log.info('[auto-plan-cron] Skipped — habilitado=0 en DB')
+            continue
         try:
             ejecutar_auto_plan_diario(app)
+            try:
+                from database import get_db
+                with app.app_context():
+                    get_db().execute(
+                        "UPDATE auto_plan_cron_state SET ultima_ejecucion_at=datetime('now'), errores_consecutivos=0 WHERE id=1"
+                    )
+                    get_db().commit()
+            except Exception:
+                pass
         except Exception as e:
             log.exception(f'[auto-plan-cron] excepción: {e}')
+            try:
+                with app.app_context():
+                    from database import get_db
+                    get_db().execute(
+                        "UPDATE auto_plan_cron_state SET errores_consecutivos=errores_consecutivos+1 WHERE id=1"
+                    )
+                    get_db().commit()
+            except Exception:
+                pass
 
 
 def iniciar_cron(app):
     """Lanza el thread del cron al arranque de la app.
     Idempotente: si ya está corriendo no hace nada.
-    Solo activo si AUTO_PLAN_CRON_ENABLED env var está set ('1' o 'true')."""
-    if os.environ.get('AUTO_PLAN_CRON_ENABLED', '').lower() not in ('1', 'true', 'yes'):
-        log.info('[auto-plan-cron] Deshabilitado (AUTO_PLAN_CRON_ENABLED no set)')
-        return
+    El thread siempre arranca, pero verifica auto_plan_cron_state.habilitado
+    antes de ejecutar (toggle desde UI)."""
     if getattr(app, '_auto_plan_cron_started', False):
         return
     t = threading.Thread(target=_loop_cron, args=(app,), daemon=True)
     t.start()
     app._auto_plan_cron_started = True
-    log.info('[auto-plan-cron] Cron arrancado')
+    log.info('[auto-plan-cron] Cron thread arrancado (ejecución gobernada por auto_plan_cron_state.habilitado)')

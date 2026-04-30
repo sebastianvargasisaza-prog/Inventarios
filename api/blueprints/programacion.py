@@ -7485,6 +7485,56 @@ def _gate_sala_libre(produccion, conn):
             'accion': None}
 
 
+def _gate_arrastre_pigmento(produccion, conn):
+    """Gate: detecta arrastre de producto con pigmento al siguiente producto claro.
+    Sebastian (30-abr-2026): pigmento → claro = limpieza profunda obligatoria."""
+    if not produccion.get('area_id'):
+        return None
+    # Producto actual: ¿tiene perfil de riesgo?
+    perfil_actual = conn.execute("""
+        SELECT tiene_pigmento, color_descripcion, riesgo_arrastre_pct
+        FROM producto_perfil_riesgo
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+    """, (produccion['producto'],)).fetchone()
+    pigmento_actual = bool(perfil_actual[0]) if perfil_actual else False
+
+    # Última producción en la misma sala antes de ESTA
+    prev = conn.execute("""
+        SELECT pp.producto, pp.fecha_programada
+        FROM produccion_programada pp
+        WHERE pp.area_id = ?
+          AND pp.id != ?
+          AND pp.fecha_programada < COALESCE(?, date('now', '+1 days'))
+          AND pp.estado IN ('completado','en_proceso')
+        ORDER BY pp.fecha_programada DESC LIMIT 1
+    """, (produccion['area_id'], produccion['id'], produccion.get('fecha_programada'))).fetchone()
+    if not prev:
+        return None
+    perfil_prev = conn.execute("""
+        SELECT tiene_pigmento, color_descripcion, riesgo_arrastre_pct
+        FROM producto_perfil_riesgo
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+    """, (prev[0],)).fetchone()
+    if not perfil_prev:
+        return None
+    pigmento_prev = bool(perfil_prev[0])
+    riesgo_prev = perfil_prev[2] or 0
+
+    # Caso crítico: previo tenía pigmento Y actual no
+    if pigmento_prev and not pigmento_actual and riesgo_prev >= 50:
+        return {'gate': 'arrastre_pigmento', 'status': 'blocker',
+                'titulo': '🎨 Riesgo de arrastre',
+                'mensaje': f'Producto previo "{prev[0]}" tiene pigmento ({perfil_prev[1] or ""}). Limpieza profunda obligatoria antes de iniciar.',
+                'accion': 'confirmar_limpieza',
+                'meta': {'producto_previo': prev[0], 'fecha_previo': prev[1], 'riesgo_pct': riesgo_prev}}
+    if pigmento_prev and not pigmento_actual and riesgo_prev >= 25:
+        return {'gate': 'arrastre_pigmento', 'status': 'warn',
+                'titulo': '🎨 Posible arrastre',
+                'mensaje': f'Producto previo "{prev[0]}" pudo dejar residuo. Confirmar limpieza intermedia.',
+                'accion': 'confirmar_limpieza'}
+    return None
+
+
 def _gate_sala_limpia(produccion, conn):
     """Gate: la sala tuvo limpieza profunda en los últimos 7 días.
     Sebastian (30-abr-2026): "area sucia confirmar limpieza"."""
@@ -7699,8 +7749,9 @@ def planta_preflight(produccion_id):
     produccion = dict(zip(cols, pp))
 
     gates = []
-    for fn in (_gate_sala_asignada, _gate_sala_libre, _gate_sala_limpia,
-               _gate_mp_disponibles, _gate_envases_listos, _gate_operarios):
+    for fn in (_gate_sala_asignada, _gate_sala_libre, _gate_arrastre_pigmento,
+               _gate_sala_limpia, _gate_mp_disponibles, _gate_envases_listos,
+               _gate_operarios):
         try:
             g = fn(produccion, c)
             if g:

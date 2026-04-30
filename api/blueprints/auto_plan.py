@@ -59,49 +59,101 @@ def _proximo_dia_acond(desde_fecha):
     return f
 
 
-def _velocidad_y_tendencia(c, sku):
-    """Velocidad de venta diaria + tendencia basada en regresión lineal
-    sobre últimos 30 días Shopify. Devuelve (velocidad_actual, factor_tendencia).
+def _ventas_diarias_por_sku(c, sku, dias=60):
+    """Devuelve [(fecha, unidades)] de ventas del SKU en los últimos N días.
 
-    factor_tendencia:
-      1.0 = estable
-      >1 = subiendo (ej. 1.30 = +30%)
-      <1 = bajando
+    Detecta automáticamente la tabla disponible:
+      1) ventas_diarias (sku, fecha, cantidad) — si existe
+      2) animus_shopify_orders.sku_items (JSON parse) — caso real Espagiria
+      3) ordenes_shopify_items legacy
     """
-    # Buscar tabla con ventas históricas — varía por entorno
-    # Usa 'ventas_diarias' o 'shopify_ventas_diarias' o calcula desde ordenes
+    # Estrategia 1: tabla agregada
+    try:
+        r = c.execute("""
+            SELECT fecha, COALESCE(SUM(cantidad),0)
+            FROM ventas_diarias WHERE sku=? AND fecha >= date('now','-' || ? || ' days')
+            GROUP BY fecha ORDER BY fecha
+        """, (sku, dias)).fetchall()
+        if r:
+            return [(row[0], float(row[1] or 0)) for row in r]
+    except Exception:
+        pass
+
+    # Estrategia 2: animus_shopify_orders con sku_items JSON
     try:
         rows = c.execute("""
-            SELECT fecha, COALESCE(SUM(cantidad),0)
-            FROM ventas_diarias
-            WHERE sku=? AND fecha >= date('now','-30 days')
-            GROUP BY fecha ORDER BY fecha
-        """, (sku,)).fetchall()
+            SELECT date(creado_en), sku_items
+            FROM animus_shopify_orders
+            WHERE creado_en >= date('now','-' || ? || ' days')
+              AND sku_items IS NOT NULL AND sku_items != ''
+        """, (dias,)).fetchall()
+        if rows:
+            por_dia = {}
+            for fecha, sku_items_json in rows:
+                if not fecha or not sku_items_json:
+                    continue
+                try:
+                    items = json.loads(sku_items_json) if isinstance(sku_items_json, str) else sku_items_json
+                except Exception:
+                    continue
+                if not isinstance(items, list):
+                    continue
+                cantidad = 0
+                for it in items:
+                    sk = (it.get('sku') or it.get('SKU') or '').strip()
+                    if sk == sku:
+                        cantidad += float(it.get('cantidad') or it.get('quantity') or 0)
+                if cantidad > 0:
+                    por_dia[fecha] = por_dia.get(fecha, 0) + cantidad
+            return sorted([(f, q) for f, q in por_dia.items()])
     except Exception:
-        rows = []
+        pass
+
+    # Estrategia 3: ordenes_shopify_items legacy
+    try:
+        r = c.execute("""
+            SELECT date(fecha), COALESCE(SUM(cantidad),0)
+            FROM ordenes_shopify_items
+            WHERE sku=? AND fecha >= date('now','-' || ? || ' days')
+            GROUP BY date(fecha) ORDER BY 1
+        """, (sku, dias)).fetchall()
+        if r:
+            return [(row[0], float(row[1] or 0)) for row in r]
+    except Exception:
+        pass
+
+    return []
+
+
+def _velocidad_y_tendencia(c, sku):
+    """Velocidad de venta diaria + factor de tendencia (regresión 30d).
+
+    factor_tendencia:
+      1.0 = estable · >1 = subiendo · <1 = bajando
+    """
+    rows = _ventas_diarias_por_sku(c, sku, dias=30)
 
     if not rows:
-        # Fallback: usar consumo histórico simple
+        # Sin datos. Fallback: consumo desde stock_pt (movimientos negativos = ventas)
         try:
             r = c.execute("""
-                SELECT COALESCE(SUM(cantidad),0)/30.0
-                FROM ventas_diarias
-                WHERE sku=? AND fecha >= date('now','-30 days')
+                SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?
             """, (sku,)).fetchone()
-            return (float(r[0] or 0), 1.0)
+            stock_actual = float(r[0] if r else 0)
+            # Si tiene stock, asumimos rotación trimestral conservadora (1 unit/dia)
+            return (max(0.5, stock_actual / 90.0), 1.0)
         except Exception:
             return (0.0, 1.0)
 
     n = len(rows)
     if n < 5:
-        avg = sum(r[1] for r in rows) / n if n else 0
+        avg = sum(q for _, q in rows) / max(1, n)
         return (float(avg), 1.0)
 
-    # Regresión lineal y = a + bx (x=día_idx, y=ventas)
+    # Regresión lineal sobre días reales (no índices) para captar tendencia
     xs = list(range(n))
-    ys = [float(r[1]) for r in rows]
-    sum_x = sum(xs)
-    sum_y = sum(ys)
+    ys = [q for _, q in rows]
+    sum_x = sum(xs); sum_y = sum(ys)
     sum_xy = sum(x * y for x, y in zip(xs, ys))
     sum_xx = sum(x * x for x in xs)
     try:
@@ -113,9 +165,11 @@ def _velocidad_y_tendencia(c, sku):
     velocidad_actual = max(0.0, a + b * (n - 1))
     velocidad_inicial = max(0.01, a + b * 0)
     factor = velocidad_actual / velocidad_inicial if velocidad_inicial > 0 else 1.0
-    # Cap razonable
     factor = max(0.3, min(factor, 3.0))
-    return (velocidad_actual, factor)
+    # Velocidad observada simple (suma / días totales) como fallback
+    obs = sum(ys) / 30.0
+    velocidad_final = max(velocidad_actual, obs)
+    return (velocidad_final, factor)
 
 
 def _stock_actual_pt(c, producto):
@@ -827,25 +881,35 @@ def asistente_planta():
         ctx = {}
         log.warning(f'asistente: no se pudo armar contexto: {e}')
 
-    system_prompt = f"""Eres el asistente experto de planta para Espagiria Laboratorios (HHA Group), un laboratorio cosmético colombiano con certificación INVIMA. La planta produce sueros, hidratantes, limpiadores, contornos y similares.
+    es_admin = user in ADMIN_USERS
+    system_prompt = f"""Eres EOS Planta, el asistente experto de planta para Espagiria Laboratorios (HHA Group), laboratorio cosmético colombiano certificado INVIMA. Te creó Claude. Eres preciso, breve y útil — operativo, no chatbot genérico.
 
-Tu nombre es EOS Planta y te creó Claude. Eres preciso, breve y útil — un asistente operativo, no un chatbot genérico.
-
-CONTEXTO ACTUAL DE LA PLANTA (snapshot {datetime.now().isoformat()}):
+CONTEXTO ACTUAL (snapshot {datetime.now().isoformat()}):
 {json.dumps(ctx, ensure_ascii=False, indent=2)}
 
-REGLAS:
+REGLAS DE PLANEACIÓN:
 - Vit C → cadencia 30d (oxida)
 - Suero AH 1.5% → cadencia 90d, lote 90kg
-- L/M/V producir, Ma/Ju acondicionar/envasar/conteo cíclico
-- MP mínimo 30d, ideal 60d
-- Envases mínimo 90d (China lead 180d)
+- L/M/V producir · Ma/Ju acondicionar/envasar/conteo cíclico
+- MP mínimo 30d, ideal 60d · Envases mínimo 90d (China lead 180d)
 - 4 operarios: Mayerlin (dispensación fija), Camilo, Milton, Sebastián M.
 - Áreas: FAB1/2/3, ENV1/2, DISP, LAV, ESC1, ACOND, FAB_FLOAT, CC, RECEP
 
-Responde en español, conciso (máximo 150 palabras salvo que pidan detalle). Si te piden hacer algo (programar, crear, ejecutar), describe los pasos pero NO ejecutas — solo Sebastian/admin pueden ejecutar.
+ACCIONES DISPONIBLES (puedes sugerir al usuario que las dispare):
+- Ejecutar Auto-Plan ahora → /api/auto-plan/aplicar (solo admin)
+- Ver alertas críticas activas → tab "Plan Semanal" o /api/asistente/tool/listar_alertas
+- Ver producciones próximas → tab "Plan Semanal" o /api/asistente/tool/listar_producciones_proximas
+- Configurar cadencia → tab "🤖 Auto-Plan" → "Cadencias por SKU"
+- Activar/desactivar cron → tab "🤖 Auto-Plan" → toggle (solo admin)
 
-Usuario actual: {user}
+Usuario actual: {user} ({'ADMIN' if es_admin else 'usuario'})
+
+INSTRUCCIONES:
+- Responde en español, conciso (máximo 200 palabras salvo que pidan detalle).
+- Si la pregunta es operativa (cuánto, cuándo, dónde), USA el contexto del snapshot para contestar con datos reales.
+- Si te piden hacer algo destructivo (ejecutar, crear), describe los pasos y dile dónde hacer click — NO inventes acciones.
+- Si no hay datos suficientes, dilo: "no tengo info sobre X — revisa Y".
+- Si detectas riesgo (alertas críticas, MP en déficit, sala sin limpieza), señálalo proactivamente.
 """
 
     messages = []
@@ -889,6 +953,312 @@ Usuario actual: {user}
     except Exception as e:
         log.warning(f'Asistente fallo: {e}')
         return jsonify({'error': str(e)}), 500
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Cron control desde UI (sin env var)
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/auto-plan/cron/state', methods=['GET'])
+def cron_state():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT habilitado, activado_por, activado_at, ultima_ejecucion_at, errores_consecutivos, notas FROM auto_plan_cron_state WHERE id=1").fetchone()
+    if not r:
+        return jsonify({'habilitado': False})
+    return jsonify({
+        'habilitado': bool(r[0]),
+        'activado_por': r[1],
+        'activado_at': r[2],
+        'ultima_ejecucion_at': r[3],
+        'errores_consecutivos': r[4],
+        'notas': r[5],
+    })
+
+
+@bp.route('/api/auto-plan/cron/toggle', methods=['POST'])
+def cron_toggle():
+    u, err, code = _auth()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    d = request.json or {}
+    habilitar = bool(d.get('habilitar'))
+    conn = get_db(); c = conn.cursor()
+    if habilitar:
+        c.execute("""
+            UPDATE auto_plan_cron_state SET
+              habilitado=1, activado_por=?, activado_at=datetime('now'),
+              errores_consecutivos=0, notas=?
+            WHERE id=1
+        """, (u, 'Activado desde UI'))
+    else:
+        c.execute("UPDATE auto_plan_cron_state SET habilitado=0, notas=? WHERE id=1",
+                  ('Desactivado desde UI',))
+    conn.commit()
+    return jsonify({'ok': True, 'habilitado': habilitar})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Email test real (envía email de prueba al rol/email)
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/auto-plan/configs/emails/test', methods=['POST'])
+def email_test():
+    u, err, code = _auth()
+    if err:
+        return err, code
+    d = request.json or {}
+    email_dest = (d.get('email') or '').strip()
+    if not email_dest:
+        return jsonify({'error': 'email requerido'}), 400
+    asunto = '🤖 Test EOS Auto-Plan'
+    html = f"""<!DOCTYPE html>
+<html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+    <div style="background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;padding:20px">
+      <h2 style="margin:0">✅ Email funcionando</h2>
+      <p style="margin:6px 0 0;opacity:.9;font-size:13px">EOS · Auto-Plan Maestro</p>
+    </div>
+    <div style="padding:20px;color:#1f2937;font-size:14px">
+      <p>Hola,</p>
+      <p>Este es un email de prueba enviado desde el módulo Auto-Plan de EOS.</p>
+      <p>Si recibes esto, los emails automáticos del cron diario funcionarán correctamente.</p>
+      <p style="margin-top:18px;font-size:12px;color:#6b7280">Disparado por: <b>{u}</b><br>Fecha: {datetime.now().isoformat()}</p>
+    </div>
+  </div>
+</body></html>"""
+    try:
+        import threading, sys, os as _os
+        sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        from notificaciones import SistemaNotificaciones
+        notif = SistemaNotificaciones()
+        threading.Thread(
+            target=notif._enviar_email,
+            args=(asunto, html, [email_dest]),
+            daemon=True
+        ).start()
+        return jsonify({'ok': True, 'mensaje': f'Email enviado a {email_dest} (puede tardar 30s)'})
+    except Exception as e:
+        return jsonify({'error': f'Error enviando email: {e}'}), 500
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Conteo cíclico — endpoints
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/conteo-ciclico/calendario', methods=['GET'])
+def conteo_calendario():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 30))
+    except Exception:
+        dias = 30
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, fecha, material_id, material_nombre, categoria_abc,
+               asignado_a, estado, stock_esperado_g, stock_real_g, diferencia_g, notas
+        FROM conteo_ciclico_calendario
+        WHERE fecha BETWEEN date('now') AND date('now', '+' || ? || ' days')
+        ORDER BY fecha, categoria_abc, material_nombre
+    """, (dias,)).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    pendientes = sum(1 for it in items if it['estado'] == 'programado')
+    return jsonify({'items': items, 'total': len(items), 'pendientes': pendientes})
+
+
+@bp.route('/api/conteo-ciclico/<int:item_id>/registrar', methods=['POST'])
+def conteo_registrar(item_id):
+    u, err, code = _auth()
+    if err:
+        return err, code
+    d = request.json or {}
+    stock_real = d.get('stock_real_g')
+    if stock_real is None:
+        return jsonify({'error': 'stock_real_g requerido'}), 400
+    stock_real = float(stock_real)
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT material_id, stock_esperado_g FROM conteo_ciclico_calendario WHERE id=?",
+        (item_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Conteo no existe'}), 404
+    material_id, stock_esperado = row
+    # Calcular esperado si no está seteado: sumar movimientos
+    if stock_esperado is None:
+        r = c.execute("""
+            SELECT COALESCE(SUM(
+                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
+                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                     ELSE 0 END
+            ), 0) FROM movimientos WHERE material_id=?
+        """, (material_id,)).fetchone()
+        stock_esperado = float(r[0] if r else 0)
+    diferencia = stock_real - (stock_esperado or 0)
+    pct = abs(diferencia) / max(1, stock_esperado or 1) * 100
+    estado = 'con_diferencia' if pct > 5 else 'cerrado'
+    c.execute("""
+        UPDATE conteo_ciclico_calendario SET
+          stock_esperado_g=?, stock_real_g=?, diferencia_g=?,
+          estado=?, terminado_at=datetime('now'), terminado_por=?,
+          notas=COALESCE(?, notas)
+        WHERE id=?
+    """, (stock_esperado, stock_real, diferencia, estado, u, d.get('notas'), item_id))
+    # Actualizar último conteo en config
+    c.execute("""
+        INSERT OR REPLACE INTO conteo_ciclico_config
+          (material_id, categoria_abc, frecuencia_dias, ultimo_conteo_fecha,
+           ultimo_conteo_diferencia, requiere_validacion, actualizado_en)
+        SELECT material_id, COALESCE(categoria_abc,'C'), 90, date('now'), ?,
+               CASE WHEN ABS(?) > stock_esperado_g * 0.05 THEN 1 ELSE 0 END,
+               datetime('now')
+        FROM conteo_ciclico_calendario WHERE id=?
+    """, (diferencia, diferencia, item_id))
+    conn.commit()
+    return jsonify({'ok': True, 'diferencia_g': diferencia, 'estado': estado, 'pct_diferencia': round(pct, 2)})
+
+
+@bp.route('/api/conteo-ciclico/configs', methods=['GET', 'POST'])
+def conteo_configs():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        c.execute("""
+            INSERT OR REPLACE INTO conteo_ciclico_config
+              (material_id, categoria_abc, frecuencia_dias, actualizado_en)
+            VALUES (?, ?, ?, datetime('now'))
+        """, (d.get('material_id'), d.get('categoria_abc') or 'C',
+              int(d.get('frecuencia_dias') or 90)))
+        conn.commit()
+        return jsonify({'ok': True})
+    rows = c.execute(
+        "SELECT * FROM conteo_ciclico_config ORDER BY categoria_abc, material_id"
+    ).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'configs': [dict(zip(cols, r)) for r in rows]})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Perfil riesgo
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/auto-plan/configs/perfil-riesgo', methods=['GET', 'POST'])
+def perfil_riesgo():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        c.execute("""
+            INSERT OR REPLACE INTO producto_perfil_riesgo
+              (producto_nombre, tiene_pigmento, color_descripcion, es_acido,
+               requiere_asepsia_extra, riesgo_arrastre_pct, notas, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (
+            d.get('producto_nombre'),
+            1 if d.get('tiene_pigmento') else 0,
+            d.get('color_descripcion'),
+            1 if d.get('es_acido') else 0,
+            1 if d.get('requiere_asepsia_extra') else 0,
+            int(d.get('riesgo_arrastre_pct') or 5),
+            d.get('notas'),
+        ))
+        conn.commit()
+        return jsonify({'ok': True})
+    rows = c.execute(
+        "SELECT * FROM producto_perfil_riesgo ORDER BY producto_nombre"
+    ).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'perfiles': [dict(zip(cols, r)) for r in rows]})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Asistente accionable — tools
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/asistente/tool/<tool_name>', methods=['POST'])
+def asistente_tool(tool_name):
+    """Endpoints de tools que el asistente Claude puede invocar."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    args = request.json or {}
+    conn = get_db(); c = conn.cursor()
+
+    resultado = {}
+    exitoso = True
+    try:
+        if tool_name == 'listar_alertas':
+            # Buscar alertas activas (last auto_plan_run + envases déficit)
+            r = c.execute("""
+                SELECT ejecutado_at, alertas_criticas FROM auto_plan_runs
+                ORDER BY id DESC LIMIT 1
+            """).fetchone()
+            resultado = {
+                'ultimo_run': r[0] if r else None,
+                'alertas_criticas': r[1] if r else 0,
+            }
+        elif tool_name == 'listar_producciones_proximas':
+            dias = int(args.get('dias', 14))
+            rows = c.execute("""
+                SELECT producto, fecha_programada, lotes, estado
+                FROM produccion_programada
+                WHERE fecha_programada >= date('now')
+                  AND fecha_programada <= date('now', '+' || ? || ' days')
+                  AND estado IN ('pendiente','en_proceso')
+                ORDER BY fecha_programada
+            """, (dias,)).fetchall()
+            resultado = {
+                'producciones': [dict(zip(['producto', 'fecha', 'lotes', 'estado'], r)) for r in rows],
+                'total': len(rows),
+            }
+        elif tool_name == 'capacidad_producir_sku':
+            producto = args.get('producto', '').strip()
+            fh = c.execute(
+                "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                (producto,)
+            ).fetchone()
+            if not fh:
+                resultado = {'error': 'producto sin fórmula'}
+            else:
+                lote_kg = fh[0] or 0
+                resultado = {'producto': producto, 'lote_kg': lote_kg, 'puede': lote_kg > 0}
+        elif tool_name == 'ejecutar_auto_plan':
+            if user not in ADMIN_USERS:
+                exitoso = False
+                resultado = {'error': 'Solo admin puede ejecutar auto-plan'}
+            else:
+                from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario
+                from flask import current_app
+                import threading
+                threading.Thread(
+                    target=ejecutar_auto_plan_diario,
+                    args=(current_app._get_current_object(),),
+                    daemon=True
+                ).start()
+                resultado = {'mensaje': 'Auto-plan ejecutándose en background'}
+        else:
+            exitoso = False
+            resultado = {'error': f'tool desconocido: {tool_name}'}
+    except Exception as e:
+        exitoso = False
+        resultado = {'error': str(e)}
+
+    # Log la acción
+    try:
+        c.execute("""
+            INSERT INTO asistente_acciones_log
+              (usuario, tool_invocado, tool_args, tool_resultado, exitoso)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user, tool_name, json.dumps(args, ensure_ascii=False)[:500],
+              json.dumps(resultado, ensure_ascii=False)[:1000], 1 if exitoso else 0))
+        conn.commit()
+    except Exception:
+        pass
+
+    return jsonify({'ok': exitoso, 'resultado': resultado})
 
 
 @bp.route('/api/auto-plan/configs/emails', methods=['GET', 'POST'])

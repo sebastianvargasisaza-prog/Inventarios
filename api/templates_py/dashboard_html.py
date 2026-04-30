@@ -1356,6 +1356,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 2px 8px rgba(124,58,237,.4)">
       &#129302; Auto-Plan
     </button>
+    <button id="prog-tab-conteo" onclick="switchProgTab('conteo')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#128203; Conteo cíclico
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5730,6 +5734,14 @@ function _renderProgramacion(d){
           <button onclick="apEjecutar()" style="background:#fff;color:#7c3aed;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">&#128293; Ejecutar AHORA</button>
         </div>
       </div>
+      <!-- Cron toggle -->
+      <div style="margin-top:14px;padding:12px;background:rgba(255,255,255,.12);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div style="font-size:12px;color:#fff">
+          <b>⏰ Cron diario L-V 7am</b>:
+          <span id="ap-cron-status" style="margin-left:6px">cargando...</span>
+        </div>
+        <button id="ap-cron-toggle-btn" onclick="apCronToggle()" style="background:#fff;color:#7c3aed;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">Activar</button>
+      </div>
     </div>
 
     <!-- Sub-tabs -->
@@ -5829,6 +5841,42 @@ function _renderProgramacion(d){
       </div>
     </div>
   </div><!-- /ptab-autoplan -->
+
+  <!-- ── ptab-conteo: Conteo cíclico ABC (Ma/Ju) ── -->
+  <div id="ptab-conteo" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#128203; Conteo Cíclico ABC</h2>
+        <p style="color:#666;font-size:13px;margin:0">Materiales contados rotativamente martes/jueves. Si stock real ≠ esperado >5% → tarea "verificar existencia real" + alerta a compras.</p>
+      </div>
+      <button onclick="cargarConteoCalendario()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">&#x21bb; Actualizar</button>
+    </div>
+
+    <div id="cc-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>
+    <div id="cc-lista"></div>
+
+    <!-- Modal registrar conteo -->
+    <div id="modal-cc-reg" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
+        <h3 id="cc-reg-titulo" style="margin:0 0 12px;color:#1a4a7a">📋 Registrar conteo</h3>
+        <input id="cc-reg-id" type="hidden">
+        <div style="display:grid;gap:10px">
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Stock real contado (g)</label>
+            <input id="cc-reg-stock" type="number" step="0.01" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;font-weight:700">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Notas (opcional)</label>
+            <textarea id="cc-reg-notas" rows="3" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="document.getElementById('modal-cc-reg').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="ccRegistrar()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Registrar</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ptab-conteo -->
 
   <!-- ── Asistente conversacional EOS Planta · Claude API ── -->
   <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:flex;align-items:center;justify-content:center">🤖</button>
@@ -7059,6 +7107,7 @@ async function ckMarcar(itemId, estado){
       var el_pf  = document.getElementById('ptab-preflight');
       var el_ps  = document.getElementById('ptab-plansem');
       var el_ap  = document.getElementById('ptab-autoplan');
+      var el_cc  = document.getElementById('ptab-conteo');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
@@ -7070,6 +7119,7 @@ async function ckMarcar(itemId, estado){
       if(el_pf)  el_pf.style.display  = tab==='preflight' ? 'block' : 'none';
       if(el_ps)  el_ps.style.display  = tab==='plansem'   ? 'block' : 'none';
       if(el_ap)  el_ap.style.display  = tab==='autoplan'  ? 'block' : 'none';
+      if(el_cc)  el_cc.style.display  = tab==='conteo'    ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -7086,6 +7136,8 @@ async function ckMarcar(itemId, estado){
       if(beq) { beq.style.background = tab==='equipos' ? '#7c3aed' : '#e2e8f0'; beq.style.color = tab==='equipos' ? '#fff' : '#1a4a7a'; }
       var bpf = document.getElementById('prog-tab-preflight');
       if(bpf) { bpf.style.background = tab==='preflight' ? '#dc2626' : '#e2e8f0'; bpf.style.color = tab==='preflight' ? '#fff' : '#1a4a7a'; }
+      var bcc = document.getElementById('prog-tab-conteo');
+      if(bcc) { bcc.style.background = tab==='conteo' ? '#0f766e' : '#e2e8f0'; bcc.style.color = tab==='conteo' ? '#fff' : '#1a4a7a'; }
       // Plan Semanal: gradient siempre activo (es el botón hero)
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
@@ -7130,6 +7182,10 @@ async function ckMarcar(itemId, estado){
       if(tab==='autoplan'){
         if(el_ap) el_ap.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof apInit==='function') apInit();
+      }
+      if(tab==='conteo'){
+        if(el_cc) el_cc.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarConteoCalendario==='function') cargarConteoCalendario();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -8373,6 +8429,95 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════════
+  // Conteo Cíclico ABC · Ma/Ju
+  // ════════════════════════════════════════════════════════════════════════
+  async function cargarConteoCalendario(){
+    var lista = document.getElementById('cc-lista');
+    var kpis  = document.getElementById('cc-kpis');
+    if(!lista) return;
+    lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/conteo-ciclico/calendario?dias=30');
+      var d = await r.json();
+      var items = d.items || [];
+      var pend = d.pendientes || 0;
+      var contados = items.filter(function(x){return x.estado==='cerrado'}).length;
+      var conDif = items.filter(function(x){return x.estado==='con_diferencia'}).length;
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0f766e;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total programados</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+items.length+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Pendientes</div><div style="font-size:26px;font-weight:800;color:#d97706">'+pend+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Contados OK</div><div style="font-size:26px;font-weight:800;color:#15803d">'+contados+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(conDif?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Con diferencia</div><div style="font-size:26px;font-weight:800;color:'+(conDif?'#dc2626':'#15803d')+'">'+conDif+'</div></div>';
+
+      if(!items.length){
+        lista.innerHTML = '<div style="background:#fef3c7;border:1px solid #fbbf24;color:#92400e;padding:20px;border-radius:10px;text-align:center">⚠ Sin conteos programados. Ejecuta "🔥 Auto-Plan AHORA" en la pestaña 🤖 Auto-Plan para generar el calendario de conteos.</div>';
+        return;
+      }
+      // Agrupar por fecha
+      var porFecha = {};
+      items.forEach(function(it){ porFecha[it.fecha] = porFecha[it.fecha] || []; porFecha[it.fecha].push(it); });
+      var html = '';
+      Object.keys(porFecha).sort().forEach(function(fecha){
+        var dia = new Date(fecha+'T00:00:00').toLocaleDateString('es-CO', {weekday:'long', day:'numeric', month:'short'});
+        html += '<div style="margin-bottom:14px"><h3 style="margin:0 0 8px;color:#0f766e;font-size:14px;text-transform:capitalize">📅 '+_escHTML(dia)+'</h3>';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f9fafb"><tr>'
+          +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th>'
+          +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">ABC</th>'
+          +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Asignado</th>'
+          +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Estado</th>'
+          +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Diferencia</th>'
+          +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Acción</th>'
+          +'</tr></thead><tbody>';
+        porFecha[fecha].forEach(function(it){
+          var abcCol = it.categoria_abc==='A' ? '#dc2626' : (it.categoria_abc==='B' ? '#d97706' : '#15803d');
+          var estCol = it.estado==='cerrado' ? '#15803d' : (it.estado==='con_diferencia' ? '#dc2626' : '#94a3b8');
+          var dif = it.diferencia_g!==null ? (it.diferencia_g>=0?'+':'')+it.diferencia_g.toFixed(0)+'g' : '—';
+          html += '<tr style="border-top:1px solid #f1f5f9">'
+            +'<td style="padding:7px 10px"><b>'+_escHTML(it.material_nombre||it.material_id)+'</b></td>'
+            +'<td style="padding:7px 10px;text-align:center"><span style="background:'+abcCol+'22;color:'+abcCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_escHTML(it.categoria_abc||'C')+'</span></td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(it.asignado_a||'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(it.estado||'')+'</span></td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+(it.estado==='con_diferencia'?'#dc2626':'#0f172a')+';font-weight:700">'+_escHTML(dif)+'</td>'
+            +'<td style="padding:7px 10px;text-align:center">'
+            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escAttr(it.material_nombre||it.material_id)+'\\')" style="background:#0f766e;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+(it.terminado_por||'—')+'</span>')
+            +'</td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+      });
+      lista.innerHTML = html;
+    } catch(e){
+      lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function ccAbrirRegistro(id, nombre){
+    document.getElementById('cc-reg-id').value = id;
+    document.getElementById('cc-reg-titulo').textContent = '📋 Conteo: '+nombre;
+    document.getElementById('cc-reg-stock').value = '';
+    document.getElementById('cc-reg-notas').value = '';
+    document.getElementById('modal-cc-reg').style.display = 'flex';
+    setTimeout(function(){document.getElementById('cc-reg-stock').focus();}, 50);
+  }
+
+  async function ccRegistrar(){
+    var id = document.getElementById('cc-reg-id').value;
+    var stock = parseFloat(document.getElementById('cc-reg-stock').value);
+    if(isNaN(stock) || stock < 0){ alert('Stock real requerido (gramos)'); return; }
+    try {
+      var r = await fetch('/api/conteo-ciclico/'+id+'/registrar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({stock_real_g: stock, notas: document.getElementById('cc-reg-notas').value})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      document.getElementById('modal-cc-reg').style.display = 'none';
+      var msg = 'Conteo registrado · diferencia '+d.diferencia_g.toFixed(0)+'g ('+d.pct_diferencia+'%)';
+      _toast(msg, 1);
+      cargarConteoCalendario();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
   // Auto-Plan Maestro · Sebastian: "la herramienta más avanzada del mundo"
   // Cron L-V 7am · genera producciones + compras + conteos + emails
   // ════════════════════════════════════════════════════════════════════════
@@ -8381,6 +8526,46 @@ async function ckMarcar(itemId, estado){
 
   function apInit(){
     apSwitchSubtab(_AP_SUBTAB);
+    apCronStateRefresh();
+  }
+
+  async function apCronStateRefresh(){
+    try {
+      var r = await fetch('/api/auto-plan/cron/state');
+      var d = await r.json();
+      var span = document.getElementById('ap-cron-status');
+      var btn = document.getElementById('ap-cron-toggle-btn');
+      if(d.habilitado){
+        span.innerHTML = '✓ <b>ACTIVO</b>'+(d.ultima_ejecucion_at?' · última: '+_escHTML(d.ultima_ejecucion_at.substring(0,16)):'');
+        btn.textContent = 'Desactivar';
+        btn.style.background = '#fee2e2';
+        btn.style.color = '#dc2626';
+      } else {
+        span.innerHTML = '⏸ inactivo';
+        btn.textContent = 'Activar';
+        btn.style.background = '#fff';
+        btn.style.color = '#7c3aed';
+      }
+    } catch(e){}
+  }
+  async function apCronToggle(){
+    try {
+      var sr = await fetch('/api/auto-plan/cron/state');
+      var st = await sr.json();
+      var nuevo = !st.habilitado;
+      var msg = nuevo
+        ? '¿ACTIVAR cron diario? Cada L-V 7am el sistema generará plan + SOLs + emails automáticamente.'
+        : '¿DESACTIVAR cron? El plan dejará de ejecutarse automáticamente (puedes seguir disparándolo manual con "🔥 Ejecutar AHORA").';
+      if(!confirm(msg)) return;
+      var r = await fetch('/api/auto-plan/cron/toggle', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({habilitar: nuevo})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert(d.error||'Error'); return; }
+      _toast('Cron '+(nuevo?'activado ✓':'desactivado'), 1);
+      apCronStateRefresh();
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   function apSwitchSubtab(t){
@@ -8704,9 +8889,18 @@ async function ckMarcar(itemId, estado){
     try { await fetch('/api/auto-plan/configs/emails', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); } catch(e){}
   }
 
-  function apEmailTest(email){
+  async function apEmailTest(email){
     if(!email) return;
-    alert('La función "test email" se conecta cuando el cron esté armado en producción. Por ahora, el email se prueba con el botón "Ejecutar AHORA" del Auto-Plan.');
+    if(!confirm('¿Enviar email de prueba a '+email+'?')) return;
+    try {
+      var r = await fetch('/api/auto-plan/configs/emails/test', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({email: email})
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'no se pudo enviar')); return; }
+      _toast('📧 Test enviado a '+email+' (puede tardar 30s)', 1);
+    } catch(e){ alert('Error: '+e.message); }
   }
 
   async function apCargarRuns(){
