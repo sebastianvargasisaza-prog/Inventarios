@@ -302,11 +302,13 @@ def register_hooks(app):
         # CSP defense-in-depth. 'unsafe-inline' sigue presente porque los
         # templates_py tienen JS/CSS embebido — migrarlos a Jinja2 +
         # nonces es trabajo de ~1 semana documentado en SECURITY.md.
-        # Mientras tanto, se cierran 3 vectores que NO requieren refactor:
-        #   - frame-ancestors 'none': bloquea clickjacking aunque
-        #     X-Frame-Options se ignore en navegadores nuevos.
-        #   - form-action 'self': forms solo pueden submitear al mismo host
-        #     (anti exfiltración via <form action="https://evil.com">).
+        # Sebastian (29-abr-2026): cambio frame-ancestors de 'none' a 'self'
+        # para que el widget flotante 💬 pueda embeber /chat en un iframe
+        # del mismo dominio. Sigue protegiendo contra clickjacking de
+        # terceros (solo MISMO host puede embebernos).
+        #   - frame-ancestors 'self': solo nuestro propio dominio puede
+        #     embeber. Misma política que X-Frame-Options SAMEORIGIN.
+        #   - form-action 'self': forms solo pueden submitear al mismo host.
         #   - base-uri 'self': anti rebase URL injection.
         #   - object-src 'none': no plugins/applets.
         csp = (
@@ -316,7 +318,7 @@ def register_hooks(app):
             "font-src 'self' fonts.gstatic.com cdnjs.cloudflare.com; "
             "img-src 'self' data: https:; "
             "connect-src 'self'; "
-            "frame-ancestors 'none'; "
+            "frame-ancestors 'self'; "
             "form-action 'self'; "
             "base-uri 'self'; "
             "object-src 'none';"
