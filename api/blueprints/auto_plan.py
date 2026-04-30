@@ -277,6 +277,11 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
     producciones_propuestas = []
     alertas = []
     fechas_ocupadas = {}  # area_codigo -> set de fechas ocupadas
+    # Sebastian (30-abr-2026): contador de lotes proyectados POR FECHA en
+    # memoria — antes el counter solo miraba BD y todas las proyecciones
+    # caían el mismo día. Ahora distribuimos máx 2 lotes por día L/M/V.
+    LOTES_MAX_POR_DIA = 2
+    lotes_por_fecha = {}  # ISO date → count
 
     for sku_row in skus:
         producto, categoria, cadencia, cob_target, cob_min, cob_max, merma_pct, prioridad, lote_size_kg = sku_row
@@ -332,18 +337,27 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         # Por ahora: 1 lote, registramos kg con merma para que CC compre lo correcto
         kg_con_merma = kg_base * (1 + merma_pct / 100.0)
 
-        # Asignar fecha L/M/V que no esté ocupada
-        fecha_objetivo = _next_dia_produccion(max(fecha_hoy + timedelta(days=2), ultima_prod + timedelta(days=cadencia or 0) if ultima_prod and cadencia else fecha_hoy + timedelta(days=2)))
-        # Buscar siguiente L/M/V sin más de 1 producción del mismo SKU
-        # Iterar hasta encontrar día disponible (max 3 intentos)
-        for _ in range(8):
-            ya_hay = c.execute("""
+        # Asignar fecha L/M/V que no esté ocupada (BD + proyecciones en memoria)
+        if ultima_prod and cadencia:
+            base_fecha = ultima_prod + timedelta(days=cadencia)
+        else:
+            base_fecha = fecha_hoy + timedelta(days=2)
+        fecha_objetivo = _next_dia_produccion(max(fecha_hoy + timedelta(days=2), base_fecha))
+        # Iterar hasta encontrar día con cupo (BD + memoria), saltando L/M/V
+        for _ in range(40):  # hasta 40 intentos para horizonte largo
+            iso = fecha_objetivo.isoformat()
+            ya_hay_bd = c.execute("""
                 SELECT COUNT(*) FROM produccion_programada
-                WHERE date(fecha_programada) = ?
-            """, (fecha_objetivo.isoformat(),)).fetchone()[0]
-            if ya_hay < 3:  # max 3 producciones por día
+                WHERE date(fecha_programada) = ? AND estado IN ('pendiente','en_proceso')
+            """, (iso,)).fetchone()[0]
+            ya_hay_proj = lotes_por_fecha.get(iso, 0)
+            total = ya_hay_bd + ya_hay_proj
+            if total < LOTES_MAX_POR_DIA:
                 break
             fecha_objetivo = _next_dia_produccion(fecha_objetivo + timedelta(days=1))
+        # Reservar el slot
+        iso = fecha_objetivo.isoformat()
+        lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
 
         producciones_propuestas.append({
             'producto': producto,
@@ -2452,20 +2466,48 @@ def perfil_riesgo():
 
 def _generar_proyeccion_lotes(c, horizonte_meses):
     """Genera proyección de lotes para los próximos N meses considerando
-    cadencias + velocidad + tendencia. NO crea registros, solo proyecta."""
+    cadencias + velocidad + tendencia. NO crea registros, solo proyecta.
+
+    Sebastian (30-abr-2026): "el calendario está limpio porque todos los
+    lotes caían el mismo día" — distribuir en L/M/V con cupo máx 2/día.
+    """
     proyeccion = []
     skus = c.execute("""
         SELECT spc.producto_nombre, spc.cadencia_dias, spc.cobertura_target_dias,
-               spc.cobertura_min_dias, spc.merma_pct, fh.lote_size_kg
+               spc.cobertura_min_dias, spc.merma_pct, fh.lote_size_kg, spc.prioridad
         FROM sku_planeacion_config spc
         LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
         WHERE spc.activo = 1 AND fh.lote_size_kg IS NOT NULL
+        ORDER BY spc.prioridad ASC, spc.producto_nombre
     """).fetchall()
 
     fecha_hoy = datetime.now().date()
     fecha_fin = fecha_hoy + timedelta(days=horizonte_meses * 30)
+    LOTES_MAX_POR_DIA = 2
+    lotes_por_fecha = {}  # ISO → count
 
-    for producto, cadencia, cob_target, cob_min, merma, lote_kg in skus:
+    def _ajustar_a_lmv_disponible(fecha_base):
+        """Devuelve la próxima fecha L/M/V (lunes=0, miércoles=2, viernes=4)
+        con cupo disponible. Considera BD + proyección en memoria."""
+        f = fecha_base
+        for _ in range(60):  # máx 60 intentos
+            while f.weekday() not in (0, 2, 4):
+                f += timedelta(days=1)
+            iso = f.isoformat()
+            ya_hay_proj = lotes_por_fecha.get(iso, 0)
+            try:
+                ya_hay_bd = c.execute(
+                    "SELECT COUNT(*) FROM produccion_programada WHERE date(fecha_programada)=? AND estado IN ('pendiente','en_proceso')",
+                    (iso,)
+                ).fetchone()[0]
+            except Exception:
+                ya_hay_bd = 0
+            if (ya_hay_bd + ya_hay_proj) < LOTES_MAX_POR_DIA:
+                return f
+            f += timedelta(days=1)
+        return f
+
+    for producto, cadencia, cob_target, cob_min, merma, lote_kg, prioridad in skus:
         velocidad, factor = _velocidad_total_producto(c, producto)
         velocidad_proj = velocidad * factor
         if velocidad_proj <= 0:
@@ -2473,46 +2515,65 @@ def _generar_proyeccion_lotes(c, horizonte_meses):
         stock_actual = _stock_actual_pt(c, producto)
         ultima_prod = _ultima_produccion(c, producto)
 
-        # Generar lotes proyectados
         if cadencia:
-            # Producción regular cada N días
-            inicio = ultima_prod or fecha_hoy
-            siguiente = inicio + timedelta(days=cadencia)
+            # Cadencia: primer lote desde última (o hoy + offset por prioridad)
+            if ultima_prod:
+                siguiente_base = ultima_prod + timedelta(days=cadencia)
+            else:
+                # Sin histórico: distribuir según prioridad para no concentrar
+                offset_dias = max(2, (prioridad or 3) * 3)
+                siguiente_base = fecha_hoy + timedelta(days=offset_dias)
+            siguiente = _ajustar_a_lmv_disponible(max(siguiente_base, fecha_hoy + timedelta(days=2)))
             while siguiente <= fecha_fin:
-                if siguiente >= fecha_hoy:
-                    proyeccion.append({
-                        'producto': producto,
-                        'fecha': siguiente.isoformat(),
-                        'mes': siguiente.strftime('%Y-%m'),
-                        'lote_kg': lote_kg,
-                        'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
-                        'velocidad_dia': velocidad_proj,
-                        'tipo': 'cadencia',
-                        'cadencia_dias': cadencia,
-                    })
-                siguiente += timedelta(days=cadencia)
+                iso = siguiente.isoformat()
+                lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
+                proyeccion.append({
+                    'producto': producto,
+                    'fecha': iso,
+                    'mes': siguiente.strftime('%Y-%m'),
+                    'lote_kg': lote_kg,
+                    'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
+                    'velocidad_dia': velocidad_proj,
+                    'tipo': 'cadencia',
+                    'cadencia_dias': cadencia,
+                })
+                # Próximo según cadencia
+                siguiente_base = siguiente + timedelta(days=cadencia)
+                siguiente = _ajustar_a_lmv_disponible(siguiente_base)
         else:
             # Auto por umbral: cuándo bajará bajo cob_min
             stock_proj = stock_actual
-            cursor_dia = fecha_hoy
+            cursor_dia = fecha_hoy + timedelta(days=max(2, (prioridad or 3) * 2))
+            ultimo_lote_fecha = None
             while cursor_dia <= fecha_fin:
-                stock_proj -= velocidad_proj
+                # Avanzar stock_proj hasta cursor_dia
+                dias_caminar = 7
+                stock_proj -= velocidad_proj * dias_caminar
                 dias_restantes = stock_proj / max(velocidad_proj, 0.01)
-                if dias_restantes < (cob_min or 30):
-                    # Producir → cubrir cob_target
-                    unidades_a_producir = velocidad_proj * (cob_target or 60)
+                if dias_restantes < (cob_min or 20):
+                    fecha_lote = _ajustar_a_lmv_disponible(cursor_dia)
+                    if fecha_lote > fecha_fin:
+                        break
+                    # Evitar producir 2 veces seguidas en pocos días
+                    if ultimo_lote_fecha and (fecha_lote - ultimo_lote_fecha).days < 21:
+                        cursor_dia += timedelta(days=14)
+                        continue
+                    iso = fecha_lote.isoformat()
+                    lotes_por_fecha[iso] = lotes_por_fecha.get(iso, 0) + 1
                     proyeccion.append({
                         'producto': producto,
-                        'fecha': cursor_dia.isoformat(),
-                        'mes': cursor_dia.strftime('%Y-%m'),
+                        'fecha': iso,
+                        'mes': fecha_lote.strftime('%Y-%m'),
                         'lote_kg': lote_kg,
                         'kg_con_merma': lote_kg * (1 + (merma or 0) / 100.0),
                         'velocidad_dia': velocidad_proj,
                         'tipo': 'umbral',
                         'cadencia_dias': None,
                     })
+                    unidades_a_producir = velocidad_proj * (cob_target or 60)
                     stock_proj += unidades_a_producir
-                cursor_dia += timedelta(days=7)
+                    ultimo_lote_fecha = fecha_lote
+                cursor_dia += timedelta(days=dias_caminar)
     return sorted(proyeccion, key=lambda x: x['fecha'])
 
 
