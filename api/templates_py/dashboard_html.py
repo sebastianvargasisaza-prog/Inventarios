@@ -1332,6 +1332,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.4)">
       &#129302; Auto-Plan
     </button>
+    <button id="prog-tab-maquila" onclick="switchProgTab('maquila')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#129309; Maquila
+    </button>
     <button id="prog-tab-config" onclick="switchProgTab('config')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#9881; Configuración
@@ -2034,7 +2038,12 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
   if(n==='produccion') cargarHistProd();
   if(n==='movimientos') loadMovimientos();
-  if(n==='programacion') cargarProgramacion(null);
+  if(n==='programacion'){
+    cargarProgramacion(null);
+    // Sebastian (30-abr-2026): "las pestañas no sirven" — al click "Programación"
+    // forzar que se muestre Plan v2 (no la pestaña Centro vieja).
+    if(typeof switchProgTab==='function') switchProgTab('planv2');
+  }
 }
 
 
@@ -5878,7 +5887,10 @@ function _renderProgramacion(d){
           <h2 style="margin:0;color:#fff;font-size:22px">📅 Plan de Producción</h2>
           <p style="margin:4px 0 0;color:#cffafe;font-size:13px">Producciones · MP · Envases · Capacidad — todo proyectado por horizonte</p>
         </div>
-        <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Descargar Excel</button>
+          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
+        </div>
       </div>
       <!-- Switcher de horizonte -->
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
@@ -5939,6 +5951,83 @@ function _renderProgramacion(d){
     </div>
     <div id="cfg-content"></div>
   </div><!-- /ptab-config -->
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- ptab-maquila: Pedidos de clientes que se suman al plan automáticamente -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <div id="ptab-maquila" style="display:none">
+    <div style="background:linear-gradient(135deg,#1a4a7a,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0;color:#fff;font-size:22px">🤝 Maquila Inteligente</h2>
+          <p style="margin:4px 0 0;color:#cffafe;font-size:13px">Pedidos de clientes (Kelly, Fernando…) que se SUMAN automáticamente al plan de Animus cuando comparten fórmula</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="abrirNuevoPedido()" style="background:#fff;color:#1a4a7a;border:none;padding:8px 16px;border-radius:6px;font-weight:800;cursor:pointer">+ Nuevo pedido</button>
+          <button onclick="abrirNuevoCliente()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-weight:700;cursor:pointer">+ Cliente</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mq-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+    <div id="mq-pedidos"></div>
+
+    <!-- Modal nuevo pedido -->
+    <div id="modal-mq-pedido" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:520px;max-width:92vw;max-height:90vh;overflow:auto">
+        <h3 style="margin:0 0 12px;color:#1a4a7a">+ Pedido de maquila</h3>
+        <div style="display:grid;gap:10px">
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Cliente *</label>
+            <select id="mq-cliente" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Producto *</label>
+            <select id="mq-producto" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Unidades *</label>
+              <input id="mq-unidades" type="number" min="1" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#64748b;font-weight:600">Kg estimados (opcional)</label>
+              <input id="mq-kg" type="number" step="0.1" placeholder="auto si tiene presentación" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Fecha entrega objetivo</label>
+            <input id="mq-fecha" type="date" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Observaciones</label>
+            <textarea id="mq-obs" rows="2" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="document.getElementById('modal-mq-pedido').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="guardarPedidoMaquila()" style="background:#1a4a7a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar pedido</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal nuevo cliente -->
+    <div id="modal-mq-cliente" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
+        <h3 style="margin:0 0 12px;color:#1a4a7a">+ Cliente de maquila</h3>
+        <div style="display:grid;gap:10px">
+          <div><label style="font-size:11px;color:#64748b;font-weight:600">Nombre *</label><input id="mc-nombre" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px"></div>
+          <div><label style="font-size:11px;color:#64748b;font-weight:600">Email</label><input id="mc-email" type="email" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px"></div>
+          <div><label style="font-size:11px;color:#64748b;font-weight:600">Teléfono</label><input id="mc-tel" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px"></div>
+          <div><label style="font-size:11px;color:#64748b;font-weight:600">¿Comparte fórmula con? (ej. Animus Lab)</label><input id="mc-comparte" placeholder="Animus Lab" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="document.getElementById('modal-mq-cliente').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
+          <button onclick="guardarClienteMaquila()" style="background:#1a4a7a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar cliente</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /ptab-maquila -->
 
   <!-- ── Asistente conversacional EOS Planta · Claude API ── -->
   <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:flex;align-items:center;justify-content:center">🤖</button>
@@ -7187,6 +7276,7 @@ async function ckMarcar(itemId, estado){
       else if(tab==='mando')      { if(el_pln) el_pln.style.display = 'block'; }
       else if(tab==='autoplan')   { if(el_ap)  el_ap.style.display  = 'block'; }
       else if(tab==='config')     { if(el_cfg) el_cfg.style.display = 'block'; }
+      else if(tab==='maquila')    { var elMq=document.getElementById('ptab-maquila'); if(elMq) elMq.style.display='block'; if(typeof maquilaInit==='function') maquilaInit(); }
       // Compatibilidad con sub-tabs antiguos invocados desde Configuración
       else if(tab==='presentaciones') { if(el_pr) el_pr.style.display='block'; }
       else if(tab==='equipos')        { if(el_eq) el_eq.style.display='block'; }
@@ -7229,6 +7319,8 @@ async function ckMarcar(itemId, estado){
       if(tab==='mando'){ gradActivo(bmando,'#1a4a7a'); } else gradInactivo(bmando);
       if(tab==='autoplan'){ gradActivo(bap2,'linear-gradient(135deg,#7c3aed,#dc2626)'); bap2.style.boxShadow='0 3px 10px rgba(124,58,237,.4)'; } else gradInactivo(bap2);
       if(tab==='config'){ gradActivo(bcfg,'#1f2937'); } else gradInactivo(bcfg);
+      var bmq = document.getElementById('prog-tab-maquila');
+      if(tab==='maquila'){ gradActivo(bmq,'linear-gradient(135deg,#1a4a7a,#0891b2)'); } else gradInactivo(bmq);
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -9242,6 +9334,163 @@ async function ckMarcar(itemId, estado){
       if(!r.ok){ alert('Error: '+(d.error||'')); return; }
       _toast('✓ Eliminada · nueva sugerida para '+d.nueva_fecha, 1);
       planV2Cargar();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  function planV2Descargar(){
+    var meses = parseFloat(_PV2_HORIZONTE);
+    if(meses < 1) meses = 1;
+    window.open('/api/planta/plan/exportar?meses='+Math.round(meses)+'&formato=xlsx', '_blank');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // MAQUILA · pedidos de clientes que se suman al plan
+  // ════════════════════════════════════════════════════════════════════════
+  var _MQ_CLIENTES = [];
+  var _MQ_PRODUCTOS = [];
+
+  async function maquilaInit(){
+    cargarClientesMaquila();
+    cargarPedidosMaquila();
+  }
+
+  async function cargarClientesMaquila(){
+    try {
+      var r = await fetch('/api/maquila/clientes');
+      var d = await r.json();
+      _MQ_CLIENTES = d.clientes || [];
+    } catch(e){}
+  }
+
+  async function cargarPedidosMaquila(){
+    var box = document.getElementById('mq-pedidos');
+    var kpis = document.getElementById('mq-kpis');
+    if(!box) return;
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/maquila/pedidos?estado=todos');
+      var d = await r.json();
+      var items = d.pedidos || [];
+      var pend = items.filter(function(x){return x.estado==='recibido'}).length;
+      var plan = items.filter(function(x){return x.estado==='planificado'}).length;
+      var enProd = items.filter(function(x){return x.estado==='en_produccion'}).length;
+      var entreg = items.filter(function(x){return x.estado==='entregado'}).length;
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Recibidos</div><div style="font-size:26px;font-weight:800;color:#d97706">'+pend+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Planificados</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+plan+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">En producción</div><div style="font-size:26px;font-weight:800;color:#0891b2">'+enProd+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Entregados</div><div style="font-size:26px;font-weight:800;color:#15803d">'+entreg+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #1a4a7a;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Clientes</div><div style="font-size:26px;font-weight:800;color:#1a4a7a">'+_MQ_CLIENTES.length+'</div></div>';
+
+      if(!items.length){
+        box.innerHTML = '<div style="background:#f8fafc;padding:30px;border-radius:10px;text-align:center;color:#94a3b8">Sin pedidos de maquila. Crea uno con "+ Nuevo pedido".</div>';
+        return;
+      }
+      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead style="background:#f9fafb"><tr>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">N°</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Cliente</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Unidades</th>'
+        +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Kg</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Entrega</th>'
+        +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Estado</th>'
+        +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producción</th>'
+        +'<th style="padding:8px 10px"></th>'
+        +'</tr></thead><tbody>';
+      items.forEach(function(p){
+        var estCol = {recibido:'#d97706',planificado:'#7c3aed',en_produccion:'#0891b2',listo_entrega:'#1a4a7a',entregado:'#15803d',cancelado:'#94a3b8'}[p.estado] || '#475569';
+        html += '<tr style="border-top:1px solid #f1f5f9">'
+          +'<td style="padding:7px 10px;font-family:monospace;font-size:11px"><b>'+_escHTML(p.numero)+'</b></td>'
+          +'<td style="padding:7px 10px"><b>'+_escHTML(p.cliente_nombre||'')+'</b></td>'
+          +'<td style="padding:7px 10px">'+_escHTML(p.producto_nombre||'')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(p.unidades||0).toLocaleString('es-CO')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:#64748b">'+(p.kg_estimados ? p.kg_estimados.toFixed(1) : '—')+'</td>'
+          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.fecha_entrega_objetivo||'—')+'</td>'
+          +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(p.estado)+'</span></td>'
+          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+(p.produccion_id ? '#'+p.produccion_id+(p.produccion_fecha?' · '+_escHTML(p.produccion_fecha):'') : '—')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right">'+(p.estado==='recibido' || p.estado==='planificado' ? '<button onclick="cancelarPedidoMaquila('+p.id+')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✕</button>' : '')+'</td>'
+          +'</tr>';
+      });
+      html += '</tbody></table></div>';
+      // Mensaje educativo
+      html += '<div style="background:#f0f9ff;border:1px solid #7dd3fc;border-radius:10px;padding:12px 16px;margin-top:14px;font-size:12px;color:#0369a1">💡 <b>Cómo funciona:</b> Los pedidos en estado "recibido" se SUMAN automáticamente al lote de Animus la próxima vez que el Auto-Plan corra. Si Kelly Guerra pide 500 unid de Suero AH y Animus va a producir 90kg → el lote total será 90kg + lo necesario para esas 500 unid.</div>';
+      box.innerHTML = html;
+    } catch(e){
+      box.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function abrirNuevoPedido(){
+    if(!_MQ_CLIENTES.length){ alert('Primero crea un cliente con "+ Cliente"'); return; }
+    var sel = document.getElementById('mq-cliente');
+    sel.innerHTML = '<option value="">— elegir cliente —</option>'
+      + _MQ_CLIENTES.map(function(c){return '<option value="'+c.id+'">'+_escHTML(c.nombre)+(c.comparte_formula_con?' (fórmula '+_escHTML(c.comparte_formula_con)+')':'')+'</option>';}).join('');
+    var sp = document.getElementById('mq-producto');
+    sp.innerHTML = '<option value="">— elegir producto —</option>'
+      + (_presProductos||[]).map(function(p){return '<option value="'+_escAttr(p.producto_nombre)+'">'+_escHTML(p.producto_nombre)+'</option>';}).join('');
+    if(!(_presProductos||[]).length){
+      // Cargar productos si no están cargados
+      fetch('/api/planta/presentaciones/productos-disponibles').then(function(r){return r.json();}).then(function(d){
+        _presProductos = d.productos || [];
+        sp.innerHTML = '<option value="">— elegir producto —</option>'
+          + _presProductos.map(function(p){return '<option value="'+_escAttr(p.producto_nombre)+'">'+_escHTML(p.producto_nombre)+'</option>';}).join('');
+      });
+    }
+    ['mq-unidades','mq-kg','mq-fecha','mq-obs'].forEach(function(id){var e=document.getElementById(id); if(e) e.value='';});
+    document.getElementById('modal-mq-pedido').style.display = 'flex';
+  }
+
+  async function guardarPedidoMaquila(){
+    var body = {
+      cliente_id: parseInt(document.getElementById('mq-cliente').value),
+      producto_nombre: document.getElementById('mq-producto').value,
+      unidades: parseInt(document.getElementById('mq-unidades').value),
+      kg_estimados: parseFloat(document.getElementById('mq-kg').value)||null,
+      fecha_entrega_objetivo: document.getElementById('mq-fecha').value,
+      observaciones: document.getElementById('mq-obs').value,
+    };
+    if(!body.cliente_id || !body.producto_nombre || !body.unidades){
+      alert('Cliente, producto y unidades son requeridos'); return;
+    }
+    try {
+      var r = await fetch('/api/maquila/pedidos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      document.getElementById('modal-mq-pedido').style.display='none';
+      _toast('✓ Pedido '+d.numero+' creado', 1);
+      cargarPedidosMaquila();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  function abrirNuevoCliente(){
+    ['mc-nombre','mc-email','mc-tel','mc-comparte'].forEach(function(id){var e=document.getElementById(id); if(e) e.value='';});
+    document.getElementById('modal-mq-cliente').style.display = 'flex';
+  }
+
+  async function guardarClienteMaquila(){
+    var body = {
+      nombre: document.getElementById('mc-nombre').value.trim(),
+      email: document.getElementById('mc-email').value.trim(),
+      telefono: document.getElementById('mc-tel').value.trim(),
+      comparte_formula_con: document.getElementById('mc-comparte').value.trim(),
+    };
+    if(!body.nombre){ alert('Nombre requerido'); return; }
+    try {
+      var r = await fetch('/api/maquila/clientes', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+      document.getElementById('modal-mq-cliente').style.display='none';
+      _toast('✓ Cliente creado', 1);
+      cargarClientesMaquila();
+    } catch(e){ alert('Error: '+e.message); }
+  }
+
+  async function cancelarPedidoMaquila(id){
+    if(!confirm('¿Cancelar este pedido de maquila?')) return;
+    try {
+      var r = await fetch('/api/maquila/pedidos/'+id, {method:'DELETE'});
+      if(r.ok){ _toast('Pedido cancelado', 1); cargarPedidosMaquila(); }
     } catch(e){ alert('Error: '+e.message); }
   }
 

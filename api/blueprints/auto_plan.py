@@ -520,16 +520,62 @@ def aplicar_plan(plan, usuario='cron'):
         """, (prop['producto'], prop['fecha_programada'])).fetchone()
         if existing:
             continue
+
+        # Sumar pedidos de maquila al lote (Sebastian: "si Fernando lleva 500
+        # le adiciona a la producción esas 500 unidades").
+        # Considera misma fórmula (comparte_formula_con) → Kelly Guerra para Animus
+        kg_extra_maquila = 0
+        pedidos_maquila_asociar = []
+        try:
+            mq_rows = c.execute("""
+                SELECT mp.id, mp.kg_estimados, mp.cliente_nombre
+                FROM maquila_pedidos mp
+                LEFT JOIN clientes_maquila cm ON cm.id = mp.cliente_id
+                WHERE mp.estado = 'recibido'
+                  AND mp.produccion_id IS NULL
+                  AND (
+                      UPPER(TRIM(mp.producto_nombre)) = UPPER(TRIM(?))
+                   OR (cm.comparte_formula_con IS NOT NULL
+                       AND UPPER(TRIM(?)) IN (
+                           SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers
+                           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(mp.producto_nombre))
+                       ))
+                  )
+            """, (prop['producto'], prop['producto'])).fetchall()
+            for mq in mq_rows:
+                kg_extra_maquila += (mq[1] or 0)
+                pedidos_maquila_asociar.append(mq[0])
+        except Exception:
+            pass
+
+        kg_total = prop['kg_con_merma'] + kg_extra_maquila
+        obs_extra = ''
+        if kg_extra_maquila > 0:
+            obs_extra = f' | Maquila: +{kg_extra_maquila:.1f}kg para {len(pedidos_maquila_asociar)} pedido(s)'
+
         cur = c.execute("""
             INSERT INTO produccion_programada
               (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
             VALUES (?, ?, ?, 'pendiente', ?, 'auto_plan', ?)
         """, (
             prop['producto'], prop['fecha_programada'], prop['lotes'],
-            f"AUTO-PLAN ({plan['fecha_hoy']}): {prop['razon']}",
-            prop['kg_con_merma'],
+            f"AUTO-PLAN ({plan['fecha_hoy']}): {prop['razon']}{obs_extra}",
+            kg_total,
         ))
         creadas_prod.append(cur.lastrowid)
+
+        # Asociar pedidos de maquila a esta producción
+        for mq_id in pedidos_maquila_asociar:
+            c.execute(
+                "UPDATE maquila_pedidos SET produccion_id=?, estado='planificado', actualizado_en=datetime('now') WHERE id=?",
+                (cur.lastrowid, mq_id)
+            )
+
+        # Asignar operarios automáticamente
+        try:
+            _asignar_operarios_a_produccion(conn, cur.lastrowid)
+        except Exception as e:
+            log.warning(f'Asignación operarios fallida prod={cur.lastrowid}: {e}')
 
     for cp in plan['compras_propuestas']:
         # Crear solicitud_compra automatizada
@@ -1143,6 +1189,341 @@ def detectar_cambios_demanda():
         'cambios': cambios_detectados,
         'total': len(cambios_detectados),
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# MAQUILA INTELIGENTE — clientes + pedidos integrados al motor del Plan
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "Kelly Guerra compra productos para marca de ella
+# pero misma fórmula Animus... espacio de maquila inteligente, si Fernando
+# lleva 500 le adiciona a la producción esas 500 unidades".
+
+@bp.route('/api/maquila/clientes', methods=['GET', 'POST'])
+def maquila_clientes():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        nombre = (d.get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'error': 'nombre requerido'}), 400
+        try:
+            c.execute("""
+                INSERT INTO clientes_maquila
+                  (nombre, nit_cedula, email, telefono, es_marca_propia,
+                   empresa_grupo, comparte_formula_con, margen_seguridad_pct, notas)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                nombre, d.get('nit_cedula'), d.get('email'), d.get('telefono'),
+                1 if d.get('es_marca_propia') else 0,
+                d.get('empresa_grupo'), d.get('comparte_formula_con'),
+                int(d.get('margen_seguridad_pct') or 5),
+                d.get('notas'),
+            ))
+            conn.commit()
+            return jsonify({'ok': True, 'id': c.lastrowid})
+        except sqlite3.IntegrityError:
+            return jsonify({'error': 'Cliente ya existe con ese nombre'}), 409
+    rows = c.execute(
+        "SELECT * FROM clientes_maquila WHERE activo=1 ORDER BY nombre"
+    ).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'clientes': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/maquila/pedidos', methods=['GET', 'POST'])
+def maquila_pedidos():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        cliente_id = d.get('cliente_id')
+        producto = (d.get('producto_nombre') or '').strip()
+        unidades = int(d.get('unidades') or 0)
+        if not cliente_id or not producto or unidades <= 0:
+            return jsonify({'error': 'cliente_id, producto_nombre, unidades requeridos'}), 400
+        # Buscar cliente
+        cli = c.execute(
+            "SELECT nombre FROM clientes_maquila WHERE id=?", (cliente_id,)
+        ).fetchone()
+        if not cli:
+            return jsonify({'error': 'Cliente no existe'}), 400
+        # Generar número
+        n = c.execute(
+            "SELECT COALESCE(MAX(CAST(SUBSTR(numero,4) AS INTEGER)),0)+1 FROM maquila_pedidos WHERE numero LIKE 'MQ-%'"
+        ).fetchone()[0] or 1
+        numero = f'MQ-{n:04d}'
+        # Calcular kg estimados desde presentación
+        kg_est = d.get('kg_estimados')
+        if not kg_est and d.get('presentacion_id'):
+            pr = c.execute(
+                "SELECT factor_g_por_unidad FROM producto_presentaciones WHERE id=?",
+                (d.get('presentacion_id'),)
+            ).fetchone()
+            if pr and pr[0]:
+                kg_est = (unidades * pr[0]) / 1000.0
+        try:
+            c.execute("""
+                INSERT INTO maquila_pedidos
+                  (numero, cliente_id, cliente_nombre, producto_nombre, presentacion_id,
+                   unidades, kg_estimados, fecha_entrega_objetivo, precio_unidad,
+                   observaciones, creado_por)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                numero, cliente_id, cli[0], producto,
+                d.get('presentacion_id'),
+                unidades, kg_est,
+                (d.get('fecha_entrega_objetivo') or '').strip() or None,
+                d.get('precio_unidad'),
+                d.get('observaciones'),
+                user,
+            ))
+            conn.commit()
+            return jsonify({'ok': True, 'numero': numero, 'id': c.lastrowid,
+                            'kg_estimados': kg_est})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    # GET — filtros opcionales
+    estado = (request.args.get('estado') or '').strip()
+    cliente = request.args.get('cliente_id')
+    where = []
+    params = []
+    if estado and estado != 'todos':
+        where.append('mp.estado=?'); params.append(estado)
+    if cliente:
+        where.append('mp.cliente_id=?'); params.append(int(cliente))
+    sql = """
+        SELECT mp.*, cm.nombre as cliente_nombre_full,
+               pp.fecha_programada as produccion_fecha,
+               pp.estado as produccion_estado
+        FROM maquila_pedidos mp
+        LEFT JOIN clientes_maquila cm ON cm.id = mp.cliente_id
+        LEFT JOIN produccion_programada pp ON pp.id = mp.produccion_id
+    """
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY mp.fecha_entrega_objetivo ASC NULLS LAST, mp.id DESC"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # KPIs
+    pendientes = sum(1 for it in items if it['estado'] in ('recibido', 'planificado'))
+    en_prod = sum(1 for it in items if it['estado'] == 'en_produccion')
+    return jsonify({
+        'pedidos': items, 'total': len(items),
+        'pendientes': pendientes, 'en_produccion': en_prod,
+    })
+
+
+@bp.route('/api/maquila/pedidos/<int:pedido_id>/asignar-produccion', methods=['POST'])
+def maquila_asignar_produccion(pedido_id):
+    """Asocia un pedido de maquila a una producción específica."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    prod_id = d.get('produccion_id')
+    if not prod_id:
+        return jsonify({'error': 'produccion_id requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE maquila_pedidos SET produccion_id=?, estado='planificado', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (prod_id, pedido_id))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/maquila/pedidos/<int:pedido_id>', methods=['DELETE'])
+def maquila_pedido_cancelar(pedido_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "UPDATE maquila_pedidos SET estado='cancelado' WHERE id=?", (pedido_id,)
+    )
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Asignación automática de operarios (Mayerlin fija + rotación inteligente)
+# ════════════════════════════════════════════════════════════════════════
+def _asignar_operarios_a_produccion(conn, produccion_id):
+    """Asigna automáticamente operarios a una producción según reglas:
+       - Dispensación: SIEMPRE Mayerlin (regla dura)
+       - Elaboración/Envasado/Acondicionamiento: rotan según historial reciente
+    """
+    c = conn.cursor()
+    # Buscar Mayerlin
+    mayerlin = c.execute(
+        "SELECT id FROM operarios_planta WHERE LOWER(nombre)='mayerlin' AND activo=1 LIMIT 1"
+    ).fetchone()
+    op_disp_id = mayerlin[0] if mayerlin else None
+
+    # Para las otras fases: encontrar operario con MENOS asignaciones en últimos 7 días
+    def operario_menos_asignado(rol_excluir=None):
+        rows = c.execute(f"""
+            SELECT op.id, op.nombre,
+                   (SELECT COUNT(*) FROM produccion_programada pp
+                    WHERE pp.fecha_programada >= date('now','-7 days')
+                      AND (pp.operario_elaboracion_id=op.id
+                        OR pp.operario_envasado_id=op.id
+                        OR pp.operario_acondicionamiento_id=op.id)) AS carga
+            FROM operarios_planta op
+            WHERE op.activo=1
+              AND op.fija_en_dispensacion=0
+              AND op.es_jefe_produccion=0
+              AND LOWER(op.nombre) != 'mayerlin'
+            ORDER BY carga ASC, op.nombre LIMIT 1
+        """).fetchone()
+        return rows[0] if rows else None
+
+    op_elab_id = operario_menos_asignado()
+    op_env_id = operario_menos_asignado()
+    op_acond_id = operario_menos_asignado()
+
+    c.execute("""
+        UPDATE produccion_programada SET
+          operario_dispensacion_id = COALESCE(operario_dispensacion_id, ?),
+          operario_elaboracion_id = COALESCE(operario_elaboracion_id, ?),
+          operario_envasado_id = COALESCE(operario_envasado_id, ?),
+          operario_acondicionamiento_id = COALESCE(operario_acondicionamiento_id, ?)
+        WHERE id=?
+    """, (op_disp_id, op_elab_id, op_env_id, op_acond_id, produccion_id))
+
+
+@bp.route('/api/planta/produccion/<int:prod_id>/asignar-operarios-auto', methods=['POST'])
+def asignar_operarios_auto(prod_id):
+    """Asigna operarios automáticamente (Mayerlin fija + rotación)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    _asignar_operarios_a_produccion(conn, prod_id)
+    conn.commit()
+    return jsonify({'ok': True, 'mensaje': 'Operarios asignados'})
+
+
+@bp.route('/api/planta/asignar-operarios-bulk', methods=['POST'])
+def asignar_operarios_bulk():
+    """Asigna operarios automáticamente a TODAS las producciones pendientes
+    sin operarios. Útil después de Auto-Plan."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id FROM produccion_programada
+        WHERE estado IN ('pendiente','en_proceso')
+          AND fecha_programada >= date('now')
+          AND (operario_dispensacion_id IS NULL
+            OR operario_elaboracion_id IS NULL
+            OR operario_envasado_id IS NULL)
+    """).fetchall()
+    asignadas = 0
+    for (pid,) in rows:
+        _asignar_operarios_a_produccion(conn, pid)
+        asignadas += 1
+    conn.commit()
+    return jsonify({'ok': True, 'asignadas': asignadas})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Descarga Plan PDF/Excel (para Alejandro)
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/plan/exportar', methods=['GET'])
+def plan_exportar():
+    """Exporta el plan a Excel para revisión.
+    Querystring: ?meses=1|2|3|6|12 ?formato=xlsx|csv (default xlsx)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from flask import Response
+    try:
+        meses = int(request.args.get('meses', 3))
+    except Exception:
+        meses = 3
+    formato = (request.args.get('formato') or 'xlsx').lower()
+
+    conn = get_db(); c = conn.cursor()
+    proyeccion = _generar_proyeccion_lotes(c, meses)
+
+    if formato == 'csv':
+        import io
+        buffer = io.StringIO()
+        buffer.write('Producto,Fecha,Mes,Lote_kg,Kg_con_merma,Velocidad_dia,Tipo,Cadencia_dias\n')
+        for p in proyeccion:
+            buffer.write(f"{p['producto']},{p['fecha']},{p['mes']},{p['lote_kg']},{p['kg_con_merma']:.1f},{p['velocidad_dia']:.2f},{p['tipo']},{p.get('cadencia_dias') or ''}\n")
+        return Response(
+            buffer.getvalue(), mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=plan_{meses}m.csv'}
+        )
+
+    # Excel
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f'Plan {meses}m'
+
+    # Header
+    headers = ['Producto', 'Fecha', 'Mes', 'Lote kg', 'Kg con merma',
+               'Velocidad/día', 'Tipo', 'Cadencia']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='7C3AED', end_color='7C3AED', fill_type='solid')
+        cell.alignment = Alignment(horizontal='center')
+
+    # Datos
+    for r, p in enumerate(proyeccion, 2):
+        ws.cell(row=r, column=1, value=p['producto'])
+        ws.cell(row=r, column=2, value=p['fecha'])
+        ws.cell(row=r, column=3, value=p['mes'])
+        ws.cell(row=r, column=4, value=p['lote_kg'])
+        ws.cell(row=r, column=5, value=round(p['kg_con_merma'], 1))
+        ws.cell(row=r, column=6, value=round(p['velocidad_dia'], 2))
+        ws.cell(row=r, column=7, value=p['tipo'])
+        ws.cell(row=r, column=8, value=p.get('cadencia_dias') or '')
+
+    # Anchos
+    for col, w in zip('ABCDEFGH', [42, 12, 10, 10, 14, 14, 14, 12]):
+        ws.column_dimensions[col].width = w
+
+    # Hoja resumen mensual
+    ws2 = wb.create_sheet('Resumen mensual')
+    ws2.cell(row=1, column=1, value='Mes').font = Font(bold=True)
+    ws2.cell(row=1, column=2, value='Lotes').font = Font(bold=True)
+    ws2.cell(row=1, column=3, value='Kg total').font = Font(bold=True)
+    ws2.cell(row=1, column=4, value='SKUs distintos').font = Font(bold=True)
+    resumen = {}
+    for p in proyeccion:
+        m = p['mes']
+        if m not in resumen:
+            resumen[m] = {'lotes': 0, 'kg': 0, 'skus': set()}
+        resumen[m]['lotes'] += 1
+        resumen[m]['kg'] += p['kg_con_merma']
+        resumen[m]['skus'].add(p['producto'])
+    for r, m in enumerate(sorted(resumen), 2):
+        ws2.cell(row=r, column=1, value=m)
+        ws2.cell(row=r, column=2, value=resumen[m]['lotes'])
+        ws2.cell(row=r, column=3, value=round(resumen[m]['kg'], 1))
+        ws2.cell(row=r, column=4, value=len(resumen[m]['skus']))
+
+    import io
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.read(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename=plan_{meses}m_alejandro.xlsx'}
+    )
 
 
 @bp.route('/api/planta/produccion/<int:prod_id>/aceptar-recomendacion', methods=['POST'])

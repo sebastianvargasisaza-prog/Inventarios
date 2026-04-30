@@ -3219,6 +3219,65 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE calidad_micro_resultados ADD COLUMN deadline_resultado TEXT",
         "CREATE INDEX IF NOT EXISTS idx_cmr_envasado ON calidad_micro_resultados(envasado_id)",
     ]),
+    (67, "maquila inteligente: clientes_maquila + maquila_pedidos integrados al plan", [
+        # Sebastian (30-abr-2026): "Kelly Guerra compra productos para marca
+        # de ella pero misma fórmula Animus, ejemplo LBHA hacemos 200 kilos
+        # pero son también para ella... espacio de maquila inteligente, si
+        # Fernando lleva 500 le adiciona a la producción esas 500 unidades".
+        # Modelo: el motor del Plan suma pedidos de maquila a la producción
+        # base de Animus, todo en el mismo lote cuando comparten fórmula.
+
+        """CREATE TABLE IF NOT EXISTS clientes_maquila (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL UNIQUE,
+            nit_cedula TEXT,
+            email TEXT,
+            telefono TEXT,
+            es_marca_propia INTEGER NOT NULL DEFAULT 0,
+            empresa_grupo TEXT,
+            comparte_formula_con TEXT,
+            margen_seguridad_pct INTEGER NOT NULL DEFAULT 5,
+            activo INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        # Seed con clientes conocidos
+        """INSERT OR IGNORE INTO clientes_maquila
+           (nombre, es_marca_propia, empresa_grupo, comparte_formula_con, notas) VALUES
+           ('Animus Lab',      1, 'HHA Group', NULL, 'Marca propia · venta directa Shopify'),
+           ('Kelly Guerra',    0, NULL, 'Animus Lab', 'Misma fórmula Animus · marca propia de cliente'),
+           ('Fernando',        0, NULL, NULL, 'Cliente maquila — pendiente confirmar fórmulas')""",
+
+        """CREATE TABLE IF NOT EXISTS maquila_pedidos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT NOT NULL UNIQUE,
+            cliente_id INTEGER NOT NULL,
+            cliente_nombre TEXT,
+            producto_nombre TEXT NOT NULL,
+            presentacion_id INTEGER,
+            unidades INTEGER NOT NULL,
+            kg_estimados REAL,
+            fecha_pedido TEXT NOT NULL DEFAULT (date('now')),
+            fecha_entrega_objetivo TEXT,
+            estado TEXT NOT NULL DEFAULT 'recibido'
+                CHECK(estado IN ('recibido','planificado','en_produccion','listo_entrega','entregado','cancelado')),
+            produccion_id INTEGER,
+            precio_unidad REAL,
+            valor_total REAL,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT,
+            FOREIGN KEY (cliente_id) REFERENCES clientes_maquila(id),
+            FOREIGN KEY (presentacion_id) REFERENCES producto_presentaciones(id),
+            FOREIGN KEY (produccion_id) REFERENCES produccion_programada(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_maquila_estado ON maquila_pedidos(estado, fecha_entrega_objetivo)",
+        "CREATE INDEX IF NOT EXISTS idx_maquila_cliente ON maquila_pedidos(cliente_id, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_maquila_producto ON maquila_pedidos(producto_nombre, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_maquila_prod ON maquila_pedidos(produccion_id)",
+    ]),
     (66, "planta polish: perfil riesgo arrastre + auto_plan_cron_state + asistente acciones", [
         # Sebastian (30-abr-2026): "termina de hacer todo lo que falta entrégame
         # cuando ya sea perfecta" — piezas finales del módulo planta:
