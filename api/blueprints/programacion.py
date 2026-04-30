@@ -2134,14 +2134,280 @@ def borrar_produccion_programada(evento_id):
 
 @bp.route('/api/programacion/programar/<int:evento_id>/completar', methods=['POST'])
 def prog_completar_evento(evento_id):
-    """Mark a production event as completed."""
-    conn = get_db()
-    conn.execute(
-        "UPDATE produccion_programada SET estado='completado' WHERE id=?",
+    """Marca una produccion como completada Y descuenta inventario.
+
+    Sebastian (29-abr-2026): "que todo descuente que el inventario este
+    perfecto". Antes solo cambiaba estado — ahora:
+      1. Calcula consumo de MPs desde formula_items: cantidad_g_por_lote * lotes
+         (o si no hay cantidad_g_por_lote, usa porcentaje * cantidad_kg * 1000).
+      2. Calcula consumo de MEEs desde produccion_checklist (items con
+         mee_codigo_asignado en estado verificado_ok / recibido / listo).
+      3. Inserta movimientos de Salida por cada MP.
+      4. Inserta movimientos_mee + actualiza maestro_mee.stock_actual por MEE.
+      5. UPDATE produccion_programada estado='completado',
+         inventario_descontado_at=NOW.
+      6. Idempotente: si ya tiene inventario_descontado_at, no descontar 2x.
+
+    Body opcional: {forzar_redescuento: true} para casos de emergencia
+    (ej. el flag quedó stale por bug). Solo admin.
+    Body opcional: {dry_run: true} para preview sin escribir nada.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json() or {}
+    forzar = bool(d.get('forzar_redescuento'))
+    dry_run = bool(d.get('dry_run'))
+    if forzar and user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede forzar re-descuento'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    prod = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               pp.estado, COALESCE(pp.inventario_descontado_at,'') as descontado_at,
+               COALESCE(pp.cantidad_kg, 0)         as cantidad_kg_explicita,
+               COALESCE(fh.lote_size_kg, 0)        as lote_kg_formula
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh
+               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE pp.id=?
+    """, (evento_id,)).fetchone()
+    if not prod:
+        return jsonify({'error': 'Producción no encontrada'}), 404
+    pid, producto, fecha, lotes, estado, descontado_at, cant_kg_exp, lote_kg = prod
+    lotes = int(lotes or 1)
+    cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
+
+    if descontado_at and not forzar:
+        return jsonify({
+            'error': f'Inventario ya fue descontado el {descontado_at}',
+            'codigo': 'YA_DESCONTADO',
+            'hint': 'Si necesitas re-descontar (admin), envía {forzar_redescuento: true}',
+            'inventario_descontado_at': descontado_at,
+        }), 409
+
+    # ── 1. Calcular MPs a consumir ─────────────────────────────────────
+    mps_a_consumir = []
+    try:
+        rows = c.execute("""
+            SELECT material_id, material_nombre,
+                   COALESCE(porcentaje, 0)                as pct,
+                   COALESCE(cantidad_g_por_lote, 0)       as g_por_lote
+            FROM formula_items
+            WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+        """, (producto,)).fetchall()
+        for cod, nom, pct, g_lote in rows:
+            # Preferimos cantidad_g_por_lote * lotes. Fallback: porcentaje*kg*1000
+            g_total = float(g_lote or 0) * lotes
+            if g_total <= 0 and cant_kg_total > 0:
+                g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
+            if g_total > 0:
+                mps_a_consumir.append({
+                    'codigo_mp': cod or '',
+                    'nombre': nom or '',
+                    'cantidad_g': round(g_total, 2),
+                })
+    except Exception as e:
+        return jsonify({'error': f'Error calculando MPs: {e}'}), 500
+
+    # ── 2. Calcular MEEs a consumir desde checklist (solo recibidos/verificados) ──
+    mees_a_consumir = []
+    try:
+        crows = c.execute("""
+            SELECT mee_codigo_asignado, descripcion, cantidad_unidades, item_tipo
+            FROM produccion_checklist
+            WHERE produccion_id = ?
+              AND COALESCE(mee_codigo_asignado,'') != ''
+              AND COALESCE(cantidad_unidades, 0) > 0
+              AND estado IN ('verificado_ok','recibido','listo')
+        """, (pid,)).fetchall()
+        for mee_cod, desc, cant_ud, tipo_item in crows:
+            mees_a_consumir.append({
+                'codigo': mee_cod, 'descripcion': desc or '',
+                'cantidad_unidades': int(cant_ud or 0),
+                'tipo_item': tipo_item or '',
+            })
+    except Exception:
+        # Si la tabla checklist no existe o falla, seguimos sin MEEs (no bloqueamos MPs)
+        pass
+
+    # ── 3. Si dry_run, devolver preview sin escribir ───────────────────
+    if dry_run:
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'producto': producto,
+            'fecha': fecha,
+            'lotes': lotes,
+            'cantidad_kg_total': cant_kg_total,
+            'mps_a_descontar': mps_a_consumir,
+            'mees_a_descontar': mees_a_consumir,
+            'total_mps': len(mps_a_consumir),
+            'total_mees': len(mees_a_consumir),
+            'total_g_mps': round(sum(m['cantidad_g'] for m in mps_a_consumir), 2),
+            'total_unidades_mees': sum(m['cantidad_unidades'] for m in mees_a_consumir),
+        })
+
+    # ── 4. ESCRIBIR descuentos (transaccional) ─────────────────────────
+    obs_base = f"Producción COMPLETADA: {producto} — {fecha} — {lotes} lote(s) × {cant_kg_total:.0f}kg"
+    descontados_mps = []
+    descontados_mees = []
+    fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
+    try:
+        # MPs → INSERT INTO movimientos
+        for mp in mps_a_consumir:
+            c.execute("""
+                INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   observaciones, operador)
+                VALUES (?, ?, ?, 'Salida', ?, ?, ?)
+            """, (mp['codigo_mp'], mp['nombre'], mp['cantidad_g'],
+                  fecha_iso, obs_base, user))
+            descontados_mps.append(mp)
+        # MEEs → INSERT INTO movimientos_mee + UPDATE maestro_mee
+        for me in mees_a_consumir:
+            try:
+                c.execute("""
+                    INSERT INTO movimientos_mee
+                      (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
+                    VALUES (?, 'salida', ?, ?, ?, ?)
+                """, (me['codigo'], me['cantidad_unidades'], obs_base, user, fecha_iso))
+                c.execute(
+                    "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
+                    "WHERE codigo=?",
+                    (me['cantidad_unidades'], me['codigo'])
+                )
+                descontados_mees.append(me)
+            except sqlite3.OperationalError:
+                # Si tabla mee no existe, seguimos
+                continue
+        # Actualizar produccion_programada
+        c.execute("""
+            UPDATE produccion_programada
+               SET estado='completado',
+                   inventario_descontado_at=?,
+                   observaciones = COALESCE(observaciones,'') ||
+                                   ' | INVENTARIO DESCONTADO ' || ? || ' por ' || ?
+             WHERE id=?
+        """, (fecha_iso, fecha_iso, user, pid))
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({
+            'error': f'Error descontando inventario: {e}',
+            'mps_descontados_antes_de_fallar': descontados_mps,
+            'mees_descontados_antes_de_fallar': descontados_mees,
+        }), 500
+
+    return jsonify({
+        'ok': True,
+        'id': pid,
+        'producto': producto,
+        'inventario_descontado_at': fecha_iso,
+        'mps_descontados': descontados_mps,
+        'mees_descontados': descontados_mees,
+        'total_mps': len(descontados_mps),
+        'total_mees': len(descontados_mees),
+        'total_g_mps': round(sum(m['cantidad_g'] for m in descontados_mps), 2),
+        'total_unidades_mees': sum(m['cantidad_unidades'] for m in descontados_mees),
+        'mensaje': f"{producto} marcada completada. Descontados {len(descontados_mps)} MPs y {len(descontados_mees)} MEEs."
+    })
+
+
+@bp.route('/api/programacion/programar/<int:evento_id>/revertir-completado', methods=['POST'])
+def prog_revertir_completado(evento_id):
+    """Revierte una produccion completada: regresa MPs y MEEs al inventario,
+    cambia estado a 'programado' y limpia el flag inventario_descontado_at.
+
+    Solo admin. Sebastian (29-abr-2026): por si Sebastian o alguien marca
+    completada por error o quiere re-hacer el descuento.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    prod = c.execute(
+        "SELECT producto, fecha_programada, lotes, "
+        "COALESCE(inventario_descontado_at,'') FROM produccion_programada WHERE id=?",
         (evento_id,)
-    )
-    conn.commit()
-    return jsonify({'ok': True, 'id': evento_id})
+    ).fetchone()
+    if not prod:
+        return jsonify({'error': 'Producción no encontrada'}), 404
+    producto, fecha, lotes, descontado_at = prod
+    if not descontado_at:
+        return jsonify({'error': 'Esta producción no tenía inventario descontado'}), 400
+
+    obs_filtro = f"Producción COMPLETADA: {producto} — {fecha}"
+    revertidos_mps = []
+    revertidos_mees = []
+    fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
+    try:
+        # Reversión de MPs: insertar movimientos de Entrada compensatorios
+        rows = c.execute("""
+            SELECT id, material_id, material_nombre, cantidad
+            FROM movimientos
+            WHERE tipo='Salida' AND observaciones LIKE ?
+        """, (f"{obs_filtro}%",)).fetchall()
+        for mid, cod, nom, cant in rows:
+            c.execute("""
+                INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   observaciones, operador)
+                VALUES (?, ?, ?, 'Entrada', ?, ?, ?)
+            """, (cod, nom, cant, fecha_iso,
+                  f"REVERSIÓN producción completada — original mov #{mid}", user))
+            revertidos_mps.append({'codigo_mp': cod, 'nombre': nom, 'cantidad_g': cant})
+
+        # Reversión de MEEs: insertar movimientos_mee de entrada + UPDATE stock
+        try:
+            rows_mee = c.execute("""
+                SELECT id, mee_codigo, cantidad
+                FROM movimientos_mee
+                WHERE tipo='salida' AND observaciones LIKE ?
+            """, (f"{obs_filtro}%",)).fetchall()
+            for mid, mee_cod, cant in rows_mee:
+                c.execute("""
+                    INSERT INTO movimientos_mee
+                      (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
+                    VALUES (?, 'entrada', ?, ?, ?, ?)
+                """, (mee_cod, cant,
+                      f"REVERSIÓN producción completada — original mov_mee #{mid}",
+                      user, fecha_iso))
+                c.execute(
+                    "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
+                    "WHERE codigo=?",
+                    (cant, mee_cod)
+                )
+                revertidos_mees.append({'codigo': mee_cod, 'cantidad_unidades': cant})
+        except sqlite3.OperationalError:
+            pass
+
+        # Limpiar flag y estado
+        c.execute("""
+            UPDATE produccion_programada
+               SET estado='programado',
+                   inventario_descontado_at=NULL,
+                   observaciones = COALESCE(observaciones,'') ||
+                                   ' | REVERTIDO ' || ? || ' por ' || ?
+             WHERE id=?
+        """, (fecha_iso, user, evento_id))
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': f'Error revirtiendo: {e}'}), 500
+
+    return jsonify({
+        'ok': True,
+        'id': evento_id,
+        'mps_revertidos': revertidos_mps,
+        'mees_revertidos': revertidos_mees,
+        'mensaje': f"Producción revertida. {len(revertidos_mps)} MPs y {len(revertidos_mees)} MEEs regresados al inventario."
+    })
 
 
 @bp.route('/api/programacion/debug-calendario')
@@ -4664,6 +4930,7 @@ def checklist_resumen_calendario():
                             COALESCE(pp.lotes, 1) * COALESCE(fh.lote_size_kg, 0)) as kg,
                    pp.estado                                         as estado_prod,
                    COALESCE(pp.origen, 'manual')                     as origen,
+                   COALESCE(pp.inventario_descontado_at, '')         as descontado_at,
                    (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}) as total_items,
                    (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}

@@ -2294,6 +2294,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         """CREATE INDEX IF NOT EXISTS idx_chat_react_msg ON chat_reactions(message_id)""",
     ]),
+    (52, "produccion_programada: flag inventario_descontado_at (idempotencia descuento)", [
+        # Sebastian (29-abr-2026): "que todo descuente que el inventario este
+        # perfecto". Bug: completar produccion solo cambiaba estado, no
+        # descontaba MPs ni MEEs. Ahora descontamos al completar; este flag
+        # garantiza idempotencia (si se llama 2x, no descontar 2x).
+        "ALTER TABLE produccion_programada ADD COLUMN inventario_descontado_at TEXT",
+    ]),
 ]
 
 

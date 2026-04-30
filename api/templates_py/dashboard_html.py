@@ -5263,9 +5263,22 @@ function rowProduccion(p){
     : '<span title="Entrada manual (no viene del calendario) — si esta duplicada, click ✖ para borrar" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">✋ man</span>';
   // Boton borrar (X) inline al lado del nombre — solo admin, valida en backend.
   var btnBorrar = '<button onclick="event.stopPropagation();ckBorrarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+', '+JSON.stringify(p.fecha_planeada).replace(/"/g,'&quot;')+')" title="Borrar esta producción (admin) — útil para limpiar duplicados/fantasmas" style="background:transparent;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;width:20px;height:20px;font-size:10px;font-weight:700;cursor:pointer;padding:0;line-height:1;margin-left:6px;vertical-align:middle">✖</button>';
+  // Sebastian (29-abr-2026): badge "✅ Completada" si ya descontó inventario.
+  // Si NO ha descontado y el checklist está al 80%+, botón "✅ Completar y descontar".
+  var yaCompletada = !!p.descontado_at;
+  var badgeCompletada = yaCompletada
+    ? '<span title="Inventario descontado el '+_escHTML(p.descontado_at)+'" style="background:#dcfce7;color:#15803d;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">✅ completada</span>'
+    : '';
+  // Botón "Completar" si checklist >= 80% Y NO se ha descontado aún
+  var btnCompletar = '';
+  if(!yaCompletada && !noChecklist && pct >= 80){
+    btnCompletar = '<button onclick="event.stopPropagation();ckCompletarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')" title="Marca completada y descuenta MPs + envases del inventario" style="background:#15803d;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-top:6px;display:block;width:100%">✅ Completar y descontar</button>';
+  } else if(yaCompletada){
+    btnCompletar = '<button onclick="event.stopPropagation();ckRevertirCompletado('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')" title="Revertir el descuento (solo admin)" style="background:transparent;color:#0891b2;border:1px solid #67e8f9;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;margin-top:6px">↩ Revertir</button>';
+  }
   return '<div style="background:#fff;border:1px solid #e7e5e4;border-left:4px solid '+color+';border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="abrirChecklistDetalle('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')">' +
     '<div>' +
-      '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+origenBadge+btnBorrar+'</div>' +
+      '<div style="font-weight:700;font-size:14px">'+_escHTML(p.producto_nombre)+origenBadge+badgeCompletada+btnBorrar+'</div>' +
       '<div style="font-size:11px;color:#78716c;margin-top:2px">' + (p.kg||0).toLocaleString('es-CO')+' kg · ' + p.fecha_planeada + '</div>' +
       barraHtml +
     '</div>' +
@@ -5274,6 +5287,7 @@ function rowProduccion(p){
       (noChecklist
         ? '<button onclick="event.stopPropagation();ckGenerar('+p.id+')" style="background:#a16207;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Generar checklist</button>'
         : '<div style="background:#f5f5f4;border-radius:8px;padding:6px 10px;text-align:center"><div style="font-weight:700;color:'+color+'">'+pct+'%</div><div style="font-size:10px;color:#78716c">'+(p.completados||0)+' de '+(p.total_items||0)+' OK</div></div>') +
+      btnCompletar +
     '</div>' +
     '<div style="font-size:11px;color:#78716c;text-align:right;min-width:140px">' +
       (noChecklist ? '' : '<div style="text-align:right;line-height:1.6">'+pills+'</div>') +
@@ -5323,6 +5337,79 @@ async function ckBackfill(){
 // cantidades de envases automaticamente con la nueva info.
 // Borra HARD una produccion programada (admin only — backend valida).
 // Util para limpiar duplicados o fantasmas que aparecen en el horizonte.
+// Sebastian (29-abr-2026): "que todo descuente que el inventario este perfecto".
+// Flujo: 1) dry_run para preview. 2) confirm con detalle. 3) descuento real.
+async function ckCompletarProduccion(produccionId, producto){
+  if(!produccionId){ alert('ID inválido'); return; }
+  try {
+    // Paso 1: dry_run para mostrar preview de qué se va a descontar
+    var rPrev = await fetch('/api/programacion/programar/'+produccionId+'/completar',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({dry_run:true})
+    });
+    var rawP = await rPrev.text();
+    var prev = null; try { prev = JSON.parse(rawP); } catch(_){}
+    if(!rPrev.ok){
+      if(prev && prev.codigo === 'YA_DESCONTADO'){
+        alert('Esta producción ya descontó inventario el '+prev.inventario_descontado_at+'.\\n\\nUsa "↩ Revertir" si necesitas re-hacer el descuento.');
+        return;
+      }
+      alert('Error: '+(prev && prev.error || rawP.substring(0,200)));
+      return;
+    }
+    var mps = prev.mps_a_descontar || [];
+    var mees = prev.mees_a_descontar || [];
+    if(!mps.length && !mees.length){
+      if(!confirm('Esta producción NO tiene MPs en fórmula ni envases en checklist. ¿Marcar completada igual?')) return;
+    } else {
+      var msg = 'Confirmar completar "'+producto+'"?\\n\\n';
+      msg += 'Se descontarán del inventario:\\n';
+      msg += '  • '+mps.length+' MPs ('+(prev.total_g_mps||0).toLocaleString('es-CO')+' g totales)\\n';
+      msg += '  • '+mees.length+' envases/etiquetas ('+(prev.total_unidades_mees||0)+' unidades)\\n\\n';
+      if(mps.length){
+        msg += 'MPs principales:\\n';
+        mps.slice(0,5).forEach(function(m){
+          msg += '  - '+m.nombre+': '+Math.round(m.cantidad_g).toLocaleString('es-CO')+' g\\n';
+        });
+        if(mps.length > 5) msg += '  ...y '+(mps.length-5)+' más\\n';
+      }
+      msg += '\\nEsto NO se puede deshacer fácilmente (admin tiene "↩ Revertir"). ¿Continuar?';
+      if(!confirm(msg)) return;
+    }
+    // Paso 2: descuento real
+    var r = await fetch('/api/programacion/programar/'+produccionId+'/completar',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({})
+    });
+    var raw = await r.text();
+    var d = null; try { d = JSON.parse(raw); } catch(_){}
+    if(!r.ok){
+      alert('Error al descontar: '+(d && d.error || raw.substring(0,200)));
+      return;
+    }
+    _toast('✅ '+(d.mensaje || 'Producción completada'), 1);
+    cargarChecklistResumen(window._ckLastDias || 60);
+  } catch(e){ alert('Error de red: '+e.message); }
+}
+
+async function ckRevertirCompletado(produccionId, producto){
+  if(!confirm('¿Revertir el descuento de "'+producto+'"?\\n\\nEsto regresará MPs y envases al inventario, y la producción volverá a estado "programado". Solo admin puede hacer esto.')) return;
+  try {
+    var r = await fetch('/api/programacion/programar/'+produccionId+'/revertir-completado',{
+      method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'
+    });
+    var raw = await r.text();
+    var d = null; try { d = JSON.parse(raw); } catch(_){}
+    if(!r.ok){
+      if(r.status === 403){ alert('Solo admin puede revertir.'); return; }
+      alert('Error: '+(d && d.error || raw.substring(0,200)));
+      return;
+    }
+    _toast(d.mensaje || 'Revertido', 1);
+    cargarChecklistResumen(window._ckLastDias || 60);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
 async function ckBorrarProduccion(produccionId, producto, fecha){
   // Guard: si el id no llegó (fila vieja o cache stale), abortar con mensaje claro
   if(!produccionId || produccionId === 'undefined' || produccionId === 'null'){
