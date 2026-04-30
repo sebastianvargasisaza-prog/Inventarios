@@ -6142,7 +6142,7 @@ function aiTogglePanel(){
   var open = p.style.display !== 'flex';
   p.style.display = open ? 'flex' : 'none';
   if(open && _AI_HIST.length === 0){
-    aiAddMsg('assistant', '👋 Hola, soy el asistente de tu planta. Conozco las cadencias, capacidades, equipos, producciones y MP en tiempo real. Pregúntame:\n\n• "¿Cuánto Suero AH puedo producir esta semana?"\n• "¿Por qué hay alerta crítica?"\n• "¿Qué cadencia tiene Vit C?"');
+    aiAddMsg('assistant', '👋 Hola, soy el asistente de tu planta. Conozco las cadencias, capacidades, equipos, producciones y MP en tiempo real. Pregúntame:\\n\\n• "¿Cuánto Suero AH puedo producir esta semana?"\\n• "¿Por qué hay alerta crítica?"\\n• "¿Qué cadencia tiene Vit C?"');
   }
 }
 function aiAddMsg(role, txt){
@@ -8894,7 +8894,7 @@ async function ckMarcar(itemId, estado){
   }
 
   async function apAplicarAprendizaje(){
-    if(!confirm('¿Aplicar TODAS las recomendaciones de cadencia detectadas del histórico?\n\nLas cadencias actualmente configuradas serán reemplazadas con las REALES.')) return;
+    if(!confirm('¿Aplicar TODAS las recomendaciones de cadencia detectadas del histórico?\\n\\nLas cadencias actualmente configuradas serán reemplazadas con las REALES.')) return;
     try {
       var r = await fetch('/api/auto-plan/aplicar-aprendizaje', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -8921,7 +8921,7 @@ async function ckMarcar(itemId, estado){
   }
 
   async function apEjecutar(){
-    if(!confirm('¿Ejecutar Auto-Plan AHORA?\n\nEl sistema CREARÁ producciones, SOLs de compra y conteos cíclicos según las cadencias y stock actual. Si hay emails configurados, los enviará.')) return;
+    if(!confirm('¿Ejecutar Auto-Plan AHORA?\\n\\nEl sistema CREARÁ producciones, SOLs de compra y conteos cíclicos según las cadencias y stock actual. Si hay emails configurados, los enviará.')) return;
     var content = document.getElementById('ap-resumen-content');
     content.innerHTML = '<div style="text-align:center;padding:40px;color:#dc2626">🔥 Ejecutando auto-plan + creando registros...</div>';
     try {
@@ -9021,7 +9021,7 @@ async function ckMarcar(itemId, estado){
     // Log
     if(d.log){
       html += '<details style="margin-top:18px"><summary style="cursor:pointer;color:#64748b;font-size:12px;font-weight:600">📜 Log generación</summary>'
-        +'<pre style="background:#0f172a;color:#cbd5e1;padding:14px;border-radius:8px;font-size:11px;overflow:auto;max-height:280px;margin-top:8px">'+ _escHTML(d.log.join('\n')) +'</pre></details>';
+        +'<pre style="background:#0f172a;color:#cbd5e1;padding:14px;border-radius:8px;font-size:11px;overflow:auto;max-height:280px;margin-top:8px">'+ _escHTML(d.log.join('\\n')) +'</pre></details>';
     }
 
     content.innerHTML = html;
@@ -9489,7 +9489,7 @@ async function ckMarcar(itemId, estado){
     var producto = card.dataset.producto;
     var fecha = card.dataset.fecha;
     var kg = parseFloat(card.dataset.kg) || 0;
-    if(!confirm('¿Confirmar producción de "'+producto+'" para '+fecha+'?\n\nSe creará en el calendario y aparecerá en Pre-flight.')) return;
+    if(!confirm('¿Confirmar producción de "'+producto+'" para '+fecha+'?\\n\\nSe creará en el calendario y aparecerá en Pre-flight.')) return;
     try {
       var r = await fetch('/api/planta/confirmar-proyeccion', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -9503,7 +9503,7 @@ async function ckMarcar(itemId, estado){
   }
 
   async function eliminarYReplanificar(prodId, producto){
-    var motivo = prompt('¿Por qué eliminas esta producción de "'+producto+'"?\n\n(El sistema propondrá automáticamente otra fecha en su lugar según cadencia)', 'Ya producida');
+    var motivo = prompt('¿Por qué eliminas esta producción de "'+producto+'"?\\n\\n(El sistema propondrá automáticamente otra fecha en su lugar según cadencia)', 'Ya producida');
     if(motivo === null) return;
     try {
       var r = await fetch('/api/planta/produccion/'+prodId+'/eliminar-y-replanificar', {
@@ -9675,7 +9675,7 @@ async function ckMarcar(itemId, estado){
   }
 
   function editarLoteModal(prodId, producto, kgActual){
-    var nueva = prompt('Editar tamaño del lote para "'+producto+'"\n\nKg actuales: '+kgActual+'\n\nNuevo tamaño (kg):', kgActual);
+    var nueva = prompt('Editar tamaño del lote para "'+producto+'"\\n\\nKg actuales: '+kgActual+'\\n\\nNuevo tamaño (kg):', kgActual);
     if(nueva === null) return;
     nueva = parseFloat(nueva);
     if(isNaN(nueva) || nueva <= 0){ alert('Cantidad inválida'); return; }
@@ -9686,11 +9686,11 @@ async function ckMarcar(itemId, estado){
       if(!d.ok){ alert('Error: '+(d.error||'')); return; }
       var msg = '✓ Lote actualizado a '+nueva+'kg';
       if(d.envase_recalculado){
-        msg += '\nEnvases ahora: '+d.envase_recalculado.unidades_requeridas+' unidades';
+        msg += '\\nEnvases ahora: '+d.envase_recalculado.unidades_requeridas+' unidades';
       }
       if(d.mp_recalculada && d.mp_recalculada.length){
-        var top3 = d.mp_recalculada.slice(0,3).map(function(m){return m.material_nombre+': '+m.gramos_requeridos+'g'}).join('\n');
-        msg += '\n\nMP recalculada:\n'+top3;
+        var top3 = d.mp_recalculada.slice(0,3).map(function(m){return m.material_nombre+': '+m.gramos_requeridos+'g'}).join('\\n');
+        msg += '\\n\\nMP recalculada:\\n'+top3;
       }
       alert(msg);
       planV2Cargar();
