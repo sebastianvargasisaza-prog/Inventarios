@@ -7155,3 +7155,245 @@ def planta_presentaciones_productos_disponibles():
             'n_presentaciones': r[2] or 0,
         })
     return jsonify({'productos': items, 'total': len(items)})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PLANTA INTELIGENTE — FASE 1: Catálogo de equipos + sugerencia de área
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian + Alejandro (30-abr-2026): el Excel "LISTADO MAESTRO DE EQUIPOS
+# 2026" tiene 104 equipos en 9 areas reales. La migracion 63 los importa.
+# Aqui exponemos endpoints para listar, ver y sugerir area al programar
+# producciones (cruce capacidad-de-tanque vs tamaño-de-lote).
+
+@bp.route('/api/planta/equipos', methods=['GET'])
+def planta_equipos_list():
+    """Lista todos los equipos. Querystring opcional:
+       ?area=<codigo>  filtra por area
+       ?tipo=<tipo>    filtra por tipo (tanque, envasadora, etc.)
+       ?con_capacidad=1 solo equipos con capacidad_litros NOT NULL
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    where = ['activo=1']
+    params = []
+    if request.args.get('area'):
+        where.append('area_codigo = ?')
+        params.append(request.args.get('area').strip())
+    if request.args.get('tipo'):
+        where.append('tipo = ?')
+        params.append(request.args.get('tipo').strip())
+    if request.args.get('con_capacidad') == '1':
+        where.append('capacidad_litros IS NOT NULL')
+    sql = "SELECT * FROM equipos_planta WHERE " + " AND ".join(where) + " ORDER BY area_codigo, COALESCE(capacidad_litros, 0) DESC, nombre"
+    rows = c.execute(sql, params).fetchall()
+    cols = [d[0] for d in c.description]
+    items = [dict(zip(cols, r)) for r in rows]
+    # Resumen por área + por tipo
+    por_area = {}
+    por_tipo = {}
+    for it in items:
+        a = it.get('area_codigo') or '—'
+        t = it.get('tipo') or 'otro'
+        por_area.setdefault(a, []).append(it)
+        por_tipo[t] = por_tipo.get(t, 0) + 1
+    return jsonify({
+        'equipos': items,
+        'total': len(items),
+        'por_area': por_area,
+        'por_tipo': por_tipo,
+    })
+
+
+@bp.route('/api/planta/equipos/<int:eq_id>', methods=['GET', 'PUT', 'DELETE'])
+def planta_equipos_detail(eq_id):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        r = c.execute("SELECT * FROM equipos_planta WHERE id=?", (eq_id,)).fetchone()
+        if not r:
+            return jsonify({'error': 'No existe'}), 404
+        cols = [d[0] for d in c.description]
+        return jsonify({'equipo': dict(zip(cols, r))})
+    if request.method == 'DELETE':
+        c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=datetime('now') WHERE id=?", (eq_id,))
+        conn.commit()
+        return jsonify({'ok': True})
+    # PUT
+    d = request.json or {}
+    campos = []
+    params = []
+    for col in ('nombre', 'area_codigo', 'tipo', 'capacidad_raw',
+                'capacidad_litros', 'capacidad_kg', 'estado_operacional',
+                'notas'):
+        if col in d:
+            campos.append(f'{col} = ?')
+            v = d[col]
+            if col in ('capacidad_litros', 'capacidad_kg'):
+                v = float(v) if v not in (None, '') else None
+            elif isinstance(v, str):
+                v = v.strip() or None
+            params.append(v)
+    if not campos:
+        return jsonify({'error': 'Sin cambios'}), 400
+    campos.append("actualizado_en = datetime('now')")
+    params.append(eq_id)
+    c.execute(f"UPDATE equipos_planta SET {', '.join(campos)} WHERE id=?", params)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/planta/areas/v2', methods=['GET'])
+def planta_areas_v2():
+    """Listado de areas con equipos asignados. Mas rico que /api/planta/areas."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT a.codigo, a.nombre, a.tipo, a.estado, a.activo,
+               a.requiere_limpieza_profunda,
+               a.ultima_limpieza_profunda,
+               a.puede_producir, a.puede_envasar,
+               (SELECT COUNT(*) FROM equipos_planta WHERE area_codigo=a.codigo AND activo=1) AS n_equipos,
+               (SELECT MAX(capacidad_litros) FROM equipos_planta
+                  WHERE area_codigo=a.codigo AND activo=1 AND tipo='tanque') AS max_tanque_l,
+               (SELECT MIN(capacidad_litros) FROM equipos_planta
+                  WHERE area_codigo=a.codigo AND activo=1 AND tipo='tanque'
+                    AND capacidad_litros IS NOT NULL) AS min_tanque_l
+        FROM areas_planta a
+        WHERE a.activo=1
+        ORDER BY a.orden, a.codigo
+    """).fetchall()
+    cols = [d[0] for d in c.description]
+    return jsonify({'areas': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/planta/sugerir-area', methods=['POST'])
+def planta_sugerir_area():
+    """Sugerencia inteligente de área para una producción.
+
+    Body: {producto_nombre*, lote_kg*, presentacion_codigo?}
+
+    Lógica (Sebastian + Alejandro, 30-abr-2026):
+      1. Filtrar areas con puede_producir=1 que tengan al menos 1 tanque
+         con capacidad >= lote_kg * 1.2 (margen 20%, asumiendo densidad ~1).
+      2. De las que pasan, preferir el tanque MAS PEQUEÑO que aguante
+         (eficiencia: no usar tanque 400L para lote de 30L).
+      3. Score adicional:
+         + estado='libre' (sin produccion en curso)
+         + cercania al envasado (FAB1->ENV1, FAB2/3->ENV2)
+         + ultima_limpieza_profunda reciente (<7 dias)
+      4. Devolver lista ordenada con score y razon.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    lote_kg = float(d.get('lote_kg') or 0)
+    if not producto or lote_kg <= 0:
+        return jsonify({'error': 'producto_nombre y lote_kg requeridos'}), 400
+    conn = get_db(); c = conn.cursor()
+
+    # Margen de 20% sobre el lote (densidad cercana a agua = 1 g/mL = 1 kg/L)
+    capacidad_min_litros = lote_kg * 1.2
+
+    # Buscar tanques candidatos (con capacidad suficiente)
+    tanques = c.execute("""
+        SELECT id, codigo, nombre, area_codigo, capacidad_litros
+        FROM equipos_planta
+        WHERE activo=1 AND tipo IN ('tanque','marmita','olla')
+          AND capacidad_litros IS NOT NULL
+          AND capacidad_litros >= ?
+        ORDER BY capacidad_litros ASC
+    """, (capacidad_min_litros,)).fetchall()
+
+    # Agrupar por area y tomar el mas pequeño que aguante
+    por_area = {}
+    for t in tanques:
+        a = t[3]
+        if a not in por_area or t[4] < por_area[a]['capacidad_litros']:
+            por_area[a] = {
+                'tanque_id': t[0],
+                'tanque_codigo': t[1],
+                'tanque_nombre': t[2],
+                'capacidad_litros': t[4],
+            }
+
+    # Cargar info de areas candidatas
+    sugerencias = []
+    for area_codigo, tanque_info in por_area.items():
+        area_row = c.execute("""
+            SELECT codigo, nombre, estado, puede_producir, puede_envasar,
+                   requiere_limpieza_profunda, ultima_limpieza_profunda
+            FROM areas_planta WHERE codigo=? AND activo=1
+        """, (area_codigo,)).fetchone()
+        if not area_row:
+            continue
+        if not area_row[3]:  # puede_producir
+            continue
+        score = 0
+        razones = []
+        # Eficiencia: tanque pequeño que aguanta
+        utilizacion = (lote_kg / tanque_info['capacidad_litros']) * 100
+        score += 50 if utilizacion >= 50 else 30
+        razones.append(f"Tanque {tanque_info['capacidad_litros']:.0f}L · uso {utilizacion:.0f}%")
+        # Estado libre
+        if area_row[2] == 'libre':
+            score += 20
+            razones.append('Sala libre')
+        elif area_row[2] == 'ocupada':
+            score -= 10
+            razones.append('Sala ocupada')
+        # Cercania a envasado (regla suave Fab1->Env1, Fab2/3->Env2)
+        env_cercano = ''
+        if area_codigo in ('FAB1', 'PROD1'):
+            env_cercano = 'ENV1'
+        elif area_codigo in ('FAB2', 'PROD2', 'FAB3', 'PROD3'):
+            env_cercano = 'ENV2'
+        # Limpieza reciente
+        if area_row[5]:  # requiere limpieza profunda
+            if area_row[6]:
+                from datetime import datetime as _dt
+                try:
+                    last = _dt.fromisoformat((area_row[6] or '').split('.')[0])
+                    dias = (_dt.now() - last).days
+                    if dias <= 7:
+                        score += 10
+                        razones.append(f"Limpieza profunda hace {dias}d")
+                    elif dias > 14:
+                        score -= 15
+                        razones.append(f"⚠ Limpieza profunda hace {dias}d (>14d)")
+                except Exception:
+                    pass
+            else:
+                score -= 5
+                razones.append('Sin registro de limpieza profunda')
+        sugerencias.append({
+            'area_codigo': area_codigo,
+            'area_nombre': area_row[1],
+            'tanque': tanque_info,
+            'estado_actual': area_row[2],
+            'envasado_sugerido': env_cercano,
+            'utilizacion_pct': round(utilizacion, 1),
+            'score': score,
+            'razones': razones,
+        })
+
+    sugerencias.sort(key=lambda x: x['score'], reverse=True)
+
+    return jsonify({
+        'producto_nombre': producto,
+        'lote_kg': lote_kg,
+        'capacidad_minima_litros': capacidad_min_litros,
+        'sugerencias': sugerencias,
+        'recomendada': sugerencias[0] if sugerencias else None,
+        'mensaje': (
+            f'No hay área con tanque ≥ {capacidad_min_litros:.0f}L disponible. '
+            f'Considera dividir el lote o revisar el catálogo de equipos.'
+            if not sugerencias else
+            f'{len(sugerencias)} área(s) candidata(s). '
+            f'Recomendada: {sugerencias[0]["area_nombre"]} '
+            f'({sugerencias[0]["tanque"]["capacidad_litros"]:.0f}L).'
+        ),
+    })

@@ -99,6 +99,119 @@ def safe_alter(conn, sql):
 # Para añadir una columna nueva a una tabla existente:
 #   1. Agregar tupla al final de MIGRATIONS con la sentencia ALTER TABLE.
 #   2. NO añadir try/except inline en init_db() — usar solo este sistema.
+
+# Seed de equipos del Excel "LISTADO MAESTRO DE EQUIPOS 2026" (Alejandro,
+# 30-abr-2026). 104 equipos en areas reales post-INVIMA. Usado por
+# migracion 63. UNIQUE(codigo, ubicacion_raw) para idempotencia.
+_SEED_EQUIPOS_PLANTA_SQL = r"""INSERT OR IGNORE INTO equipos_planta
+  (codigo, nombre, area_codigo, ubicacion_raw, tipo, capacidad_raw, capacidad_litros, capacidad_kg)
+VALUES
+    ('BL-PRD-001', 'Balanza EJ-6100', 'DISP', 'Dispensación', 'balanza', '', NULL, NULL),
+    ('BL-PRD-002', 'Balanza Precisa 620M', 'DISP', 'Producción-Dispensación', 'balanza', '620 g', NULL, NULL),
+    ('PC-COC-002', 'Picnómetro de acero', 'CC', 'Control de Calidad', 'picnometro', '37ml', 0.037, NULL),
+    ('BL-COC-001', 'Balanza Mix - A3000g', 'CC', 'Control de Calidad', 'balanza', '2,0-3000g d:0.1g', NULL, NULL),
+    ('BL-PRD-003', 'Balanza Mix - H', 'ENV2', 'Envasado 2', 'balanza', '0,01-600g', NULL, NULL),
+    ('BC-PRD-001', 'Bascula Digital TCS-150Kg', 'DISP', 'Producción-Dispensación', 'bascula', '150Kg', NULL, 150.0),
+    ('BL-PRD-004', 'Balanza Mix-A3000g', 'DISP', 'Dispensación', 'balanza', '2,0-3000g d:0.1g', NULL, NULL),
+    ('TM-PRD-001', 'Termómetro Digital HI98509', 'FAB2', 'Fabricacion 2', 'termometro', '< 50 A 150°C', NULL, NULL),
+    ('HG-PRD-001', 'Homogeneizador D-500 DLAB', 'FAB1', 'Fabricación 1', 'homogenizador', '10000-29000RPM', NULL, NULL),
+    ('AG-PRD-001', 'Agitador OS40 DLAB', 'FAB3', 'Fabricación 3', 'agitador', '50-2200RPM', NULL, NULL),
+    ('AG-PRD-002', 'Agitador OS40 DLAB', 'FAB2', 'Fabricación 2', 'agitador', '50-2200RPM', NULL, NULL),
+    ('AG-PRD-003', 'Agitador OS-70 PRO', 'FAB1', 'Fabricación 1', 'agitador', '50-1100RPM', NULL, NULL),
+    ('BM-PRD-001', 'Equipo de Mano (Batidor Manual) DD653', 'FAB1', 'Fabricación 1', 'batidor', 'N/A', NULL, NULL),
+    ('BM-PRD-002', 'Equipo de Mano (Batidor Manual) DD653', 'FAB2', 'Fabricación 2', 'batidor', 'N/A', NULL, NULL),
+    ('BM-PRD-003', 'Equipo de Mano (Batidor Manual) DD653', 'FAB2', 'Fabricación 2', 'batidor', 'N/A', NULL, NULL),
+    ('SA-PRD-001', 'Sistema de Agua Blue Tide Ro', 'LAV', 'Área de lavado', 'sistema_agua', 'N/A', NULL, NULL),
+    ('PL-PRD-001', 'Plancha Calentamiento 3P', 'FAB1', 'Fabricación 1', 'plancha', '60-300°C', NULL, NULL),
+    ('PL-PRD-002', 'Plancha Calentamiento 3P', 'FAB2', 'Fabricación 2', 'plancha', '60-300°C', NULL, NULL),
+    ('ES-PRD-001', 'Envasadora Semiautomática FLUITEC', 'ENV2', 'Envasado 2', 'envasadora', 'N/A', NULL, NULL),
+    ('RF-PRD-001', 'Nevera', 'ALM_MP', 'Producción-Almacenamiento de materias primas', 'nevera', '2-8°C', NULL, NULL),
+    ('HA-PRD-001', 'Hervidor de agua', 'FAB2', 'Fabricación 2', 'hervidor', 'N/A', NULL, NULL),
+    ('TF-PRD-001', 'Tanque de fabricación 100L', 'FAB1', 'Fabricación 1', 'tanque', '100L', 100.0, NULL),
+    ('TF-PRD-002', 'Tanque de fabricación 70L', 'FAB1', 'Fabricación 1', 'tanque', '70L', 70.0, NULL),
+    ('TF-PRD-003', 'Tanque de fabricación 50L', 'FAB2', 'Fabricación 2', 'tanque', '50L', 50.0, NULL),
+    ('TF-PRD-004', 'Tanque de fabricación 50L', 'FAB2', 'Fabricación 2', 'tanque', '50L', 50.0, NULL),
+    ('DA-PRD-001', 'Destilador de agua', 'LAV', 'ÁREA DE LAVADO', 'destilador', 'N/A', NULL, NULL),
+    ('BC-PRD-001', 'Bascula Digital TCS-150Kg', 'RECEP', 'Recepción de Insumos', 'bascula', '150Kg', NULL, 150.0),
+    ('TH-PRD-001', 'Termohigrómetro Digital', 'PAS', 'Pasillo general', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-002', 'Termohigrómetro Digital', 'ALM_ENV', 'Almacenamiento envases', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-003', 'Termohigrómetro Digital', 'ALM_MP', 'Almacenamiento materias primas', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-004', 'Termohigrómetro Digital', 'SAGUA', 'Sistema de agua', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-005', 'Termohigrómetro Digital', 'DISP', 'Dispensación', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-008', 'Termohigrómetro Digital', 'FAB1', 'Fabricación 1', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-007', 'Termohigrómetro Digital', 'ENV1', 'Envasado 1', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-006', 'Termohigrómetro Digital', 'FAB2', 'Fabricación 2', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-009', 'Termohigrómetro Digital', 'ENV2', 'Envasado 2', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-COC-001', 'Termohigrómetro Digital', 'CC', 'Control de calidad', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-BDG-001', 'Termohigrómetro Digital', 'BDG', 'Bodega producto terminado', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-BDG-002', 'Termohigrómetro Digital', 'OTROS', 'Producto en proceso', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-002B', 'Termohigrómetro Digital', 'FAB3', 'Fabricacion 3', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-BDG-003', 'Termohigrómetro Digital', 'MUESTRAS', 'Muestras de retención', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-010', 'Termohigrómetro Digital', 'ESC', 'Esclusa posterior', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-PRD-011', 'Termohigrómetro Digital', 'RECEP', 'Recepción de insumos', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('TH-BDG-003B', 'Termohigrómetro Digital', 'ACOND', 'Acondicionamiento', 'termohigrometro', '-10°C ͂ 50°', NULL, NULL),
+    ('CA-PRD-001', 'Compresor de aire', 'VENT', 'Producción-Sistema de Ventilación', 'compresor', '53 - 118 °F', NULL, NULL),
+    ('BL-PRD-005', 'Balanza Mix - H', 'ENV1', 'Envasado 1', 'balanza', '0,01-600g', NULL, NULL),
+    ('PP-COC-001', 'Pesa patrón 1g', 'CC', 'Control de Calidad', 'pesa_patron', '1g', NULL, NULL),
+    ('PP-COC-002', 'Pesa patrón 50 g', 'CC', 'Control de Calidad', 'pesa_patron', '50g', NULL, NULL),
+    ('PP-COC-003', 'Pesa patrón 10kg', 'CC', 'Control de Calidad', 'pesa_patron', '10kg', NULL, 10.0),
+    ('PP-COC-004', 'Pesa patrón 20kg', 'CC', 'Control de Calidad', 'pesa_patron', '20kg', NULL, 20.0),
+    ('ML-BDG-001', 'Maquina loteadora inject', 'ACOND', 'Acondicionamiento', 'loteadora', 'Hasta 5 líneas de impresión', NULL, NULL),
+    ('LM-BDG-001', 'Loteadora manual de tinta', 'ACOND', 'Acondicionamiento', 'loteadora', '1mm hasta 12mm', NULL, NULL),
+    ('AG-PRD-004', 'Agitador Digital OS40-PRO Wisdom', 'FAB2', 'Fabricación 2', 'agitador', '50-2200RPM', NULL, NULL),
+    ('HG-PRD-002', 'Homogenizador D-500 WISDOM', 'FAB3', 'Fabricación 3', 'homogenizador', '10,000-30,000 RPM', NULL, NULL),
+    ('VS-COC-001', 'Viscosímetro Brookfield', 'CC', 'Control de Calidad', 'viscosimetro', '1-1000,000mp.s', NULL, NULL),
+    ('MR-PRD-001', 'Molino de 3 rodillos', 'FAB2', 'Fabricación 2', 'molino', '1 a 18 micras / 2 a 5 kg/h', NULL, 5.0),
+    ('VS-COC-002', 'Viscosímetro Wisdom', 'CC', 'Control de Calidad', 'viscosimetro', '1-1000,000mp.s', NULL, NULL),
+    ('PA-PRD-001', 'Plancha de calentamiento con agitador', 'FAB1', 'Fabricación 1', 'agitador', '0°C-550°C Y 1500rpm', NULL, NULL),
+    ('PA-PRD-002', 'Plancha de calentamiento con agitador', 'FAB2', 'Fabricación 2', 'agitador', '0°C-550°C Y 1500rpm', NULL, NULL),
+    ('PA-PRD-003', 'Plancha de calentamiento con agitador', 'FAB3', 'Fabricación 3', 'agitador', '0°C-550°C Y 1500rpm', NULL, NULL),
+    ('EF-COC-001', 'Espectrofotómetro (Colorimetro)', 'CC', 'Control de Calidad', 'espectrofotometro', '360 nm - 700 nm', NULL, NULL),
+    ('PC-COC-003', 'Picnómetro de vidrio', 'CC', 'Control de Calidad', 'picnometro', '10,3108 ±0,01 cm', NULL, NULL),
+    ('PC-COC-004', 'Picnómetro de vidrio', 'CC', 'Control de Calidad', 'picnometro', '10,3108 ±0,01 cm', NULL, NULL),
+    ('PC-COC-001', 'Picnómetro de vidrio', 'CC', 'Control de Calidad', 'picnometro', '10,3108 ±0,01 cm', NULL, NULL),
+    ('PR-COC-001', 'Pie de Rey', 'CC', 'Control de Calidad', 'pie_de_rey', '0-150mm/0-6 in', NULL, NULL),
+    ('CL-PRD-001', 'Cabina de Flujo laminar', 'DISP', 'Producción - Dispensación', 'cabina_flujo', '220V / 330W / 60Hz', NULL, NULL),
+    ('ES-PRD-002', 'Envasadora Semiautomática XIAOYING', 'ENV1', 'Envasado 1', 'envasadora', '10-120ML', 0.12, NULL),
+    ('HG-PRD-003', 'Homogenizador Mixer de 100 L', 'FAB1', 'Fabricación 1', 'homogenizador', '0-3000rpm. T 0-100°C', NULL, NULL),
+    ('PH-COC-001', 'pHmetro HANNA HI', 'CC', 'Control de Calidad', 'phmetro', '0-14,00 ph', NULL, NULL),
+    ('HG-PRD-004', 'Homogenizador D-160 Wisdom', 'FAB2', 'Fabricación 2', 'homogenizador', '8000-32000rpm', NULL, NULL),
+    ('MM-PRD-001', 'Marmita', 'PROD', 'Producción', 'marmita', '250L', 250.0, NULL),
+    ('ST-PRD-001', 'Soplador térmico (pistola de calor)', 'DISP', 'Dispensación', 'soplador', '60°C-500°C', NULL, NULL),
+    ('BL-COC-002', 'Balanza analitica AXIS', 'CC', 'Control de calidad', 'balanza', '0-210g d:0,001g', NULL, NULL),
+    ('EM-PRD-003', 'Envasadora Manual KITEM', 'ENV1', 'Envasado 1', 'envasadora', '10ml-50ml', 0.01, NULL),
+    ('EM-PRD-004', 'Envasadora Manual KITEM', 'ENV2', 'Envasado 2', 'envasadora', '10ml-50ml', 0.01, NULL),
+    ('OF-PRD-001', 'Olla de fabricación BESNEL', 'FAB_FLOAT', 'Fabricación', 'olla', '7.5 L', 7.5, NULL),
+    ('OF-PRD-002', 'Olla de fabricación BESNEL', 'FAB_FLOAT', 'Fabricación', 'olla', '7.5 L', 7.5, NULL),
+    ('OF-PRD-003', 'Olla de fabricación BESNEL', 'FAB_FLOAT', 'Fabricación', 'olla', '7.5 L', 7.5, NULL),
+    ('OF-PRD-004', 'Olla de fabricación BESNEL', 'FAB_FLOAT', 'Fabricación', 'olla', '7.5 L', 7.5, NULL),
+    ('ES-PRD-003', 'Envasadora semiautomática BOINES', 'ENV1', 'Envasado 1', 'envasadora', '30g-10000g', NULL, NULL),
+    ('CA-PRD-002', 'Compresor de aire TRUPER', 'CUB', 'Cubierta', 'compresor', '24 L / 800 kPa (116 PSI)', 24.0, NULL),
+    ('GE-PRD-001', 'Generador eléctrico portátil PRETUL', 'PISO3', 'Tercer piso', 'generador', '2,500 W (Potencia máxima) / 2,200 W', NULL, NULL),
+    ('ME-PRD-001', 'Mezclador eléctrico', 'FAB1', 'Fabricación 1', 'homogenizador', '2400W. / Hasta 1200 r/min', NULL, NULL),
+    ('ME-PRD-002', 'Mezclador eléctrico', 'FAB2', 'Fabricación 2', 'homogenizador', '2400W. / Hasta 1200 r/min', NULL, NULL),
+    ('ME-PRD-003', 'Mezclador eléctrico', 'FAB3', 'Fabricación 3', 'homogenizador', '2400W. / Hasta 1200 r/min', NULL, NULL),
+    ('NV-PRD-001', 'Nevera Midea (secado)', 'FAB2', 'Fabricación 2', 'nevera', '-5°C a -18°C', NULL, NULL),
+    ('TF-PRD-005', 'Tanque de fabricación 120L', 'FAB3', 'Fabricación 3', 'tanque', '100L', 100.0, NULL),
+    ('TF-PRD-006', 'Tanque de fabricación 400L', 'FAB3', 'Fabricación 3', 'tanque', '400L', 400.0, NULL),
+    ('TF-PRD-007', 'Tanque de fabricación 400L', 'FAB3', 'Fabricación 3', 'tanque', '400L', 400.0, NULL),
+    ('TF-PRD-008', 'Tanque de fabricación 200L', 'FAB1', 'Fabricación 1', 'tanque', '200L', 200.0, NULL),
+    ('TF-PRD-009', 'Tanque de fabricación Enjuague bucal 25L', 'FAB2', 'Fabricación 2', 'tanque', '20L', 20.0, NULL),
+    ('TF-PRD-010', 'Tanque de fabricación Repelentes 30L', 'FAB2', 'Fabricación 2', 'tanque', '30L', 30.0, NULL),
+    ('TF-PRD-011', 'Tanque de fabricación 50L', 'FAB2', 'Fabricación 2', 'tanque', '50L', 50.0, NULL),
+    ('TF-PRD-012', 'Tanque de fabricación 30L', 'FAB_FLOAT', 'Fabricación según la necesidad', 'tanque', '20L', 20.0, NULL),
+    ('TF-PRD-013', 'Tanque de fabricación 15L', 'FAB_FLOAT', 'Fabricación según la necesidad', 'tanque', '10L', 10.0, NULL),
+    ('TF-PRD-014', 'Tanque de fabricación 20L', 'FAB_FLOAT', 'Fabricación según la necesidad', 'tanque', '6L', 6.0, NULL),
+    ('TF-PRD-015', 'Tanque de fabricación 3L', 'FAB_FLOAT', 'Fabricación', 'tanque', '3L', 3.0, NULL),
+    ('TF-PRD-016', 'Tanque de fabricación 10L', 'FAB_FLOAT', 'Fabricación según la necesidad', 'tanque', '10L', 10.0, NULL),
+    ('ML-BDG-002', 'Inkjet printer', 'ACOND', 'Acondicionamiento', 'loteadora', '2 mm a 12.7 mm', NULL, NULL),
+    ('TN-PRD-001', 'Tapadora neumático', 'ENV1', 'Envasado', 'tapadora', '', NULL, NULL),
+    ('TN-PRD-002', 'Tapadora neumático', 'ENV2', 'Envasado', 'tapadora', '', NULL, NULL),
+    ('ST-PRD-002', 'Soplador térmico (pistola de calor) BAUKER', 'ACOND', 'Acondicionamiento', 'soplador', '50°C- 600°C', NULL, NULL),
+    ('ES-PRD-004', 'Envasadora semiautomática KM-B1000V', 'FAB_FLOAT', 'Fabricación según necesidad', 'envasadora', '', NULL, NULL),
+    ('TP-PRD-001', 'Tapadora Electroneumática', 'FAB_FLOAT', 'Envasado según necesidad', 'tapadora', '', NULL, NULL)"""
+
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (1, "baseline — sistema de migraciones instalado", []),
     (2, "maestro_mps: proveedor_preferido", [
@@ -2946,6 +3059,70 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Alejandro asigne presentaciones a cada formula.
         # Por ahora dejamos solo la estructura — seed de plantillas no aplica
         # porque UNIQUE(producto, presentacion) requiere producto.
+    ]),
+    (63, "planta inteligente fase 1: catalogo equipos del Excel + 9 areas reales", [
+        # Sebastian + Alejandro (30-abr-2026): Excel "LISTADO MAESTRO DE
+        # EQUIPOS 2026" trae 104 equipos en 9+ areas reales. Hoy
+        # areas_planta solo tiene 5 codigos (PROD1-4, ENV1) que no
+        # representan la planta real post-INVIMA. Esta migracion:
+        #  1. Renombra PROD1->Fabricacion 1 (mantiene codigo PROD1 para
+        #     no romper produccion_programada.area_id historico).
+        #  2. Marca PROD4 como activo=0 (no existe en la realidad).
+        #  3. Agrega areas nuevas: FAB1/2/3, ENV2, DISP, LAV, ESC1, FAB_FLOAT,
+        #     CC, RECEP. FAB1/2/3 conviven con PROD1/2/3 — los nuevos son
+        #     los oficiales para nueva data.
+        #  4. Marca las 9 areas que requieren limpieza profunda (brief K).
+        #  5. Crea tabla equipos_planta.
+        #  6. Seed con 104 equipos del Excel (idempotente con OR IGNORE).
+        "ALTER TABLE areas_planta ADD COLUMN requiere_limpieza_profunda INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE areas_planta ADD COLUMN ultima_limpieza_profunda TEXT",
+        "UPDATE areas_planta SET nombre='Fabricación 1' WHERE codigo='PROD1'",
+        "UPDATE areas_planta SET nombre='Fabricación 2' WHERE codigo='PROD2'",
+        "UPDATE areas_planta SET nombre='Fabricación 3' WHERE codigo='PROD3'",
+        "UPDATE areas_planta SET activo=0, nombre='Producción 4 (deprecated)' WHERE codigo='PROD4'",
+        """INSERT OR IGNORE INTO areas_planta
+           (codigo, nombre, puede_producir, puede_envasar, marmita_ml, especial, orden, tipo, requiere_limpieza_profunda) VALUES
+           ('FAB1', 'Fabricación 1', 1, 0, NULL, NULL, 1, 'produccion', 1),
+           ('FAB2', 'Fabricación 2', 1, 1, 50, NULL, 2, 'produccion', 1),
+           ('FAB3', 'Fabricación 3', 1, 1, 400, NULL, 3, 'produccion', 1),
+           ('ENV2', 'Envasado 2', 0, 1, NULL, NULL, 5, 'produccion', 1),
+           ('DISP', 'Dispensación', 0, 0, NULL, 'asepsia', 6, 'apoyo_asignable', 1),
+           ('LAV',  'Área de Lavado', 0, 0, NULL, NULL, 7, 'apoyo_asignable', 1),
+           ('ESC1', 'Esclusa 1', 0, 0, NULL, NULL, 8, 'apoyo_asignable', 1),
+           ('FAB_FLOAT', 'Fabricación según necesidad', 1, 0, NULL, NULL, 9, 'produccion', 0),
+           ('CC',   'Control de Calidad', 0, 0, NULL, NULL, 10, 'apoyo_asignable', 0),
+           ('RECEP','Recepción de Insumos', 0, 0, NULL, NULL, 11, 'apoyo_asignable', 0)""",
+        # Marcar las 9 areas que pide Alejandro K (brief de limpieza profunda).
+        # Usamos los codigos nuevos (FAB1..FAB3, ENV1..ENV2, DISP, LAV, ESC1, ALMP).
+        "UPDATE areas_planta SET requiere_limpieza_profunda=1 WHERE codigo IN ('FAB1','FAB2','FAB3','ENV1','ENV2','DISP','LAV','ESC1','ALMP')",
+        # Catalogo de equipos. Acepta duplicados de codigo en distintas
+        # ubicaciones porque el Excel los tiene (errores marcados como
+        # observacion, validos hasta que Alejandro corrija).
+        """CREATE TABLE IF NOT EXISTS equipos_planta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            nombre TEXT NOT NULL,
+            area_codigo TEXT,
+            ubicacion_raw TEXT,
+            tipo TEXT NOT NULL DEFAULT 'otro',
+            capacidad_raw TEXT,
+            capacidad_litros REAL,
+            capacidad_kg REAL,
+            estado_operacional TEXT NOT NULL DEFAULT 'operativo'
+                CHECK(estado_operacional IN ('operativo','mantenimiento','baja','calibracion')),
+            activo INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT,
+            UNIQUE(codigo, ubicacion_raw)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_equipos_area ON equipos_planta(area_codigo, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_equipos_tipo ON equipos_planta(tipo, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_equipos_capacidad ON equipos_planta(capacidad_litros)",
+        # Seed: 104 equipos del Excel "LISTADO MAESTRO DE EQUIPOS 2026".
+        # Multi-row INSERT idempotente. Si Alejandro corrige el Excel mas
+        # adelante, se puede re-ejecutar sin duplicar (UNIQUE codigo+ubicacion).
+        _SEED_EQUIPOS_PLANTA_SQL,
     ]),
 ]
 

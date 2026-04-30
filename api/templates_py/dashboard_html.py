@@ -1293,6 +1293,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
       &#128230; Presentaciones
     </button>
+    <button id="prog-tab-equipos" onclick="switchProgTab('equipos')"
+      style="padding:7px 18px;border:none;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
+      &#127981; Equipos
+    </button>
   </div>
 
   <div id="ptab-centro">
@@ -5542,6 +5546,57 @@ function _renderProgramacion(d){
     </div>
   </div><!-- /ptab-presentaciones -->
 
+  <!-- ── ptab-equipos: catálogo de equipos del Excel (Fase 1) ── -->
+  <div id="ptab-equipos" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="margin:0 0 4px;color:#1a4a7a">&#127981; Catálogo de Equipos</h2>
+        <p style="color:#666;font-size:13px;margin:0">104 equipos del "LISTADO MAESTRO DE EQUIPOS 2026" — distribuidos por área. Usado por el algoritmo de sugerir-área (capacidad × lote).</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="abrirSugerirArea()" style="background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">&#x1F9E0; Probar sugerir-área</button>
+        <button onclick="cargarEquipos()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">&#x21bb; Actualizar</button>
+      </div>
+    </div>
+
+    <div id="eq-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>
+
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <input id="eq-search" placeholder="🔍 Buscar por código, nombre o capacidad..." oninput="filtrarEquipos()" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+      <select id="eq-filtro-tipo" onchange="filtrarEquipos()" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <option value="">Todos los tipos</option>
+      </select>
+      <select id="eq-filtro-area" onchange="filtrarEquipos()" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <option value="">Todas las áreas</option>
+      </select>
+    </div>
+
+    <div id="eq-lista"></div>
+
+    <!-- Modal sugerir-area -->
+    <div id="modal-sugerir-area" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:10px;padding:22px;width:580px;max-width:92vw;max-height:90vh;overflow:auto">
+        <h3 style="margin:0 0 12px;color:#7c3aed">&#x1F9E0; Sugerir área para producir</h3>
+        <p style="color:#64748b;font-size:12px;margin:0 0 12px">Cruza capacidad de tanques × tamaño de lote. Recomienda el tanque más pequeño que aguante con margen 20% (eficiencia).</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Producto</label>
+            <input id="sa-producto" placeholder="ej. Suero X" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Tamaño lote (kg)</label>
+            <input id="sa-lote" type="number" step="0.1" placeholder="ej. 80" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:14px">
+          <button onclick="cerrarSugerirArea()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cerrar</button>
+          <button onclick="ejecutarSugerirArea()" style="background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Calcular</button>
+        </div>
+        <div id="sa-resultado"></div>
+      </div>
+    </div>
+  </div><!-- /ptab-equipos -->
+
 <script>
 // Estado del auto-refresh
 window._ckAutoRefreshTimer = null;
@@ -6681,6 +6736,7 @@ async function ckMarcar(itemId, estado){
       var el_tk  = document.getElementById('ptab-tareas');
       var el_pln = document.getElementById('ptab-plano');
       var el_pr  = document.getElementById('ptab-presentaciones');
+      var el_eq  = document.getElementById('ptab-equipos');
       if(!el_c || !el_p){ _toast('ERROR: ptab divs no encontrados', 0); return; }
       el_c.style.display  = tab==='centro' ? 'block' : 'none';
       el_p.style.display  = tab==='plan'   ? 'block' : 'none';
@@ -6688,6 +6744,7 @@ async function ckMarcar(itemId, estado){
       if(el_tk)  el_tk.style.display  = tab==='tareas'    ? 'block' : 'none';
       if(el_pln) el_pln.style.display = tab==='plano'     ? 'block' : 'none';
       if(el_pr)  el_pr.style.display  = tab==='presentaciones' ? 'block' : 'none';
+      if(el_eq)  el_eq.style.display  = tab==='equipos'   ? 'block' : 'none';
       var bc   = document.getElementById('prog-tab-centro');
       var bp   = document.getElementById('prog-tab-plan');
       var bck  = document.getElementById('prog-tab-checklist');
@@ -6700,6 +6757,8 @@ async function ckMarcar(itemId, estado){
       if(btk) { btk.style.background = tab==='tareas' ? '#0891b2' : '#e2e8f0'; btk.style.color = tab==='tareas' ? '#fff' : '#1a4a7a'; }
       if(bpln){ bpln.style.background= tab==='plano'  ? '#1a4a7a' : '#e2e8f0'; bpln.style.color= tab==='plano'  ? '#fff' : '#1a4a7a'; }
       if(bpr) { bpr.style.background = tab==='presentaciones' ? '#0f766e' : '#e2e8f0'; bpr.style.color = tab==='presentaciones' ? '#fff' : '#1a4a7a'; }
+      var beq = document.getElementById('prog-tab-equipos');
+      if(beq) { beq.style.background = tab==='equipos' ? '#7c3aed' : '#e2e8f0'; beq.style.color = tab==='equipos' ? '#fff' : '#1a4a7a'; }
       if(tab==='plan'){
         el_p.scrollIntoView({behavior:'smooth', block:'start'});
         if(!_planLoaded) cargarPlanificacion(60);
@@ -6727,6 +6786,10 @@ async function ckMarcar(itemId, estado){
       if(tab==='presentaciones'){
         if(el_pr) el_pr.scrollIntoView({behavior:'smooth', block:'start'});
         if(typeof cargarPresentaciones==='function') cargarPresentaciones();
+      }
+      if(tab==='equipos'){
+        if(el_eq) el_eq.scrollIntoView({behavior:'smooth', block:'start'});
+        if(typeof cargarEquipos==='function') cargarEquipos();
       }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
@@ -7531,6 +7594,139 @@ async function ckMarcar(itemId, estado){
       if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
       cargarPresentaciones();
     } catch(e){ alert('Error de red: '+e.message); }
+  }
+
+  // ── Fase 1: Equipos del Excel + sugerir-área ─────────────────────────
+  var _eqTodos = [];
+  var _eqTipos = {};
+  var _eqAreas = {};
+
+  async function cargarEquipos(){
+    var lista = document.getElementById('eq-lista');
+    if(!lista) return;
+    lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">Cargando...</div>';
+    try {
+      var r = await fetch('/api/planta/equipos');
+      var d = await r.json();
+      _eqTodos = d.equipos || [];
+      _eqTipos = d.por_tipo || {};
+      // Por area
+      var porArea = d.por_area || {};
+      _eqAreas = porArea;
+
+      // KPIs
+      var kpis = document.getElementById('eq-kpis');
+      var nTanques = _eqTodos.filter(function(e){return e.tipo==='tanque'||e.tipo==='marmita'||e.tipo==='olla'}).length;
+      var nEnvas   = _eqTodos.filter(function(e){return e.tipo==='envasadora'||e.tipo==='tapadora'}).length;
+      var nMedida  = _eqTodos.filter(function(e){return ['balanza','bascula','viscosimetro','phmetro','espectrofotometro','termometro','termohigrometro','pie_de_rey','picnometro','pesa_patron'].indexOf(e.tipo)>=0}).length;
+      var nMezcla  = _eqTodos.filter(function(e){return ['agitador','homogenizador','mezclador','batidor','molino','plancha'].indexOf(e.tipo)>=0}).length;
+      kpis.innerHTML = ''
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+_eqTodos.length+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Tanques/marmitas</div><div style="font-size:24px;font-weight:800;color:#1a4a7a">'+nTanques+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Envasado</div><div style="font-size:24px;font-weight:800;color:#0891b2">'+nEnvas+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Mezcla</div><div style="font-size:24px;font-weight:800;color:#7c3aed">'+nMezcla+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Medición/CC</div><div style="font-size:24px;font-weight:800;color:#16a34a">'+nMedida+'</div></div>';
+
+      // Llenar selects de filtro
+      var selT = document.getElementById('eq-filtro-tipo');
+      var selA = document.getElementById('eq-filtro-area');
+      var tiposSorted = Object.keys(_eqTipos).sort();
+      selT.innerHTML = '<option value="">Todos los tipos ('+_eqTodos.length+')</option>'
+        + tiposSorted.map(function(t){ return '<option value="'+t+'">'+t+' ('+_eqTipos[t]+')</option>'; }).join('');
+      var areasSorted = Object.keys(porArea).sort();
+      selA.innerHTML = '<option value="">Todas las áreas</option>'
+        + areasSorted.map(function(a){ return '<option value="'+a+'">'+a+' ('+(porArea[a].length)+')</option>'; }).join('');
+
+      filtrarEquipos();
+    } catch(e){
+      lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
+    }
+  }
+
+  function filtrarEquipos(){
+    var lista = document.getElementById('eq-lista');
+    var q = (document.getElementById('eq-search').value||'').toLowerCase();
+    var ft = (document.getElementById('eq-filtro-tipo').value||'').toLowerCase();
+    var fa = (document.getElementById('eq-filtro-area').value||'');
+    var filtered = _eqTodos.filter(function(e){
+      if(ft && (e.tipo||'').toLowerCase()!==ft) return false;
+      if(fa && (e.area_codigo||'')!==fa) return false;
+      if(q){
+        var t = ((e.codigo||'')+' '+(e.nombre||'')+' '+(e.capacidad_raw||'')+' '+(e.area_codigo||'')+' '+(e.ubicacion_raw||'')).toLowerCase();
+        if(t.indexOf(q)<0) return false;
+      }
+      return true;
+    });
+    if(!filtered.length){
+      lista.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Sin resultados.</div>';
+      return;
+    }
+    // Agrupar por area
+    var grupos = {};
+    filtered.forEach(function(e){
+      var a = e.area_codigo || '—';
+      grupos[a] = grupos[a] || [];
+      grupos[a].push(e);
+    });
+    var html = '';
+    Object.keys(grupos).sort().forEach(function(a){
+      var eqs = grupos[a];
+      html += '<div style="margin-bottom:14px"><h3 style="margin:0 0 8px;color:#1a4a7a;font-size:14px">'+a+' <span style="color:#64748b;font-size:11px;font-weight:500">('+eqs.length+' equipos)</span></h3>'
+        +'<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9"><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Código</th><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Nombre</th><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Tipo</th><th style="padding:8px 12px;text-align:right;font-size:11px;color:#475569;text-transform:uppercase">Capacidad</th></tr></thead><tbody>';
+      eqs.forEach(function(e){
+        var capStr = e.capacidad_raw || '—';
+        if(e.capacidad_litros){ capStr = e.capacidad_litros+' L'; }
+        else if(e.capacidad_kg){ capStr = e.capacidad_kg+' kg'; }
+        html += '<tr style="border-top:1px solid #e2e8f0"><td style="padding:7px 12px;font-family:monospace;font-size:12px;color:#1e293b">'+_escHTML(e.codigo)+'</td><td style="padding:7px 12px;font-size:13px">'+_escHTML(e.nombre||'')+'</td><td style="padding:7px 12px;font-size:11px"><span style="background:#ede9fe;color:#5b21b6;padding:2px 7px;border-radius:8px;font-weight:600">'+_escHTML(e.tipo||'otro')+'</span></td><td style="padding:7px 12px;font-size:12px;text-align:right;color:#0f172a;font-weight:600">'+_escHTML(capStr)+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    lista.innerHTML = html;
+  }
+
+  function abrirSugerirArea(){
+    document.getElementById('sa-producto').value = '';
+    document.getElementById('sa-lote').value = '';
+    document.getElementById('sa-resultado').innerHTML = '';
+    document.getElementById('modal-sugerir-area').style.display = 'flex';
+  }
+  function cerrarSugerirArea(){ document.getElementById('modal-sugerir-area').style.display='none'; }
+
+  async function ejecutarSugerirArea(){
+    var prod = (document.getElementById('sa-producto').value||'').trim() || 'Producto X';
+    var lote = parseFloat(document.getElementById('sa-lote').value);
+    if(!lote || lote<=0){ alert('Tamaño de lote requerido (kg)'); return; }
+    var box = document.getElementById('sa-resultado');
+    box.innerHTML = '<div style="color:#94a3b8;padding:14px;text-align:center">Calculando...</div>';
+    try {
+      var r = await fetch('/api/planta/sugerir-area', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prod, lote_kg: lote})
+      });
+      var d = await r.json();
+      if(!r.ok){ box.innerHTML='<div style="color:#dc2626;padding:14px">'+(d.error||'Error')+'</div>'; return; }
+      var sugerencias = d.sugerencias||[];
+      var html = '<div style="background:#f8fafc;border:1px solid #e2e8f0;padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:12px;color:#475569">📊 '+_escHTML(d.mensaje)+'</div>';
+      if(!sugerencias.length){
+        box.innerHTML = html;
+        return;
+      }
+      sugerencias.forEach(function(s, i){
+        var medal = i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : '·';
+        var color = i===0 ? '#15803d' : '#64748b';
+        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+color+';border-radius:8px;padding:12px 14px;margin-bottom:8px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:6px">'
+          +'<div><b style="color:#0f172a;font-size:14px">'+medal+' '+_escHTML(s.area_nombre)+'</b> <span style="font-family:monospace;color:#64748b;font-size:11px">('+_escHTML(s.area_codigo)+')</span></div>'
+          +'<div style="font-size:13px;font-weight:700;color:'+color+'">Score '+s.score+'</div>'
+          +'</div>'
+          +'<div style="margin-top:6px;font-size:12px;color:#475569">🛢 '+_escHTML(s.tanque.tanque_nombre)+' <span style="color:#64748b">('+_escHTML(s.tanque.tanque_codigo)+')</span> · '+s.tanque.capacidad_litros+'L · uso '+s.utilizacion_pct+'%</div>'
+          +(s.envasado_sugerido?'<div style="margin-top:4px;font-size:11px;color:#0891b2">📦 Envasado sugerido: '+s.envasado_sugerido+'</div>':'')
+          +'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'
+          +(s.razones||[]).map(function(r){ return '<span style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 8px;border-radius:8px">'+_escHTML(r)+'</span>'; }).join('')
+          +'</div></div>';
+      });
+      box.innerHTML = html;
+    } catch(e){ box.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
   }
 
   // Safe modal backdrop close — placed after all functions are defined
