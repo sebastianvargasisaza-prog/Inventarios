@@ -213,8 +213,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <button class="tab-btn active" data-tab="hoy" onclick="switchTab('hoy')">&#x1F3AF; Hoy</button>
   <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
   <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
-  <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers</button>
-  <button class="tab-btn" data-tab="pagos" onclick="switchTab('pagos')">&#x1F4B0; Mis Pagos &amp; Solicitudes</button>
+  <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers &amp; Pagos</button>
   <button class="tab-btn" data-tab="contenido" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
   <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">&#x1F9E0; Inteligencia</button>
 </div>
@@ -426,58 +425,28 @@ window.addEventListener('unhandledrejection', function(ev) {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: INFLUENCERS -->
+<!-- TAB: INFLUENCERS & PAGOS (fusionado) -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-influencers" class="tab-panel">
   <div class="actions-bar">
     <div>
-      <div class="page-title">&#x1F465; Influencers</div>
+      <div class="page-title">&#x1F465; Influencers &amp; Pagos</div>
+      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Catálogo + historial de pagos por influencer · click en una fila para expandir su historial.</div>
     </div>
-    <div style="display:flex;gap:10px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <input class="search-box" id="inf-search" placeholder="Buscar nombre, @usuario, nicho..." oninput="loadInfluencers()">
       <button class="btn btn-primary" onclick="openInfluencerModal()">+ Nuevo Influencer</button>
     </div>
   </div>
+
+  <!-- KPIs unificados (catálogo + pagos) -->
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+
   <!-- Banner de solicitudes pendientes (visible si hay alguna) -->
   <div id="inf-pendientes-banner" style="display:none;background:linear-gradient(90deg,#78350f,#7c2d12);color:#fed7aa;padding:14px 18px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.5;border:1px solid #b45309;"></div>
   <div id="inf-alert" style="display:none;"></div>
-  <div class="card">
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Email</th><th>Banco / Cuenta</th><th>Estado Pago</th><th>Acciones</th></tr></thead>
-        <tbody id="inf-body"><tr class="empty-row"><td colspan="12"><span class="spin"></span></td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: PAGOS REALIZADOS — vista cronológica para Jefferson/Marketing -->
-<!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-pagos" class="tab-panel">
-  <div class="actions-bar">
-    <div>
-      <div class="page-title">&#x1F4B0; Mis Pagos & Solicitudes</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Filtro default: <b>⏳ esperando pago</b> (lo que está con Sebastián). Cambia a "Pagados" para ver el histórico con comprobantes PDF.</div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <input class="search-box" id="pag-search" placeholder="Buscar influencer, OC, concepto..." oninput="renderPagos()">
-      <select id="pag-mes" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
-        <option value="">Todos los meses</option>
-      </select>
-      <select id="pag-estado" onchange="renderPagos()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
-        <option value="Pendiente" selected>⏳ Esperando pago (mis solicitudes)</option>
-        <option value="Pagada">✅ Pagados</option>
-        <option value="">Todos</option>
-      </select>
-      <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar">&#x21BB;</button>
-      <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Detectar y corregir comprobantes que dicen Espagiria pero deberian decir ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:6px 10px;">&#x1F527; Fix legacy ANIMUS</button>
-      <button onclick="cleanupHistoricoImportado()" title="Marcar como Pagada los registros 'Pago histórico importado' que están atrapados en Pendiente" style="background:#dc2626;color:white;border:1px solid #b91c1c;font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:700;">&#x1F9F9; Limpiar histórico importado</button>
-    </div>
-  </div>
-
-  <!-- ═══ Atribución de ventas (discount codes) ═══════════════════════════ -->
+  <!-- Atribución ventas (preservada) -->
   <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
       <div>
@@ -504,23 +473,38 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
   </div>
 
-  <div id="pag-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
+  <!-- Filtros para historial de pagos (que sale al expandir cada fila) -->
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:#64748b">
+    <span style="font-weight:600">📊 Filtros para historial expandido:</span>
+    <select id="pag-mes" onchange="renderInfluencersTable()" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:5px 9px;color:#e2e8f0;font-size:12px;">
+      <option value="">Todos los meses</option>
+    </select>
+    <select id="pag-estado" onchange="renderInfluencersTable()" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:5px 9px;color:#e2e8f0;font-size:12px;">
+      <option value="">Todos los pagos</option>
+      <option value="Pendiente">⏳ Solo pendientes</option>
+      <option value="Pagada">✅ Solo pagados</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar pagos">&#x21BB; Pagos</button>
+    <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Fix comprobantes que dicen Espagiria → ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:5px 9px;">&#x1F527; Fix legacy</button>
+    <button onclick="cleanupHistoricoImportado()" title="Marcar como Pagada los 'Pago histórico importado' atrapados en Pendiente" style="background:#dc2626;color:white;border:1px solid #b91c1c;font-size:11px;padding:5px 9px;border-radius:6px;cursor:pointer;font-weight:700;">&#x1F9F9; Limpiar histórico</button>
+  </div>
+
+  <!-- Tabla principal: catálogo influencers (rows expandibles) -->
   <div class="card">
     <div class="tbl-wrap">
       <table>
-        <thead><tr>
-          <th>Fecha</th>
-          <th>Influencer</th>
-          <th>Concepto</th>
-          <th style="text-align:right;">Valor</th>
-          <th>OC</th>
-          <th>Comprobante</th>
-          <th>Estado</th>
-        </tr></thead>
-        <tbody id="pag-body"><tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr></tbody>
+        <thead><tr><th style="width:24px"></th><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Email</th><th>Banco / Cuenta</th><th>Estado Pago</th><th>Pagos</th><th>Acciones</th></tr></thead>
+        <tbody id="inf-body"><tr class="empty-row"><td colspan="14"><span class="spin"></span></td></tr></tbody>
       </table>
     </div>
   </div>
+</div>
+
+<!-- Tab "tab-pagos" eliminado — fusionado al de Influencers (Sebastian 30-abr-2026) -->
+<div id="tab-pagos" class="tab-panel" style="display:none">
+  <!-- LEGACY: por compatibilidad si algún link viejo apunta a este tab,
+       redirige al de Influencers. -->
+  <script>setTimeout(function(){ if(typeof switchTab==='function') switchTab('influencers'); }, 100);</script>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -2101,38 +2085,35 @@ async function loadAtribucion() {
 async function loadPagosInfluencers() {
   // Trigger atribución en paralelo (independiente de pagos)
   loadAtribucion();
-  const body = document.getElementById('pag-body');
-  if (body) body.innerHTML = '<tr class="empty-row"><td colspan="7"><span class="spin"></span></td></tr>';
   try {
     const r = await fetch('/api/marketing/pagos-influencers');
     const d = await r.json();
     _PAGOS_INF_CACHE = d.pagos || [];
-    // Llenar select de meses con los disponibles + opción 'Todos'
+    // Poblar PAGOS_BY_INF_ID y PAGOS_BY_INF_NAME para la vista fusionada
+    PAGOS_BY_INF_ID = {};
+    PAGOS_BY_INF_NAME = {};
+    for (const p of _PAGOS_INF_CACHE) {
+      if (p.influencer_id) {
+        if (!PAGOS_BY_INF_ID[p.influencer_id]) PAGOS_BY_INF_ID[p.influencer_id] = [];
+        PAGOS_BY_INF_ID[p.influencer_id].push(p);
+      }
+      const nm = (p.influencer_nombre||'').toLowerCase().trim();
+      if (nm) {
+        if (!PAGOS_BY_INF_NAME[nm]) PAGOS_BY_INF_NAME[nm] = [];
+        PAGOS_BY_INF_NAME[nm].push(p);
+      }
+    }
+    // Llenar select de meses con los disponibles
     const mesSel = document.getElementById('pag-mes');
     if (mesSel) {
       const cur = mesSel.value;
       mesSel.innerHTML = '<option value="">Todos los meses</option>'
         + (d.meses_disponibles || []).map(m => '<option value="' + m + '"' + (m===cur?' selected':'') + '>' + m + '</option>').join('');
     }
-    // KPIs
-    const kpis = d.kpis || {};
-    const kpiBar = document.getElementById('pag-kpi-bar');
-    if (kpiBar) {
-      kpiBar.style.display = 'grid';
-      kpiBar.innerHTML = [
-        {label:'Pagado este mes', val:fmtM(kpis.pagos_mes_valor||0), sub:(kpis.pagos_mes_count||0)+' pagos', color:'#34d399'},
-        {label:'Pagado en 2026', val:fmtM(kpis.pagos_anio_valor||0), sub:(kpis.pagos_anio_count||0)+' pagos', color:'#60a5fa'},
-        {label:'Pendientes (todos)', val:fmtM(kpis.total_pendiente||0), sub:'sin ejecutar', color:'#f59e0b'},
-        {label:'Total mostrado', val:fmtM(kpis.total_pagado||0), sub:_PAGOS_INF_CACHE.length+' filas', color:'#a78bfa'},
-      ].map(k => '<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;">'
-        + '<div style="font-size:18px;font-weight:800;color:'+k.color+';">'+k.val+'</div>'
-        + '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+k.label+'</div>'
-        + '<div style="font-size:10px;color:#475569;margin-top:1px;">'+k.sub+'</div>'
-      + '</div>').join('');
-    }
-    renderPagos();
+    // Re-render tabla principal con cache pagos actualizado
+    if (typeof renderInfluencersTable === 'function') renderInfluencersTable();
   } catch(e) {
-    if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#f87171;padding:20px;">Error: '+e.message+'</td></tr>';
+    console.warn('loadPagosInfluencers fallo:', e);
   }
 }
 
@@ -2199,17 +2180,21 @@ function renderPagos() {
 // funcionar visualmente.
 let _INFLUENCERS_CACHE = {};
 
+// Estado global compartido entre catalogo + historial pagos (post-fusión)
+var INFLUENCERS_LIST = [];
+var PAGOS_BY_INF_ID = {};      // influencer_id → array de pagos
+var PAGOS_BY_INF_NAME = {};    // nombre lowercase → array de pagos (fallback)
+var EXPANDED_INF = new Set();  // ids de influencers con historial expandido
+
 async function loadInfluencers() {
   const q = document.getElementById('inf-search').value;
   const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');
   let data;
   try { data = await fetch(url).then(r=>r.json()); } catch(e) { data = {influencers:[], kpis:{}}; }
-  // Show debug error if backend returned one
   if(data._error) { console.warn('[panel error]', data._error, data._trace); }
-  const infs = data.influencers || [];
-  // Llenar cache para verHistorial — pasamos solo ID por onclick, no JSON
+  INFLUENCERS_LIST = data.influencers || [];
   _INFLUENCERS_CACHE = {};
-  for (const inf of infs) _INFLUENCERS_CACHE[inf.id] = inf;
+  for (const inf of INFLUENCERS_LIST) _INFLUENCERS_CACHE[inf.id] = inf;
   const kpis = data.kpis || {};
   const kpiBar = document.getElementById('inf-kpi-bar');
   if(kpiBar) {
@@ -2224,10 +2209,9 @@ async function loadInfluencers() {
       +`<div style="font-size:11px;color:#64748b;margin-top:2px;">${k.label}</div>`
       +'</div>').join('');
   }
-  // Banner de solicitudes pendientes — visible si hay alguna esperando pago
   const banner = document.getElementById('inf-pendientes-banner');
   if(banner) {
-    const conPendiente = infs.filter(x => x.tiene_pendiente);
+    const conPendiente = INFLUENCERS_LIST.filter(x => x.tiene_pendiente);
     if(conPendiente.length > 0) {
       const totalPend = kpis.total_pendiente || 0;
       banner.style.display = 'block';
@@ -2241,10 +2225,18 @@ async function loadInfluencers() {
       banner.style.display = 'none';
     }
   }
+  // Cargar pagos en paralelo y luego render
+  await loadPagosInfluencers();
+  renderInfluencersTable();
+}
+
+// Render de la tabla principal — separado para poder llamar al cambiar filtros
+function renderInfluencersTable() {
+  const infs = INFLUENCERS_LIST || [];
   const body = document.getElementById('inf-body');
+  if(!body) return;
   if(!infs.length) {
-    const errMsg = data._error ? ` (error: ${data._error.substring(0,80)})` : '';
-    body.innerHTML=`<tr class="empty-row"><td colspan="12">Sin influencers registrados${errMsg}.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="14">Sin influencers registrados.</td></tr>`;
     return;
   }
   body.innerHTML = infs.map((r, idx)=>{
@@ -2271,7 +2263,25 @@ async function loadInfluencers() {
     const ce = (r.cuenta_bancaria||'').replace(/'/g,"\\'");
     const de = (r.cedula_nit||'').replace(/'/g,"\\'");
     const te = (r.tipo_cuenta||'Ahorros').replace(/'/g,"\\'");
-    return `<tr>`
+    // Resumen pagos del influencer (cache desde loadPagosInfluencers)
+    const pagosInf = (PAGOS_BY_INF_ID[r.id] || PAGOS_BY_INF_NAME[(r.nombre||'').toLowerCase()] || []);
+    const pendCount = pagosInf.filter(p => (p.estado||'').toLowerCase()==='pendiente').length;
+    const paidCount = pagosInf.filter(p => (p.estado||'').toLowerCase()==='pagada').length;
+    const totalPaidVal = pagosInf
+      .filter(p => (p.estado||'').toLowerCase()==='pagada')
+      .reduce((s,p) => s + (p.valor||0), 0);
+    let pagosBadge = '<span style="color:#475569;font-size:11px">\u2014</span>';
+    if(pagosInf.length > 0){
+      pagosBadge = '<span style="display:inline-flex;gap:4px;align-items:center;font-size:11px">';
+      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#fcd34d;padding:1px 7px;border-radius:8px;font-weight:700" title="${pendCount} solicitud(es) pendientes">\u23f3 ${pendCount}</span>`;
+      if(paidCount>0) pagosBadge += `<span style="background:#064e3b;color:#34d399;padding:1px 7px;border-radius:8px;font-weight:700" title="${paidCount} pago(s) - total ${fmtM(totalPaidVal)}">\u2713 ${paidCount}</span>`;
+      pagosBadge += '</span>';
+    }
+    const isExpanded = EXPANDED_INF.has(r.id);
+    const expandIcon = isExpanded ? '\u25bc' : '\u25b6';
+    const expandColor = pagosInf.length>0 ? '#818cf8' : '#475569';
+    const mainRow = `<tr style="cursor:pointer" onclick="toggleExpandInf(${r.id})" title="Click para ver historial pagos">`
+      +`<td style="color:${expandColor};font-weight:700;font-size:14px;text-align:center;width:24px;">${pagosInf.length>0?expandIcon:''}</td>`
       +`<td style="color:#64748b;">${idx+1}</td>`
       +`<td style="font-weight:700;">${r.nombre}</td>`
       +`<td><span class="badge badge-gray">${r.red_social}</span></td>`
@@ -2283,14 +2293,46 @@ async function loadInfluencers() {
       +`<td style="font-size:12px;color:#94a3b8;">${r.email||'\u2014'}</td>`
       +`<td style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
-      +`<td style="white-space:nowrap;">`
-        +`<button class="btn btn-outline btn-sm" onclick="verHistorial(${r.id})" title="Ver historial" style="color:#818cf8;border-color:#818cf8;">&#x1F4CB;</button> `
+      +`<td>${pagosBadge}</td>`
+      +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
-        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Crear cuenta de cobro y enviar a Sebastián para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
+        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button>`
       +'</td>'
       +'</tr>';
+    let expandedRows = '';
+    if(isExpanded && pagosInf.length>0){
+      const fEstado = (document.getElementById('pag-estado')||{value:''}).value;
+      const fMes = (document.getElementById('pag-mes')||{value:''}).value;
+      let filtered = pagosInf;
+      if(fEstado) filtered = filtered.filter(p => (p.estado||'')===fEstado);
+      if(fMes) filtered = filtered.filter(p => (p.fecha||'').startsWith(fMes));
+      if(filtered.length){
+        expandedRows = filtered.map(p => {
+          const est = p.estado||'Pendiente';
+          const estColor = est.toLowerCase()==='pagada' ? '#34d399' : (est.toLowerCase()==='pendiente'?'#fcd34d':'#94a3b8');
+          const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:#34d399;text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:#475569;font-size:11px;">\u2014</span>';
+          return `<tr style="background:#0a0f1a">`
+            +`<td colspan="2" style="color:#64748b;font-size:11px;padding-left:42px;">${p.fecha||'\u2014'}</td>`
+            +`<td colspan="3" style="font-size:12px;color:#94a3b8">${(p.concepto||'(sin concepto)').substring(0,80)}</td>`
+            +`<td colspan="3" style="text-align:right;font-weight:700;">${fmtM(p.valor||0)}</td>`
+            +`<td colspan="2" style="font-size:11px;color:#818cf8;font-family:monospace">${p.numero_oc||'\u2014'}</td>`
+            +`<td colspan="2">${pdfBtn}</td>`
+            +`<td colspan="2"><span style="color:${estColor};font-size:11px;font-weight:700;">${est}</span></td>`
+            +`</tr>`;
+        }).join('');
+      } else {
+        expandedRows = `<tr style="background:#0a0f1a"><td colspan="14" style="color:#64748b;text-align:center;padding:14px;font-size:11px;font-style:italic;padding-left:42px">Sin pagos para los filtros seleccionados.</td></tr>`;
+      }
+    }
+    return mainRow + expandedRows;
   }).join('');
+}
+
+function toggleExpandInf(id){
+  if(EXPANDED_INF.has(id)) EXPANDED_INF.delete(id);
+  else EXPANDED_INF.add(id);
+  renderInfluencersTable();
 }
 
 function openInfluencerModal() {
