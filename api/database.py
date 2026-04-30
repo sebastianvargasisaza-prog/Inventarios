@@ -2654,6 +2654,65 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_hall_estado ON hallazgos(estado, fecha_limite)",
         "CREATE INDEX IF NOT EXISTS idx_hall_origen ON hallazgos(origen, severidad)",
+        # ── Tabla 4: maquila_pipeline (B2B Full Service) ──────────────────
+        # Sebastian (30-abr-2026): correo JGB SA pidio maquila Full Service
+        # 29 abr — NDA firmado mismo dia. Fernando Mesa unico activo,
+        # ERLENMEYER ya cliente. Pipeline para no perder otro JGB.
+        """CREATE TABLE IF NOT EXISTS maquila_pipeline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            empresa TEXT NOT NULL,
+            contacto_nombre TEXT,
+            contacto_email TEXT,
+            contacto_telefono TEXT,
+            origen TEXT,
+            stage TEXT NOT NULL DEFAULT 'consulta'
+                CHECK(stage IN ('consulta','nda','brief','cotizacion','contrato','produccion','ganado','perdido')),
+            valor_estimado_cop REAL DEFAULT 0,
+            volumen_estimado_unds INTEGER DEFAULT 0,
+            producto_descripcion TEXT,
+            nda_firmado_at TEXT,
+            brief_recibido_at TEXT,
+            cotizacion_enviada_at TEXT,
+            contrato_firmado_at TEXT,
+            fecha_cierre_estimada TEXT,
+            owner TEXT,
+            notas TEXT,
+            motivo_perdida TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_maq_stage ON maquila_pipeline(stage, creado_en DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_maq_owner ON maquila_pipeline(owner, stage)",
+        # Seed con casos reales abiertos:
+        """INSERT OR IGNORE INTO maquila_pipeline
+           (empresa, contacto_nombre, contacto_email, origen, stage,
+            nda_firmado_at, owner, notas) VALUES
+           ('JGB SA', 'Yudy Alejandra Londoño', 'ylondono@jgb.com.co',
+            'consulta web Espagiria', 'nda', '2026-04-29',
+            'sebastian', 'Equipo compras JGB explorando proveedores Full Service. NDA firmado 29 abr. Esperan brief.'),
+           ('ERLENMEYER SAS', 'Ana Maria Correa', 'erlenmeyer@erlenmeyer.com.co',
+            'cliente recurrente', 'contrato', NULL,
+            'sebastian', 'Cliente activo. Contrato y formatos en revision por RH.'),
+           ('Fernando Mesa', 'Fernando Mesa', '', 'aliado B2B',
+            'produccion', NULL, 'sebastian',
+            'Pedido recurrente ~60 dias, ~$94.5M COP por ciclo.')""",
+        # ── Tabla 5: eos_leads (form demo landing) ────────────────────────
+        """CREATE TABLE IF NOT EXISTS eos_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT,
+            email TEXT,
+            telefono TEXT,
+            empresa TEXT,
+            mensaje TEXT,
+            fuente TEXT DEFAULT 'web3forms',
+            payload_raw TEXT,
+            estado TEXT NOT NULL DEFAULT 'nuevo'
+                CHECK(estado IN ('nuevo','contactado','demo_agendada','propuesta','cerrado','descartado')),
+            owner TEXT,
+            notas TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_eos_leads_estado ON eos_leads(estado, creado_en DESC)",
         # Seed con hallazgos abiertos reales de los correos:
         """INSERT OR IGNORE INTO hallazgos
            (codigo, origen, titulo, descripcion, area, severidad,
