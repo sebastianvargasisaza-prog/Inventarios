@@ -5150,103 +5150,211 @@ function _renderProgramacion(d){
       <span><span style="display:inline-block;width:14px;height:14px;background:#93c5fd;border:1px solid #1d4ed8;vertical-align:middle;margin-right:4px"></span>Limpiando</span>
       <span><span style="display:inline-block;width:14px;height:14px;background:#e5e5e5;border:1px solid #94a3b8;vertical-align:middle;margin-right:4px"></span>No asignable (apoyo)</span>
     </div>
-    <!-- SVG dibujado a mano basado en el plano real ASG-PRO-006-A02 -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:18px;overflow-x:auto">
-      <svg id="plano-svg" viewBox="0 0 1000 600" style="width:100%;max-width:1000px;height:auto;font-family:Segoe UI,sans-serif">
-        <!-- Fila superior: dispensación + envasados -->
-        <g class="rect-area" data-codigo="DISP">
-          <rect x="20" y="20" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="110" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2937">Zona Dispensación</text>
-          <text x="110" y="75" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · no asignable)</text>
+    <!-- SVG fiel al plano real ASG-PRO-006-A02 (post-INVIMA abr-2026).
+         Layout aproximado: el edificio tiene forma irregular, salas
+         de tamaños distintos, esclusas como filtros entre zonas, y un
+         bloque de servicios (comedor/baños/lockers) en la parte inferior.
+         Las 5 salas asignables (PROD1-4, ENV1) tienen rect.r y son
+         clickables; el resto son areas de apoyo decorativas. -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;overflow-x:auto">
+      <svg id="plano-svg" viewBox="0 0 1200 820" style="width:100%;max-width:1200px;height:auto;font-family:Segoe UI,sans-serif">
+        <!-- Marco exterior del edificio -->
+        <rect x="10" y="10" width="1180" height="800" fill="#fafaf9" stroke="#475569" stroke-width="2" rx="4"/>
+
+        <!-- ── ZONA TÉCNICA SUPERIOR (esclusas, ingresos, equipos) ─────── -->
+        <g>
+          <rect x="20" y="20" width="100" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="70" y="46" text-anchor="middle" font-size="10" fill="#64748b">EQUIPO</text>
+          <text x="70" y="60" text-anchor="middle" font-size="10" fill="#64748b">DE AGUA</text>
         </g>
-        <g class="rect-area" data-codigo="ENV1" style="cursor:pointer">
-          <rect class="r" x="220" y="20" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
-          <text x="310" y="50" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Envasado 1</text>
-          <text x="310" y="70" text-anchor="middle" font-size="10" fill="#475569">solo envasado</text>
-          <text class="status" x="310" y="125" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        <g>
+          <rect x="130" y="20" width="80" height="60" fill="#fef3c7" stroke="#ca8a04" stroke-width="1" stroke-dasharray="4 2" rx="3"/>
+          <text x="170" y="46" text-anchor="middle" font-size="10" fill="#92400e" font-weight="700">ESCLUSA 1</text>
+          <text x="170" y="60" text-anchor="middle" font-size="9" fill="#92400e">filtro</text>
         </g>
-        <g class="rect-area" data-codigo="PROD4" style="cursor:pointer">
-          <rect class="r" x="420" y="20" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
-          <text x="510" y="50" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 4</text>
-          <text x="510" y="70" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
-          <text class="status" x="510" y="125" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        <g>
+          <rect x="220" y="20" width="220" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="330" y="46" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">INGRESO MATERIA PRIMA</text>
+          <text x="330" y="62" text-anchor="middle" font-size="9" fill="#94a3b8">(carga · proveedores)</text>
         </g>
-        <g class="rect-area" data-codigo="PIP">
-          <rect x="620" y="20" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="710" y="55" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2937">Producto en Proceso</text>
-          <text x="710" y="75" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · no asignable)</text>
+        <g>
+          <rect x="450" y="20" width="100" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="500" y="50" text-anchor="middle" font-size="10" fill="#64748b">ESCALERA</text>
         </g>
-        <g class="rect-area" data-codigo="ACOND">
-          <rect x="820" y="20" width="160" height="240" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="900" y="120" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Acondicionamiento</text>
-          <text x="900" y="140" text-anchor="middle" font-size="11" fill="#475569">PT</text>
-          <text x="900" y="160" text-anchor="middle" font-size="10" fill="#64748b">(apoyo)</text>
+        <g>
+          <rect x="560" y="20" width="180" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="650" y="50" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">INGRESO CUBIERTA</text>
         </g>
-        <!-- Fila central: almacenamiento MP + producción 1, 2, 3 + control calidad -->
+
+        <!-- ── COLUMNA IZQUIERDA: lavado, ducha, almacen MP ─────────────── -->
+        <g>
+          <rect x="20" y="95" width="160" height="70" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="100" y="125" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">LAVADO DE</text>
+          <text x="100" y="142" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">UTENSILIOS</text>
+        </g>
+        <g>
+          <rect x="20" y="175" width="160" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="100" y="205" text-anchor="middle" font-size="11" fill="#475569">DUCHA</text>
+        </g>
+        <!-- Almacenamiento materia prima (vertical, izquierda, grande) -->
         <g class="rect-area" data-codigo="ALMP">
-          <rect x="20" y="160" width="180" height="180" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="110" y="240" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Almacenamiento</text>
-          <text x="110" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Materia Prima</text>
-          <text x="110" y="280" text-anchor="middle" font-size="10" fill="#64748b">(bodega)</text>
+          <rect x="20" y="240" width="160" height="240" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="100" y="345" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
+          <text x="100" y="362" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">MATERIA PRIMA</text>
+          <text x="100" y="382" text-anchor="middle" font-size="10" fill="#64748b">(bodega · apoyo)</text>
         </g>
-        <g class="rect-area" data-codigo="PROD1" style="cursor:pointer">
-          <rect class="r" x="220" y="160" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
-          <text x="310" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 1</text>
-          <text x="310" y="210" text-anchor="middle" font-size="10" fill="#7c2d12">⚠ ALCOHOLES</text>
-          <text x="310" y="225" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
-          <text class="status" x="310" y="265" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+
+        <!-- ── COLUMNA CENTRO: dispensación, prod 2, prod 1 ─────────────── -->
+        <!-- Zona de Dispensación (apoyo) -->
+        <g class="rect-area" data-codigo="DISP">
+          <rect x="200" y="95" width="240" height="130" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="320" y="155" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ZONA DE</text>
+          <text x="320" y="173" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">DISPENSACIÓN</text>
+          <text x="320" y="195" text-anchor="middle" font-size="10" fill="#64748b">(Mayerlin · fija)</text>
         </g>
+        <!-- Producción 2 — con marmita 100ml — debajo de dispensación -->
         <g class="rect-area" data-codigo="PROD2" style="cursor:pointer">
-          <rect class="r" x="420" y="160" width="180" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
-          <text x="510" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Producción 2</text>
-          <text x="510" y="210" text-anchor="middle" font-size="10" fill="#0c4a6e">🔥 marmita 100ml</text>
-          <text x="510" y="225" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
-          <text class="status" x="510" y="265" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+          <rect class="r" x="200" y="240" width="240" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="320" y="270" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">PRODUCCIÓN 2</text>
+          <circle cx="252" cy="295" r="11" fill="#0c4a6e"/>
+          <text x="252" y="299" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">M</text>
+          <text x="328" y="299" text-anchor="middle" font-size="10" fill="#0c4a6e" font-weight="600">marmita 100 ml</text>
+          <text x="320" y="318" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="320" y="345" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
         </g>
+        <!-- Producción 1 — con manejo de alcoholes — debajo de prod 2 -->
+        <g class="rect-area" data-codigo="PROD1" style="cursor:pointer">
+          <rect class="r" x="200" y="370" width="240" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="320" y="400" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">PRODUCCIÓN 1</text>
+          <text x="320" y="424" text-anchor="middle" font-size="11" fill="#7c2d12" font-weight="700">⚠ ALCOHOLES</text>
+          <text x="320" y="442" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="320" y="475" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+
+        <!-- ── COLUMNA CENTRO-DERECHA: envasado 1, env 2 (ahora prod 4) ── -->
+        <!-- Envasado 1 (solo envasado) -->
+        <g class="rect-area" data-codigo="ENV1" style="cursor:pointer">
+          <rect class="r" x="450" y="95" width="220" height="130" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="560" y="135" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">ENVASADO 1</text>
+          <text x="560" y="158" text-anchor="middle" font-size="10" fill="#475569">solo envasado</text>
+          <text class="status" x="560" y="200" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <!-- Producción 4 (era Envasado 2) -->
+        <g class="rect-area" data-codigo="PROD4" style="cursor:pointer">
+          <rect class="r" x="450" y="240" width="220" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="560" y="270" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">PRODUCCIÓN 4</text>
+          <text x="560" y="290" text-anchor="middle" font-size="9" fill="#94a3b8" font-style="italic">(antes Envasado 2)</text>
+          <text x="560" y="312" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
+          <text class="status" x="560" y="345" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+        </g>
+        <!-- Control de calidad debajo de prod 4 -->
         <g class="rect-area" data-codigo="QC">
-          <rect x="620" y="160" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="710" y="215" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Control de Calidad</text>
-          <text x="710" y="235" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · QC)</text>
+          <rect x="450" y="370" width="220" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="560" y="420" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">CONTROL DE</text>
+          <text x="560" y="438" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">CALIDAD</text>
+          <text x="560" y="458" text-anchor="middle" font-size="10" fill="#64748b">(apoyo · QC)</text>
         </g>
-        <!-- Fila inferior: producción 3 + almacenamiento PT -->
+
+        <!-- ── COLUMNA DERECHA: producto en proceso + esclusa 2 + acond ── -->
+        <g class="rect-area" data-codigo="PIP">
+          <rect x="680" y="95" width="220" height="130" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="790" y="155" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PRODUCTO EN</text>
+          <text x="790" y="173" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PROCESO</text>
+          <text x="790" y="195" text-anchor="middle" font-size="10" fill="#64748b">(transición · apoyo)</text>
+        </g>
+        <!-- Esclusa 2 entre PIP y acondicionamiento -->
+        <g>
+          <rect x="680" y="240" width="80" height="50" fill="#fef3c7" stroke="#ca8a04" stroke-width="1" stroke-dasharray="4 2" rx="3"/>
+          <text x="720" y="265" text-anchor="middle" font-size="10" fill="#92400e" font-weight="700">ESCLUSA 2</text>
+          <text x="720" y="278" text-anchor="middle" font-size="8" fill="#92400e">filtro PT</text>
+        </g>
+
+        <!-- ── EXTREMO DERECHO: acondicionamiento PT (vertical alto) ────── -->
+        <g class="rect-area" data-codigo="ACOND">
+          <rect x="910" y="95" width="180" height="395" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="1000" y="240" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ACONDICIONA-</text>
+          <text x="1000" y="258" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">MIENTO DE</text>
+          <text x="1000" y="276" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PRODUCTO</text>
+          <text x="1000" y="294" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">TERMINADO</text>
+          <text x="1000" y="320" text-anchor="middle" font-size="10" fill="#64748b">(Camilo · su rol)</text>
+          <text x="1000" y="338" text-anchor="middle" font-size="9" fill="#94a3b8" font-style="italic">apoyo · no asignable</text>
+        </g>
+
+        <!-- ── PRODUCCIÓN 3 (grande, abajo izquierda, con marmita 250) ──── -->
         <g class="rect-area" data-codigo="PROD3" style="cursor:pointer">
-          <rect class="r" x="220" y="300" width="380" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
-          <text x="410" y="335" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Producción 3</text>
-          <text x="410" y="358" text-anchor="middle" font-size="11" fill="#0c4a6e">🔥 marmita 250ml &middot; prod + env</text>
-          <text class="status" x="410" y="402" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
+          <rect class="r" x="200" y="510" width="470" height="130" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
+          <text x="435" y="555" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">PRODUCCIÓN 3</text>
+          <circle cx="380" cy="585" r="13" fill="#0c4a6e"/>
+          <text x="380" y="590" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">M</text>
+          <text x="478" y="590" text-anchor="middle" font-size="11" fill="#0c4a6e" font-weight="600">marmita 250 ml &middot; prod + env</text>
+          <text class="status" x="435" y="625" text-anchor="middle" font-size="11" fill="#16a34a" font-weight="700">LIBRE</text>
         </g>
+        <!-- Almacenamiento PT a la derecha de prod 3 -->
         <g class="rect-area" data-codigo="ALMPT">
-          <rect x="620" y="300" width="180" height="120" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
-          <text x="710" y="355" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937">Almacenamiento PT</text>
-          <text x="710" y="375" text-anchor="middle" font-size="10" fill="#64748b">(bodega)</text>
+          <rect x="680" y="510" width="220" height="130" fill="#e5e5e5" stroke="#94a3b8" stroke-width="1.5" rx="4"/>
+          <text x="790" y="565" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
+          <text x="790" y="583" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">PT</text>
+          <text x="790" y="608" text-anchor="middle" font-size="10" fill="#64748b">(bodega · apoyo)</text>
         </g>
-        <!-- Servicios (parte de abajo) -->
+        <!-- Material de envase (vertical extremo derecho, abajo) -->
         <g>
-          <rect x="20" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="80" y="478" text-anchor="middle" font-size="11" fill="#475569">Lavado utensilios</text>
+          <rect x="910" y="510" width="180" height="220" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="1000" y="600" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">MATERIAL DE</text>
+          <text x="1000" y="618" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">ENVASE Y</text>
+          <text x="1000" y="636" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">EMPAQUE</text>
+          <text x="1000" y="660" text-anchor="middle" font-size="9" fill="#94a3b8">(bodega lateral)</text>
         </g>
+
+        <!-- ── ESCLUSA 3 + bloque de servicios (comedor/baños/lockers) ── -->
         <g>
-          <rect x="160" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="220" y="478" text-anchor="middle" font-size="11" fill="#475569">Esclusas</text>
-        </g>
-        <g>
-          <rect x="300" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="360" y="478" text-anchor="middle" font-size="11" fill="#475569">Comedor</text>
-        </g>
-        <g>
-          <rect x="440" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="500" y="478" text-anchor="middle" font-size="11" fill="#475569">Cocineta</text>
-        </g>
-        <g>
-          <rect x="580" y="450" width="120" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="640" y="478" text-anchor="middle" font-size="11" fill="#475569">Lockers + Baños</text>
+          <rect x="20" y="500" width="160" height="50" fill="#fef3c7" stroke="#ca8a04" stroke-width="1" stroke-dasharray="4 2" rx="3"/>
+          <text x="100" y="525" text-anchor="middle" font-size="10" fill="#92400e" font-weight="700">ESCLUSA 3</text>
+          <text x="100" y="540" text-anchor="middle" font-size="9" fill="#92400e">salida personal</text>
         </g>
         <g>
-          <rect x="720" y="450" width="200" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="4"/>
-          <text x="820" y="478" text-anchor="middle" font-size="11" fill="#475569">Recepción material envase</text>
+          <rect x="20" y="560" width="160" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="100" y="585" text-anchor="middle" font-size="10" fill="#475569">UTENSILIOS</text>
+          <text x="100" y="603" text-anchor="middle" font-size="10" fill="#475569">DE ASEO</text>
         </g>
-        <!-- Leyenda dentro del SVG -->
-        <text x="500" y="540" text-anchor="middle" font-size="10" fill="#94a3b8" font-style="italic">Salas asignables: PROD1 PROD2 PROD3 PROD4 ENV1 — click para detalle</text>
+        <g>
+          <rect x="20" y="630" width="160" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="100" y="666" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">LOCKERS · A/C</text>
+        </g>
+        <g>
+          <rect x="20" y="700" width="160" height="100" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="100" y="730" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">INGRESO</text>
+          <text x="100" y="750" text-anchor="middle" font-size="9" fill="#94a3b8">+ ASEO</text>
+          <text x="100" y="770" text-anchor="middle" font-size="9" fill="#94a3b8">+ BAÑOS · DUCHA</text>
+        </g>
+        <!-- Pasillo gris central (LIBRE en el plano original) -->
+        <g>
+          <rect x="200" y="660" width="220" height="80" fill="#e5e7eb" stroke="#94a3b8" stroke-width="1" stroke-dasharray="6 3" rx="3"/>
+          <text x="310" y="695" text-anchor="middle" font-size="11" fill="#64748b" font-weight="700">PASILLO GRIS</text>
+          <text x="310" y="715" text-anchor="middle" font-size="9" fill="#94a3b8" font-style="italic">circulación interna</text>
+        </g>
+        <!-- Comedor + cocineta -->
+        <g>
+          <rect x="430" y="660" width="170" height="80" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="515" y="695" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">COMEDOR</text>
+          <text x="515" y="713" text-anchor="middle" font-size="9" fill="#94a3b8">break room</text>
+        </g>
+        <g>
+          <rect x="610" y="660" width="170" height="80" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="695" y="695" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">COCINETA</text>
+        </g>
+        <!-- Sala de juntas + recepción material envase -->
+        <g>
+          <rect x="200" y="750" width="380" height="55" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="390" y="775" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">RECEPCIÓN MATERIAL ENVASE Y EMPAQUE</text>
+          <text x="390" y="792" text-anchor="middle" font-size="9" fill="#94a3b8">(carga · proveedores empaque)</text>
+        </g>
+        <g>
+          <rect x="610" y="750" width="290" height="55" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
+          <text x="755" y="780" text-anchor="middle" font-size="11" fill="#475569" font-weight="700">SALA DE JUNTAS</text>
+        </g>
+
+        <!-- Pie del SVG: nota -->
+        <text x="600" y="20" text-anchor="middle" font-size="9" fill="#94a3b8" font-style="italic" opacity="0.6">Plano fiel a ASG-PRO-006-A02 · 5 salas asignables (verde) · click sala → detalle</text>
       </svg>
     </div>
     <!-- Panel detalle al lado: producciones del día por sala -->

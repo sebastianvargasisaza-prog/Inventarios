@@ -2436,10 +2436,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_notif_emp_user ON notificaciones_empleados(empleado_username, creado_en DESC)",
         "CREATE INDEX IF NOT EXISTS idx_notif_emp_estado ON notificaciones_empleados(estado, tipo)",
-        # Tabla 2: capacitaciones (asignacion + material)
-        # El jefe asigna recurso (video URL, PDF, descripcion, NotebookLM URL)
-        # con un titulo y nivel_dificultad. nota_minima default 70.
-        """CREATE TABLE IF NOT EXISTS capacitaciones (
+        # Tabla 2: bienestar_capacitaciones (asignacion + material)
+        # OJO: usamos prefijo 'bienestar_' para no chocar con la tabla
+        # 'capacitaciones' legacy de RRHH (catalogo corporativo de cursos
+        # con instructor, duracion_horas, etc — concepto distinto).
+        # Aqui es: jefe asigna recurso URL puntual + autoexamen Claude.
+        """CREATE TABLE IF NOT EXISTS bienestar_capacitaciones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             titulo TEXT NOT NULL,
             descripcion TEXT,
@@ -2459,13 +2461,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             completada_en TEXT,
             creado_en TEXT NOT NULL DEFAULT (datetime('now'))
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_capac_user ON capacitaciones(asignado_a, estado)",
-        "CREATE INDEX IF NOT EXISTS idx_capac_fecha ON capacitaciones(fecha_limite)",
-        # Tabla 3: capacitaciones_intentos (cada autoexamen es un intento)
+        "CREATE INDEX IF NOT EXISTS idx_bcapac_user ON bienestar_capacitaciones(asignado_a, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_bcapac_fecha ON bienestar_capacitaciones(fecha_limite)",
+        # Tabla 3: bienestar_capacitaciones_intentos (cada autoexamen es 1 intento)
         # preguntas_json: array de preguntas generadas por Claude
         # respuestas_json: array de respuestas del operario
         # evaluacion_json: feedback por pregunta + nota global
-        """CREATE TABLE IF NOT EXISTS capacitaciones_intentos (
+        """CREATE TABLE IF NOT EXISTS bienestar_capacitaciones_intentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             capacitacion_id INTEGER NOT NULL,
             empleado_username TEXT NOT NULL,
@@ -2475,9 +2477,9 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             nota INTEGER,
             iniciado_en TEXT NOT NULL DEFAULT (datetime('now')),
             terminado_en TEXT,
-            FOREIGN KEY (capacitacion_id) REFERENCES capacitaciones(id)
+            FOREIGN KEY (capacitacion_id) REFERENCES bienestar_capacitaciones(id)
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_cap_int_cap ON capacitaciones_intentos(capacitacion_id, empleado_username)",
+        "CREATE INDEX IF NOT EXISTS idx_bcap_int_cap ON bienestar_capacitaciones_intentos(capacitacion_id, empleado_username)",
     ]),
     (57, "users_mfa: TOTP de 2 factores (Google Authenticator) — Sebastian 30-abr-2026", [
         """CREATE TABLE IF NOT EXISTS users_mfa (

@@ -154,7 +154,7 @@ def capacitaciones_handler():
         material_tipo = (d.get('material_tipo') or 'video').strip().lower()
         if material_tipo not in ('video', 'pdf', 'notebooklm', 'articulo', 'otro'):
             material_tipo = 'otro'
-        c.execute("""INSERT INTO capacitaciones
+        c.execute("""INSERT INTO bienestar_capacitaciones
             (titulo, descripcion, material_tipo, material_url, material_notas,
              asignado_a, asignado_por, fecha_limite, nota_minima)
             VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -182,7 +182,7 @@ def capacitaciones_handler():
     sql = "SELECT id, titulo, descripcion, material_tipo, material_url, material_notas, " \
           "asignado_a, asignado_por, fecha_asignacion, fecha_limite, estado, " \
           "nota_minima, nota_obtenida, intentos, completada_en, creado_en " \
-          "FROM capacitaciones"
+          "FROM bienestar_capacitaciones"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY estado='pendiente' DESC, fecha_limite ASC NULLS LAST, creado_en DESC LIMIT 100"
@@ -213,7 +213,7 @@ def capacitacion_iniciar_examen(cid):
     cap = c.execute("""SELECT id, titulo, descripcion, material_tipo,
                               material_url, material_notas, asignado_a,
                               estado, nota_minima
-                       FROM capacitaciones WHERE id=?""", (cid,)).fetchone()
+                       FROM bienestar_capacitaciones WHERE id=?""", (cid,)).fetchone()
     if not cap:
         return jsonify({'error': 'capacitacion no existe'}), 404
     if cap[6] != user and not _is_jefe(user):
@@ -225,12 +225,12 @@ def capacitacion_iniciar_examen(cid):
     preguntas = _generar_preguntas_claude(titulo, descr, mat_tipo, mat_url, mat_notas)
 
     # Crear intento
-    c.execute("""INSERT INTO capacitaciones_intentos
+    c.execute("""INSERT INTO bienestar_capacitaciones_intentos
         (capacitacion_id, empleado_username, preguntas_json)
         VALUES (?,?,?)""", (cid, user, json.dumps(preguntas, ensure_ascii=False)))
     intento_id = c.lastrowid
     # Marcar capacitacion en_curso si estaba pendiente
-    c.execute("""UPDATE capacitaciones
+    c.execute("""UPDATE bienestar_capacitaciones
                  SET estado='en_curso', intentos=intentos+1
                  WHERE id=? AND estado IN ('pendiente','reprobada')""", (cid,))
     conn.commit()
@@ -251,14 +251,14 @@ def calificar_intento(int_id):
     conn = get_db(); c = conn.cursor()
     intento = c.execute("""SELECT id, capacitacion_id, empleado_username,
                                   preguntas_json
-                           FROM capacitaciones_intentos WHERE id=?""", (int_id,)).fetchone()
+                           FROM bienestar_capacitaciones_intentos WHERE id=?""", (int_id,)).fetchone()
     if not intento:
         return jsonify({'error': 'intento no existe'}), 404
     if intento[2] != user:
         return jsonify({'error': 'no es tu intento'}), 403
     cap_id = intento[1]
     cap = c.execute("""SELECT titulo, descripcion, material_notas, nota_minima
-                       FROM capacitaciones WHERE id=?""", (cap_id,)).fetchone()
+                       FROM bienestar_capacitaciones WHERE id=?""", (cap_id,)).fetchone()
     titulo, descr, mat_notas, nota_minima = cap
     preguntas = json.loads(intento[3])
 
@@ -268,7 +268,7 @@ def calificar_intento(int_id):
     )
     aprobado = nota >= (nota_minima or 70)
 
-    c.execute("""UPDATE capacitaciones_intentos
+    c.execute("""UPDATE bienestar_capacitaciones_intentos
         SET respuestas_json=?, evaluacion_json=?, nota=?, terminado_en=datetime('now')
         WHERE id=?""", (
         json.dumps(respuestas, ensure_ascii=False),
@@ -276,7 +276,7 @@ def calificar_intento(int_id):
         nota, int_id))
 
     nuevo_estado = 'completada' if aprobado else 'reprobada'
-    c.execute("""UPDATE capacitaciones
+    c.execute("""UPDATE bienestar_capacitaciones
                  SET estado=?, nota_obtenida=?,
                      completada_en = CASE WHEN ?='completada' THEN datetime('now') ELSE completada_en END
                  WHERE id=?""", (nuevo_estado, nota, nuevo_estado, cap_id))
@@ -303,7 +303,7 @@ def historial_capacitaciones(usuario):
         SELECT c.id, c.titulo, c.material_tipo, c.estado,
                c.nota_obtenida, c.nota_minima, c.fecha_asignacion,
                c.completada_en, c.intentos, c.asignado_por
-        FROM capacitaciones c
+        FROM bienestar_capacitaciones c
         WHERE c.asignado_a=?
         ORDER BY c.fecha_asignacion DESC
     """, (usuario,)).fetchall()

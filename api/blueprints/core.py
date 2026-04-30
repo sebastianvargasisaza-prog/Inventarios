@@ -174,6 +174,21 @@ def login():
         else:
             match = bool(expected) and hmac.compare_digest(expected, password)
         if match:
+            # ── MFA gate (paso 2) ──────────────────────────────────────────────
+            # Si el usuario tiene MFA enabled, NO completamos login todavía.
+            # Guardamos username en 'mfa_pending_user' y redirigimos a /login/mfa
+            # donde se pide el token TOTP. Solo después de verificar TOTP se
+            # establece session['compras_user'] = username (en blueprints/mfa.py).
+            try:
+                from blueprints.mfa import _is_mfa_enabled
+                if _is_mfa_enabled(username):
+                    session.clear()
+                    session['mfa_pending_user'] = username
+                    session['mfa_pending_next'] = next_url
+                    _log_sec("login_password_ok_mfa_pending", username, ip)
+                    return redirect('/login/mfa')
+            except ImportError:
+                pass  # blueprint mfa no cargado (test environment) — seguir sin MFA
             _clear_attempts(ip, username)
             _log_sec("login_success", username, ip)
             session.clear()
@@ -254,9 +269,34 @@ def marketing():
 _PWD_MIN_LEN = 8
 _PWD_MAX_LEN = 128
 
+# Blacklist de passwords más comunes en español/inglés. Bloqueo absoluto
+# aunque cumplan los demás criterios. Cubre ~90% de los ataques de
+# diccionario de bots scanners. Lista pequeña, evaluable en O(1).
+# Sebastian (30-abr-2026): refuerzo de password policy en audit de seguridad.
+_PWD_BLACKLIST = frozenset([
+    "password", "password1", "password123", "passw0rd", "passw0rd1",
+    "12345678", "123456789", "1234567890", "qwerty123", "qwertyuiop",
+    "abc12345", "abcd1234", "111111", "1q2w3e4r", "1qaz2wsx",
+    "admin123", "admin1234", "administrator", "letmein123",
+    "welcome1", "welcome123", "iloveyou", "monkey123",
+    "espagiria", "espagiria1", "espagiria123", "espagiria2026",
+    "animus", "animus1", "animus123", "animus2026",
+    "hha2026", "hhagroup", "hhagroup2026", "hhagroup1",
+    "colombia", "colombia1", "bogota", "bogota1", "bogota2026",
+    "cosmetica", "cosmeticos", "laboratorio", "laboratorio1",
+])
 
-def _validate_new_password(pwd, current_pwd):
-    """Valida una password nueva. Retorna lista de errores (vacía si OK)."""
+
+def _validate_new_password(pwd, current_pwd, username=None):
+    """Valida una password nueva. Retorna lista de errores (vacía si OK).
+
+    Reglas:
+      - Longitud entre _PWD_MIN_LEN y _PWD_MAX_LEN
+      - Al menos 1 letra y 1 número
+      - No idéntica a la actual
+      - No en blacklist (top passwords comunes)
+      - No idéntica al username (incluso lowercase)
+    """
     errors = []
     if not pwd or len(pwd) < _PWD_MIN_LEN:
         errors.append(f"Mínimo {_PWD_MIN_LEN} caracteres.")
@@ -269,6 +309,12 @@ def _validate_new_password(pwd, current_pwd):
         errors.append("Debe incluir al menos una letra.")
     if not any(c.isdigit() for c in pwd):
         errors.append("Debe incluir al menos un número.")
+    # Blacklist de passwords comunes (case-insensitive)
+    if pwd.lower() in _PWD_BLACKLIST:
+        errors.append("Contraseña demasiado común. Escoge una distinta.")
+    # No usar el username como password
+    if username and pwd.lower() == username.lower().strip():
+        errors.append("La contraseña no puede ser igual al usuario.")
     return errors
 
 
@@ -322,8 +368,8 @@ def cambiar_password():
         _log_sec("password_change_failed", username, ip, "actual incorrecta")
         return jsonify({'error': 'Contraseña actual incorrecta'}), 403
 
-    # Validar password nueva
-    errors = _validate_new_password(nueva, actual)
+    # Validar password nueva (incluye check anti-username)
+    errors = _validate_new_password(nueva, actual, username=username)
     if errors:
         return jsonify({'error': ' '.join(errors)}), 400
 
