@@ -8310,16 +8310,18 @@ def _operarios_libres_en_dia(c, fecha_iso):
 
 
 def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
-    """Asigna 4 roles ponderando preferencias · rotación ocasional.
-    Sebastián 1-may-2026: 'mayerlin dispensa y produce, camilo acondiciona ·
-    la idea es rotarlos pero no siempre que sean ocasionales · luis enrique
-    es jefe NO operario'.
+    """Asigna 4 roles ponderando preferencias + AVOID double-booking del día.
+    Sebastián 1-may-2026 (round 2): 'mismo operario en 4 producciones distintas
+    el mismo día' es físicamente imposible · ahora la IA evita asignar operarios
+    que YA están en otras producciones del mismo día (por rol).
 
-    Cambios 1-may-2026:
-    - Excluye es_jefe_produccion=1 del pool (Luis Enrique fuera)
-    - Pondera por rol_predeterminado: peso 4 si match, 2 si todero, 1 fallback
-    - Hash determinístico para rotación ocasional (~20% del tiempo)
-    - Garantiza 4 operarios DISTINTOS por producción
+    Lógica:
+    1. Pool = 4 operarios activos no-jefe
+    2. Carga global: operarios_ya_usados_por_rol[rol] = set(op_ids) de OTRAS
+       producciones del mismo día
+    3. Para cada rol, intenta primero: pool - usados_en_esta_prod - globalmente_usados_para_rol
+    4. Si vacío, fallback: pool - usados_en_esta_prod (acepta double-book)
+    5. Aplica afinidad ponderada para escoger el final
     """
     import hashlib
     # Pool = operarios activos NO jefes (4 personas)
@@ -8341,6 +8343,31 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
     ).fetchone()
     producto = (prod_row[0] or '') if prod_row else ''
 
+    # ── Global day load: operarios ya asignados en OTRAS producciones del día
+    # Sebastián 1-may-2026: evita 'Camilo en 4 producciones · Lunes'
+    globalmente_usados = {
+        'dispensacion': set(),
+        'elaboracion': set(),
+        'envasado': set(),
+        'acondicionamiento': set(),
+    }
+    try:
+        otras_rows = c.execute("""
+            SELECT operario_dispensacion_id, operario_elaboracion_id,
+                   operario_envasado_id, operario_acondicionamiento_id
+            FROM produccion_programada
+            WHERE date(fecha_programada) = ?
+              AND id != ?
+              AND COALESCE(estado, 'programado') NOT IN ('cancelado','completado')
+        """, (fecha_iso, produccion_id)).fetchall()
+        for r in otras_rows:
+            if r[0]: globalmente_usados['dispensacion'].add(r[0])
+            if r[1]: globalmente_usados['elaboracion'].add(r[1])
+            if r[2]: globalmente_usados['envasado'].add(r[2])
+            if r[3]: globalmente_usados['acondicionamiento'].add(r[3])
+    except Exception:
+        pass
+
     AFINIDAD = {
         'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
                           'acondicionamiento': 1, 'todero': 2},
@@ -8359,10 +8386,16 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
     asignaciones = {}
     usados = set()
     for rol in ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento'):
-        candidatos = [(oid, rol_pre) for (oid, rol_pre) in pool if oid not in usados]
-        if not candidatos:
-            # Pool agotado (menos de 4 operarios) → permitir reuso último recurso
-            candidatos = pool
+        # 1ra preferencia: NO en esta producción Y NO en otras producciones (mismo rol)
+        candidatos_strict = [
+            (oid, rol_pre) for (oid, rol_pre) in pool
+            if oid not in usados and oid not in globalmente_usados.get(rol, set())
+        ]
+        # Fallback 1: solo NO en esta producción (acepta double-book global)
+        candidatos_fallback = [(oid, rol_pre) for (oid, rol_pre) in pool if oid not in usados]
+        # Fallback 2 (último recurso): pool completo
+        candidatos = candidatos_strict if candidatos_strict else (
+                     candidatos_fallback if candidatos_fallback else pool)
         afin = AFINIDAD.get(rol, {})
         weighted = [(afin.get(rp, 1) if rp else 1, oid) for (oid, rp) in candidatos]
         total = sum(w for w, _ in weighted)
@@ -8379,6 +8412,9 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
                     break
         asignaciones[rol] = elegido
         usados.add(elegido)
+        # Marcar también como globalmente usado para que las siguientes producciones
+        # (si el caller recursa por más prods el mismo día) ya lo eviten
+        globalmente_usados.get(rol, set()).add(elegido)
         _registrar_rotacion(c, rol, elegido, user)
 
     # UPDATE produccion_programada
