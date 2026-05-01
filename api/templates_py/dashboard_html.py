@@ -5973,6 +5973,7 @@ function _renderProgramacion(d){
           <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan semana solo Shopify">🛒 Sem</button>
           <button onclick="planV2VerLargoShopify(6)" style="background:#10b981;color:#064e3b;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 6 meses">📆 6m</button>
           <button onclick="planV2VerLargoShopify(12)" style="background:#06b6d4;color:#083344;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 1 año">🗓️ 1a</button>
+          <button onclick="planV2VerForecastBF()" style="background:#a855f7;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Pre-stock Black Friday">🛍️ BF</button>
           <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📥</button>
           <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">↻</button>
         </div>
@@ -9304,6 +9305,75 @@ async function ckMarcar(itemId, estado){
     planV2DetectarCambios();
     planV2CargarStatusLine();
     planV2CargarCentroAccion();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 🛍️ FORECAST BLACK FRIDAY — pre-stock necesario por SKU
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2VerForecastBF(){
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center"><div style="font-size:32px">🛍️</div><div style="margin-top:10px;color:#64748b">Calculando forecast Black Friday...</div></div>';
+    document.body.appendChild(modal);
+    try {
+      var r = await fetch('/api/planta/forecast-black-friday');
+      var d = await r.json();
+      if(d.error){ modal.remove(); alert('Error: '+d.error); return; }
+      var skus = d.skus || [];
+      var k = d.kpis || {};
+      var html = '<div style="background:#fff;border-radius:12px;width:1000px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
+      html += '<div style="background:linear-gradient(135deg,#a855f7,#dc2626);color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:18px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">';
+      html += '<div><h2 style="margin:0;font-size:22px">🛍️ Forecast Black Friday '+d.year+'</h2>';
+      html += '<p style="font-size:12px;color:#fce7f3;margin:4px 0 0">BF: '+_escHTML(d.bf_fecha)+' · Cyber Monday: '+_escHTML(d.cyber_monday)+' · Ventana pico: '+_escHTML(d.ventana_pico_inicio)+' → '+_escHTML(d.ventana_pico_fin)+'</p>';
+      html += '<p style="font-size:12px;color:#fce7f3;margin:4px 0 0">⚠️ Stock LISTO máximo el '+_escHTML(d.fecha_limite_stock)+' (pipeline 7d)</p></div>';
+      html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700">Cerrar ✕</button>';
+      html += '</div></div>';
+
+      // KPIs
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px">';
+      html += '<div style="background:#fdf4ff;padding:12px;border-radius:8px;border:1px solid #d8b4fe"><div style="font-size:11px;color:#581c87">SKUs afectados</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.total_skus_afectados||0)+'</div></div>';
+      html += '<div style="background:#fef2f2;padding:12px;border-radius:8px;border:1px solid #fca5a5"><div style="font-size:11px;color:#991b1b">Lotes extra recomendados</div><div style="font-size:26px;font-weight:800;color:#dc2626">'+(k.total_lotes_extra||0)+'</div></div>';
+      html += '<div style="background:#fff7ed;padding:12px;border-radius:8px;border:1px solid #fdba74"><div style="font-size:11px;color:#7c2d12">Total kg extra</div><div style="font-size:26px;font-weight:800;color:#ea580c">'+_fmtMiles(Math.round(k.total_kg_extra||0))+'</div></div>';
+      html += '</div>';
+
+      // Reglas
+      html += '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#78350f">';
+      html += '<b>📐 Reglas:</b><ul style="margin:6px 0 0 18px;padding:0">';
+      (d.reglas||[]).forEach(function(r){ html += '<li>'+_escHTML(r)+'</li>'; });
+      html += '</ul></div>';
+
+      // Tabla
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f1f5f9"><tr>';
+      html += '<th style="padding:8px;text-align:left">Producto</th>';
+      html += '<th style="padding:8px;text-align:right">Vel normal</th>';
+      html += '<th style="padding:8px;text-align:right">Vel pico</th>';
+      html += '<th style="padding:8px;text-align:right">Mult</th>';
+      html += '<th style="padding:8px;text-align:right">Extra (u)</th>';
+      html += '<th style="padding:8px;text-align:right">Extra (kg)</th>';
+      html += '<th style="padding:8px;text-align:right">Lotes extra</th>';
+      html += '<th style="padding:8px;text-align:left">Urg</th>';
+      html += '</tr></thead><tbody>';
+      var urgCol = {alta:'#dc2626', media:'#f97316', baja:'#10b981'};
+      skus.forEach(function(s){
+        var col = urgCol[s.urgencia] || '#64748b';
+        html += '<tr style="border-top:1px solid #e2e8f0"><td style="padding:6px 8px"><b>'+_escHTML(s.producto)+'</b></td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:monospace">'+s.velocidad_normal_u_d+'</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:monospace;color:'+col+';font-weight:700">'+s.velocidad_pico_u_d+'</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:monospace">'+s.multiplicador+'×</td>';
+        html += '<td style="padding:6px 8px;text-align:right">'+_fmtMiles(s.extra_unidades_pico)+'</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-weight:700">'+s.extra_kg_pico+' kg</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-weight:800;color:'+col+'">'+s.lotes_extra_recomendados+'</td>';
+        html += '<td style="padding:6px 8px"><span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase">'+s.urgencia+'</span></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '</div>';
+      modal.innerHTML = html;
+    } catch(e){
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════

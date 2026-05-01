@@ -4161,6 +4161,170 @@ def cron_toggle():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# FORECAST BLACK FRIDAY — pre-stock necesario por SKU para nov-dic
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "Black Friday 2025 fue catástrofe por escasez.
+# Para BF 2026 hay que pre-stockear MUCHO más". Multiplicadores REALES
+# calculados de venta nov-2025 vs venta normal 2026.
+
+# Multiplicadores empíricos durante 14 días pico BF 2025
+BF_MULTIPLIERS = {
+    'GLOSSN':       6.6,
+    'CMULP':        5.1,
+    'MAXLASH':      4.9,
+    'HKJ':          4.8,
+    'GELH':         4.5,
+    'SMULPP':       4.0,
+    'CCAFE':        3.9,
+    'CRB3BHA':      3.9,
+    'NPHA10':       3.4,
+    'TRX':          2.8,
+    'TRX10':        2.8,
+    'LAH':          2.6,
+    'LKJ':          2.5,
+    'CRETT':        2.5,
+    'LBHA':         2.5,
+    'RECN-2':       2.4,
+    'ECENT':        2.2,
+    'EMLIM':        2.1,
+    'NIA':          2.0,
+    'NIA10':        2.0,
+    'SVITC33':      2.0,
+    'BHA33':        1.9,
+    'SAH10':        1.8,
+    'AZHC30':       1.8,
+    'SAH':          1.8,
+    'TRIAC':        1.5,
+    'CRCUREA':      1.5,
+}
+DEFAULT_BF_MULT = 1.5  # productos sin histórico BF
+
+
+@bp.route('/api/planta/forecast-black-friday', methods=['GET'])
+def forecast_black_friday():
+    """Calcula stock extra necesario por SKU para Black Friday.
+
+    Ventana pico: 14 días alrededor de BF (último viernes de noviembre).
+    Multiplicador por SKU basado en BF 2025 (real).
+
+    Devuelve:
+      {
+        bf_fecha: 'YYYY-MM-DD',
+        ventana_pico: ['inicio', 'fin'],
+        fecha_limite_stock: 'YYYY-MM-DD' (BF - 7d pipeline),
+        skus: [{producto, vel_normal, vel_pico, mult, extra_unidades, extra_kg, lote_extra_kg}],
+        kpis: total_lotes_extra_necesarios, total_kg_extra
+      }
+
+    Query params:
+      year: año (default año actual o próximo si ya pasó BF)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    year = int(request.args.get('year') or datetime.now().year)
+    # BF = último viernes de noviembre
+    nov_30 = date(year, 11, 30)
+    while nov_30.weekday() != 4:  # 4 = viernes
+        nov_30 -= timedelta(days=1)
+    bf_fecha = nov_30
+    ventana_inicio = bf_fecha - timedelta(days=4)
+    ventana_fin = bf_fecha + timedelta(days=10)
+    fecha_limite_stock = bf_fecha - timedelta(days=7)  # pipeline 7d
+
+    conn = get_db(); c = conn.cursor()
+
+    # SKUs activos con ventas
+    skus = c.execute("""
+        SELECT spc.producto_nombre, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+          AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado', 'pausado')
+    """).fetchall()
+
+    skus_out = []
+    total_extra_kg = 0
+    total_lotes_extra = 0
+
+    for producto, lote_kg_default in skus:
+        # Buscar SKUs Shopify mapeados → tomar el primero con multiplicador conocido
+        skus_shop = c.execute("""
+            SELECT sku FROM sku_producto_map
+            WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+              AND COALESCE(activo, 1) = 1
+        """, (producto,)).fetchall()
+        mult = None
+        sku_main = None
+        for (s,) in skus_shop:
+            if s in BF_MULTIPLIERS:
+                mult = BF_MULTIPLIERS[s]
+                sku_main = s
+                break
+        if mult is None:
+            mult = DEFAULT_BF_MULT
+            sku_main = skus_shop[0][0] if skus_shop else producto
+
+        # Velocidad real reciente
+        vel_real, ftend = _velocidad_total_producto(c, producto)
+        vel_real_p = vel_real * (ftend or 1)
+        if vel_real_p < 0.05: continue  # ignorar productos sin ventas
+
+        vel_pico = vel_real_p * mult
+        # Stock extra para 14 días de ventana pico
+        extra_unidades = (vel_pico - vel_real_p) * 14  # solo el "delta" sobre normal
+        if extra_unidades < 1: continue
+
+        factor_g = _factor_g_por_unidad(c, producto)
+        extra_kg = (extra_unidades * factor_g) / 1000
+
+        lote_kg = lote_kg_default or 30
+        # ¿Cuántos lotes EXTRA necesito?
+        lotes_extra = max(1, round(extra_kg / lote_kg))
+
+        skus_out.append({
+            'producto': producto,
+            'sku_main': sku_main,
+            'velocidad_normal_u_d': round(vel_real_p, 2),
+            'velocidad_pico_u_d': round(vel_pico, 2),
+            'multiplicador': mult,
+            'extra_unidades_pico': int(extra_unidades),
+            'extra_kg_pico': round(extra_kg, 1),
+            'lote_kg_actual': lote_kg,
+            'lotes_extra_recomendados': lotes_extra,
+            'urgencia': 'alta' if mult >= 4 else 'media' if mult >= 2.5 else 'baja',
+        })
+        total_extra_kg += extra_kg
+        total_lotes_extra += lotes_extra
+
+    # Ordenar por multiplicador descendente
+    skus_out.sort(key=lambda x: -x['multiplicador'])
+
+    return jsonify({
+        'year': year,
+        'bf_fecha': bf_fecha.isoformat(),
+        'cyber_monday': (bf_fecha + timedelta(days=3)).isoformat(),
+        'ventana_pico_inicio': ventana_inicio.isoformat(),
+        'ventana_pico_fin': ventana_fin.isoformat(),
+        'fecha_limite_stock': fecha_limite_stock.isoformat(),
+        'fecha_inicio_pre_stock': (bf_fecha - timedelta(days=60)).isoformat(),
+        'skus': skus_out,
+        'kpis': {
+            'total_skus_afectados': len(skus_out),
+            'total_lotes_extra': total_lotes_extra,
+            'total_kg_extra': round(total_extra_kg, 1),
+        },
+        'reglas': [
+            'Multiplicadores empíricos basados en BF 2025 (calculado venta nov vs normal)',
+            'Ventana pico = 4d antes BF + 10d después (incluye Cyber Monday)',
+            'Pre-stock: producir lotes EXTRA en sept-oct para que estén listos antes de ' + fecha_limite_stock.isoformat(),
+            'Pipeline 7d → fabricar máximo el ' + fecha_limite_stock.isoformat(),
+            'BF 2025 hubo escasez · NO repetir',
+        ],
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # REGISTRAR LOTE REAL — Mayerlin/operario marca que un lote se hizo con kg reales
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "botón marcar lote hecho con kg reales —
