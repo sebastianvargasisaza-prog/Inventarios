@@ -323,19 +323,24 @@ def _palabras_clave_unicas(producto_nombre):
 def _match_producto_evento(producto_nombre, alias_csv, titulo_evento, descripcion=''):
     """Devuelve score de match (0-100) entre un producto y un evento de calendar.
 
-    Algoritmo:
-      - Score 100: alias EXACTO encontrado en título
-      - Score 90: nombre del producto (parcial substring) en título
-      - Score 80-95: alias parcial + match palabras clave
-      - Score 50-79: solo palabras clave únicas matchean
-      - Score 30-49: substring de palabra significativa
-      - Score < 30: no match
+    Algoritmo (de mayor a menor confianza):
+      - 100: alias EXACTO en título (boundary)
+      - 95:  nombre del producto contenido como substring en título
+      - 85:  todos los tokens significativos del nombre presentes (con prefix match)
+      - 60-80: % de tokens del nombre presentes
+      - 50-79: palabras clave únicas (sin stopwords) matchean
+      - <50: no match
+
+    Sebastián 1-may-2026: bug de stopwords filtraban TODAS las palabras
+    de productos como 'GEL HIDRATANTE', 'EMULSION HIDRATANTE IL' →
+    score 0 → fallback insertaba con título crudo (mal).
+    Fix: match por TOKENS SIN filtrar stopwords + prefix matching.
     """
     if not titulo_evento:
         return 0
     texto = _normalizar(titulo_evento + ' ' + (descripcion or ''))
 
-    # 1) Alias exact match (máxima confianza · word boundary)
+    # 1) Alias EXACTO en título (boundary) → 100
     if alias_csv:
         for alias in alias_csv.split(','):
             alias_norm = _normalizar(alias)
@@ -345,34 +350,53 @@ def _match_producto_evento(producto_nombre, alias_csv, titulo_evento, descripcio
             if _re_match.search(patron, texto):
                 return 100
 
-    # 2) Match nombre del producto como substring (parcial)
+    # 2) Nombre completo del producto como substring → 95
     nombre_norm = _normalizar(producto_nombre)
-    if nombre_norm and len(nombre_norm) >= 5:
-        # ¿El nombre completo (o gran parte) está en el título?
-        # Strip palabras genéricas del producto para comparar
-        nombre_keywords = [w for w in nombre_norm.split()
-                            if w not in _MATCH_STOPWORDS and len(w) >= 3]
-        if nombre_keywords:
-            # ¿Cuántas palabras significativas aparecen?
-            matches = sum(1 for w in nombre_keywords
-                            if _re_match.search(r'(^|[^A-Z0-9+])' + _re_match.escape(w) + r'($|[^A-Z0-9+])', texto))
-            if matches == len(nombre_keywords) and matches > 0:
-                return 90  # todas las palabras del nombre en evento
+    if nombre_norm and len(nombre_norm) >= 5 and nombre_norm in texto:
+        return 95
 
-    # 3) Match por palabras clave únicas del producto
+    # 3) TOKENS · match suelto con prefix (Sebastián fix)
+    # Tomamos TODAS las palabras del nombre (sin filtrar stopwords) ≥2 chars
+    nombre_tokens = [t for t in nombre_norm.split() if len(t) >= 2]
+    titulo_tokens = [t for t in texto.split() if len(t) >= 2]
+    if nombre_tokens:
+        matched = 0
+        for nt in nombre_tokens:
+            # Match exacto
+            if nt in titulo_tokens:
+                matched += 1
+                continue
+            # Prefix match: el token del título es prefijo de uno del nombre
+            # (caso 'IL' en título prefijo de 'ILUMINADORA' del nombre)
+            found = False
+            for tt in titulo_tokens:
+                if len(tt) >= 2 and (nt.startswith(tt) or tt.startswith(nt)):
+                    found = True
+                    break
+            if found:
+                matched += 1
+        pct = matched / len(nombre_tokens) if nombre_tokens else 0
+        if pct >= 0.95:  # casi todo el nombre
+            return 90
+        if pct >= 0.7:   # mayoría
+            return 75
+        if pct >= 0.5:
+            return 55
+
+    # 4) Palabras clave únicas (sin stopwords) - fallback
     palabras_clave = _palabras_clave_unicas(producto_nombre)
     if not palabras_clave:
         return 0
 
-    matched = 0
+    matched_p = 0
     for p in palabras_clave:
         if _re_match.search(r'(^|[^A-Z0-9+])' + _re_match.escape(p) + r'($|[^A-Z0-9+])', texto):
-            matched += 1
-    if matched == 0:
+            matched_p += 1
+    if matched_p == 0:
         return 0
 
-    score = int((matched / len(palabras_clave)) * 80)
-    if len(palabras_clave) == 1 and matched == 1:
+    score = int((matched_p / len(palabras_clave)) * 80)
+    if len(palabras_clave) == 1 and matched_p == 1:
         score = max(score, 75)
     return score
 
