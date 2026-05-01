@@ -4368,6 +4368,589 @@ def forecast_black_friday():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# AUTO-SC IA — generación automática de Solicitudes de Compra MP
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián 30-abr-2026: "lo más automático posible. Primeros 5 días del
+# mes genera órdenes para los 2 meses siguientes. Horizonte 60 y 90 días.
+# Buffer IA analiza ventas para decir vamos aumentando. Va directo a
+# Compras (Catalina + Alejandro). Email a Alejandro".
+
+def _factor_buffer_ia(c, producto):
+    """Buffer multiplicador basado en tendencia de ventas reales.
+
+    Compara velocidad últimos 30d vs últimos 180d:
+      crecimiento >50%: 1.50× (negocio explotando, pedir mucho más)
+      crecimiento >25%: 1.30× (negocio creciendo fuerte)
+      crecimiento >10%: 1.15× (crecimiento moderado)
+      crecimiento  ±10%: 1.00× (estable)
+      decrecimiento >10%: 0.90× (vendiendo menos)
+    """
+    try:
+        # Últimos 30d
+        v30 = _ventas_diarias_por_sku(c, producto, dias=30)
+        v30_total = sum(q for _, q in v30)
+        # Últimos 180d
+        v180 = _ventas_diarias_por_sku(c, producto, dias=180)
+        v180_total = sum(q for _, q in v180)
+    except Exception:
+        return 1.0
+
+    vel_30 = v30_total / 30 if v30_total else 0
+    vel_180 = v180_total / 180 if v180_total else 0
+    if vel_180 < 0.05:
+        return 1.0
+    ratio = vel_30 / vel_180
+    if ratio >= 1.50: return 1.50
+    if ratio >= 1.25: return 1.30
+    if ratio >= 1.10: return 1.15
+    if ratio >= 0.90: return 1.00
+    return 0.90
+
+
+def _factor_buffer_estacional(fecha_objetivo):
+    """Multiplicador por mes (anticipación BF + Día Madres + etc.)."""
+    if fecha_objetivo is None:
+        return 1.0
+    mes = fecha_objetivo.month
+    # Buffer pre-Black Friday (compra en sept-oct para llegar lista a nov)
+    if mes in (9, 10):
+        return 1.20  # +20% pre-BF
+    if mes == 11:
+        return 1.50  # +50% el mes BF (BF + Cyber Monday)
+    if mes == 5:
+        return 1.10  # +10% Día Madres
+    if mes == 12:
+        return 1.20  # +20% Navidad / cierre año
+    return 1.0
+
+
+def _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo='mensual'):
+    """Calcula las SC que deberían crearse automáticamente.
+
+    Args:
+      horizontes_dias: tupla con horizontes a evaluar (default 60 y 90)
+      modo: 'mensual' (cron 1-5 del mes) o 'urgente' (cron semanal lunes,
+            solo MPs con stockout en próximos 14d)
+
+    Returns:
+      {
+        scs_por_proveedor: {proveedor: [items]},
+        items_huerfanos: [items sin proveedor sugerido],
+        modo, horizontes_dias, fecha_analisis,
+        kpis: {total_items, total_proveedores, total_g, mp_criticas}
+      }
+    """
+    c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+
+    try:
+        from blueprints.programacion import _get_mp_stock, _norm_mp_name
+        mp_stock_map = _get_mp_stock(conn)
+    except Exception:
+        mp_stock_map = {}
+        _norm_mp_name = lambda x: str(x or '').upper().strip()
+
+    skus = c.execute("""
+        SELECT spc.producto_nombre, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1 AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado', 'pausado')
+    """).fetchall()
+    sku_lote = {p: l for p, l in skus}
+
+    # Cache fórmulas + buffer IA por producto
+    formulas_cache = {}
+    buffer_ia_cache = {}
+
+    def _get_formula(prod):
+        if prod not in formulas_cache:
+            rows = c.execute("""
+                SELECT material_id, material_nombre, porcentaje
+                FROM formula_items WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+            """, (prod,)).fetchall()
+            formulas_cache[prod] = rows
+        return formulas_cache[prod]
+
+    def _get_buffer_ia(prod):
+        if prod not in buffer_ia_cache:
+            buffer_ia_cache[prod] = _factor_buffer_ia(c, prod)
+        return buffer_ia_cache[prod]
+
+    def _stock_de(mat_id, mat_nombre):
+        mid = str(mat_id or '').strip()
+        if mid in mp_stock_map: return float(mp_stock_map[mid])
+        if mid.upper() in mp_stock_map: return float(mp_stock_map[mid.upper()])
+        nom_up = str(mat_nombre or '').strip().upper()
+        if nom_up and nom_up in mp_stock_map: return float(mp_stock_map[nom_up])
+        try:
+            nom_norm = _norm_mp_name(mat_nombre or '')
+            if nom_norm and nom_norm in mp_stock_map: return float(mp_stock_map[nom_norm])
+        except Exception: pass
+        return 0
+
+    # Eventos del Calendar en el horizonte mayor
+    eventos = _calendar_events_cached()
+    horizonte_max = max(horizontes_dias)
+    fecha_limite = fecha_hoy + timedelta(days=horizonte_max)
+
+    producciones = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f < fecha_hoy or f > fecha_limite:
+            continue
+        producto_match = None
+        for prod_nom in sku_lote.keys():
+            alias = _alias_calendar_for(c, prod_nom)
+            score = _match_producto_evento(prod_nom, alias, ev.get('titulo'), ev.get('descripcion', ''))
+            if score >= 60:
+                producto_match = prod_nom
+                break
+        if not producto_match:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or sku_lote.get(producto_match) or 30
+        producciones.append({'fecha': f, 'producto': producto_match, 'kg': kg})
+    producciones.sort(key=lambda p: p['fecha'])
+
+    # Acumular consumo por MP (con buffer IA por producto)
+    mp_consumo = {}  # (mat_id, mat_nom) → {stock, consumos: [{fecha, g_neto, g_ajustado}]}
+    for prod_evento in producciones:
+        items = _get_formula(prod_evento['producto'])
+        if not items: continue
+        kg = prod_evento['kg']
+        total_g = kg * 1000
+        buf_ia = _get_buffer_ia(prod_evento['producto'])
+        buf_est = _factor_buffer_estacional(prod_evento['fecha'])
+        for mat_id, mat_nom, pct in items:
+            try: pct_f = float(pct or 0)
+            except Exception: pct_f = 0
+            req_g_neto = total_g * pct_f / 100
+            if req_g_neto <= 0: continue
+            req_g_ajustado = req_g_neto * buf_ia * buf_est
+            key = (mat_id, mat_nom or mat_id)
+            if key not in mp_consumo:
+                mp_consumo[key] = {
+                    'material_id': mat_id,
+                    'material_nombre': mat_nom or mat_id,
+                    'stock_g': _stock_de(mat_id, mat_nom),
+                    'consumos': [],
+                }
+            mp_consumo[key]['consumos'].append({
+                'fecha': prod_evento['fecha'],
+                'producto': prod_evento['producto'],
+                'g_neto': req_g_neto,
+                'g_ajustado': req_g_ajustado,
+                'buf_ia': buf_ia,
+                'buf_est': buf_est,
+            })
+
+    # Determinar qué MPs requieren SC
+    items_a_pedir = []
+    for key, info in mp_consumo.items():
+        # Saldo proyectado a 60d y 90d
+        saldos_por_horizonte = {}
+        for h in horizontes_dias:
+            fecha_h = fecha_hoy + timedelta(days=h)
+            consumo_h = sum(c['g_ajustado'] for c in info['consumos'] if c['fecha'] <= fecha_h)
+            saldo_h = info['stock_g'] - consumo_h
+            saldos_por_horizonte[h] = saldo_h
+
+        # Modo urgente: solo MPs con stockout en próximos 14 días
+        if modo == 'urgente':
+            consumo_14d = sum(c['g_ajustado'] for c in info['consumos'] if (c['fecha'] - fecha_hoy).days <= 14)
+            saldo_14d = info['stock_g'] - consumo_14d
+            if saldo_14d >= 0:
+                continue  # no urgente
+            # Cantidad a pedir: lo que falta + 30d cobertura
+            consumo_30d = sum(c['g_ajustado'] for c in info['consumos'] if (c['fecha'] - fecha_hoy).days <= 30)
+            cantidad = abs(saldo_14d) + consumo_30d
+        else:
+            # Modo mensual: pedir para llegar a saldo positivo en horizonte 60d y mantener cobertura 90d
+            saldo_60 = saldos_por_horizonte.get(60, 0)
+            saldo_90 = saldos_por_horizonte.get(90, 0)
+            if saldo_60 >= 0 and saldo_90 >= 0:
+                continue  # alcanza para ambos horizontes
+            # Cantidad: déficit del horizonte 90d (ya incluye buffers IA + estacional)
+            cantidad = abs(min(saldo_60, saldo_90))
+            # Más buffer cobertura adicional 30d
+            consumo_30d_post = sum(c['g_ajustado'] for c in info['consumos'] if (c['fecha'] - fecha_hoy).days <= 30)
+            cantidad += consumo_30d_post * 0.5  # +15d cobertura extra
+
+        if cantidad < 50:  # ignorar MPs con cantidad mínima absurda (<50g)
+            continue
+
+        # Lead time + proveedor
+        lt = c.execute("""
+            SELECT lead_time_dias, origen, proveedor_principal
+            FROM mp_lead_time_config WHERE material_id=?
+        """, (info['material_id'],)).fetchone()
+        lead = lt[0] if lt else 14
+        origen = lt[1] if lt else 'local'
+        proveedor = (lt[2] if lt else '') or 'Sin proveedor sugerido'
+
+        # Buffer IA promedio (de los productos que la usan)
+        bufs_ia = [c['buf_ia'] for c in info['consumos']]
+        buf_ia_avg = sum(bufs_ia) / len(bufs_ia) if bufs_ia else 1.0
+
+        # Justificación
+        productos_que_la_usan = list(set(c['producto'] for c in info['consumos']))[:5]
+        justif = (
+            f'Auto-SC IA · stock {int(info["stock_g"])}g · '
+            f'consumirán {int(sum(c["g_ajustado"] for c in info["consumos"]))}g en {horizonte_max}d · '
+            f'usada por {len(productos_que_la_usan)} producto(s): {", ".join(productos_que_la_usan[:3])} · '
+            f'buffer IA tendencia ×{buf_ia_avg:.2f} · lead {lead}d ({origen})'
+        )
+
+        items_a_pedir.append({
+            'material_id': info['material_id'],
+            'material_nombre': info['material_nombre'],
+            'cantidad_g': round(cantidad, 0),
+            'unidad': 'g',
+            'justificacion': justif,
+            'proveedor_sugerido': proveedor,
+            'lead_time_dias': lead,
+            'origen': origen,
+            'stock_actual_g': round(info['stock_g'], 0),
+            'consumo_total_g': round(sum(c['g_ajustado'] for c in info['consumos']), 0),
+            'buffer_ia_avg': round(buf_ia_avg, 2),
+            'productos_que_la_usan': productos_que_la_usan,
+            'saldo_60d': round(saldos_por_horizonte.get(60, 0), 0),
+            'saldo_90d': round(saldos_por_horizonte.get(90, 0), 0),
+        })
+
+    # Agrupar por proveedor → 1 SC por proveedor
+    scs_por_proveedor = {}
+    huerfanos = []
+    for item in items_a_pedir:
+        prov = item['proveedor_sugerido']
+        if not prov or prov == 'Sin proveedor sugerido':
+            huerfanos.append(item)
+        else:
+            scs_por_proveedor.setdefault(prov, []).append(item)
+
+    return {
+        'modo': modo,
+        'horizontes_dias': list(horizontes_dias),
+        'fecha_analisis': datetime.now().isoformat(),
+        'producciones_analizadas': len(producciones),
+        'scs_por_proveedor': scs_por_proveedor,
+        'items_huerfanos': huerfanos,
+        'kpis': {
+            'total_items': len(items_a_pedir),
+            'total_proveedores': len(scs_por_proveedor),
+            'total_g': round(sum(i['cantidad_g'] for i in items_a_pedir), 0),
+            'mp_huerfanas': len(huerfanos),
+        },
+    }
+
+
+@bp.route('/api/planta/auto-sc-preview', methods=['GET'])
+def auto_sc_preview():
+    """Devuelve qué SCs se generarían SIN crearlas (para revisar).
+
+    Query params:
+      modo: 'mensual' (default) o 'urgente'
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    modo = (request.args.get('modo') or 'mensual').strip()
+    conn = get_db()
+    return jsonify(_calcular_auto_sc(conn, horizontes_dias=(60, 90), modo=modo))
+
+
+@bp.route('/api/planta/auto-sc-generar', methods=['POST'])
+def auto_sc_generar():
+    """Crea las SCs automáticamente. Acepta:
+      - sesión 'compras_user' (manual)
+      - ?clave=AUTO_PLAN_CRON_KEY (cron externo Render)
+
+    Body:
+      modo: 'mensual' (default) o 'urgente'
+      enviar_email: bool (default true)
+    """
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    d = request.json or {}
+    modo = (d.get('modo') or request.args.get('modo') or 'mensual').strip()
+    enviar_email = d.get('enviar_email', True)
+    user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
+
+    conn = get_db(); c = conn.cursor()
+    plan = _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo=modo)
+
+    # Crear las SCs reales en estado 'Pendiente' (Sebastián: va directo a
+    # Compras; Catalina + Alejandro revisan ahí)
+    scs_creadas = []
+    fecha_hoy_iso = datetime.now().date().isoformat()
+    for proveedor, items in plan['scs_por_proveedor'].items():
+        # Generar número
+        c.execute("""
+            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+            FROM solicitudes_compra WHERE numero LIKE ?
+        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
+        n = (c.fetchone()[0] or 0) + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
+
+        observ = f'🤖 Auto-SC IA ({modo}) · proveedor: {proveedor} · horizonte 60-90d · buffers IA tendencia + estacional aplicados'
+
+        c.execute("""
+            INSERT INTO solicitudes_compra
+            (numero, fecha, estado, solicitante, urgencia, observaciones, area, empresa, categoria, tipo, fecha_requerida, valor)
+            VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Produccion', 'Espagiria', 'Materia Prima', 'Compra', ?, 0)
+        """, (numero, datetime.now().isoformat(), user,
+              'Alta' if modo == 'urgente' else 'Normal',
+              observ, fecha_hoy_iso))
+
+        for it in items:
+            try:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                    (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion, valor_estimado, proveedor_sugerido)
+                    VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
+                """, (numero, it['material_id'], it['material_nombre'],
+                      it['cantidad_g'], it['justificacion'], it['proveedor_sugerido']))
+            except sqlite3.OperationalError:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                    (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion, valor_estimado)
+                    VALUES (?, ?, ?, ?, 'g', ?, 0)
+                """, (numero, it['material_id'], it['material_nombre'],
+                      it['cantidad_g'], it['justificacion']))
+
+        scs_creadas.append({
+            'numero': numero,
+            'proveedor': proveedor,
+            'items_count': len(items),
+            'total_g': round(sum(it['cantidad_g'] for it in items), 0),
+        })
+
+    conn.commit()
+
+    # Email a Alejandro con resumen (desde email_destinatarios_config)
+    email_enviado = False
+    if enviar_email and scs_creadas:
+        try:
+            html = _generar_html_auto_sc(plan, scs_creadas, modo)
+            # Sebastián: "email a alejandro". Intentamos varias rutas:
+            # 1) rol gerencia_produccion (suele ser Alejandro)
+            # 2) email LIKE %alejandro%
+            # 3) flag recibe_compras_aprob = 1 (compras flow)
+            destinatarios = []
+            try:
+                rows = c.execute("""
+                    SELECT email FROM email_destinatarios_config
+                    WHERE activo=1 AND email != ''
+                      AND (rol='gerencia_produccion' OR LOWER(email) LIKE '%alejandro%' OR recibe_compras_aprob=1)
+                """).fetchall()
+                destinatarios = [r[0] for r in rows if r[0]]
+            except Exception:
+                destinatarios = []
+            if not destinatarios:
+                try:
+                    rows = c.execute("""
+                        SELECT email FROM email_destinatarios_config
+                        WHERE activo=1 AND email != ''
+                    """).fetchall()
+                    destinatarios = [r[0] for r in rows if r[0]]
+                except Exception:
+                    destinatarios = []
+            if destinatarios:
+                import threading, sys, os as _os
+                sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+                from notificaciones import SistemaNotificaciones
+                notif = SistemaNotificaciones()
+                threading.Thread(
+                    target=notif._enviar_email,
+                    args=(f'🤖 Auto-SC IA · {len(scs_creadas)} SCs creadas ({modo})', html, destinatarios),
+                    daemon=True
+                ).start()
+                email_enviado = True
+        except Exception as e:
+            log.warning(f'Email auto-SC fallo: {e}')
+
+    # Log en auto_plan_runs (esquema real: ejecutado_por, compras_creadas, error, payload_json)
+    try:
+        notas = f'{plan["kpis"]["total_items"]} items · {len(scs_creadas)} SCs · email={email_enviado}'
+        c.execute("""
+            INSERT INTO auto_plan_runs
+              (ejecutado_at, ejecutado_por, tipo, horizonte_dias,
+               producciones_creadas, compras_creadas, alertas_criticas,
+               emails_enviados, error, payload_json)
+            VALUES (?, ?, ?, ?, 0, ?, 0, ?, NULL, ?)
+        """, (
+            datetime.now().isoformat(), user, f'auto_sc_{modo}',
+            90 if modo == 'mensual' else 14,
+            len(scs_creadas),
+            1 if email_enviado else 0,
+            json.dumps({'modo': modo, 'kpis': plan['kpis'],
+                        'scs': scs_creadas, 'notas': notas}, default=str),
+        ))
+        conn.commit()
+    except Exception as e:
+        log.warning(f'Log auto-sc fallo: {e}')
+
+    return jsonify({
+        'ok': True,
+        'modo': modo,
+        'scs_creadas': scs_creadas,
+        'items_huerfanos': plan['items_huerfanos'],
+        'email_enviado': email_enviado,
+        'kpis': plan['kpis'],
+        'mensaje': f'✅ {len(scs_creadas)} SCs creadas en estado Pendiente · {plan["kpis"]["total_items"]} MPs · email={"sí" if email_enviado else "no"}',
+    })
+
+
+def _generar_html_auto_sc(plan, scs_creadas, modo):
+    """HTML email para Alejandro con resumen de las SCs creadas."""
+    fecha_hoy = datetime.now().date()
+    titulo = '🚨 SC Urgentes (lunes)' if modo == 'urgente' else '🤖 SC Mensuales 60-90d'
+    bgHeader = '#dc2626' if modo == 'urgente' else '#0891b2'
+
+    html_scs = ''
+    for sc in scs_creadas:
+        items = plan['scs_por_proveedor'].get(sc['proveedor'], [])
+        html_scs += f'<div style="background:#f8fafc;border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
+        html_scs += f'<b>{sc["numero"]}</b> · proveedor: <b>{sc["proveedor"]}</b> · {sc["items_count"]} MPs · {int(sc["total_g"]/1000)} kg total'
+        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#475569">'
+        for it in items[:6]:
+            html_scs += f'<li><b>{it["material_nombre"]}</b>: {int(it["cantidad_g"]/1000)} kg (buf IA ×{it["buffer_ia_avg"]})</li>'
+        if len(items) > 6:
+            html_scs += f'<li style="color:#94a3b8">+ {len(items)-6} MPs más</li>'
+        html_scs += '</ul></div>'
+
+    huerfanos_html = ''
+    if plan['items_huerfanos']:
+        huerfanos_html = '<div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
+        huerfanos_html += f'<b style="color:#92400e">⚠️ {len(plan["items_huerfanos"])} MPs SIN proveedor sugerido</b>'
+        huerfanos_html += '<div style="font-size:11px;color:#78350f;margin-top:4px">No se crearon SCs porque mp_lead_time_config no tiene proveedor_principal:</div>'
+        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">'
+        for it in plan['items_huerfanos'][:8]:
+            huerfanos_html += f'<li>{it["material_nombre"]}: {int(it["cantidad_g"]/1000)} kg</li>'
+        huerfanos_html += '</ul></div>'
+
+    return f'''<!DOCTYPE html>
+<html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px;margin:0">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+    <div style="background:{bgHeader};color:#fff;padding:20px">
+      <h2 style="margin:0;font-size:20px">{titulo}</h2>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">{fecha_hoy.strftime("%d-%b-%Y")} · Auto-Plan IA</p>
+    </div>
+    <div style="padding:20px">
+      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#065f46">
+        ✅ <b>{len(scs_creadas)} solicitudes creadas</b> · {plan["kpis"]["total_items"]} MPs · {plan["kpis"]["total_g"]/1000:.0f} kg total<br>
+        Estado: <b>Pendiente</b> · Catalina y Alejandro pueden revisar y aprobar en <a href="/solicitudes" style="color:#065f46">/solicitudes</a>
+      </div>
+      <h3 style="color:#0f172a;font-size:14px;margin:14px 0 8px">📋 Solicitudes creadas</h3>
+      {html_scs}
+      {huerfanos_html}
+      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+        Buffer IA aplicado: tendencia (vel 30d vs 180d) + estacional (BF/Madres/Navidad).<br>
+        Auto-SC IA · cron mensual día 1-5 (60-90d) + cron lunes (urgentes 14d).
+      </div>
+    </div>
+  </div>
+</body></html>'''
+
+
+@bp.route('/api/planta/auto-sc-status', methods=['GET'])
+def auto_sc_status():
+    """Status compacto para el panel Auto-SC IA en el tab Plan.
+
+    Devuelve último run (mensual y urgente), SCs creadas en el mes actual y
+    en el anterior, próximas ventanas (siguiente lunes y siguiente día-1),
+    y la lista de las últimas 10 SCs creadas por la IA.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date, timedelta
+    conn = get_db(); c = conn.cursor()
+    hoy = date.today()
+    inicio_mes = hoy.replace(day=1)
+    if inicio_mes.month == 1:
+        inicio_mes_pasado = inicio_mes.replace(year=inicio_mes.year - 1, month=12)
+    else:
+        inicio_mes_pasado = inicio_mes.replace(month=inicio_mes.month - 1)
+
+    def _last_run(tipo):
+        try:
+            row = c.execute("""
+                SELECT ejecutado_at, compras_creadas, payload_json, error, emails_enviados
+                FROM auto_plan_runs
+                WHERE tipo = ?
+                ORDER BY id DESC LIMIT 1
+            """, (tipo,)).fetchone()
+            if not row:
+                return None
+            return {
+                'ejecutado_at': row[0],
+                'scs_creadas': row[1] or 0,
+                'payload_json': row[2] or '',
+                'error': row[3] or '',
+                'emails_enviados': row[4] or 0,
+            }
+        except Exception:
+            return None
+
+    def _count_scs_desde(d_iso):
+        try:
+            row = c.execute("""
+                SELECT COUNT(*) FROM solicitudes_compra
+                WHERE solicitante = 'auto-plan-ia' AND date(fecha) >= ?
+            """, (d_iso,)).fetchone()
+            return row[0] if row else 0
+        except Exception:
+            return 0
+
+    def _proximo_lunes():
+        dias = (7 - hoy.weekday()) % 7
+        if dias == 0:
+            dias = 7
+        return hoy + timedelta(days=dias)
+
+    def _proxima_ventana_mensual():
+        if hoy.day <= 5:
+            return hoy
+        if hoy.month == 12:
+            return date(hoy.year + 1, 1, 1)
+        return date(hoy.year, hoy.month + 1, 1)
+
+    recientes = []
+    try:
+        rows = c.execute("""
+            SELECT s.id, s.numero, s.estado, s.fecha, s.observaciones, s.valor,
+                   (SELECT COUNT(*) FROM solicitudes_compra_items i WHERE i.numero = s.numero) AS items_count,
+                   (SELECT GROUP_CONCAT(DISTINCT proveedor_sugerido)
+                      FROM solicitudes_compra_items i WHERE i.numero = s.numero) AS proveedor
+            FROM solicitudes_compra s
+            WHERE s.solicitante = 'auto-plan-ia'
+            ORDER BY s.id DESC LIMIT 12
+        """).fetchall()
+        cols = [d[0] for d in c.description]
+        recientes = [dict(zip(cols, r)) for r in rows]
+    except Exception:
+        recientes = []
+
+    return jsonify({
+        'hoy': hoy.isoformat(),
+        'dia_mes': hoy.day,
+        'ventana_mensual_activa': hoy.day <= 5,
+        'proximo_lunes': _proximo_lunes().isoformat(),
+        'proxima_ventana_mensual': _proxima_ventana_mensual().isoformat(),
+        'last_mensual': _last_run('auto_sc_mensual'),
+        'last_urgente': _last_run('auto_sc_urgente'),
+        'scs_mes_actual': _count_scs_desde(inicio_mes.isoformat()),
+        'scs_mes_pasado': _count_scs_desde(inicio_mes_pasado.isoformat()) - _count_scs_desde(inicio_mes.isoformat()),
+        'recientes': recientes,
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # MP ROLLING FORECAST — consumo MP acumulado a lo largo del horizonte
 # ════════════════════════════════════════════════════════════════════════
 # Sebastián (30-abr-2026): "el lunes hay unos productos, ellos pueden usar

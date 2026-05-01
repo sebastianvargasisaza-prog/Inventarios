@@ -5018,6 +5018,45 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Auto-SC IA ──────────────────────────────────────────────────
+         Sebastián (30-abr-2026): "Quiero que sea lo mas automatico posible…
+         primeros 5 dias del mes genere ordenes 60-90d, lunes urgentes,
+         buffer IA por tendencia de ventas, email a Alejandro, SCs van
+         directo a Pendiente para Catalina/Alejandro revisar en /solicitudes". -->
+    <div id="plan-autosc" style="background:linear-gradient(135deg,#0891b2 0%,#0e7490 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;letter-spacing:.3px">&#129302; Auto-SC IA &middot; Solicitudes automáticas</div>
+          <div id="autosc-subtitle" style="font-size:11px;opacity:.92;margin-top:2px">Cargando estado…</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button onclick="autoscPreview('mensual')" style="padding:6px 12px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128270; Preview 60-90d</button>
+          <button onclick="autoscGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#0e7490;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
+          <button onclick="autoscGenerar('urgente')" style="padding:6px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128680; Urgente lunes</button>
+          <button onclick="autoscRecargar()" title="Refrescar" style="padding:6px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="autosc-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
+        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mes-actual" class="autosc-val">—</div><div class="autosc-sub">SCs creadas IA</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última mensual</div><div id="autosc-last-mensual" class="autosc-val">—</div><div id="autosc-last-mensual-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última urgente</div><div id="autosc-last-urgente" class="autosc-val">—</div><div id="autosc-last-urgente-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Próxima ventana</div><div id="autosc-prox" class="autosc-val">—</div><div class="autosc-sub" id="autosc-prox-sub">Mensual día 1-5 / Lunes</div></div>
+      </div>
+      <div id="autosc-recientes-wrap" style="margin-top:12px;display:none">
+        <div style="font-size:11px;opacity:.88;margin-bottom:4px">SCs IA recientes</div>
+        <div id="autosc-recientes-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <div id="autosc-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
+    </div>
+    <style>
+      #plan-autosc .autosc-tile{background:rgba(255,255,255,.13);border-radius:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.18)}
+      #plan-autosc .autosc-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;opacity:.85}
+      #plan-autosc .autosc-val{font-size:20px;font-weight:800;margin-top:2px;line-height:1.1}
+      #plan-autosc .autosc-sub{font-size:10px;opacity:.78;margin-top:2px}
+      #plan-autosc .autosc-pill{background:rgba(255,255,255,.18);padding:3px 8px;border-radius:12px;font-size:10px;cursor:pointer;border:1px solid rgba(255,255,255,.3);text-decoration:none;color:#fff;display:inline-flex;align-items:center;gap:4px}
+      #plan-autosc .autosc-pill:hover{background:rgba(255,255,255,.28)}
+    </style>
+
     <div id="plan-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px"></div>
 
     <div id="plan-prods-box" style="display:none;background:#f0f4f8;border-radius:8px;padding:14px;margin-bottom:16px">
@@ -7405,6 +7444,7 @@ async function ckMarcar(itemId, estado){
       if(tab==='plan' && typeof cargarPlanificacion==='function' && !window._planLoaded){
         cargarPlanificacion(60);
       }
+      if(tab==='plan' && typeof autoscRecargar==='function') autoscRecargar();
       // Estilos botones — los 6 oficiales
       function _bg(id, activeStyle, activeClass){
         var b = document.getElementById(id);
@@ -11694,6 +11734,129 @@ async function ckMarcar(itemId, estado){
       var b=document.getElementById('plan-btn-'+n);
       if(b){ b.style.background=d===n?'#1a4a7a':'#fff'; b.style.color=d===n?'#fff':'#1a4a7a'; }
     });
+  }
+
+  // ── Auto-SC IA (Sebastián 30-abr-2026): panel automático en tab Plan
+  function _autoscFmtFecha(iso){
+    if(!iso) return '—';
+    try{
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString('es-CO', {day:'2-digit', month:'short'}) + ' ' + d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'});
+    }catch(e){ return iso; }
+  }
+  function _autoscDiasSince(iso){
+    if(!iso) return null;
+    try{
+      var d = new Date(iso); var now = new Date();
+      return Math.floor((now-d) / 86400000);
+    }catch(e){ return null; }
+  }
+  async function autoscRecargar(){
+    var sub = document.getElementById('autosc-subtitle');
+    if(sub) sub.textContent = 'Cargando estado…';
+    try{
+      var r = await fetch('/api/planta/auto-sc-status', {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var s = await r.json();
+      var ventana = s.ventana_mensual_activa
+        ? '🟢 Ventana mensual activa (día '+s.dia_mes+'/5) · próxima ejecución cron mensual'
+        : '⚪ Día '+s.dia_mes+' del mes · próxima ventana mensual: '+s.proxima_ventana_mensual;
+      var hoyEsLunes = (new Date(s.hoy)).getUTCDay() === 1;
+      if(hoyEsLunes) ventana += ' · 🟡 Hoy es lunes (cron urgente)';
+      if(sub) sub.textContent = ventana;
+
+      document.getElementById('autosc-mes-actual').textContent = (s.scs_mes_actual||0) + ' SCs';
+      var elM = document.getElementById('autosc-last-mensual');
+      var elMs = document.getElementById('autosc-last-mensual-sub');
+      if(s.last_mensual){
+        var d = _autoscDiasSince(s.last_mensual.ejecutado_at);
+        elM.textContent = (s.last_mensual.scs_creadas||0)+' SCs';
+        elMs.textContent = _autoscFmtFecha(s.last_mensual.ejecutado_at) + (d!=null ? ' · hace '+d+'d' : '');
+      } else { elM.textContent='—'; elMs.textContent='Sin ejecuciones aún'; }
+      var elU = document.getElementById('autosc-last-urgente');
+      var elUs = document.getElementById('autosc-last-urgente-sub');
+      if(s.last_urgente){
+        var d2 = _autoscDiasSince(s.last_urgente.ejecutado_at);
+        elU.textContent = (s.last_urgente.scs_creadas||0)+' SCs';
+        elUs.textContent = _autoscFmtFecha(s.last_urgente.ejecutado_at) + (d2!=null ? ' · hace '+d2+'d' : '');
+      } else { elU.textContent='—'; elUs.textContent='Sin ejecuciones aún'; }
+
+      var elP = document.getElementById('autosc-prox');
+      var elPs = document.getElementById('autosc-prox-sub');
+      if(s.ventana_mensual_activa){
+        elP.textContent = 'AHORA';
+        elPs.textContent = 'Día '+s.dia_mes+' (1-5) · ejecutar cuando quieras';
+      } else if(hoyEsLunes){
+        elP.textContent = 'HOY';
+        elPs.textContent = 'Lunes · cron urgente activo';
+      } else {
+        var proxLunes = new Date(s.proximo_lunes);
+        elP.textContent = proxLunes.toLocaleDateString('es-CO',{day:'2-digit',month:'short'});
+        elPs.textContent = 'Lunes · luego día 1-5 ('+s.proxima_ventana_mensual+')';
+      }
+
+      var wrap = document.getElementById('autosc-recientes-wrap');
+      var list = document.getElementById('autosc-recientes-list');
+      if(s.recientes && s.recientes.length){
+        wrap.style.display = 'block';
+        list.innerHTML = s.recientes.slice(0,12).map(function(sc){
+          var prov = (sc.proveedor||'').split(',')[0] || 'sin proveedor';
+          var icono = sc.estado === 'Pendiente' ? '🟡' : (sc.estado === 'Aprobada' ? '✅' : (sc.estado === 'Rechazada' ? '❌' : '⚪'));
+          return '<a class="autosc-pill" href="/solicitudes#'+encodeURIComponent(sc.numero)+'" title="'+(sc.observaciones||'').replace(/"/g,'&quot;')+'">'+icono+' '+sc.numero+' · '+prov+' · '+(sc.items_count||0)+' MPs</a>';
+        }).join('');
+      } else { wrap.style.display = 'none'; }
+    }catch(e){
+      if(sub) sub.textContent = 'No se pudo cargar el estado · '+(e.message||e);
+    }
+  }
+  async function autoscPreview(modo){
+    var msg = document.getElementById('autosc-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Calculando preview ('+modo+')…';
+    try{
+      var r = await fetch('/api/planta/auto-sc-preview?modo='+encodeURIComponent(modo), {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var p = await r.json();
+      var k = p.kpis || {};
+      var sps = p.scs_por_proveedor || {};
+      var huerf = p.items_huerfanos || [];
+      var nProv = Object.keys(sps).length;
+      var html = '<b>📊 Preview '+modo+'</b> · '+nProv+' SCs por crear · '+(k.total_items||0)+' MPs · '+Math.round((k.total_g||0)/1000)+' kg<br>';
+      if(nProv){
+        html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">';
+        Object.entries(sps).slice(0,8).forEach(function(kv){
+          html += '<span style="background:rgba(0,0,0,.18);padding:3px 8px;border-radius:10px">'+kv[0]+': '+kv[1].length+' MPs</span>';
+        });
+        html += '</div>';
+      }
+      if(huerf.length){
+        html += '<div style="margin-top:6px;color:#fde68a">⚠️ '+huerf.length+' MPs sin proveedor sugerido (no se incluirán)</div>';
+      }
+      msg.innerHTML = html;
+    }catch(e){
+      msg.innerHTML = '❌ Error en preview: '+(e.message||e);
+    }
+  }
+  async function autoscGenerar(modo){
+    var nombreModo = modo === 'urgente' ? 'URGENTE (lunes, 14d)' : 'MENSUAL (60-90d)';
+    if(!confirm('Vas a crear las SCs reales en estado Pendiente '+nombreModo+'.\\n\\nCatalina y Alejandro las verán en /solicitudes para revisar/editar/aprobar.\\n\\n¿Continuar?')) return;
+    var msg = document.getElementById('autosc-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Generando SCs ('+modo+')…';
+    try{
+      var r = await fetch('/api/planta/auto-sc-generar', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({modo: modo, enviar_email: true}),
+      });
+      var data = await r.json();
+      if(!r.ok || !data.ok) throw new Error(data.error || ('HTTP '+r.status));
+      msg.innerHTML = '✅ '+data.mensaje + ' · <a href="/solicitudes" style="color:#fff;text-decoration:underline">ver en Compras</a>';
+      autoscRecargar();
+    }catch(e){
+      msg.innerHTML = '❌ Error generando SCs: '+(e.message||e);
+    }
   }
 
   async function cargarPlanificacion(dias){
