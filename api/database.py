@@ -3340,6 +3340,28 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Si 2 requests concurrentes generan número, ambos pueden insertar el
         # mismo. UNIQUE INDEX previene el INSERT duplicado · el segundo falla
         # con IntegrityError y debe reintentarse en código.
+        #
+        # IMPORTANTE: Si en producción YA hay duplicados (race ya ocurrió),
+        # el CREATE UNIQUE INDEX falla y crashea el deploy. Por eso primero
+        # renombramos los duplicados (mantenemos el ID más bajo, los demás
+        # quedan con sufijo "-DUP-{id}") · esto preserva data y deja audit
+        # trail visible para que humano revise.
+        """UPDATE ordenes_compra SET numero_oc = numero_oc || '-DUP-' || id
+        WHERE id IN (
+            SELECT id FROM ordenes_compra o1
+            WHERE EXISTS (
+                SELECT 1 FROM ordenes_compra o2
+                WHERE o2.numero_oc = o1.numero_oc AND o2.id < o1.id
+            )
+        )""",
+        """UPDATE solicitudes_compra SET numero = numero || '-DUP-' || id
+        WHERE id IN (
+            SELECT id FROM solicitudes_compra s1
+            WHERE EXISTS (
+                SELECT 1 FROM solicitudes_compra s2
+                WHERE s2.numero = s1.numero AND s2.id < s1.id
+            )
+        )""",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_ordenes_compra_numero ON ordenes_compra(numero_oc)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_solicitudes_compra_numero ON solicitudes_compra(numero)",
     ]),
