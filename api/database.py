@@ -3302,6 +3302,12 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (76, "produccion_programada: area_envasado_id (Sebastián 1-may-2026 · IA asigna FAB+ENV)", [
+        # Sebastián: "asigna el area de produccion y el area de envasado".
+        # El motor IA mapea FAB1→ENV1, FAB2/3/FLOAT→ENV2 y necesita persistirlo.
+        "ALTER TABLE produccion_programada ADD COLUMN area_envasado_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_pp_area_env ON produccion_programada(area_envasado_id)",
+    ]),
     (75, "Auto-asignación IA · rotación operarios + limpieza mismo día (Sebastián)", [
         # Sebastián 1-may-2026: "TODOS rotan no necesariamente deja a Camilo
         # y Mayerlin fijos, queden limpias el mismo día, IA que sepa que usar

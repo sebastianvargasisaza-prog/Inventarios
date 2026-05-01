@@ -9593,15 +9593,33 @@ async function ckMarcar(itemId, estado){
     var planv2 = document.getElementById('ptab-planv2');
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
-    var ids = ['plan-salas-vivo', 'plan-mi-dia', 'plan-cron-status',
-               'plan-reporte-ejecutivo', 'plan-pre-produccion',
-               'plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee',
-               'mee-asignar-panel', 'mee-config-panel'];
+
+    // Sebastián 1-may-2026: "consolida claro". 2 niveles:
+    // ESENCIALES (siempre visibles, orden de uso diario):
+    //   1. Salas vivo · 2. Mi Día · 3. Alertas etiquetas+D20 ·
+    //   4. Auto-SC MP · 5. Auto-SC MEE
+    // AVANZADO (detrás de botón ⚙️ collapsable):
+    //   6. Reporte ejecutivo · 7. Pre-producción · 8. Crons status
+    //   9. Items por asignar · 10. Config MEE
+    var esenciales = ['plan-salas-vivo', 'plan-mi-dia', 'plan-mee-alerts',
+                       'plan-autosc', 'plan-autosc-mee'];
+    var avanzados = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
+                       'plan-cron-status', 'mee-asignar-panel', 'mee-config-panel'];
+
+    // Crear contenedor de avanzados (oculto por default)
+    var avBtn = document.createElement('div');
+    avBtn.id = 'plan-avanzado-toggle';
+    avBtn.style.cssText = 'margin:8px 0;text-align:center';
+    avBtn.innerHTML = '<button onclick="planV2ToggleAvanzado()" id="btn-tog-avanzado" style="padding:6px 18px;background:#f1f5f9;color:#1f2937;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600">⚙️ Mostrar avanzado (reportes · crons · config MEE)</button>';
+
+    var avCont = document.createElement('div');
+    avCont.id = 'plan-avanzado-cont';
+    avCont.style.cssText = 'display:none';
+
     var current = anchor;
-    ids.forEach(function(id){
+    esenciales.forEach(function(id){
       var el = document.getElementById(id);
       if(!el) return;
-      // Mover después del nodo current (mantiene orden)
       if(current.nextSibling){
         planv2.insertBefore(el, current.nextSibling);
       } else {
@@ -9609,27 +9627,55 @@ async function ckMarcar(itemId, estado){
       }
       current = el;
     });
+    // Toggle button + container
+    if(current.nextSibling){
+      planv2.insertBefore(avBtn, current.nextSibling);
+      planv2.insertBefore(avCont, avBtn.nextSibling);
+    } else {
+      planv2.appendChild(avBtn);
+      planv2.appendChild(avCont);
+    }
+    avanzados.forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) avCont.appendChild(el);
+    });
+
     window._meePanelsMoved = true;
-    // Cargar todos los datos
+    // Cargar datos esenciales (los avanzados se cargan al toggle)
     if(typeof autoscRecargar === 'function') autoscRecargar();
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
     if(typeof alertD20Recargar === 'function') alertD20Recargar();
-    if(typeof reporteEjecutivoRecargar === 'function') reporteEjecutivoRecargar();
-    if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
     if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
-    if(typeof cronStatusRecargar === 'function') cronStatusRecargar();
     if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
-    // Recargar contador de items por asignar (no abre el panel)
-    if(typeof meeAsignarRecargar === 'function'){
-      try{
-        fetch('/api/planta/items-por-asignar', {credentials:'same-origin'})
-          .then(function(r){return r.json();})
-          .then(function(d){
-            var btn = document.getElementById('btn-asignar-count');
-            if(btn) btn.textContent = (d.total || 0);
-          }).catch(function(){});
-      }catch(e){}
+    // Counter del botón asignar (sin abrir panel)
+    try{
+      fetch('/api/planta/items-por-asignar', {credentials:'same-origin'})
+        .then(function(r){return r.json();})
+        .then(function(d){
+          var btn = document.getElementById('btn-asignar-count');
+          if(btn) btn.textContent = (d.total || 0);
+        }).catch(function(){});
+    }catch(e){}
+  }
+  function planV2ToggleAvanzado(){
+    var cont = document.getElementById('plan-avanzado-cont');
+    var btn = document.getElementById('btn-tog-avanzado');
+    if(!cont || !btn) return;
+    if(cont.style.display === 'none'){
+      cont.style.display = 'block';
+      btn.textContent = '⚙️ Ocultar avanzado';
+      btn.style.background = '#1f2937';
+      btn.style.color = '#fff';
+      // Cargar datos avanzados al expandir
+      if(typeof reporteEjecutivoRecargar === 'function') reporteEjecutivoRecargar();
+      if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
+      if(typeof cronStatusRecargar === 'function') cronStatusRecargar();
+    } else {
+      cont.style.display = 'none';
+      btn.textContent = '⚙️ Mostrar avanzado (reportes · crons · config MEE)';
+      btn.style.background = '#f1f5f9';
+      btn.style.color = '#1f2937';
     }
   }
 

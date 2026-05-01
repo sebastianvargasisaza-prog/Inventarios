@@ -7840,8 +7840,15 @@ def _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=True):
     donde está marmita 250 litros".
 
     Returns: {area_codigo, area_id, tanque_codigo, capacidad_litros, score, razon}
-              o None si nada candidato.
+              o None si nada candidato (incluye lote_kg<=0).
     """
+    # Guard: lote inválido → no se puede seleccionar área (Sebastián test)
+    try:
+        lote_kg = float(lote_kg)
+    except (TypeError, ValueError):
+        return None
+    if lote_kg <= 0:
+        return None
     capacidad_min = lote_kg * 1.2  # 20% headroom
 
     # Tanques candidatos (suficiente capacidad)
@@ -8040,13 +8047,23 @@ def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
             row = c.execute("SELECT id FROM areas_planta WHERE codigo=?", (env_codigo,)).fetchone()
             if row: env_id = row[0]
 
-        c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
-                  (area['area_id'], produccion_id))
+        # Persistir área producción + área envasado (col agregada migración 76)
+        try:
+            c.execute(
+                "UPDATE produccion_programada SET area_id=?, area_envasado_id=? WHERE id=?",
+                (area['area_id'], env_id, produccion_id)
+            )
+        except sqlite3.OperationalError:
+            # Fallback si col area_envasado_id aún no migrada
+            c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                      (area['area_id'], produccion_id))
+
         resultado['area'] = area
         resultado['area_envasado'] = {'codigo': env_codigo, 'id': env_id}
         resultado['cambios'].append(
             f"Área asignada: {area['area_codigo']} (tanque {area['tanque_codigo']} · "
             f"{area['capacidad_litros']:.0f}L · uso {area['utilizacion_pct']}%)"
+            + (f" → envasado {env_codigo}" if env_codigo else "")
         )
 
     # 2) Operarios rotando

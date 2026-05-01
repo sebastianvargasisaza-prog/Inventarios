@@ -7022,47 +7022,149 @@ def mi_dia():
 
 @bp.route('/api/planta/diagnostico-calendar', methods=['GET'])
 def diagnostico_calendar():
-    """Diagnostica por qué planv2 dice 'Sin eventos del Calendar'.
+    """Diagnóstico production-grade del Calendar feed.
 
-    Sebastián (1-may-2026) reportó empty state en planv2. Devuelve:
-      · source (ical/gcal_api/none)
-      · error si lo hay
-      · cantidad de eventos próximos 60d
-      · sample primeros 5 eventos
-      · sugerencia de qué env vars configurar
+    Sebastián 1-may-2026: 'haz que el calendario funcione, ya está conectado'.
+    Devuelve TODO lo necesario para diagnosticar por qué no jala eventos:
+      · Estado env vars (GCAL_ICAL_URL / GOOGLE_API_KEY / CALENDAR_ID)
+      · URL siendo usada (oculta partes secretas)
+      · Resultado fetch en vivo (force_refresh=True, sin cache)
+      · Status HTTP / encoding / longitud feed / error específico
+      · Primeros 10 eventos parseados con título + fecha
+      · Sample matching producto-evento (top 3 productos activos)
+      · Tiempo de fetch en ms
+      · Sugerencias específicas por caso
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     import os as _os
+    import time as _time
+    import urllib.request as _ur
+
+    gcal_url = _os.environ.get('GCAL_ICAL_URL', '').strip()
+    google_key = _os.environ.get('GOOGLE_API_KEY', '').strip()
+    cal_id = _os.environ.get('CALENDAR_ID', '').strip()
+
     diag = {
-        'env_GCAL_ICAL_URL_configurado': bool(_os.environ.get('GCAL_ICAL_URL', '').strip()),
-        'env_GOOGLE_API_KEY_configurado': bool(_os.environ.get('GOOGLE_API_KEY', '').strip()),
-        'env_CALENDAR_ID': _os.environ.get('CALENDAR_ID', '(no definido)'),
+        'fecha_diagnostico': datetime.now().isoformat(),
+        'env_vars': {
+            'GCAL_ICAL_URL_configurado': bool(gcal_url),
+            'GCAL_ICAL_URL_preview': (gcal_url[:35] + '…' + gcal_url[-12:]) if len(gcal_url) > 50 else (gcal_url or '(no definido)'),
+            'GOOGLE_API_KEY_configurado': bool(google_key),
+            'GOOGLE_API_KEY_preview': (google_key[:8] + '…') if google_key else '(no definido)',
+            'CALENDAR_ID': cal_id or '(no definido)',
+        },
     }
+
+    # Fetch en vivo con force_refresh + cronometrar
+    t0 = _time.time()
     try:
         from blueprints.programacion import _fetch_calendar_events
         result = _fetch_calendar_events(days_ahead=60) or {}
         eventos = result.get('events') or []
-        diag['source'] = result.get('source', 'unknown')
-        diag['error'] = result.get('error')
-        diag['total_eventos_60d'] = len(eventos)
-        diag['sample'] = [{'fecha': e.get('fecha'), 'titulo': (e.get('titulo') or '')[:60]} for e in eventos[:5]]
+        ms = int((_time.time() - t0) * 1000)
+        diag['fetch'] = {
+            'source': result.get('source', 'unknown'),
+            'duracion_ms': ms,
+            'error': result.get('error'),
+            'total_eventos_60d': len(eventos),
+        }
+        diag['eventos_sample'] = [
+            {'fecha': e.get('fecha'), 'titulo': (e.get('titulo') or '')[:80],
+             'descripcion_preview': (e.get('descripcion') or '')[:60]}
+            for e in eventos[:10]
+        ]
     except Exception as e:
-        diag['source'] = 'fail'
-        diag['error'] = str(e)
-        diag['total_eventos_60d'] = 0
-        diag['sample'] = []
+        ms = int((_time.time() - t0) * 1000)
+        import traceback
+        diag['fetch'] = {
+            'source': 'fail',
+            'duracion_ms': ms,
+            'error': str(e),
+            'traceback_preview': traceback.format_exc()[-500:],
+            'total_eventos_60d': 0,
+        }
+        diag['eventos_sample'] = []
 
-    # Sugerencias
-    sugerencias = []
-    if diag['source'] == 'none' or (not diag['env_GCAL_ICAL_URL_configurado']
-                                      and not diag['env_GOOGLE_API_KEY_configurado']):
-        sugerencias.append('Configura env var GCAL_ICAL_URL en Render con la URL secreta del calendario (Configuración → Integrar → URL secreta).')
-    elif diag['env_GCAL_ICAL_URL_configurado'] and diag['error']:
-        sugerencias.append(f'Hay GCAL_ICAL_URL pero falla: {diag["error"]}. Verifica que la URL siga válida.')
-    if diag['total_eventos_60d'] == 0 and not diag.get('error'):
-        sugerencias.append('Calendar conectado pero sin eventos en próximos 60 días. Revisa: ¿tienes producciones programadas en mayo-junio? Crea eventos en Google Calendar con el nombre del producto.')
-    diag['sugerencias'] = sugerencias
+    # Test directo de URL si hay GCAL_ICAL_URL (extra info para debug)
+    if gcal_url and not diag['fetch'].get('total_eventos_60d'):
+        try:
+            req = _ur.Request(gcal_url, headers={'User-Agent': 'EspagiRIA-Diagnostico/1.0'})
+            t1 = _time.time()
+            with _ur.urlopen(req, timeout=10) as r:
+                content = r.read()
+                ct = r.headers.get('Content-Type', '')
+                diag['url_test'] = {
+                    'status': r.getcode(),
+                    'content_type': ct,
+                    'size_bytes': len(content),
+                    'duracion_ms': int((_time.time() - t1) * 1000),
+                    'preview_500_chars': content[:500].decode('utf-8', errors='replace'),
+                    'es_ical_valido': content[:15].startswith(b'BEGIN:VCALENDAR'),
+                    'cantidad_VEVENT': content.count(b'BEGIN:VEVENT'),
+                }
+        except Exception as e:
+            diag['url_test'] = {'error': str(e)}
+
+    # Test matching producto-evento (los primeros 3 productos activos)
+    diag['matching_test'] = []
+    try:
+        conn = get_db(); c = conn.cursor()
+        eventos = []
+        if diag['fetch'].get('total_eventos_60d', 0) > 0:
+            from blueprints.programacion import _fetch_calendar_events
+            eventos = (_fetch_calendar_events(days_ahead=60) or {}).get('events') or []
+        productos_activos = c.execute("""
+            SELECT producto_nombre FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+            LIMIT 3
+        """).fetchall()
+        for (prod,) in productos_activos:
+            try:
+                alias = _alias_calendar_for(c, prod)
+            except Exception:
+                alias = ''
+            mejores = []
+            for ev in eventos[:30]:
+                try:
+                    score = _match_producto_evento(prod, alias, ev.get('titulo',''),
+                                                     ev.get('descripcion',''))
+                    if score > 0:
+                        mejores.append({'evento': (ev.get('titulo') or '')[:50],
+                                          'fecha': ev.get('fecha'), 'score': score})
+                except Exception:
+                    continue
+            mejores.sort(key=lambda x: x['score'], reverse=True)
+            diag['matching_test'].append({
+                'producto': prod[:40],
+                'alias': alias or '(ninguno)',
+                'top_matches': mejores[:3],
+            })
+    except Exception:
+        pass
+
+    # Sugerencias específicas según el caso detectado
+    s = []
+    if not gcal_url and not google_key:
+        s.append('🚨 Configura GCAL_ICAL_URL en Render: Calendar Producciones → Configuración → Integrar calendario → "URL secreta en formato iCal" (formato https://calendar.google.com/calendar/ical/.../basic.ics)')
+    elif gcal_url:
+        ut = diag.get('url_test', {})
+        if ut.get('error'):
+            s.append(f'⚠️ La URL configurada falla: {ut["error"]}. Verifica que esté vigente y que el calendario sea accesible.')
+        elif not ut.get('es_ical_valido'):
+            s.append(f'⚠️ La URL responde pero no devuelve formato iCal. Content-Type: {ut.get("content_type")}. Asegúrate de copiar la URL "iCal" no la URL pública.')
+        elif ut.get('cantidad_VEVENT', 0) == 0:
+            s.append('⚠️ El feed iCal no tiene eventos. Crea eventos en el Calendar Producciones (deben aparecer ahí, no en otro calendario).')
+        elif diag['fetch'].get('total_eventos_60d') == 0 and ut.get('cantidad_VEVENT', 0) > 0:
+            s.append(f'⚠️ El feed tiene {ut.get("cantidad_VEVENT")} eventos pero ninguno cae en próximos 60 días. ¿Están en el pasado o muy en el futuro?')
+    if diag['fetch'].get('total_eventos_60d', 0) > 0 and diag['matching_test']:
+        sin_match = [t for t in diag['matching_test'] if not t['top_matches']]
+        if len(sin_match) == len(diag['matching_test']):
+            s.append('⚠️ Hay eventos pero ninguno hace match con productos activos. Revisa que los títulos del Calendar contengan el nombre del producto (o configura sku_planeacion_config.alias_calendar)')
+
+    if not s and diag['fetch'].get('total_eventos_60d', 0) > 0:
+        s.append(f'✅ Calendar funciona correctamente · {diag["fetch"]["total_eventos_60d"]} eventos en 60 días')
+    diag['sugerencias'] = s
 
     return jsonify(diag)
 
