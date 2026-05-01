@@ -2966,6 +2966,79 @@ def planta_centro_mando():
         fecha_sel = datetime.strptime(fecha_param, '%Y-%m-%d').date() if fecha_param else date.today()
     except Exception:
         fecha_sel = date.today()
+
+    # ── AUTO-LIMPIEZA INDEPENDIENTE AL INICIO (Sebastián 1-may-2026) ──
+    # 'sigue mostrando lunes todas las producciones, martes también'
+    # Antes esta limpieza estaba al final y dependía de variables del
+    # bloque diagnóstico → si fallaba, no limpiaba. Ahora corre PRIMERO
+    # como query SQL independiente. Resultado: garantizado que producciones_dia
+    # construido más abajo NO contiene huérfanas.
+    auto_canceladas_inicial = 0
+    auto_cancel_detalle_inicial = []
+    try:
+        _f_inicio = fecha_sel.isoformat()
+        _f_fin = (fecha_sel + timedelta(days=6)).isoformat()
+        # Set de Calendar (fecha, producto_upper) en horizonte
+        _productos_cal = set()
+        try:
+            from blueprints.auto_plan import (
+                _calendar_events_cached as _cec,
+                _match_producto_evento as _mpe,
+            )
+            cal_events = _cec(force_refresh=True) or []
+            skus_aliases = {}
+            for sku_n, alias_csv in conn.execute("""
+                SELECT producto_nombre, COALESCE(alias_calendar,'')
+                FROM sku_planeacion_config
+                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+            """).fetchall():
+                skus_aliases[sku_n] = alias_csv
+            for ev in cal_events:
+                f_ev = (ev.get('fecha') or '')[:10]
+                if f_ev < _f_inicio or f_ev > _f_fin: continue
+                producto_match = None; best = 0
+                for prod_n, alias_csv in skus_aliases.items():
+                    try:
+                        s = _mpe(prod_n, alias_csv, ev.get('titulo'), ev.get('descripcion',''))
+                        if s >= 50 and s > best:
+                            best = s; producto_match = prod_n
+                    except Exception:
+                        continue
+                if producto_match:
+                    _productos_cal.add((f_ev, producto_match.upper()))
+        except Exception as _e:
+            logging.getLogger('programacion').warning(f'[centro-mando auto-clean] cal fetch falla: {_e}')
+
+        # Solo limpiar si Calendar tiene eventos (guard contra feed caído)
+        if _productos_cal:
+            # DB rows en horizonte no iniciadas
+            _db_rows = conn.execute("""
+                SELECT id, producto, date(fecha_programada)
+                FROM produccion_programada
+                WHERE date(fecha_programada) BETWEEN ? AND ?
+                  AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
+                LIMIT 100
+            """, (_f_inicio, _f_fin)).fetchall()
+            for pid, prod, fecha in _db_rows:
+                key = (fecha, (prod or '').upper())
+                if key not in _productos_cal:
+                    conn.execute("""
+                        UPDATE produccion_programada
+                          SET estado='cancelado',
+                              observaciones = COALESCE(observaciones,'') ||
+                                ' [auto-cancelado · sin match Calendar]'
+                        WHERE id=? AND COALESCE(estado,'programado') IN ('','programado','planeado')
+                    """, (pid,))
+                    auto_canceladas_inicial += 1
+                    if len(auto_cancel_detalle_inicial) < 5:
+                        auto_cancel_detalle_inicial.append(f"{(prod or '?')[:30]} {fecha}")
+            if auto_canceladas_inicial:
+                conn.commit()
+                logging.getLogger('programacion').info(
+                    f'[centro-mando auto-clean] {auto_canceladas_inicial} filas DB canceladas'
+                )
+    except Exception as _e:
+        logging.getLogger('programacion').warning(f'[centro-mando auto-clean inicial] falla: {_e}')
     hoy = fecha_sel.isoformat()
 
     # Areas con producciones activas (in progress: inicio_real_at NOT NULL,
@@ -3271,51 +3344,11 @@ def planta_centro_mando():
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando] producciones_dia falla: {_e}')
 
-    # ── AUTO-LIMPIEZA Calendar-first (Sebastián 1-may-2026) ──
-    # 'sigue mostrando lunes todas y martes mezcla' → limpieza al GET.
-    # Cancela DB rows huérfanas SOLO si:
-    #   1. Calendar tiene eventos en el horizonte (no es feed vacío)
-    #   2. Producción no iniciada (estado in 'programado','planeado','')
-    #   3. (fecha, producto) no aparece en Calendar
-    # Guards: máximo 50 por GET · revertible (cancelado, no DELETE).
-    auto_canceladas = 0
-    auto_cancel_detalle = []
-    try:
-        if productos_calendar_por_fecha and db_sin_calendar:
-            # Solo limpiar si Calendar tiene MIN 1 evento en el horizonte
-            # (sino podría ser que el feed esté caído y borraríamos todo)
-            for orphan in db_sin_calendar[:50]:
-                pid = orphan.get('id')
-                if not pid: continue
-                # Re-verificar estado actual antes de cancelar (race-safe)
-                actual = conn.execute(
-                    "SELECT COALESCE(estado,'programado') FROM produccion_programada WHERE id=?",
-                    (pid,)
-                ).fetchone()
-                if not actual: continue
-                est_actual = (actual[0] or '').strip()
-                if est_actual not in ('', 'programado', 'planeado'):
-                    continue  # ya iniciada/completada · no tocar
-                conn.execute("""
-                    UPDATE produccion_programada
-                      SET estado='cancelado',
-                          observaciones = COALESCE(observaciones,'') ||
-                            ' [auto-cancelado · sin match Calendar]'
-                    WHERE id=?
-                """, (pid,))
-                auto_canceladas += 1
-                auto_cancel_detalle.append(f"{orphan.get('producto','?')[:30]} {orphan.get('fecha','?')}")
-            if auto_canceladas:
-                conn.commit()
-                # Re-filtrar producciones_dia para quitar las canceladas
-                producciones_dia = [p for p in producciones_dia
-                                     if not (p.get('id') and not p.get('desde_calendar')
-                                             and (p.get('fecha',''), (p.get('producto','') or '').upper())
-                                                 not in productos_calendar_por_fecha
-                                             and p.get('estado') in ('programado','planeado',''))]
-                db_sin_calendar = []  # ya quedaron limpias
-    except Exception as _e:
-        logging.getLogger('programacion').warning(f'[centro-mando] auto-clean falla: {_e}')
+    # Auto-limpieza ya se ejecutó al INICIO del endpoint (variables
+    # auto_canceladas_inicial / auto_cancel_detalle_inicial) · garantiza
+    # que producciones_dia construido arriba ya no incluye huérfanas
+    auto_canceladas = auto_canceladas_inicial
+    auto_cancel_detalle = auto_cancel_detalle_inicial
 
     return jsonify({
         'areas': areas,
