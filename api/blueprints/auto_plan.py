@@ -7111,17 +7111,17 @@ def mi_dia():
 
 @bp.route('/api/planta/semana-produccion', methods=['GET'])
 def semana_produccion():
-    """Vista CLARA para el jefe de producción · IA asignó todo,
-    el operario solo da click para avanzar.
-    Sebastián 1-may-2026: 'que sea aún más sencillo · qué produce esta semana
-    le salga lunes tal · dónde queda cada operario · solicitar limpieza marque
-    limpiado/sucio · todo en tiempo real · pero que todo lo asigne la IA'.
+    """Vista CLARA · ARQUITECTURA CALENDAR-FIRST.
+    Sebastián 1-may-2026: 'cambuamos la forma · piensa bien · si es necesario
+    cambia la forma'.
 
-    Devuelve L-V (lunes próximo si hoy es fin de semana) con:
-      - Por cada día: producciones programadas, área asignada por IA,
-        operarios rotados por IA, estado live, limpiezas
-      - Si una producción NO tiene área/operario → flag (IA debe asignar)
-      - Acciones disponibles según estado: iniciar / terminar / marcar limpia
+    Calendar = ÚNICA fuente de verdad de qué se va a producir.
+    DB (produccion_programada) solo guarda lo que YA empezó/terminó.
+    Operarios rotan deterministically (hash de producto+fecha+rol).
+    Áreas se eligen al vuelo según kg.
+
+    Sin sync, sin merge, sin auto-inserts ON LOAD. La fila DB se crea
+    solo cuando el operario presiona ▶ Iniciar.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -7138,161 +7138,191 @@ def semana_produccion():
     dias_semana = [base + timedelta(days=i) for i in range(5)]
     nombres_dia = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE']
 
-    # AUTO-SYNC ON LOAD: si hay eventos del Calendar sin sincronizar,
-    # ejecutar sync inmediatamente (Sebastián 1-may-2026: 'no se activa solo').
-    # FORCE_REFRESH para evitar cache stale (60s puede estar vacío si primera
-    # lectura falló) · UMBRAL match 50 (no 60) para mayor cobertura.
-    calendar_eventos_por_fecha = {}
-    eventos_a_sincronizar = []
-    auto_sync_diag = {'cal_events_total': 0, 'en_semana': 0, 'con_match': 0, 'sin_match': []}
+    # =========== HELPERS LOCALES (Calendar-first) ===========
+    import hashlib
+
+    def _hash_rotacion(producto, fecha_iso, rol):
+        """Hash determinístico → mismo (producto+fecha+rol) siempre da
+        el mismo índice. Cambia rol → cambia operario (NO duplicados
+        dentro de la misma producción para roles distintos)."""
+        s = f'{producto}|{fecha_iso}|{rol}'
+        return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
+
+    # Pool de operarios activos (cargado una vez)
+    op_pool_rows = c.execute("""
+        SELECT id, nombre || ' ' || COALESCE(apellido, '')
+        FROM operarios_planta
+        WHERE COALESCE(activo, 1) = 1
+        ORDER BY id
+    """).fetchall()
+    op_pool = [(r[0], (r[1] or '').strip()) for r in op_pool_rows]
+    op_count = len(op_pool)
+
+    def _operarios_para(producto, fecha_iso):
+        """Rota 4 operarios DISTINTOS para los 4 roles, al vuelo,
+        deterministically. Mismo producto+fecha → mismas asignaciones siempre."""
+        if op_count == 0:
+            return {'dispensacion': '', 'elaboracion': '', 'envasado': '', 'acondicionamiento': ''}
+        roles = ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento')
+        usados = set()
+        out = {}
+        for rol in roles:
+            base_idx = _hash_rotacion(producto, fecha_iso, rol) % op_count
+            # buscar el siguiente no usado
+            for offset in range(op_count):
+                idx = (base_idx + offset) % op_count
+                if idx not in usados or len(usados) >= op_count:
+                    usados.add(idx)
+                    out[rol] = op_pool[idx][1]
+                    break
+        return out
+
+    # Pre-cargar áreas posibles (tipo producción, activas)
+    areas_rows = c.execute("""
+        SELECT a.id, a.codigo, a.nombre, a.estado, COALESCE(a.tipo, 'produccion'),
+               COALESCE((SELECT MIN(t.capacidad_litros)
+                         FROM equipos_planta t
+                         WHERE t.area_codigo = a.codigo
+                           AND t.activo = 1
+                           AND t.tipo IN ('tanque','marmita','olla')
+                           AND t.capacidad_litros IS NOT NULL), 9999)
+        FROM areas_planta a
+        WHERE COALESCE(a.activo, 1) = 1
+          AND COALESCE(a.puede_producir, 0) = 1
+        ORDER BY a.orden, a.codigo
+    """).fetchall()
+    areas_prod = [(r[0], r[1], r[2], r[3] or 'libre', r[5]) for r in areas_rows]
+
+    # Áreas de envasado (separadas)
+    env_rows = c.execute("""
+        SELECT codigo, nombre, estado FROM areas_planta
+        WHERE COALESCE(activo,1)=1 AND tipo='envasado'
+        ORDER BY orden, codigo
+    """).fetchall()
+    env_areas = [(r[0], r[1], r[2] or 'libre') for r in env_rows]
+
+    def _area_para(kg, fecha_iso, ya_ocupadas):
+        """Elige área con tanque más chico que aguante el lote
+        (mejor utilización · IA). ya_ocupadas = set de area_id del día."""
+        if not kg or kg <= 0:
+            # Sin kg: simplemente toma una libre cualquiera
+            for aid, cod, nom, est, cap in areas_prod:
+                if aid in ya_ocupadas: continue
+                if est == 'sucia': continue
+                return {'id': aid, 'codigo': cod, 'nombre': nom, 'estado': est, 'capacidad_litros': cap}
+            return None
+        capacidad_min = kg * 1.2  # 20% headroom
+        # Ordenar por capacidad ascendente (ya viene de menor a mayor por SQL)
+        candidatas = sorted(
+            [a for a in areas_prod if a[4] and a[4] >= capacidad_min and a[3] != 'sucia' and a[0] not in ya_ocupadas],
+            key=lambda x: x[4]
+        )
+        if not candidatas:
+            # Fallback: ignora estado sucio si nada
+            candidatas = sorted(
+                [a for a in areas_prod if a[4] and a[4] >= capacidad_min and a[0] not in ya_ocupadas],
+                key=lambda x: x[4]
+            )
+        if not candidatas:
+            return None
+        a = candidatas[0]
+        return {'id': a[0], 'codigo': a[1], 'nombre': a[2], 'estado': a[3], 'capacidad_litros': a[4]}
+
+    def _envasado_para(area_codigo):
+        """Mapping FAB→ENV: misma sala con sufijo si existe, sino primera libre."""
+        if not area_codigo:
+            # primera libre
+            for cod, nom, est in env_areas:
+                if est != 'sucia': return cod
+            return env_areas[0][0] if env_areas else ''
+        # Buscar correspondencia ENV-X si FAB-X
+        if area_codigo.startswith('FAB-'):
+            equiv = 'ENV-' + area_codigo[4:]
+            for cod, nom, est in env_areas:
+                if cod == equiv: return cod
+        # Fallback: primera libre
+        for cod, nom, est in env_areas:
+            if est != 'sucia': return cod
+        return env_areas[0][0] if env_areas else ''
+
+    # =========== LEER CALENDAR (fuente de verdad) ===========
+    cal_events_raw = []
+    cal_diag = {'total': 0, 'en_semana': 0, 'con_match': 0, 'sin_match_sample': []}
     try:
-        cal_events = _calendar_events_cached(force_refresh=True) or []
-        auto_sync_diag['cal_events_total'] = len(cal_events)
-        skus_aliases = {}
-        try:
-            for sku_n, alias_csv in c.execute("""
-                SELECT producto_nombre, COALESCE(alias_calendar,'')
-                FROM sku_planeacion_config
-                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
-            """).fetchall():
-                skus_aliases[sku_n] = alias_csv
-        except Exception:
-            pass
-        for ev in cal_events:
-            try:
-                f_ev = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
-            except Exception:
-                continue
-            if f_ev < dias_semana[0] or f_ev > dias_semana[-1]:
-                continue
-            auto_sync_diag['en_semana'] += 1
-            # Match producto · umbral 50 (más permisivo)
-            producto_match = None
-            best_score = 0
-            for prod_n, alias_csv in skus_aliases.items():
-                try:
-                    score = _match_producto_evento(prod_n, alias_csv,
-                                                     ev.get('titulo'), ev.get('descripcion',''))
-                    if score >= 50 and score > best_score:
-                        best_score = score
-                        producto_match = prod_n
-                except Exception:
-                    continue
-            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-            # Fallback: si no hay match, usar el TÍTULO COMPLETO como producto.
-            # Sebastián 1-may-2026: 'que se active solo, todo automático'.
-            # Mejor crear producción con título raro que perder el evento.
-            if producto_match:
-                auto_sync_diag['con_match'] += 1
-                producto_final = producto_match
-            else:
-                auto_sync_diag['sin_match'].append((ev.get('titulo','')[:60], f_ev.isoformat()))
-                # Producto fallback = título limpio (sin kg, sin estado entre paréntesis)
-                titulo_clean = (ev.get('titulo') or '').strip()
-                # quitar kg al final, descriptors comunes
-                titulo_clean = _re_match.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', titulo_clean, flags=_re_match.IGNORECASE)
-                titulo_clean = _re_match.sub(r'\s*\(.*?\)\s*$', '', titulo_clean)
-                titulo_clean = _re_match.sub(r'\s*\d+\s*kg.*$', '', titulo_clean, flags=_re_match.IGNORECASE)
-                producto_final = titulo_clean.strip().upper() or 'EVENTO SIN MATCH'
-            calendar_eventos_por_fecha.setdefault(f_ev.isoformat(), []).append({
-                'titulo': ev.get('titulo', ''),
-                'producto_match': producto_final,
-                'kg': kg,
-                'desde_calendar': True,
-            })
-            # Sincronizar SIEMPRE (con o sin match perfecto · fallback con título)
-            existe = c.execute("""
-                SELECT id FROM produccion_programada
-                WHERE producto=? AND date(fecha_programada)=?
-            """, (producto_final, f_ev.isoformat())).fetchone()
-            if not existe:
-                eventos_a_sincronizar.append({
-                    'producto': producto_final, 'fecha': f_ev.isoformat(),
-                    'kg': kg, 'titulo': ev.get('titulo','')[:200],
-                    'tiene_match': bool(producto_match),
-                })
+        cal_events_raw = _calendar_events_cached(force_refresh=True) or []
+        cal_diag['total'] = len(cal_events_raw)
     except Exception as _e:
-        log.warning(f'[semana_produccion] sync diag falla: {_e}')
+        log.warning(f'[semana_produccion] cal fetch falla: {_e}')
 
-    # AUTO-SYNC: insertar eventos pendientes + auto-asignar IA (sin esperar cron)
-    auto_sincronizadas = 0
-    auto_asignadas = 0
-    auto_sync_errores = []
-    if eventos_a_sincronizar:
-        # NOTA: cada INSERT en su propio try/except para que si UNO falla
-        # no se rollback'a TODOS los demás. Sebastián 1-may-2026: bug
-        # silencioso causaba 0 sincronizadas cuando solo 1 evento tenía error.
-        for ev in eventos_a_sincronizar:
-            try:
-                cur_ins = c.execute("""
-                    INSERT INTO produccion_programada
-                      (producto, fecha_programada, lotes, cantidad_kg,
-                       estado, observaciones, origen)
-                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
-                """, (ev['producto'], ev['fecha'], ev['kg'],
-                      f'[auto-sync semana_produccion] {ev["titulo"]}'))
-                new_id = cur_ins.lastrowid
-                auto_sincronizadas += 1
-                if ev['kg'] > 0 and new_id:
-                    try:
-                        from blueprints.programacion import _auto_asignar_produccion
-                        res = _auto_asignar_produccion(c, new_id, 'auto-sync-on-load')
-                        if res.get('ok'): auto_asignadas += 1
-                        else: auto_sync_errores.append(f"asign #{new_id}: {res.get('error','?')}")
-                    except Exception as _e_asign:
-                        auto_sync_errores.append(f"asign #{new_id}: {str(_e_asign)[:80]}")
-            except Exception as _e_ins:
-                auto_sync_errores.append(f"insert {ev['producto'][:30]}: {str(_e_ins)[:80]}")
-                log.warning(f'[semana_produccion] insert falla {ev["producto"]}: {_e_ins}')
-        try:
-            conn.commit()
-            # Re-cargar producciones después del sync
-            calendar_eventos_por_fecha = {}
-        except Exception as _e_commit:
-            auto_sync_errores.append(f"commit: {str(_e_commit)[:80]}")
-            try: conn.rollback()
-            except: pass
-
-    # ADICIONAL: producciones SIN operarios (existentes en DB pero no asignadas)
-    # → forzar auto-asignación IA inmediatamente
+    # SKUs activos para matching
+    skus_aliases = {}
     try:
-        from blueprints.programacion import _auto_asignar_produccion
-        sin_op_rows = c.execute("""
-            SELECT id FROM produccion_programada
-            WHERE date(fecha_programada) BETWEEN ? AND ?
-              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
-              AND (operario_dispensacion_id IS NULL
-                   AND operario_elaboracion_id IS NULL
-                   AND operario_envasado_id IS NULL)
-        """, (dias_semana[0].isoformat(), dias_semana[-1].isoformat())).fetchall()
-        for (pid,) in sin_op_rows:
-            try:
-                res = _auto_asignar_produccion(c, pid, 'auto-asignar-on-load')
-                if res.get('ok'): auto_asignadas += 1
-            except Exception:
-                continue
-        if sin_op_rows:
-            conn.commit()
+        for sku_n, alias_csv in c.execute("""
+            SELECT producto_nombre, COALESCE(alias_calendar,'')
+            FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchall():
+            skus_aliases[sku_n] = alias_csv
     except Exception:
         pass
 
-    dias_data = []
-    for i, fecha in enumerate(dias_semana):
-        es_hoy = (fecha == fecha_hoy)
-        wd = fecha.weekday()
-        es_lmv = wd in (0, 2, 4)  # lunes, miércoles, viernes
-        tipo_dia = 'PRODUCCIÓN' if es_lmv else 'ACOND/CONTEO'
+    def _match_titulo(ev):
+        """Match producto SKU o fallback a título limpio."""
+        producto_match = None
+        best_score = 0
+        for prod_n, alias_csv in skus_aliases.items():
+            try:
+                score = _match_producto_evento(prod_n, alias_csv,
+                                                 ev.get('titulo'), ev.get('descripcion',''))
+                if score >= 50 and score > best_score:
+                    best_score = score
+                    producto_match = prod_n
+            except Exception:
+                continue
+        if producto_match:
+            return producto_match, True
+        # Fallback: título limpio
+        titulo = (ev.get('titulo') or '').strip()
+        titulo = _re_match.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', titulo, flags=_re_match.IGNORECASE)
+        titulo = _re_match.sub(r'\s*\(.*?\)\s*$', '', titulo)
+        titulo = _re_match.sub(r'\s*\d+\s*kg.*$', '', titulo, flags=_re_match.IGNORECASE)
+        return (titulo.strip().upper() or 'EVENTO SIN TÍTULO'), False
 
-        # Producciones programadas ese día (desde produccion_programada)
-        prods_rows = c.execute("""
-            SELECT pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
-                   pp.estado, pp.area_id,
+    # Agrupar eventos por fecha de la semana
+    eventos_por_fecha = {}  # {fecha_iso: [{producto, kg, titulo, tiene_match}]}
+    for ev in cal_events_raw:
+        try:
+            f_ev = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f_ev < dias_semana[0] or f_ev > dias_semana[-1]:
+            continue
+        cal_diag['en_semana'] += 1
+        producto, tiene_match = _match_titulo(ev)
+        if tiene_match: cal_diag['con_match'] += 1
+        else:
+            if len(cal_diag['sin_match_sample']) < 5:
+                cal_diag['sin_match_sample'].append((ev.get('titulo','')[:50], f_ev.isoformat()))
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+        eventos_por_fecha.setdefault(f_ev.isoformat(), []).append({
+            'producto': producto, 'kg': kg,
+            'titulo': (ev.get('titulo') or '')[:120],
+            'tiene_match': tiene_match,
+        })
+
+    # =========== LEER DB (estado real de lo iniciado/terminado) ===========
+    db_por_fecha_y_producto = {}  # {(fecha_iso, producto_upper): row}
+    try:
+        rows_db = c.execute("""
+            SELECT pp.id, pp.producto, date(pp.fecha_programada) as f,
+                   pp.lotes, COALESCE(pp.cantidad_kg, 0), pp.estado,
+                   pp.area_id,
                    ap.codigo as area_codigo, ap.nombre as area_nombre, ap.estado as area_estado,
                    ap_env.codigo as env_codigo,
-                   o1.id, o1.nombre || ' ' || COALESCE(o1.apellido,'') as op_disp,
-                   o2.id, o2.nombre || ' ' || COALESCE(o2.apellido,'') as op_elab,
-                   o3.id, o3.nombre || ' ' || COALESCE(o3.apellido,'') as op_env,
-                   o4.id, o4.nombre || ' ' || COALESCE(o4.apellido,'') as op_acon,
+                   o1.nombre || ' ' || COALESCE(o1.apellido,''),
+                   o2.nombre || ' ' || COALESCE(o2.apellido,''),
+                   o3.nombre || ' ' || COALESCE(o3.apellido,''),
+                   o4.nombre || ' ' || COALESCE(o4.apellido,''),
                    pp.inicio_real_at, pp.fin_real_at
             FROM produccion_programada pp
               LEFT JOIN areas_planta ap ON ap.id = pp.area_id
@@ -7301,40 +7331,128 @@ def semana_produccion():
               LEFT JOIN operarios_planta o2 ON o2.id = pp.operario_elaboracion_id
               LEFT JOIN operarios_planta o3 ON o3.id = pp.operario_envasado_id
               LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
-            WHERE date(pp.fecha_programada) = ?
+            WHERE date(pp.fecha_programada) BETWEEN ? AND ?
               AND COALESCE(pp.estado, 'programado') != 'cancelado'
-            ORDER BY pp.id
-        """, (fecha.isoformat(),)).fetchall()
+        """, (dias_semana[0].isoformat(), dias_semana[-1].isoformat())).fetchall()
+        for r in rows_db:
+            key = (r[2], (r[1] or '').upper())
+            db_por_fecha_y_producto[key] = r
+    except Exception as _e:
+        log.warning(f'[semana_produccion] db read falla: {_e}')
+
+    # =========== CONSTRUIR DÍAS ===========
+    dias_data = []
+    for i, fecha in enumerate(dias_semana):
+        es_hoy = (fecha == fecha_hoy)
+        wd = fecha.weekday()
+        es_lmv = wd in (0, 2, 4)  # lunes, miércoles, viernes
+        tipo_dia = 'PRODUCCIÓN' if es_lmv else 'ACOND/CONTEO'
+        fecha_iso = fecha.isoformat()
+        ya_ocupadas = set()  # area_ids ya asignados ese día (para evitar overlap)
 
         prods = []
-        for r in prods_rows:
-            (pid, producto, lotes, kg, estado, area_id, area_cod, area_nom, area_est,
-             env_cod, _, op_disp, _, op_elab, _, op_env, _, op_acon,
-             inicio_at, fin_at) = r
-            # Bloqueado lunes 7am? (lookup separado · col puede no existir aún)
-            bloqueado = False
-            try:
-                bl_row = c.execute("SELECT bloqueado_at FROM produccion_programada WHERE id=?", (pid,)).fetchone()
-                bloqueado = bool(bl_row and bl_row[0])
-            except Exception:
-                pass
-            estado = (estado or 'programado').strip()
-            ya_asignada = bool(area_id and (op_disp or op_elab or op_env))
-            # Acción siguiente según estado
-            if estado == 'completado':
-                accion = None; accion_label = '✅ Completada'
-            elif estado in ('en_proceso', 'iniciado'):
-                accion = 'terminar'; accion_label = '✓ Terminar'
-            elif ya_asignada:
-                accion = 'iniciar'; accion_label = '▶ Iniciar'
+        evs_dia = eventos_por_fecha.get(fecha_iso, [])
+
+        # 1) Eventos del Calendar (fuente principal)
+        for ev_data in evs_dia:
+            producto = ev_data['producto']
+            kg = ev_data['kg']
+            db_row = db_por_fecha_y_producto.get((fecha_iso, producto.upper()))
+
+            if db_row:
+                # YA tiene fila DB → usar estado real
+                (pid, _prod, _f, lotes, kg_db, estado, area_id,
+                 area_cod, area_nom, area_est, env_cod,
+                 op_disp, op_elab, op_env, op_acon,
+                 inicio_at, fin_at) = db_row
+                estado = (estado or 'programado').strip()
+                if area_id: ya_ocupadas.add(area_id)
+                if estado == 'completado':
+                    accion, accion_label = None, '✅ Completada'
+                elif estado in ('en_proceso', 'iniciado'):
+                    accion, accion_label = 'terminar', '✓ Terminar'
+                else:
+                    accion, accion_label = 'iniciar', '▶ Iniciar'
+                prods.append({
+                    'id': pid, 'producto': producto,
+                    'lotes': lotes or 1, 'kg': kg_db or kg,
+                    'estado': estado,
+                    'desde_calendar': True,
+                    'tiene_match': ev_data['tiene_match'],
+                    'titulo_calendar': ev_data['titulo'],
+                    'area': {'codigo': area_cod or '', 'nombre': area_nom or '', 'estado': area_est or ''},
+                    'envasado': env_cod or '',
+                    'operarios': {
+                        'dispensacion': (op_disp or '').strip(),
+                        'elaboracion': (op_elab or '').strip(),
+                        'envasado': (op_env or '').strip(),
+                        'acondicionamiento': (op_acon or '').strip(),
+                    },
+                    'ya_asignada': True,
+                    'accion': accion, 'accion_label': accion_label,
+                    'inicio_real_at': inicio_at, 'fin_real_at': fin_at,
+                })
             else:
-                accion = 'asignar_ia'; accion_label = '🤖 IA asignar'
+                # NO existe en DB → preview al vuelo (sin escribir nada)
+                area_sug = _area_para(kg, fecha_iso, ya_ocupadas)
+                if area_sug: ya_ocupadas.add(area_sug['id'])
+                ops_sug = _operarios_para(producto, fecha_iso)
+                env_cod_sug = _envasado_para(area_sug['codigo'] if area_sug else '')
+                prods.append({
+                    'id': None, 'producto': producto,
+                    'lotes': 1, 'kg': kg,
+                    'estado': 'planeado',
+                    'desde_calendar': True,
+                    'tiene_match': ev_data['tiene_match'],
+                    'titulo_calendar': ev_data['titulo'],
+                    'area': {
+                        'codigo': area_sug['codigo'] if area_sug else '',
+                        'nombre': area_sug['nombre'] if area_sug else '',
+                        'estado': area_sug['estado'] if area_sug else '',
+                    } if area_sug else {'codigo': '', 'nombre': 'Sin área disponible', 'estado': ''},
+                    'envasado': env_cod_sug,
+                    'operarios': ops_sug,
+                    'ya_asignada': bool(area_sug),
+                    'accion': 'iniciar_calendar',
+                    'accion_label': '▶ Iniciar (crea registro)',
+                    'inicio_real_at': None, 'fin_real_at': None,
+                    # payload para crear DB row al click
+                    'payload_iniciar': {
+                        'producto': producto, 'fecha': fecha_iso, 'kg': kg,
+                        'area_codigo': area_sug['codigo'] if area_sug else '',
+                        'area_id': area_sug['id'] if area_sug else None,
+                        'titulo': ev_data['titulo'],
+                    },
+                })
+
+        # 2) Filas DB que NO están en Calendar (rezagadas / extra-calendar)
+        for (db_fecha, db_prod_up), db_row in db_por_fecha_y_producto.items():
+            if db_fecha != fecha_iso: continue
+            if any(p.get('producto', '').upper() == db_prod_up for p in prods):
+                continue  # ya cubierta por evento Calendar
+            (pid, _prod, _f, lotes, kg_db, estado, area_id,
+             area_cod, area_nom, area_est, env_cod,
+             op_disp, op_elab, op_env, op_acon,
+             inicio_at, fin_at) = db_row
+            estado = (estado or 'programado').strip()
+            if area_id: ya_ocupadas.add(area_id)
+            ya_asignada = bool(area_id and (op_disp or op_elab or op_env))
+            if estado == 'completado':
+                accion, accion_label = None, '✅ Completada'
+            elif estado in ('en_proceso', 'iniciado'):
+                accion, accion_label = 'terminar', '✓ Terminar'
+            elif ya_asignada:
+                accion, accion_label = 'iniciar', '▶ Iniciar'
+            else:
+                accion, accion_label = 'asignar_ia', '🤖 IA asignar'
             prods.append({
-                'id': pid, 'producto': producto, 'lotes': lotes, 'kg': kg,
+                'id': pid, 'producto': _prod or db_prod_up,
+                'lotes': lotes or 1, 'kg': kg_db,
                 'estado': estado,
-                'bloqueado': bloqueado,
-                'area': {'codigo': area_cod, 'nombre': area_nom, 'estado': area_est},
-                'envasado': env_cod,
+                'desde_calendar': False,
+                'tiene_match': True,
+                'area': {'codigo': area_cod or '', 'nombre': area_nom or '', 'estado': area_est or ''},
+                'envasado': env_cod or '',
                 'operarios': {
                     'dispensacion': (op_disp or '').strip(),
                     'elaboracion': (op_elab or '').strip(),
@@ -7346,29 +7464,6 @@ def semana_produccion():
                 'inicio_real_at': inicio_at, 'fin_real_at': fin_at,
             })
 
-        # MERGE: agregar eventos del Calendar que NO tienen contraparte en DB
-        # (para que aparezcan aunque la sync calendar→produccion_programada no
-        # haya corrido aún)
-        productos_en_db = {p['producto'] for p in prods if p.get('producto')}
-        for cev in calendar_eventos_por_fecha.get(fecha.isoformat(), []):
-            prod_n = cev.get('producto_match') or cev.get('titulo','').split('–')[0].strip()
-            if not prod_n: continue
-            # Si ya está en DB, skip (evita duplicados)
-            if any(prod_n.upper() == (p.get('producto') or '').upper() for p in prods):
-                continue
-            prods.append({
-                'id': None, 'producto': prod_n,
-                'lotes': 1, 'kg': cev.get('kg') or 0,
-                'estado': 'calendar_sin_sync',
-                'area': {'codigo': '', 'nombre': '', 'estado': ''},
-                'envasado': '',
-                'operarios': {'dispensacion':'','elaboracion':'','envasado':'','acondicionamiento':''},
-                'ya_asignada': False,
-                'accion': 'sincronizar', 'accion_label': '🔄 Sync Calendar',
-                'desde_calendar': True,
-                'titulo_calendar': cev.get('titulo', '')[:60],
-            })
-
         # Limpiezas programadas ese día
         limpiezas = []
         try:
@@ -7378,7 +7473,7 @@ def semana_produccion():
                 WHERE date(fecha) = ?
                   AND estado IN ('pendiente','asignada','en_proceso')
                 ORDER BY id
-            """, (fecha.isoformat(),)).fetchall()
+            """, (fecha_iso,)).fetchall()
             for lr in limp_rows:
                 limpiezas.append({
                     'id': lr[0], 'area': lr[1], 'asignado_a': lr[2] or '',
@@ -7389,17 +7484,17 @@ def semana_produccion():
             pass
 
         dias_data.append({
-            'fecha': fecha.isoformat(),
+            'fecha': fecha_iso,
             'nombre_dia': nombres_dia[i],
             'es_hoy': es_hoy,
             'tipo_dia': tipo_dia,
             'es_laboral': True,
             'producciones': prods,
             'limpiezas': limpiezas,
-            'total_kg': sum(p['kg'] for p in prods),
-            'total_lotes': sum(p['lotes'] or 0 for p in prods),
-            'sin_asignar': sum(1 for p in prods if not p['ya_asignada']),
-            'sin_sync': sum(1 for p in prods if p.get('desde_calendar')),
+            'total_kg': sum((p.get('kg') or 0) for p in prods),
+            'total_lotes': sum((p.get('lotes') or 0) for p in prods),
+            'sin_asignar': sum(1 for p in prods if not p.get('ya_asignada')),
+            'desde_calendar': sum(1 for p in prods if p.get('desde_calendar')),
         })
 
     # Estado salas en vivo (mini)
@@ -7421,6 +7516,7 @@ def semana_produccion():
     total_limpiezas = sum(len(d['limpiezas']) for d in dias_data)
 
     return jsonify({
+        'arquitectura': 'calendar-first',
         'fecha_hoy': fecha_hoy.isoformat(),
         'semana_inicio': dias_semana[0].isoformat(),
         'semana_fin': dias_semana[-1].isoformat(),
@@ -7432,16 +7528,8 @@ def semana_produccion():
             'sin_asignar_ia': sin_asignar_total,
             'total_limpiezas': total_limpiezas,
         },
-        'auto_sync': {
-            'sincronizadas_esta_carga': auto_sincronizadas,
-            'asignadas_esta_carga': auto_asignadas,
-            'cal_events_total': auto_sync_diag.get('cal_events_total', 0),
-            'en_semana': auto_sync_diag.get('en_semana', 0),
-            'con_match': auto_sync_diag.get('con_match', 0),
-            'sin_match_sample': auto_sync_diag.get('sin_match', [])[:5],
-            'errores': auto_sync_errores[:10],
-            'eventos_pendientes_sync': len(eventos_a_sincronizar),
-        },
+        'calendar_diag': cal_diag,
+        'operarios_pool': len(op_pool),
     })
 
 
@@ -7566,6 +7654,76 @@ def planta_accion_rapida():
             else:
                 return jsonify({'ok': False, 'error': res.get('error')}), 400
         except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    elif tipo == 'iniciar_calendar':
+        # Sebastián 1-may-2026 (Calendar-first): crea fila DB en el momento
+        # del click + auto-asigna IA + marca en_proceso. Sin pre-sync.
+        # Body: {tipo:'iniciar_calendar', producto, fecha, kg, area_codigo?,
+        #        area_id?, titulo?}
+        producto = (d.get('producto') or '').strip()
+        fecha = (d.get('fecha') or '').strip()
+        kg = float(d.get('kg') or 0)
+        area_codigo = (d.get('area_codigo') or '').strip()
+        area_id = d.get('area_id')
+        titulo = (d.get('titulo') or '')[:200]
+        if not producto or not fecha:
+            return jsonify({'error': 'producto y fecha requeridos'}), 400
+        try:
+            # Anti-duplicado: si ya existe fila para producto+fecha, usar esa
+            existe = c.execute("""
+                SELECT id, estado FROM produccion_programada
+                WHERE producto=? AND date(fecha_programada)=?
+            """, (producto, fecha)).fetchone()
+            if existe:
+                pid_ex, est_ex = existe
+                if (est_ex or '') in ('en_proceso', 'iniciado'):
+                    return jsonify({'ok': True, 'mensaje': 'Ya estaba iniciada', 'produccion_id': pid_ex})
+                if (est_ex or '') == 'completado':
+                    return jsonify({'error': 'Ya completada'}), 400
+                # existe pero programado → solo iniciar
+                pid = pid_ex
+            else:
+                # Insertar nueva fila desde Calendar
+                cur_ins = c.execute("""
+                    INSERT INTO produccion_programada
+                      (producto, fecha_programada, lotes, cantidad_kg,
+                       estado, observaciones, origen)
+                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
+                """, (producto, fecha, kg,
+                      f'[iniciar_calendar] {titulo}'))
+                pid = cur_ins.lastrowid
+
+            # Auto-asignar IA si no tiene área/operarios
+            row = c.execute("""
+                SELECT area_id, operario_dispensacion_id
+                FROM produccion_programada WHERE id=?
+            """, (pid,)).fetchone()
+            if row and (not row[0] or not row[1]):
+                try:
+                    from blueprints.programacion import _auto_asignar_produccion
+                    _auto_asignar_produccion(c, pid, f'iniciar-cal-{user}')
+                except Exception as _e_a:
+                    log.warning(f'[iniciar_calendar] auto-asignar falla pid={pid}: {_e_a}')
+
+            # Re-leer área asignada (puede haber cambiado)
+            ar = c.execute("SELECT area_id FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+            area_id_final = ar[0] if ar else None
+
+            # Marcar como iniciada
+            c.execute("""
+                UPDATE produccion_programada
+                  SET estado='en_proceso', inicio_real_at=datetime('now')
+                WHERE id=?
+            """, (pid,))
+            # Marcar área ocupada
+            if area_id_final:
+                c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=? AND estado IN ('libre','limpiando')", (area_id_final,))
+            conn.commit()
+            return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada (registro creado desde Calendar)', 'produccion_id': pid})
+        except Exception as e:
+            try: conn.rollback()
+            except: pass
             return jsonify({'error': str(e)}), 500
 
     elif tipo == 'sincronizar':

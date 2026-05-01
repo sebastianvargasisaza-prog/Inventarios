@@ -5034,11 +5034,10 @@ function _renderProgramacion(d){
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
         <div>
           <div style="font-size:16px;font-weight:800;letter-spacing:.3px">&#128197; Esta semana en planta · qué producir y quién</div>
-          <div id="semana-subtitle" style="font-size:11px;opacity:.92;margin-top:3px">🤖 IA asignó todo automáticamente · solo click para avanzar</div>
+          <div id="semana-subtitle" style="font-size:11px;opacity:.92;margin-top:3px">📅 Calendar-first · IA asigna área + operarios al instante · solo click para iniciar</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button onclick="forzarSyncSemana()" title="Forzar sync Calendar→DB + auto-asignar IA" style="padding:5px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#129302; Forzar sync IA</button>
-          <button onclick="semanaRecargar()" title="Refrescar" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
+          <button onclick="semanaRecargar()" title="Refrescar Calendar" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635; Refrescar</button>
         </div>
       </div>
       <!-- KPIs semana -->
@@ -12524,27 +12523,23 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
       var k = d.kpis || {};
-      var asy = d.auto_sync || {};
-      var subText = '🤖 IA asignó · ' + (k.total_producciones_semana||0) + ' producciones · ' + (k.total_kg_semana||0) + ' kg total · ' + (k.total_limpiezas||0) + ' limpiezas';
-      if(asy.sincronizadas_esta_carga > 0){
-        subText += ' · ✨ ' + asy.sincronizadas_esta_carga + ' nuevas sincronizadas · ' + asy.asignadas_esta_carga + ' asignadas IA';
-      }
+      var cdiag = d.calendar_diag || {};
+      var subText = '📅 Calendar-first · ' + (k.total_producciones_semana||0) + ' producciones · ' + (k.total_kg_semana||0) + ' kg total · ' + (k.total_limpiezas||0) + ' limpiezas';
+      if(cdiag.con_match) subText += ' · ✅ ' + cdiag.con_match + ' SKUs reconocidos';
       if(k.sin_asignar_ia) subText += ' · ⚠️ ' + k.sin_asignar_ia + ' sin asignar';
       if(sub) sub.textContent = subText;
-      // Banner debug si hay errores o eventos sin match
+      // Banner debug si hay eventos sin match
       var msgEl = document.getElementById('semana-msg');
       if(msgEl){
         var lines = [];
-        if(asy.errores && asy.errores.length){
-          lines.push('🚨 <b>'+asy.errores.length+' errores en auto-sync:</b><br>' +
-            asy.errores.slice(0,5).map(function(e){return '&nbsp;&nbsp;• <code style="font-size:10px">'+esc(e)+'</code>';}).join('<br>'));
+        if(cdiag.sin_match_sample && cdiag.sin_match_sample.length){
+          lines.push('ℹ️ Eventos en Calendar sin match preciso a SKU (se muestran con título crudo): ' +
+            cdiag.sin_match_sample.slice(0,3).map(function(s){return '<code>'+esc(s[0])+'</code>';}).join(', '));
         }
-        if(asy.eventos_pendientes_sync > 0 && asy.sincronizadas_esta_carga === 0){
-          lines.push('⚠️ <b>'+asy.eventos_pendientes_sync+' eventos pendientes de sync</b> (NO se sincronizaron · revisar logs)');
-        }
-        if(asy.sin_match_sample && asy.sin_match_sample.length){
-          lines.push('ℹ️ '+asy.sin_match_sample.length+' eventos sin match preciso (insertados con título crudo): ' +
-            asy.sin_match_sample.slice(0,3).map(function(s){return '<code>'+esc(s[0])+'</code>';}).join(', '));
+        if(cdiag.total === 0){
+          lines.push('⚠️ <b>No hay eventos del Calendar</b> · revisa GCAL_ICAL_URL en Render env vars');
+        } else if(cdiag.en_semana === 0){
+          lines.push('ℹ️ Calendar tiene '+cdiag.total+' eventos pero ninguno cae en esta semana');
         }
         if(lines.length){
           msgEl.style.display='block';
@@ -12585,8 +12580,15 @@ async function ckMarcar(itemId, estado){
               'iniciado':'#1d4ed8',
               'programado':'#64748b',
             }[p.estado] || '#64748b';
-            html += '<div style="background:rgba(255,255,255,.6);border-left:3px solid '+stColor+';padding:5px 7px;margin-bottom:4px;border-radius:4px;font-size:10px">';
-            html += '<div style="font-weight:700;color:#0f172a">'+(p.bloqueado?'🔒 ':'')+esc(p.producto.substring(0,22))+'</div>';
+            // Card · color borde varía segun estado/origen
+            var bordeCol = stColor;
+            if(p.estado === 'planeado' && p.desde_calendar) bordeCol = '#7c3aed'; // morado para planeado-calendar
+            html += '<div style="background:rgba(255,255,255,.6);border-left:3px solid '+bordeCol+';padding:5px 7px;margin-bottom:4px;border-radius:4px;font-size:10px">';
+            var icon = '';
+            if(p.bloqueado) icon = '🔒 ';
+            else if(p.estado === 'planeado') icon = '📅 ';
+            else if(!p.tiene_match && p.desde_calendar) icon = '❓ ';
+            html += '<div style="font-weight:700;color:#0f172a" title="'+esc(p.titulo_calendar||p.producto)+'">'+icon+esc(p.producto.substring(0,22))+'</div>';
             html += '<div style="color:#475569">'+p.kg+'kg · '+p.lotes+' lt';
             if(p.area && p.area.codigo) html += ' · 🏭 '+p.area.codigo;
             if(p.envasado) html += ' → '+p.envasado;
@@ -12599,8 +12601,15 @@ async function ckMarcar(itemId, estado){
             if(ops.length) html += '<div style="color:#64748b;font-size:9px;margin-top:2px">👤 '+ops.join(' · ')+'</div>';
             // Acción inline (data-attrs para evitar problemas de quoting)
             if(p.accion){
-              var btnCol = p.accion === 'iniciar' ? '#10b981' : (p.accion === 'terminar' ? '#1d4ed8' : '#7c3aed');
-              html += '<button class="semana-accion-btn" data-tipo="'+p.accion+'" data-id="'+p.id+'" style="margin-top:3px;width:100%;padding:3px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:10px;font-weight:700;cursor:pointer">'+esc(p.accion_label)+'</button>';
+              var btnCol = (p.accion === 'iniciar' || p.accion === 'iniciar_calendar') ? '#10b981'
+                          : (p.accion === 'terminar' ? '#1d4ed8' : '#7c3aed');
+              if(p.accion === 'iniciar_calendar' && p.payload_iniciar){
+                // Calendar-first: payload completo en data-payload (JSON encoded)
+                var payB64 = btoa(unescape(encodeURIComponent(JSON.stringify(p.payload_iniciar))));
+                html += '<button class="semana-accion-btn" data-tipo="iniciar_calendar" data-payload="'+payB64+'" style="margin-top:3px;width:100%;padding:3px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:10px;font-weight:700;cursor:pointer">'+esc(p.accion_label)+'</button>';
+              } else {
+                html += '<button class="semana-accion-btn" data-tipo="'+p.accion+'" data-id="'+(p.id||0)+'" style="margin-top:3px;width:100%;padding:3px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:10px;font-weight:700;cursor:pointer">'+esc(p.accion_label)+'</button>';
+              }
             } else if(p.estado === 'completado'){
               html += '<div style="margin-top:3px;color:#10b981;font-size:9px;font-weight:700">✅ Completada</div>';
             }
@@ -12645,26 +12654,43 @@ async function ckMarcar(itemId, estado){
     var btn = ev.target.closest && ev.target.closest('.semana-accion-btn');
     if(!btn) return;
     var tipo = btn.getAttribute('data-tipo');
+    // Calendar-first: si trae payload, decodificar y usar
+    var payload = btn.getAttribute('data-payload');
+    if(tipo === 'iniciar_calendar' && payload){
+      try{
+        var pl = JSON.parse(decodeURIComponent(escape(atob(payload))));
+        accionRapidaCalendar(tipo, pl);
+        return;
+      }catch(e){
+        console.error('payload decode failed', e);
+        return;
+      }
+    }
     var id = parseInt(btn.getAttribute('data-id') || '0', 10);
     if(tipo && id) accionRapida(tipo, id);
   });
-  async function forzarSyncSemana(){
-    if(!confirm('🤖 Forzar sync Calendar→DB + auto-asignar IA semana actual?\\n\\n• Insertar eventos del Calendar pendientes\\n• Auto-asignar área + 4 operarios rotando\\n\\n¿Continuar?')) return;
+
+  async function accionRapidaCalendar(tipo, payload){
+    // Calendar-first iniciar: crea fila DB + auto-asigna IA + marca en_proceso
+    if(!confirm('▶ Iniciar producción "'+(payload.producto||'')+'"?\\n\\n• Crea registro en DB ahora\\n• IA asigna área óptima\\n• IA rota operarios\\n• Marca como en proceso')) return;
     var msg = document.getElementById('semana-msg');
     msg.style.display='block';
-    msg.innerHTML='⏳ Forzando sync IA...';
+    msg.innerHTML = '⏳ Creando registro y asignando IA...';
     try{
-      var r = await fetch('/api/planta/forzar-sync-semana', {
+      var body = Object.assign({tipo: 'iniciar_calendar'}, payload);
+      var r = await fetch('/api/planta/accion-rapida', {
         method:'POST', credentials:'same-origin',
-        headers:{'Content-Type':'application/json'}, body:'{}'
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
       });
       var d = await r.json();
-      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
-      msg.innerHTML='✅ '+d.mensaje;
-      setTimeout(function(){ msg.style.display='none'; }, 4000);
+      if(!r.ok || (d.ok === false && d.error)) throw new Error(d.error || 'HTTP '+r.status);
+      msg.innerHTML = '✅ '+ (d.mensaje || 'OK');
+      setTimeout(function(){ msg.style.display='none'; }, 3000);
       semanaRecargar();
+      if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
     }catch(e){
-      msg.innerHTML='❌ Error: '+(e.message||e);
+      msg.innerHTML = '❌ Error: '+(e.message||e);
     }
   }
 
