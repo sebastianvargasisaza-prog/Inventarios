@@ -2013,6 +2013,152 @@ def diagnostico_sku():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# MP PARA LOTE — para cada producción del Calendar, ¿alcanza la materia prima?
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "ya sabemos hoy se hace este producto, qué
+# necesita ese producto? Segundo, debe tener allí materias primas alcanza
+# o no alcanza".
+
+@bp.route('/api/planta/mp-para-lote', methods=['GET'])
+def mp_para_lote():
+    """Calcula MPs requeridas para un lote específico vs stock actual.
+
+    Query params:
+      - producto: nombre del producto (ej. 'SUERO HIDRATANTE AH 1.5%')
+      - kg: tamaño del lote en kg
+
+    Devuelve:
+      {
+        producto, lote_kg, total_g,
+        mps: [{material_id, material_nombre, porcentaje, requerido_g,
+               stock_g, falta_g, ratio, estado}],
+        kpis: {total_mps, ok, ajustado, faltante, sin_formula},
+        alcanza: bool (true si todas las MPs cubren ≥100% del requerimiento)
+      }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'Falta producto'}), 400
+    try:
+        kg = float(request.args.get('kg') or '0')
+    except Exception:
+        kg = 0
+    if kg <= 0:
+        return jsonify({'error': 'kg inválido'}), 400
+
+    conn = get_db(); c = conn.cursor()
+
+    # Buscar items de la fórmula
+    items = c.execute("""
+        SELECT material_id, material_nombre, porcentaje, COALESCE(cantidad_g_por_lote, 0)
+        FROM formula_items
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+        ORDER BY porcentaje DESC
+    """, (producto,)).fetchall()
+
+    if not items:
+        return jsonify({
+            'producto': producto,
+            'lote_kg': kg,
+            'mps': [],
+            'kpis': {'total_mps': 0, 'sin_formula': True},
+            'alcanza': False,
+            'mensaje': f'⚠️ Sin fórmula registrada para "{producto}". Ver Drive: Formulas Maestras',
+        })
+
+    total_g_lote = kg * 1000
+    mps = []
+    falta_count = 0
+    ajustado_count = 0
+    ok_count = 0
+
+    for material_id, mat_nombre, pct, g_ref in items:
+        try:
+            pct = float(pct or 0)
+        except Exception:
+            pct = 0
+        req_g = total_g_lote * pct / 100
+
+        # Stock actual = SUM movimientos
+        stock_row = c.execute("""
+            SELECT COALESCE(SUM(
+                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
+                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                     ELSE 0 END
+            ), 0) FROM movimientos WHERE material_id=?
+        """, (material_id,)).fetchone()
+        stock_g = float(stock_row[0] if stock_row else 0)
+
+        # Lead time si está
+        lt = c.execute("""
+            SELECT lead_time_dias, origen, proveedor_principal
+            FROM mp_lead_time_config WHERE material_id=?
+        """, (material_id,)).fetchone()
+        lead_time = lt[0] if lt else None
+        origen = lt[1] if lt else None
+        proveedor = lt[2] if lt else None
+
+        falta = req_g - stock_g
+        ratio = stock_g / req_g if req_g > 0 else 99
+
+        if ratio >= 1.10:
+            estado = 'ok'
+            ok_count += 1
+        elif ratio >= 0.95:
+            estado = 'ajustado'
+            ajustado_count += 1
+        else:
+            estado = 'faltante'
+            falta_count += 1
+
+        mps.append({
+            'material_id': material_id,
+            'material_nombre': mat_nombre or material_id,
+            'porcentaje': round(pct, 2),
+            'requerido_g': round(req_g, 1),
+            'stock_g': round(stock_g, 1),
+            'falta_g': round(max(0, falta), 1),
+            'ratio': round(ratio, 2),
+            'estado': estado,
+            'lead_time_dias': lead_time,
+            'origen': origen,
+            'proveedor': proveedor,
+        })
+
+    alcanza = falta_count == 0
+
+    # Mensaje resumen
+    if alcanza and ajustado_count == 0:
+        mensaje = f'✅ MP suficiente para los {kg} kg de "{producto}". {ok_count} ingredientes OK.'
+    elif alcanza:
+        mensaje = f'🟡 MP cubre el lote pero {ajustado_count} ingredientes ajustados (margen <10%).'
+    else:
+        # Lista críticos para mensaje
+        criticos = [m['material_nombre'] for m in mps if m['estado'] == 'faltante'][:3]
+        mensaje = f'🔴 FALTA MP para {falta_count} ingredientes' + ('. Críticos: ' + ', '.join(criticos) if criticos else '')
+
+    return jsonify({
+        'producto': producto,
+        'lote_kg': kg,
+        'total_g': total_g_lote,
+        'mps': mps,
+        'kpis': {
+            'total_mps': len(mps),
+            'ok': ok_count,
+            'ajustado': ajustado_count,
+            'faltante': falta_count,
+            'sin_formula': False,
+        },
+        'alcanza': alcanza,
+        'mensaje': mensaje,
+        'fecha_analisis': datetime.now().isoformat(),
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # ALERTAS CALENDAR — cruce de cadencia planeada vs velocidad real
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "ese calendario debería ir unido a una alerta
