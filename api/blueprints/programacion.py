@@ -3271,6 +3271,52 @@ def planta_centro_mando():
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando] producciones_dia falla: {_e}')
 
+    # ── AUTO-LIMPIEZA Calendar-first (Sebastián 1-may-2026) ──
+    # 'sigue mostrando lunes todas y martes mezcla' → limpieza al GET.
+    # Cancela DB rows huérfanas SOLO si:
+    #   1. Calendar tiene eventos en el horizonte (no es feed vacío)
+    #   2. Producción no iniciada (estado in 'programado','planeado','')
+    #   3. (fecha, producto) no aparece en Calendar
+    # Guards: máximo 50 por GET · revertible (cancelado, no DELETE).
+    auto_canceladas = 0
+    auto_cancel_detalle = []
+    try:
+        if productos_calendar_por_fecha and db_sin_calendar:
+            # Solo limpiar si Calendar tiene MIN 1 evento en el horizonte
+            # (sino podría ser que el feed esté caído y borraríamos todo)
+            for orphan in db_sin_calendar[:50]:
+                pid = orphan.get('id')
+                if not pid: continue
+                # Re-verificar estado actual antes de cancelar (race-safe)
+                actual = conn.execute(
+                    "SELECT COALESCE(estado,'programado') FROM produccion_programada WHERE id=?",
+                    (pid,)
+                ).fetchone()
+                if not actual: continue
+                est_actual = (actual[0] or '').strip()
+                if est_actual not in ('', 'programado', 'planeado'):
+                    continue  # ya iniciada/completada · no tocar
+                conn.execute("""
+                    UPDATE produccion_programada
+                      SET estado='cancelado',
+                          observaciones = COALESCE(observaciones,'') ||
+                            ' [auto-cancelado · sin match Calendar]'
+                    WHERE id=?
+                """, (pid,))
+                auto_canceladas += 1
+                auto_cancel_detalle.append(f"{orphan.get('producto','?')[:30]} {orphan.get('fecha','?')}")
+            if auto_canceladas:
+                conn.commit()
+                # Re-filtrar producciones_dia para quitar las canceladas
+                producciones_dia = [p for p in producciones_dia
+                                     if not (p.get('id') and not p.get('desde_calendar')
+                                             and (p.get('fecha',''), (p.get('producto','') or '').upper())
+                                                 not in productos_calendar_por_fecha
+                                             and p.get('estado') in ('programado','planeado',''))]
+                db_sin_calendar = []  # ya quedaron limpias
+    except Exception as _e:
+        logging.getLogger('programacion').warning(f'[centro-mando] auto-clean falla: {_e}')
+
     return jsonify({
         'areas': areas,
         'kpis': {
@@ -3283,11 +3329,14 @@ def planta_centro_mando():
             'producciones_dia_total': len(producciones_dia),
             'producciones_dia_pendientes': sum(1 for p in producciones_dia
                                                   if p['estado'] in ('planeado','programado')),
+            'auto_canceladas': auto_canceladas,
         },
         'producciones_dia': producciones_dia,
         'producciones_diag': {
             'db_sin_calendar': db_sin_calendar,
             'db_sin_calendar_count': len(db_sin_calendar),
+            'auto_canceladas_esta_carga': auto_canceladas,
+            'auto_cancel_detalle': auto_cancel_detalle[:5],
         },
         'eventos_recientes': eventos,
         'fecha': hoy,

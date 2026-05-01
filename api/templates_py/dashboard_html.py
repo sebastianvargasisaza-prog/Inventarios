@@ -8011,32 +8011,47 @@ async function ckMarcar(itemId, estado){
   }
 
   // ── Diagnóstico DB sin match Calendar (Sebastián 1-may-2026:
-  // 'siento que deja todo como lunes · no sabe discriminar · junta todo')
+  // 'sigue mostrando lunes todas y martes mezcla' → auto-limpieza al GET)
   function renderProduccionesDiag(diag){
     var panel = document.getElementById('cm-dia-panel');
     if(!panel) return;
     var existing = document.getElementById('cm-diag-banner');
     if(existing) existing.remove();
     var orphans = (diag.db_sin_calendar) || [];
-    if(!orphans.length) return;
+    var autoClean = diag.auto_canceladas_esta_carga || 0;
+    // Mostrar banner si hubo auto-clean O quedan orphans
+    if(!autoClean && !orphans.length) return;
     var banner = document.createElement('div');
     banner.id = 'cm-diag-banner';
-    banner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#78350f';
-    var lista = orphans.slice(0,8).map(function(o){
-      return '<li>'+_escHTML(o.producto)+' · '+o.fecha+' · '+(o.kg||0)+'kg'+(o.area_codigo?(' · '+_escHTML(o.area_codigo)):'')+'</li>';
-    }).join('');
-    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
-      +'<div><b>⚠️ '+orphans.length+' producciones DB SIN match en Google Calendar</b><br>'
-      +'<span style="font-size:10px">Pueden ser duplicados de auto-sync antiguo · Calendar es la fuente de verdad</span></div>'
-      +'<button onclick="limpiarDbSinCalendar()" style="padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🗑 Cancelar '+orphans.length+' filas</button>'
-      +'</div>'
-      +'<details style="margin-top:6px"><summary style="cursor:pointer;font-size:10px">Ver detalle</summary>'
-      +'<ul style="margin:4px 0 0 18px;padding:0">'+lista
-      +(orphans.length > 8 ? '<li>...y '+(orphans.length-8)+' más</li>' : '')
-      +'</ul></details>';
+    if(autoClean){
+      // ✅ Auto-clean sucedió en este GET · banner verde informativo
+      banner.style.cssText = 'background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#166534';
+      var detalle = (diag.auto_cancel_detalle||[]).map(_escHTML).join(' · ');
+      banner.innerHTML = '<b>✅ '+autoClean+' filas DB huérfanas auto-canceladas</b> · Calendar es ahora la fuente única de verdad'
+        +(detalle ? '<br><span style="font-size:10px;opacity:.8">Ej: '+detalle+(autoClean > 5 ? ' ...' : '')+'</span>' : '');
+    } else {
+      // Quedan orphans pendientes (probablemente >50 de límite)
+      banner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#78350f';
+      var lista = orphans.slice(0,8).map(function(o){
+        return '<li>'+_escHTML(o.producto)+' · '+o.fecha+' · '+(o.kg||0)+'kg'+(o.area_codigo?(' · '+_escHTML(o.area_codigo)):'')+'</li>';
+      }).join('');
+      banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<div><b>⚠️ '+orphans.length+' producciones DB SIN match en Google Calendar</b><br>'
+        +'<span style="font-size:10px">Auto-limpieza próximo refresh · o click manual</span></div>'
+        +'<button onclick="limpiarDbSinCalendar()" style="padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🗑 Cancelar '+orphans.length+' ahora</button>'
+        +'</div>'
+        +'<details style="margin-top:6px"><summary style="cursor:pointer;font-size:10px">Ver detalle</summary>'
+        +'<ul style="margin:4px 0 0 18px;padding:0">'+lista
+        +(orphans.length > 8 ? '<li>...y '+(orphans.length-8)+' más</li>' : '')
+        +'</ul></details>';
+    }
     // Insertar al inicio del panel (después del header)
     var firstChild = panel.firstChild;
     panel.insertBefore(banner, firstChild ? firstChild.nextSibling : null);
+    // Auto-hide después de 8s si fue solo info de auto-clean
+    if(autoClean){
+      setTimeout(function(){ if(banner) banner.style.display='none'; }, 8000);
+    }
   }
 
   async function limpiarDbSinCalendar(){
