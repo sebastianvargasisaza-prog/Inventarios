@@ -5999,6 +5999,9 @@ function _renderProgramacion(d){
     <!-- ── CENTRO DE ACCIÓN UNIFICADO (alertas + recomendaciones en 1 panel) ─── -->
     <div id="pv2-centro-accion" style="margin-bottom:14px"></div>
 
+    <!-- ── 📦 MP ROLLING FORECAST (consumo MP acumulado en horizonte) ─── -->
+    <div id="pv2-mp-rolling" style="margin-bottom:14px"></div>
+
     <!-- Datos crudos ocultos (los consume el centro de acción) -->
     <div id="pv2-alertas-wrap" style="display:none"></div>
     <div id="pv2-recomendaciones-wrap" style="display:none"></div>
@@ -9305,6 +9308,146 @@ async function ckMarcar(itemId, estado){
     planV2DetectarCambios();
     planV2CargarStatusLine();
     planV2CargarCentroAccion();
+    planV2CargarMpRolling();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 📦 MP ROLLING FORECAST — consumo MP acumulado en el horizonte
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2CargarMpRolling(){
+    var box = document.getElementById('pv2-mp-rolling');
+    if(!box) return;
+    box.innerHTML = '<div style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;color:#64748b">⏳ Calculando consumo MP acumulado próximos 60 días...</div>';
+    try {
+      var r = await fetch('/api/planta/mp-rolling-forecast?dias=60');
+      var d = await r.json();
+      if(d.error){ box.innerHTML=''; return; }
+      var mats = d.materias || [];
+      var k = d.kpis || {};
+      if(!mats.length){
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin producciones planeadas en el horizonte — no hay consumo MP que proyectar</div>';
+        return;
+      }
+      var stockouts = mats.filter(function(m){return m.fecha_stockout;});
+      var criticas = stockouts.filter(function(m){return m.urgencia==='critica';});
+      var altas = stockouts.filter(function(m){return m.urgencia==='alta';});
+      var medias = stockouts.filter(function(m){return m.urgencia==='media';});
+      var ok = mats.filter(function(m){return !m.fecha_stockout;});
+
+      var bgHeader = stockouts.length ? 'linear-gradient(135deg,#7c3aed,#dc2626)' : 'linear-gradient(135deg,#0891b2,#059669)';
+      var html = '<div style="background:#fff;border:2px solid '+(stockouts.length?'#7c3aed':'#0891b2')+';border-radius:10px;overflow:hidden">';
+      html += '<div style="background:'+bgHeader+';color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+      html += '<div><b style="font-size:15px">📦 Plan MP rolling · '+(d.horizonte_dias||60)+' días</b><div style="font-size:11px;color:#fce7f3;margin-top:2px">Consumo MP acumulado de TODAS las producciones planeadas (sumando lunes + martes + ...)</div></div>';
+      html += '<div style="display:flex;gap:6px;font-size:11px;flex-wrap:wrap">';
+      if(criticas.length) html += '<span style="background:rgba(220,38,38,.5);padding:4px 10px;border-radius:6px;font-weight:800">🔴 '+criticas.length+' críticas (15d)</span>';
+      if(altas.length) html += '<span style="background:rgba(249,115,22,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟠 '+altas.length+' altas (30d)</span>';
+      if(medias.length) html += '<span style="background:rgba(234,179,8,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟡 '+medias.length+' medias</span>';
+      if(ok.length) html += '<span style="background:rgba(34,197,94,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟢 '+ok.length+' OK</span>';
+      html += '</div></div>';
+      html += '<div style="padding:10px 14px">';
+      html += '<div style="font-size:11px;color:#64748b;margin-bottom:8px">📊 '+(k.total_producciones||0)+' producciones planeadas · '+(k.mps_afectadas||0)+' MPs distintas se consumirán</div>';
+
+      // Tabla MP
+      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+      html += '<thead style="background:#f1f5f9"><tr>';
+      html += '<th style="padding:6px;text-align:left">Material</th>';
+      html += '<th style="padding:6px;text-align:right">Stock hoy</th>';
+      html += '<th style="padding:6px;text-align:right">Consumo total</th>';
+      html += '<th style="padding:6px;text-align:right">Saldo final</th>';
+      html += '<th style="padding:6px;text-align:right">Lotes</th>';
+      html += '<th style="padding:6px;text-align:left">Stockout</th>';
+      html += '<th style="padding:6px;text-align:left">Comprar antes</th>';
+      html += '<th style="padding:6px;text-align:right">Pedir</th>';
+      html += '</tr></thead><tbody>';
+      var urgCol = {critica:'#dc2626', alta:'#f97316', media:'#eab308', ok:'#10b981'};
+      var maxFilas = stockouts.length + Math.min(8, ok.length);  // mostrar todos los stockouts + máx 8 ok
+      var idx = 0;
+      var todas = stockouts.concat(ok);
+      todas.forEach(function(m){
+        if(idx >= maxFilas && !m.fecha_stockout) return;
+        idx++;
+        var col = urgCol[m.urgencia] || '#64748b';
+        var safeId = (m.material_id||'').replace(/\\x27/g,"\\\\\\x27");
+        html += '<tr style="border-top:1px solid #e2e8f0;cursor:pointer" onclick="planV2VerMpDetalle(\\''+safeId+'\\')">';
+        html += '<td style="padding:5px 6px"><b>'+_escHTML(m.material_nombre)+'</b><div style="font-size:9px;color:#64748b">'+_escHTML(m.material_id)+'</div></td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+_fmtMiles(Math.round(m.stock_inicial_g))+' g</td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+_fmtMiles(Math.round(m.consumo_total_g))+' g</td>';
+        var saldoCol = m.saldo_final_g < 0 ? '#dc2626' : '#10b981';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:'+saldoCol+';font-weight:700">'+_fmtMiles(Math.round(m.saldo_final_g))+' g</td>';
+        html += '<td style="padding:5px 6px;text-align:right">'+m.num_lotes_que_la_usan+'</td>';
+        if(m.fecha_stockout){
+          html += '<td style="padding:5px 6px"><span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">'+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+'d)</span></td>';
+          html += '<td style="padding:5px 6px;font-size:10px;color:'+col+';font-weight:700">'+_escHTML(m.comprar_antes_de||'—')+'</td>';
+          html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;font-weight:700;color:'+col+'">'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</td>';
+        } else {
+          html += '<td style="padding:5px 6px;color:#10b981">✓ alcanza</td>';
+          html += '<td style="padding:5px 6px;color:#94a3b8">—</td>';
+          html += '<td style="padding:5px 6px;text-align:right;color:#94a3b8">—</td>';
+        }
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      if(ok.length > 8){
+        html += '<div style="margin-top:6px;font-size:10px;color:#64748b">+ '+(ok.length-8)+' MPs adicionales con stock suficiente (no listadas)</div>';
+      }
+      html += '<div style="margin-top:10px;font-size:10px;color:#64748b">💡 Click en una MP para ver el detalle día por día</div>';
+      html += '</div></div>';
+      box.innerHTML = html;
+      // Guardar para detalle
+      window._mpRollingData = mats;
+    } catch(e){
+      box.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;padding:10px;border-radius:8px;font-size:12px;color:#991b1b">Error MP rolling: '+(e.message||'desconocido')+'</div>';
+    }
+  }
+
+  function planV2VerMpDetalle(materialId){
+    var mats = window._mpRollingData || [];
+    var m = mats.find(function(x){return x.material_id === materialId;});
+    if(!m){ alert('MP no encontrada'); return; }
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    var html = '<div style="background:#fff;border-radius:12px;width:780px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px"><div>';
+    html += '<h2 style="margin:0;color:#0f172a">📦 '+_escHTML(m.material_nombre)+'</h2>';
+    html += '<p style="font-size:11px;color:#64748b;margin:4px 0 0">'+_escHTML(m.material_id)+'</p>';
+    html += '</div><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>';
+    // KPIs
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px">';
+    html += '<div style="background:#ecfdf5;padding:10px;border-radius:8px"><div style="font-size:10px;color:#065f46">Stock hoy</div><div style="font-size:20px;font-weight:800;color:#047857">'+_fmtMiles(Math.round(m.stock_inicial_g))+' g</div></div>';
+    html += '<div style="background:#fff7ed;padding:10px;border-radius:8px"><div style="font-size:10px;color:#7c2d12">Consumo total</div><div style="font-size:20px;font-weight:800;color:#ea580c">'+_fmtMiles(Math.round(m.consumo_total_g))+' g</div></div>';
+    var saldoCol = m.saldo_final_g < 0 ? '#dc2626' : '#10b981';
+    html += '<div style="background:'+saldoCol+'12;padding:10px;border-radius:8px"><div style="font-size:10px;color:'+saldoCol+'">Saldo final</div><div style="font-size:20px;font-weight:800;color:'+saldoCol+'">'+_fmtMiles(Math.round(m.saldo_final_g))+' g</div></div>';
+    html += '<div style="background:#f1f5f9;padding:10px;border-radius:8px"><div style="font-size:10px;color:#475569">Lotes la usan</div><div style="font-size:20px;font-weight:800;color:#1e293b">'+m.num_lotes_que_la_usan+'</div></div>';
+    html += '</div>';
+    if(m.fecha_stockout){
+      html += '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:8px;padding:12px;margin-bottom:14px">';
+      html += '<b style="color:#991b1b">🔴 Stock-out el '+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+' días)</b>';
+      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:4px">📅 Comprar antes de: <b>'+_escHTML(m.comprar_antes_de||'—')+'</b></div>';
+      html += '<div style="font-size:11px;color:#7f1d1d">📦 Cantidad recomendada: <b>'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</b></div>';
+      html += '<div style="font-size:11px;color:#7f1d1d">⏱️ Lead time: '+(m.lead_time_dias||14)+'d · Origen: '+(m.origen||'local')+'</div>';
+      html += '</div>';
+    }
+    // Tabla cronológica
+    html += '<h3 style="color:#0f172a;font-size:14px;margin:14px 0 8px">📅 Consumo día a día</h3>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead style="background:#f1f5f9"><tr>';
+    html += '<th style="padding:6px;text-align:left">Fecha</th><th style="padding:6px;text-align:left">Producto</th>';
+    html += '<th style="padding:6px;text-align:right">Lote kg</th><th style="padding:6px;text-align:right">Consume g</th>';
+    html += '<th style="padding:6px;text-align:right">Saldo</th></tr></thead><tbody>';
+    (m.consumos||[]).forEach(function(cons){
+      var sCol = cons.saldo_post_g < 0 ? '#dc2626' : '#10b981';
+      html += '<tr style="border-top:1px solid #f1f5f9">';
+      html += '<td style="padding:5px 6px;font-family:monospace">'+_escHTML(cons.fecha)+'</td>';
+      html += '<td style="padding:5px 6px"><b>'+_escHTML(cons.producto)+'</b></td>';
+      html += '<td style="padding:5px 6px;text-align:right">'+cons.kg_lote+' kg</td>';
+      html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">-'+_fmtMiles(Math.round(cons.g_consumido))+' g</td>';
+      html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;font-weight:700;color:'+sCol+'">'+_fmtMiles(Math.round(cons.saldo_post_g))+' g</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
   }
 
   // ════════════════════════════════════════════════════════════════════

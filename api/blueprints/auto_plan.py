@@ -4368,6 +4368,248 @@ def forecast_black_friday():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# MP ROLLING FORECAST — consumo MP acumulado a lo largo del horizonte
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (30-abr-2026): "el lunes hay unos productos, ellos pueden usar
+# materias primas que usa el del martes ya se lo van a gastar entonces
+# debe ir sumando para dar una realidad".
+
+@bp.route('/api/planta/mp-rolling-forecast', methods=['GET'])
+def mp_rolling_forecast():
+    """Para cada producción futura del Calendar, simula el consumo de MP
+    día a día y detecta cuándo cada MP se va a quedar sin stock.
+
+    Query params:
+      dias: horizonte en días (default 60)
+
+    Devuelve:
+      {
+        horizonte_dias: 60,
+        producciones: [{fecha, producto, kg, num_mps_consume}],
+        materias: [{
+          material_id, material_nombre, stock_inicial_g,
+          consumo_total_g, saldo_final_g, dias_hasta_stockout,
+          fecha_stockout, urgencia,
+          consumos: [{fecha, producto, kg_lote, g_consumido, saldo_post}],
+          comprar_antes_de, comprar_g_recomendado
+        }],
+        kpis: {total_producciones, mps_afectadas, mps_stockout, mps_criticas}
+      }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    dias_horizonte = int(request.args.get('dias') or 60)
+    fecha_hoy = datetime.now().date()
+    fecha_limite = fecha_hoy + timedelta(days=dias_horizonte)
+
+    conn = get_db(); c = conn.cursor()
+
+    # Stock map robusto
+    try:
+        from blueprints.programacion import _get_mp_stock, _norm_mp_name
+        mp_stock_map = _get_mp_stock(conn)
+    except Exception:
+        mp_stock_map = {}
+        _norm_mp_name = lambda x: str(x or '').upper().strip()
+
+    # Cargar fórmulas activas
+    skus = c.execute("""
+        SELECT spc.producto_nombre, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+          AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado', 'pausado')
+    """).fetchall()
+    sku_lote_default = {p: l for p, l in skus}
+
+    # Cache fórmulas
+    formulas_cache = {}
+    def _get_formula(prod):
+        if prod in formulas_cache:
+            return formulas_cache[prod]
+        rows = c.execute("""
+            SELECT material_id, material_nombre, porcentaje
+            FROM formula_items
+            WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+        """, (prod,)).fetchall()
+        formulas_cache[prod] = rows
+        return rows
+
+    # Eventos del Calendar dentro del horizonte
+    eventos = _calendar_events_cached()
+    producciones_planeadas = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f < fecha_hoy or f > fecha_limite:
+            continue
+        # Match a un SKU activo
+        producto_match = None
+        for prod_nom in sku_lote_default.keys():
+            alias = _alias_calendar_for(c, prod_nom)
+            score = _match_producto_evento(prod_nom, alias, ev.get('titulo'), ev.get('descripcion', ''))
+            if score >= 60:
+                producto_match = prod_nom
+                break
+        if not producto_match:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or sku_lote_default.get(producto_match) or 30
+        producciones_planeadas.append({
+            'fecha': f,
+            'producto': producto_match,
+            'kg': kg,
+        })
+    producciones_planeadas.sort(key=lambda p: p['fecha'])
+
+    # Función para resolver stock por (id, nombre)
+    def _stock_de(mat_id, mat_nombre):
+        mid = str(mat_id or '').strip()
+        if mid in mp_stock_map: return float(mp_stock_map[mid])
+        if mid.upper() in mp_stock_map: return float(mp_stock_map[mid.upper()])
+        nom_up = str(mat_nombre or '').strip().upper()
+        if nom_up and nom_up in mp_stock_map: return float(mp_stock_map[nom_up])
+        try:
+            nom_norm = _norm_mp_name(mat_nombre or '')
+            if nom_norm and nom_norm in mp_stock_map: return float(mp_stock_map[nom_norm])
+        except Exception:
+            pass
+        return 0
+
+    # Acumular consumo por MP
+    # mp_data[(material_id, material_nombre)] = {stock_inicial, consumos: [...]}
+    mp_data = {}
+
+    for prod_evento in producciones_planeadas:
+        items = _get_formula(prod_evento['producto'])
+        kg = prod_evento['kg']
+        total_g_lote = kg * 1000
+        for mat_id, mat_nom, pct in items:
+            try:
+                pct_f = float(pct or 0)
+            except Exception:
+                pct_f = 0
+            req_g = total_g_lote * pct_f / 100
+            if req_g <= 0: continue
+            key = (mat_id, mat_nom or mat_id)
+            if key not in mp_data:
+                mp_data[key] = {
+                    'material_id': mat_id,
+                    'material_nombre': mat_nom or mat_id,
+                    'stock_inicial_g': _stock_de(mat_id, mat_nom),
+                    'consumos': [],
+                }
+            mp_data[key]['consumos'].append({
+                'fecha': prod_evento['fecha'].isoformat(),
+                'producto': prod_evento['producto'],
+                'kg_lote': kg,
+                'g_consumido': round(req_g, 1),
+            })
+
+    # Calcular saldos rolling y stockout por MP
+    materias_out = []
+    mps_stockout = 0
+    mps_criticas = 0  # stockout antes de 30d
+
+    for key, info in mp_data.items():
+        stock = info['stock_inicial_g']
+        saldo = stock
+        consumo_total = 0
+        fecha_stockout = None
+        for cons in info['consumos']:
+            saldo -= cons['g_consumido']
+            consumo_total += cons['g_consumido']
+            cons['saldo_post_g'] = round(saldo, 1)
+            if fecha_stockout is None and saldo < 0:
+                fecha_stockout = cons['fecha']
+
+        dias_hasta_stockout = None
+        if fecha_stockout:
+            try:
+                fs = datetime.strptime(fecha_stockout, '%Y-%m-%d').date()
+                dias_hasta_stockout = (fs - fecha_hoy).days
+            except Exception:
+                pass
+
+        # Urgencia: cuándo hay que comprar
+        # Lead time + buffer (si está en mp_lead_time_config)
+        lt_row = c.execute("""
+            SELECT lead_time_dias, origen
+            FROM mp_lead_time_config WHERE material_id=?
+        """, (info['material_id'],)).fetchone()
+        lead = lt_row[0] if lt_row else 14
+        origen = lt_row[1] if lt_row else 'local'
+
+        comprar_antes = None
+        comprar_g = 0
+        if fecha_stockout and dias_hasta_stockout is not None:
+            comprar_antes_d = max(0, dias_hasta_stockout - lead - 7)  # +7 buffer
+            comprar_antes = (fecha_hoy + timedelta(days=comprar_antes_d)).isoformat()
+            # Cuánto: lo que falta + 30d de cobertura adicional
+            falta_g = abs(saldo)  # saldo final negativo
+            comprar_g = round(falta_g + (consumo_total / max(dias_horizonte, 1)) * 30, 1)
+
+        if fecha_stockout:
+            mps_stockout += 1
+            if dias_hasta_stockout is not None and dias_hasta_stockout <= 30:
+                mps_criticas += 1
+        urgencia = 'critica' if dias_hasta_stockout is not None and dias_hasta_stockout <= 15 else \
+                   'alta' if dias_hasta_stockout is not None and dias_hasta_stockout <= 30 else \
+                   'media' if fecha_stockout else 'ok'
+
+        materias_out.append({
+            'material_id': info['material_id'],
+            'material_nombre': info['material_nombre'],
+            'stock_inicial_g': round(stock, 1),
+            'consumo_total_g': round(consumo_total, 1),
+            'saldo_final_g': round(saldo, 1),
+            'fecha_stockout': fecha_stockout,
+            'dias_hasta_stockout': dias_hasta_stockout,
+            'lead_time_dias': lead,
+            'origen': origen,
+            'comprar_antes_de': comprar_antes,
+            'comprar_g_recomendado': comprar_g,
+            'consumos': info['consumos'],
+            'num_lotes_que_la_usan': len(info['consumos']),
+            'urgencia': urgencia,
+        })
+
+    # Ordenar: stockouts primero (más cercanos arriba), luego por consumo total descendente
+    def _ord(m):
+        if m['dias_hasta_stockout'] is not None:
+            return (0, m['dias_hasta_stockout'])
+        return (1, -m['consumo_total_g'])
+    materias_out.sort(key=_ord)
+
+    return jsonify({
+        'horizonte_dias': dias_horizonte,
+        'fecha_inicio': fecha_hoy.isoformat(),
+        'fecha_fin': fecha_limite.isoformat(),
+        'producciones': [{
+            'fecha': p['fecha'].isoformat(),
+            'producto': p['producto'],
+            'kg': p['kg'],
+        } for p in producciones_planeadas],
+        'materias': materias_out,
+        'kpis': {
+            'total_producciones': len(producciones_planeadas),
+            'mps_afectadas': len(materias_out),
+            'mps_stockout': mps_stockout,
+            'mps_criticas_30d': mps_criticas,
+        },
+        'reglas': [
+            f'Horizonte: {dias_horizonte} días',
+            'Consumo MP acumulado: cada producción descuenta de stock simulado',
+            'Stockout = saldo proyectado < 0 en alguna fecha',
+            'Comprar antes de = fecha stockout − lead time − 7d buffer',
+            'Cantidad recomendada = déficit + 30d cobertura adicional',
+        ],
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # AUDITOR SEMANAL — email cada lunes 7AM con plan + alertas críticas
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "auditor diario automático (email 9 AM lunes
