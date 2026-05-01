@@ -3302,6 +3302,46 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (71, "Auto-SC MEE: mee_lead_time_config + sku_mee_config (para proyección 9m China + 90d local)", [
+        # Sebastian (1-may-2026): "envases China 9m, etiquetas las pedimos al
+        # envasar, serigrafía 20d antes, plegadiza no aplica, el resto local
+        # 60-90d como MP". Tablas paralelas a mp_lead_time_config para que el
+        # Auto-SC IA pueda proyectar también MEE.
+        """CREATE TABLE IF NOT EXISTS mee_lead_time_config (
+            mee_codigo TEXT PRIMARY KEY,
+            proveedor_principal TEXT NOT NULL DEFAULT '',
+            origen TEXT NOT NULL DEFAULT 'Local'
+                CHECK(origen IN ('China','Local','Mixto')),
+            lead_time_dias INTEGER NOT NULL DEFAULT 30,
+            moq_unidades INTEGER NOT NULL DEFAULT 0,
+            precio_unit REAL NOT NULL DEFAULT 0,
+            disparo_d20 INTEGER NOT NULL DEFAULT 0,
+            aplica INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            actualizado_en TEXT,
+            actualizado_por TEXT
+        )""",
+        # disparo_d20=1 → cron diario revisa Calendar y dispara SC en D-20
+        # (serigrafía/tampografía); aplica=0 → ignorado por Auto-SC (plegadiza).
+        "CREATE INDEX IF NOT EXISTS idx_mlt_origen ON mee_lead_time_config(origen, aplica)",
+
+        """CREATE TABLE IF NOT EXISTS sku_mee_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku_codigo TEXT NOT NULL,
+            mee_codigo TEXT NOT NULL,
+            componente_tipo TEXT NOT NULL DEFAULT 'envase'
+                CHECK(componente_tipo IN ('envase','tapa','etiqueta','caja',
+                                          'serigrafia','tampografia','plegadiza','otro')),
+            cantidad_por_unidad REAL NOT NULL DEFAULT 1,
+            aplica INTEGER NOT NULL DEFAULT 1,
+            notas TEXT,
+            UNIQUE(sku_codigo, mee_codigo)
+        )""",
+        # cantidad_por_unidad típica = 1 (un envase por SKU vendido). Para caja
+        # master de 24 unidades = 0.0417. Para etiquetas con cara dual = 2.
+        "CREATE INDEX IF NOT EXISTS idx_smc_sku ON sku_mee_config(sku_codigo, aplica)",
+        "CREATE INDEX IF NOT EXISTS idx_smc_mee ON sku_mee_config(mee_codigo, aplica)",
+    ]),
     (68, "planta MRP: alias_calendar + log eventos + auto-area producciones", [
         # Sebastian (30-abr-2026, ULTRATHINK): "en calendar dice kg, revisa
         # bien y que sea perfecto, zero-error-enterprise". El motor MRP

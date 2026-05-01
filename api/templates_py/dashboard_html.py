@@ -5018,6 +5018,40 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Auto-SC IA · MEE (Material de Empaque) ─────────────────────
+         Sebastián (1-may-2026): envases China 9m, etiquetas se piden al
+         envasar (no acá), serigrafía 20d antes (cron diario aparte),
+         plegadiza no aplica. Espejo del Auto-SC MP pero por SKU vendido. -->
+    <div id="plan-autosc-mee" style="background:linear-gradient(135deg,#0f766e 0%,#115e59 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;letter-spacing:.3px">&#128230; Auto-SC IA &middot; MEE (Material de Empaque)</div>
+          <div id="autosc-mee-subtitle" style="font-size:11px;opacity:.92;margin-top:2px">Cargando configuración…</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select id="autosc-mee-origen" style="padding:5px 8px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px">
+            <option value="">Todos orígenes</option>
+            <option value="China">&#127464;&#127475; China (9m)</option>
+            <option value="Local">&#127464;&#127476; Local (90d)</option>
+          </select>
+          <button onclick="autoscMeePreview('mensual')" style="padding:6px 12px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128270; Preview</button>
+          <button onclick="autoscMeeGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#115e59;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
+          <button onclick="autoscMeeGenerar('urgente')" style="padding:6px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128680; Urgente 30d</button>
+          <button onclick="autoscMeeRecargar()" title="Refrescar" style="padding:6px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="autosc-mee-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
+        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mee-mes-actual" class="autosc-val">—</div><div class="autosc-sub">SCs MEE creadas</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">MEE configurados</div><div id="autosc-mee-configs" class="autosc-val">—</div><div id="autosc-mee-configs-sub" class="autosc-sub">con proveedor</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">SKUs con MEE</div><div id="autosc-mee-skus" class="autosc-val">—</div><div class="autosc-sub">mapeados a componentes</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última run</div><div id="autosc-mee-last" class="autosc-val">—</div><div id="autosc-mee-last-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+      </div>
+      <div id="autosc-mee-config-warn" style="display:none;margin-top:10px;padding:8px 10px;background:#fbbf24;color:#78350f;border-radius:6px;font-size:11px">
+        ⚠️ Configura primero <code>mee_lead_time_config</code> (proveedor, origen, MOQ) y <code>sku_mee_config</code> (SKU → componentes). Sin esto, Auto-SC MEE no genera nada.
+      </div>
+      <div id="autosc-mee-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
+    </div>
+
     <!-- ── Auto-SC IA ──────────────────────────────────────────────────
          Sebastián (30-abr-2026): "Quiero que sea lo mas automatico posible…
          primeros 5 dias del mes genere ordenes 60-90d, lunes urgentes,
@@ -7445,6 +7479,7 @@ async function ckMarcar(itemId, estado){
         cargarPlanificacion(60);
       }
       if(tab==='plan' && typeof autoscRecargar==='function') autoscRecargar();
+      if(tab==='plan' && typeof autoscMeeRecargar==='function') autoscMeeRecargar();
       // Estilos botones — los 6 oficiales
       function _bg(id, activeStyle, activeClass){
         var b = document.getElementById(id);
@@ -11856,6 +11891,109 @@ async function ckMarcar(itemId, estado){
       autoscRecargar();
     }catch(e){
       msg.innerHTML = '❌ Error generando SCs: '+(e.message||e);
+    }
+  }
+
+  // ── Auto-SC MEE (Sebastián 1-may-2026): China 9m + Local 90d, MOQ-aware
+  async function autoscMeeRecargar(){
+    var sub = document.getElementById('autosc-mee-subtitle');
+    if(sub) sub.textContent = 'Cargando estado…';
+    try{
+      var r = await fetch('/api/planta/auto-sc-mee-status', {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var s = await r.json();
+      document.getElementById('autosc-mee-mes-actual').textContent = (s.scs_mes_actual||0)+' SCs';
+      var configsEl = document.getElementById('autosc-mee-configs');
+      var configsSub = document.getElementById('autosc-mee-configs-sub');
+      if(configsEl){ configsEl.textContent = s.mee_configurados||0; }
+      if(configsSub){ configsSub.textContent = (s.mee_con_proveedor||0)+' con proveedor'; }
+      var skusEl = document.getElementById('autosc-mee-skus');
+      if(skusEl){ skusEl.textContent = s.skus_con_mee||0; }
+      var lastEl = document.getElementById('autosc-mee-last');
+      var lastSub = document.getElementById('autosc-mee-last-sub');
+      if(s.last_mensual && lastEl){
+        lastEl.textContent = (s.last_mensual.scs_creadas||0)+' SCs';
+        if(lastSub) lastSub.textContent = _autoscFmtFecha(s.last_mensual.ejecutado_at);
+      } else if(lastEl){
+        lastEl.textContent = '—';
+        if(lastSub) lastSub.textContent = 'Sin ejecuciones aún';
+      }
+      var warn = document.getElementById('autosc-mee-config-warn');
+      if(warn) warn.style.display = s.configuracion_lista ? 'none' : 'block';
+      if(sub){
+        if(!s.configuracion_lista){
+          sub.textContent = 'Pendiente configurar proveedores MEE y mapping SKU→componentes';
+        } else {
+          sub.textContent = (s.mee_con_proveedor||0)+' MEE listos · '+(s.skus_con_mee||0)+' SKUs mapeados';
+        }
+      }
+    }catch(e){
+      if(sub) sub.textContent = 'No se pudo cargar el estado · '+(e.message||e);
+    }
+  }
+  async function autoscMeePreview(modo){
+    var origen = (document.getElementById('autosc-mee-origen')||{value:''}).value || '';
+    var msg = document.getElementById('autosc-mee-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Calculando preview MEE ('+modo+(origen?' / '+origen:'')+')…';
+    try{
+      var url = '/api/planta/auto-sc-mee-preview?modo='+encodeURIComponent(modo);
+      if(origen) url += '&origen='+encodeURIComponent(origen);
+      var r = await fetch(url, {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var p = await r.json();
+      if(p.razon_vacio){
+        msg.innerHTML = '⚠️ '+p.razon_vacio;
+        return;
+      }
+      var k = p.kpis || {};
+      var sps = p.scs_por_proveedor || {};
+      var huerf = p.items_huerfanos || [];
+      var nProv = Object.keys(sps).length;
+      var html = '<b>📊 Preview MEE '+modo+'</b> · '+nProv+' SCs · '+(k.total_items||0)+' MEE · '+Math.round(k.total_unidades||0).toLocaleString()+' ud';
+      if(k.total_valor_estimado) html += ' · $'+Math.round(k.total_valor_estimado).toLocaleString();
+      html += '<br>SKUs evaluados: '+(k.skus_evaluados||0)+' · MEE evaluados: '+(k.mee_evaluados||0);
+      if(nProv){
+        html += '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">';
+        Object.entries(sps).slice(0,8).forEach(function(kv){
+          var totalUd = kv[1].reduce(function(a,b){return a+b.cantidad_unidades;},0);
+          html += '<span style="background:rgba(0,0,0,.18);padding:3px 8px;border-radius:10px">'+kv[0]+': '+kv[1].length+' MEE / '+Math.round(totalUd).toLocaleString()+' ud</span>';
+        });
+        html += '</div>';
+      }
+      if(huerf.length){
+        html += '<div style="margin-top:6px;color:#fde68a">⚠️ '+huerf.length+' MEE sin proveedor (no incluidos)</div>';
+      }
+      msg.innerHTML = html;
+    }catch(e){
+      msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
+    }
+  }
+  async function autoscMeeGenerar(modo){
+    var origen = (document.getElementById('autosc-mee-origen')||{value:''}).value || '';
+    var nombreModo = modo === 'urgente' ? 'URGENTE (30d)' : 'MENSUAL (China 9m + Local 90d)';
+    if(!confirm('Vas a crear las SCs MEE reales '+nombreModo+(origen?' / origen '+origen:'')+'.\\n\\nCatalina y Alejandro revisarán en /solicitudes.\\n\\n¿Continuar?')) return;
+    var msg = document.getElementById('autosc-mee-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Generando SCs MEE ('+modo+')…';
+    try{
+      var body = {modo: modo, enviar_email: true};
+      if(origen) body.origen = origen;
+      var r = await fetch('/api/planta/auto-sc-mee-generar', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      var data = await r.json();
+      if(!r.ok || !data.ok) throw new Error(data.error || ('HTTP '+r.status));
+      if(data.razon_vacio){
+        msg.innerHTML = '⚠️ '+data.razon_vacio;
+        return;
+      }
+      msg.innerHTML = '✅ '+data.mensaje + ' · <a href="/solicitudes" style="color:#fff;text-decoration:underline">ver en Compras</a>';
+      autoscMeeRecargar();
+    }catch(e){
+      msg.innerHTML = '❌ Error generando SCs MEE: '+(e.message||e);
     }
   }
 

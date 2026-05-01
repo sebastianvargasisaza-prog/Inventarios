@@ -4951,6 +4951,538 @@ def auto_sc_status():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# AUTO-SC IA · MEE (Material de Empaque y Etiquetas)
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (1-may-2026): "envases China 9m, etiquetas las pedimos al
+# envasar, serigrafía 20d antes, plegadiza no aplica, el resto local 60-90d
+# como MP". Espejo del Auto-SC de MP pero proyectando ventas por SKU →
+# componentes MEE, agrupando por (proveedor, origen).
+#
+# Horizontes:
+#   · China:  270d (9m) — lead time 180d + buffer producción 90d
+#   · Local:  90d  — espejo del MP local
+#   · Urgente: 30d — solo lo que stockout en próximas 4 semanas
+#
+# Filtros:
+#   · sku_mee_config.aplica = 0 → ignorado (plegadiza)
+#   · mee_lead_time_config.disparo_d20 = 1 → ignorado (serigrafía/tampografía
+#     van por cron diario D-20, fase aparte)
+
+
+def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
+    """Calcula SCs MEE proyectando ventas por SKU.
+
+    Args:
+      modo: 'mensual' (default, horizonte por origen) o 'urgente' (30d todos)
+      origen_filtro: 'China'|'Local'|None (None = todos)
+
+    Returns:
+      {scs_por_proveedor (clave='Proveedor (Origen)'), items_huerfanos,
+       kpis, fecha_analisis, modo, origen_filtro}
+    """
+    c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+
+    HORIZONTE_CHINA = 270
+    HORIZONTE_LOCAL = 90
+    HORIZONTE_URGENTE = 30
+
+    # 1) Mappings sku → componentes MEE (con cantidad_por_unidad)
+    sku_components = {}
+    try:
+        rows = c.execute("""
+            SELECT sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad
+            FROM sku_mee_config
+            WHERE aplica = 1
+        """).fetchall()
+        for sku, mee, tipo, cant in rows:
+            sku_components.setdefault(sku, []).append({
+                'mee_codigo': mee,
+                'tipo': tipo,
+                'cantidad_por_unidad': float(cant or 1),
+            })
+    except sqlite3.OperationalError:
+        return _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy,
+                                          razon='sku_mee_config no existe')
+
+    # 2) Config MEE (lead time, MOQ, proveedor, origen)
+    mee_config = {}
+    try:
+        rows = c.execute("""
+            SELECT mee_codigo, proveedor_principal, origen, lead_time_dias,
+                   moq_unidades, precio_unit, disparo_d20, aplica
+            FROM mee_lead_time_config
+            WHERE aplica = 1
+        """).fetchall()
+        for mc, prov, ori, lt, moq, prec, d20, ap in rows:
+            if origen_filtro and ori != origen_filtro:
+                continue
+            if d20:
+                continue  # serigrafía/tampografía van por D-20
+            mee_config[mc] = {
+                'proveedor': (prov or '').strip() or '(sin proveedor)',
+                'origen': ori or 'Local',
+                'lead_time_dias': int(lt or 30),
+                'moq_unidades': int(moq or 0),
+                'precio_unit': float(prec or 0),
+            }
+    except sqlite3.OperationalError:
+        return _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy,
+                                          razon='mee_lead_time_config no existe')
+
+    if not mee_config:
+        return _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy,
+                                          razon='Ningún MEE configurado en mee_lead_time_config (origen/proveedor)')
+
+    # 3) Stock MEE
+    stock_mee = {}
+    try:
+        for cod, st in c.execute("SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee").fetchall():
+            stock_mee[cod] = float(st or 0)
+    except Exception:
+        pass
+
+    # 4) SKUs activos
+    skus_lista = []
+    try:
+        rows = c.execute("""
+            SELECT producto_nombre FROM sku_planeacion_config
+            WHERE activo = 1
+              AND COALESCE(estado, 'activo') NOT IN ('descontinuado', 'pausado', 'sin_ventas')
+        """).fetchall()
+        skus_lista = [r[0] for r in rows]
+    except Exception:
+        pass
+
+    # 5) Proyección demanda por MEE (sumar todos los SKUs que la usan)
+    demanda_mee = {}  # mee_codigo → {cantidad_total, justificaciones[]}
+    for sku in skus_lista:
+        if sku not in sku_components:
+            continue
+        try:
+            v180 = _ventas_diarias_por_sku(c, sku, dias=180)
+            v180_total = sum(q for _, q in v180)
+        except Exception:
+            v180_total = 0
+        vel_diaria = v180_total / 180.0 if v180_total else 0
+        if vel_diaria <= 0:
+            continue
+        try:
+            buf_ia = _factor_buffer_ia(c, sku)
+        except Exception:
+            buf_ia = 1.0
+        for comp in sku_components[sku]:
+            mee_cod = comp['mee_codigo']
+            if mee_cod not in mee_config:
+                continue
+            cfg = mee_config[mee_cod]
+            origen = cfg['origen']
+            if modo == 'urgente':
+                horizonte = HORIZONTE_URGENTE
+            elif origen == 'China':
+                horizonte = HORIZONTE_CHINA
+            else:
+                horizonte = HORIZONTE_LOCAL
+            fecha_medio = fecha_hoy + timedelta(days=horizonte // 2)
+            buf_est = _factor_buffer_estacional(fecha_medio)
+            unidades_sku = vel_diaria * horizonte * buf_ia * buf_est
+            cant_mee = unidades_sku * comp['cantidad_por_unidad']
+            if mee_cod not in demanda_mee:
+                demanda_mee[mee_cod] = {
+                    'cantidad_total': 0,
+                    'horizonte': horizonte,
+                    'justificaciones': [],
+                }
+            demanda_mee[mee_cod]['cantidad_total'] += cant_mee
+            demanda_mee[mee_cod]['justificaciones'].append({
+                'sku': sku,
+                'velocidad_diaria': round(vel_diaria, 2),
+                'horizonte_dias': horizonte,
+                'buf_ia': buf_ia,
+                'buf_est': round(buf_est, 2),
+                'cantidad_por_unidad': comp['cantidad_por_unidad'],
+                'tipo_componente': comp['tipo'],
+                'unidades_mee_estimadas': round(cant_mee, 0),
+            })
+
+    # 6) Déficit + MOQ + agrupar por (proveedor, origen)
+    scs_por_proveedor = {}
+    items_huerfanos = []
+    for mee_cod, dem in demanda_mee.items():
+        cant_demanda = dem['cantidad_total']
+        stock = stock_mee.get(mee_cod, 0)
+        deficit = max(0, cant_demanda - stock)
+        if deficit <= 0:
+            continue
+        cfg = mee_config[mee_cod]
+        moq = cfg['moq_unidades']
+        cant_a_pedir = max(deficit, moq) if moq > 0 else deficit
+        prov = cfg['proveedor']
+        try:
+            row = c.execute("SELECT descripcion FROM maestro_mee WHERE codigo=?", (mee_cod,)).fetchone()
+            nombre = (row[0] if row else mee_cod) or mee_cod
+        except Exception:
+            nombre = mee_cod
+        item = {
+            'mee_codigo': mee_cod,
+            'mee_nombre': nombre,
+            'cantidad_unidades': round(cant_a_pedir, 0),
+            'demanda_estimada': round(cant_demanda, 0),
+            'stock_actual': round(stock, 0),
+            'deficit': round(deficit, 0),
+            'moq_aplicado': moq,
+            'cobertura_dias': dem['horizonte'],
+            'origen': cfg['origen'],
+            'lead_time_dias': cfg['lead_time_dias'],
+            'precio_unit': cfg['precio_unit'],
+            'valor_estimado': round(cant_a_pedir * cfg['precio_unit'], 2) if cfg['precio_unit'] else 0,
+            'justificaciones': dem['justificaciones'][:5],
+            'proveedor_sugerido': prov,
+        }
+        # Justificación texto
+        moq_msg = f' · MOQ {moq}' if moq > 0 and cant_a_pedir == moq else ''
+        item['justificacion'] = (
+            f"MEE {mee_cod} ({cfg['origen']}, lead {cfg['lead_time_dias']}d) · "
+            f"stock {round(stock,0)} ud · demanda {round(cant_demanda,0)} ud "
+            f"({dem['horizonte']}d) · déficit {round(deficit,0)}{moq_msg} · "
+            f"pedir {round(cant_a_pedir,0)} ud"
+        )
+        if not prov or prov == '(sin proveedor)':
+            items_huerfanos.append(item)
+            continue
+        clave = f"{prov} ({cfg['origen']})"
+        scs_por_proveedor.setdefault(clave, []).append(item)
+
+    total_items = sum(len(v) for v in scs_por_proveedor.values())
+    total_unidades = sum(it['cantidad_unidades'] for items in scs_por_proveedor.values() for it in items)
+    total_valor = sum(it['valor_estimado'] for items in scs_por_proveedor.values() for it in items)
+
+    return {
+        'modo': modo,
+        'origen_filtro': origen_filtro,
+        'fecha_analisis': fecha_hoy.isoformat(),
+        'scs_por_proveedor': scs_por_proveedor,
+        'items_huerfanos': items_huerfanos,
+        'kpis': {
+            'total_items': total_items,
+            'total_proveedores': len(scs_por_proveedor),
+            'total_unidades': round(total_unidades, 0),
+            'total_valor_estimado': round(total_valor, 2),
+            'mee_huerfanas': len(items_huerfanos),
+            'skus_evaluados': len(skus_lista),
+            'mee_evaluados': len(demanda_mee),
+        },
+    }
+
+
+def _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy, razon=''):
+    """Resultado vacío con mensaje de razón (config faltante)."""
+    return {
+        'modo': modo,
+        'origen_filtro': origen_filtro,
+        'fecha_analisis': fecha_hoy.isoformat(),
+        'scs_por_proveedor': {},
+        'items_huerfanos': [],
+        'kpis': {
+            'total_items': 0, 'total_proveedores': 0, 'total_unidades': 0,
+            'total_valor_estimado': 0, 'mee_huerfanas': 0,
+            'skus_evaluados': 0, 'mee_evaluados': 0,
+        },
+        'razon_vacio': razon,
+    }
+
+
+@bp.route('/api/planta/auto-sc-mee-preview', methods=['GET'])
+def auto_sc_mee_preview():
+    """Preview Auto-SC MEE sin crear SCs reales.
+
+    Query: ?modo=mensual|urgente  ?origen=China|Local
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    modo = (request.args.get('modo') or 'mensual').strip()
+    origen = (request.args.get('origen') or '').strip() or None
+    if origen and origen not in ('China', 'Local', 'Mixto'):
+        return jsonify({'error': 'origen debe ser China, Local o Mixto'}), 400
+    return jsonify(_calcular_auto_sc_mee(get_db(), modo=modo, origen_filtro=origen))
+
+
+@bp.route('/api/planta/auto-sc-mee-generar', methods=['POST'])
+def auto_sc_mee_generar():
+    """Crea las SCs MEE reales en estado 'Pendiente'.
+
+    Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
+    Body: {modo, origen?, enviar_email?}
+    """
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    d = request.json or {}
+    modo = (d.get('modo') or request.args.get('modo') or 'mensual').strip()
+    origen = (d.get('origen') or request.args.get('origen') or '').strip() or None
+    if origen and origen not in ('China', 'Local', 'Mixto'):
+        return jsonify({'error': 'origen invalido'}), 400
+    enviar_email = d.get('enviar_email', True)
+    user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
+
+    conn = get_db(); c = conn.cursor()
+    plan = _calcular_auto_sc_mee(conn, modo=modo, origen_filtro=origen)
+
+    scs_creadas = []
+    fecha_hoy_iso = datetime.now().date().isoformat()
+    for proveedor_clave, items in plan['scs_por_proveedor'].items():
+        # extraer proveedor + origen del clave "Proveedor (Origen)"
+        prov_real = proveedor_clave.split(' (')[0]
+        origen_real = items[0]['origen'] if items else 'Local'
+
+        c.execute("""
+            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+            FROM solicitudes_compra WHERE numero LIKE ?
+        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
+        n = (c.fetchone()[0] or 0) + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
+
+        observ = (f'🤖 Auto-SC IA MEE ({modo}) · proveedor: {prov_real} · '
+                  f'origen: {origen_real} · '
+                  f'horizonte {270 if origen_real == "China" else 90}d · '
+                  f'buffer IA + estacional + MOQ aplicados')
+
+        c.execute("""
+            INSERT INTO solicitudes_compra
+              (numero, fecha, estado, solicitante, urgencia, observaciones,
+               area, empresa, categoria, tipo, fecha_requerida, valor)
+            VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Produccion', 'Espagiria',
+                    'Material de Empaque', 'Compra', ?, ?)
+        """, (numero, datetime.now().isoformat(), user,
+              'Alta' if (modo == 'urgente' or origen_real == 'China') else 'Normal',
+              observ, fecha_hoy_iso,
+              sum(it.get('valor_estimado', 0) for it in items)))
+
+        for it in items:
+            try:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado, proveedor_sugerido)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?, ?)
+                """, (numero, it['mee_codigo'], it['mee_nombre'],
+                      it['cantidad_unidades'], it['justificacion'],
+                      it.get('valor_estimado', 0), prov_real))
+            except sqlite3.OperationalError:
+                # Sin proveedor_sugerido en esquema legacy
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?)
+                """, (numero, it['mee_codigo'], it['mee_nombre'],
+                      it['cantidad_unidades'], it['justificacion'],
+                      it.get('valor_estimado', 0)))
+
+        scs_creadas.append({
+            'numero': numero,
+            'proveedor': prov_real,
+            'origen': origen_real,
+            'items_count': len(items),
+            'total_unidades': round(sum(it['cantidad_unidades'] for it in items), 0),
+            'valor_estimado': round(sum(it.get('valor_estimado', 0) for it in items), 2),
+        })
+
+    conn.commit()
+
+    # Email a Alejandro
+    email_enviado = False
+    if enviar_email and scs_creadas:
+        try:
+            html = _generar_html_auto_sc_mee(plan, scs_creadas, modo)
+            destinatarios = []
+            try:
+                rows = c.execute("""
+                    SELECT email FROM email_destinatarios_config
+                    WHERE activo=1 AND email != ''
+                      AND (rol='gerencia_produccion' OR LOWER(email) LIKE '%alejandro%' OR recibe_compras_aprob=1)
+                """).fetchall()
+                destinatarios = [r[0] for r in rows if r[0]]
+            except Exception:
+                pass
+            if not destinatarios:
+                try:
+                    rows = c.execute("SELECT email FROM email_destinatarios_config WHERE activo=1 AND email != ''").fetchall()
+                    destinatarios = [r[0] for r in rows if r[0]]
+                except Exception:
+                    pass
+            if destinatarios:
+                import threading, sys, os as _os
+                sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+                from notificaciones import SistemaNotificaciones
+                notif = SistemaNotificaciones()
+                threading.Thread(
+                    target=notif._enviar_email,
+                    args=(f'🤖 Auto-SC IA MEE · {len(scs_creadas)} SCs creadas ({modo})', html, destinatarios),
+                    daemon=True
+                ).start()
+                email_enviado = True
+        except Exception as e:
+            log.warning(f'Email auto-SC MEE fallo: {e}')
+
+    # Log
+    try:
+        notas = (f'{plan["kpis"]["total_items"]} items · '
+                 f'{len(scs_creadas)} SCs · email={email_enviado} · '
+                 f'origen={origen or "todos"}')
+        c.execute("""
+            INSERT INTO auto_plan_runs
+              (ejecutado_at, ejecutado_por, tipo, horizonte_dias,
+               producciones_creadas, compras_creadas, alertas_criticas,
+               emails_enviados, error, payload_json)
+            VALUES (?, ?, ?, ?, 0, ?, 0, ?, NULL, ?)
+        """, (datetime.now().isoformat(), user,
+              f'auto_sc_mee_{modo}',
+              270 if (origen == 'China') else (90 if modo == 'mensual' else 30),
+              len(scs_creadas),
+              1 if email_enviado else 0,
+              json.dumps({'modo': modo, 'origen': origen,
+                          'kpis': plan['kpis'], 'scs': scs_creadas,
+                          'notas': notas}, default=str)))
+        conn.commit()
+    except Exception as e:
+        log.warning(f'Log auto-sc-mee fallo: {e}')
+
+    return jsonify({
+        'ok': True,
+        'modo': modo,
+        'origen': origen,
+        'scs_creadas': scs_creadas,
+        'items_huerfanos': plan['items_huerfanos'],
+        'email_enviado': email_enviado,
+        'kpis': plan['kpis'],
+        'razon_vacio': plan.get('razon_vacio'),
+        'mensaje': (f'✅ {len(scs_creadas)} SCs MEE creadas · '
+                    f'{plan["kpis"]["total_items"]} items · '
+                    f'email={"sí" if email_enviado else "no"}'),
+    })
+
+
+def _generar_html_auto_sc_mee(plan, scs_creadas, modo):
+    """HTML email para Alejandro con resumen de SCs MEE creadas."""
+    fecha_hoy = datetime.now().date()
+    titulo = '🚨 SC MEE Urgentes' if modo == 'urgente' else '🤖 SC MEE Mensuales (China 9m + Local 90d)'
+    bgHeader = '#dc2626' if modo == 'urgente' else '#0f766e'
+
+    html_scs = ''
+    for sc in scs_creadas:
+        items = plan['scs_por_proveedor'].get(f"{sc['proveedor']} ({sc['origen']})", [])
+        flag_origen = '🇨🇳' if sc['origen'] == 'China' else '🇨🇴'
+        html_scs += f'<div style="background:#f8fafc;border-left:4px solid {bgHeader};padding:10px 14px;margin-bottom:8px;border-radius:0 6px 6px 0">'
+        html_scs += f'<b>{sc["numero"]}</b> · {flag_origen} {sc["proveedor"]} · {sc["items_count"]} MEE · {int(sc["total_unidades"]):,} ud'
+        if sc.get('valor_estimado'):
+            html_scs += f' · ${sc["valor_estimado"]:,.0f}'
+        html_scs += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#475569">'
+        for it in items[:6]:
+            html_scs += f'<li><b>{it["mee_nombre"]}</b>: {int(it["cantidad_unidades"]):,} ud (lead {it["lead_time_dias"]}d)</li>'
+        if len(items) > 6:
+            html_scs += f'<li style="color:#94a3b8">+ {len(items)-6} MEE más</li>'
+        html_scs += '</ul></div>'
+
+    huerfanos_html = ''
+    if plan['items_huerfanos']:
+        huerfanos_html = '<div style="background:#fef3c7;border:1px solid #fcd34d;padding:10px;border-radius:6px;margin-top:14px">'
+        huerfanos_html += f'<b style="color:#92400e">⚠️ {len(plan["items_huerfanos"])} MEE SIN proveedor</b>'
+        huerfanos_html += '<div style="font-size:11px;color:#78350f;margin-top:4px">No se crearon SCs (mee_lead_time_config sin proveedor_principal):</div>'
+        huerfanos_html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">'
+        for it in plan['items_huerfanos'][:8]:
+            huerfanos_html += f'<li>{it["mee_nombre"]}: {int(it["cantidad_unidades"]):,} ud ({it["origen"]})</li>'
+        huerfanos_html += '</ul></div>'
+
+    return f'''<!DOCTYPE html>
+<html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px;margin:0">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+    <div style="background:{bgHeader};color:#fff;padding:20px">
+      <h2 style="margin:0;font-size:20px">{titulo}</h2>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">{fecha_hoy.strftime("%d-%b-%Y")} · Auto-Plan IA · MEE</p>
+    </div>
+    <div style="padding:20px">
+      <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#065f46">
+        ✅ <b>{len(scs_creadas)} solicitudes creadas</b> · {plan["kpis"]["total_items"]} MEE · {plan["kpis"]["total_unidades"]:,.0f} unidades<br>
+        Estado: <b>Pendiente</b> · Catalina y Alejandro revisan en <a href="/solicitudes" style="color:#065f46">/solicitudes</a>
+      </div>
+      <h3 style="color:#0f172a;font-size:14px;margin:14px 0 8px">📦 Solicitudes MEE creadas</h3>
+      {html_scs}
+      {huerfanos_html}
+      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+        Horizontes: 🇨🇳 China 9m (270d) · 🇨🇴 Local 90d · Urgente 30d.<br>
+        MOQ aplicado por proveedor. Buffer IA tendencia + estacional aplicados.<br>
+        Serigrafía/tampografía van por cron D-20 (no incluidas aquí). Etiquetas se piden post-envasado.
+      </div>
+    </div>
+  </div>
+</body></html>'''
+
+
+@bp.route('/api/planta/auto-sc-mee-status', methods=['GET'])
+def auto_sc_mee_status():
+    """Status del Auto-SC MEE para el panel del dashboard."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date, timedelta
+    conn = get_db(); c = conn.cursor()
+    hoy = date.today()
+    inicio_mes = hoy.replace(day=1)
+
+    def _last_run(tipo):
+        try:
+            row = c.execute("""
+                SELECT ejecutado_at, compras_creadas, payload_json, error, emails_enviados
+                FROM auto_plan_runs WHERE tipo = ?
+                ORDER BY id DESC LIMIT 1
+            """, (tipo,)).fetchone()
+            if not row: return None
+            return {
+                'ejecutado_at': row[0], 'scs_creadas': row[1] or 0,
+                'payload_json': row[2] or '', 'error': row[3] or '',
+                'emails_enviados': row[4] or 0,
+            }
+        except Exception:
+            return None
+
+    # Contar configuración MEE
+    mee_configurados = 0
+    mee_con_proveedor = 0
+    skus_con_mee = 0
+    try:
+        mee_configurados = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1").fetchone()[0]
+        mee_con_proveedor = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1 AND COALESCE(proveedor_principal,'') != ''").fetchone()[0]
+        skus_con_mee = c.execute("SELECT COUNT(DISTINCT sku_codigo) FROM sku_mee_config WHERE aplica=1").fetchone()[0]
+    except Exception:
+        pass
+
+    # SCs MEE este mes
+    scs_mes = 0
+    try:
+        scs_mes = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE solicitante='auto-plan-ia' AND categoria='Material de Empaque'
+              AND date(fecha) >= ?
+        """, (inicio_mes.isoformat(),)).fetchone()[0]
+    except Exception:
+        pass
+
+    return jsonify({
+        'hoy': hoy.isoformat(),
+        'last_mensual': _last_run('auto_sc_mee_mensual'),
+        'last_urgente': _last_run('auto_sc_mee_urgente'),
+        'mee_configurados': mee_configurados,
+        'mee_con_proveedor': mee_con_proveedor,
+        'skus_con_mee': skus_con_mee,
+        'scs_mes_actual': scs_mes,
+        'configuracion_lista': mee_con_proveedor > 0 and skus_con_mee > 0,
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # MP ROLLING FORECAST — consumo MP acumulado a lo largo del horizonte
 # ════════════════════════════════════════════════════════════════════════
 # Sebastián (30-abr-2026): "el lunes hay unos productos, ellos pueden usar
