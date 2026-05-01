@@ -6720,27 +6720,44 @@ def pre_produccion_equipo():
         p['listo_para_producir'] = (p['mp_pendientes'] == 0 and p['mee_pendientes'] == 0)
         producciones.append(p)
 
-    # Detectar conflictos: mismo operario en >1 producción mismo día
-    operarios_dia = {}  # (op_id, fecha) → [producciones]
+    # Detectar conflictos: mismo operario en >1 producción DIFERENTE el mismo día.
+    # Sebastián 1-may-2026: mismo operario en varios roles de la MISMA
+    # producción NO es conflicto (son etapas secuenciales: elab→env→acond).
+    # Solo es conflicto si está en 2 PRODUCCIONES distintas el mismo día.
+    operarios_dia = {}  # (op_id, fecha) → [{prod_id, producto, rol, ...}]
+    duplicados_intra_produccion = []  # mismo op en 2+ roles de la misma prod
     conflictos = []
     for p in producciones:
+        # Detectar duplicados dentro de la misma producción
+        roles_por_op = {}  # op_id → [roles]
         for op_field, op_id in (('op_elaboracion', p['op_elab_id']),
                                   ('op_envasado', p['op_env_id']),
                                   ('op_acondicionamiento', p['op_acond_id'])):
-            if not op_id:
-                continue
+            if not op_id: continue
+            roles_por_op.setdefault(op_id, []).append(op_field)
             key = (op_id, p['fecha'][:10])
             if key not in operarios_dia:
                 operarios_dia[key] = []
             operarios_dia[key].append({'prod_id': p['id'], 'producto': p['producto'],
                                         'rol': op_field, 'op_nombre': p[op_field]})
+        for op_id, roles in roles_por_op.items():
+            if len(roles) >= 2:
+                duplicados_intra_produccion.append({
+                    'prod_id': p['id'], 'producto': p['producto'],
+                    'fecha': p['fecha'][:10],
+                    'operario_id': op_id, 'roles': roles,
+                })
+
     for key, lst in operarios_dia.items():
-        if len(lst) > 1:
+        # Conflicto real = 2+ PRODUCCIONES distintas (no solo 2+ roles)
+        prods_distintas = set(item['prod_id'] for item in lst)
+        if len(prods_distintas) > 1:
             conflictos.append({
                 'operario_id': key[0],
                 'operario_nombre': lst[0]['op_nombre'],
                 'fecha': key[1],
                 'producciones': lst,
+                'producciones_distintas': len(prods_distintas),
             })
 
     # Por operario: total carga semanal
@@ -6786,9 +6803,84 @@ def pre_produccion_equipo():
             'con_pendientes': n_con_pendientes,
             'sin_operarios_asignados': n_sin_operarios,
             'conflictos_operario': len(conflictos),
+            'duplicados_intra_produccion': len(duplicados_intra_produccion),
         },
         'conflictos': conflictos,
+        'duplicados_intra_produccion': duplicados_intra_produccion,
         'carga_operarios': carga_operario_list,
+    })
+
+
+@bp.route('/api/planta/reasignar-operarios-conflictos', methods=['POST'])
+def reasignar_operarios_conflictos():
+    """Re-asigna operarios IA a producciones con duplicados (mismo operario
+    en 2+ roles de la misma producción) o conflictos cross-producción.
+    Sebastián 1-may-2026: 'pre-produccion muestra conflictos · resuelve esto'.
+
+    1. Encuentra producciones próximas 14 días con duplicados/conflictos
+    2. NULL todos los operarios de esas filas
+    3. Llama _auto_asignar_operarios para repoblar con 4 distintos
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    fecha_max = fecha_hoy + timedelta(days=14)
+
+    # Filas con operarios duplicados dentro de la misma producción
+    rows = c.execute("""
+        SELECT id, producto, fecha_programada,
+               operario_dispensacion_id, operario_elaboracion_id,
+               operario_envasado_id, operario_acondicionamiento_id
+        FROM produccion_programada
+        WHERE date(fecha_programada) BETWEEN ? AND ?
+          AND COALESCE(estado, 'programado') NOT IN ('completado','cancelado')
+    """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+
+    pids_a_reasignar = []
+    for r in rows:
+        pid, prod_n, fecha, *ops = r
+        ops_no_null = [o for o in ops if o]
+        if len(ops_no_null) != len(set(ops_no_null)):
+            # Duplicado dentro de la misma producción
+            pids_a_reasignar.append((pid, prod_n, fecha[:10]))
+
+    reasignadas = 0
+    errores = []
+    try:
+        from blueprints.programacion import _auto_asignar_operarios
+        for pid, prod_n, fecha_iso in pids_a_reasignar:
+            try:
+                # NULL todos los operarios para forzar reasignación limpia
+                c.execute("""
+                    UPDATE produccion_programada SET
+                      operario_dispensacion_id = NULL,
+                      operario_elaboracion_id = NULL,
+                      operario_envasado_id = NULL,
+                      operario_acondicionamiento_id = NULL
+                    WHERE id = ?
+                """, (pid,))
+                # Reasignar
+                asigns = _auto_asignar_operarios(c, pid, fecha_iso, f'reasignar-{user}')
+                if asigns:
+                    reasignadas += 1
+                else:
+                    errores.append(f'{prod_n[:30]} pid#{pid}: sin operarios disponibles')
+            except Exception as _e:
+                errores.append(f'{prod_n[:30]} pid#{pid}: {str(_e)[:80]}')
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except: pass
+        return jsonify({'ok': False, 'error': str(_e)}), 500
+
+    return jsonify({
+        'ok': True,
+        'mensaje': f'🔧 {reasignadas}/{len(pids_a_reasignar)} producciones reasignadas con operarios distintos',
+        'reasignadas': reasignadas,
+        'duplicadas_encontradas': len(pids_a_reasignar),
+        'errores': errores[:10],
     })
 
 

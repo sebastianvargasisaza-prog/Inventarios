@@ -5135,6 +5135,7 @@ function _renderProgramacion(d){
           <div id="prep-subtitle" style="font-size:11px;color:#64748b;margin-top:2px">Cargando…</div>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="reasignarConflictos()" title="Re-asigna IA a producciones con duplicados o conflictos" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#128295; Resolver conflictos</button>
           <select id="prep-dias" onchange="preProduccionRecargar()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:11px">
             <option value="7" selected>7 días</option>
             <option value="14">14 días</option>
@@ -5144,6 +5145,7 @@ function _renderProgramacion(d){
         </div>
       </div>
       <div id="prep-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px"></div>
+      <div id="prep-msg" style="display:none;margin-bottom:10px;padding:8px 10px;background:#dcfce7;border-radius:6px;font-size:11px;color:#166534"></div>
       <div id="prep-conflictos" style="margin-bottom:10px"></div>
       <div id="prep-producciones" style="display:flex;flex-direction:column;gap:8px"></div>
       <div id="prep-carga-operarios" style="margin-top:14px"></div>
@@ -12857,20 +12859,31 @@ async function ckMarcar(itemId, estado){
   // ── Mi Día por Operario (Sebastián 1-may-2026)
   var _MI_DIA_OPERARIOS = [];
   async function miDiaCargarOperarios(){
+    var sel = document.getElementById('midia-operario');
+    var sub = document.getElementById('midia-subtitle');
+    if(!sel) return;
     try{
       var r = await fetch('/api/planta/mi-dia', {credentials:'same-origin'});
       var d = await r.json();
-      if(d.operarios_disponibles){
-        _MI_DIA_OPERARIOS = d.operarios_disponibles;
-        var sel = document.getElementById('midia-operario');
-        if(sel){
-          sel.innerHTML = '<option value="">— elegir operario —</option>' +
-            _MI_DIA_OPERARIOS.map(function(o){
-              return '<option value="'+o.id+'">'+(o.nombre || o.codigo)+(o.rol?' ['+o.rol+']':'')+'</option>';
-            }).join('');
-        }
+      if(!r.ok){
+        if(sub) sub.textContent = '❌ Error cargando operarios: '+(d.error||'HTTP '+r.status);
+        return;
       }
-    }catch(e){}
+      var ops = d.operarios_disponibles || [];
+      if(!ops.length){
+        if(sub) sub.textContent = '⚠️ No hay operarios activos en operarios_planta · revisar config';
+        sel.innerHTML = '<option value="">⚠️ Sin operarios activos</option>';
+        return;
+      }
+      _MI_DIA_OPERARIOS = ops;
+      sel.innerHTML = '<option value="">— elegir operario ('+ops.length+') —</option>' +
+        ops.map(function(o){
+          return '<option value="'+o.id+'">'+_escHTML(o.nombre || o.codigo || ('op#'+o.id))+(o.rol?' ['+_escHTML(o.rol)+']':'')+'</option>';
+        }).join('');
+      if(sub) sub.textContent = ops.length+' operarios disponibles · selecciona uno para ver sus tareas próximos 7 días';
+    }catch(e){
+      if(sub) sub.textContent = '❌ Error: '+(e.message||e);
+    }
   }
   async function miDiaRecargar(){
     var opId = (document.getElementById('midia-operario')||{value:''}).value;
@@ -12879,11 +12892,14 @@ async function ckMarcar(itemId, estado){
     var grid = document.getElementById('midia-grid');
     var resumen = document.getElementById('midia-resumen');
     if(!opId){
-      if(sub) sub.textContent = 'Selecciona un operario para ver sus tareas';
+      // Si dropdown está vacío, recargar operarios
+      if(!_MI_DIA_OPERARIOS.length) {
+        await miDiaCargarOperarios();
+      } else {
+        if(sub) sub.textContent = 'Selecciona un operario para ver sus tareas';
+      }
       if(grid) grid.innerHTML = '';
       if(resumen) resumen.innerHTML = '';
-      // Cargar lista de operarios si está vacía
-      if(!_MI_DIA_OPERARIOS.length) miDiaCargarOperarios();
       return;
     }
     if(sub) sub.textContent = 'Cargando…';
@@ -13016,6 +13032,40 @@ async function ckMarcar(itemId, estado){
     }
   }
 
+  // ── Re-asigna IA a producciones con conflictos/duplicados (Sebastián 1-may-2026)
+  async function reasignarConflictos(){
+    if(!confirm('🔧 Resolver conflictos de operarios?\\n\\n• Detecta producciones con duplicados (mismo op en 2+ roles)\\n• NULL todos los operarios de esas filas\\n• IA reasigna 4 operarios DISTINTOS por producción\\n\\nAfecta próximos 14 días. ¿Continuar?')) return;
+    var msg = document.getElementById('prep-msg');
+    if(msg){
+      msg.style.display='block';
+      msg.style.background='#fef3c7';
+      msg.style.color='#78350f';
+      msg.innerHTML='⏳ Reasignando IA...';
+    }
+    try{
+      var r = await fetch('/api/planta/reasignar-operarios-conflictos', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'}, body:'{}'
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      if(msg){
+        msg.style.background='#dcfce7';
+        msg.style.color='#166534';
+        msg.innerHTML='✅ '+d.mensaje + (d.errores && d.errores.length ? '<br>⚠️ '+d.errores.length+' errores: '+d.errores.slice(0,3).map(_escHTML).join('; ') : '');
+      }
+      setTimeout(function(){ if(msg) msg.style.display='none'; }, 6000);
+      preProduccionRecargar();
+      if(typeof semanaRecargar === 'function') semanaRecargar();
+    }catch(e){
+      if(msg){
+        msg.style.background='#fef2f2';
+        msg.style.color='#991b1b';
+        msg.innerHTML='❌ Error: '+(e.message||e);
+      }
+    }
+  }
+
   // ── Pre-producción · Acomodo del equipo
   async function preProduccionRecargar(){
     var sub = document.getElementById('prep-subtitle');
@@ -13043,18 +13093,34 @@ async function ckMarcar(itemId, estado){
         + tile('Listas', k.listas||0, '#15803d')
         + tile('Con pendientes', k.con_pendientes||0, k.con_pendientes ? '#dc2626' : '#15803d')
         + tile('Sin operario', k.sin_operarios_asignados||0, k.sin_operarios_asignados ? '#dc2626' : '#15803d')
-        + tile('Conflictos', k.conflictos_operario||0, k.conflictos_operario ? '#dc2626' : '#15803d');
+        + tile('Conflictos', k.conflictos_operario||0, k.conflictos_operario ? '#dc2626' : '#15803d')
+        + tile('Duplicados intra', k.duplicados_intra_produccion||0, k.duplicados_intra_produccion ? '#fbbf24' : '#15803d');
 
-      // Conflictos (operario en 2 sitios mismo día)
+      // Conflictos REALES (operario en 2+ producciones DISTINTAS mismo día)
       var conflictos = d.conflictos || [];
+      // Duplicados INTRA-producción (mismo op en varios roles de la misma prod) → bug
+      var dupes = d.duplicados_intra_produccion || [];
       conflEl.innerHTML = '';
       if(conflictos.length){
-        conflEl.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;font-size:11px">'
-          +'<b style="color:#991b1b">⚠️ '+conflictos.length+' conflicto(s) de operario:</b><ul style="margin:4px 0 0 18px;padding:0;color:#7f1d1d">'
+        conflEl.innerHTML += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;font-size:11px;margin-bottom:6px">'
+          +'<b style="color:#991b1b">⚠️ '+conflictos.length+' conflicto(s) cross-producción</b> · mismo operario en 2+ producciones distintas el mismo día:'
+          +'<ul style="margin:4px 0 0 18px;padding:0;color:#7f1d1d">'
           + conflictos.map(function(c){
-            return '<li>'+c.operario_nombre+' el '+c.fecha+' asignado a '+c.producciones.length+' producciones: '
-              + c.producciones.map(function(p){return p.producto+'('+p.rol+')';}).join(', ')+'</li>';
+            var prods_set = {};
+            (c.producciones||[]).forEach(function(p){ prods_set[p.producto]=1; });
+            return '<li>'+_escHTML(c.operario_nombre)+' · '+c.fecha+' · '+(c.producciones_distintas||0)+' producciones: '
+              + Object.keys(prods_set).map(_escHTML).join(', ')+'</li>';
           }).join('')
+          +'</ul></div>';
+      }
+      if(dupes.length){
+        conflEl.innerHTML += '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:8px 10px;font-size:11px">'
+          +'<b style="color:#78350f">🔧 '+dupes.length+' producción(es) con operario duplicado en varios roles</b> · click "🔧 Resolver conflictos" arriba para reasignar:'
+          +'<ul style="margin:4px 0 0 18px;padding:0;color:#78350f">'
+          + dupes.slice(0,8).map(function(d){
+            return '<li>'+_escHTML(d.producto.substring(0,40))+' · '+d.fecha+' · op#'+d.operario_id+' en '+(d.roles||[]).map(function(r){return r.replace('op_','');}).join('+')+'</li>';
+          }).join('')
+          + (dupes.length > 8 ? '<li>...y '+(dupes.length-8)+' más</li>' : '')
           +'</ul></div>';
       }
 
