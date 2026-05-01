@@ -12619,31 +12619,121 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  // ── Diagnosticar Calendar (Sebastián 1-may-2026)
+  // ── Diagnosticar Calendar (Sebastián 1-may-2026, modal + nuevo shape)
   async function diagnosticarCalendar(){
+    // Crear modal flotante con resultado bonito
+    var prev = document.getElementById('diag-cal-modal');
+    if(prev) prev.remove();
+    var modal = document.createElement('div');
+    modal.id = 'diag-cal-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+      +'<h3 style="margin:0;color:#0f172a">🔧 Diagnóstico Google Calendar</h3>'
+      +'<button onclick="document.getElementById(\\'diag-cal-modal\\').remove()" style="background:#f1f5f9;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">×</button>'
+      +'</div>'
+      +'<div id="diag-cal-body" style="font-size:12px;color:#334155">⏳ Diagnosticando…</div>'
+      +'</div>';
+    document.body.appendChild(modal);
+    var body = document.getElementById('diag-cal-body');
+
     try{
       var r = await fetch('/api/planta/diagnostico-calendar', {credentials:'same-origin'});
       var d = await r.json();
       if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
-      var html = '🔧 Diagnóstico Google Calendar\\n\\n';
-      html += '📍 Source detectado: '+d.source+'\\n';
-      html += '📅 Eventos en próximos 60d: '+d.total_eventos_60d+'\\n';
-      html += '\\n🔑 Variables de entorno:\\n';
-      html += '  • GCAL_ICAL_URL: '+(d.env_GCAL_ICAL_URL_configurado ? '✓ configurado' : '✗ NO configurado')+'\\n';
-      html += '  • GOOGLE_API_KEY: '+(d.env_GOOGLE_API_KEY_configurado ? '✓ configurado' : '✗ NO configurado')+'\\n';
-      html += '  • CALENDAR_ID: '+d.env_CALENDAR_ID+'\\n';
-      if(d.error){ html += '\\n❌ Error: '+d.error+'\\n'; }
-      if(d.sample && d.sample.length){
-        html += '\\n📋 Próximos eventos:\\n';
-        d.sample.forEach(function(e){ html += '  • '+e.fecha+' · '+e.titulo+'\\n'; });
+
+      var env = d.env_vars || {};
+      var fetch_ = d.fetch || {};
+      var ut = d.url_test || null;
+      var html = '';
+
+      // Sección 1: Variables de entorno
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px">';
+      html += '<b style="color:#0f172a">🔑 Variables de entorno (Render)</b>';
+      html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr><td><b>GCAL_ICAL_URL</b></td><td style="text-align:right">'+(env.GCAL_ICAL_URL_configurado ? '<span style="color:#15803d">✓ configurada</span>' : '<span style="color:#dc2626">✗ NO configurada</span>')+'</td></tr>';
+      if(env.GCAL_ICAL_URL_preview && env.GCAL_ICAL_URL_configurado){
+        html += '<tr><td colspan="2"><code style="font-size:10px;color:#64748b;word-break:break-all">'+esc(env.GCAL_ICAL_URL_preview)+'</code></td></tr>';
       }
+      html += '<tr><td><b>GOOGLE_API_KEY</b></td><td style="text-align:right">'+(env.GOOGLE_API_KEY_configurado ? '<span style="color:#15803d">✓ configurada</span>' : '<span style="color:#94a3b8">— no configurada (opcional)</span>')+'</td></tr>';
+      html += '<tr><td><b>CALENDAR_ID</b></td><td style="text-align:right"><code style="font-size:10px">'+esc(env.CALENDAR_ID || '(no definido)')+'</code></td></tr></table>';
+      html += '</div>';
+
+      // Sección 2: Fetch en vivo
+      var srcCol = fetch_.source === 'ical' ? '#15803d' : (fetch_.source === 'gcal_api' ? '#15803d' : (fetch_.source === 'fail' ? '#dc2626' : '#f59e0b'));
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px">';
+      html += '<b style="color:#0f172a">📡 Fetch en vivo</b>';
+      html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr><td><b>Source</b></td><td style="text-align:right;color:'+srcCol+';font-weight:700">'+esc(fetch_.source || '?')+'</td></tr>';
+      html += '<tr><td><b>Eventos en próximos 60d</b></td><td style="text-align:right;font-size:14px;font-weight:800;color:'+(fetch_.total_eventos_60d > 0 ? '#15803d' : '#dc2626')+'">'+(fetch_.total_eventos_60d || 0)+'</td></tr>';
+      html += '<tr><td><b>Duración fetch</b></td><td style="text-align:right">'+(fetch_.duracion_ms || 0)+' ms</td></tr>';
+      if(fetch_.error){
+        html += '<tr><td colspan="2" style="color:#dc2626;font-size:10px">⚠ '+esc(fetch_.error)+'</td></tr>';
+      }
+      html += '</table></div>';
+
+      // Sección 3: Test directo URL (si aplica)
+      if(ut){
+        html += '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px;margin-bottom:10px">';
+        html += '<b style="color:#92400e">🧪 Test directo de URL</b>';
+        html += '<table style="width:100%;font-size:11px;margin-top:6px">';
+        if(ut.error){
+          html += '<tr><td colspan="2" style="color:#dc2626">⚠ '+esc(ut.error)+'</td></tr>';
+        } else {
+          html += '<tr><td><b>Status HTTP</b></td><td style="text-align:right">'+(ut.status||0)+'</td></tr>';
+          html += '<tr><td><b>Content-Type</b></td><td style="text-align:right;font-size:10px"><code>'+esc(ut.content_type||'')+'</code></td></tr>';
+          html += '<tr><td><b>Tamaño feed</b></td><td style="text-align:right">'+((ut.size_bytes||0)/1024).toFixed(1)+' KB</td></tr>';
+          html += '<tr><td><b>iCal válido</b></td><td style="text-align:right">'+(ut.es_ical_valido ? '<span style="color:#15803d">✓ sí</span>' : '<span style="color:#dc2626">✗ no</span>')+'</td></tr>';
+          html += '<tr><td><b>Eventos VEVENT</b></td><td style="text-align:right;font-weight:700">'+(ut.cantidad_VEVENT || 0)+'</td></tr>';
+        }
+        html += '</table></div>';
+      }
+
+      // Sección 4: Sample eventos
+      if(d.eventos_sample && d.eventos_sample.length){
+        html += '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:12px;margin-bottom:10px">';
+        html += '<b style="color:#1e40af">📅 Próximos eventos (sample 10)</b>';
+        html += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px">';
+        d.eventos_sample.forEach(function(e){
+          html += '<li><b>'+esc(e.fecha||'')+'</b> · '+esc(e.titulo||'(sin título)')+'</li>';
+        });
+        html += '</ul></div>';
+      }
+
+      // Sección 5: Test matching producto-evento
+      if(d.matching_test && d.matching_test.length){
+        html += '<div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;padding:12px;margin-bottom:10px">';
+        html += '<b style="color:#6b21a8">🎯 Test matching producto ↔ evento</b>';
+        html += '<div style="font-size:11px;margin-top:6px">';
+        d.matching_test.forEach(function(t){
+          html += '<div style="margin-bottom:6px"><b>'+esc(t.producto)+'</b>';
+          if(t.alias && t.alias !== '(ninguno)') html += ' <span style="color:#64748b">(alias: '+esc(t.alias)+')</span>';
+          html += ':<br>';
+          if(t.top_matches && t.top_matches.length){
+            t.top_matches.forEach(function(m){
+              var col = m.score >= 60 ? '#15803d' : '#f59e0b';
+              html += '&nbsp;&nbsp;→ <span style="color:'+col+'">score '+m.score+'</span> · '+esc(m.evento)+' ('+esc(m.fecha)+')<br>';
+            });
+          } else {
+            html += '&nbsp;&nbsp;<span style="color:#dc2626">— sin match en eventos disponibles</span><br>';
+          }
+          html += '</div>';
+        });
+        html += '</div></div>';
+      }
+
+      // Sección 6: Sugerencias
       if(d.sugerencias && d.sugerencias.length){
-        html += '\\n💡 Sugerencias:\\n';
-        d.sugerencias.forEach(function(s){ html += '  • '+s+'\\n'; });
+        html += '<div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:8px;padding:12px">';
+        html += '<b style="color:#065f46">💡 Recomendación</b>';
+        html += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px">';
+        d.sugerencias.forEach(function(s){
+          html += '<li style="margin-bottom:4px">'+esc(s)+'</li>';
+        });
+        html += '</ul></div>';
       }
-      alert(html);
+
+      body.innerHTML = html;
     }catch(e){
-      alert('❌ Error diagnóstico: '+(e.message||e));
+      body.innerHTML = '<div style="color:#dc2626">❌ Error: '+esc(e.message||String(e))+'</div>';
     }
   }
 
