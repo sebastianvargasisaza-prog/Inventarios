@@ -3042,6 +3042,168 @@ def planta_centro_mando():
             'area_nombre': r[7], 'producto': r[8],
         })
 
+    # ── PRODUCCIONES DEL DÍA · Calendar-first (Sebastián 1-may-2026) ──
+    # Unifica todo en el mapa: cards arriba muestran lo que toca HOY pero
+    # aún no se ha iniciado · click ▶ los marca en proceso en su sala IA.
+    producciones_dia = []
+    try:
+        # 1) Filas DB del día (incluye iniciadas, en_proceso, programadas)
+        rows_db = conn.execute("""
+            SELECT pp.id, pp.producto, COALESCE(pp.cantidad_kg,0), pp.lotes,
+                   pp.estado, pp.area_id,
+                   ap.codigo as area_cod, ap.nombre as area_nom,
+                   o1.nombre || ' ' || COALESCE(o1.apellido,'') as op_disp,
+                   o2.nombre || ' ' || COALESCE(o2.apellido,'') as op_elab,
+                   o3.nombre || ' ' || COALESCE(o3.apellido,'') as op_env,
+                   o4.nombre || ' ' || COALESCE(o4.apellido,'') as op_acon,
+                   pp.inicio_real_at, pp.fin_real_at
+            FROM produccion_programada pp
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            LEFT JOIN operarios_planta o1 ON o1.id = pp.operario_dispensacion_id
+            LEFT JOIN operarios_planta o2 ON o2.id = pp.operario_elaboracion_id
+            LEFT JOIN operarios_planta o3 ON o3.id = pp.operario_envasado_id
+            LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
+            WHERE date(pp.fecha_programada) = ?
+              AND COALESCE(pp.estado, 'programado') != 'cancelado'
+            ORDER BY pp.id
+        """, (hoy,)).fetchall()
+        productos_db = set()
+        for r in rows_db:
+            (pid, prod_n, kg, lotes, estado, area_id, area_cod, area_nom,
+             op_disp, op_elab, op_env, op_acon, inicio, fin) = r
+            productos_db.add((prod_n or '').upper())
+            estado = (estado or 'programado').strip()
+            # Acción según estado
+            if estado == 'completado':
+                accion, accion_label = None, '✅ Completada'
+            elif estado in ('en_proceso', 'iniciado'):
+                accion, accion_label = 'terminar', '✓ Terminar'
+            elif area_id and op_disp:
+                accion, accion_label = 'iniciar', '▶ Iniciar'
+            else:
+                accion, accion_label = 'asignar_ia', '🤖 IA asignar'
+            producciones_dia.append({
+                'id': pid, 'producto': prod_n, 'kg': kg, 'lotes': lotes or 1,
+                'estado': estado,
+                'area': {'codigo': area_cod or '', 'nombre': area_nom or ''},
+                'operarios': {
+                    'dispensacion': (op_disp or '').strip(),
+                    'elaboracion': (op_elab or '').strip(),
+                    'envasado': (op_env or '').strip(),
+                    'acondicionamiento': (op_acon or '').strip(),
+                },
+                'accion': accion, 'accion_label': accion_label,
+                'desde_calendar': False,
+                'inicio_real_at': inicio, 'fin_real_at': fin,
+            })
+
+        # 2) Eventos Calendar de HOY que no están en DB → preview con IA
+        # Importar lazy las funciones de auto_plan
+        try:
+            from blueprints.auto_plan import (
+                _calendar_events_cached, _match_producto_evento, _parsear_kg_evento
+            )
+            import re as _re
+            cal_events = _calendar_events_cached(force_refresh=False) or []
+            skus_aliases = {}
+            for sku_n, alias_csv in conn.execute("""
+                SELECT producto_nombre, COALESCE(alias_calendar,'')
+                FROM sku_planeacion_config
+                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+            """).fetchall():
+                skus_aliases[sku_n] = alias_csv
+
+            # Pool operarios + áreas (para IA preview)
+            import hashlib
+            op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower())
+                       for r in conn.execute("""
+                            SELECT id, nombre || ' ' || COALESCE(apellido,''),
+                                   COALESCE(rol_predeterminado,'')
+                            FROM operarios_planta
+                            WHERE COALESCE(activo,1)=1 AND COALESCE(es_jefe_produccion,0)=0
+                            ORDER BY id
+                       """).fetchall()]
+            AFINIDAD_CM = {
+                'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'todero': 2},
+                'elaboracion':  {'dispensacion': 3, 'elaboracion': 4, 'todero': 2},
+                'envasado':     {'envasado': 4, 'todero': 2},
+                'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'todero': 2},
+            }
+            def _hash_cm(s):
+                return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
+            def _ops_para(producto_n, fecha_iso):
+                if not op_pool: return {}
+                roles = ('dispensacion','elaboracion','envasado','acondicionamiento')
+                usados = set()
+                out = {}
+                for rol in roles:
+                    cands = [(oid, nom, rp) for (oid, nom, rp) in op_pool if oid not in usados]
+                    if not cands:
+                        out[rol] = ''
+                        continue
+                    afin = AFINIDAD_CM.get(rol, {})
+                    weighted = [(afin.get(rp, 1) if rp else 1, oid, nom) for (oid, nom, rp) in cands]
+                    total = sum(w for w, _, _ in weighted)
+                    target = _hash_cm(f'{producto_n}|{fecha_iso}|{rol}') % max(total, 1)
+                    cum = 0
+                    chosen = weighted[0]
+                    for w, oid, nom in weighted:
+                        cum += w
+                        if target < cum:
+                            chosen = (w, oid, nom); break
+                    out[rol] = chosen[2]
+                    usados.add(chosen[1])
+                return out
+
+            for ev in cal_events:
+                try:
+                    f_ev = ev.get('fecha', '')[:10]
+                    if f_ev != hoy: continue
+                except Exception:
+                    continue
+                # Match SKU
+                producto_match = None
+                best = 0
+                for prod_n, alias_csv in skus_aliases.items():
+                    try:
+                        s = _match_producto_evento(prod_n, alias_csv, ev.get('titulo'), ev.get('descripcion',''))
+                        if s >= 50 and s > best:
+                            best = s; producto_match = prod_n
+                    except Exception:
+                        continue
+                if producto_match:
+                    producto_final = producto_match
+                else:
+                    titulo = (ev.get('titulo') or '').strip()
+                    titulo = _re.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', titulo, flags=_re.IGNORECASE)
+                    titulo = _re.sub(r'\s*\(.*?\)\s*$', '', titulo)
+                    titulo = _re.sub(r'\s*\d+\s*kg.*$', '', titulo, flags=_re.IGNORECASE)
+                    producto_final = titulo.strip().upper() or 'EVENTO SIN TÍTULO'
+                # Skip si ya está en DB (no duplicar)
+                if producto_final.upper() in productos_db:
+                    continue
+                kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+                ops = _ops_para(producto_final, hoy)
+                producciones_dia.append({
+                    'id': None, 'producto': producto_final,
+                    'kg': kg, 'lotes': 1,
+                    'estado': 'planeado',
+                    'area': {'codigo': '', 'nombre': ''},
+                    'operarios': ops,
+                    'accion': 'iniciar_calendar',
+                    'accion_label': '▶ Iniciar (Calendar)',
+                    'desde_calendar': True,
+                    'titulo_calendar': (ev.get('titulo') or '')[:120],
+                    'payload_iniciar': {
+                        'producto': producto_final, 'fecha': hoy,
+                        'kg': kg, 'titulo': (ev.get('titulo') or '')[:200],
+                    },
+                })
+        except Exception as _e:
+            logging.getLogger('programacion').warning(f'[centro-mando] preview Calendar falla: {_e}')
+    except Exception as _e:
+        logging.getLogger('programacion').warning(f'[centro-mando] producciones_dia falla: {_e}')
+
     return jsonify({
         'areas': areas,
         'kpis': {
@@ -3051,7 +3213,11 @@ def planta_centro_mando():
             'salas_libres': salas_libres,
             'salas_sucias': salas_sucias,
             'salas_ocupadas': salas_ocupadas,
+            'producciones_dia_total': len(producciones_dia),
+            'producciones_dia_pendientes': sum(1 for p in producciones_dia
+                                                  if p['estado'] in ('planeado','programado')),
         },
+        'producciones_dia': producciones_dia,
         'eventos_recientes': eventos,
         'fecha': hoy,
     })

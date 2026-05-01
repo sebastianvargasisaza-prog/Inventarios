@@ -1325,13 +1325,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
       &#128197; Plan
     </button>
-    <button id="prog-tab-asignacion" onclick="switchProgTab('asignacion')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#128205; Asignación Semanal
-    </button>
     <button id="prog-tab-mando" onclick="switchProgTab('mando')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127919; Centro de Mando <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">live</span>
+      &#127919; Operación Live <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">unificado</span>
     </button>
     <button id="prog-tab-autoplan" onclick="switchProgTab('autoplan')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.4)">
@@ -5554,6 +5550,21 @@ function _renderProgramacion(d){
     <!-- KPIs en vivo -->
     <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- ── Producciones HOY · Calendar-first cards (Sebastián 1-may-2026)
+         "unifiquemos todo en el mapa, que cargue automatico ocupada/libre,
+         cuando digan termine quede sucia hasta que digan que la limpiaron" -->
+    <div id="cm-dia-panel" style="background:#fff;border:2px solid #0f766e;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <b style="font-size:14px;color:#0f766e">📅 Producciones HOY</b>
+          <span id="cm-dia-sub" style="font-size:11px;color:#64748b;margin-left:8px">Cargando...</span>
+        </div>
+        <div style="font-size:10px;color:#64748b">Click ▶ para iniciar · cuando termines la sala queda 🔴 hasta marcar limpia</div>
+      </div>
+      <div id="cm-dia-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
+      <div id="cm-dia-msg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:5px;font-size:11px"></div>
+    </div>
+
     <!-- KPIs actividades operarios (turnos, horas) -->
     <div id="cm-act-kpis" style="margin-bottom:14px"></div>
 
@@ -6342,13 +6353,10 @@ function _renderProgramacion(d){
   </div><!-- /ptab-planv2 -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <!-- ptab-asignacion: contenedor que recibe paneles inyectados (Esta      -->
-  <!-- Semana, Mi Día, Pre-producción, Salas Vivo). El grid antiguo se      -->
-  <!-- eliminó por redundancia con Calendar-first.                          -->
+  <!-- ptab-asignacion ELIMINADO 1-may-2026: Mi Día + Pre-producción ahora  -->
+  <!-- viven dentro de Operación Live (ptab-plano) junto con el mapa SVG.   -->
+  <!-- Esta Semana y Salas Vivo eliminados (redundantes con cards de hoy).  -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <div id="ptab-asignacion" style="display:none">
-    <div id="asig-anchor"></div>
-  </div><!-- /ptab-asignacion -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <!-- ptab-config: Configuración (Presentaciones + Equipos + Cadencias…)   -->
@@ -7670,7 +7678,8 @@ async function ckMarcar(itemId, estado){
       // Mapeo tab → ID del div objetivo
       var TAB_TO_DIV = {
         'planv2': 'ptab-planv2',
-        'asignacion': 'ptab-asignacion',
+        // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
+        'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
         'autoplan': 'ptab-autoplan',
         'config': 'ptab-config',
@@ -7736,19 +7745,16 @@ async function ckMarcar(itemId, estado){
         else { b.style.background='#e2e8f0'; b.style.color='#1a4a7a'; b.style.boxShadow=''; }
       }
       _bg('prog-tab-planv2',     'linear-gradient(135deg,#0f766e,#0891b2)', tab==='planv2');
-      _bg('prog-tab-asignacion', '#0f766e',                                  tab==='asignacion');
       _bg('prog-tab-mando',      '#1a4a7a',                                  tab==='mando');
       _bg('prog-tab-autoplan',   'linear-gradient(135deg,#7c3aed,#dc2626)',  tab==='autoplan');
       _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#0891b2)', tab==='maquila');
       _bg('prog-tab-config',     '#1f2937',                                  tab==='config');
-      // === Hooks de inicialización para las 4 pestañas oficiales ===
+      // === Hooks de inicialización ===
       if(tab==='planv2' && typeof planV2Init==='function') planV2Init();
-      // 'asignacion' ya no llama asigInit (grid antiguo eliminado · paneles Calendar-first)
       if(tab==='config' && typeof cfgInit==='function') cfgInit();
-      // Sebastián 1-may-2026: paneles operativos viven en Asignación
-      if(tab==='asignacion'){
-        if(typeof semanaRecargar === 'function') semanaRecargar();
-        if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
+      // Sebastián 1-may-2026: tab Asignación ELIMINADO · paneles operativos
+      // ahora viven dentro de Operación Live (mando) junto con el mapa
+      if(tab==='mando'){
         if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
         if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
       }
@@ -7857,12 +7863,134 @@ async function ckMarcar(itemId, estado){
       cargarRotacionOperarios();
       cargarTablaOperarios();
       cargarKpisActividades();
+      // ── Producciones HOY · cards encima del mapa (Sebastián 1-may-2026)
+      renderProduccionesDiaCards(d.producciones_dia || [], k);
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
       if(!silent){ _toast('Error al cargar Centro de Mando: '+e.message, 0); }
     }
   }
+
+  function renderProduccionesDiaCards(prods, kpis){
+    var sub = document.getElementById('cm-dia-sub');
+    var grid = document.getElementById('cm-dia-cards');
+    if(!grid) return;
+    if(!prods.length){
+      if(sub) sub.textContent = 'Sin producciones programadas para hoy';
+      grid.innerHTML = '<div style="color:#94a3b8;font-style:italic;font-size:11px;padding:10px;text-align:center">Sin producciones · revisa Calendar o Plan</div>';
+      return;
+    }
+    var n_pendientes = (kpis||{}).producciones_dia_pendientes || 0;
+    var n_iniciadas = prods.filter(function(p){ return p.estado === 'en_proceso' || p.estado === 'iniciado'; }).length;
+    var n_terminadas = prods.filter(function(p){ return p.estado === 'completado'; }).length;
+    if(sub) sub.textContent = prods.length + ' total · ' + n_pendientes + ' pendientes · ' + n_iniciadas + ' en proceso · ' + n_terminadas + ' terminadas';
+
+    grid.innerHTML = prods.map(function(p){
+      // Color border según estado
+      var borderCol = '#cbd5e1';
+      var bgCol = '#fff';
+      var icon = '';
+      if(p.estado === 'completado'){
+        borderCol = '#16a34a'; bgCol = '#f0fdf4'; icon = '✅';
+      } else if(p.estado === 'en_proceso' || p.estado === 'iniciado'){
+        borderCol = '#1d4ed8'; bgCol = '#eff6ff'; icon = '🔵';
+      } else if(p.desde_calendar){
+        borderCol = '#7c3aed'; bgCol = '#faf5ff'; icon = '📅';
+      } else {
+        borderCol = '#0f766e'; bgCol = '#f0fdfa'; icon = '⏳';
+      }
+      var html = '<div style="background:'+bgCol+';border-left:4px solid '+borderCol+';border-radius:6px;padding:8px 10px;font-size:11px">';
+      html += '<div style="font-weight:700;color:#0f172a;font-size:12px" title="'+_escHTML(p.titulo_calendar||p.producto)+'">'+icon+' '+_escHTML(p.producto.substring(0,28))+'</div>';
+      html += '<div style="color:#475569;font-size:10px;margin-top:2px">'+(p.kg||0)+'kg · '+(p.lotes||1)+' lt';
+      if(p.area && p.area.codigo) html += ' · 🏭 '+_escHTML(p.area.codigo);
+      html += '</div>';
+      // Operarios mini
+      var ops = [];
+      if(p.operarios.dispensacion) ops.push('D:'+p.operarios.dispensacion.split(' ')[0]);
+      if(p.operarios.elaboracion) ops.push('E:'+p.operarios.elaboracion.split(' ')[0]);
+      if(p.operarios.envasado) ops.push('Env:'+p.operarios.envasado.split(' ')[0]);
+      if(p.operarios.acondicionamiento) ops.push('Ac:'+p.operarios.acondicionamiento.split(' ')[0]);
+      if(ops.length) html += '<div style="color:#64748b;font-size:9px;margin-top:2px">👤 '+_escHTML(ops.join(' · '))+'</div>';
+      // Botón acción
+      if(p.accion){
+        var btnCol = (p.accion === 'iniciar' || p.accion === 'iniciar_calendar') ? '#10b981' :
+                     (p.accion === 'terminar' ? '#1d4ed8' : '#7c3aed');
+        if(p.accion === 'iniciar_calendar' && p.payload_iniciar){
+          var payB64 = btoa(unescape(encodeURIComponent(JSON.stringify(p.payload_iniciar))));
+          html += '<button class="cm-dia-btn" data-tipo="iniciar_calendar" data-payload="'+payB64+'" style="margin-top:5px;width:100%;padding:4px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">'+_escHTML(p.accion_label)+'</button>';
+        } else {
+          html += '<button class="cm-dia-btn" data-tipo="'+p.accion+'" data-id="'+(p.id||0)+'" style="margin-top:5px;width:100%;padding:4px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">'+_escHTML(p.accion_label)+'</button>';
+        }
+      } else if(p.estado === 'completado'){
+        html += '<div style="margin-top:5px;color:#16a34a;font-size:10px;font-weight:700">✅ Completada · esperar limpieza</div>';
+      }
+      html += '</div>';
+      return html;
+    }).join('');
+  }
+
+  // Event delegation para botones de cards (Sebastián 1-may-2026)
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest && ev.target.closest('.cm-dia-btn');
+    if(!btn) return;
+    var tipo = btn.getAttribute('data-tipo');
+    var msg = document.getElementById('cm-dia-msg');
+    function showMsg(html, color, bg){
+      if(!msg) return;
+      msg.style.display='block';
+      msg.style.color = color || '#0f172a';
+      msg.style.background = bg || '#f1f5f9';
+      msg.innerHTML = html;
+    }
+    function hideMsg(){
+      setTimeout(function(){ if(msg) msg.style.display='none'; }, 3500);
+    }
+    // Calendar-first iniciar
+    var payload = btn.getAttribute('data-payload');
+    if(tipo === 'iniciar_calendar' && payload){
+      try{
+        var pl = JSON.parse(decodeURIComponent(escape(atob(payload))));
+        if(!confirm('▶ Iniciar "'+pl.producto+'"?\\n\\n• IA asigna área óptima\\n• IA rota operarios\\n• Marca sala como ocupada')) return;
+        showMsg('⏳ Iniciando...', '#78350f', '#fef3c7');
+        fetch('/api/planta/accion-rapida', {
+          method:'POST', credentials:'same-origin',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(Object.assign({tipo:'iniciar_calendar'}, pl)),
+        }).then(function(r){return r.json().then(function(d){return {ok:r.ok && d.ok!==false, d:d};});}).then(function(res){
+          if(!res.ok) throw new Error(res.d.error || 'error');
+          showMsg('✅ '+(res.d.mensaje||'Iniciada'), '#166534', '#dcfce7');
+          hideMsg();
+          renderCentroMando();
+        }).catch(function(e){
+          showMsg('❌ '+e.message, '#991b1b', '#fef2f2');
+        });
+      }catch(e){ showMsg('❌ payload error', '#991b1b', '#fef2f2'); }
+      return;
+    }
+    var id = parseInt(btn.getAttribute('data-id') || '0', 10);
+    if(!tipo || !id) return;
+    var labels = {
+      'iniciar': '▶ Iniciar producción',
+      'terminar': '✓ Terminar (sala queda SUCIA hasta marcar limpia)',
+      'asignar_ia': '🤖 IA asigna área + operarios',
+    };
+    if(!confirm((labels[tipo]||tipo)+'?')) return;
+    showMsg('⏳ Ejecutando...', '#78350f', '#fef3c7');
+    var tipoBack = tipo === 'iniciar' ? 'iniciar_produccion' : (tipo === 'terminar' ? 'terminar_produccion' : tipo);
+    fetch('/api/planta/accion-rapida', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({tipo: tipoBack, produccion_id: id}),
+    }).then(function(r){return r.json().then(function(d){return {ok:r.ok && d.ok!==false, d:d};});}).then(function(res){
+      if(!res.ok) throw new Error(res.d.error || 'error');
+      showMsg('✅ '+(res.d.mensaje||'OK'), '#166534', '#dcfce7');
+      hideMsg();
+      renderCentroMando();
+    }).catch(function(e){
+      showMsg('❌ '+e.message, '#991b1b', '#fef2f2');
+    });
+  });
 
   function _kpiCard(label, val, color){
     return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;border-left:4px solid '+color+'">'+
@@ -9663,15 +9791,21 @@ async function ckMarcar(itemId, estado){
     var esenciales = ['plan-estado-solicitudes', 'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
     var avanzados = ['mee-asignar-panel', 'mee-config-panel'];
 
-    // Mover paneles operativos al tab Asignación
-    // (grid antiguo eliminado · solo paneles Calendar-first)
-    var asignacion = document.getElementById('ptab-asignacion');
-    var asigAnchor = document.getElementById('asig-anchor');
-    if(asignacion && asigAnchor){
-      var panelesAsig = ['plan-esta-semana', 'plan-salas-vivo', 'plan-mi-dia', 'plan-pre-produccion'];
-      panelesAsig.forEach(function(id){
+    // Sebastián 1-may-2026: 'unificamos todo en el mapa, eliminamos pestaña'.
+    // Mi Día + Pre-producción → tab Operación Live (Centro de Mando).
+    // Esta Semana + Salas Vivo → ELIMINADOS (redundantes con cards de hoy
+    // arriba del mapa · si quieres ver semana completa usa tab Plan).
+    var mando = document.getElementById('ptab-plano');
+    if(mando){
+      var panelesMando = ['plan-mi-dia', 'plan-pre-produccion'];
+      panelesMando.forEach(function(id){
         var el = document.getElementById(id);
-        if(el) asignacion.appendChild(el);
+        if(el) mando.appendChild(el);
+      });
+      // Esta Semana y Salas Vivo: ocultar (redundantes)
+      ['plan-esta-semana', 'plan-salas-vivo'].forEach(function(id){
+        var el = document.getElementById(id);
+        if(el) el.style.display = 'none';
       });
     }
 
