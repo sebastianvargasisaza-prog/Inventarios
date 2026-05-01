@@ -23,7 +23,7 @@ from config import ADMIN_USERS, APP_BASE_URL
 
 bp = Blueprint('programacion', __name__)
 
-CALENDAR_ID      = os.environ.get('CALENDAR_ID', 'c_d3a06d5f8ace62d5566968a70aeb2f3bd1d0a5b6b2b2f8c6b4ad66ac0d03286c@group.calendar.google.com')
+CALENDAR_ID      = os.environ.get('CALENDAR_ID', '1c8aa3f1d9024d5eeead72447c0606f927cfd6ee6d1d2e5d28bf1b252959f396@group.calendar.google.com')
 GOOGLE_API_KEY   = os.environ.get('GOOGLE_API_KEY', '')
 GCAL_ICAL_URL    = os.environ.get('GCAL_ICAL_URL', '')   # iCal feed URL (no API key needed)
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
@@ -204,31 +204,145 @@ def _shopify_velocity(conn, days=60):
 # ─── Google Calendar ─────────────────────────────────────────────────────────
 
 def _parse_ical(text, days_ahead=90):
-    """Parse iCal text and return list of {titulo, fecha} dicts."""
+    """Parse iCal text and return list of {titulo, fecha, descripcion, id} dicts.
+
+    Supports:
+      - SUMMARY (titulo)
+      - DESCRIPTION (descripcion, with line continuations)
+      - DTSTART (start date)
+      - UID (event id)
+      - RRULE expansion: FREQ=DAILY/WEEKLY with INTERVAL and COUNT/UNTIL
+        (covers our use case: recurrent batches every N days)
+      - EXDATE (excluded dates)
+      - Status: skip CANCELLED events
+    """
     import re as _re
     today = date.today()
     cutoff = today + timedelta(days=days_ahead)
+    # Window also includes some past so /auditoria-calendar can see history
+    window_start = today - timedelta(days=180)
     events = []
+
+    # Unfold lines: iCal continuation = next line starts with space/tab
+    unfolded_lines = []
+    for raw_line in text.splitlines():
+        if raw_line.startswith((' ', '\t')) and unfolded_lines:
+            unfolded_lines[-1] += raw_line[1:]
+        else:
+            unfolded_lines.append(raw_line)
+    text_unfolded = '\n'.join(unfolded_lines)
+
+    def _unescape_ical(s):
+        return s.replace(r'\n', '\n').replace(r'\,', ',').replace(r'\;', ';').replace(r'\\', '\\')
+
     # Split into VEVENT blocks
-    for block in _re.split(r'BEGIN:VEVENT', text)[1:]:
+    for block in _re.split(r'BEGIN:VEVENT', text_unfolded)[1:]:
         summary = ''
-        dt_str  = ''
+        description = ''
+        dt_str = ''
+        uid = ''
+        status = ''
+        rrule = ''
+        exdates = set()
         for line in block.splitlines():
-            line = line.strip()
+            line = line.rstrip()
             if line.startswith('SUMMARY:'):
-                summary = line[8:].replace('\n', ' ').replace(r'\,', ',').strip()
+                summary = _unescape_ical(line[8:]).strip()
+            elif line.startswith('DESCRIPTION:'):
+                description = _unescape_ical(line[12:]).strip()
             elif line.startswith('DTSTART'):
-                # DTSTART;VALUE=DATE:20260502 or DTSTART:20260502T... 
                 val = line.split(':', 1)[-1].strip()
-                dt_str = val[:8]  # YYYYMMDD
-        if summary and dt_str and len(dt_str) == 8:
+                dt_str = val[:8]
+            elif line.startswith('UID:'):
+                uid = line[4:].strip()
+            elif line.startswith('STATUS:'):
+                status = line[7:].strip().upper()
+            elif line.startswith('RRULE:'):
+                rrule = line[6:].strip()
+            elif line.startswith('EXDATE'):
+                # EXDATE;VALUE=DATE:20260518 or EXDATE:20260518T...
+                val = line.split(':', 1)[-1].strip()
+                for d_str in val.split(','):
+                    d_str = d_str.strip()[:8]
+                    if len(d_str) == 8:
+                        try:
+                            exdates.add(date(int(d_str[:4]), int(d_str[4:6]), int(d_str[6:8])))
+                        except ValueError:
+                            pass
+
+        if not summary or len(dt_str) != 8 or status == 'CANCELLED':
+            continue
+        try:
+            base_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
+        except ValueError:
+            continue
+
+        # Generate occurrences
+        occurrences = []
+        if rrule:
+            # Parse RRULE params
+            rr = {}
+            for part in rrule.split(';'):
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    rr[k.strip().upper()] = v.strip()
+            freq = rr.get('FREQ', '').upper()
             try:
-                ev_date = date(int(dt_str[:4]), int(dt_str[4:6]), int(dt_str[6:8]))
-                if today <= ev_date <= cutoff:
-                    events.append({'titulo': summary, 'fecha': ev_date.isoformat(),
-                                   'descripcion': '', 'id': ''})
+                interval = int(rr.get('INTERVAL', '1'))
             except ValueError:
-                pass
+                interval = 1
+            count = None
+            if 'COUNT' in rr:
+                try:
+                    count = int(rr['COUNT'])
+                except ValueError:
+                    count = None
+            until = None
+            if 'UNTIL' in rr:
+                u = rr['UNTIL'][:8]
+                if len(u) == 8:
+                    try:
+                        until = date(int(u[:4]), int(u[4:6]), int(u[6:8]))
+                    except ValueError:
+                        until = None
+
+            # Step in days
+            if freq == 'DAILY':
+                step_days = interval
+            elif freq == 'WEEKLY':
+                step_days = interval * 7
+            elif freq == 'MONTHLY':
+                step_days = interval * 30  # approx (good enough for our cadences)
+            elif freq == 'YEARLY':
+                step_days = interval * 365
+            else:
+                step_days = None
+
+            if step_days:
+                # Cap occurrences (safety: max 200 per series)
+                max_occ = count if count is not None else 200
+                cur = base_date
+                for i in range(min(max_occ, 200)):
+                    if until and cur > until:
+                        break
+                    if cur not in exdates:
+                        occurrences.append(cur)
+                    cur = cur + timedelta(days=step_days)
+            else:
+                occurrences = [base_date]
+        else:
+            occurrences = [base_date]
+
+        # Filter by window and append
+        for occ in occurrences:
+            if window_start <= occ <= cutoff:
+                events.append({
+                    'titulo': summary,
+                    'fecha': occ.isoformat(),
+                    'descripcion': description,
+                    'id': uid,
+                })
+
     return sorted(events, key=lambda e: e['fecha'])
 
 
