@@ -3052,6 +3052,39 @@ def planta_centro_mando():
             f'matched={auto_clean_diag["matched"]} '
             f'canceladas={auto_canceladas_inicial}'
         )
+
+        # ── AUTO-RESET SALAS STALE (Sebastián 1-may-2026: 'que quede
+        # automático'). Si una sala está 'ocupada' pero NO hay producción
+        # en_proceso/iniciado activa en ella → resetear a 'libre'.
+        # No tocamos 'sucia' (requiere marcar limpia explícito) ni 'limpiando'.
+        salas_reset = 0
+        try:
+            stale_rows = _ac.execute("""
+                SELECT a.id, a.codigo FROM areas_planta a
+                WHERE a.estado = 'ocupada'
+                  AND a.activo = 1
+                  AND NOT EXISTS (
+                    SELECT 1 FROM produccion_programada pp
+                    WHERE pp.area_id = a.id
+                      AND COALESCE(pp.estado,'programado') IN ('en_proceso','iniciado')
+                      AND pp.inicio_real_at IS NOT NULL
+                      AND pp.fin_real_at IS NULL
+                  )
+            """).fetchall()
+            for area_id, codigo in stale_rows:
+                _ac.execute(
+                    "UPDATE areas_planta SET estado='libre' WHERE id=? AND estado='ocupada'",
+                    (area_id,)
+                )
+                salas_reset += 1
+            if salas_reset:
+                conn.commit()
+                logging.getLogger('programacion').info(
+                    f'[centro-mando auto-reset salas] {salas_reset} salas reset a libre'
+                )
+        except Exception as _e:
+            logging.getLogger('programacion').warning(f'[centro-mando auto-reset salas] falla: {_e}')
+        auto_clean_diag['salas_reset'] = salas_reset
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando auto-clean inicial] falla: {_e}')
         try: conn.rollback()
