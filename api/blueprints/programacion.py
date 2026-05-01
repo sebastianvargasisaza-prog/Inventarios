@@ -3092,7 +3092,7 @@ def planta_centro_mando():
     hoy = fecha_sel.isoformat()
 
     # Areas con producciones activas (in progress: inicio_real_at NOT NULL,
-    # fin_real_at NULL)
+    # fin_real_at NULL) + ultima producción para 'sucia · era X'
     areas = []
     for r in conn.execute("""
         SELECT id, codigo, nombre, tipo, puede_producir, puede_envasar,
@@ -3105,8 +3105,27 @@ def planta_centro_mando():
             'marmita_ml': r[6], 'especial': r[7],
             'estado': r[8], 'orden': r[9],
             'ocupada_por': [],
+            'ultima_produccion': None,
         })
     area_by_id = {a['id']: a for a in areas}
+    # Sebastián 1-may-2026: 'área sucia por fabricar tal'
+    # Para cada sala, buscar la ÚLTIMA producción que ocupó/completó esa sala
+    try:
+        for r in conn.execute("""
+            SELECT pp.area_id, pp.producto, pp.fin_real_at,
+                   COALESCE(pp.estado, 'programado') as est
+            FROM produccion_programada pp
+            WHERE pp.area_id IS NOT NULL
+              AND pp.fin_real_at IS NOT NULL
+            ORDER BY pp.fin_real_at DESC
+        """):
+            aid = r[0]
+            if aid in area_by_id and area_by_id[aid]['ultima_produccion'] is None:
+                area_by_id[aid]['ultima_produccion'] = {
+                    'producto': r[1], 'terminada_at': r[2], 'estado': r[3],
+                }
+    except Exception:
+        pass
     # Producciones en curso (no terminadas) — vienen siempre, las del dia mas
     # las que se quedaron sin terminar (ocupando sala todavia)
     for r in conn.execute("""

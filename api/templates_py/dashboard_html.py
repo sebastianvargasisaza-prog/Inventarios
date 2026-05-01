@@ -7887,12 +7887,28 @@ async function ckMarcar(itemId, estado){
           rect.setAttribute('stroke', col.stroke);
         }
         if(lbl){
-          var txt = estadoVisual.toUpperCase();
+          // Texto contextual según estado (Sebastián 1-may-2026:
+          // 'fabricando GEL HIDRATANTE · sucia por fabricar tal · limpiada')
+          var txt = '';
           if(enCurso.length){
+            // OCUPADA: producto + operario + tiempo corrido
             var o = enCurso[0];
             var quien = o.operario_elaboracion || o.operario_envasado || o.operario_dispensacion || o.operario_acondicionamiento || '';
-            txt = o.producto + (o.minutos_corridos!=null?' · ⏱'+_fmtMin(o.minutos_corridos):'') +
-                  (quien?(' · 🧑'+quien.split(' ')[0]):'');
+            txt = '🏭 ' + o.producto.substring(0,18);
+            if(o.minutos_corridos != null) txt += ' · ⏱'+_fmtMin(o.minutos_corridos);
+            if(quien) txt += ' · '+quien.split(' ')[0];
+          } else if(estadoVisual === 'sucia'){
+            // SUCIA: 'Sucia · era X'
+            txt = '🔴 SUCIA';
+            if(a.ultima_produccion && a.ultima_produccion.producto){
+              txt += ' · era ' + a.ultima_produccion.producto.substring(0,15);
+            }
+          } else if(estadoVisual === 'limpiando'){
+            txt = '🧹 LIMPIANDO';
+          } else if(estadoVisual === 'libre'){
+            txt = 'LIBRE';
+          } else {
+            txt = estadoVisual.toUpperCase();
           }
           lbl.textContent = txt;
           lbl.setAttribute('fill', col.txt);
