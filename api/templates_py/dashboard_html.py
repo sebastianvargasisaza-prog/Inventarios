@@ -12531,15 +12531,27 @@ async function ckMarcar(itemId, estado){
       }
       if(k.sin_asignar_ia) subText += ' · ⚠️ ' + k.sin_asignar_ia + ' sin asignar';
       if(sub) sub.textContent = subText;
-      // Banner debug si hay eventos sin match (Sebastián: visibilidad anti-bug)
+      // Banner debug si hay errores o eventos sin match
       var msgEl = document.getElementById('semana-msg');
-      if(asy.sin_match_sample && asy.sin_match_sample.length){
-        if(msgEl){
+      if(msgEl){
+        var lines = [];
+        if(asy.errores && asy.errores.length){
+          lines.push('🚨 <b>'+asy.errores.length+' errores en auto-sync:</b><br>' +
+            asy.errores.slice(0,5).map(function(e){return '&nbsp;&nbsp;• <code style="font-size:10px">'+esc(e)+'</code>';}).join('<br>'));
+        }
+        if(asy.eventos_pendientes_sync > 0 && asy.sincronizadas_esta_carga === 0){
+          lines.push('⚠️ <b>'+asy.eventos_pendientes_sync+' eventos pendientes de sync</b> (NO se sincronizaron · revisar logs)');
+        }
+        if(asy.sin_match_sample && asy.sin_match_sample.length){
+          lines.push('ℹ️ '+asy.sin_match_sample.length+' eventos sin match preciso (insertados con título crudo): ' +
+            asy.sin_match_sample.slice(0,3).map(function(s){return '<code>'+esc(s[0])+'</code>';}).join(', '));
+        }
+        if(lines.length){
           msgEl.style.display='block';
           msgEl.style.background='rgba(251,191,36,.2)';
-          msgEl.innerHTML = '⚠️ <b>'+asy.sin_match_sample.length+' eventos sin match preciso a SKU</b> (insertados con título crudo): ' +
-            asy.sin_match_sample.slice(0,3).map(function(s){return '<code>'+esc(s[0])+'</code>';}).join(', ') +
-            ' · si necesitas que matcheen a un SKU específico, agrega el código a sku_planeacion_config.alias_calendar';
+          msgEl.innerHTML = lines.join('<hr style="margin:6px 0;border:0;border-top:1px solid rgba(255,255,255,.3)">');
+        } else {
+          msgEl.style.display='none';
         }
       }
 

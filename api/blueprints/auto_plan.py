@@ -7217,9 +7217,13 @@ def semana_produccion():
     # AUTO-SYNC: insertar eventos pendientes + auto-asignar IA (sin esperar cron)
     auto_sincronizadas = 0
     auto_asignadas = 0
+    auto_sync_errores = []
     if eventos_a_sincronizar:
-        try:
-            for ev in eventos_a_sincronizar:
+        # NOTA: cada INSERT en su propio try/except para que si UNO falla
+        # no se rollback'a TODOS los demás. Sebastián 1-may-2026: bug
+        # silencioso causaba 0 sincronizadas cuando solo 1 evento tenía error.
+        for ev in eventos_a_sincronizar:
+            try:
                 cur_ins = c.execute("""
                     INSERT INTO produccion_programada
                       (producto, fecha_programada, lotes, cantidad_kg,
@@ -7234,13 +7238,18 @@ def semana_produccion():
                         from blueprints.programacion import _auto_asignar_produccion
                         res = _auto_asignar_produccion(c, new_id, 'auto-sync-on-load')
                         if res.get('ok'): auto_asignadas += 1
-                    except Exception:
-                        pass
+                        else: auto_sync_errores.append(f"asign #{new_id}: {res.get('error','?')}")
+                    except Exception as _e_asign:
+                        auto_sync_errores.append(f"asign #{new_id}: {str(_e_asign)[:80]}")
+            except Exception as _e_ins:
+                auto_sync_errores.append(f"insert {ev['producto'][:30]}: {str(_e_ins)[:80]}")
+                log.warning(f'[semana_produccion] insert falla {ev["producto"]}: {_e_ins}')
+        try:
             conn.commit()
             # Re-cargar producciones después del sync
             calendar_eventos_por_fecha = {}
-        except Exception as _e:
-            log.warning(f'[semana_produccion] auto-sync insert falla: {_e}')
+        except Exception as _e_commit:
+            auto_sync_errores.append(f"commit: {str(_e_commit)[:80]}")
             try: conn.rollback()
             except: pass
 
@@ -7430,6 +7439,8 @@ def semana_produccion():
             'en_semana': auto_sync_diag.get('en_semana', 0),
             'con_match': auto_sync_diag.get('con_match', 0),
             'sin_match_sample': auto_sync_diag.get('sin_match', [])[:5],
+            'errores': auto_sync_errores[:10],
+            'eventos_pendientes_sync': len(eventos_a_sincronizar),
         },
     })
 
