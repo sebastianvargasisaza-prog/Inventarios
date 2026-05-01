@@ -7810,40 +7810,76 @@ def _operarios_libres_en_dia(c, fecha_iso):
 
 
 def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
-    """Asigna 4 roles rotando entre operarios activos.
-    Sebastián 1-may-2026: TODOS rotan, sin fijos.
+    """Asigna 4 roles ponderando preferencias · rotación ocasional.
+    Sebastián 1-may-2026: 'mayerlin dispensa y produce, camilo acondiciona ·
+    la idea es rotarlos pero no siempre que sean ocasionales · luis enrique
+    es jefe NO operario'.
 
-    Bug fix 1-may-2026: usa SIEMPRE el pool completo de operarios activos
-    (no solo los 'libres' del día). Razón: con sólo 5 operarios y 6+
-    producciones/día se agotan los 'libres' → fallback ponía el MISMO
-    operario en TODOS los 4 roles de la misma producción → conflictos.
-    Ahora garantizamos 4 operarios DISTINTOS por producción · si hay
-    overlap entre producciones del mismo día (inevitable con 5 operarios
-    + 6 producciones), eso lo flagea conflictos en pre-produccion.
+    Cambios 1-may-2026:
+    - Excluye es_jefe_produccion=1 del pool (Luis Enrique fuera)
+    - Pondera por rol_predeterminado: peso 4 si match, 2 si todero, 1 fallback
+    - Hash determinístico para rotación ocasional (~20% del tiempo)
+    - Garantiza 4 operarios DISTINTOS por producción
     """
-    # Pool = TODOS los operarios activos (5)
+    import hashlib
+    # Pool = operarios activos NO jefes (4 personas)
     todos_rows = c.execute("""
-        SELECT id FROM operarios_planta
-        WHERE COALESCE(activo, 1) = 1 ORDER BY id
+        SELECT id, COALESCE(rol_predeterminado, '')
+        FROM operarios_planta
+        WHERE COALESCE(activo, 1) = 1
+          AND COALESCE(es_jefe_produccion, 0) = 0
+        ORDER BY id
     """).fetchall()
-    pool_ids = [r[0] for r in todos_rows]
-    if not pool_ids:
+    pool = [(r[0], (r[1] or '').strip().lower()) for r in todos_rows]
+    if not pool:
         return None
+
+    # Producto+fecha para hash determinístico
+    prod_row = c.execute(
+        "SELECT producto FROM produccion_programada WHERE id=?",
+        (produccion_id,)
+    ).fetchone()
+    producto = (prod_row[0] or '') if prod_row else ''
+
+    AFINIDAD = {
+        'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
+                          'acondicionamiento': 1, 'todero': 2},
+        'elaboracion':  {'dispensacion': 3, 'elaboracion': 4, 'envasado': 1,
+                          'acondicionamiento': 1, 'todero': 2},
+        'envasado':     {'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
+                          'acondicionamiento': 1, 'todero': 2},
+        'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
+                                'elaboracion': 1, 'todero': 2},
+    }
+
+    def _hash_rot(rol):
+        s = f'{producto}|{fecha_iso}|{rol}'
+        return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
 
     asignaciones = {}
     usados = set()
     for rol in ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento'):
-        # NUNCA reusar operario dentro de la misma producción
-        candidatos = [oid for oid in pool_ids if oid not in usados]
+        candidatos = [(oid, rol_pre) for (oid, rol_pre) in pool if oid not in usados]
         if not candidatos:
-            # Solo pasa si hay menos de 4 operarios totales — permitir reuso
-            # como último recurso
-            candidatos = pool_ids
-        elegido = _siguiente_operario_rotando(c, rol, candidatos)
-        if elegido:
-            asignaciones[rol] = elegido
-            usados.add(elegido)
-            _registrar_rotacion(c, rol, elegido, user)
+            # Pool agotado (menos de 4 operarios) → permitir reuso último recurso
+            candidatos = pool
+        afin = AFINIDAD.get(rol, {})
+        weighted = [(afin.get(rp, 1) if rp else 1, oid) for (oid, rp) in candidatos]
+        total = sum(w for w, _ in weighted)
+        if total <= 0:
+            elegido = candidatos[_hash_rot(rol) % len(candidatos)][0]
+        else:
+            target = _hash_rot(rol) % total
+            cumulative = 0
+            elegido = weighted[0][1]
+            for w, oid in weighted:
+                cumulative += w
+                if target < cumulative:
+                    elegido = oid
+                    break
+        asignaciones[rol] = elegido
+        usados.add(elegido)
+        _registrar_rotacion(c, rol, elegido, user)
 
     # UPDATE produccion_programada
     c.execute("""
@@ -8095,8 +8131,36 @@ def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
         )
 
     # 2) Operarios rotando
+    # Sebastián 1-may-2026: detectar asignaciones malas (jefes asignados,
+    # duplicados intra-producción) y forzar reasignación limpia.
     sin_ops = not (prod[6] or prod[7] or prod[8] or prod[9])
-    if sin_ops:
+    necesita_reasignar = sin_ops
+    if not sin_ops:
+        ops_actuales = [o for o in (prod[6], prod[7], prod[8], prod[9]) if o]
+        # Hay duplicados?
+        if len(ops_actuales) != len(set(ops_actuales)):
+            necesita_reasignar = True
+            resultado['cambios'].append('⚠️ Reasignando: operarios duplicados detectados')
+        else:
+            # Hay algún jefe entre los asignados?
+            jefes_asignados = c.execute(
+                f"SELECT id FROM operarios_planta WHERE id IN ({','.join(['?']*len(ops_actuales))}) AND COALESCE(es_jefe_produccion,0)=1",
+                ops_actuales
+            ).fetchall()
+            if jefes_asignados:
+                necesita_reasignar = True
+                resultado['cambios'].append('⚠️ Reasignando: jefe asignado como operario (Luis Enrique no rota)')
+        if necesita_reasignar:
+            # NULL los operarios para que _auto_asignar_operarios los repueble
+            c.execute("""
+                UPDATE produccion_programada SET
+                  operario_dispensacion_id = NULL,
+                  operario_elaboracion_id = NULL,
+                  operario_envasado_id = NULL,
+                  operario_acondicionamiento_id = NULL
+                WHERE id = ?
+            """, (produccion_id,))
+    if necesita_reasignar:
         asigns = _auto_asignar_operarios(c, produccion_id, fecha_iso, user)
         if asigns:
             # Lookup nombres

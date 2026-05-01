@@ -6828,7 +6828,12 @@ def reasignar_operarios_conflictos():
     fecha_hoy = datetime.now().date()
     fecha_max = fecha_hoy + timedelta(days=14)
 
-    # Filas con operarios duplicados dentro de la misma producción
+    # IDs de jefes (Luis Enrique) → no deben estar en rotación
+    jefes_ids = set(r[0] for r in c.execute(
+        "SELECT id FROM operarios_planta WHERE COALESCE(es_jefe_produccion,0)=1"
+    ).fetchall())
+
+    # Filas con operarios duplicados o jefes asignados
     rows = c.execute("""
         SELECT id, producto, fecha_programada,
                operario_dispensacion_id, operario_elaboracion_id,
@@ -6839,12 +6844,18 @@ def reasignar_operarios_conflictos():
     """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
 
     pids_a_reasignar = []
+    razones = {}
     for r in rows:
         pid, prod_n, fecha, *ops = r
         ops_no_null = [o for o in ops if o]
+        razon = None
         if len(ops_no_null) != len(set(ops_no_null)):
-            # Duplicado dentro de la misma producción
+            razon = 'duplicado-intra'
+        elif any(o in jefes_ids for o in ops_no_null):
+            razon = 'jefe-asignado'
+        if razon:
             pids_a_reasignar.append((pid, prod_n, fecha[:10]))
+            razones[pid] = razon
 
     reasignadas = 0
     errores = []
@@ -6875,11 +6886,14 @@ def reasignar_operarios_conflictos():
         except: pass
         return jsonify({'ok': False, 'error': str(_e)}), 500
 
+    n_dup = sum(1 for r in razones.values() if r == 'duplicado-intra')
+    n_jefe = sum(1 for r in razones.values() if r == 'jefe-asignado')
     return jsonify({
         'ok': True,
-        'mensaje': f'🔧 {reasignadas}/{len(pids_a_reasignar)} producciones reasignadas con operarios distintos',
+        'mensaje': f'🔧 {reasignadas}/{len(pids_a_reasignar)} producciones reasignadas · {n_dup} con duplicados · {n_jefe} con jefe asignado',
         'reasignadas': reasignadas,
-        'duplicadas_encontradas': len(pids_a_reasignar),
+        'duplicadas_encontradas': n_dup,
+        'jefes_asignados_encontrados': n_jefe,
         'errores': errores[:10],
     })
 
@@ -7043,6 +7057,29 @@ def mi_dia():
     operario_id = request.args.get('operario_id', type=int)
     usuario = (request.args.get('usuario') or session.get('compras_user') or '').strip()
     dias = int(request.args.get('dias', 7))
+    list_only = request.args.get('list_only', '0') == '1'
+
+    # Lista SIEMPRE disponible para frontend (incluye jefes con rol)
+    # Sebastián 1-may-2026: bug 'sin operarios activos' por auto-resolución.
+    operarios_lista = [
+        {'id': r[0], 'codigo': '', 'nombre': (r[1] or '').strip(),
+         'rol': r[2] or '', 'activo': bool(r[3]),
+         'es_jefe': bool(r[4])}
+        for r in c.execute("""
+            SELECT id, nombre || ' ' || COALESCE(apellido,'') as nombre,
+                   rol_predeterminado, activo,
+                   COALESCE(es_jefe_produccion, 0)
+            FROM operarios_planta WHERE COALESCE(activo,1)=1
+            ORDER BY COALESCE(es_jefe_produccion, 0), nombre
+        """).fetchall()
+    ]
+
+    # Si frontend pidió solo lista (sin auto-resolver) → devolver
+    if list_only:
+        return jsonify({
+            'sin_operario_resuelto': True,
+            'operarios_disponibles': operarios_lista,
+        })
 
     # Resolver operario_id si solo viene usuario
     if not operario_id and usuario:
@@ -7057,21 +7094,10 @@ def mi_dia():
             operario_id = row[0]
 
     if not operario_id:
-        # Listar operarios para que el frontend deje al usuario elegir
-        rows = c.execute("""
-            SELECT id, nombre || ' ' || COALESCE(apellido,'') as nombre,
-                   rol_predeterminado, activo
-            FROM operarios_planta WHERE COALESCE(activo,1)=1
-            ORDER BY nombre
-        """).fetchall()
         return jsonify({
             'sin_operario_resuelto': True,
             'usuario_query': usuario,
-            'operarios_disponibles': [
-                {'id': r[0], 'codigo': '', 'nombre': (r[1] or '').strip(),
-                 'rol': r[2] or '', 'activo': bool(r[3])}
-                for r in rows
-            ],
+            'operarios_disponibles': operarios_lista,
         })
 
     # Datos del operario
@@ -7240,33 +7266,82 @@ def semana_produccion():
         s = f'{producto}|{fecha_iso}|{rol}'
         return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
 
-    # Pool de operarios activos (cargado una vez)
+    # Pool de operarios activos (excluye jefes de producción)
+    # Sebastián 1-may-2026: 'Luis Enrique es jefe · no es operario'.
     op_pool_rows = c.execute("""
-        SELECT id, nombre || ' ' || COALESCE(apellido, '')
+        SELECT id, nombre || ' ' || COALESCE(apellido, ''),
+               COALESCE(rol_predeterminado, '')
         FROM operarios_planta
         WHERE COALESCE(activo, 1) = 1
+          AND COALESCE(es_jefe_produccion, 0) = 0
         ORDER BY id
     """).fetchall()
-    op_pool = [(r[0], (r[1] or '').strip()) for r in op_pool_rows]
+    op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower()) for r in op_pool_rows]
     op_count = len(op_pool)
 
+    # Tabla de afinidad por rol_predeterminado · Sebastián 1-may-2026:
+    # 'mayerlin dispensa y produce, camilo acondiciona · rotarlos ocasional'.
+    # Pesos: 4=preferido fuerte · 3=preferido medio · 2=todero · 1=fallback.
+    AFINIDAD = {
+        'dispensacion': {
+            'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
+            'acondicionamiento': 1, 'todero': 2,
+        },
+        'elaboracion': {
+            'dispensacion': 3,  # Mayerlin secundario (dispensa Y produce)
+            'elaboracion': 4, 'envasado': 1,
+            'acondicionamiento': 1, 'todero': 2,
+        },
+        'envasado': {
+            'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
+            'acondicionamiento': 1, 'todero': 2,
+        },
+        'acondicionamiento': {
+            'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
+            'elaboracion': 1, 'todero': 2,
+        },
+    }
+
     def _operarios_para(producto, fecha_iso):
-        """Rota 4 operarios DISTINTOS para los 4 roles, al vuelo,
-        deterministically. Mismo producto+fecha → mismas asignaciones siempre."""
+        """Rota 4 operarios DISTINTOS para los 4 roles · pondera preferencias.
+        Mayerlin/dispensación 80% del tiempo · Camilo/acondicionamiento 80% ·
+        rota ocasionalmente vía hash determinístico."""
         if op_count == 0:
             return {'dispensacion': '', 'elaboracion': '', 'envasado': '', 'acondicionamiento': ''}
         roles = ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento')
         usados = set()
         out = {}
         for rol in roles:
-            base_idx = _hash_rotacion(producto, fecha_iso, rol) % op_count
-            # buscar el siguiente no usado
-            for offset in range(op_count):
-                idx = (base_idx + offset) % op_count
-                if idx not in usados or len(usados) >= op_count:
-                    usados.add(idx)
-                    out[rol] = op_pool[idx][1]
+            candidatos = [(oid, nom, rol_pre) for (oid, nom, rol_pre) in op_pool if oid not in usados]
+            if not candidatos:
+                out[rol] = ''
+                continue
+            # Calcular peso de cada candidato según afinidad
+            afin = AFINIDAD.get(rol, {})
+            weighted = []
+            for oid, nom, rol_pre in candidatos:
+                peso = afin.get(rol_pre, 1) if rol_pre else 1
+                weighted.append((peso, oid, nom))
+            total_weight = sum(w for w, _, _ in weighted)
+            if total_weight <= 0:
+                # Fallback uniforme
+                idx = _hash_rotacion(producto, fecha_iso, rol) % len(candidatos)
+                chosen = candidatos[idx]
+                out[rol] = chosen[1]
+                usados.add(chosen[0])
+                continue
+            target = _hash_rotacion(producto, fecha_iso, rol) % total_weight
+            cumulative = 0
+            chosen_oid = weighted[0][1]
+            chosen_nom = weighted[0][2]
+            for w, oid, nom in weighted:
+                cumulative += w
+                if target < cumulative:
+                    chosen_oid = oid
+                    chosen_nom = nom
                     break
+            out[rol] = chosen_nom
+            usados.add(chosen_oid)
         return out
 
     # Pre-cargar áreas posibles (tipo producción, activas)

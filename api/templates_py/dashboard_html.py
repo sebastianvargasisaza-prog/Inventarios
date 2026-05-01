@@ -12863,7 +12863,8 @@ async function ckMarcar(itemId, estado){
     var sub = document.getElementById('midia-subtitle');
     if(!sel) return;
     try{
-      var r = await fetch('/api/planta/mi-dia', {credentials:'same-origin'});
+      // list_only=1 fuerza que el endpoint devuelva la lista (no auto-resuelve usuario)
+      var r = await fetch('/api/planta/mi-dia?list_only=1', {credentials:'same-origin'});
       var d = await r.json();
       if(!r.ok){
         if(sub) sub.textContent = '❌ Error cargando operarios: '+(d.error||'HTTP '+r.status);
@@ -12878,7 +12879,10 @@ async function ckMarcar(itemId, estado){
       _MI_DIA_OPERARIOS = ops;
       sel.innerHTML = '<option value="">— elegir operario ('+ops.length+') —</option>' +
         ops.map(function(o){
-          return '<option value="'+o.id+'">'+_escHTML(o.nombre || o.codigo || ('op#'+o.id))+(o.rol?' ['+_escHTML(o.rol)+']':'')+'</option>';
+          var label = _escHTML(o.nombre || o.codigo || ('op#'+o.id));
+          if(o.es_jefe) label += ' [👨‍🏭 jefe]';
+          else if(o.rol) label += ' ['+_escHTML(o.rol)+']';
+          return '<option value="'+o.id+'">'+label+'</option>';
         }).join('');
       if(sub) sub.textContent = ops.length+' operarios disponibles · selecciona uno para ver sus tareas próximos 7 días';
     }catch(e){
