@@ -3453,6 +3453,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             locked_at TEXT NOT NULL DEFAULT (datetime('now')),
             locked_by TEXT
         )""",
+        # Si en producción ya hay duplicados ok=1 mismo job+día (race ya
+        # ocurrió pre-fix), mantener solo el más reciente para que el UNIQUE
+        # INDEX pueda crearse. Los duplicados antiguos se preservan con
+        # ok=2 (estado custom "duplicate-ignored") · no se borran.
+        """UPDATE cron_jobs_runs SET ok = 2
+        WHERE ok = 1 AND id IN (
+            SELECT cjr1.id FROM cron_jobs_runs cjr1
+            WHERE cjr1.ok = 1 AND EXISTS (
+                SELECT 1 FROM cron_jobs_runs cjr2
+                WHERE cjr2.ok = 1
+                  AND cjr2.job_name = cjr1.job_name
+                  AND date(cjr2.ejecutado_at) = date(cjr1.ejecutado_at)
+                  AND cjr2.id > cjr1.id
+            )
+        )""",
         # Previene doble registro de éxito hoy (defensa secundaria al lock).
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_cjr_unique_ok_today "
         "ON cron_jobs_runs(job_name, date(ejecutado_at)) WHERE ok=1",
