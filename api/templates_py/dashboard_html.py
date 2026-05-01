@@ -12287,19 +12287,32 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error en preview: '+(e.message||e);
     }
   }
-  async function autoscGenerar(modo){
+  async function autoscGenerar(modo, forzar){
     var nombreModo = modo === 'urgente' ? 'URGENTE (lunes, 14d)' : 'MENSUAL (60-90d)';
-    if(!confirm('Vas a crear las SCs reales en estado Pendiente '+nombreModo+'.\\n\\nCatalina y Alejandro las verán en /solicitudes para revisar/editar/aprobar.\\n\\n¿Continuar?')) return;
+    var prompt = forzar
+      ? '⚠️ FORZAR nuevo pedido aunque YA hay SCs creadas este mes?\\n\\n(Catalina podría recibir SCs duplicadas)\\n\\n¿Continuar?'
+      : 'Vas a crear las SCs reales en estado Pendiente '+nombreModo+'.\\n\\nCatalina y Alejandro las verán en /solicitudes para revisar/editar/aprobar.\\n\\n¿Continuar?';
+    if(!confirm(prompt)) return;
     var msg = document.getElementById('autosc-msg');
     msg.style.display='block';
     msg.innerHTML = '⏳ Generando SCs ('+modo+')…';
     try{
+      var body = {modo: modo, enviar_email: true};
+      if(forzar) body.forzar = true;
       var r = await fetch('/api/planta/auto-sc-generar', {
         method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({modo: modo, enviar_email: true}),
+        body: JSON.stringify(body),
       });
       var data = await r.json();
+      // Anti-duplicado · 409
+      if(r.status === 409 && data.duplicado){
+        if(confirm(data.mensaje + '\\n\\n¿Forzar igual?')){
+          return autoscGenerar(modo, true);
+        }
+        msg.innerHTML = '⚠️ ' + data.mensaje;
+        return;
+      }
       if(!r.ok || !data.ok) throw new Error(data.error || ('HTTP '+r.status));
       msg.innerHTML = '✅ '+data.mensaje + ' · <a href="/solicitudes" style="color:#fff;text-decoration:underline">ver en Compras</a>';
       autoscRecargar();
@@ -12392,13 +12405,20 @@ async function ckMarcar(itemId, estado){
     var det = document.getElementById('estado-sol-detalle');
     if(sub) sub.textContent = 'Cargando...';
     try{
-      var r = await fetch('/api/planta/estado-solicitudes', {credentials:'same-origin'});
-      var d = await r.json();
-      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      // Cargar resumen de SCs activas + workflow lunes
+      var [r1, r2] = await Promise.all([
+        fetch('/api/planta/estado-solicitudes', {credentials:'same-origin'}),
+        fetch('/api/planta/scs-pedidas-resumen?dias=45', {credentials:'same-origin'}),
+      ]);
+      var d = await r1.json();
+      var pedidas = await r2.json();
+      if(!r1.ok) throw new Error(d.error || 'HTTP '+r1.status);
       var sol = d.solicitado_ultimo_mes || {};
       var pend = d.pendiente_solicitar || {};
       var ult = d.ultimo_workflow_lunes;
       var ejecutado = d.workflow_lunes_ejecutado_esta_semana;
+      var pkpis = (pedidas && pedidas.kpis) || {};
+      var pmes = (pedidas && pedidas.mes_actual) || {};
 
       if(sub){
         if(ejecutado && ult){
@@ -12417,23 +12437,44 @@ async function ckMarcar(itemId, estado){
           +(sub?'<div style="font-size:10px;opacity:.7;margin-top:2px">'+sub+'</div>':'')
           +'</div>';
       }
+      // Tiles con estado real de SCs (Sebastián 1-may-2026: claridad anti-doble pedido)
       grid.innerHTML = ''
-        + tile('SCs MP solicitadas', sol.mp || 0, '#22d3ee', 'últimos 30d')
-        + tile('SCs MEE solicitadas', sol.mee || 0, '#22d3ee', 'últimos 30d')
-        + tile('Pendiente solicitar MP', pend.mp_30d || 0, pend.mp_30d > 0 ? '#fbbf24' : '#a3e635', 'cron mensual día 1-5')
-        + tile('Pendiente solicitar MEE', pend.mee_30d || 0, pend.mee_30d > 0 ? '#fbbf24' : '#a3e635', 'cron mensual día 1-5')
-        + tile('Etiquetas + D-20 (14d)', (sol.etiquetas||0)+(sol.d20||0), '#a3e635', 'sync automático');
+        + tile('🟡 Pendiente aprobación', pkpis.pendiente || 0, '#fbbf24', 'esperando Catalina')
+        + tile('🟢 Aprobadas', pkpis.aprobada || 0, '#10b981', 'OC en proceso')
+        + tile('🚚 En tránsito', pkpis.en_transito || 0, '#3b82f6', 'mercancía viajando')
+        + tile('✅ Recibidas', pkpis.recibida || 0, '#10b981', 'en bodega')
+        + tile('Pendiente solicitar', (pend.mp_30d||0)+(pend.mee_30d||0), (pend.mp_30d+pend.mee_30d)>0 ? '#fbbf24' : '#a3e635', 'cron día 1-5');
 
+      // Detalle anti-duplicado · qué se puede pedir y qué no
       var html = '';
+      if(pmes.mp_ya_pedido || pmes.mee_ya_pedido){
+        html += '<div style="background:#dbeafe;color:#1e40af;padding:6px 10px;border-radius:6px;margin-bottom:6px;font-size:11px">'
+          + '<b>⚠️ Anti-duplicado activo</b> · este mes ya hay '
+          + (pmes.mp_ya_pedido ? (pmes.mp_creadas+' SCs MP') : '')
+          + (pmes.mp_ya_pedido && pmes.mee_ya_pedido ? ' + ' : '')
+          + (pmes.mee_ya_pedido ? (pmes.mee_creadas+' SCs MEE') : '')
+          + ' creadas. Si das "Generar mensual" otra vez, te pediré confirmación para FORZAR.'
+          + '</div>';
+      }
       if(ult){
-        html = '<b>Última ejecución lunes 7am ('+ult.fecha_lunes+'):</b><br>'
+        html += '<b>Última ejecución lunes 7am ('+ult.fecha_lunes+'):</b><br>'
           + '✅ '+(ult.bloqueadas||0)+' producciones bloqueadas · '
           + '🔄 '+(ult.sincronizadas||0)+' sincronizadas Calendar · '
           + '🤖 '+(ult.asignadas||0)+' asignadas IA · '
-          + '🧹 '+(ult.limpiezas_creadas||0)+' limpiezas · '
-          + '📧 '+(ult.email_enviado?'email enviado':'sin email');
+          + '🧹 '+(ult.limpiezas_creadas||0)+' limpiezas';
       } else {
-        html = 'El cron interno corre lunes 7:00 AM automáticamente · sync Shopify + Calendar + auto-asignar + bloquear semana + email Alejandro';
+        html += 'El cron interno corre lunes 7:00 AM automáticamente.';
+      }
+      // Listar SCs activas (top 5)
+      if(pedidas && pedidas.scs && pedidas.scs.length){
+        html += '<div style="margin-top:10px"><b>SCs activas (' + pedidas.scs.length + '):</b><br>'
+          + pedidas.scs.slice(0,8).map(function(sc){
+            return '<div style="margin-top:3px;padding:3px 6px;background:rgba(255,255,255,.08);border-left:3px solid '+sc.color+';border-radius:3px;font-size:10px">'
+              + sc.icon + ' <b>' + sc.numero + '</b> · ' + sc.estado_label
+              + ' · ' + sc.categoria
+              + (sc.fecha ? ' · ' + sc.fecha : '')
+              + '</div>';
+          }).join('') + '</div>';
       }
       if(det) det.innerHTML = html;
     }catch(e){
@@ -13472,13 +13513,15 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  async function autoscMeeGenerar(modo, generico){
+  async function autoscMeeGenerar(modo, generico, forzar){
     generico = !!generico;
     var origen = (document.getElementById('autosc-mee-origen')||{value:''}).value || '';
     var nombreModo = generico ? '🎯 GENÉRICA · Catalina asigna' : (modo === 'urgente' ? 'URGENTE (30d)' : 'MENSUAL (China 9m + Local 90d)');
-    var aviso = generico
-      ? 'Vas a crear UNA SC genérica con items "POR-ASIGNAR" para todos los SKUs SIN mapping.\\n\\nCatalina debe abrir cada item en /solicitudes y asignar:\\n  • código MEE específico\\n  • proveedor\\n\\nAl asignar, el sistema aprende y guarda el mapping para futuras SCs.\\n\\n¿Continuar?'
-      : 'Vas a crear las SCs MEE reales '+nombreModo+(origen?' / origen '+origen:'')+'.\\n\\nCatalina y Alejandro revisarán en /solicitudes.\\n\\n¿Continuar?';
+    var aviso = forzar
+      ? '⚠️ FORZAR nuevo pedido aunque YA hay SCs MEE este mes?\\n\\n(Catalina podría recibir SCs duplicadas)\\n\\n¿Continuar?'
+      : (generico
+        ? 'Vas a crear UNA SC genérica con items "POR-ASIGNAR" para todos los SKUs SIN mapping.\\n\\nCatalina debe abrir cada item en /solicitudes y asignar:\\n  • código MEE específico\\n  • proveedor\\n\\nAl asignar, el sistema aprende y guarda el mapping para futuras SCs.\\n\\n¿Continuar?'
+        : 'Vas a crear las SCs MEE reales '+nombreModo+(origen?' / origen '+origen:'')+'.\\n\\nCatalina y Alejandro revisarán en /solicitudes.\\n\\n¿Continuar?');
     if(!confirm(aviso)) return;
     var msg = document.getElementById('autosc-mee-msg');
     msg.style.display='block';
@@ -13486,12 +13529,21 @@ async function ckMarcar(itemId, estado){
     try{
       var body = {modo: modo, enviar_email: true, generico: generico};
       if(origen) body.origen = origen;
+      if(forzar) body.forzar = true;
       var r = await fetch('/api/planta/auto-sc-mee-generar', {
         method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify(body),
       });
       var data = await r.json();
+      // Anti-duplicado · 409
+      if(r.status === 409 && data.duplicado){
+        if(confirm(data.mensaje + '\\n\\n¿Forzar igual?')){
+          return autoscMeeGenerar(modo, generico, true);
+        }
+        msg.innerHTML = '⚠️ ' + data.mensaje;
+        return;
+      }
       if(!r.ok || !data.ok) throw new Error(data.error || ('HTTP '+r.status));
       if(data.razon_vacio){
         msg.innerHTML = '⚠️ '+data.razon_vacio;

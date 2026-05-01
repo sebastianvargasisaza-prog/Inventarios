@@ -4679,9 +4679,36 @@ def auto_sc_generar():
     d = request.json or {}
     modo = (d.get('modo') or request.args.get('modo') or 'mensual').strip()
     enviar_email = d.get('enviar_email', True)
+    forzar = bool(d.get('forzar', False))  # Sebastián: 'forzar nuevo pedido'
     user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
 
     conn = get_db(); c = conn.cursor()
+
+    # ANTI-DUPLICADO: si modo=mensual y ya hay SCs MP creadas este mes, NO crear
+    # otra ronda (a menos que forzar=True). Sebastián 1-may-2026: 'si alguien
+    # le da pedir le va salir doble a Catalina · primero resolver eso'.
+    if modo == 'mensual' and not forzar and not es_cron:
+        try:
+            inicio_mes = datetime.now().date().replace(day=1).isoformat()
+            existentes = c.execute("""
+                SELECT COUNT(*), MAX(fecha) FROM solicitudes_compra
+                WHERE solicitante='auto-plan-ia'
+                  AND categoria='Materia Prima'
+                  AND date(fecha) >= ?
+            """, (inicio_mes,)).fetchone()
+            if existentes and existentes[0] > 0:
+                return jsonify({
+                    'ok': False,
+                    'duplicado': True,
+                    'mensaje': (f'⚠️ Ya hay {existentes[0]} SCs MP creadas este mes '
+                                f'(última: {existentes[1][:10]}). Ver en /solicitudes. '
+                                f'Si necesitas REGENERAR, pasa forzar=true.'),
+                    'scs_existentes': existentes[0],
+                    'ultima_fecha': existentes[1][:10] if existentes[1] else None,
+                }), 409
+        except Exception:
+            pass
+
     plan = _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo=modo)
 
     # Crear las SCs reales en estado 'Pendiente' (Sebastián: va directo a
@@ -5308,9 +5335,35 @@ def auto_sc_mee_generar():
         return jsonify({'error': 'origen invalido'}), 400
     enviar_email = d.get('enviar_email', True)
     generico = bool(d.get('generico', False))
+    forzar = bool(d.get('forzar', False))
     user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
 
     conn = get_db(); c = conn.cursor()
+
+    # ANTI-DUPLICADO: si modo=mensual y ya hay SCs MEE este mes, NO crear
+    # otra ronda (sin forzar). Sebastián 1-may-2026 anti-doble pedido.
+    if modo == 'mensual' and not forzar and not es_cron and not generico:
+        try:
+            inicio_mes = datetime.now().date().replace(day=1).isoformat()
+            existentes = c.execute("""
+                SELECT COUNT(*), MAX(fecha) FROM solicitudes_compra
+                WHERE solicitante='auto-plan-ia'
+                  AND categoria='Material de Empaque'
+                  AND date(fecha) >= ?
+            """, (inicio_mes,)).fetchone()
+            if existentes and existentes[0] > 0:
+                return jsonify({
+                    'ok': False,
+                    'duplicado': True,
+                    'mensaje': (f'⚠️ Ya hay {existentes[0]} SCs MEE creadas este mes '
+                                f'(última: {existentes[1][:10]}). Ver en /solicitudes. '
+                                f'Si necesitas REGENERAR, pasa forzar=true.'),
+                    'scs_existentes': existentes[0],
+                    'ultima_fecha': existentes[1][:10] if existentes[1] else None,
+                }), 409
+        except Exception:
+            pass
+
     plan = _calcular_auto_sc_mee(conn, modo=modo, origen_filtro=origen, generico=generico)
 
     scs_creadas = []
@@ -7455,6 +7508,117 @@ def planta_accion_rapida():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': f'tipo desconocido: {tipo}'}), 400
+
+
+@bp.route('/api/planta/scs-pedidas-resumen', methods=['GET'])
+def scs_pedidas_resumen():
+    """Resumen claro de SCs YA pedidas con estado real (Sebastián 1-may-2026:
+    'si ya se pidió debería decir solicitudes pedidas en espera de aprobación
+    · después pedido en tránsito · que quede claro · si alguien le da pedir
+    le va salir doble a Catalina').
+
+    Filtros: ?categoria=MP|MEE|Servicios  ?dias=30 (default últimos 30d)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    dias = int(request.args.get('dias', 30))
+    categoria = (request.args.get('categoria') or '').strip()
+
+    # Mapeo de categoría amigable a SQL
+    cat_map = {
+        'MP': "s.categoria = 'Materia Prima'",
+        'MEE': "s.categoria = 'Material de Empaque'",
+        'Servicios': "s.categoria = 'Servicios'",
+    }
+    where_cat = cat_map.get(categoria, "s.categoria IN ('Materia Prima','Material de Empaque','Servicios')")
+
+    # Estados consolidados:
+    # 🟡 Pendiente: solicitud creada, esperando aprobación Catalina
+    # 🟢 Aprobada: solicitud aprobada, OC pendiente o en borrador
+    # 🚚 En tránsito: OC pagada/autorizada, mercancía viajando
+    # ✅ Recibida: en bodega
+    # ❌ Rechazada/Cancelada
+    rows = c.execute(f"""
+        SELECT s.numero, s.fecha, s.estado, s.solicitante, s.observaciones,
+               s.categoria, s.valor, s.numero_oc,
+               oc.estado as estado_oc, oc.fecha_pago, oc.fecha_recepcion
+        FROM solicitudes_compra s
+          LEFT JOIN ordenes_compra oc ON oc.numero_oc = s.numero_oc
+        WHERE date(s.fecha) >= date('now', '-' || ? || ' days')
+          AND {where_cat}
+          AND s.solicitante = 'auto-plan-ia'
+        ORDER BY s.fecha DESC
+        LIMIT 100
+    """, (dias,)).fetchall()
+
+    scs = []
+    contadores = {'pendiente': 0, 'aprobada': 0, 'en_transito': 0,
+                   'recibida': 0, 'rechazada': 0}
+    for r in rows:
+        sc_estado = (r[2] or '').strip()
+        oc_estado = (r[8] or '').strip()
+        # Determinar estado consolidado
+        if sc_estado == 'Rechazada' or oc_estado in ('Cancelada', 'Rechazada'):
+            estado_label = 'Rechazada'; estado_key = 'rechazada'
+            color = '#dc2626'; icon = '❌'
+        elif oc_estado == 'Recibida':
+            estado_label = 'Recibida en bodega'; estado_key = 'recibida'
+            color = '#10b981'; icon = '✅'
+        elif oc_estado in ('Pagada', 'Autorizada', 'Parcial'):
+            estado_label = 'En tránsito'; estado_key = 'en_transito'
+            color = '#1d4ed8'; icon = '🚚'
+        elif sc_estado == 'Aprobada' or oc_estado in ('Aprobada', 'Revisada', 'Borrador', 'Pendiente'):
+            estado_label = 'Aprobada · esperando OC pago'; estado_key = 'aprobada'
+            color = '#059669'; icon = '🟢'
+        else:
+            estado_label = 'Pendiente · esperando aprobación Catalina'; estado_key = 'pendiente'
+            color = '#f59e0b'; icon = '🟡'
+        contadores[estado_key] = contadores.get(estado_key, 0) + 1
+        scs.append({
+            'numero': r[0],
+            'fecha': r[1][:10] if r[1] else '',
+            'categoria': r[5],
+            'observacion': (r[4] or '')[:80],
+            'valor': r[6] or 0,
+            'estado_label': estado_label,
+            'estado_key': estado_key,
+            'icon': icon, 'color': color,
+            'numero_oc': r[7] or '',
+            'fecha_pago': r[9],
+            'fecha_recepcion': r[10],
+        })
+
+    # Determinar si "ya se pidió este mes" para anti-duplicado
+    inicio_mes = datetime.now().date().replace(day=1).isoformat()
+    cnt_mes = {}
+    try:
+        for cat in ('Materia Prima', 'Material de Empaque'):
+            row = c.execute("""
+                SELECT COUNT(*) FROM solicitudes_compra
+                WHERE solicitante='auto-plan-ia' AND categoria=?
+                  AND date(fecha) >= ?
+            """, (cat, inicio_mes)).fetchone()
+            cnt_mes[cat] = row[0] if row else 0
+    except Exception:
+        pass
+
+    return jsonify({
+        'fecha_hoy': datetime.now().date().isoformat(),
+        'horizonte_dias': dias,
+        'categoria_filtro': categoria or 'todos',
+        'scs': scs,
+        'kpis': {
+            'total': len(scs),
+            **contadores,
+        },
+        'mes_actual': {
+            'mp_creadas': cnt_mes.get('Materia Prima', 0),
+            'mee_creadas': cnt_mes.get('Material de Empaque', 0),
+            'mp_ya_pedido': cnt_mes.get('Materia Prima', 0) > 0,
+            'mee_ya_pedido': cnt_mes.get('Material de Empaque', 0) > 0,
+        },
+    })
 
 
 @bp.route('/api/planta/estado-solicitudes', methods=['GET'])
