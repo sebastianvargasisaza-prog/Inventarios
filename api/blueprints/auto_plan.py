@@ -2071,6 +2071,49 @@ def mp_para_lote():
             'mensaje': f'⚠️ Sin fórmula registrada para "{producto}". Ver Drive: Formulas Maestras',
         })
 
+    # Stock map robusto: cruza 2 sistemas de IDs (formula vs bodega) + nombres
+    # normalizados + alias + bridge table. Resuelve el bug de stock negativo
+    # cuando formula_items.material_id no coincide con movimientos.material_id.
+    try:
+        from blueprints.programacion import _get_mp_stock, _norm_mp_name
+        mp_stock_map = _get_mp_stock(conn)
+    except Exception as e:
+        log.warning(f'No pude cargar mp_stock_map robusto: {e}')
+        mp_stock_map = None
+
+    def _buscar_stock_robusto(mat_id, mat_nombre):
+        """Busca stock en este orden:
+           1. material_id directo (canónico bodega)
+           2. material_id en uppercase
+           3. nombre exacto en uppercase
+           4. nombre normalizado (sin acentos, sin paréntesis, etc.)
+           Devuelve (stock_g, fuente) - fuente para diagnóstico.
+        """
+        if mp_stock_map is None:
+            # Fallback: query directa
+            r = conn.execute("""
+                SELECT COALESCE(SUM(
+                    CASE WHEN tipo IN ('Entrada','Ingreso','Ajuste','Devolucion') THEN cantidad
+                         WHEN tipo IN ('Salida','Consumo') THEN -cantidad
+                         ELSE 0 END), 0) FROM movimientos WHERE material_id=?
+            """, (mat_id,)).fetchone()
+            return float(r[0] or 0) if r else 0, 'fallback_query'
+        mid = str(mat_id or '').strip()
+        if mid in mp_stock_map:
+            return float(mp_stock_map[mid]), 'material_id'
+        if mid.upper() in mp_stock_map:
+            return float(mp_stock_map[mid.upper()]), 'material_id_upper'
+        nom = str(mat_nombre or '').strip().upper()
+        if nom and nom in mp_stock_map:
+            return float(mp_stock_map[nom]), 'nombre_exacto'
+        try:
+            nom_norm = _norm_mp_name(mat_nombre or '')
+            if nom_norm and nom_norm in mp_stock_map:
+                return float(mp_stock_map[nom_norm]), 'nombre_normalizado'
+        except Exception:
+            pass
+        return 0, 'no_encontrado'
+
     total_g_lote = kg * 1000
     mps = []
     falta_count = 0
@@ -2084,17 +2127,10 @@ def mp_para_lote():
             pct = 0
         req_g = total_g_lote * pct / 100
 
-        # Stock actual = SUM movimientos
-        stock_row = c.execute("""
-            SELECT COALESCE(SUM(
-                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                     ELSE 0 END
-            ), 0) FROM movimientos WHERE material_id=?
-        """, (material_id,)).fetchone()
-        stock_g = float(stock_row[0] if stock_row else 0)
+        # Stock con búsqueda robusta (resuelve diferencia de IDs)
+        stock_g, fuente_stock = _buscar_stock_robusto(material_id, mat_nombre)
 
-        # Lead time si está
+        # Lead time si está (mantenemos por material_id)
         lt = c.execute("""
             SELECT lead_time_dias, origen, proveedor_principal
             FROM mp_lead_time_config WHERE material_id=?
@@ -2128,6 +2164,7 @@ def mp_para_lote():
             'lead_time_dias': lead_time,
             'origen': origen,
             'proveedor': proveedor,
+            'fuente_stock': fuente_stock,
         })
 
     alcanza = falta_count == 0

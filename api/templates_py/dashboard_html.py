@@ -9432,6 +9432,20 @@ async function ckMarcar(itemId, estado){
         html += '</ul></div>';
       }
 
+      // Alerta si hay MPs sin cruce (no_encontrado) — bug de ID
+      var noCruzados = mps.filter(function(m){return m.fuente_stock === 'no_encontrado';});
+      if(noCruzados.length){
+        html += '<div style="background:#fef3c7;border:2px solid #d97706;border-radius:8px;padding:12px;margin-bottom:14px">';
+        html += '<b style="color:#92400e">⚠️ '+noCruzados.length+' MPs sin cruce de ID</b>';
+        html += '<div style="font-size:11px;color:#78350f;margin-top:4px">El sistema NO encontró estas MPs en bodega — probable diferencia entre el ID de la fórmula y el ID de movimientos. <b>Stock mostrado puede ser incorrecto.</b></div>';
+        html += '<div style="font-size:11px;color:#78350f;margin-top:6px">Solución: ir a Admin → Bridge MP → mapear estos IDs:</div>';
+        html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">';
+        noCruzados.slice(0,8).forEach(function(m){
+          html += '<li><b>'+_escHTML(m.material_id)+'</b> ('+_escHTML(m.material_nombre)+') → bridge a su ID en bodega</li>';
+        });
+        html += '</ul></div>';
+      }
+
       // Tabla MPs
       html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
       html += '<thead style="background:#f1f5f9"><tr>';
@@ -9441,10 +9455,20 @@ async function ckMarcar(itemId, estado){
       html += '<th style="padding:6px;text-align:right">Stock</th>';
       html += '<th style="padding:6px;text-align:right">Falta</th>';
       html += '<th style="padding:6px;text-align:left">Estado</th>';
+      html += '<th style="padding:6px;text-align:left">Match</th>';
       html += '</tr></thead><tbody>';
       var estCol = {ok:'#10b981',ajustado:'#f59e0b',faltante:'#dc2626'};
+      var fuenteIcono = {
+        material_id: '✅ id',
+        material_id_upper: '✅ id↑',
+        nombre_exacto: '✅ nom',
+        nombre_normalizado: '🟡 norm',
+        no_encontrado: '🔴 SIN MATCH',
+        fallback_query: '⚠ fallback',
+      };
       mps.forEach(function(m){
         var c = estCol[m.estado] || '#64748b';
+        var fuenteCol = m.fuente_stock === 'no_encontrado' ? '#dc2626' : (m.fuente_stock === 'nombre_normalizado' ? '#f59e0b' : '#10b981');
         html += '<tr style="border-top:1px solid #e2e8f0">';
         html += '<td style="padding:5px 6px"><b>'+_escHTML(m.material_nombre)+'</b><div style="font-size:9px;color:#64748b">'+_escHTML(m.material_id)+'</div></td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.porcentaje+'%</td>';
@@ -9452,6 +9476,7 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.stock_g+' g</td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:'+c+';font-weight:700">'+(m.falta_g>0?m.falta_g+' g':'—')+'</td>';
         html += '<td style="padding:5px 6px"><span style="background:'+c+'22;color:'+c+';padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase">'+m.estado+'</span></td>';
+        html += '<td style="padding:5px 6px;font-size:9px;color:'+fuenteCol+'">'+(fuenteIcono[m.fuente_stock]||m.fuente_stock||'—')+'</td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
