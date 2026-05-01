@@ -51,12 +51,28 @@ def _ig_resolve_token(conn):
         return None, None
 
     def _fetch(url):
-        import urllib.request, json
+        """Sebastián 1-may-2026 audit: el Graph API acepta token en query
+        string (legacy) Y en header Authorization. Movemos a Authorization
+        para no exponer el token en logs de urllib si falla la request.
+        El query string ?access_token=X queda como fallback compatible."""
+        import urllib.request, urllib.parse, json, re
         try:
-            with urllib.request.urlopen(url, timeout=10) as r:
+            # Extraer token del query string para usarlo en Authorization header.
+            # NO eliminamos del URL — algunos endpoints requieren el query
+            # param para subprocesos batch.
+            req = urllib.request.Request(url)
+            m = re.search(r'[?&]access_token=([^&]+)', url)
+            if m:
+                req.add_header('Authorization', f'Bearer {urllib.parse.unquote(m.group(1))}')
+            with urllib.request.urlopen(req, timeout=10) as r:
                 return json.loads(r.read()), None
         except Exception as e:
-            return None, str(e)
+            # Sanitizar error: NO incluir URL (puede contener token en query).
+            # Solo el tipo de error y mensaje sin URL completa.
+            err_msg = str(e)
+            # Redactar token si aparece en mensaje
+            err_msg = re.sub(r'access_token=[^&\s\'"]+', 'access_token=***REDACTED***', err_msg)
+            return None, f'{type(e).__name__}: {err_msg[:200]}'
 
     # Paso 1: ¿qué devuelve /me con este token?
     me_data, me_err = _fetch(f"https://graph.facebook.com/v19.0/me?access_token={token}")
@@ -105,8 +121,10 @@ def _ig_resolve_token(conn):
                             ("instagram_user_id", linked2)
                         )
                         conn.commit()
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        __import__('logging').getLogger('marketing').warning(
+                            'guardar IG token fallo: %s', _e
+                        )
                     return pt, linked2
 
     # Fallback: usar lo que hay almacenado
@@ -156,7 +174,10 @@ def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
         if conn.execute("SELECT changes()").fetchone()[0] == 0:
             return False
         conn.commit()
-    except Exception:
+    except Exception as _e:
+        __import__('logging').getLogger('marketing').warning(
+            'push_alert dedupe fallo (tipo=%s clave=%s): %s', tipo, clave_unica, _e
+        )
         return False
 
     # Mandar email en background — no bloquea la respuesta del agente

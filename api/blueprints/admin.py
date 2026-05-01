@@ -1622,7 +1622,8 @@ def admin_inventario_reset_aplicar():
         conn.commit()
     except Exception as _e:
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            __import__('logging').getLogger('admin').warning('rollback no aplicable: %s', _r)
         return jsonify({
             'ok': False,
             'error': f'Reset abortado por error: {_e}',
@@ -2259,7 +2260,8 @@ def admin_revertir_formulas_desde_backup():
     finally:
         if tmp_path != bk_db_path and _os.path.exists(tmp_path):
             try: _os.remove(tmp_path)
-            except Exception: pass
+            except Exception as _e:
+                __import__('logging').getLogger('admin').debug('cleanup tmp_path fallo: %s', _e)
 
     # Crear backup adicional ANTES de revertir (por si acaso)
     try:
@@ -2284,7 +2286,8 @@ def admin_revertir_formulas_desde_backup():
         conn.commit()
     except Exception as _e:
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            __import__('logging').getLogger('admin').warning('rollback no aplicable: %s', _r)
         return jsonify({'error': f'Reversion fallo: {_e}'}), 500
 
     # Audit
@@ -2522,7 +2525,8 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
             usados = set()
             for (cm,) in todos:
                 try: usados.add(int(cm[2:]))
-                except Exception: pass
+                except (ValueError, TypeError):
+                    pass  # codigo_mp no numérico (ej. MPABC), skip esperado
             new_start = None
             for base in range(1000, 9000, 50):
                 if not any((base + k) in usados for k in range(50)):
@@ -2565,7 +2569,8 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
         conn.commit()
     except Exception as _e:
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            __import__('logging').getLogger('admin').warning('rollback no aplicable: %s', _r)
         conn.close()
         return jsonify({'error': f'Aplicacion del SQL fallo: {_e}'}), 500
 
@@ -7103,16 +7108,19 @@ def admin_audit_inventario():
     total_mps = total_mees = total_prods_act = 0
     try:
         total_mps = c.execute("SELECT COUNT(DISTINCT material_id) FROM movimientos WHERE COALESCE(material_id,'')!=''").fetchone()[0]
-    except Exception: pass
+    except Exception as _e:
+        __import__('logging').getLogger('admin').warning('count mps fallo: %s', _e)
     try:
         total_mees = c.execute("SELECT COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'')!='Inactivo'").fetchone()[0]
-    except Exception: pass
+    except Exception as _e:
+        __import__('logging').getLogger('admin').warning('count mees fallo: %s', _e)
     try:
         total_prods_act = c.execute(
             "SELECT COUNT(*) FROM produccion_programada "
             "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')"
         ).fetchone()[0]
-    except Exception: pass
+    except Exception as _e:
+        __import__('logging').getLogger('admin').warning('count prods fallo: %s', _e)
 
     conn.close()
 
