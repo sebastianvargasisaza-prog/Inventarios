@@ -5960,49 +5960,52 @@ function _renderProgramacion(d){
   <!-- ptab-planv2: Plan unificado con horizontes 1sem→1año + necesidades   -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div id="ptab-planv2" style="display:none">
-    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:16px">
+    <!-- ── HEADER COMPACTO ─────────────────────────────────────────────── -->
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:14px 20px;border-radius:12px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
-          <h2 style="margin:0;color:#fff;font-size:22px">📅 Plan de Producción</h2>
-          <p style="margin:4px 0 0;color:#cffafe;font-size:13px">Producciones · MP · Envases · Capacidad — todo proyectado por horizonte</p>
+          <h2 style="margin:0;color:#fff;font-size:20px">📅 Plan de Producción Ánimus</h2>
+          <div id="pv2-status-line" style="font-size:12px;color:#cffafe;margin-top:3px">⏳ Cargando estado...</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">+ Nuevo producto</button>
-          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Ver crudo qué LEE el sistema de Shopify para un producto">🔍 Diagnóstico SKU</button>
-          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de la semana basado SOLO en Shopify, sin Calendar">🛒 Semana</button>
-          <button onclick="planV2VerLargoShopify(6)" style="background:#10b981;color:#064e3b;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan de los próximos 6 meses con Shopify">📆 6 meses</button>
-          <button onclick="planV2VerLargoShopify(12)" style="background:#06b6d4;color:#083344;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer" title="Plan del próximo año con Shopify">🗓️ 1 año</button>
-          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📥 Excel</button>
-          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Actualizar</button>
+          <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">+ Nuevo</button>
+          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Diagnóstico SKU">🔍 Diag</button>
+          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan semana solo Shopify">🛒 Sem</button>
+          <button onclick="planV2VerLargoShopify(6)" style="background:#10b981;color:#064e3b;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 6 meses">📆 6m</button>
+          <button onclick="planV2VerLargoShopify(12)" style="background:#06b6d4;color:#083344;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 1 año">🗓️ 1a</button>
+          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📥</button>
+          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">↻</button>
         </div>
       </div>
-      <div id="pv2-cobertura" style="margin-top:14px;padding:10px 14px;background:rgba(255,255,255,.12);border-radius:8px;font-size:12px;color:#cffafe">📊 Cargando cobertura SKUs...</div>
-      <div id="pv2-calendar-status" style="margin-top:6px;padding:8px 14px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#cffafe;display:none"></div>
-      <div id="pv2-auditoria" style="margin-top:6px;padding:8px 14px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#cffafe;display:none"></div>
-      <!-- Switcher de horizonte -->
-      <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
-        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
-        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 mes</button>
-        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:7px 14px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">2 meses</button>
-        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">3 meses</button>
-        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">6 meses</button>
-        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:7px 14px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 año</button>
+      <!-- Switcher de horizonte (1 línea) -->
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
+        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
+        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 mes</button>
+        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:6px 13px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">2 meses</button>
+        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">3 meses</button>
+        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">6 meses</button>
+        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 año</button>
       </div>
+      <!-- Status banners ocultos (se consolidan en pv2-status-line) -->
+      <div id="pv2-cobertura" style="display:none"></div>
+      <div id="pv2-calendar-status" style="display:none"></div>
+      <div id="pv2-auditoria" style="display:none"></div>
     </div>
 
-    <!-- KPIs siempre visibles -->
-    <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
+    <!-- ── KPIs (1 fila) ─────────────────────────────────────────────────── -->
+    <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px"></div>
 
-    <!-- 🚨 ALERTAS Calendar vs Velocidad real (vendes más / igual / menos) -->
-    <div id="pv2-alertas-wrap" style="margin-bottom:16px"></div>
+    <!-- ── CENTRO DE ACCIÓN UNIFICADO (alertas + recomendaciones en 1 panel) ─── -->
+    <div id="pv2-centro-accion" style="margin-bottom:14px"></div>
 
-    <!-- 🎯 RECOMENDACIONES INTELIGENTES — siempre visible arriba -->
-    <div id="pv2-recomendaciones-wrap" style="margin-bottom:16px"></div>
+    <!-- Datos crudos ocultos (los consume el centro de acción) -->
+    <div id="pv2-alertas-wrap" style="display:none"></div>
+    <div id="pv2-recomendaciones-wrap" style="display:none"></div>
 
     <!-- Sección: Comprar AHORA (urgentes por lead time) -->
-    <div id="pv2-comprar-ya" style="display:none;margin-bottom:16px"></div>
+    <div id="pv2-comprar-ya" style="display:none;margin-bottom:14px"></div>
 
-    <!-- Vista que cambia según horizonte: cards | calendar | timeline | heatmap -->
+    <!-- ── VISTA CALENDARIO/TIMELINE según horizonte ──────────────────── -->
     <div id="pv2-vista"></div>
   </div><!-- /ptab-planv2 -->
 
@@ -9299,11 +9302,158 @@ async function ckMarcar(itemId, estado){
       }).catch(function(){});
     planV2Cargar();
     planV2DetectarCambios();
-    planV2CargarCobertura();
-    planV2CargarCalendarStatus();
-    planV2CargarAlertas();
-    planV2CargarRecomendaciones();
-    planV2CargarAuditoria();
+    planV2CargarStatusLine();
+    planV2CargarCentroAccion();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // STATUS LINE CONSOLIDADA — 1 línea con cobertura + calendar + margen
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2CargarStatusLine(){
+    var box = document.getElementById('pv2-status-line');
+    if(!box) return;
+    try {
+      var [cobR, calR, audR] = await Promise.all([
+        fetch('/api/planta/kpi-cobertura-skus').then(function(r){return r.json();}).catch(function(){return null;}),
+        fetch('/api/planta/calendar-debug').then(function(r){return r.json();}).catch(function(){return null;}),
+        fetch('/api/planta/auditoria-calendar').then(function(r){return r.json();}).catch(function(){return null;}),
+      ]);
+      var partes = [];
+      if(cobR && cobR.cobertura_pct !== undefined){
+        partes.push('🎯 ' + cobR.cobertura_pct + '% cobertura SKUs');
+      }
+      if(calR && calR.events !== undefined){
+        partes.push('📅 ' + (calR.events.length || 0) + ' eventos Calendar');
+      }
+      if(audR && audR.kpis && audR.kpis.cumple_margen_pct !== undefined){
+        partes.push('✓ ' + audR.kpis.cumple_margen_pct + '% margen 20d');
+      }
+      if(partes.length){
+        box.innerHTML = partes.join(' · ');
+      } else {
+        box.innerHTML = 'Producciones · MP · Envases — proyectado por horizonte';
+      }
+    } catch(e){
+      box.innerHTML = 'Producciones · MP · Envases — proyectado por horizonte';
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // CENTRO DE ACCIÓN UNIFICADO — Alertas + Recomendaciones en 1 panel
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2CargarCentroAccion(){
+    var box = document.getElementById('pv2-centro-accion');
+    if(!box) return;
+    box.innerHTML = '<div style="background:#f1f5f9;padding:14px;border-radius:8px;font-size:13px;color:#64748b">⏳ Cargando centro de acción...</div>';
+    try {
+      var [alR, recR] = await Promise.all([
+        fetch('/api/planta/alertas-calendar').then(function(r){return r.json();}).catch(function(){return {alertas:[],kpis:{}};}),
+        fetch('/api/planta/recomendaciones').then(function(r){return r.json();}).catch(function(){return {recomendaciones:[],kpis:{}};}),
+      ]);
+      var alertas = (alR && alR.alertas) || [];
+      var alK = (alR && alR.kpis) || {};
+      var recs = (recR && recR.recomendaciones) || [];
+      var recK = (recR && recR.kpis) || {};
+
+      // Combinar alertas + recomendaciones en una sola lista de "acciones"
+      // Producto único, prioridad por estado más urgente
+      var accionesMap = {};
+      // Alertas
+      alertas.forEach(function(a){
+        accionesMap[a.producto] = {
+          producto: a.producto,
+          tipo: 'alerta',
+          estado: a.estado,
+          mensaje: a.mensaje,
+          proxima_fecha: a.proxima_fecha,
+          dias_hasta: a.dias_hasta_proximo,
+          kg: a.kg_proximo,
+          velocidad_real: a.velocidad_real,
+          velocidad_planeada: a.velocidad_planeada,
+          ratio: a.ratio,
+          diff_dias: a.diff_dias,
+          urgencia_orden: ({adelantar:1, adelantar_ligero:2, reducir_lote:3, atrasar_ligero:4, sin_ventas:5, ok:6}[a.estado] || 7),
+        };
+      });
+      // Recomendaciones (sólo si SKU no tiene alerta y es accionable)
+      recs.forEach(function(r){
+        if(!accionesMap[r.producto] && (r.urgencia==='critica' || r.urgencia==='alta' || r.urgencia==='media')){
+          accionesMap[r.producto] = {
+            producto: r.producto,
+            tipo: 'recomendacion',
+            estado: r.urgencia,
+            mensaje: r.razon || ('Días alcance: ' + r.dias_alcance + 'd'),
+            proxima_fecha: r.fecha_proxima,
+            dias_hasta: null,
+            kg: r.lote_tipico_kg || r.lote_kg_default,
+            velocidad_real: r.velocidad_dia,
+            urgencia_orden: ({critica:1, alta:2, media:3}[r.urgencia] || 8),
+          };
+        }
+      });
+      var acciones = Object.values(accionesMap);
+      acciones.sort(function(a,b){return a.urgencia_orden - b.urgencia_orden;});
+
+      if(!acciones.length){
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:14px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin acciones pendientes — todos los SKUs alineados con su plan</div>';
+        return;
+      }
+
+      var colDeEstado = function(s){
+        return s==='adelantar'||s==='critica'?'#dc2626'
+          : s==='adelantar_ligero'||s==='alta'?'#f97316'
+          : s==='ok'?'#10b981'
+          : s==='atrasar_ligero'||s==='media'?'#eab308'
+          : s==='reducir_lote'?'#a855f7'
+          : '#64748b';
+      };
+      var labelEstado = function(s){
+        return ({adelantar:'🔴 ADELANTAR',adelantar_ligero:'🟠 ADELANTAR LIGERO',ok:'🟢 OK',
+                 atrasar_ligero:'🟡 ATRASAR',reducir_lote:'⚠️ REDUCIR',sin_ventas:'∅ SIN VENTAS',
+                 critica:'🔴 CRÍTICA',alta:'🟠 ALTA',media:'🟡 MEDIA'}[s] || s.toUpperCase());
+      };
+
+      var criticos = acciones.filter(function(a){return a.urgencia_orden <= 2;});
+      var medios = acciones.filter(function(a){return a.urgencia_orden >= 3 && a.urgencia_orden <= 5;});
+      var ok = acciones.filter(function(a){return a.urgencia_orden >= 6;});
+
+      var html = '<div style="background:#fff;border:2px solid '+(criticos.length>0?'#dc2626':'#fb923c')+';border-radius:10px;overflow:hidden">';
+      html += '<div style="background:linear-gradient(135deg,'+(criticos.length>0?'#dc2626,#ea580c':'#f97316,#fbbf24')+');color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+      html += '<div><b style="font-size:15px">🎯 Centro de Acción</b><div style="font-size:11px;color:#fed7aa;margin-top:2px">Cruce Calendar + Velocidad real + Recomendaciones</div></div>';
+      html += '<div style="display:flex;gap:6px;font-size:11px;flex-wrap:wrap">';
+      if(criticos.length) html += '<span style="background:rgba(220,38,38,.4);padding:4px 10px;border-radius:6px;font-weight:800">🔴 '+criticos.length+' críticas</span>';
+      if(medios.length) html += '<span style="background:rgba(234,179,8,.4);padding:4px 10px;border-radius:6px;font-weight:800">🟡 '+medios.length+' medias</span>';
+      if(ok.length) html += '<span style="background:rgba(34,197,94,.4);padding:4px 10px;border-radius:6px;font-weight:800">🟢 '+ok.length+' OK</span>';
+      html += '</div></div>';
+      html += '<div style="padding:8px 12px;max-height:380px;overflow:auto">';
+
+      function fila(a){
+        var col = colDeEstado(a.estado);
+        var bg = col + '12';
+        return '<div style="background:'+bg+';border-left:4px solid '+col+';padding:10px 12px;margin-bottom:6px;border-radius:0 6px 6px 0">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
+          +'<div style="flex:1"><b style="color:#0f172a;font-size:13px">'+_escHTML(a.producto)+'</b>'
+          +'<div style="font-size:11px;color:#475569;margin-top:3px">'+_escHTML(a.mensaje||'')+'</div>'
+          +(a.proxima_fecha?'<div style="font-size:10px;color:#64748b;margin-top:3px">📅 Próximo: '+_escHTML(a.proxima_fecha)+(a.dias_hasta!=null?(' (en '+a.dias_hasta+'d)'):'')+(a.kg?(' · '+a.kg+' kg'):'')+'</div>':'')
+          +(a.velocidad_real?'<div style="font-size:10px;color:#64748b">📊 Vel real: '+a.velocidad_real+' u/d'+(a.velocidad_planeada?(' · plan: '+a.velocidad_planeada+' u/d · ratio '+a.ratio+'×'):'')+'</div>':'')
+          +'</div>'
+          +'<div style="text-align:right">'
+          +'<span style="background:'+col+';color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:800;white-space:nowrap">'+labelEstado(a.estado)+'</span>'
+          +(a.diff_dias?('<div style="font-size:10px;color:'+col+';margin-top:4px;font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
+          +'</div></div></div>';
+      }
+      criticos.forEach(function(a){html+=fila(a);});
+      medios.forEach(function(a){html+=fila(a);});
+      if(ok.length){
+        html += '<details style="margin-top:8px"><summary style="cursor:pointer;color:#475569;font-size:12px;padding:6px;font-weight:600">🟢 '+ok.length+' SKUs en plan correcto (clic para expandir)</summary>';
+        ok.forEach(function(a){html+=fila(a);});
+        html += '</details>';
+      }
+      html += '</div></div>';
+      box.innerHTML = html;
+    } catch(e){
+      box.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;padding:12px;border-radius:8px;font-size:12px;color:#991b1b">Error cargando centro de acción: '+(e.message||'desconocido')+'</div>';
+    }
   }
 
   async function planV2CargarAlertas(){
@@ -10193,21 +10343,102 @@ async function ckMarcar(itemId, estado){
     vista.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8">Cargando plan...</div>';
     var meses = parseFloat(_PV2_HORIZONTE);
     try {
+      // Para horizonte ≤ 2 meses: pintar grid calendario visual ARRIBA + cards abajo
+      var calendarHtml = '';
+      if(meses <= 2){
+        try {
+          var diasGrid = meses < 1 ? 14 : Math.round(meses * 30);
+          var calR = await fetch('/api/planta/calendar-eventos-plan?dias='+diasGrid);
+          var calD = await calR.json();
+          calendarHtml = planV2RenderCalendarGrid(calD.events || [], diasGrid);
+        } catch(e){ /* sin calendar grid si falla */ }
+      }
       if(meses < 1){
-        // Semana → plan-semanal-v2 (con fallback a proyección si BD vacía)
         var r = await fetch('/api/planta/plan-semanal-v2?dias=14');
         var d = await r.json();
         _PV2_DATA = d;
         planV2RenderSemanaV2(d);
+        if(calendarHtml) vista.innerHTML = calendarHtml + vista.innerHTML;
       } else {
         var r = await fetch('/api/planta/forecast?meses='+Math.round(meses));
         var d = await r.json();
         _PV2_DATA = d;
         planV2RenderForecast(d, Math.round(meses));
+        if(calendarHtml) vista.innerHTML = calendarHtml + vista.innerHTML;
       }
     } catch(e){
       vista.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e.message+'</div>';
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // VISTA CALENDARIO GRID — pinta los eventos del Calendar como grid mensual
+  // ════════════════════════════════════════════════════════════════════
+  function planV2RenderCalendarGrid(events, diasHorizonte){
+    if(!events || !events.length){
+      return '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:18px;margin-bottom:14px;text-align:center;color:#94a3b8;font-size:13px">📅 Sin eventos del Calendar en los próximos '+diasHorizonte+' días</div>';
+    }
+    // Agrupar eventos por fecha
+    var porFecha = {};
+    events.forEach(function(e){
+      if(!porFecha[e.fecha]) porFecha[e.fecha] = [];
+      porFecha[e.fecha].push(e);
+    });
+    // Determinar rango: hoy + N días
+    var hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    var fin = new Date(hoy.getTime() + diasHorizonte*86400000);
+    // Ajustar inicio al lunes anterior, fin al domingo siguiente
+    var inicio = new Date(hoy);
+    var dowInicio = (inicio.getDay() + 6) % 7;  // 0=Mon
+    inicio.setDate(inicio.getDate() - dowInicio);
+    var dowFin = (fin.getDay() + 6) % 7;
+    fin.setDate(fin.getDate() + (6 - dowFin));
+
+    var nombreMeses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    var nombreDias = ['L','M','M','J','V','S','D'];
+
+    var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:14px">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+    html += '<b style="color:#0f172a;font-size:14px">📅 Calendario de Producción</b>';
+    html += '<span style="font-size:11px;color:#64748b">'+events.length+' eventos · '+inicio.toLocaleDateString('es-CO',{day:'numeric',month:'short'})+' → '+fin.toLocaleDateString('es-CO',{day:'numeric',month:'short'})+'</span>';
+    html += '</div>';
+
+    // Headers de días
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px">';
+    nombreDias.forEach(function(d,i){
+      var col = i>=5 ? '#94a3b8' : '#475569';
+      html += '<div style="text-align:center;font-size:10px;color:'+col+';font-weight:700;text-transform:uppercase;padding:4px">'+d+'</div>';
+    });
+    html += '</div>';
+
+    // Grid de días
+    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
+    var cur = new Date(inicio);
+    var hoyISO = new Date().toISOString().slice(0,10);
+    while(cur <= fin){
+      var iso = cur.toISOString().slice(0,10);
+      var dow = (cur.getDay() + 6) % 7;
+      var esWeekend = dow >= 5;
+      var esHoy = iso === hoyISO;
+      var dentroRango = cur >= hoy && cur <= new Date(hoy.getTime() + diasHorizonte*86400000);
+      var evs = porFecha[iso] || [];
+      var bg = esHoy ? '#fef3c7' : esWeekend ? '#f8fafc' : (dentroRango?'#fff':'#f1f5f9');
+      var border = esHoy ? '2px solid #f59e0b' : '1px solid #e2e8f0';
+      html += '<div style="background:'+bg+';border:'+border+';border-radius:6px;min-height:80px;padding:5px;font-size:10px;'+(dentroRango?'':'opacity:.5')+'">';
+      html += '<div style="font-weight:700;color:'+(esHoy?'#92400e':esWeekend?'#94a3b8':'#0f172a')+';margin-bottom:3px">'+cur.getDate()+(cur.getDate()===1?' '+nombreMeses[cur.getMonth()]:'')+'</div>';
+      evs.slice(0,3).forEach(function(e){
+        var titulo = (e.titulo||'').replace(/[🌿💋🧴🧬🍊🚿💄🆕💡🔬✨🧪☕🌿💫📦👁️💧🛍️🏖️]/g,'').trim();
+        html += '<div title="'+_escHTML(e.titulo||'')+'" style="background:rgba(99,102,241,.15);color:#3730a3;padding:2px 4px;border-radius:3px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">'+_escHTML((e.titulo||'').slice(0,18))+'</div>';
+      });
+      if(evs.length > 3) html += '<div style="font-size:9px;color:#64748b">+'+(evs.length-3)+' más</div>';
+      html += '</div>';
+      cur.setDate(cur.getDate() + 1);
+    }
+    html += '</div>';
+    html += '<div style="margin-top:8px;font-size:10px;color:#64748b;text-align:center">⬛ hoy · ⬜ fin de semana · 💜 evento Calendar</div>';
+    html += '</div>';
+    return html;
   }
 
   function planV2RenderSemanaV2(d){
