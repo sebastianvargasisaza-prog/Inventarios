@@ -2623,7 +2623,11 @@ def prog_terminar_produccion(evento_id):
     c.execute("UPDATE produccion_programada SET fin_real_at=datetime('now') WHERE id=?", (evento_id,))
     if pp[2]:
         prev = c.execute("SELECT estado FROM areas_planta WHERE id=?", (pp[2],)).fetchone()
-        c.execute("UPDATE areas_planta SET estado='sucia' WHERE id=?", (pp[2],))
+        # Sebastián 1-may-2026: guard contra sobrescribir 'limpiando'
+        c.execute("""
+            UPDATE areas_planta SET estado='sucia'
+            WHERE id=? AND estado IN ('ocupada','libre')
+        """, (pp[2],))
         c.execute("""INSERT INTO area_eventos
             (area_id, tipo, estado_anterior, estado_nuevo, produccion_id, usuario, nota)
             VALUES (?,?,?,?,?,?,?)""",
@@ -8120,11 +8124,13 @@ def _registrar_rotacion(c, rol, operario_id, user='auto-ia'):
 
 
 def _operarios_libres_en_dia(c, fecha_iso):
-    """Operarios que NO están ya asignados a otra producción ese día."""
+    """Operarios que NO están ya asignados a otra producción ese día.
+    Sebastián 1-may-2026: excluye jefes de producción (Luis Enrique no rota)."""
     rows = c.execute("""
         SELECT id, nombre, COALESCE(apellido,''), rol_predeterminado
         FROM operarios_planta
         WHERE COALESCE(activo,1)=1
+          AND COALESCE(es_jefe_produccion,0)=0
         ORDER BY id
     """).fetchall()
     todos = [(r[0], (r[1]+' '+r[2]).strip(), r[3] or '') for r in rows]
@@ -8358,10 +8364,11 @@ def _crear_limpieza_post_produccion(c, area_id, area_codigo, fecha_produccion,
     except Exception:
         pass
 
-    # Asignar operario rotando (todos rotan)
+    # Asignar operario rotando (excluye jefes · Sebastián 1-may-2026)
     operarios = c.execute("""
         SELECT id FROM operarios_planta
         WHERE COALESCE(activo,1)=1
+          AND COALESCE(es_jefe_produccion,0)=0
         ORDER BY id
     """).fetchall()
     pool = [r[0] for r in operarios]
@@ -9569,7 +9576,7 @@ def planta_plan_semanal():
         LEFT JOIN areas_planta ap ON ap.id = pp.area_id
         LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
         WHERE pp.fecha_programada BETWEEN ? AND ?
-          AND pp.estado IN ('pendiente','en_proceso')
+          AND COALESCE(pp.estado,'programado') NOT IN ('completado','cancelado')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """, (fecha_desde, fecha_hasta)).fetchall()
 

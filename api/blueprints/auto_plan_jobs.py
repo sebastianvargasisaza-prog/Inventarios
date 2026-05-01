@@ -886,13 +886,13 @@ def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
 
 
 def job_auto_asignar_areas(app):
-    """Cron diario 6:30: SINCRONIZA Calendar→DB primero, luego auto-asigna
-    área + envasado + operarios para producciones próximos 7d.
+    """Cron diario 6:30: auto-asigna área + envasado + operarios para
+    producciones que YA existen en DB sin asignación.
 
-    Sebastián 1-may-2026: 'haz todo automático con IA · no se activa solo'.
-    Ahora el cron ejecuta los 2 pasos en sucesión:
-      1. Sync Calendar→DB (insertar eventos nuevos)
-      2. Auto-asignar IA para producciones sin área/operarios
+    Sebastián 1-may-2026 (refactor Calendar-first): el PASO 1 (sync Calendar→DB)
+    se ELIMINÓ. La DB solo guarda lo que YA se inició/terminó. El cron solo
+    completa asignaciones de filas DB ya creadas (manuales o desde
+    iniciar_calendar). Calendar es la fuente de verdad para 'lo que toca'.
     """
     with app.app_context():
         from database import get_db
@@ -900,20 +900,11 @@ def job_auto_asignar_areas(app):
         from datetime import datetime as _dt, timedelta as _td
         conn = get_db(); c = conn.cursor()
         fecha_hoy = _dt.now().date()
-        # Ventana 14d (semana actual + próxima)
+        # Ventana 14d (semana actual + próxima) · solo filas DB existentes
         fecha_inicio = fecha_hoy - _td(days=fecha_hoy.weekday())  # lunes esta semana
         fecha_fin = fecha_inicio + _td(days=14)
 
-        # PASO 1: Sync Calendar → DB
-        insertadas = 0; ya_existian = 0
-        try:
-            insertadas, ya_existian = _sync_calendar_a_db(
-                conn, c, fecha_inicio, fecha_fin, 'cron-6:30'
-            )
-        except Exception as _e:
-            log.warning(f'[auto-asignar-areas] sync calendar falla: {_e}')
-
-        # PASO 2: Auto-asignar producciones sin área/operarios
+        # Solo auto-asignar producciones DB sin área/operarios (NO sync Calendar)
         rows = c.execute("""
             SELECT id FROM produccion_programada
             WHERE date(fecha_programada) >= ?
@@ -934,8 +925,7 @@ def job_auto_asignar_areas(app):
                 errores += 1
         conn.commit()
         return True, {
-            'sync_insertadas': insertadas,
-            'sync_ya_existian': ya_existian,
+            'sync_deprecated': True,  # PASO 1 eliminado · Calendar-first
             'asignadas': procesadas,
             'errores': errores,
             'total_evaluadas': len(rows),
@@ -1014,72 +1004,30 @@ def job_lunes_7am_workflow(app):
         except Exception as e:
             resumen['pasos'].append(f'Sync Shopify ERROR: {str(e)[:100]}')
 
-        # PASO 2-3-4: Sync Calendar + insertar + auto-asignar IA
-        sincronizadas = 0
+        # PASO 2: Auto-asignar IA a producciones DB existentes (Calendar-first)
+        # Sebastián 1-may-2026: refactor · YA NO insertamos desde Calendar.
+        # Calendar es la fuente de verdad. La DB solo recibe filas cuando el
+        # usuario clickea ▶ Iniciar (Calendar) en Operación Live. Aquí solo
+        # completamos asignaciones de filas que ya existen.
+        sincronizadas = 0  # Mantenido en payload por compat (siempre 0 ahora)
         asignadas = 0
         try:
-            from blueprints.auto_plan import (
-                _calendar_events_cached, _alias_calendar_for, _match_producto_evento,
-                _parsear_kg_evento
-            )
             from blueprints.programacion import _auto_asignar_produccion
-            cal_events = _calendar_events_cached(force_refresh=True) or []
-            skus_aliases = {}
-            for sku_n, alias_csv in c.execute("""
-                SELECT producto_nombre, COALESCE(alias_calendar, '')
-                FROM sku_planeacion_config
-                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
-            """).fetchall():
-                skus_aliases[sku_n] = alias_csv
-
-            for ev in cal_events:
-                try:
-                    f_ev = _dt.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
-                except Exception:
-                    continue
-                # Solo eventos de la semana en curso
-                if f_ev < lunes_semana or f_ev > viernes_semana:
-                    continue
-                producto_match = None
-                best_score = 0
-                for prod_n, alias_csv in skus_aliases.items():
-                    try:
-                        score = _match_producto_evento(prod_n, alias_csv,
-                                                         ev.get('titulo'), ev.get('descripcion',''))
-                        if score >= 60 and score > best_score:
-                            best_score = score
-                            producto_match = prod_n
-                    except Exception:
-                        continue
-                if not producto_match: continue
-                kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-                # Skip si ya existe
-                exists = c.execute("""
-                    SELECT id, area_id, operario_dispensacion_id FROM produccion_programada
-                    WHERE producto=? AND date(fecha_programada)=?
-                """, (producto_match, f_ev.isoformat())).fetchone()
-                if exists:
-                    pid_existente = exists[0]
-                    if not exists[1] and not exists[2]:
-                        res = _auto_asignar_produccion(c, pid_existente, 'cron-lunes-7am')
-                        if res.get('ok'): asignadas += 1
-                    continue
-                cur_ins = c.execute("""
-                    INSERT INTO produccion_programada
-                      (producto, fecha_programada, lotes, cantidad_kg,
-                       estado, observaciones, origen, semana_workflow_id)
-                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar', ?)
-                """, (producto_match, f_ev.isoformat(), kg,
-                      f'[lunes 7am] {(ev.get("titulo") or "")[:200]}',
-                      workflow_id))
-                new_id = cur_ins.lastrowid
-                sincronizadas += 1
-                if kg > 0 and new_id:
-                    res = _auto_asignar_produccion(c, new_id, 'cron-lunes-7am')
-                    if res.get('ok'): asignadas += 1
-            resumen['pasos'].append(f'Calendar: {sincronizadas} producciones nuevas · {asignadas} asignadas IA')
+            rows_sin_asignar = c.execute("""
+                SELECT id FROM produccion_programada
+                WHERE date(fecha_programada) BETWEEN ? AND ?
+                  AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+                  AND (area_id IS NULL
+                       OR (operario_dispensacion_id IS NULL
+                           AND operario_elaboracion_id IS NULL
+                           AND operario_envasado_id IS NULL))
+            """, (lunes_semana.isoformat(), viernes_semana.isoformat())).fetchall()
+            for (pid,) in rows_sin_asignar:
+                res = _auto_asignar_produccion(c, pid, 'cron-lunes-7am')
+                if res.get('ok'): asignadas += 1
+            resumen['pasos'].append(f'Auto-asignación IA: {asignadas}/{len(rows_sin_asignar)} filas DB asignadas (Calendar-first · NO sync)')
         except Exception as e:
-            resumen['pasos'].append(f'Calendar ERROR: {str(e)[:100]}')
+            resumen['pasos'].append(f'Auto-asignación ERROR: {str(e)[:100]}')
 
         # PASO 5: Crear limpiezas para áreas que tendrán producción esta semana
         limpiezas_creadas = 0

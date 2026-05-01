@@ -3901,6 +3901,7 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     BENIGN_PATTERNS = (
         "duplicate column name",
         "already exists",
+        "no such table",  # ALTER en tabla que aún no se ha creado
     )
 
     for version, description, stmts in MIGRATIONS:
