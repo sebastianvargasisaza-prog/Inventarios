@@ -3203,6 +3203,7 @@ def planta_centro_mando():
     # que el jefe siempre vea qué viene (no quedar en blanco un viernes).
     producciones_dia = []
     db_sin_calendar = []
+    capacidad_warnings = []
     fechas_horizonte = [fecha_sel + timedelta(days=i) for i in range(7)]
     fechas_horizonte_iso = set(f.isoformat() for f in fechas_horizonte)
 
@@ -3377,6 +3378,47 @@ def planta_centro_mando():
             return (p.get('fecha', ''), est_orden.get(p.get('estado', ''), 4))
         producciones_dia.sort(key=_orden_key)
 
+        # ── SCHEDULING SECUENCIAL (Sebastián 1-may-2026) ──
+        # 'capacidad simultánea 4 · si hay más, recomendar secuencial'
+        # 4 operarios pueden llevar 4 producciones paralelas (cada uno en
+        # un rol distinto). Días con > 4 prods necesitan ondas secuenciales.
+        CAPACIDAD_PARALELA = 4
+        DURACION_DEFAULT_MIN = 180  # 3h por producción (estándar)
+        HORA_INICIO = 7  # 7am
+        # Agrupar por fecha
+        prods_por_fecha = {}
+        for p in producciones_dia:
+            f = p.get('fecha', '')
+            if f: prods_por_fecha.setdefault(f, []).append(p)
+        # Calcular wave + horario sugerido por cada producción
+        capacidad_warnings = []
+        for f, prods in prods_por_fecha.items():
+            num = len(prods)
+            for idx, p in enumerate(prods):
+                # Estimar duración: 3h base, +1h si >50kg, +2h si >100kg
+                kg = p.get('kg') or 0
+                dur_min = DURACION_DEFAULT_MIN
+                if kg > 100: dur_min = 300
+                elif kg > 50: dur_min = 240
+                wave = (idx // CAPACIDAD_PARALELA) + 1  # 1, 2, 3...
+                slot_min = (wave - 1) * DURACION_DEFAULT_MIN
+                slot_h = HORA_INICIO + slot_min // 60
+                slot_m = slot_min % 60
+                fin_h = slot_h + dur_min // 60
+                fin_m = (slot_min + dur_min) % 60
+                p['wave'] = wave
+                p['slot_inicio_sugerido'] = f'{slot_h:02d}:{slot_m:02d}'
+                p['slot_fin_sugerido'] = f'{fin_h:02d}:{fin_m:02d}'
+                p['duracion_estimada_min'] = dur_min
+            if num > CAPACIDAD_PARALELA:
+                capacidad_warnings.append({
+                    'fecha': f,
+                    'num_producciones': num,
+                    'capacidad': CAPACIDAD_PARALELA,
+                    'ondas_secuenciales': (num + CAPACIDAD_PARALELA - 1) // CAPACIDAD_PARALELA,
+                    'extras_secuenciales': num - CAPACIDAD_PARALELA,
+                })
+
         # ── DIAGNÓSTICO: filas DB sin match en Calendar (orphans/stale)
         # Sebastián 1-may-2026: 'siento que deja todo como lunes, no sabe
         # discriminar junta todo' → detectar duplicados de auto-sync antiguo
@@ -3448,6 +3490,7 @@ def planta_centro_mando():
             'auto_canceladas_esta_carga': auto_canceladas,
             'auto_cancel_detalle': auto_cancel_detalle[:5],
             'auto_clean_diag': auto_clean_diag,
+            'capacidad_warnings': capacidad_warnings,
         },
         'eventos_recientes': eventos,
         'fecha': hoy,

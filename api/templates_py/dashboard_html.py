@@ -7989,10 +7989,17 @@ async function ckMarcar(itemId, estado){
       } else {
         borderCol = '#0f766e'; bgCol = '#f0fdfa'; icon = '⏳';
       }
+      // Wave label si hay scheduling secuencial
+      var waveBadge = '';
+      if(p.wave && p.wave > 1){
+        waveBadge = '<span style="background:#fbbf24;color:#78350f;padding:1px 4px;border-radius:3px;font-size:8px;font-weight:700;margin-left:3px">⏰ ONDA '+p.wave+'</span>';
+      }
       var h = '<div style="background:'+bgCol+';border-left:3px solid '+borderCol+';border-radius:4px;padding:5px 7px;margin-bottom:5px;font-size:10px">';
-      h += '<div style="font-weight:700;color:#0f172a" title="'+_escHTML(p.titulo_calendar||p.producto)+'">'+icon+' '+_escHTML((p.producto||'').substring(0,24))+'</div>';
+      h += '<div style="font-weight:700;color:#0f172a" title="'+_escHTML(p.titulo_calendar||p.producto)+'">'+icon+' '+_escHTML((p.producto||'').substring(0,24))+waveBadge+'</div>';
       h += '<div style="color:#475569;font-size:9px;margin-top:1px">'+(p.kg||0)+'kg';
       if(p.area && p.area.codigo) h += ' · 🏭 '+_escHTML(p.area.codigo);
+      // Slot horario sugerido
+      if(p.slot_inicio_sugerido) h += ' · ⏱'+p.slot_inicio_sugerido+'-'+p.slot_fin_sugerido;
       h += '</div>';
       // Operarios compactos (1 línea)
       var ops = [];
@@ -8052,9 +8059,30 @@ async function ckMarcar(itemId, estado){
     if(!panel) return;
     var existing = document.getElementById('cm-diag-banner');
     if(existing) existing.remove();
+    var capExisting = document.getElementById('cm-cap-banner');
+    if(capExisting) capExisting.remove();
     var orphans = (diag.db_sin_calendar) || [];
     var autoClean = diag.auto_canceladas_esta_carga || 0;
-    // Mostrar banner si hubo auto-clean O quedan orphans
+    var capWarn = diag.capacidad_warnings || [];
+
+    // Banner de sobre-capacidad (Sebastián 1-may-2026)
+    if(capWarn.length){
+      var capBanner = document.createElement('div');
+      capBanner.id = 'cm-cap-banner';
+      capBanner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#78350f';
+      var lista = capWarn.map(function(w){
+        var d = new Date(w.fecha+'T00:00:00');
+        var nombresD = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+        return '<li><b>'+nombresD[d.getDay()]+' '+w.fecha.substring(5)+'</b>: '+w.num_producciones+' producciones · capacidad simultánea '+w.capacidad+' · '+w.extras_secuenciales+' deben ser secuenciales (onda '+w.ondas_secuenciales+')</li>';
+      }).join('');
+      capBanner.innerHTML = '<b>⏰ '+capWarn.length+' día(s) con sobre-capacidad</b> · 4 operarios pueden llevar máximo 4 producciones en paralelo · las extras serán ondas secuenciales:<br>'
+        +'<ul style="margin:4px 0 0 18px;padding:0">'+lista+'</ul>'
+        +'<div style="font-size:10px;margin-top:4px;opacity:.8">Las cards muestran ⏱hh:mm con horario sugerido · onda 2/3 = ⏰ amarillo</div>';
+      var firstChild = panel.firstChild;
+      panel.insertBefore(capBanner, firstChild ? firstChild.nextSibling : null);
+    }
+
+    // Mostrar banner orphans/auto-clean si hubo
     if(!autoClean && !orphans.length) return;
     var banner = document.createElement('div');
     banner.id = 'cm-diag-banner';
