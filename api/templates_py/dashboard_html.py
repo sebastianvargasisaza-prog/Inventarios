@@ -5086,6 +5086,7 @@ function _renderProgramacion(d){
       </div>
       <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
         <button onclick="meeConfigToggle()" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#9881; Configurar MEE (proveedor / MOQ / origen / flags)</button>
+        <button onclick="meeNormalizar()" title="Backfill proveedor desde maestro_mee + auto-mapping fuzzy SKU→etiqueta/serigrafía por similitud" style="padding:5px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#129668; Normalizar (proveedor + mappings)</button>
       </div>
       <div id="autosc-mee-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
     </div>
@@ -11504,8 +11505,8 @@ async function ckMarcar(itemId, estado){
       vista.innerHTML = '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:32px 18px;text-align:center;color:#64748b">'
         +'<div style="font-size:32px;margin-bottom:8px">📊</div>'
         +'<div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px">Sin producciones proyectadas en '+meses+' meses</div>'
-        +'<div style="font-size:12px;color:#64748b">El motor MRP no encontró eventos del Calendar ni necesidades por velocidad de venta. '
-        +'Si esperabas verlas, revisa: <b>velocidades de venta Shopify</b> · <b>SKUs activos</b> · <b>fórmulas con lote_size_kg</b>.</div>'
+        +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">El motor MRP no encontró eventos del Calendar ni necesidades por velocidad de venta.</div>'
+        +'<button onclick="diagnosticarCalendar()" style="padding:7px 14px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔧 Diagnosticar Calendar</button>'
         +'</div>';
       return;
     }
@@ -12111,6 +12112,93 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Diagnosticar Calendar (Sebastián 1-may-2026)
+  async function diagnosticarCalendar(){
+    try{
+      var r = await fetch('/api/planta/diagnostico-calendar', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var html = '🔧 Diagnóstico Google Calendar\\n\\n';
+      html += '📍 Source detectado: '+d.source+'\\n';
+      html += '📅 Eventos en próximos 60d: '+d.total_eventos_60d+'\\n';
+      html += '\\n🔑 Variables de entorno:\\n';
+      html += '  • GCAL_ICAL_URL: '+(d.env_GCAL_ICAL_URL_configurado ? '✓ configurado' : '✗ NO configurado')+'\\n';
+      html += '  • GOOGLE_API_KEY: '+(d.env_GOOGLE_API_KEY_configurado ? '✓ configurado' : '✗ NO configurado')+'\\n';
+      html += '  • CALENDAR_ID: '+d.env_CALENDAR_ID+'\\n';
+      if(d.error){ html += '\\n❌ Error: '+d.error+'\\n'; }
+      if(d.sample && d.sample.length){
+        html += '\\n📋 Próximos eventos:\\n';
+        d.sample.forEach(function(e){ html += '  • '+e.fecha+' · '+e.titulo+'\\n'; });
+      }
+      if(d.sugerencias && d.sugerencias.length){
+        html += '\\n💡 Sugerencias:\\n';
+        d.sugerencias.forEach(function(s){ html += '  • '+s+'\\n'; });
+      }
+      alert(html);
+    }catch(e){
+      alert('❌ Error diagnóstico: '+(e.message||e));
+    }
+  }
+
+  // ── Normalizar MEE: backfill proveedor + auto-mapping fuzzy
+  async function meeNormalizar(){
+    var msg = document.getElementById('autosc-mee-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Calculando propuestas de normalización…';
+    try{
+      // Paso 1: dry_run para mostrar propuestas
+      var r = await fetch('/api/planta/normalizar-mee', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({dry_run: true, umbral_score: 40}),
+      });
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var bf = d.backfill_proveedor || {};
+      var am = d.auto_mapping || {};
+      var nBf = (bf.cambios||[]).length;
+      var nMap = (am.sugerencias||[]).length;
+      if(nBf === 0 && nMap === 0){
+        msg.innerHTML = '✅ Nada que normalizar · todos los MEE ya tienen proveedor y los SKUs ya están mapeados.';
+        return;
+      }
+      // Mostrar resumen + sample
+      var samplesMap = (am.sugerencias||[]).slice(0,8).map(function(s){
+        return '<li>'+s.sku_codigo.substring(0,30)+' → <code>'+s.mee_codigo+'</code> ('+s.componente_tipo+', score '+s.score+')</li>';
+      }).join('');
+      var html = '<b>📋 Propuestas de normalización</b><br>';
+      html += '<div style="margin-top:6px">📦 Backfill proveedor: <b>'+nBf+'</b> MEE</div>';
+      html += '<div>🪄 Auto-mapping fuzzy SKU→etiqueta/serigrafía: <b>'+nMap+'</b> mappings</div>';
+      if(samplesMap) html += '<ul style="margin:6px 0 0 18px;font-size:10px">'+samplesMap + (nMap>8?'<li>+ '+(nMap-8)+' más</li>':'')+'</ul>';
+      html += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">';
+      html += '<button onclick="meeNormalizarAplicar()" style="padding:5px 12px;background:#10b981;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✅ Aplicar todos</button>';
+      html += '<button onclick="document.getElementById(\\'autosc-mee-msg\\').style.display=\\'none\\'" style="padding:5px 12px;background:#64748b;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">Cancelar</button>';
+      html += '</div>';
+      msg.innerHTML = html;
+    }catch(e){
+      msg.innerHTML = '❌ Error normalizando: '+(e.message||e);
+    }
+  }
+  async function meeNormalizarAplicar(){
+    var msg = document.getElementById('autosc-mee-msg');
+    msg.innerHTML = '⏳ Aplicando normalización…';
+    try{
+      var r = await fetch('/api/planta/normalizar-mee', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({dry_run: false, umbral_score: 40}),
+      });
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var bf = d.backfill_proveedor || {};
+      var am = d.auto_mapping || {};
+      msg.innerHTML = '✅ ' + d.mensaje + '<br><div style="font-size:10px;margin-top:4px;opacity:.85">Refresca el panel para ver los datos actualizados.</div>';
+      autoscMeeRecargar();
+    }catch(e){
+      msg.innerHTML = '❌ Error aplicando: '+(e.message||e);
+    }
+  }
+
   // ── Config MEE (proveedor + MOQ + origen + flags)
   var _meeConfigData = [];
   function meeConfigToggle(){

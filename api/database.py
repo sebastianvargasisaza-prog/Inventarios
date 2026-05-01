@@ -3302,6 +3302,28 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (73, "Auto-SC MEE: backfill proveedor desde maestro_mee (normalización Sebastián)", [
+        # Sebastian (1-may-2026): "82 MEE configurados, 0 con proveedor". El
+        # seed migración 72 dejó proveedor_principal=''. Pero maestro_mee.proveedor
+        # YA tenía el dato real (69/69 con proveedor). Backfill: copiar maestro_mee.proveedor
+        # a mee_lead_time_config.proveedor_principal donde esté vacío. Idempotente.
+        """UPDATE mee_lead_time_config
+              SET proveedor_principal = (
+                    SELECT m.proveedor FROM maestro_mee m
+                    WHERE m.codigo = mee_lead_time_config.mee_codigo
+                  )
+            WHERE COALESCE(proveedor_principal,'') = ''
+              AND mee_codigo IN (
+                SELECT codigo FROM maestro_mee
+                WHERE COALESCE(proveedor,'') != ''
+              )""",
+        # Si el origen viene como 'China' en proveedor maestro, sugerir origen=China
+        # para esos MEE (idempotente: solo si origen quedó en default 'Local').
+        """UPDATE mee_lead_time_config
+              SET origen = 'China'
+            WHERE proveedor_principal = 'China'
+              AND origen = 'Local'""",
+    ]),
     (72, "Auto-SC MEE: seed inteligente + flag disparo_post_envasado (etiquetas)", [
         # Sebastian (1-may-2026): "etiquetas las pedimos el dia que sabemos
         # cuanto envasamos". Flag disparo_post_envasado=1 las saca del cron

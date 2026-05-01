@@ -5834,6 +5834,238 @@ def sc_d20_rapida():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# NORMALIZACIÓN MEE · backfill proveedor + auto-mapping SKU→MEE fuzzy
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (1-may-2026): "no esta tomando nada para eso podemos normalizar".
+# 82 MEE configurados pero 0 con proveedor + 1 SKU mapeado de 32 activos.
+# Datos reales viven en maestro_mee.proveedor (no se copiaron al config).
+# Más: muchas etiquetas/serigrafías tienen el nombre del SKU en su descripción
+# → auto-mapping fuzzy posible.
+
+def _normalizar_palabras(s):
+    """Tokeniza un string para comparación fuzzy: minúsculas, sin acentos,
+    quita conectores, devuelve set de palabras significativas."""
+    if not s:
+        return set()
+    import unicodedata
+    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii').lower()
+    # Quitar puntuación
+    import re
+    s = re.sub(r'[^a-z0-9\s+]', ' ', s)
+    palabras = set(s.split())
+    # Quitar conectores comunes
+    stopwords = {'de', 'del', 'la', 'el', 'y', 'a', 'en', 'con', 'sin', 'para',
+                 'por', 'al', 'los', 'las', 'un', 'una', 'es', 'que', 'lo'}
+    return {p for p in palabras if p not in stopwords and len(p) >= 2}
+
+
+def _score_fuzzy(palabras_a, palabras_b):
+    """Score 0-100 de similitud entre dos sets de palabras (Jaccard expandido)."""
+    if not palabras_a or not palabras_b:
+        return 0
+    inter = palabras_a & palabras_b
+    if not inter:
+        return 0
+    # Pesar más palabras "raras" (no comunes en muchos MEE)
+    score = (len(inter) / max(len(palabras_a), len(palabras_b))) * 100
+    # Bonus si todas las palabras del SKU están en el MEE
+    if palabras_a.issubset(palabras_b):
+        score = min(100, score + 25)
+    return round(score, 1)
+
+
+@bp.route('/api/planta/diagnostico-calendar', methods=['GET'])
+def diagnostico_calendar():
+    """Diagnostica por qué planv2 dice 'Sin eventos del Calendar'.
+
+    Sebastián (1-may-2026) reportó empty state en planv2. Devuelve:
+      · source (ical/gcal_api/none)
+      · error si lo hay
+      · cantidad de eventos próximos 60d
+      · sample primeros 5 eventos
+      · sugerencia de qué env vars configurar
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    import os as _os
+    diag = {
+        'env_GCAL_ICAL_URL_configurado': bool(_os.environ.get('GCAL_ICAL_URL', '').strip()),
+        'env_GOOGLE_API_KEY_configurado': bool(_os.environ.get('GOOGLE_API_KEY', '').strip()),
+        'env_CALENDAR_ID': _os.environ.get('CALENDAR_ID', '(no definido)'),
+    }
+    try:
+        from blueprints.programacion import _fetch_calendar_events
+        result = _fetch_calendar_events(days_ahead=60) or {}
+        eventos = result.get('events') or []
+        diag['source'] = result.get('source', 'unknown')
+        diag['error'] = result.get('error')
+        diag['total_eventos_60d'] = len(eventos)
+        diag['sample'] = [{'fecha': e.get('fecha'), 'titulo': (e.get('titulo') or '')[:60]} for e in eventos[:5]]
+    except Exception as e:
+        diag['source'] = 'fail'
+        diag['error'] = str(e)
+        diag['total_eventos_60d'] = 0
+        diag['sample'] = []
+
+    # Sugerencias
+    sugerencias = []
+    if diag['source'] == 'none' or (not diag['env_GCAL_ICAL_URL_configurado']
+                                      and not diag['env_GOOGLE_API_KEY_configurado']):
+        sugerencias.append('Configura env var GCAL_ICAL_URL en Render con la URL secreta del calendario (Configuración → Integrar → URL secreta).')
+    elif diag['env_GCAL_ICAL_URL_configurado'] and diag['error']:
+        sugerencias.append(f'Hay GCAL_ICAL_URL pero falla: {diag["error"]}. Verifica que la URL siga válida.')
+    if diag['total_eventos_60d'] == 0 and not diag.get('error'):
+        sugerencias.append('Calendar conectado pero sin eventos en próximos 60 días. Revisa: ¿tienes producciones programadas en mayo-junio? Crea eventos en Google Calendar con el nombre del producto.')
+    diag['sugerencias'] = sugerencias
+
+    return jsonify(diag)
+
+
+@bp.route('/api/planta/normalizar-mee', methods=['POST'])
+def normalizar_mee():
+    """Normaliza datos MEE en bulk:
+      1. Backfill proveedor_principal desde maestro_mee.proveedor (idempotente)
+      2. Auto-mapping fuzzy SKU → etiqueta/serigrafía/tampografía/plegadiza
+         basado en similitud de palabras (descripción MEE vs nombre SKU)
+
+    Body opcional: {dry_run: bool=true, umbral_score: int=40}
+    Si dry_run=true, devuelve propuestas sin escribir.
+    Si dry_run=false, aplica los cambios.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    dry_run = bool(d.get('dry_run', True))
+    umbral = int(d.get('umbral_score', 40))
+    conn = get_db(); c = conn.cursor()
+
+    resultado = {
+        'dry_run': dry_run,
+        'umbral_score': umbral,
+        'backfill_proveedor': {'antes': 0, 'despues': 0, 'cambios': []},
+        'auto_mapping': {'sugerencias': [], 'aplicados': 0, 'omitidos': 0},
+    }
+
+    # 1) BACKFILL PROVEEDOR
+    n_antes = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE COALESCE(proveedor_principal,'') != ''").fetchone()[0]
+    resultado['backfill_proveedor']['antes'] = n_antes
+
+    rows = c.execute("""
+        SELECT cfg.mee_codigo, m.proveedor, m.descripcion
+        FROM mee_lead_time_config cfg
+          JOIN maestro_mee m ON m.codigo = cfg.mee_codigo
+        WHERE COALESCE(cfg.proveedor_principal, '') = ''
+          AND COALESCE(m.proveedor, '') != ''
+    """).fetchall()
+    for codigo, prov, desc in rows:
+        resultado['backfill_proveedor']['cambios'].append({
+            'mee_codigo': codigo, 'descripcion': (desc or '')[:40],
+            'proveedor_asignado': prov,
+        })
+        if not dry_run:
+            origen_nuevo = 'China' if prov == 'China' else None
+            if origen_nuevo:
+                c.execute("""
+                    UPDATE mee_lead_time_config
+                       SET proveedor_principal = ?, origen = 'China',
+                           actualizado_en = datetime('now'), actualizado_por = ?
+                     WHERE mee_codigo = ? AND COALESCE(proveedor_principal,'') = ''
+                """, (prov, user, codigo))
+            else:
+                c.execute("""
+                    UPDATE mee_lead_time_config
+                       SET proveedor_principal = ?,
+                           actualizado_en = datetime('now'), actualizado_por = ?
+                     WHERE mee_codigo = ? AND COALESCE(proveedor_principal,'') = ''
+                """, (prov, user, codigo))
+
+    n_despues = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE COALESCE(proveedor_principal,'') != ''").fetchone()[0]
+    resultado['backfill_proveedor']['despues'] = n_despues if not dry_run else (n_antes + len(rows))
+
+    # 2) AUTO-MAPPING SKU → MEE (etiquetas, serigrafías, tampografías)
+    # Solo tipos donde el nombre del SKU suele aparecer en la descripción.
+    skus_activos = c.execute("""
+        SELECT producto_nombre FROM sku_planeacion_config
+        WHERE activo = 1
+          AND COALESCE(estado, 'activo') NOT IN ('descontinuado', 'pausado', 'sin_ventas')
+    """).fetchall()
+    skus_activos = [r[0] for r in skus_activos]
+
+    # MEEs candidatos por categoría
+    mees_etiqueta = c.execute("""
+        SELECT codigo, descripcion FROM maestro_mee
+        WHERE COALESCE(estado,'Activo')='Activo'
+          AND COALESCE(categoria,'') IN ('Etiqueta','Serigrafia')
+    """).fetchall()
+
+    # Mappings ya existentes (para no duplicar)
+    existentes = set()
+    try:
+        for r in c.execute("SELECT sku_codigo, mee_codigo FROM sku_mee_config").fetchall():
+            existentes.add((r[0], r[1]))
+    except Exception:
+        pass
+
+    for sku in skus_activos:
+        palabras_sku = _normalizar_palabras(sku)
+        if not palabras_sku:
+            continue
+        # Buscar el mejor match por categoría
+        mejores = {}  # categoria → (codigo, score, desc)
+        for cod, desc in mees_etiqueta:
+            palabras_mee = _normalizar_palabras(desc)
+            score = _score_fuzzy(palabras_sku, palabras_mee)
+            if score < umbral:
+                continue
+            # Determinar categoría/tipo del MEE
+            cat_row = next(((c_, d_) for c_, d_ in mees_etiqueta if c_ == cod), None)
+            tipo = 'etiqueta' if cod.upper().startswith(('ETIQ', 'EMP-ETIQ')) else (
+                   'serigrafia' if cod.upper().startswith('SERIG') else 'etiqueta')
+            actual = mejores.get(tipo)
+            if not actual or score > actual[1]:
+                mejores[tipo] = (cod, score, desc)
+
+        for tipo, (cod, score, desc) in mejores.items():
+            if (sku, cod) in existentes:
+                continue
+            sug = {
+                'sku_codigo': sku,
+                'mee_codigo': cod,
+                'mee_descripcion': desc,
+                'componente_tipo': tipo,
+                'score': score,
+                'cantidad_por_unidad': 1,
+            }
+            resultado['auto_mapping']['sugerencias'].append(sug)
+            if not dry_run:
+                try:
+                    c.execute("""
+                        INSERT INTO sku_mee_config
+                          (sku_codigo, mee_codigo, componente_tipo,
+                           cantidad_por_unidad, aplica, notas)
+                        VALUES (?, ?, ?, 1, 1, ?)
+                    """, (sku, cod, tipo,
+                          f'Auto-mapeo (score {score}) por similitud nombre — Sebastián 1-may-2026'))
+                    resultado['auto_mapping']['aplicados'] += 1
+                    existentes.add((sku, cod))
+                except sqlite3.IntegrityError:
+                    resultado['auto_mapping']['omitidos'] += 1
+
+    if not dry_run:
+        conn.commit()
+
+    resultado['mensaje'] = (
+        f"{'DRY RUN: ' if dry_run else ''}"
+        f"{len(resultado['backfill_proveedor']['cambios'])} proveedores "
+        f"{'a backfillear' if dry_run else 'backfilleados'}, "
+        f"{len(resultado['auto_mapping']['sugerencias'])} mappings "
+        f"{'sugeridos' if dry_run else 'creados'}"
+    )
+    return jsonify(resultado)
+
+
+# ════════════════════════════════════════════════════════════════════════
 # CRUD config MEE · proveedor + origen + MOQ + lead time + flags
 # ════════════════════════════════════════════════════════════════════════
 
