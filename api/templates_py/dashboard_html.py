@@ -5149,6 +5149,25 @@ function _renderProgramacion(d){
       <div id="prep-carga-operarios" style="margin-top:14px"></div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════
+         ESTADO SOLICITUDES · qué se solicitó vs qué falta · Sebastián 1-may
+         ⭐ Lunes 7am: workflow automático bloquea la semana
+         ══════════════════════════════════════════════════════════════ -->
+    <div id="plan-estado-solicitudes" style="background:linear-gradient(135deg,#1e293b 0%,#0f766e 100%);border-radius:12px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(15,118,110,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:800">&#11088; Plan automático · Lunes 7am</div>
+          <div id="estado-sol-subtitle" style="font-size:11px;opacity:.92;margin-top:2px">Cargando estado...</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="ejecutarLunes7am()" title="Ejecuta el workflow completo AHORA: sync Calendar + auto-asignar IA + bloquear semana + email Alejandro" style="padding:6px 14px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">&#11088; Ejecutar lunes 7am ahora</button>
+          <button onclick="estadoSolicitudesRecargar()" style="padding:6px 10px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="estado-sol-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px"></div>
+      <div id="estado-sol-detalle" style="margin-top:10px;font-size:11px;opacity:.88"></div>
+    </div>
+
     <!-- ── Centro de Alertas MEE · etiquetas post-envasado + D-20 ───────
          Sebastián (1-may-2026): "etiquetas las pedimos el día que sabemos
          cuanto envasamos. serigrafía ideal pedir 20 días antes". Sistema
@@ -9649,7 +9668,7 @@ async function ckMarcar(itemId, estado){
     // PLAN: sólo necesidades (qué solicitar) + alertas
     // ASIGNACION: Esta Semana + Mi Día + Salas Vivo
     // CONFIG: Salud + Reporte + Crons + Items asignar + Config MEE
-    var esenciales = ['plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
+    var esenciales = ['plan-estado-solicitudes', 'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
     var avanzados = ['mee-asignar-panel', 'mee-config-panel'];
 
     // Mover paneles operativos al tab Asignación Semanal
@@ -9712,7 +9731,8 @@ async function ckMarcar(itemId, estado){
 
     window._meePanelsMoved = true;
     // Cargar datos esenciales (los avanzados se cargan al toggle)
-    // Plan = sólo necesidades del mes a solicitar (simple)
+    // Plan = estado solicitudes + auto-SC + alertas (simple)
+    if(typeof estadoSolicitudesRecargar === 'function') estadoSolicitudesRecargar();
     if(typeof autoscRecargar === 'function') autoscRecargar();
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
@@ -12364,6 +12384,90 @@ async function ckMarcar(itemId, estado){
     }
   }
   // ══════════════════════════════════════════════════════════════
+  // ESTADO SOLICITUDES · ⭐ Plan automático Lunes 7am (Sebastián 1-may-2026)
+  // ══════════════════════════════════════════════════════════════
+  async function estadoSolicitudesRecargar(){
+    var sub = document.getElementById('estado-sol-subtitle');
+    var grid = document.getElementById('estado-sol-grid');
+    var det = document.getElementById('estado-sol-detalle');
+    if(sub) sub.textContent = 'Cargando...';
+    try{
+      var r = await fetch('/api/planta/estado-solicitudes', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var sol = d.solicitado_ultimo_mes || {};
+      var pend = d.pendiente_solicitar || {};
+      var ult = d.ultimo_workflow_lunes;
+      var ejecutado = d.workflow_lunes_ejecutado_esta_semana;
+
+      if(sub){
+        if(ejecutado && ult){
+          sub.textContent = '✅ Workflow lunes 7am ejecutado · ' + ult.bloqueadas + ' producciones bloqueadas · semana ' + ult.fecha_lunes;
+        } else if(ult){
+          sub.textContent = '⚠️ Última ejecución: ' + (ult.fecha_lunes||'—') + ' · esta semana NO se ha ejecutado';
+        } else {
+          sub.textContent = '⏳ Workflow lunes 7am NO se ha ejecutado nunca · click "Ejecutar lunes 7am ahora"';
+        }
+      }
+
+      function tile(label, val, color, sub){
+        return '<div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:10px 12px">'
+          +'<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.75">'+label+'</div>'
+          +'<div style="font-size:22px;font-weight:800;color:'+(color||'#fff')+';margin-top:2px">'+val+'</div>'
+          +(sub?'<div style="font-size:10px;opacity:.7;margin-top:2px">'+sub+'</div>':'')
+          +'</div>';
+      }
+      grid.innerHTML = ''
+        + tile('SCs MP solicitadas', sol.mp || 0, '#22d3ee', 'últimos 30d')
+        + tile('SCs MEE solicitadas', sol.mee || 0, '#22d3ee', 'últimos 30d')
+        + tile('Pendiente solicitar MP', pend.mp_30d || 0, pend.mp_30d > 0 ? '#fbbf24' : '#a3e635', 'cron mensual día 1-5')
+        + tile('Pendiente solicitar MEE', pend.mee_30d || 0, pend.mee_30d > 0 ? '#fbbf24' : '#a3e635', 'cron mensual día 1-5')
+        + tile('Etiquetas + D-20 (14d)', (sol.etiquetas||0)+(sol.d20||0), '#a3e635', 'sync automático');
+
+      var html = '';
+      if(ult){
+        html = '<b>Última ejecución lunes 7am ('+ult.fecha_lunes+'):</b><br>'
+          + '✅ '+(ult.bloqueadas||0)+' producciones bloqueadas · '
+          + '🔄 '+(ult.sincronizadas||0)+' sincronizadas Calendar · '
+          + '🤖 '+(ult.asignadas||0)+' asignadas IA · '
+          + '🧹 '+(ult.limpiezas_creadas||0)+' limpiezas · '
+          + '📧 '+(ult.email_enviado?'email enviado':'sin email');
+      } else {
+        html = 'El cron interno corre lunes 7:00 AM automáticamente · sync Shopify + Calendar + auto-asignar + bloquear semana + email Alejandro';
+      }
+      if(det) det.innerHTML = html;
+    }catch(e){
+      if(sub) sub.textContent = 'Error: '+(e.message||e);
+    }
+  }
+  async function ejecutarLunes7am(){
+    if(!confirm('Ejecutar workflow LUNES 7AM completo AHORA?\\n\\n1. Sync Shopify\\n2. Sync Calendar (force)\\n3. Auto-asignar IA toda la semana\\n4. Bloquear producciones (no más cambios)\\n5. Email Alejandro\\n\\n¿Continuar?')) return;
+    var sub = document.getElementById('estado-sol-subtitle');
+    if(sub) sub.textContent = '⏳ Ejecutando workflow completo...';
+    try{
+      var r = await fetch('/api/planta/ejecutar-lunes-7am', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'}, body:'{}'
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var res = d.resultado || {};
+      var msg = '⭐ ' + d.mensaje + '\\n\\n';
+      msg += '✅ ' + (res.bloqueadas||0) + ' producciones bloqueadas\\n';
+      msg += '🔄 ' + (res.sincronizadas||0) + ' sincronizadas del Calendar\\n';
+      msg += '🤖 ' + (res.asignadas||0) + ' asignadas por IA\\n';
+      msg += '🧹 ' + (res.limpiezas_creadas||0) + ' limpiezas auto\\n';
+      msg += '📧 ' + (res.email_enviado ? 'Email enviado' : 'Email skipped') + '\\n\\n';
+      if(res.pasos) msg += res.pasos.join('\\n');
+      alert(msg);
+      estadoSolicitudesRecargar();
+      if(typeof semanaRecargar === 'function') semanaRecargar();
+    }catch(e){
+      alert('❌ Error: '+(e.message||e));
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // ESTA SEMANA · vista principal jefe de produccion (Sebastián 1-may-2026)
   // IA asigna todo · operario solo da click para avanzar
   // ══════════════════════════════════════════════════════════════
@@ -12411,7 +12515,7 @@ async function ckMarcar(itemId, estado){
               'programado':'#64748b',
             }[p.estado] || '#64748b';
             html += '<div style="background:rgba(255,255,255,.6);border-left:3px solid '+stColor+';padding:5px 7px;margin-bottom:4px;border-radius:4px;font-size:10px">';
-            html += '<div style="font-weight:700;color:#0f172a">'+esc(p.producto.substring(0,22))+'</div>';
+            html += '<div style="font-weight:700;color:#0f172a">'+(p.bloqueado?'🔒 ':'')+esc(p.producto.substring(0,22))+'</div>';
             html += '<div style="color:#475569">'+p.kg+'kg · '+p.lotes+' lt';
             if(p.area && p.area.codigo) html += ' · 🏭 '+p.area.codigo;
             if(p.envasado) html += ' → '+p.envasado;

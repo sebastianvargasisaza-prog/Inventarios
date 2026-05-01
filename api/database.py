@@ -3302,6 +3302,30 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (79, "Bloqueo semanal lunes 7am (Sebastián 1-may-2026 · todo automático)", [
+        # Sebastián 1-may-2026: 'el lunes 7am todo debe estar programado y
+        # bloqueado · jefe de producción no hace nada · solo entra y ve'.
+        # Producciones bloqueadas no son re-asignables hasta desbloquear.
+        "ALTER TABLE produccion_programada ADD COLUMN bloqueado_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN bloqueado_por TEXT DEFAULT ''",
+        "ALTER TABLE produccion_programada ADD COLUMN semana_workflow_id TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_pp_bloq ON produccion_programada(bloqueado_at)",
+        # Tabla histórico de workflows lunes 7am
+        """CREATE TABLE IF NOT EXISTS workflow_lunes_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ejecutado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ejecutado_por TEXT NOT NULL DEFAULT 'cron-lunes-7am',
+            fecha_lunes TEXT NOT NULL,
+            producciones_bloqueadas INTEGER DEFAULT 0,
+            sincronizadas INTEGER DEFAULT 0,
+            asignadas INTEGER DEFAULT 0,
+            limpiezas_creadas INTEGER DEFAULT 0,
+            email_enviado INTEGER DEFAULT 0,
+            error TEXT,
+            payload_json TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_wll_lunes ON workflow_lunes_log(fecha_lunes DESC)",
+    ]),
     (78, "Aliases Calendar · códigos cortos TRIAC/LBHA/CRETT/etc (Sebastián 1-may-2026)", [
         # Sebastián 1-may-2026: el Calendar usa códigos cortos en eventos
         # (TRIAC, LBHA, CRETT, NPHA, CMULP, EMLIM, CRCUREA, etc.) pero los

@@ -7128,6 +7128,13 @@ def semana_produccion():
             (pid, producto, lotes, kg, estado, area_id, area_cod, area_nom, area_est,
              env_cod, _, op_disp, _, op_elab, _, op_env, _, op_acon,
              inicio_at, fin_at) = r
+            # Bloqueado lunes 7am? (lookup separado · col puede no existir aún)
+            bloqueado = False
+            try:
+                bl_row = c.execute("SELECT bloqueado_at FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+                bloqueado = bool(bl_row and bl_row[0])
+            except Exception:
+                pass
             estado = (estado or 'programado').strip()
             ya_asignada = bool(area_id and (op_disp or op_elab or op_env))
             # Acción siguiente según estado
@@ -7142,6 +7149,7 @@ def semana_produccion():
             prods.append({
                 'id': pid, 'producto': producto, 'lotes': lotes, 'kg': kg,
                 'estado': estado,
+                'bloqueado': bloqueado,
                 'area': {'codigo': area_cod, 'nombre': area_nom, 'estado': area_est},
                 'envasado': env_cod,
                 'operarios': {
@@ -7447,6 +7455,128 @@ def planta_accion_rapida():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': f'tipo desconocido: {tipo}'}), 400
+
+
+@bp.route('/api/planta/estado-solicitudes', methods=['GET'])
+def estado_solicitudes():
+    """Estado del Plan: qué se solicitó vs qué falta solicitar.
+    Sebastián 1-may-2026: 'Plan: yo ya le di solicitar todo · debería decir
+    qué ya se solicitó y que no'.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    # SCs creadas por IA en último mes (MP + MEE)
+    sc_mp = 0; sc_mee = 0; sc_etq = 0; sc_d20 = 0
+    try:
+        sc_mp = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE solicitante='auto-plan-ia'
+              AND categoria='Materia Prima'
+              AND date(fecha) >= date('now','-30 days')
+        """).fetchone()[0]
+        sc_mee = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE solicitante='auto-plan-ia'
+              AND categoria='Material de Empaque'
+              AND date(fecha) >= date('now','-30 days')
+        """).fetchone()[0]
+        sc_etq = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE date(fecha) >= date('now','-14 days')
+              AND observaciones LIKE '%etiqueta%'
+        """).fetchone()[0]
+        sc_d20 = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE date(fecha) >= date('now','-30 days')
+              AND categoria='Servicios'
+              AND observaciones LIKE '%D-20%'
+        """).fetchone()[0]
+    except Exception:
+        pass
+
+    # Estado del último workflow lunes
+    ult_lunes = None
+    try:
+        row = c.execute("""
+            SELECT ejecutado_at, fecha_lunes, producciones_bloqueadas,
+                   sincronizadas, asignadas, limpiezas_creadas, email_enviado
+            FROM workflow_lunes_log
+            ORDER BY id DESC LIMIT 1
+        """).fetchone()
+        if row:
+            ult_lunes = {
+                'ejecutado_at': row[0], 'fecha_lunes': row[1],
+                'bloqueadas': row[2], 'sincronizadas': row[3],
+                'asignadas': row[4], 'limpiezas_creadas': row[5],
+                'email_enviado': bool(row[6]),
+            }
+    except Exception:
+        pass
+
+    # Calcular si debería ejecutarse ahora (lunes 7am o pendiente)
+    from datetime import datetime as _dt, timedelta as _td
+    fecha_hoy = _dt.now().date()
+    base = fecha_hoy
+    while base.weekday() != 0:
+        base -= _td(days=1)
+    lunes_actual = base.isoformat()
+    workflow_de_esta_semana = ult_lunes and ult_lunes.get('fecha_lunes') == lunes_actual
+
+    # Calcular preview de SCs pendientes (qué falta solicitar)
+    pendientes = {'mp_30d': 0, 'mee_30d': 0}
+    try:
+        from blueprints.auto_plan import _calcular_auto_sc, _calcular_auto_sc_mee
+        plan_mp = _calcular_auto_sc(conn, modo='mensual')
+        pendientes['mp_30d'] = plan_mp.get('kpis', {}).get('total_items', 0)
+        plan_mee = _calcular_auto_sc_mee(conn, modo='mensual')
+        pendientes['mee_30d'] = plan_mee.get('kpis', {}).get('total_items', 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'lunes_actual': lunes_actual,
+        'workflow_lunes_ejecutado_esta_semana': bool(workflow_de_esta_semana),
+        'ultimo_workflow_lunes': ult_lunes,
+        'solicitado_ultimo_mes': {
+            'mp': sc_mp, 'mee': sc_mee, 'etiquetas': sc_etq, 'd20': sc_d20,
+            'total': sc_mp + sc_mee + sc_etq + sc_d20,
+        },
+        'pendiente_solicitar': pendientes,
+    })
+
+
+@bp.route('/api/planta/ejecutar-lunes-7am', methods=['POST'])
+def ejecutar_lunes_7am():
+    """Ejecuta manualmente el workflow del lunes 7am (botón Sebastián).
+    Útil cuando se quiere disparar antes/después o re-ejecutar."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from blueprints.auto_plan_jobs import job_lunes_7am_workflow
+        from flask import current_app
+        ok, resultado, _ = job_lunes_7am_workflow(current_app)
+        return jsonify({'ok': ok, 'resultado': resultado,
+                          'mensaje': f'⭐ Workflow lunes 7am ejecutado · {resultado.get("bloqueadas", 0)} producciones bloqueadas'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@bp.route('/api/planta/desbloquear-produccion/<int:pid>', methods=['POST'])
+def desbloquear_produccion(pid):
+    """Desbloquear una producción específica (CEO/Alejandro)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    c.execute("""
+        UPDATE produccion_programada SET bloqueado_at=NULL, bloqueado_por='' WHERE id=?
+    """, (pid,))
+    conn.commit()
+    return jsonify({'ok': True, 'mensaje': f'Producción #{pid} desbloqueada'})
 
 
 @bp.route('/api/planta/health-check', methods=['GET'])

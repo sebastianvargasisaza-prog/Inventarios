@@ -548,16 +548,18 @@ def iniciar_cron(app):
 
 JOBS_SCHEDULE = [
     # (job_name, hora, minuto, días_semana[0=lun..6=dom] o None=todos, días_mes[1-31] o None=todos, callable_name)
+    # ⭐ LUNES 7AM · Workflow completo (jefe producción no hace nada manual)
+    ('lunes_7am_workflow',    7,  0, [0],  None,                'job_lunes_7am_workflow'),
     # Diarios
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
-    ('self_heal',             7,  0, None, None,                'job_self_heal'),  # diario 7:00
-    ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),  # nocturno 2am
+    ('self_heal',             7,  5, None, None,                'job_self_heal'),  # 5 min después del lunes_7am
+    ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
-    # Lunes urgente
+    # Lunes urgente (después del workflow lunes 7am)
     ('auto_sc_urgente_lun',  12,  0, [0],  None,                'job_auto_sc_urgente'),
 ]
 
@@ -846,6 +848,257 @@ def job_auto_asignar_areas(app):
         conn.commit()
         return True, {'procesadas': procesadas, 'errores': errores,
                        'total_evaluadas': len(rows)}, 0
+
+
+def job_lunes_7am_workflow(app):
+    """⭐ Workflow completo lunes 7am (Sebastián 1-may-2026):
+    'el jefe de producción no debe hacer nada manualmente · solo entrar
+    y ver lo que ya está programado y bloqueado'.
+
+    Pasos secuenciales:
+      1. Sync Shopify (velocidades actualizadas)
+      2. Sync Calendar (force refresh · jala todos los eventos)
+      3. Insertar producciones del Calendar a produccion_programada
+      4. Auto-asignar IA cada producción (área + 4 operarios rotando)
+      5. Crear limpiezas automáticas para áreas que terminarán sucias
+      6. BLOQUEAR todas las producciones de la semana (no más cambios)
+      7. Email a Alejandro/Sebastián con resumen
+      8. Log en workflow_lunes_log
+    """
+    import json as _json
+    with app.app_context():
+        from database import get_db
+        from datetime import datetime as _dt, timedelta as _td, date as _date
+        conn = get_db(); c = conn.cursor()
+
+        fecha_hoy = _dt.now().date()
+        # Lunes de esta semana (si hoy NO es lunes, calcular el lunes)
+        base = fecha_hoy
+        while base.weekday() != 0:
+            base -= _td(days=1)
+        lunes_semana = base
+        viernes_semana = lunes_semana + _td(days=4)
+        workflow_id = f'lunes-{lunes_semana.isoformat()}'
+
+        resumen = {
+            'workflow_id': workflow_id,
+            'lunes': lunes_semana.isoformat(),
+            'viernes': viernes_semana.isoformat(),
+            'pasos': [],
+        }
+
+        # PASO 1: Sync Shopify
+        try:
+            from blueprints.animus import _cfg
+            token = _cfg(conn, 'shopify_token')
+            shop = _cfg(conn, 'shopify_shop')
+            if token and shop:
+                import urllib.request as _ur
+                url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+                req = _ur.Request(url, headers={"X-Shopify-Access-Token": token})
+                synced = 0
+                with _ur.urlopen(req, timeout=30) as r:
+                    orders = _json.loads(r.read())["orders"]
+                for o in orders:
+                    items_sku = _json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)}
+                                              for li in o.get("line_items",[])])
+                    total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+                    addr = o.get("billing_address") or {}
+                    conn.execute("""
+                        INSERT OR REPLACE INTO animus_shopify_orders
+                          (shopify_id, nombre, email, total, moneda, estado, estado_pago,
+                           sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                    """, (str(o["id"]), o.get("name",""), o.get("email",""),
+                          float(o.get("total_price",0)), o.get("currency","COP"),
+                          o.get("fulfillment_status",""), o.get("financial_status",""),
+                          items_sku, total_uds,
+                          addr.get("city",""), addr.get("country_code","CO"),
+                          o.get("created_at","")[:10]))
+                    synced += 1
+                resumen['pasos'].append(f'Sync Shopify: {synced} órdenes')
+            else:
+                resumen['pasos'].append('Sync Shopify: skipped (sin token)')
+        except Exception as e:
+            resumen['pasos'].append(f'Sync Shopify ERROR: {str(e)[:100]}')
+
+        # PASO 2-3-4: Sync Calendar + insertar + auto-asignar IA
+        sincronizadas = 0
+        asignadas = 0
+        try:
+            from blueprints.auto_plan import (
+                _calendar_events_cached, _alias_calendar_for, _match_producto_evento,
+                _parsear_kg_evento
+            )
+            from blueprints.programacion import _auto_asignar_produccion
+            cal_events = _calendar_events_cached(force_refresh=True) or []
+            skus_aliases = {}
+            for sku_n, alias_csv in c.execute("""
+                SELECT producto_nombre, COALESCE(alias_calendar, '')
+                FROM sku_planeacion_config
+                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+            """).fetchall():
+                skus_aliases[sku_n] = alias_csv
+
+            for ev in cal_events:
+                try:
+                    f_ev = _dt.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+                except Exception:
+                    continue
+                # Solo eventos de la semana en curso
+                if f_ev < lunes_semana or f_ev > viernes_semana:
+                    continue
+                producto_match = None
+                best_score = 0
+                for prod_n, alias_csv in skus_aliases.items():
+                    try:
+                        score = _match_producto_evento(prod_n, alias_csv,
+                                                         ev.get('titulo'), ev.get('descripcion',''))
+                        if score >= 60 and score > best_score:
+                            best_score = score
+                            producto_match = prod_n
+                    except Exception:
+                        continue
+                if not producto_match: continue
+                kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+                # Skip si ya existe
+                exists = c.execute("""
+                    SELECT id, area_id, operario_dispensacion_id FROM produccion_programada
+                    WHERE producto=? AND date(fecha_programada)=?
+                """, (producto_match, f_ev.isoformat())).fetchone()
+                if exists:
+                    pid_existente = exists[0]
+                    if not exists[1] and not exists[2]:
+                        res = _auto_asignar_produccion(c, pid_existente, 'cron-lunes-7am')
+                        if res.get('ok'): asignadas += 1
+                    continue
+                cur_ins = c.execute("""
+                    INSERT INTO produccion_programada
+                      (producto, fecha_programada, lotes, cantidad_kg,
+                       estado, observaciones, origen, semana_workflow_id)
+                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar', ?)
+                """, (producto_match, f_ev.isoformat(), kg,
+                      f'[lunes 7am] {(ev.get("titulo") or "")[:200]}',
+                      workflow_id))
+                new_id = cur_ins.lastrowid
+                sincronizadas += 1
+                if kg > 0 and new_id:
+                    res = _auto_asignar_produccion(c, new_id, 'cron-lunes-7am')
+                    if res.get('ok'): asignadas += 1
+            resumen['pasos'].append(f'Calendar: {sincronizadas} producciones nuevas · {asignadas} asignadas IA')
+        except Exception as e:
+            resumen['pasos'].append(f'Calendar ERROR: {str(e)[:100]}')
+
+        # PASO 5: Crear limpiezas para áreas que tendrán producción esta semana
+        limpiezas_creadas = 0
+        try:
+            # Áreas que terminan producción esta semana → limpieza día siguiente
+            # (esto ya lo maneja el hook prog_completar_evento, pero ejecutamos
+            # un sweep para limpiezas faltantes)
+            from blueprints.programacion import _crear_limpieza_post_produccion
+            rows = c.execute("""
+                SELECT a.id, a.codigo FROM areas_planta a
+                WHERE a.activo=1 AND a.estado='sucia'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM limpieza_profunda_calendario l
+                    WHERE l.area_codigo = a.codigo
+                      AND l.estado IN ('pendiente','asignada','en_proceso')
+                      AND date(l.fecha) >= date('now')
+                  )
+            """).fetchall()
+            for area_id, area_cod in rows:
+                limp = _crear_limpieza_post_produccion(c, area_id, area_cod,
+                                                        fecha_hoy.isoformat(),
+                                                        'lunes-7am', '', 'cron-lunes-7am')
+                if limp: limpiezas_creadas += 1
+            resumen['pasos'].append(f'Limpiezas auto: {limpiezas_creadas}')
+        except Exception as e:
+            resumen['pasos'].append(f'Limpiezas ERROR: {str(e)[:100]}')
+
+        # PASO 6: BLOQUEAR producciones de la semana
+        bloqueadas = 0
+        try:
+            cur = c.execute("""
+                UPDATE produccion_programada
+                  SET bloqueado_at = datetime('now'),
+                      bloqueado_por = 'cron-lunes-7am',
+                      semana_workflow_id = COALESCE(NULLIF(semana_workflow_id,''), ?)
+                WHERE date(fecha_programada) BETWEEN ? AND ?
+                  AND COALESCE(estado, 'programado') NOT IN ('completado','cancelado')
+                  AND bloqueado_at IS NULL
+            """, (workflow_id, lunes_semana.isoformat(), viernes_semana.isoformat()))
+            bloqueadas = cur.rowcount
+            resumen['pasos'].append(f'Bloqueadas: {bloqueadas} producciones de la semana')
+        except Exception as e:
+            resumen['pasos'].append(f'Bloqueo ERROR: {str(e)[:100]}')
+
+        # PASO 7: Email Alejandro/Sebastián
+        email_enviado = False
+        try:
+            destinatarios = []
+            rows = c.execute("""
+                SELECT email FROM email_destinatarios_config
+                WHERE activo=1 AND email != ''
+                  AND (rol IN ('ceo','gerencia_produccion','jefe_planta')
+                       OR LOWER(email) LIKE '%alejandro%'
+                       OR LOWER(email) LIKE '%sebastian%')
+            """).fetchall()
+            destinatarios = [r[0] for r in rows if r[0]]
+            if destinatarios:
+                html = f'''<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;background:#f3f4f6;padding:20px">
+                <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+                  <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:20px">
+                    <h2 style="margin:0;font-size:20px">📅 Plan Semanal Listo · {lunes_semana.strftime("%d-%b")} a {viernes_semana.strftime("%d-%b")}</h2>
+                    <p style="margin:4px 0 0;opacity:.9;font-size:13px">Lunes 7am · IA programó y bloqueó la semana</p>
+                  </div>
+                  <div style="padding:20px;font-size:13px;color:#0f172a">
+                    <div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:6px;margin-bottom:14px;color:#065f46">
+                      ✅ Workflow lunes 7am ejecutado · {bloqueadas} producciones bloqueadas
+                    </div>
+                    <h3 style="margin:14px 0 8px">Pasos ejecutados:</h3>
+                    <ul style="margin:0;padding:0 0 0 20px">{''.join(f'<li>{p}</li>' for p in resumen["pasos"])}</ul>
+                    <p style="font-size:11px;color:#64748b;margin-top:14px">El equipo de planta solo entra a la app y ejecuta lo asignado · sin clicks de configuración</p>
+                  </div>
+                </div></body></html>'''
+                import threading, sys, os as _os
+                sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+                from notificaciones import SistemaNotificaciones
+                notif = SistemaNotificaciones()
+                threading.Thread(
+                    target=notif._enviar_email,
+                    args=(f'📅 Plan Semanal Listo · {lunes_semana.strftime("%d-%b")} (lunes 7am)', html, destinatarios),
+                    daemon=True
+                ).start()
+                email_enviado = True
+                resumen['pasos'].append(f'Email enviado a {len(destinatarios)} destinatarios')
+            else:
+                resumen['pasos'].append('Email skipped (sin destinatarios)')
+        except Exception as e:
+            resumen['pasos'].append(f'Email ERROR: {str(e)[:80]}')
+
+        # PASO 8: Log
+        try:
+            c.execute("""
+                INSERT INTO workflow_lunes_log
+                  (fecha_lunes, producciones_bloqueadas, sincronizadas, asignadas,
+                   limpiezas_creadas, email_enviado, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (lunes_semana.isoformat(), bloqueadas, sincronizadas, asignadas,
+                  limpiezas_creadas, 1 if email_enviado else 0,
+                  _json.dumps(resumen)))
+            conn.commit()
+        except Exception:
+            pass
+
+        return True, {
+            'fecha_lunes': lunes_semana.isoformat(),
+            'bloqueadas': bloqueadas,
+            'sincronizadas': sincronizadas,
+            'asignadas': asignadas,
+            'limpiezas_creadas': limpiezas_creadas,
+            'email_enviado': email_enviado,
+            'pasos': resumen['pasos'],
+        }, 0
 
 
 def job_self_heal(app):
