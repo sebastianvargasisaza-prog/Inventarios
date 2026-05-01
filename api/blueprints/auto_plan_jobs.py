@@ -550,6 +550,7 @@ JOBS_SCHEDULE = [
     # (job_name, hora, minuto, días_semana[0=lun..6=dom] o None=todos, días_mes[1-31] o None=todos, callable_name)
     # Diarios
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
+    ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
@@ -769,6 +770,41 @@ def job_auto_sc_mee_mensual(app):
         conn = get_db()
         plan = _calcular_auto_sc_mee(conn, modo='mensual')
         return True, {'kpis': plan.get('kpis', {})}, 0
+
+
+def job_auto_asignar_areas(app):
+    """Cron diario 6:30: auto-asigna área + envasado + operarios para
+    producciones próximos 7d sin asignación.
+    Sebastián 1-may-2026: 'haz todo automático con IA'.
+    """
+    with app.app_context():
+        from database import get_db
+        from blueprints.programacion import _auto_asignar_produccion
+        from datetime import datetime as _dt, timedelta as _td
+        conn = get_db(); c = conn.cursor()
+        fecha_hoy = _dt.now().date()
+        fecha_max = fecha_hoy + _td(days=7)
+        rows = c.execute("""
+            SELECT id FROM produccion_programada
+            WHERE date(fecha_programada) >= ?
+              AND date(fecha_programada) <= ?
+              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (area_id IS NULL
+                   OR (operario_dispensacion_id IS NULL
+                       AND operario_elaboracion_id IS NULL
+                       AND operario_envasado_id IS NULL))
+            ORDER BY fecha_programada ASC
+        """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+        procesadas, errores = 0, 0
+        for (pid,) in rows:
+            res = _auto_asignar_produccion(c, pid, 'cron-auto-asignar')
+            if res.get('ok'):
+                procesadas += 1
+            else:
+                errores += 1
+        conn.commit()
+        return True, {'procesadas': procesadas, 'errores': errores,
+                       'total_evaluadas': len(rows)}, 0
 
 
 def job_auto_sc_urgente(app):

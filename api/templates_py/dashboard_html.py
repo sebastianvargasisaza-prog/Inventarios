@@ -5026,6 +5026,21 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Estado Salas en Vivo · Sebastián 1-may-2026 ─────────────── -->
+    <div id="plan-salas-vivo" style="background:#fff;border:2px solid #0891b2;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#0891b2">&#127981;&#65039; Estado salas en vivo · IA asigna y rota automáticamente</div>
+          <div id="salas-subtitle" style="font-size:11px;color:#64748b;margin-top:2px">Cargando…</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="autoAsignarPendientes()" title="Auto-asigna área + operarios para producciones próximos 7d sin asignar" style="padding:5px 10px;background:#0891b2;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#129302; Auto-asignar pendientes</button>
+          <button onclick="salasVivoRecargar()" style="padding:5px 10px;background:#f1f5f9;color:#0891b2;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="salas-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
+    </div>
+
     <!-- ── Mi Día por Operario · Sebastián 1-may-2026 (Alejandro) ────── -->
     <div id="plan-mi-dia" style="background:#fff;border:2px solid #1d4ed8;border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -9578,7 +9593,7 @@ async function ckMarcar(itemId, estado){
     var planv2 = document.getElementById('ptab-planv2');
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
-    var ids = ['plan-mi-dia', 'plan-cron-status',
+    var ids = ['plan-salas-vivo', 'plan-mi-dia', 'plan-cron-status',
                'plan-reporte-ejecutivo', 'plan-pre-produccion',
                'plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee',
                'mee-asignar-panel', 'mee-config-panel'];
@@ -9604,6 +9619,7 @@ async function ckMarcar(itemId, estado){
     if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
     if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
     if(typeof cronStatusRecargar === 'function') cronStatusRecargar();
+    if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
     // Recargar contador de items por asignar (no abre el panel)
     if(typeof meeAsignarRecargar === 'function'){
       try{
@@ -12232,6 +12248,78 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Estado Salas en Vivo · IA auto-asigna áreas + operarios + limpieza
+  async function salasVivoRecargar(){
+    var sub = document.getElementById('salas-subtitle');
+    var grid = document.getElementById('salas-grid');
+    if(sub) sub.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/estado-salas-vivo', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      if(sub) sub.textContent = (d.libres||0)+' libres · '+(d.ocupadas||0)+' ocupadas · '+(d.sucias||0)+' sucias · '+(d.limpiando||0)+' limpiando';
+      var salas = d.salas || [];
+      grid.innerHTML = salas.map(function(s){
+        var bg, border, ico, statusTxt;
+        switch(s.estado){
+          case 'ocupada': bg='#fef2f2'; border='#dc2626'; ico='🔴'; statusTxt='OCUPADA'; break;
+          case 'sucia':   bg='#fef3c7'; border='#f59e0b'; ico='🟡'; statusTxt='SUCIA'; break;
+          case 'limpiando': bg='#dbeafe'; border='#2563eb'; ico='🔵'; statusTxt='LIMPIANDO'; break;
+          default:        bg='#f0fdf4'; border='#15803d'; ico='🟢'; statusTxt='LIBRE'; break;
+        }
+        var html = '<div style="background:'+bg+';border:2px solid '+border+';border-radius:8px;padding:10px;font-size:11px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center"><b style="color:#0f172a;font-size:13px">'+ico+' '+s.codigo+' · '+s.nombre.substring(0,18)+'</b><span style="background:'+border+';color:#fff;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700">'+statusTxt+'</span></div>';
+        if(s.tanque_principal){
+          html += '<div style="font-size:10px;color:#64748b;margin-top:4px">🛢 '+s.tanque_principal.codigo+' · '+s.tanque_principal.litros+'L</div>';
+        }
+        if(s.produccion){
+          var p = s.produccion;
+          html += '<div style="background:rgba(255,255,255,.5);border-radius:5px;padding:6px;margin-top:6px;font-size:10px">';
+          html += '<b>'+p.producto.substring(0,28)+'</b> · '+p.kg+'kg<br>';
+          html += '📅 '+p.fecha+' · '+p.lotes+' lote · '+(p.estado||'programado')+'<br>';
+          if(p.op_dispensacion) html += '👤 disp: '+p.op_dispensacion+'<br>';
+          if(p.op_elaboracion)  html += '👤 elab: '+p.op_elaboracion+'<br>';
+          if(p.op_envasado)     html += '👤 env: '+p.op_envasado;
+          html += '</div>';
+        } else {
+          html += '<div style="color:#94a3b8;font-style:italic;font-size:10px;margin-top:6px">Sin producción asignada</div>';
+        }
+        if(s.limpieza_pendiente){
+          var l = s.limpieza_pendiente;
+          html += '<div style="background:#fff;border:1px solid #f59e0b;border-radius:5px;padding:5px;margin-top:5px;font-size:10px;color:#92400e">';
+          html += '🧹 Limpieza '+l.fecha.substring(0,10)+'<br>';
+          html += '👤 '+(l.asignado_a||'sin asignar')+' · '+l.estado;
+          html += '</div>';
+        }
+        if(s.requiere_limpieza_profunda && !s.ultima_limpieza_profunda){
+          html += '<div style="font-size:9px;color:#92400e;margin-top:4px">⚠ Sin registro de limpieza profunda</div>';
+        }
+        html += '</div>';
+        return html;
+      }).join('');
+    }catch(e){
+      if(sub) sub.textContent = 'Error: '+(e.message||e);
+    }
+  }
+  async function autoAsignarPendientes(){
+    if(!confirm('Auto-asignar área + operarios para producciones próximos 7 días sin asignar.\\n\\nLa IA elige tanque óptimo (más chico que aguante el lote) y rota operarios.\\n\\n¿Continuar?')) return;
+    var sub = document.getElementById('salas-subtitle');
+    if(sub) sub.textContent = '⏳ Auto-asignando…';
+    try{
+      var r = await fetch('/api/planta/auto-asignar-pendientes', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({dias: 7}),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      alert('✅ '+d.mensaje + (d.procesadas.length ? '\\n\\n'+d.procesadas.slice(0,8).map(function(p){return '#'+p.id+' · '+p.cambios.join(' | ');}).join('\\n') : ''));
+      salasVivoRecargar();
+    }catch(e){
+      alert('❌ Error: '+(e.message||e));
+    }
+  }
+
   // ── Mi Día por Operario (Sebastián 1-may-2026)
   var _MI_DIA_OPERARIOS = [];
   async function miDiaCargarOperarios(){

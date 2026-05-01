@@ -3302,6 +3302,39 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (75, "Auto-asignación IA · rotación operarios + limpieza mismo día (Sebastián)", [
+        # Sebastián 1-may-2026: "TODOS rotan no necesariamente deja a Camilo
+        # y Mayerlin fijos, queden limpias el mismo día, IA que sepa que usar
+        # si es producción de 200 kilos debe decir producción donde está la
+        # marmita de 250 litros, si lo haces automático sería maravilloso".
+        """CREATE TABLE IF NOT EXISTS rotacion_operarios_state (
+            rol TEXT PRIMARY KEY,
+            ultimo_operario_id INTEGER,
+            ultimo_asignado_at TEXT,
+            actualizado_por TEXT
+        )""",
+        """INSERT OR IGNORE INTO rotacion_operarios_state (rol, ultimo_operario_id, ultimo_asignado_at, actualizado_por)
+           VALUES
+             ('dispensacion', NULL, datetime('now'), 'seed'),
+             ('elaboracion', NULL, datetime('now'), 'seed'),
+             ('envasado', NULL, datetime('now'), 'seed'),
+             ('acondicionamiento', NULL, datetime('now'), 'seed'),
+             ('limpieza', NULL, datetime('now'), 'seed')""",
+        # Tabla de log de auto-asignaciones para auditoría
+        """CREATE TABLE IF NOT EXISTS auto_asignacion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produccion_id INTEGER NOT NULL,
+            ejecutado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ejecutado_por TEXT NOT NULL DEFAULT 'auto-ia',
+            area_asignada TEXT,
+            tanque_asignado TEXT,
+            area_envasado_asignada TEXT,
+            operarios_json TEXT,
+            score INTEGER,
+            razon TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_aal_prod ON auto_asignacion_log(produccion_id)",
+    ]),
     (74, "Cron multi-job interno (Sebastián 1-may-2026: sin cron Render externos)", [
         # Sebastián: "configurar 4 crons" lo hago internamente para que no
         # dependa de Render Cron Jobs (que requieren plan paid). Tabla

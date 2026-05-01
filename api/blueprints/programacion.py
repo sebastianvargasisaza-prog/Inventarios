@@ -3499,7 +3499,7 @@ def prog_completar_evento(evento_id):
             except sqlite3.OperationalError:
                 # Si tabla mee no existe, seguimos
                 continue
-        # Actualizar produccion_programada
+        # Actualizar produccion_programada + marcar área 'sucia'
         c.execute("""
             UPDATE produccion_programada
                SET estado='completado',
@@ -3508,6 +3508,33 @@ def prog_completar_evento(evento_id):
                                    ' | INVENTARIO DESCONTADO ' || ? || ' por ' || ?
              WHERE id=?
         """, (fecha_iso, fecha_iso, user, pid))
+
+        # Sebastián 1-may-2026: "queden limpias el mismo día". Si la
+        # producción tenía área asignada → marcar sucia + crear limpieza HOY
+        # con operario rotando.
+        limpieza_id = None
+        try:
+            row = c.execute("""
+                SELECT pp.area_id, ap.codigo, pp.lotes
+                FROM produccion_programada pp
+                  LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+                WHERE pp.id=?
+            """, (pid,)).fetchone()
+            if row and row[0]:
+                area_id_, area_codigo, lotes_n = row
+                # Marcar sucia
+                c.execute(
+                    "UPDATE areas_planta SET estado='sucia' WHERE id=? AND estado='ocupada'",
+                    (area_id_,)
+                )
+                # Crear limpieza mismo día
+                limpieza_id = _crear_limpieza_post_produccion(
+                    c, area_id_, area_codigo, fecha,
+                    producto, f'{lotes_n}lt' if lotes_n else '', user
+                )
+        except Exception as _e:
+            log.warning(f'[completar] limpieza post-prod falla: {_e}')
+
         conn.commit()
     except Exception as e:
         try: conn.rollback()
@@ -3529,7 +3556,10 @@ def prog_completar_evento(evento_id):
         'total_mees': len(descontados_mees),
         'total_g_mps': round(sum(m['cantidad_g'] for m in descontados_mps), 2),
         'total_unidades_mees': sum(m['cantidad_unidades'] for m in descontados_mees),
-        'mensaje': f"{producto} marcada completada. Descontados {len(descontados_mps)} MPs y {len(descontados_mees)} MEEs."
+        'limpieza_auto_id': limpieza_id,
+        'mensaje': (f"{producto} marcada completada. Descontados {len(descontados_mps)} MPs y "
+                    f"{len(descontados_mees)} MEEs. " +
+                    (f"🧹 Limpieza programada hoy (#{limpieza_id})" if limpieza_id else ""))
     })
 
 
@@ -7687,6 +7717,556 @@ def planta_sugerir_area():
             f'Recomendada: {sugerencias[0]["area_nombre"]} '
             f'({sugerencias[0]["tanque"]["capacidad_litros"]:.0f}L).'
         ),
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# AUTO-ASIGNACIÓN IA · área + envasado + operarios + limpieza mismo día
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (1-may-2026): "TODOS rotan, queden limpias el mismo día, IA
+# que sepa qué usar — si producción 200kg debe decir producción donde está
+# marmita 250 litros, si lo haces automático sería maravilloso".
+
+
+def _siguiente_operario_rotando(c, rol, candidatos_ids):
+    """Round-robin estricto entre los operarios candidatos.
+
+    Lee rotacion_operarios_state[rol], devuelve el próximo en la lista.
+    Si el último estaba al final → vuelve al primero.
+    Si el último ya no está en candidatos (operario inactivo) → primero.
+    """
+    if not candidatos_ids:
+        return None
+    try:
+        row = c.execute(
+            "SELECT ultimo_operario_id FROM rotacion_operarios_state WHERE rol=?",
+            (rol,)
+        ).fetchone()
+        ultimo = row[0] if row else None
+    except Exception:
+        ultimo = None
+    if not ultimo or ultimo not in candidatos_ids:
+        return candidatos_ids[0]
+    try:
+        idx = candidatos_ids.index(ultimo)
+        return candidatos_ids[(idx + 1) % len(candidatos_ids)]
+    except ValueError:
+        return candidatos_ids[0]
+
+
+def _registrar_rotacion(c, rol, operario_id, user='auto-ia'):
+    """Persiste la asignación para que la próxima iteración rote al siguiente."""
+    try:
+        c.execute("""
+            INSERT INTO rotacion_operarios_state (rol, ultimo_operario_id, ultimo_asignado_at, actualizado_por)
+            VALUES (?, ?, datetime('now'), ?)
+            ON CONFLICT(rol) DO UPDATE SET
+              ultimo_operario_id=excluded.ultimo_operario_id,
+              ultimo_asignado_at=datetime('now'),
+              actualizado_por=excluded.actualizado_por
+        """, (rol, operario_id, user))
+    except Exception:
+        # Fallback si SQLite vieja sin ON CONFLICT
+        c.execute(
+            "UPDATE rotacion_operarios_state SET ultimo_operario_id=?, ultimo_asignado_at=datetime('now'), actualizado_por=? WHERE rol=?",
+            (operario_id, user, rol)
+        )
+
+
+def _operarios_libres_en_dia(c, fecha_iso):
+    """Operarios que NO están ya asignados a otra producción ese día."""
+    rows = c.execute("""
+        SELECT id, nombre, COALESCE(apellido,''), rol_predeterminado
+        FROM operarios_planta
+        WHERE COALESCE(activo,1)=1
+        ORDER BY id
+    """).fetchall()
+    todos = [(r[0], (r[1]+' '+r[2]).strip(), r[3] or '') for r in rows]
+    # Excluir operarios ya asignados ese día
+    ocupados_rows = c.execute("""
+        SELECT operario_dispensacion_id, operario_elaboracion_id,
+               operario_envasado_id, operario_acondicionamiento_id
+        FROM produccion_programada
+        WHERE date(fecha_programada) = ?
+          AND COALESCE(estado, 'programado') NOT IN ('cancelado',)
+    """, (fecha_iso,)).fetchall()
+    ocupados = set()
+    for r in ocupados_rows:
+        for x in r:
+            if x: ocupados.add(x)
+    return [(oid, nom, rol) for (oid, nom, rol) in todos if oid not in ocupados], todos
+
+
+def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
+    """Asigna 4 roles rotando entre operarios disponibles ese día.
+    Sebastián 1-may-2026: TODOS rotan, sin fijos."""
+    libres, todos = _operarios_libres_en_dia(c, fecha_iso)
+    pool_ids = [o[0] for o in (libres if libres else todos)]
+    if not pool_ids:
+        return None
+
+    asignaciones = {}
+    usados = set()
+    for rol in ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento'):
+        candidatos = [oid for oid in pool_ids if oid not in usados]
+        if not candidatos:
+            candidatos = pool_ids  # si se acaban, permitir reuso
+        elegido = _siguiente_operario_rotando(c, rol, candidatos)
+        if elegido:
+            asignaciones[rol] = elegido
+            usados.add(elegido)
+            _registrar_rotacion(c, rol, elegido, user)
+
+    # UPDATE produccion_programada
+    c.execute("""
+        UPDATE produccion_programada SET
+          operario_dispensacion_id = COALESCE(?, operario_dispensacion_id),
+          operario_elaboracion_id = COALESCE(?, operario_elaboracion_id),
+          operario_envasado_id = COALESCE(?, operario_envasado_id),
+          operario_acondicionamiento_id = COALESCE(?, operario_acondicionamiento_id)
+        WHERE id = ?
+    """, (asignaciones.get('dispensacion'),
+          asignaciones.get('elaboracion'),
+          asignaciones.get('envasado'),
+          asignaciones.get('acondicionamiento'),
+          produccion_id))
+    return asignaciones
+
+
+def _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=True):
+    """IA: elige el ÁREA con tanque más chico que aguante el lote (eficiencia).
+
+    Sebastián 1-may-2026: "si producción 200 kilos debe decir producción
+    donde está marmita 250 litros".
+
+    Returns: {area_codigo, area_id, tanque_codigo, capacidad_litros, score, razon}
+              o None si nada candidato.
+    """
+    capacidad_min = lote_kg * 1.2  # 20% headroom
+
+    # Tanques candidatos (suficiente capacidad)
+    tanques = c.execute("""
+        SELECT t.id, t.codigo, t.nombre, t.area_codigo, t.capacidad_litros,
+               a.id as area_id, a.estado, a.requiere_limpieza_profunda,
+               a.puede_producir
+        FROM equipos_planta t
+          LEFT JOIN areas_planta a ON a.codigo = t.area_codigo
+        WHERE t.activo = 1
+          AND t.tipo IN ('tanque','marmita','olla')
+          AND t.capacidad_litros IS NOT NULL
+          AND t.capacidad_litros >= ?
+          AND COALESCE(a.activo, 1) = 1
+          AND COALESCE(a.puede_producir, 0) = 1
+        ORDER BY t.capacidad_litros ASC
+    """, (capacidad_min,)).fetchall()
+
+    # Producciones ya programadas en otras áreas ese día
+    areas_ocupadas_hoy = set()
+    try:
+        rows = c.execute("""
+            SELECT DISTINCT pp.area_id
+            FROM produccion_programada pp
+            WHERE date(pp.fecha_programada) = ?
+              AND pp.area_id IS NOT NULL
+              AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado','completado')
+        """, (fecha_iso,)).fetchall()
+        areas_ocupadas_hoy = {r[0] for r in rows}
+    except Exception:
+        pass
+
+    candidatos = []
+    seen_area = set()
+    for t in tanques:
+        if t[3] in seen_area:
+            continue  # ya tomamos el tanque más chico de esta área
+        seen_area.add(t[3])
+        if not t[5]:  # area_id None
+            continue
+        estado_area = t[6] or 'libre'
+        if excluir_sucias and estado_area == 'sucia':
+            continue
+        # Evitar misma área el mismo día (otro lote)
+        if t[5] in areas_ocupadas_hoy:
+            continue
+        utilizacion = (lote_kg / t[4]) * 100
+        score = 0
+        razones = []
+        if utilizacion >= 60:
+            score += 60
+            razones.append(f"Tanque {t[4]:.0f}L · uso {utilizacion:.0f}% (eficiente)")
+        elif utilizacion >= 30:
+            score += 40
+            razones.append(f"Tanque {t[4]:.0f}L · uso {utilizacion:.0f}%")
+        else:
+            score += 20
+            razones.append(f"Tanque {t[4]:.0f}L · uso {utilizacion:.0f}% (sub-utilizado)")
+        if estado_area == 'libre':
+            score += 30
+            razones.append('Sala libre')
+        elif estado_area == 'limpiando':
+            score += 10
+            razones.append('Sala en limpieza · disponible al terminar')
+
+        candidatos.append({
+            'area_codigo': t[3],
+            'area_id': t[5],
+            'tanque_codigo': t[1],
+            'tanque_nombre': t[2],
+            'capacidad_litros': t[4],
+            'estado_area': estado_area,
+            'utilizacion_pct': round(utilizacion, 1),
+            'score': score,
+            'razones': razones,
+        })
+
+    candidatos.sort(key=lambda x: x['score'], reverse=True)
+    return candidatos[0] if candidatos else None
+
+
+def _envasado_sugerido(area_codigo):
+    """Mapeo FAB → ENV (Sebastián + Alejandro)."""
+    if area_codigo in ('FAB1', 'PROD1'):
+        return 'ENV1'
+    if area_codigo in ('FAB2', 'PROD2', 'FAB3', 'PROD3', 'FAB_FLOAT'):
+        return 'ENV2'
+    return None
+
+
+def _crear_limpieza_post_produccion(c, area_id, area_codigo, fecha_produccion,
+                                       producto, lote, user='auto-ia'):
+    """Sebastián 1-may-2026: 'queden limpias el mismo día'.
+    Crea entrada en limpieza_profunda_calendario para HOY (la fecha de la
+    producción) para que mañana el área esté disponible.
+    """
+    if not area_codigo:
+        return None
+    # Verificar si ya hay limpieza creada para esta área+fecha
+    try:
+        existe = c.execute("""
+            SELECT id FROM limpieza_profunda_calendario
+            WHERE area_codigo = ? AND date(fecha) = ?
+              AND estado IN ('pendiente','asignada','en_proceso')
+            LIMIT 1
+        """, (area_codigo, fecha_produccion)).fetchone()
+        if existe:
+            return existe[0]
+    except Exception:
+        pass
+
+    # Asignar operario rotando (todos rotan)
+    operarios = c.execute("""
+        SELECT id FROM operarios_planta
+        WHERE COALESCE(activo,1)=1
+        ORDER BY id
+    """).fetchall()
+    pool = [r[0] for r in operarios]
+    if not pool:
+        return None
+    op_id = _siguiente_operario_rotando(c, 'limpieza', pool)
+    _registrar_rotacion(c, 'limpieza', op_id, user)
+
+    # Lookup nombre operario
+    op_nombre = ''
+    if op_id:
+        row = c.execute(
+            "SELECT nombre || ' ' || COALESCE(apellido,'') FROM operarios_planta WHERE id=?",
+            (op_id,)
+        ).fetchone()
+        if row: op_nombre = (row[0] or '').strip()
+
+    razon = f'Auto post-producción {producto} (lote {lote or "—"}) · limpieza mismo día'
+    try:
+        c.execute("""
+            INSERT INTO limpieza_profunda_calendario
+              (fecha, area_codigo, asignado_a, estado, generado_por, razon_asignacion)
+            VALUES (?, ?, ?, 'asignada', ?, ?)
+        """, (fecha_produccion, area_codigo, op_nombre, user, razon))
+        return c.lastrowid
+    except Exception as e:
+        log.warning(f'Crear limpieza auto fallo: {e}')
+        return None
+
+
+def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
+    """Pipeline completo de auto-asignación IA para una producción:
+      1. Selecciona área óptima por lote_kg (tanque más chico que aguante)
+      2. Asigna área de envasado correspondiente
+      3. Asigna operarios rotando (4 roles, todos rotan)
+      4. Logs en auto_asignacion_log
+    """
+    prod = c.execute("""
+        SELECT id, producto, fecha_programada, lotes,
+               COALESCE(cantidad_kg, 0), area_id,
+               operario_dispensacion_id, operario_elaboracion_id,
+               operario_envasado_id, operario_acondicionamiento_id
+        FROM produccion_programada
+        WHERE id = ?
+    """, (produccion_id,)).fetchone()
+    if not prod:
+        return {'ok': False, 'error': 'Producción no existe'}
+
+    fecha_iso = prod[2][:10] if prod[2] else None
+    lote_kg = float(prod[4] or 0)
+    if lote_kg <= 0:
+        # Inferir desde fórmula
+        try:
+            row = c.execute("""
+                SELECT COALESCE(lote_size_kg,0) FROM formula_headers
+                WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+            """, (prod[1],)).fetchone()
+            if row:
+                lote_kg = float(row[0] or 0) * int(prod[3] or 1)
+        except Exception:
+            pass
+    if lote_kg <= 0:
+        return {'ok': False, 'error': 'lote_kg desconocido (revisa fórmula)'}
+
+    resultado = {'ok': True, 'produccion_id': produccion_id, 'cambios': []}
+
+    # 1) Área óptima (si no la tiene)
+    if not prod[5]:
+        area = _seleccionar_area_optima(c, lote_kg, fecha_iso)
+        if not area:
+            # Reintentar incluyendo sucias (con limpieza inmediata)
+            area = _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=False)
+            if not area:
+                return {'ok': False, 'error': f'Sin área disponible para {lote_kg:.0f}kg ese día'}
+            else:
+                resultado['cambios'].append('⚠️ Asignada área sucia, requiere limpieza primero')
+
+        env_codigo = _envasado_sugerido(area['area_codigo'])
+        env_id = None
+        if env_codigo:
+            row = c.execute("SELECT id FROM areas_planta WHERE codigo=?", (env_codigo,)).fetchone()
+            if row: env_id = row[0]
+
+        c.execute("UPDATE produccion_programada SET area_id=? WHERE id=?",
+                  (area['area_id'], produccion_id))
+        resultado['area'] = area
+        resultado['area_envasado'] = {'codigo': env_codigo, 'id': env_id}
+        resultado['cambios'].append(
+            f"Área asignada: {area['area_codigo']} (tanque {area['tanque_codigo']} · "
+            f"{area['capacidad_litros']:.0f}L · uso {area['utilizacion_pct']}%)"
+        )
+
+    # 2) Operarios rotando
+    sin_ops = not (prod[6] or prod[7] or prod[8] or prod[9])
+    if sin_ops:
+        asigns = _auto_asignar_operarios(c, produccion_id, fecha_iso, user)
+        if asigns:
+            # Lookup nombres
+            ids = [v for v in asigns.values() if v]
+            nombres_map = {}
+            if ids:
+                placeholders = ','.join(['?'] * len(ids))
+                rows = c.execute(
+                    f"SELECT id, nombre || ' ' || COALESCE(apellido,'') FROM operarios_planta WHERE id IN ({placeholders})",
+                    ids
+                ).fetchall()
+                nombres_map = {r[0]: (r[1] or '').strip() for r in rows}
+            asigns_nom = {rol: nombres_map.get(oid, f'#{oid}') for rol, oid in asigns.items()}
+            resultado['operarios'] = asigns_nom
+            resultado['cambios'].append(
+                'Operarios asignados (rotación): ' +
+                ' · '.join(f'{k}: {v}' for k, v in asigns_nom.items())
+            )
+
+    # 3) Log
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO auto_asignacion_log
+              (produccion_id, ejecutado_por, area_asignada, tanque_asignado,
+               area_envasado_asignada, operarios_json, score, razon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            produccion_id, user,
+            resultado.get('area', {}).get('area_codigo'),
+            resultado.get('area', {}).get('tanque_codigo'),
+            resultado.get('area_envasado', {}).get('codigo'),
+            _json.dumps(resultado.get('operarios', {})),
+            resultado.get('area', {}).get('score'),
+            ' | '.join(resultado.get('cambios', [])),
+        ))
+    except Exception:
+        pass
+
+    return resultado
+
+
+@bp.route('/api/planta/estado-salas-vivo', methods=['GET'])
+def estado_salas_vivo():
+    """Estado live de las áreas de producción + envasado.
+    Sebastián 1-may-2026: vista en vivo de qué pasa en planta hoy.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    fecha_man = fecha_hoy + timedelta(days=1)
+
+    salas = c.execute("""
+        SELECT a.id, a.codigo, a.nombre, a.tipo, a.estado,
+               a.requiere_limpieza_profunda, a.ultima_limpieza_profunda,
+               a.puede_producir, a.puede_envasar
+        FROM areas_planta a
+        WHERE a.activo=1 AND a.tipo='produccion'
+        ORDER BY a.orden, a.codigo
+    """).fetchall()
+
+    out = []
+    for s in salas:
+        sala = {
+            'id': s[0], 'codigo': s[1], 'nombre': s[2],
+            'estado': s[4] or 'libre',
+            'requiere_limpieza_profunda': bool(s[5]),
+            'ultima_limpieza_profunda': s[6],
+            'puede_producir': bool(s[7]),
+            'puede_envasar': bool(s[8]),
+        }
+        # Producción actual o próxima
+        prod = c.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+                   COALESCE(pp.cantidad_kg,0), pp.estado,
+                   o1.nombre as op_disp, o2.nombre as op_elab,
+                   o3.nombre as op_env
+            FROM produccion_programada pp
+              LEFT JOIN operarios_planta o1 ON o1.id = pp.operario_dispensacion_id
+              LEFT JOIN operarios_planta o2 ON o2.id = pp.operario_elaboracion_id
+              LEFT JOIN operarios_planta o3 ON o3.id = pp.operario_envasado_id
+            WHERE pp.area_id = ?
+              AND date(pp.fecha_programada) >= ?
+              AND date(pp.fecha_programada) <= ?
+              AND COALESCE(pp.estado, 'programado') NOT IN ('completado', 'cancelado')
+            ORDER BY pp.fecha_programada ASC LIMIT 1
+        """, (s[0], fecha_hoy.isoformat(), fecha_man.isoformat())).fetchall()
+        if prod:
+            p = prod[0]
+            sala['produccion'] = {
+                'id': p[0], 'producto': p[1], 'fecha': p[2][:10] if p[2] else '',
+                'lotes': p[3], 'kg': p[4], 'estado': p[5],
+                'op_dispensacion': p[6] or '',
+                'op_elaboracion': p[7] or '',
+                'op_envasado': p[8] or '',
+            }
+        else:
+            sala['produccion'] = None
+        # Limpieza pendiente
+        try:
+            limp = c.execute("""
+                SELECT id, fecha, asignado_a, estado, razon_asignacion
+                FROM limpieza_profunda_calendario
+                WHERE area_codigo = ?
+                  AND date(fecha) >= ?
+                  AND estado IN ('pendiente','asignada','en_proceso')
+                ORDER BY fecha ASC LIMIT 1
+            """, (s[1], fecha_hoy.isoformat())).fetchone()
+            if limp:
+                sala['limpieza_pendiente'] = {
+                    'id': limp[0], 'fecha': limp[1], 'asignado_a': limp[2] or '',
+                    'estado': limp[3], 'razon': limp[4] or '',
+                }
+            else:
+                sala['limpieza_pendiente'] = None
+        except Exception:
+            sala['limpieza_pendiente'] = None
+        # Tanque más grande de la sala (info)
+        try:
+            tan = c.execute("""
+                SELECT codigo, nombre, capacidad_litros
+                FROM equipos_planta
+                WHERE area_codigo=? AND activo=1
+                  AND tipo IN ('tanque','marmita','olla')
+                ORDER BY capacidad_litros DESC LIMIT 1
+            """, (s[1],)).fetchone()
+            if tan:
+                sala['tanque_principal'] = {
+                    'codigo': tan[0], 'nombre': tan[1], 'litros': tan[2]
+                }
+        except Exception:
+            pass
+        out.append(sala)
+
+    return jsonify({
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'salas': out,
+        'total': len(out),
+        'libres': sum(1 for s in out if s['estado'] == 'libre'),
+        'ocupadas': sum(1 for s in out if s['estado'] == 'ocupada'),
+        'sucias': sum(1 for s in out if s['estado'] == 'sucia'),
+        'limpiando': sum(1 for s in out if s['estado'] == 'limpiando'),
+    })
+
+
+@bp.route('/api/planta/auto-asignar/<int:prod_id>', methods=['POST'])
+def auto_asignar_endpoint(prod_id):
+    """Auto-asigna área + envasado + operarios para 1 producción específica."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', 'manual')
+    conn = get_db(); c = conn.cursor()
+    try:
+        resultado = _auto_asignar_produccion(c, prod_id, user)
+        if resultado.get('ok'):
+            conn.commit()
+        return jsonify(resultado)
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@bp.route('/api/planta/auto-asignar-pendientes', methods=['POST'])
+def auto_asignar_pendientes():
+    """Recorre producciones próximos N días sin área/operarios y auto-asigna.
+
+    Sebastián 1-may-2026: "haz todo automático".
+    Acepta sesión o ?clave=AUTO_PLAN_CRON_KEY para uso interno.
+    Body opcional: {dias: 7}
+    """
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    user = 'cron-auto-asignar' if es_cron else session.get('compras_user', 'manual')
+    d = request.json or {}
+    dias = int(d.get('dias', 7))
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    fecha_max = fecha_hoy + timedelta(days=dias)
+
+    pendientes = c.execute("""
+        SELECT id FROM produccion_programada
+        WHERE date(fecha_programada) >= ?
+          AND date(fecha_programada) <= ?
+          AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+          AND (area_id IS NULL
+               OR (operario_dispensacion_id IS NULL
+                   AND operario_elaboracion_id IS NULL
+                   AND operario_envasado_id IS NULL))
+        ORDER BY fecha_programada ASC
+    """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+
+    procesadas = []
+    errores = []
+    for (prod_id,) in pendientes:
+        res = _auto_asignar_produccion(c, prod_id, user)
+        if res.get('ok'):
+            procesadas.append({'id': prod_id, 'cambios': res.get('cambios', [])})
+        else:
+            errores.append({'id': prod_id, 'error': res.get('error')})
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'horizonte_dias': dias,
+        'pendientes_evaluadas': len(pendientes),
+        'procesadas': procesadas,
+        'errores': errores,
+        'mensaje': f'✅ {len(procesadas)} producciones auto-asignadas, {len(errores)} con error',
     })
 
 
