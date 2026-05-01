@@ -41,6 +41,118 @@ DIAS_PRODUCCION = (0, 2, 4)        # lunes, miércoles, viernes
 DIAS_ACOND_CONTEO = (1, 3)         # martes, jueves
 DIAS_NO_LABORAL = (5, 6)           # sábado, domingo
 
+# Márgenes de planeación · Sebastián 1-may-2026:
+# - MARGEN_MIN_DIAS = 20: regla dura · NUNCA producir más tarde de 20d.
+# - MARGEN_IDEAL_DIAS = 25: objetivo ideal · empezar a planear con 25d colchón.
+# Default = 25 (ideal · regla CEO). Override con env MARGEN_PLANEACION_DIAS si
+# se requiere ajustar (ej. =20 para producir más tarde, =30 para más colchón).
+MARGEN_MIN_DIAS = 20
+MARGEN_IDEAL_DIAS = 25
+try:
+    MARGEN_DIAS_ACTIVO = int(os.environ.get('MARGEN_PLANEACION_DIAS', MARGEN_IDEAL_DIAS))
+except (ValueError, TypeError):
+    MARGEN_DIAS_ACTIVO = MARGEN_IDEAL_DIAS
+# Hard floor: si alguien setea env <MARGEN_MIN_DIAS, forzar al mínimo.
+if MARGEN_DIAS_ACTIVO < MARGEN_MIN_DIAS:
+    MARGEN_DIAS_ACTIVO = MARGEN_MIN_DIAS
+
+# AFINIDAD por defecto (fallback si rol_afinidad_config está vacía).
+# Pesos: 4=preferido fuerte · 2=todero · 1=fallback. SIN peso 3 para fijos
+# en otros roles — fija_en_dispensacion se enforza por filtrado, no peso.
+_AFINIDAD_DEFAULT = {
+    'dispensacion': {
+        'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
+        'acondicionamiento': 1, 'todero': 2,
+    },
+    'elaboracion': {
+        'dispensacion': 1, 'elaboracion': 4, 'envasado': 1,
+        'acondicionamiento': 1, 'todero': 2,
+    },
+    'envasado': {
+        'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
+        'acondicionamiento': 1, 'todero': 2,
+    },
+    'acondicionamiento': {
+        'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
+        'elaboracion': 1, 'todero': 2,
+    },
+}
+
+
+def _validar_acceso_cron(request, body=None):
+    """Valida acceso a endpoints cron con backward-compat opt-in HMAC.
+
+    Modo 1 (legacy default): aceptar `?clave=AUTO_PLAN_CRON_KEY` plain.
+    Modo 2 (HMAC opt-in): si env `HMAC_CRON_REQUIRED=1`, EXIGIR header
+      `X-Cron-Signature: hex(hmac_sha256(secret, ts || body))` + header
+      `X-Cron-Timestamp: <unix_ts>` con ventana ±300s para anti-replay.
+
+    Returns: (es_cron: bool, error_msg: str|None). Si es_cron=False y
+    error_msg es None, no se intentó autenticar como cron (caller decide
+    si fallback a sesión normal).
+    """
+    import hmac, hashlib, time
+    secret = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    if not secret:
+        return False, None
+
+    # ── Modo HMAC (opt-in) ───────────────────────────────────────────────
+    if os.environ.get('HMAC_CRON_REQUIRED', '').lower() in ('1', 'true', 'yes'):
+        sig = request.headers.get('X-Cron-Signature', '').strip().lower()
+        ts = request.headers.get('X-Cron-Timestamp', '').strip()
+        if not sig or not ts:
+            return False, 'HMAC_REQUIRED: faltan headers X-Cron-Signature/Timestamp'
+        try:
+            ts_int = int(ts)
+        except (ValueError, TypeError):
+            return False, 'HMAC_REQUIRED: timestamp inválido'
+        # Ventana anti-replay ±300s (5 min)
+        if abs(time.time() - ts_int) > 300:
+            return False, 'HMAC_REQUIRED: timestamp expirado (±5 min)'
+        body_bytes = (body or '').encode('utf-8') if isinstance(body, str) else (body or b'')
+        msg = ts.encode('utf-8') + b'\n' + body_bytes
+        expected = hmac.new(secret.encode('utf-8'), msg, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return False, 'HMAC_REQUIRED: firma inválida'
+        return True, None
+
+    # ── Modo legacy (default · plaintext clave en query/body) ────────────
+    try:
+        clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    except Exception:
+        clave_cron = request.args.get('clave', '')
+    if clave_cron and hmac.compare_digest(clave_cron, secret):
+        return True, None
+    return False, None
+
+
+def _cargar_afinidad(c):
+    """Carga la matriz de afinidad rol_destino → rol_predeterminado → peso
+    desde la tabla rol_afinidad_config (migración 81). Si la tabla no existe
+    o está vacía, devuelve _AFINIDAD_DEFAULT como fallback.
+
+    Se llama por cada cálculo de plan/asignación (no se cachea) — la tabla
+    es chica (≤20 rows) y permite cambios en caliente sin redeploy.
+    """
+    try:
+        rows = c.execute(
+            "SELECT rol_destino, rol_predeterminado, peso FROM rol_afinidad_config"
+        ).fetchall()
+        if not rows:
+            return {k: dict(v) for k, v in _AFINIDAD_DEFAULT.items()}
+        out = {}
+        for rol_d, rol_p, peso in rows:
+            out.setdefault(rol_d, {})[rol_p] = peso
+        # Si la tabla tiene rows pero falta algún rol_destino, completar con default
+        for rd, defaults in _AFINIDAD_DEFAULT.items():
+            if rd not in out:
+                out[rd] = dict(defaults)
+        return out
+    except Exception as e:
+        log.warning('_cargar_afinidad fallback a default: %s', e)
+        return {k: dict(v) for k, v in _AFINIDAD_DEFAULT.items()}
+
+
 # ───────────────────────────────────────────────────────────────────────
 # UTILIDADES
 # ───────────────────────────────────────────────────────────────────────
@@ -1084,18 +1196,28 @@ def plan_semanal_v2():
         # Solo los próximos 'dias' días
         from datetime import datetime as _dt2
         fecha_limite = _dt2.now().date() + timedelta(days=dias)
+        # Sebastián 1-may-2026 audit zero-error: pre-cargar TODAS las imágenes
+        # de fórmulas en single query y mapear por producto. Antes: 1 query
+        # por producción proyectada · 100 prods = 100 queries.
+        img_map = {}
+        try:
+            for row in c.execute(
+                "SELECT UPPER(TRIM(producto_nombre)), imagen_url FROM formula_headers"
+            ).fetchall():
+                if row[0]:
+                    img_map[row[0]] = row[1]
+        except Exception as _e:
+            log.warning('plan-semanal-v2 img_map preload fallo: %s', _e)
         for p in proy:
             try:
                 f = _dt2.strptime(p['fecha'], '%Y-%m-%d').date()
                 if f > fecha_limite:
                     continue
-            except Exception:
+            except Exception as _e:
+                log.debug('plan-semanal-v2 skip evento por fecha invalida (%s): %s',
+                          p.get('fecha'), _e)
                 continue
-            # Buscar imagen del producto
-            img = c.execute(
-                "SELECT imagen_url FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
-                (p['producto'],)
-            ).fetchone()
+            img_url = img_map.get((p['producto'] or '').strip().upper())
             items_proy.append({
                 'origen': 'proyeccion',
                 'produccion_id': None,  # aún no existe
@@ -1106,7 +1228,7 @@ def plan_semanal_v2():
                 'area_codigo': None,
                 'area_nombre': None,
                 'lote_size_kg': p['lote_kg'],
-                'imagen_url': img[0] if img else None,
+                'imagen_url': img_url,
                 'kg': p['kg_con_merma'],
                 'razon': f"Cadencia {p['cadencia_dias']}d" if p.get('cadencia_dias') else 'Auto por umbral',
             })
@@ -1515,7 +1637,7 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
       4. Si alcance > target+margen → OK no producir
       5. Si alcance > margen → producir cuando falten margen días
       6. Si alcance ≤ margen → URGENTE
-      7. Cadencia histórica de calendar > 14d atrás como referencia
+      7. Cadencia histórica de calendar > PIPELINE_DIAS atrás como referencia
       8. Lote típico = mediana de kg en calendar histórico
 
     Si ignorar_calendar=True: NO suma pipeline_kg ni futuro_kg de Calendar
@@ -1523,8 +1645,12 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
     cuenta el calendario, si tuvieras que producir ya según Shopify".
     """
     fecha_hoy = datetime.now().date()
-    fecha_pipeline_inicio = fecha_hoy - timedelta(days=14)
-    margen_dias = 20  # Sebastian: producir 20d antes de agotar
+    # Sebastián 1-may-2026: lote fabricado tarda ~7d en quedar disponible en
+    # Shopify. Pipeline = lo producido en los últimos PIPELINE_DIAS que aún
+    # no aparece en stock. Antes era 14d → contaba double (pipeline + stock).
+    PIPELINE_DIAS = 7
+    fecha_pipeline_inicio = fecha_hoy - timedelta(days=PIPELINE_DIAS)
+    margen_dias = MARGEN_DIAS_ACTIVO  # 20 default · 25 si MARGEN_PLANEACION_DIAS=25
     cobertura_target = 60  # objetivo
 
     # 1. Velocidad de venta (Shopify 30d con tendencia)
@@ -1534,8 +1660,8 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
     # 2. Stock actual (Shopify)
     stock_shopify = _stock_actual_pt(c, producto)
 
-    # 3. Pipeline: producciones del calendar entre hoy-14d y hoy (ya hechas
-    #    pero aún no entran a Shopify)
+    # 3. Pipeline: producciones del calendar entre hoy-PIPELINE_DIAS y hoy
+    #    (ya hechas pero aún no entran a Shopify por el lag de 7d).
     eventos = _calendar_events_cached()
     alias = _alias_calendar_for(c, producto)
     factor_g = _factor_g_por_unidad(c, producto)
@@ -1553,13 +1679,13 @@ def _calcular_recomendacion_sku(c, producto, lote_kg_default, cadencia_cfg, merm
             continue
         kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or lote_kg_default or 30
         if fecha_pipeline_inicio <= f <= fecha_hoy:
-            # Pipeline (no entra aún a Shopify pero ya producido)
+            # Pipeline: producido pero aún no en Shopify (≤7d atrás)
             pipeline_kg += kg
         elif f > fecha_hoy:
             # Futuro programado
             futuro_kg += kg
         else:
-            # Histórico (>14d atrás)
+            # Histórico (>PIPELINE_DIAS atrás · ya en Shopify)
             historico_fechas.append(f)
             historico_kg_list.append(kg)
 
@@ -2670,7 +2796,7 @@ def plan_largo_shopify():
     """).fetchall()
 
     fecha_hoy = datetime.now().date()
-    margen_dias = 20  # Sebastián: producir 20d antes de agotar
+    margen_dias = MARGEN_DIAS_ACTIVO  # 20 default · 25 si MARGEN_PLANEACION_DIAS=25
 
     # Reunir info por SKU primero
     sku_info = []
@@ -3586,7 +3712,7 @@ def maquila_clientes():
         except sqlite3.IntegrityError:
             return jsonify({'error': 'Cliente ya existe con ese nombre'}), 409
     rows = c.execute(
-        "SELECT * FROM clientes_maquila WHERE activo=1 ORDER BY nombre"
+        "SELECT * FROM clientes_maquila WHERE activo=1 ORDER BY nombre LIMIT 5000"
     ).fetchall()
     cols = [d[0] for d in c.description]
     return jsonify({'clientes': [dict(zip(cols, r)) for r in rows]})
@@ -3740,10 +3866,16 @@ def asignar_operarios_auto(prod_id):
 @bp.route('/api/planta/asignar-operarios-bulk', methods=['POST'])
 def asignar_operarios_bulk():
     """Asigna operarios automáticamente a TODAS las producciones pendientes
-    sin operarios. Útil después de Auto-Plan."""
+    sin operarios. Útil después de Auto-Plan.
+
+    Sebastián 1-may-2026 audit zero-error: wrap en transacción explícita con
+    rollback granular — antes era best-effort sin atomicidad.
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '?')
     conn = get_db(); c = conn.cursor()
+    log = logging.getLogger('inventario.planta')
     rows = c.execute("""
         SELECT id FROM produccion_programada
         WHERE COALESCE(estado,'programado') NOT IN ('completado','cancelado')
@@ -3753,11 +3885,24 @@ def asignar_operarios_bulk():
             OR operario_envasado_id IS NULL)
     """).fetchall()
     asignadas = 0
-    for (pid,) in rows:
-        _asignar_operarios_a_produccion(conn, pid)
-        asignadas += 1
-    conn.commit()
-    return jsonify({'ok': True, 'asignadas': asignadas})
+    fallidas = []
+    try:
+        for (pid,) in rows:
+            try:
+                _asignar_operarios_a_produccion(conn, pid)
+                asignadas += 1
+            except Exception as _e:
+                fallidas.append({'pid': pid, 'error': str(_e)[:120]})
+                log.warning('bulk asignar fallo prod=%s user=%s: %s', pid, user, _e)
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception as _r: log.debug('rollback no aplicable: %s', _r)
+        log.exception('bulk asignar rollback total user=%s: %s', user, _e)
+        return jsonify({'ok': False, 'error': str(_e)[:200],
+                         'asignadas_antes_de_fallo': asignadas}), 500
+    return jsonify({'ok': True, 'asignadas': asignadas,
+                     'total_intentadas': len(rows), 'fallidas': fallidas[:10]})
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -3946,6 +4091,41 @@ def configs_mp():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        # Validación de rango razonable. Sebastián 1-may-2026 audit:
+        # antes aceptaba cualquier número (incluso negativos/absurdos).
+        # NOTA: usar `if X is None else int(X)` en lugar de `or X` para que
+        # explicit 0 falle validación en vez de fallback al default.
+        try:
+            _lead_raw = d.get('lead_time_dias')
+            lead = 14 if _lead_raw is None else int(_lead_raw)
+            _buf_raw = d.get('buffer_dias')
+            buffer_d = 30 if _buf_raw is None else int(_buf_raw)
+            _cmin_raw = d.get('cobertura_min_dias')
+            cob_min = 30 if _cmin_raw is None else int(_cmin_raw)
+            _cidl_raw = d.get('cobertura_ideal_dias')
+            cob_ideal = 60 if _cidl_raw is None else int(_cidl_raw)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'lead_time/buffer/cobertura deben ser enteros'}), 400
+        if not (1 <= lead <= 365):
+            return jsonify({'error': 'lead_time_dias fuera de rango (1-365)'}), 400
+        if not (0 <= buffer_d <= 180):
+            return jsonify({'error': 'buffer_dias fuera de rango (0-180)'}), 400
+        if not (1 <= cob_min <= 365):
+            return jsonify({'error': 'cobertura_min_dias fuera de rango (1-365)'}), 400
+        if cob_ideal < cob_min:
+            return jsonify({'error': 'cobertura_ideal_dias debe ser ≥ cobertura_min_dias'}), 400
+        origen = (d.get('origen') or 'local').strip().lower()
+        # Regla CEO: MP de China tiene lead time típico 90-180d.
+        # Si origen='China' con lead<60d → warning (no error, pero alerta a UI).
+        warnings = []
+        if origen == 'china' and lead < 60:
+            warnings.append(
+                f'⚠ MP China con lead_time={lead}d parece bajo · típico 90-180d (verificar)'
+            )
+        if origen == 'china' and lead > 365:
+            warnings.append(
+                f'⚠ MP China con lead_time={lead}d > 1 año · verificar'
+            )
         c.execute("""
             INSERT OR REPLACE INTO mp_lead_time_config
               (material_id, material_nombre, proveedor_principal, lead_time_dias,
@@ -3954,14 +4134,12 @@ def configs_mp():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
         """, (
             d.get('material_id'), d.get('material_nombre'),
-            d.get('proveedor_principal'), int(d.get('lead_time_dias') or 14),
-            int(d.get('buffer_dias') or 30), int(d.get('cobertura_min_dias') or 30),
-            int(d.get('cobertura_ideal_dias') or 60),
-            d.get('origen') or 'local', 1 if d.get('es_envase') else 0,
+            d.get('proveedor_principal'), lead, buffer_d, cob_min, cob_ideal,
+            origen, 1 if d.get('es_envase') else 0,
         ))
         conn.commit()
-        return jsonify({'ok': True})
-    rows = c.execute("SELECT * FROM mp_lead_time_config WHERE activo=1 ORDER BY origen, material_nombre").fetchall()
+        return jsonify({'ok': True, 'warnings': warnings})
+    rows = c.execute("SELECT * FROM mp_lead_time_config WHERE activo=1 ORDER BY origen, material_nombre LIMIT 5000").fetchall()
     cols = [d[0] for d in c.description]
     return jsonify({'configs': [dict(zip(cols, r)) for r in rows]})
 
@@ -4492,7 +4670,8 @@ def _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo='mensual'):
         try:
             nom_norm = _norm_mp_name(mat_nombre or '')
             if nom_norm and nom_norm in mp_stock_map: return float(mp_stock_map[nom_norm])
-        except Exception: pass
+        except Exception as _e:
+            log.debug('_norm_mp_name fallback: %s', _e)
         return 0
 
     # Eventos del Calendar en el horizonte mayor
@@ -4677,9 +4856,9 @@ def auto_sc_generar():
       modo: 'mensual' (default) o 'urgente'
       enviar_email: bool (default true)
     """
-    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
-    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
-    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    es_cron, _err_cron = _validar_acceso_cron(request)
+    if _err_cron:
+        return jsonify({'error': _err_cron}), 401
     if not es_cron and 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
 
@@ -5329,9 +5508,9 @@ def auto_sc_mee_generar():
     Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
     Body: {modo, origen?, enviar_email?, generico?}
     """
-    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
-    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
-    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    es_cron, _err_cron = _validar_acceso_cron(request)
+    if _err_cron:
+        return jsonify({'error': _err_cron}), 401
     if not es_cron and 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
 
@@ -5924,9 +6103,9 @@ def auto_d20_cron():
     Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
     Body opcional: {dry_run: bool, dias_ventana: 5}
     """
-    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
-    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
-    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    es_cron, _err_cron = _validar_acceso_cron(request)
+    if _err_cron:
+        return jsonify({'error': _err_cron}), 401
     if not es_cron and 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
@@ -6647,40 +6826,55 @@ def pre_produccion_equipo():
     cols = ['id','producto','fecha','lotes','cantidad_kg','area','estado',
             'op_elab_id','op_env_id','op_acond_id',
             'op_elaboracion','op_envasado','op_acondicionamiento']
+
+    # Pre-cargar TODOS los checklists de las producciones del rango en UNA sola
+    # query — evita N+1 (antes: 1 query por producción · 100 prods = 101 queries).
+    # Sebastián 1-may-2026 audit zero-error: aplanar en single fetch.
+    prod_ids = [r[0] for r in rows]
+    checklist_por_prod = {pid: [] for pid in prod_ids}
+    if prod_ids:
+        placeholders = ','.join('?' * len(prod_ids))
+        try:
+            checklist_rows = c.execute(f"""
+                SELECT produccion_id, item_tipo, estado, COUNT(*) as n
+                FROM produccion_checklist
+                WHERE produccion_id IN ({placeholders})
+                GROUP BY produccion_id, item_tipo, estado
+            """, prod_ids).fetchall()
+            for pid, tipo, est, n in checklist_rows:
+                checklist_por_prod.setdefault(pid, []).append((tipo, est, n))
+        except Exception as _e:
+            log = logging.getLogger('inventario.planta')
+            log.warning('pre-produccion checklist bulk fallo: %s', _e)
+
+    def _clasificar_checklist(items):
+        mp_ok, mp_pend, mee_ok, mee_pend = 0, 0, 0, 0
+        for tipo, est, n in items:
+            tipo_low = (tipo or '').lower()
+            est_low = (est or '').lower()
+            es_listo = est_low in ('verificado_ok', 'recibido', 'listo', 'consumido')
+            es_mee = any(k in tipo_low for k in
+                         ('envase','tapa','etiqueta','caja','serigraf','tampograf'))
+            if es_mee:
+                if es_listo: mee_ok += n
+                else: mee_pend += n
+            else:
+                if es_listo: mp_ok += n
+                else: mp_pend += n
+        return mp_ok, mp_pend, mee_ok, mee_pend
+
     producciones = []
     for r in rows:
         p = dict(zip(cols, r))
         p['op_elaboracion'] = (p['op_elaboracion'] or '').strip()
         p['op_envasado'] = (p['op_envasado'] or '').strip()
         p['op_acondicionamiento'] = (p['op_acondicionamiento'] or '').strip()
-        # Estado MPs/MEEs desde checklist
-        try:
-            checklist = c.execute("""
-                SELECT item_tipo, estado, COUNT(*) as n
-                FROM produccion_checklist
-                WHERE produccion_id = ?
-                GROUP BY item_tipo, estado
-            """, (p['id'],)).fetchall()
-            mp_ok, mp_pend, mee_ok, mee_pend = 0, 0, 0, 0
-            for tipo, est, n in checklist:
-                tipo_low = (tipo or '').lower()
-                est_low = (est or '').lower()
-                es_listo = est_low in ('verificado_ok', 'recibido', 'listo', 'consumido')
-                if 'envase' in tipo_low or 'tapa' in tipo_low or 'etiqueta' in tipo_low or 'caja' in tipo_low or 'serigraf' in tipo_low or 'tampograf' in tipo_low:
-                    if es_listo: mee_ok += n
-                    else: mee_pend += n
-                else:
-                    if es_listo: mp_ok += n
-                    else: mp_pend += n
-            p['mp_ok'] = mp_ok
-            p['mp_pendientes'] = mp_pend
-            p['mee_ok'] = mee_ok
-            p['mee_pendientes'] = mee_pend
-        except Exception:
-            p['mp_ok'] = 0
-            p['mp_pendientes'] = 0
-            p['mee_ok'] = 0
-            p['mee_pendientes'] = 0
+        mp_ok, mp_pend, mee_ok, mee_pend = _clasificar_checklist(
+            checklist_por_prod.get(p['id'], []))
+        p['mp_ok'] = mp_ok
+        p['mp_pendientes'] = mp_pend
+        p['mee_ok'] = mee_ok
+        p['mee_pendientes'] = mee_pend
         # Días hasta producción
         try:
             f_prod = datetime.strptime(p['fecha'][:10], '%Y-%m-%d').date()
@@ -6784,13 +6978,15 @@ def pre_produccion_equipo():
 
 @bp.route('/api/planta/reasignar-operarios-conflictos', methods=['POST'])
 def reasignar_operarios_conflictos():
-    """Re-asigna operarios IA a producciones con duplicados (mismo operario
-    en 2+ roles de la misma producción) o conflictos cross-producción.
-    Sebastián 1-may-2026: 'pre-produccion muestra conflictos · resuelve esto'.
+    """Re-asigna operarios IA a producciones con CUALQUIERA de:
+    - duplicados (mismo operario en 2+ roles de la misma producción)
+    - jefe asignado a un rol operario
+    - operario fija_en_dispensacion=1 en rol ≠ dispensación (Sebastián 1-may-2026
+      round 2: regla dura · enforce sobre datos viejos pre-fix)
 
-    1. Encuentra producciones próximas 14 días con duplicados/conflictos
+    1. Encuentra producciones próximas 14 días con cualquier violación
     2. NULL todos los operarios de esas filas
-    3. Llama _auto_asignar_operarios para repoblar con 4 distintos
+    3. Llama _auto_asignar_operarios para repoblar respetando regla fija
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -6803,8 +6999,12 @@ def reasignar_operarios_conflictos():
     jefes_ids = set(r[0] for r in c.execute(
         "SELECT id FROM operarios_planta WHERE COALESCE(es_jefe_produccion,0)=1"
     ).fetchall())
+    # IDs de operarios fija_en_dispensacion (Mayerlin) → solo van a dispensacion
+    fijos_ids = set(r[0] for r in c.execute(
+        "SELECT id FROM operarios_planta WHERE COALESCE(fija_en_dispensacion,0)=1"
+    ).fetchall())
 
-    # Filas con operarios duplicados o jefes asignados
+    # Filas con operarios duplicados, jefes asignados o regla fija violada
     rows = c.execute("""
         SELECT id, producto, fecha_programada,
                operario_dispensacion_id, operario_elaboracion_id,
@@ -6818,12 +7018,16 @@ def reasignar_operarios_conflictos():
     razones = {}
     for r in rows:
         pid, prod_n, fecha, *ops = r
+        op_disp, op_elab, op_env, op_acond = ops
         ops_no_null = [o for o in ops if o]
         razon = None
         if len(ops_no_null) != len(set(ops_no_null)):
             razon = 'duplicado-intra'
         elif any(o in jefes_ids for o in ops_no_null):
             razon = 'jefe-asignado'
+        # Regla fija: Mayerlin (u otro fijo) en rol ≠ dispensación
+        elif (op_elab in fijos_ids) or (op_env in fijos_ids) or (op_acond in fijos_ids):
+            razon = 'regla-fija-violada'
         if razon:
             pids_a_reasignar.append((pid, prod_n, fecha[:10]))
             razones[pid] = razon
@@ -6854,7 +7058,7 @@ def reasignar_operarios_conflictos():
         conn.commit()
     except Exception as _e:
         try: conn.rollback()
-        except: pass
+        except Exception as _r: log.debug('rollback no aplicable: %s', _r)
         return jsonify({'ok': False, 'error': str(_e)}), 500
 
     n_dup = sum(1 for r in razones.values() if r == 'duplicado-intra')
@@ -6880,9 +7084,9 @@ def sync_shopify_cron():
     Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
     Llama internamente a /api/animus/sync/shopify y registra el resultado.
     """
-    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
-    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
-    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    es_cron, _err_cron = _validar_acceso_cron(request)
+    if _err_cron:
+        return jsonify({'error': _err_cron}), 401
     if not es_cron and 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
 
@@ -7088,23 +7292,21 @@ def mi_dia():
     }
 
     fecha_hoy = datetime.now().date()
-    fecha_max = fecha_hoy + timedelta(days=dias)
+    fecha_max = fecha_hoy + timedelta(days=dias - 1)
     nombres_dia = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
     DIAS_PRODUCCION = (0, 2, 4)  # L, Mi, V
     DIAS_ACONDICIONAR = (1, 3)   # Ma, J
 
-    # Tareas por día
-    dias_data = []
-    for d_offset in range(dias):
-        f = fecha_hoy + timedelta(days=d_offset)
-        wd = f.weekday()
-        dia_label = 'PRODUCCIÓN' if wd in DIAS_PRODUCCION else (
-                    'ACONDICIONAR/CONTEO' if wd in DIAS_ACONDICIONAR else 'FIN DE SEMANA')
-        es_lab = wd < 5
+    # Sebastián 1-may-2026 audit zero-error: 3 queries totales en lugar de 3*dias.
+    # Antes: 7 días × 3 queries = 21 queries por request. Ahora: 3 queries fijas.
+    op_log = logging.getLogger('inventario.planta')
 
-        # Producciones donde participa este operario
-        prods = c.execute("""
-            SELECT pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
+    # Pre-cargar producciones del rango entero
+    prods_por_fecha = {}
+    try:
+        prods_rows = c.execute("""
+            SELECT date(pp.fecha_programada) as fecha,
+                   pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
                    ap.codigo as area, pp.estado,
                    CASE
                      WHEN pp.operario_dispensacion_id = ? THEN 'dispensacion'
@@ -7118,59 +7320,84 @@ def mi_dia():
               LEFT JOIN areas_planta ap ON ap.id = pp.area_id
               LEFT JOIN producto_perfil_riesgo pr
                 ON UPPER(TRIM(pr.producto_nombre)) = UPPER(TRIM(pp.producto))
-            WHERE date(pp.fecha_programada) = ?
+            WHERE date(pp.fecha_programada) BETWEEN ? AND ?
               AND COALESCE(pp.estado, 'programado') NOT IN ('completado', 'cancelado')
               AND (pp.operario_dispensacion_id = ? OR pp.operario_elaboracion_id = ?
                    OR pp.operario_envasado_id = ? OR pp.operario_acondicionamiento_id = ?)
-        """, (operario_id, operario_id, operario_id, operario_id, f.isoformat(),
+        """, (operario_id, operario_id, operario_id, operario_id,
+              fecha_hoy.isoformat(), fecha_max.isoformat(),
               operario_id, operario_id, operario_id, operario_id)).fetchall()
+        for row in prods_rows:
+            prods_por_fecha.setdefault(row[0], []).append({
+                'id': row[1], 'producto': row[2], 'lotes': row[3], 'kg': row[4],
+                'area': row[5] or '', 'estado': row[6], 'rol': row[7],
+                'pigmento': bool(row[8]) if row[8] is not None else False,
+                'color_descripcion': row[9] or '',
+                'riesgo_arrastre_pct': row[10] or 0,
+            })
+    except Exception as _e:
+        op_log.warning('mi-dia prods bulk fallo op=%s: %s', operario_id, _e)
 
-        prods_data = [{
-            'id': p[0], 'producto': p[1], 'lotes': p[2], 'kg': p[3],
-            'area': p[4] or '', 'estado': p[5], 'rol': p[6],
-            'pigmento': bool(p[7]) if p[7] is not None else False,
-            'color_descripcion': p[8] or '',
-            'riesgo_arrastre_pct': p[9] or 0,
-        } for p in prods]
+    # Pre-cargar limpiezas profundas del rango
+    limps_por_fecha = {}
+    try:
+        limps_rows = c.execute("""
+            SELECT date(fecha), id, area_codigo, asignado_a, estado, razon_asignacion
+            FROM limpieza_profunda_calendario
+            WHERE date(fecha) BETWEEN ? AND ?
+              AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
+        """, (fecha_hoy.isoformat(), fecha_max.isoformat(),
+              op_info['nombre'], op_info['nombre'])).fetchall()
+        for row in limps_rows:
+            limps_por_fecha.setdefault(row[0], []).append({
+                'id': row[1], 'area': row[2], 'asignado_a': row[3],
+                'estado': row[4], 'razon': row[5] or '',
+            })
+    except Exception as _e:
+        op_log.warning('mi-dia limpiezas bulk fallo op=%s: %s', operario_id, _e)
 
-        # Limpiezas profundas asignadas a este operario
-        try:
-            limps = c.execute("""
-                SELECT id, area_codigo, asignado_a, estado, razon_asignacion
-                FROM limpieza_profunda_calendario
-                WHERE date(fecha) = ?
-                  AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
-            """, (f.isoformat(), op_info['nombre'], op_info['nombre'])).fetchall()
-            limps_data = [{'id': l[0], 'area': l[1], 'asignado_a': l[2],
-                            'estado': l[3], 'razon': l[4] or ''} for l in limps]
-        except Exception:
-            limps_data = []
+    # Pre-cargar conteos cíclicos del rango
+    conts_por_fecha = {}
+    try:
+        conts_rows = c.execute("""
+            SELECT date(fecha), id, material_id, material_nombre, estado, categoria_abc
+            FROM conteo_ciclico_calendario
+            WHERE date(fecha) BETWEEN ? AND ?
+              AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
+        """, (fecha_hoy.isoformat(), fecha_max.isoformat(),
+              op_info['nombre'], op_info['nombre'])).fetchall()
+        for row in conts_rows:
+            conts_por_fecha.setdefault(row[0], []).append({
+                'id': row[1], 'material_id': row[2], 'material': row[3],
+                'estado': row[4], 'abc': row[5] or '',
+            })
+    except Exception as _e:
+        op_log.warning('mi-dia conteos bulk fallo op=%s: %s', operario_id, _e)
 
-        # Conteos cíclicos asignados
-        try:
-            conts = c.execute("""
-                SELECT id, material_id, material_nombre, estado, categoria_abc
-                FROM conteo_ciclico_calendario
-                WHERE date(fecha) = ?
-                  AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
-            """, (f.isoformat(), op_info['nombre'], op_info['nombre'])).fetchall()
-            cont_data = [{'id': c_[0], 'material_id': c_[1], 'material': c_[2],
-                           'estado': c_[3], 'abc': c_[4] or ''} for c_ in conts]
-        except Exception:
-            cont_data = []
+    # Tareas por día (sin queries adicionales · todo viene del pre-cargado)
+    dias_data = []
+    for d_offset in range(dias):
+        f = fecha_hoy + timedelta(days=d_offset)
+        wd = f.weekday()
+        dia_label = 'PRODUCCIÓN' if wd in DIAS_PRODUCCION else (
+                    'ACONDICIONAR/CONTEO' if wd in DIAS_ACONDICIONAR else 'FIN DE SEMANA')
+        es_lab = wd < 5
+        f_iso = f.isoformat()
+        prods_data = prods_por_fecha.get(f_iso, [])
+        limps_data = limps_por_fecha.get(f_iso, [])
+        cont_data = conts_por_fecha.get(f_iso, [])
 
         # Limpieza obligatoria si producción anterior tiene pigmento alto
         alerta_limpieza = None
-        if prods_data:
-            for p in prods_data:
-                if p['riesgo_arrastre_pct'] >= 50:
-                    alerta_limpieza = (f"⚠️ Limpieza profunda OBLIGATORIA antes de "
-                                        f"siguiente producción (anterior tuvo pigmento "
-                                        f"{p['color_descripcion']}, riesgo {p['riesgo_arrastre_pct']}%)")
-                    break
+        for p in prods_data:
+            if p['riesgo_arrastre_pct'] >= 50:
+                alerta_limpieza = (f"⚠️ Limpieza profunda OBLIGATORIA antes de "
+                                    f"siguiente producción (anterior tuvo pigmento "
+                                    f"{p['color_descripcion']}, riesgo {p['riesgo_arrastre_pct']}%)")
+                break
 
         dias_data.append({
-            'fecha': f.isoformat(),
+            'fecha': f_iso,
             'nombre_dia': nombres_dia[wd],
             'tipo_dia': dia_label,
             'es_laboral': es_lab,
@@ -7239,65 +7466,70 @@ def semana_produccion():
 
     # Pool de operarios activos (excluye jefes de producción)
     # Sebastián 1-may-2026: 'Luis Enrique es jefe · no es operario'.
+    # Sebastián 1-may-2026 round 3: respetar fija_en_dispensacion (regla dura).
     op_pool_rows = c.execute("""
         SELECT id, nombre || ' ' || COALESCE(apellido, ''),
-               COALESCE(rol_predeterminado, '')
+               COALESCE(rol_predeterminado, ''),
+               COALESCE(fija_en_dispensacion, 0)
         FROM operarios_planta
         WHERE COALESCE(activo, 1) = 1
           AND COALESCE(es_jefe_produccion, 0) = 0
         ORDER BY id
     """).fetchall()
-    op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower()) for r in op_pool_rows]
+    op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower(), bool(r[3]))
+               for r in op_pool_rows]
     op_count = len(op_pool)
 
-    # Tabla de afinidad por rol_predeterminado · Sebastián 1-may-2026:
-    # 'mayerlin dispensa y produce, camilo acondiciona · rotarlos ocasional'.
-    # Pesos: 4=preferido fuerte · 3=preferido medio · 2=todero · 1=fallback.
-    AFINIDAD = {
-        'dispensacion': {
-            'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
-            'acondicionamiento': 1, 'todero': 2,
-        },
-        'elaboracion': {
-            'dispensacion': 3,  # Mayerlin secundario (dispensa Y produce)
-            'elaboracion': 4, 'envasado': 1,
-            'acondicionamiento': 1, 'todero': 2,
-        },
-        'envasado': {
-            'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
-            'acondicionamiento': 1, 'todero': 2,
-        },
-        'acondicionamiento': {
-            'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
-            'elaboracion': 1, 'todero': 2,
-        },
-    }
+    # Tabla de afinidad por rol_predeterminado.
+    # Sebastián 1-may-2026 audit: leer de rol_afinidad_config (migración 81).
+    # Si la tabla está vacía o no existe (deploy nuevo), fallback hardcoded.
+    # Pesos: 4=preferido fuerte · 2=todero · 1=fallback.
+    AFINIDAD = _cargar_afinidad(c)
 
     def _operarios_para(producto, fecha_iso):
-        """Rota 4 operarios DISTINTOS para los 4 roles · pondera preferencias.
-        Mayerlin/dispensación 80% del tiempo · Camilo/acondicionamiento 80% ·
-        rota ocasionalmente vía hash determinístico."""
+        """Rota operarios para los 4 roles.
+
+        Reglas duras:
+        - Operarios con fija_en_dispensacion=1 SOLO pueden ir a 'dispensacion'.
+          Mayerlin Rivera tiene este flag (regla CEO 1-may-2026).
+        - Si hay >=1 operario fija_en_dispensacion activo, el rol 'dispensacion'
+          se llena obligatoriamente con el primero (rotación determinística).
+        - Pesos AFINIDAD aplican a operarios sin el flag.
+        """
         if op_count == 0:
             return {'dispensacion': '', 'elaboracion': '', 'envasado': '', 'acondicionamiento': ''}
         roles = ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento')
         usados = set()
         out = {}
+        # Pre-segmentar pool: fijos vs móviles
+        op_fijos = [(oid, nom, rp) for (oid, nom, rp, fija) in op_pool if fija]
+        op_moviles = [(oid, nom, rp) for (oid, nom, rp, fija) in op_pool if not fija]
+
         for rol in roles:
-            candidatos = [(oid, nom, rol_pre) for (oid, nom, rol_pre) in op_pool if oid not in usados]
-            if not candidatos:
+            if rol == 'dispensacion' and op_fijos:
+                # Forzar fijo: si hay >1 fijo, rotar entre ellos por hash
+                idx = _hash_rotacion(producto, fecha_iso, rol) % len(op_fijos)
+                chosen = op_fijos[idx]
+                if chosen[0] not in usados:
+                    out[rol] = chosen[1]
+                    usados.add(chosen[0])
+                    continue
+                # Si el fijo ya está usado (caso patológico), cae al pool normal
+            # Para roles != dispensación: EXCLUIR fijos (regla dura).
+            # Para dispensación sin fijos: usar movibles + posibles fijos como fallback.
+            if rol == 'dispensacion':
+                pool_rol = [c for c in (op_moviles + op_fijos) if c[0] not in usados]
+            else:
+                pool_rol = [c for c in op_moviles if c[0] not in usados]
+            if not pool_rol:
                 out[rol] = ''
                 continue
-            # Calcular peso de cada candidato según afinidad
             afin = AFINIDAD.get(rol, {})
-            weighted = []
-            for oid, nom, rol_pre in candidatos:
-                peso = afin.get(rol_pre, 1) if rol_pre else 1
-                weighted.append((peso, oid, nom))
+            weighted = [(afin.get(rp, 1) if rp else 1, oid, nom) for (oid, nom, rp) in pool_rol]
             total_weight = sum(w for w, _, _ in weighted)
             if total_weight <= 0:
-                # Fallback uniforme
-                idx = _hash_rotacion(producto, fecha_iso, rol) % len(candidatos)
-                chosen = candidatos[idx]
+                idx = _hash_rotacion(producto, fecha_iso, rol) % len(pool_rol)
+                chosen = pool_rol[idx]
                 out[rol] = chosen[1]
                 usados.add(chosen[0])
                 continue
@@ -7720,7 +7952,7 @@ def planta_accion_rapida():
             return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada'})
         except Exception as e:
             try: conn.rollback()
-            except: pass
+            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
             return jsonify({'error': str(e)}), 500
 
     elif tipo == 'terminar_produccion':
@@ -7756,13 +7988,13 @@ def planta_accion_rapida():
                     if area_row:
                         _crear_limpieza_post_produccion(c, row[3], area_row[0], fecha_iso,
                                                           row[1], '', user)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    log.warning('crear_limpieza_post_produccion fallo prod=%s: %s', row[0], _e)
             conn.commit()
             return jsonify({'ok': True, 'mensaje': '✓ Producción terminada · área marcada sucia · limpieza programada'})
         except Exception as e:
             try: conn.rollback()
-            except: pass
+            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
             return jsonify({'error': str(e)}), 500
 
     elif tipo == 'marcar_limpia':
@@ -7782,7 +8014,7 @@ def planta_accion_rapida():
             return jsonify({'ok': True, 'mensaje': f'✓ Área {row[0]} limpia · disponible para producción'})
         except Exception as e:
             try: conn.rollback()
-            except: pass
+            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
             return jsonify({'error': str(e)}), 500
 
     elif tipo == 'marcar_sucia':
@@ -7873,7 +8105,7 @@ def planta_accion_rapida():
             return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada (registro creado desde Calendar)', 'produccion_id': pid})
         except Exception as e:
             try: conn.rollback()
-            except: pass
+            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
             return jsonify({'error': str(e)}), 500
 
     elif tipo == 'sincronizar':
@@ -9337,9 +9569,9 @@ def auditor_semanal_enviar():
     Acepta también ?clave=XXX para disparo desde cron externo (Render Cron Job).
     """
     # Auth: sesión compras O clave de cron
-    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
-    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
-    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    es_cron, _err_cron = _validar_acceso_cron(request)
+    if _err_cron:
+        return jsonify({'error': _err_cron}), 401
     if not es_cron and 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
 
@@ -9526,7 +9758,7 @@ def conteo_configs():
         conn.commit()
         return jsonify({'ok': True})
     rows = c.execute(
-        "SELECT * FROM conteo_ciclico_config ORDER BY categoria_abc, material_id"
+        "SELECT * FROM conteo_ciclico_config ORDER BY categoria_abc, material_id LIMIT 5000"
     ).fetchall()
     cols = [d[0] for d in c.description]
     return jsonify({'configs': [dict(zip(cols, r)) for r in rows]})
@@ -9559,7 +9791,7 @@ def perfil_riesgo():
         conn.commit()
         return jsonify({'ok': True})
     rows = c.execute(
-        "SELECT * FROM producto_perfil_riesgo ORDER BY producto_nombre"
+        "SELECT * FROM producto_perfil_riesgo ORDER BY producto_nombre LIMIT 5000"
     ).fetchall()
     cols = [d[0] for d in c.description]
     return jsonify({'perfiles': [dict(zip(cols, r)) for r in rows]})
@@ -10082,6 +10314,151 @@ def planta_asignacion_semanal():
         'areas': [], 'tareas_globales': [], 'dias': [],
     })
 
+
+# ════════════════════════════════════════════════════════════════════════
+# Validar productos hermanos (SAH↔SAH10, NIA↔NIA10, etc.) · audit zero-error
+# Sebastián 1-may-2026: hermanos comparten bulk pero pueden estar con
+# nombres distintos en sku_producto_map → forecast los cuenta separados.
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/validar-hermanos-skus', methods=['GET'])
+def validar_hermanos_skus():
+    """Detecta SKUs candidatos a ser hermanos (mismo bulk · cuentan juntos).
+
+    Heurística: SKUs con prefijo común de >=3 chars donde uno termina con
+    sufijo numérico (ej. SAH, SAH10) pero `producto_nombre` distintos.
+
+    Retorna grupos sospechosos para revisión humana — NO modifica la BD.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT sku, producto_nombre FROM sku_producto_map
+        WHERE COALESCE(activo,1) = 1
+        ORDER BY sku
+    """).fetchall()
+    import re
+    by_prefix = {}
+    for sku, prod in rows:
+        sku_up = (sku or '').strip().upper()
+        if not sku_up:
+            continue
+        m = re.match(r'^([A-Z]{3,})(\d+)?$', sku_up)
+        if not m:
+            continue
+        prefix = m.group(1)
+        by_prefix.setdefault(prefix, []).append((sku_up, (prod or '').strip()))
+    grupos_sospechosos = []
+    for prefix, items in by_prefix.items():
+        if len(items) < 2:
+            continue
+        productos_distintos = set(p[1].upper() for p in items)
+        if len(productos_distintos) > 1:
+            grupos_sospechosos.append({
+                'prefix': prefix,
+                'skus': [{'sku': s, 'producto': p} for s, p in items],
+                'productos_distintos': len(productos_distintos),
+                'sugerencia': f'Si {prefix}* comparten bulk, unificar producto_nombre a un único valor',
+            })
+    grupos_sospechosos.sort(key=lambda g: g['productos_distintos'], reverse=True)
+    return jsonify({
+        'total_grupos_sospechosos': len(grupos_sospechosos),
+        'grupos': grupos_sospechosos[:50],
+        'nota': 'Solo sugerencia — revisar manualmente. NO modifica datos.',
+    })
+
+
+@bp.route('/api/planta/unificar-hermanos-skus', methods=['POST'])
+def unificar_hermanos_skus():
+    """Unifica SKUs hermanos al mismo `producto_nombre` (comparten bulk).
+
+    Body JSON: {
+        "producto_canonico": "SUERO HIDRATANTE AH 1.5%",  # nombre destino
+        "skus": ["SAH", "SAH10", "SAH-30"]                # SKUs a unificar
+    }
+
+    Acción:
+    - UPDATE sku_producto_map SET producto_nombre = canonico WHERE sku IN (...)
+    - Audit log con cambios anteriores
+
+    Sebastián 1-may-2026 round 2: complementa el endpoint de validación
+    (GET validar-hermanos-skus) — antes solo detectaba, ahora aplica.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(force=True, silent=True) or {}
+    canonico = (d.get('producto_canonico') or '').strip()
+    skus_in = d.get('skus') or []
+    if not canonico or len(canonico) < 3:
+        return jsonify({'error': 'producto_canonico requerido (≥3 chars)'}), 400
+    if not isinstance(skus_in, list) or len(skus_in) < 2:
+        return jsonify({'error': 'skus debe ser lista con ≥2 elementos'}), 400
+    skus_clean = [str(s).strip().upper() for s in skus_in if str(s).strip()]
+    if len(set(skus_clean)) < 2:
+        return jsonify({'error': 'skus debe contener ≥2 valores únicos'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    try:
+        # Validar PRIMERO que producto canónico exista en formula_headers
+        # (sino el bulk no calcula). Esto antes que SKU lookup para que el
+        # error 400 sea más útil al usuario que un 404 ambiguo.
+        existe_form = c.execute(
+            "SELECT 1 FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+            (canonico,)
+        ).fetchone()
+        if not existe_form:
+            return jsonify({
+                'error': f'producto_canonico "{canonico}" no existe en formula_headers',
+                'sugerencia': 'Crear la fórmula primero o usar un nombre que exista'
+            }), 400
+        # Snapshot anterior para audit
+        placeholders = ','.join('?' * len(skus_clean))
+        anteriores = c.execute(
+            f"SELECT sku, producto_nombre FROM sku_producto_map "
+            f"WHERE UPPER(sku) IN ({placeholders})",
+            skus_clean
+        ).fetchall()
+        if not anteriores:
+            return jsonify({'error': 'ningún SKU encontrado'}), 404
+
+        n_actualizados = 0
+        for sku in skus_clean:
+            r = c.execute(
+                "UPDATE sku_producto_map SET producto_nombre = ? WHERE UPPER(sku) = ?",
+                (canonico, sku)
+            )
+            n_actualizados += r.rowcount
+
+        # Audit log
+        try:
+            import json as _json
+            c.execute("""
+                INSERT INTO audit_log (usuario, accion, registro_id, antes, despues)
+                VALUES (?, 'UNIFICAR_HERMANOS_SKUS', ?, ?, ?)
+            """, (
+                user,
+                ','.join(skus_clean)[:200],
+                _json.dumps({s: p for s, p in anteriores}),
+                _json.dumps({'producto_canonico': canonico,
+                             'skus': skus_clean}),
+            ))
+        except Exception as _e:
+            log.warning('audit unificar-hermanos fallo: %s', _e)
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception as _r: log.debug('rollback no aplicable: %s', _r)
+        log.exception('unificar-hermanos-skus user=%s: %s', user, e)
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({
+        'ok': True,
+        'producto_canonico': canonico,
+        'skus_actualizados': n_actualizados,
+        'nombres_anteriores': [{'sku': s, 'producto_anterior': p} for s, p in anteriores],
+    })
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Dossier de Lote PDF — INVIMA / trazabilidad completa
 # ════════════════════════════════════════════════════════════════════════
@@ -10414,7 +10791,7 @@ def configs_emails():
         conn.commit()
         return jsonify({'ok': True})
     rows = c.execute(
-        "SELECT * FROM email_destinatarios_config WHERE activo=1 ORDER BY rol"
+        "SELECT * FROM email_destinatarios_config WHERE activo=1 ORDER BY rol LIMIT 1000"
     ).fetchall()
     cols = [d[0] for d in c.description]
     return jsonify({'configs': [dict(zip(cols, r)) for r in rows]})

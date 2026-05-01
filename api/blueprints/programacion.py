@@ -362,6 +362,10 @@ def _fetch_calendar_events(days_ahead=90):
             events = _parse_ical(text, days_ahead)
             return {'events': events, 'error': None, 'source': 'ical'}
         except Exception as e:
+            # Sebastián 1-may-2026 audit: ANTES era silencioso · si Calendar
+            # cae nadie sabía. Ahora log.warning + tipo de error explícito.
+            log = logging.getLogger('inventario.programacion')
+            log.warning('iCal fetch fallo (%s): %s', type(e).__name__, e)
             return {'events': [], 'error': f'iCal error: {e}', 'source': 'ical'}
 
     # ── Option 2: Google Calendar API (requires GOOGLE_API_KEY) ──────────────
@@ -1932,6 +1936,8 @@ def prog_test_shopify():
 @bp.route('/api/programacion/sync-ventas', methods=['POST'])
 def prog_sync_ventas():
     """Sincroniza ordenes Shopify directamente — independiente de marketing."""
+    if 'compras_user' not in session:
+        return jsonify({'ok': False, 'error': 'No autorizado'}), 401
     try:
         days = int(request.json.get('days', 60)) if request.json else 60
         conn = get_db()
@@ -1951,9 +1957,15 @@ def prog_sync_ventas():
 def prog_sync_stock_shopify():
     """
     Sincroniza inventario desde Shopify products API a stock_pt.
-    No requiere auth — usa credenciales server-side de animus_config.
+    Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
     Siempre retorna JSON; nunca lanza 500 HTML.
+
+    Sebastián 1-may-2026 audit: antes era public · ahora requiere uno de los 2.
     """
+    from blueprints.auto_plan import _validar_acceso_cron
+    es_cron, _err = _validar_acceso_cron(request)
+    if 'compras_user' not in session and not es_cron:
+        return jsonify({'ok': False, 'error': 'No autorizado'}), 401
     try:
         conn = get_db()
 
@@ -2167,6 +2179,8 @@ def prog_listar_eventos():
 @bp.route('/api/programacion/programar', methods=['POST'])
 def prog_crear_evento():
     """Create a production event."""
+    if 'compras_user' not in session:
+        return jsonify({'ok': False, 'error': 'No autorizado'}), 401
     data = request.get_json(force=True, silent=True) or {}
     producto = (data.get('producto') or '').strip()
     fecha    = (data.get('fecha') or '').strip()
@@ -2196,6 +2210,8 @@ def prog_crear_evento():
 @bp.route('/api/programacion/programar/<int:evento_id>', methods=['DELETE'])
 def prog_cancelar_evento(evento_id):
     """Cancel a scheduled production event."""
+    if 'compras_user' not in session:
+        return jsonify({'ok': False, 'error': 'No autorizado'}), 401
     conn = get_db()
     conn.execute(
         "UPDATE produccion_programada SET estado='cancelado' WHERE id=?",
@@ -3088,7 +3104,8 @@ def planta_centro_mando():
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando auto-clean inicial] falla: {_e}')
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            logging.getLogger('programacion').debug('rollback no aplicable: %s', _r)
     hoy = fecha_sel.isoformat()
 
     # Areas con producciones activas (in progress: inicio_real_at NOT NULL,
@@ -4118,7 +4135,8 @@ def prog_completar_evento(evento_id):
         conn.commit()
     except Exception as e:
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            logging.getLogger('programacion').debug('rollback no aplicable: %s', _r)
         return jsonify({
             'error': f'Error descontando inventario: {e}',
             'mps_descontados_antes_de_fallar': descontados_mps,
@@ -4268,7 +4286,8 @@ def prog_revertir_completado(evento_id):
         conn.commit()
     except Exception as e:
         try: conn.rollback()
-        except Exception: pass
+        except Exception as _r:
+            logging.getLogger('programacion').debug('rollback no aplicable: %s', _r)
         return jsonify({'error': f'Error revirtiendo: {e}'}), 500
 
     return jsonify({
@@ -5143,6 +5162,8 @@ def mp_bridge_add():
         bodega_material_id, bodega_material_nombre, bodega_inci, notas
     }
     """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     data = request.get_json(force=True) or {}
     fid   = str(data.get('formula_material_id', '') or '').strip()
     fname = str(data.get('formula_material_nombre', '') or '').strip()
@@ -5175,6 +5196,8 @@ def mp_bridge_add():
 @bp.route('/api/programacion/mp-bridge/<int:bridge_id>', methods=['DELETE'])
 def mp_bridge_delete(bridge_id):
     """Soft-delete a bridge mapping (sets activo=0)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     with _db() as conn:
         conn.execute("UPDATE mp_formula_bridge SET activo=0 WHERE id=?", (bridge_id,))
         conn.commit()
@@ -5739,7 +5762,8 @@ def planificacion_solicitar_bulk():
             })
         except Exception as _e:
             try: conn.rollback()
-            except Exception: pass
+            except Exception as _r:
+                logging.getLogger('programacion').debug('rollback no aplicable: %s', _r)
             errores.append({'proveedor': prov, 'error': str(_e)})
             continue
 
@@ -7902,7 +7926,7 @@ def planta_presentaciones_list():
     sql = "SELECT * FROM producto_presentaciones"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY producto_nombre, COALESCE(volumen_ml, 999) DESC, etiqueta"
+    sql += " ORDER BY producto_nombre, COALESCE(volumen_ml, 999) DESC, etiqueta LIMIT 2000"
     rows = c.execute(sql, params).fetchall()
     cols = [d[0] for d in c.description]
     items = [dict(zip(cols, r)) for r in rows]
@@ -8403,15 +8427,17 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
     5. Aplica afinidad ponderada para escoger el final
     """
     import hashlib
-    # Pool = operarios activos NO jefes (4 personas)
+    # Pool = operarios activos NO jefes. Se trae también fija_en_dispensacion
+    # para enforzar la regla dura del CEO (Mayerlin SOLO dispensa).
     todos_rows = c.execute("""
-        SELECT id, COALESCE(rol_predeterminado, '')
+        SELECT id, COALESCE(rol_predeterminado, ''),
+               COALESCE(fija_en_dispensacion, 0)
         FROM operarios_planta
         WHERE COALESCE(activo, 1) = 1
           AND COALESCE(es_jefe_produccion, 0) = 0
         ORDER BY id
     """).fetchall()
-    pool = [(r[0], (r[1] or '').strip().lower()) for r in todos_rows]
+    pool = [(r[0], (r[1] or '').strip().lower(), bool(r[2])) for r in todos_rows]
     if not pool:
         return None
 
@@ -8444,37 +8470,75 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
             if r[1]: globalmente_usados['elaboracion'].add(r[1])
             if r[2]: globalmente_usados['envasado'].add(r[2])
             if r[3]: globalmente_usados['acondicionamiento'].add(r[3])
-    except Exception:
-        pass
+    except Exception as _e:
+        log = logging.getLogger('inventario.programacion')
+        log.warning('global day load fallo prod=%s fecha=%s: %s',
+                    produccion_id, fecha_iso, _e)
 
-    AFINIDAD = {
-        'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
-                          'acondicionamiento': 1, 'todero': 2},
-        'elaboracion':  {'dispensacion': 3, 'elaboracion': 4, 'envasado': 1,
-                          'acondicionamiento': 1, 'todero': 2},
-        'envasado':     {'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
-                          'acondicionamiento': 1, 'todero': 2},
-        'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
-                                'elaboracion': 1, 'todero': 2},
-    }
+    # Sebastián 1-may-2026 audit: leer AFINIDAD de tabla rol_afinidad_config
+    # (migración 81). Antes hardcoded duplicado entre auto_plan.py y este archivo.
+    try:
+        from blueprints.auto_plan import _cargar_afinidad
+        AFINIDAD = _cargar_afinidad(c)
+    except Exception as _e:
+        log = logging.getLogger('inventario.programacion')
+        log.warning('_cargar_afinidad fallback hardcoded: %s', _e)
+        AFINIDAD = {
+            'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
+                              'acondicionamiento': 1, 'todero': 2},
+            'elaboracion':  {'dispensacion': 1, 'elaboracion': 4, 'envasado': 1,
+                              'acondicionamiento': 1, 'todero': 2},
+            'envasado':     {'envasado': 4, 'dispensacion': 1, 'elaboracion': 1,
+                              'acondicionamiento': 1, 'todero': 2},
+            'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'dispensacion': 1,
+                                    'elaboracion': 1, 'todero': 2},
+        }
 
     def _hash_rot(rol):
         s = f'{producto}|{fecha_iso}|{rol}'
         return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
 
+    # Pre-segmentación: fijos vs móviles
+    pool_fijos = [(oid, rp) for (oid, rp, fija) in pool if fija]
+    pool_moviles = [(oid, rp) for (oid, rp, fija) in pool if not fija]
+
     asignaciones = {}
     usados = set()
     for rol in ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento'):
+        # Regla dura: roles ≠ dispensación NUNCA reciben operarios fija_en_dispensacion
+        if rol == 'dispensacion':
+            base_pool = pool_moviles + pool_fijos  # móviles primero, fijos como respaldo
+            preferido_fijo = [c for c in pool_fijos if c[0] not in usados]
+        else:
+            base_pool = pool_moviles
+            preferido_fijo = []
+
+        # Para dispensación con fijo disponible: forzar fijo (rotación entre fijos por hash)
+        if rol == 'dispensacion' and preferido_fijo:
+            idx = _hash_rot(rol) % len(preferido_fijo)
+            elegido = preferido_fijo[idx][0]
+            asignaciones[rol] = elegido
+            usados.add(elegido)
+            globalmente_usados.get(rol, set()).add(elegido)
+            _registrar_rotacion(c, rol, elegido, user)
+            continue
+
         # 1ra preferencia: NO en esta producción Y NO en otras producciones (mismo rol)
         candidatos_strict = [
-            (oid, rol_pre) for (oid, rol_pre) in pool
+            (oid, rp) for (oid, rp) in base_pool
             if oid not in usados and oid not in globalmente_usados.get(rol, set())
         ]
-        # Fallback 1: solo NO en esta producción (acepta double-book global)
-        candidatos_fallback = [(oid, rol_pre) for (oid, rol_pre) in pool if oid not in usados]
-        # Fallback 2 (último recurso): pool completo
-        candidatos = candidatos_strict if candidatos_strict else (
-                     candidatos_fallback if candidatos_fallback else pool)
+        # Fallback 1: solo NO en esta producción
+        candidatos_fallback = [(oid, rp) for (oid, rp) in base_pool if oid not in usados]
+        # Fallback 2 (último recurso): base_pool completo
+        candidatos = candidatos_strict or candidatos_fallback or base_pool
+        if not candidatos:
+            # Sin base_pool (caso pool=todos fijos y rol≠disp) → registrar warning,
+            # NO romper la regla dura. Producción queda con NULL en este rol.
+            log = logging.getLogger('inventario.programacion')
+            log.warning('rol %s sin candidatos en prod=%s fecha=%s (todos fijos?)',
+                        rol, produccion_id, fecha_iso)
+            continue
         afin = AFINIDAD.get(rol, {})
         weighted = [(afin.get(rp, 1) if rp else 1, oid) for (oid, rp) in candidatos]
         total = sum(w for w, _ in weighted)
@@ -8491,8 +8555,6 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
                     break
         asignaciones[rol] = elegido
         usados.add(elegido)
-        # Marcar también como globalmente usado para que las siguientes producciones
-        # (si el caller recursa por más prods el mismo día) ya lo eviten
         globalmente_usados.get(rol, set()).add(elegido)
         _registrar_rotacion(c, rol, elegido, user)
 
@@ -8937,7 +8999,8 @@ def auto_asignar_endpoint(prod_id):
         return jsonify(resultado)
     except Exception as e:
         try: conn.rollback()
-        except: pass
+        except Exception as _r:
+            logging.getLogger('programacion').debug('rollback no aplicable: %s', _r)
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
@@ -9557,7 +9620,7 @@ def planta_cola_liberacion():
     sql = "SELECT * FROM cola_liberacion"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY fecha_min_liberacion ASC, id ASC"
+    sql += " ORDER BY fecha_min_liberacion ASC, id ASC LIMIT 1000"
     rows = c.execute(sql, params).fetchall()
     cols = [d[0] for d in c.description]
     items = [dict(zip(cols, r)) for r in rows]

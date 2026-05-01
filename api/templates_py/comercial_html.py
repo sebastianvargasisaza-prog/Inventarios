@@ -1,12 +1,12 @@
 """Template Comercial — Pipeline Maquila + EOS Leads."""
 
 HTML = r"""<!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Comercial · HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos11">
+<link rel="stylesheet" href="/static/cortex.css?v=eos12">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}

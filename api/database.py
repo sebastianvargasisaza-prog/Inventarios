@@ -3335,6 +3335,137 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (84, "UNIQUE constraints contra duplicados de numero (OC/SOL/factura)", [
+        # Sebastián 1-may-2026 round 3: race condition en MAX(numero)+1.
+        # Si 2 requests concurrentes generan número, ambos pueden insertar el
+        # mismo. UNIQUE INDEX previene el INSERT duplicado · el segundo falla
+        # con IntegrityError y debe reintentarse en código.
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_ordenes_compra_numero ON ordenes_compra(numero_oc)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_solicitudes_compra_numero ON solicitudes_compra(numero)",
+    ]),
+    (83, "Trigger BD: proteger operarios_planta.fija_en_dispensacion · log cambios", [
+        # Sebastián 1-may-2026 round 3: si alguien hace UPDATE manual quitando
+        # el flag a Mayerlin (UPDATE operarios_planta SET fija_en_dispensacion=0
+        # WHERE id=...), la regla dura cae sin alarma. Trigger BEFORE UPDATE
+        # registra el cambio en audit_log para visibilidad. NO bloquea (admin
+        # legítimamente puede querer transferir el rol a otra persona) pero
+        # deja rastro auditable.
+        """CREATE TABLE IF NOT EXISTS operarios_fija_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operario_id INTEGER NOT NULL,
+            valor_anterior INTEGER NOT NULL,
+            valor_nuevo INTEGER NOT NULL,
+            cambiado_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        """CREATE TRIGGER IF NOT EXISTS trg_op_fija_audit
+        AFTER UPDATE OF fija_en_dispensacion ON operarios_planta
+        FOR EACH ROW WHEN OLD.fija_en_dispensacion != NEW.fija_en_dispensacion
+        BEGIN
+            INSERT INTO operarios_fija_audit (operario_id, valor_anterior, valor_nuevo)
+            VALUES (NEW.id, OLD.fija_en_dispensacion, NEW.fija_en_dispensacion);
+        END""",
+        # Si se INTENTA setear fija_en_dispensacion=1 a un operario marcado
+        # como jefe, eso es contradictorio (jefe no rota · no es operario activo).
+        # Bloquear con mensaje claro.
+        """CREATE TRIGGER IF NOT EXISTS trg_op_fija_no_jefe
+        BEFORE UPDATE OF fija_en_dispensacion ON operarios_planta
+        FOR EACH ROW WHEN NEW.fija_en_dispensacion = 1
+          AND COALESCE(NEW.es_jefe_produccion, OLD.es_jefe_produccion, 0) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion=1 incompatible con es_jefe_produccion=1'); END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_op_fija_no_jefe_ins
+        BEFORE INSERT ON operarios_planta
+        FOR EACH ROW WHEN NEW.fija_en_dispensacion = 1
+          AND NEW.es_jefe_produccion = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion=1 incompatible con es_jefe_produccion=1'); END""",
+    ]),
+    (82, "Triggers BD: enforce regla fija_en_dispensacion (defense-in-depth)", [
+        # Sebastián 1-may-2026 round 2: enforce regla dura a nivel BD para que
+        # NINGÚN path (UI manual, scripts, endpoints futuros) pueda asignar un
+        # operario fija_en_dispensacion=1 a roles ≠ dispensación.
+        # Estos triggers re-NULLean el campo si alguien intenta violarlo y
+        # registran el intento en audit_log.
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_elab_block
+        BEFORE UPDATE OF operario_elaboracion_id ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_elaboracion_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_elaboracion_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_env_block
+        BEFORE UPDATE OF operario_envasado_id ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_envasado_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_envasado_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_acond_block
+        BEFORE UPDATE OF operario_acondicionamiento_id ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_acondicionamiento_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_acondicionamiento_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+        # Idem en INSERT
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_elab_block_ins
+        BEFORE INSERT ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_elaboracion_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_elaboracion_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_env_block_ins
+        BEFORE INSERT ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_envasado_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_envasado_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_pp_fija_acond_block_ins
+        BEFORE INSERT ON produccion_programada
+        FOR EACH ROW WHEN NEW.operario_acondicionamiento_id IS NOT NULL
+          AND (SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta
+               WHERE id = NEW.operario_acondicionamiento_id) = 1
+        BEGIN SELECT RAISE(ABORT, 'fija_en_dispensacion: este operario solo puede ir a dispensacion'); END""",
+    ]),
+    (81, "Audit zero-error: cron_locks + indexes + rol_afinidad_config + UNIQUE cron_jobs_runs", [
+        # Serialización de workers concurrentes en multi-cron. Antes: 2 workers
+        # podían ejecutar el mismo job el mismo día (race en _ya_ejecutado_hoy).
+        # cron_locks con TTL 2h: si crash sin liberar, se libera solo.
+        """CREATE TABLE IF NOT EXISTS cron_locks (
+            job_name TEXT PRIMARY KEY,
+            locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+            locked_by TEXT
+        )""",
+        # Previene doble registro de éxito hoy (defensa secundaria al lock).
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_cjr_unique_ok_today "
+        "ON cron_jobs_runs(job_name, date(ejecutado_at)) WHERE ok=1",
+        # Tabla rol_afinidad_config: pesos para asignación de operarios.
+        # Antes hardcoded en auto_plan.py:7256 y programacion.py:8450 (duplicado).
+        # Ahora: una sola fuente. Si está vacía, código usa fallback hardcoded.
+        """CREATE TABLE IF NOT EXISTS rol_afinidad_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rol_destino TEXT NOT NULL,
+            rol_predeterminado TEXT NOT NULL,
+            peso INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(rol_destino, rol_predeterminado)
+        )""",
+        # Seed AFINIDAD por defecto. Pesos: 4=preferido fuerte · 2=todero · 1=fallback.
+        # Sin peso 3 (legacy buggy que dejaba caer Mayerlin en elaboracion).
+        """INSERT OR IGNORE INTO rol_afinidad_config (rol_destino, rol_predeterminado, peso) VALUES
+           ('dispensacion','dispensacion',4),('dispensacion','elaboracion',1),
+           ('dispensacion','envasado',1),('dispensacion','acondicionamiento',1),
+           ('dispensacion','todero',2),
+           ('elaboracion','dispensacion',1),('elaboracion','elaboracion',4),
+           ('elaboracion','envasado',1),('elaboracion','acondicionamiento',1),
+           ('elaboracion','todero',2),
+           ('envasado','envasado',4),('envasado','dispensacion',1),
+           ('envasado','elaboracion',1),('envasado','acondicionamiento',1),
+           ('envasado','todero',2),
+           ('acondicionamiento','acondicionamiento',4),('acondicionamiento','envasado',2),
+           ('acondicionamiento','dispensacion',1),('acondicionamiento','elaboracion',1),
+           ('acondicionamiento','todero',2)""",
+        # Índices que el audit detectó faltantes.
+        "CREATE INDEX IF NOT EXISTS idx_areas_tipo ON areas_planta(tipo)",
+        "CREATE INDEX IF NOT EXISTS idx_aso_creado ON animus_shopify_orders(creado_en)",
+        "CREATE INDEX IF NOT EXISTS idx_pchk_prod ON produccion_checklist(produccion_id, item_tipo)",
+        "CREATE INDEX IF NOT EXISTS idx_lpc_fecha_asig ON limpieza_profunda_calendario(fecha, asignado_a)",
+        "CREATE INDEX IF NOT EXISTS idx_ccc_fecha_asig ON conteo_ciclico_calendario(fecha, asignado_a)",
+    ]),
     (78, "Aliases Calendar · códigos cortos TRIAC/LBHA/CRETT/etc (Sebastián 1-may-2026)", [
         # Sebastián 1-may-2026: el Calendar usa códigos cortos en eventos
         # (TRIAC, LBHA, CRETT, NPHA, CMULP, EMLIM, CRCUREA, etc.) pero los

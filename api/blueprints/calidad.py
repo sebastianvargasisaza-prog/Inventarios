@@ -140,13 +140,57 @@ def handle_no_conformidades():
 
 @bp.route('/api/calidad/no-conformidades/<int:ncid>/cerrar', methods=['POST'])
 def cerrar_no_conformidad(ncid):
+    """Cierra una NC. Sebastián 1-may-2026 audit INVIMA:
+    - Requiere motivo_cierre (≥10 chars) explícito
+    - Requiere accion_correctiva o evidencia
+    - RBAC: solo CALIDAD_USERS o ADMIN_USERS
+    - Audit log obligatorio (regulación INVIMA)
+    """
+    user = session.get('compras_user', '')
+    # RBAC: solo calidad o admin pueden cerrar NC
+    try:
+        from config import CALIDAD_USERS, ADMIN_USERS
+        autorizados = set(CALIDAD_USERS) | set(ADMIN_USERS)
+    except ImportError:
+        from config import ADMIN_USERS
+        autorizados = set(ADMIN_USERS)
+    if user not in autorizados:
+        return jsonify({'error': 'Solo Calidad o Admin pueden cerrar NCs (regulación INVIMA)'}), 403
+
+    d = request.get_json(silent=True) or {}
+    motivo = (d.get('motivo_cierre') or '').strip()
+    accion = (d.get('accion_correctiva') or '').strip()
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo_cierre requerido (mín 10 chars)'}), 400
+    if len(accion) < 5:
+        return jsonify({'error': 'accion_correctiva requerida (mín 5 chars)'}), 400
     conn = get_db(); c = conn.cursor()
+    # Verificar NC existe y NO ya cerrada
+    row = c.execute(
+        "SELECT estado FROM no_conformidades WHERE id=?", (ncid,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'NC no encontrada'}), 404
+    if row[0] == 'Cerrada':
+        return jsonify({'error': 'NC ya está cerrada'}), 409
     c.execute("""UPDATE no_conformidades
-                 SET estado='Cerrada', fecha_cierre=date('now'), cerrado_por=?
+                 SET estado='Cerrada', fecha_cierre=date('now'), cerrado_por=?,
+                     accion_correctiva=COALESCE(?, accion_correctiva)
                  WHERE id=?""",
-              (session.get('compras_user',''), ncid))
+              (user, accion, ncid))
+    # Audit log INVIMA
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, antes, despues)
+            VALUES (?, 'CERRAR_NC', ?, ?, ?)
+        """, (user, str(ncid), _json.dumps({'estado_anterior': row[0]}),
+              _json.dumps({'motivo': motivo[:300], 'accion': accion[:300]})))
+    except Exception as _e:
+        import logging
+        logging.getLogger('calidad').warning('audit cerrar_NC fallo: %s', _e)
     conn.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'cerrado_por': user, 'fecha_cierre': datetime.now().date().isoformat()})
 
 @bp.route('/api/calidad/calibraciones')
 def get_calibraciones():

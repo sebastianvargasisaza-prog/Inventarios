@@ -722,13 +722,48 @@ def handle_movimientos():
         u, err, code = _require_planta_write()
         if err:
             return err, code
-        data = request.json
+        data = request.get_json(silent=True) or {}
+        # Sebastián 1-may-2026 audit: validar inputs antes de INSERT.
+        # Antes aceptaba data sin checks · cantidad negativa, sin material_id, etc.
+        material_id = (data.get('material_id') or '').strip()
+        material_nombre = (data.get('material_nombre') or '').strip()
+        tipo = (data.get('tipo') or '').strip()
+        if not material_id:
+            return jsonify({'error': 'material_id requerido'}), 400
+        if not material_nombre:
+            return jsonify({'error': 'material_nombre requerido'}), 400
+        if tipo not in ('Entrada', 'Salida', 'Ajuste'):
+            return jsonify({'error': "tipo debe ser 'Entrada', 'Salida' o 'Ajuste'"}), 400
+        try:
+            cantidad = float(data.get('cantidad') or 0)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'cantidad debe ser numérico'}), 400
+        if cantidad <= 0:
+            return jsonify({'error': 'cantidad debe ser > 0'}), 400
+        if cantidad > 1_000_000_000:  # 1 ton en gramos
+            return jsonify({'error': 'cantidad excede límite razonable'}), 400
+        # Pre-check de stock para Salida: rechazar si va a dejar saldo negativo.
+        # Sin este check antes podía dejar stock negativo silenciosamente.
+        if tipo == 'Salida':
+            saldo = c.execute("""
+                SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                          WHEN tipo='Salida' THEN -cantidad
+                                          ELSE 0 END), 0)
+                FROM movimientos WHERE material_id = ?
+            """, (material_id,)).fetchone()[0]
+            if saldo < cantidad:
+                return jsonify({
+                    'error': 'stock insuficiente',
+                    'saldo_actual': saldo,
+                    'cantidad_pedida': cantidad,
+                    'sugerencia': 'Verificar stock disponible en /api/stock o registrar Entrada primero'
+                }), 422
         c.execute("""INSERT INTO movimientos
                      (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
                       lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (data['material_id'], data['material_nombre'], data['cantidad'],
-                   data['tipo'], datetime.now().isoformat(), data.get('observaciones',''),
+                  (material_id, material_nombre, cantidad,
+                   tipo, datetime.now().isoformat(), data.get('observaciones',''),
                    data.get('lote',''), data.get('fecha_vencimiento',''),
                    data.get('estanteria',''), data.get('posicion',''),
                    data.get('proveedor',''), data.get('estado_lote','VIGENTE'),

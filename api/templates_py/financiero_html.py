@@ -1,10 +1,10 @@
 # Auto-extraído de index.py — Fase A refactor
 FINANCIERO_HTML = """<!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Financiero — HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos11">
+<link rel="stylesheet" href="/static/cortex.css?v=eos12">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>

@@ -352,3 +352,39 @@ table.cx-table tr:hover td {
     display: none !important;
   }
 }
+
+/* ===================== Suprimir Google Translate widget =====================
+   Refuerza <meta name="google" content="notranslate"> + translate="no"
+   para casos donde Chrome ya cacheó "traducir esta página" por dominio. */
+.goog-te-banner-frame,
+.goog-te-banner-frame.skiptranslate,
+.goog-te-balloon-frame,
+.goog-te-ftab,
+.goog-te-menu-frame,
+iframe.goog-te-menu-frame,
+iframe.skiptranslate,
+#goog-gt-tt,
+.goog-tooltip,
+.goog-tooltip:hover,
+.VIpgJd-ZVi9od-l4eHX-hSRGPd,
+.VIpgJd-ZVi9od-aZ2wEe-wOHMyf,
+.VIpgJd-ZVi9od-aZ2wEe-OiiCO {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  pointer-events: none !important;
+}
+.goog-text-highlight {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body {
+  top: 0 !important;
+  position: static !important;
+}
+html.translated-ltr,
+html.translated-rtl {
+  margin-top: 0 !important;
+}

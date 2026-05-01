@@ -37,19 +37,33 @@ DIAS_CRON = (0, 1, 2, 3, 4)  # lunes a viernes
 # ───────────────────────────────────────────────────────────────────────
 
 def _enviar_email_async(asunto, html, destinos):
-    """Envía email en thread separado. Nunca falla."""
+    """Envía email en thread separado. Nunca falla.
+
+    Sebastián 1-may-2026 audit zero-error: el thread loguea el resultado
+    real del envío. Antes silencioso · si SMTP fallaba nadie sabía.
+    """
     if not destinos:
-        return
+        return False
     try:
         import sys
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from notificaciones import SistemaNotificaciones
         notif = SistemaNotificaciones()
-        t = threading.Thread(
-            target=notif._enviar_email,
-            args=(asunto, html, destinos),
-            daemon=True,
-        )
+
+        def _wrapped_send():
+            try:
+                resultado = notif._enviar_email(asunto, html, destinos)
+                if resultado is False:
+                    log.warning('[auto-plan-email] SMTP rechazó envio · asunto=%r destinos=%s',
+                                asunto[:80], destinos)
+                else:
+                    log.info('[auto-plan-email] OK · asunto=%r destinos=%d',
+                             asunto[:80], len(destinos))
+            except Exception as _e:
+                log.exception('[auto-plan-email] thread excepción asunto=%r: %s',
+                              asunto[:80], _e)
+
+        t = threading.Thread(target=_wrapped_send, daemon=True)
         t.start()
         return True
     except Exception as e:
@@ -455,8 +469,8 @@ def ejecutar_auto_plan_diario(app):
                     (n_emails,)
                 )
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as _e:
+                log.warning('update emails_enviados fallo: %s', _e)
 
             log.info(f'[auto-plan-cron] Completado · {len(plan["producciones_propuestas"])} prod · {len(plan["compras_propuestas"])} compras · {n_emails} emails')
         except Exception as e:
@@ -477,7 +491,8 @@ def _segundos_hasta_proximo_cron():
 
 
 def _cron_habilitado_en_db(app):
-    """Lee auto_plan_cron_state.habilitado desde la DB."""
+    """Lee auto_plan_cron_state.habilitado desde la DB. Default conservador:
+    si la DB está temporalmente inaccesible, retorna False (no ejecutar)."""
     with app.app_context():
         try:
             from database import get_db
@@ -485,7 +500,8 @@ def _cron_habilitado_en_db(app):
                 "SELECT habilitado FROM auto_plan_cron_state WHERE id=1"
             ).fetchone()
             return bool(r[0]) if r else False
-        except Exception:
+        except Exception as e:
+            log.warning('_cron_habilitado_en_db read fallo: %s · returning False', e)
             return False
 
 
@@ -511,8 +527,8 @@ def _loop_cron(app):
                         "UPDATE auto_plan_cron_state SET ultima_ejecucion_at=datetime('now'), errores_consecutivos=0 WHERE id=1"
                     )
                     get_db().commit()
-            except Exception:
-                pass
+            except Exception as _e:
+                log.warning('update ultima_ejecucion_at fallo: %s', _e)
         except Exception as e:
             log.exception(f'[auto-plan-cron] excepción: {e}')
             try:
@@ -522,8 +538,8 @@ def _loop_cron(app):
                         "UPDATE auto_plan_cron_state SET errores_consecutivos=errores_consecutivos+1 WHERE id=1"
                     )
                     get_db().commit()
-            except Exception:
-                pass
+            except Exception as _e:
+                log.warning('update errores_consecutivos fallo: %s', _e)
 
 
 def iniciar_cron(app):
@@ -602,8 +618,48 @@ def _ya_ejecutado_hoy(conn, job_name, retry_si_fallo_horas=2):
             LIMIT 1
         """, (job_name, retry_si_fallo_horas)).fetchone()
         return bool(row_fail)
-    except Exception:
+    except Exception as e:
+        log.warning('_ya_ejecutado_hoy(%s) read fallo: %s · returning False', job_name, e)
         return False
+
+
+def _adquirir_lock_cron(conn, job_name, ttl_horas=2):
+    """Reserva atómica del derecho a ejecutar un cron job (anti race entre workers).
+
+    Antes: dos workers podían pasar `_ya_ejecutado_hoy=False` en paralelo y
+    ejecutar el job dos veces (duplicando datos · creando SCs duplicadas).
+
+    Ahora: INSERT OR IGNORE en cron_locks con UNIQUE(job_name) garantiza
+    atomicidad. Locks viejos (>ttl_horas) se limpian automáticamente para
+    cubrir el caso de un crash sin _liberar_lock_cron.
+
+    Returns: True si reclamó el lock (este worker debe ejecutar), False si
+    otro worker ya lo tiene activo.
+    """
+    try:
+        # Limpiar locks vencidos antes de intentar reclamar
+        conn.execute("""
+            DELETE FROM cron_locks
+            WHERE locked_at < datetime('now', '-' || ? || ' hours')
+        """, (ttl_horas,))
+        cur = conn.execute("""
+            INSERT OR IGNORE INTO cron_locks (job_name, locked_at, locked_by)
+            VALUES (?, datetime('now'), 'multi-cron')
+        """, (job_name,))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        log.warning('_adquirir_lock_cron(%s) fallo: %s', job_name, e)
+        return False
+
+
+def _liberar_lock_cron(conn, job_name):
+    """Libera el lock de un job. Idempotente."""
+    try:
+        conn.execute("DELETE FROM cron_locks WHERE job_name = ?", (job_name,))
+        conn.commit()
+    except Exception as e:
+        log.warning('_liberar_lock_cron(%s) fallo: %s', job_name, e)
 
 
 def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None):
@@ -646,14 +702,14 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
                             from datetime import datetime as _dt
                             if (_dt.now() - _dt.fromisoformat(notif_old)).total_seconds() < 86400:
                                 notificar = False
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            log.info('parse notificado_at fallo (%s): %s', notif_old, _e)
                     if notificar:
                         log.warning(f'[multi-cron] {job_name}: {row[0]} errores consecutivos · notificando')
                         conn.execute("UPDATE cron_jobs_health SET notificado_at=datetime('now') WHERE job_name=?",
                                        (job_name,))
-        except Exception:
-            pass
+        except Exception as _e:
+            log.warning('cron_jobs_health update %s fallo: %s', job_name, _e)
         conn.commit()
     except Exception as e:
         log.warning(f'[multi-cron] no se pudo registrar {job_name}: {e}')
@@ -1122,8 +1178,8 @@ def job_self_heal(app):
             if r and not r[0]:
                 c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now') WHERE id=1")
                 acciones.append('cron habilitado')
-        except Exception:
-            pass
+        except Exception as _e:
+            log.warning('self-heal habilitar cron fallo: %s', _e)
 
         # 2) Limpiezas pendientes para áreas sucias
         try:
@@ -1142,8 +1198,8 @@ def job_self_heal(app):
                                                         _date.today().isoformat(),
                                                         'self-heal', '', 'cron-self-heal')
                 if limp: acciones.append(f'limpieza {area_cod}')
-        except Exception:
-            pass
+        except Exception as _e:
+            log.warning('self-heal limpiezas fallo: %s', _e)
 
         # 3) Auto-asignar producciones próximas pendientes
         try:
@@ -1160,8 +1216,54 @@ def job_self_heal(app):
             for (pid,) in rows:
                 res = _auto_asignar_produccion(c, pid, 'cron-self-heal')
                 if res.get('ok'): acciones.append(f'asign #{pid}')
-        except Exception:
-            pass
+        except Exception as _e:
+            log.warning('self-heal auto-asignar fallo: %s', _e)
+
+        # 4) Reparar regla Mayerlin (audit zero-error 1-may-2026 round 2):
+        # detectar producciones futuras con operario fija_en_dispensacion=1
+        # asignado a roles ≠ dispensación · NULLearlas y dejar que la próxima
+        # corrida del cron las re-asigne con la regla dura nueva.
+        try:
+            fecha_hoy = _dt.now().date()
+            fecha_max = fecha_hoy + _td(days=14)
+            fijos_ids = [r[0] for r in c.execute("""
+                SELECT id FROM operarios_planta
+                WHERE COALESCE(fija_en_dispensacion,0) = 1
+                  AND COALESCE(activo,1) = 1
+            """).fetchall()]
+            n_reparadas = 0
+            if fijos_ids:
+                placeholders = ','.join('?' * len(fijos_ids))
+                params = [fecha_hoy.isoformat(), fecha_max.isoformat()]
+                params.extend(fijos_ids * 3)
+                rows = c.execute(f"""
+                    SELECT id, producto, fecha_programada FROM produccion_programada
+                    WHERE date(fecha_programada) BETWEEN ? AND ?
+                      AND COALESCE(estado, 'programado') NOT IN ('completado','cancelado')
+                      AND (operario_elaboracion_id IN ({placeholders})
+                        OR operario_envasado_id IN ({placeholders})
+                        OR operario_acondicionamiento_id IN ({placeholders}))
+                """, params).fetchall()
+                from blueprints.programacion import _auto_asignar_operarios
+                for pid, _prod, _fecha_iso in rows:
+                    # NULL los 3 roles ≠ dispensacion (mantener disp si está OK)
+                    c.execute("""
+                        UPDATE produccion_programada SET
+                          operario_elaboracion_id = NULL,
+                          operario_envasado_id = NULL,
+                          operario_acondicionamiento_id = NULL
+                        WHERE id = ?
+                    """, (pid,))
+                    fecha_iso = (_fecha_iso or '')[:10] or fecha_hoy.isoformat()
+                    try:
+                        _auto_asignar_operarios(c, pid, fecha_iso, 'self-heal-mayerlin')
+                        n_reparadas += 1
+                    except Exception as _ee:
+                        log.warning('self-heal reparar Mayerlin prod=%s fallo: %s', pid, _ee)
+            if n_reparadas:
+                acciones.append(f'reparadas regla-fija {n_reparadas} prods')
+        except Exception as _e:
+            log.warning('self-heal reparar regla fija fallo: %s', _e)
 
         conn.commit()
         return True, {'acciones': acciones, 'total': len(acciones)}, 0
@@ -1174,22 +1276,31 @@ def job_cleanup_logs(app):
         from database import get_db
         conn = get_db(); c = conn.cursor()
         n_runs = 0; n_apr = 0; n_aal = 0
+        errores = []
         try:
             n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-30 days')").rowcount
-        except Exception: pass
+        except Exception as e:
+            log.warning('cleanup cron_jobs_runs fallo: %s', e)
+            errores.append(f'cron_jobs_runs:{e}')
         try:
             n_apr = c.execute("DELETE FROM auto_plan_runs WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
-        except Exception: pass
+        except Exception as e:
+            log.warning('cleanup auto_plan_runs fallo: %s', e)
+            errores.append(f'auto_plan_runs:{e}')
         try:
             n_aal = c.execute("DELETE FROM auto_asignacion_log WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
-        except Exception: pass
+        except Exception as e:
+            log.warning('cleanup auto_asignacion_log fallo: %s', e)
+            errores.append(f'auto_asignacion_log:{e}')
         # VACUUM para reclamar espacio (ligero, sin lock)
         try:
             c.execute("PRAGMA incremental_vacuum")
-        except Exception: pass
+        except Exception as e:
+            log.info('incremental_vacuum no aplicable: %s', e)
         conn.commit()
         return True, {'cron_jobs_runs': n_runs, 'auto_plan_runs': n_apr,
-                       'auto_asignacion_log': n_aal}, 0
+                       'auto_asignacion_log': n_aal,
+                       'errores': errores}, 0
 
 
 def job_auto_sc_urgente(app):
@@ -1203,7 +1314,11 @@ def job_auto_sc_urgente(app):
 
 
 def _loop_multi_cron(app):
-    """Loop cada 5 min revisa schedule de jobs y ejecuta los que apliquen."""
+    """Loop cada 5 min revisa schedule de jobs y ejecuta los que apliquen.
+
+    Sebastián 1-may-2026 audit zero-error: incorporar lock distribuido
+    `cron_locks` para prevenir doble ejecución cuando hay >1 worker.
+    """
     log.info('[multi-cron] Loop iniciado · 5 jobs configurados')
     import time as _time
     import time as time_mod
@@ -1219,9 +1334,13 @@ def _loop_multi_cron(app):
                         continue
                     if _ya_ejecutado_hoy(conn, job_name):
                         continue
+                    if not _adquirir_lock_cron(conn, job_name):
+                        log.info(f'[multi-cron] {job_name}: lock ocupado · otro worker ejecutando')
+                        continue
                     fn = globals().get(callable_name)
                     if not fn:
                         log.warning(f'[multi-cron] {job_name}: callable {callable_name} no existe')
+                        _liberar_lock_cron(conn, job_name)
                         continue
                     log.info(f'[multi-cron] Ejecutando {job_name}...')
                     t0 = _time.time()
@@ -1234,6 +1353,8 @@ def _loop_multi_cron(app):
                         dur = int((_time.time() - t0) * 1000)
                         log.exception(f'[multi-cron] {job_name} excepción')
                         _registrar_ejecucion(conn, job_name, False, None, dur, str(e))
+                    finally:
+                        _liberar_lock_cron(conn, job_name)
         except Exception as e:
             log.exception(f'[multi-cron] error en loop: {e}')
         time_mod.sleep(300)  # cada 5 min

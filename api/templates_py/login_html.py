@@ -1,10 +1,10 @@
 # Auto-extraído de index.py — Fase A refactor (rebranded EOS)
 LOGIN_HTML = """<!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>EOS · Acceso</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos11">
+<link rel="stylesheet" href="/static/cortex.css?v=eos12">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <meta name="application-name" content="EOS">
 <meta name="apple-mobile-web-app-title" content="EOS">

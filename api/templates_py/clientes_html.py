@@ -1,12 +1,12 @@
 # Auto-generado — Canal B2B HHA Group (ÁNIMUS Aliados + Espagiria Maquila 360)
 CLIENTES_HTML = """\
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Canal B2B &#x2014; HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos11">
+<link rel="stylesheet" href="/static/cortex.css?v=eos12">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}

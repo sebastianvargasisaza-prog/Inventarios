@@ -1,8 +1,10 @@
 # Auto-extraído de index.py — Fase A refactor
 DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="es">
+<html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<meta name="google" content="notranslate">
+<meta http-equiv="Content-Language" content="es">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
 <meta name="theme-color" content="#7c3aed">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -11,7 +13,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <link rel="manifest" href="/static/manifest.json">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos11">
+<link rel="stylesheet" href="/static/cortex.css?v=eos12">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <script>
 // PWA: registrar service worker (Sebastian 30-abr-2026: "y si haz lo del mobil")
@@ -1583,10 +1585,10 @@ async function enviarSolicitarLote(){
       msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Solicitud creada')+'. Llega a Compras.</span>';
       setTimeout(cerrarSolicitarLote,1800);
     }else{
-      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+'</span>';
+      msg.innerHTML='<span style="color:#c00;">Error: '+_escHTML(d.error||r.status)+'</span>';
     }
   }catch(e){
-    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+_escHTML(e.message)+'</span>';
   }
 }
 
@@ -1764,10 +1766,10 @@ async function unificarGrupo(gi){
       // Re-render despues de un momento
       setTimeout(function(){_renderLimpiezaProveedores();loadStock();},1500);
     }else{
-      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+'</span>';
+      msg.innerHTML='<span style="color:#c00;">Error: '+_escHTML(d.error||r.status)+'</span>';
     }
   }catch(e){
-    msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
+    msg.innerHTML='<span style="color:#c00;">Error de red: '+_escHTML(e.message)+'</span>';
   }
 }
 
@@ -1985,7 +1987,7 @@ async function verHistorialLote(idx){
     var r=await fetch('/api/movimientos'),d=await r.json();
     var mv=(d.movimientos||[]).filter(function(m){return m.lote===i.lote&&m.material_id===i.material_id;});
     if(!mv.length){tb.innerHTML='<tr><td colspan=5 style=text-align:center>Sin movimientos</td></tr>';return;}
-    tb.innerHTML=mv.map(function(m){var f=m.fecha?m.fecha.substring(0,16).replace("T"," "):"";return "<tr><td>"+m.tipo+"</td><td>"+m.cantidad+"</td><td>"+f+"</td><td>"+(m.observaciones||"")+"</td><td>"+(m.operador||"")+"</td></tr>";}).join("");
+    tb.innerHTML=mv.map(function(m){var f=m.fecha?m.fecha.substring(0,16).replace("T"," "):"";return "<tr><td>"+_escHTML(m.tipo)+"</td><td>"+_escHTML(m.cantidad)+"</td><td>"+_escHTML(f)+"</td><td>"+_escHTML(m.observaciones||"")+"</td><td>"+_escHTML(m.operador||"")+"</td></tr>";}).join("");
   }catch(e){tb.innerHTML='<tr><td colspan=5>Error</td></tr>';}
 }
 
@@ -2066,9 +2068,12 @@ async function cargarHistProd(){
     tb.innerHTML=ps.map(function(p){
       var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
       var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
-      return '<tr><td style="font-weight:600;">'+p.producto+'</td><td style="text-align:right;font-weight:700;color:#2B7A78;">'+p.cantidad.toLocaleString()+' kg</td><td style="font-size:0.85em;color:#666;">'+f+'</td><td>'+op+'</td><td style="text-align:center;"><span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+p.estado+'</span></td></tr>';
+      return '<tr><td style="font-weight:600;">'+_escHTML(p.producto)+'</td><td style="text-align:right;font-weight:700;color:#2B7A78;">'+p.cantidad.toLocaleString()+' kg</td><td style="font-size:0.85em;color:#666;">'+_escHTML(f)+'</td><td>'+op+'</td><td style="text-align:center;"><span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado)+'</span></td></tr>';
     }).join('');
-  }catch(e){}
+  }catch(e){
+    console.error('cargarProduccionesHistorial fallo:',e);
+    tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#c00;padding:16px;">Error cargando histórico</td></tr>';
+  }
 }
 
 
@@ -2578,10 +2583,10 @@ async function guardarFormula(){
   try{
     var r=await fetch('/api/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod,unidad_base_g:base,descripcion:desc,items:items})});
     var res=await r.json();
-    document.getElementById('formula-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
+    document.getElementById('formula-msg').innerHTML='<div class="alert-success">'+_escHTML(res.message)+'</div>';
     await loadFormulas();
     setTimeout(function(){document.getElementById('formula-msg').innerHTML='';},3000);
-  }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+  }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+_escHTML(e.message)+'</div>';}
 }
 
 function editFormula(idx){
@@ -3263,7 +3268,7 @@ async function buscarTrazabilidadPT(){
   try{
     var r=await fetch('/api/trazabilidad/lote-pt/'+encodeURIComponent(lote));
     var d=await r.json();
-    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
+    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+_escHTML(d.error)+'</div>';return;}
     var html='<div style="background:#f8f9ff;border:1px solid #c3cfe2;border-radius:10px;padding:16px;margin-bottom:12px;">';
     html+='<h4 style="margin:0 0 10px;color:#6c5ce7;">&#128203; Lote PT: '+d.lote_ref+'</h4>';
     if(d.produccion){
@@ -3313,7 +3318,7 @@ async function buscarTrazabilidadMP(){
   try{
     var r=await fetch('/api/trazabilidad/lote-mp/'+encodeURIComponent(lote));
     var d=await r.json();
-    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+d.error+'</div>';return;}
+    if(d.error){div.innerHTML='<div style="color:#e74c3c;padding:12px;background:#ffeaea;border-radius:8px;">'+_escHTML(d.error)+'</div>';return;}
     var html='<div style="background:#f8fff8;border:1px solid #c3e2cf;border-radius:10px;padding:16px;margin-bottom:12px;">';
     html+='<h4 style="margin:0 0 10px;color:#00b894;">&#128203; Lote MP: '+d.lote_mp+'</h4>';
     if(d.material){
@@ -3769,16 +3774,21 @@ async function cargarMeeStock(){
     var d = await r.json();
     if(sel && d.categorias){
       var cur = sel.value;
-      sel.innerHTML = '<option value="">Todas ('+d.total+')</option>';
-      d.categorias.forEach(function(c){ sel.innerHTML += '<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+'</option>'; });
+      // Build full HTML once · Sebastián 1-may-2026 audit: antes era innerHTML+= en loop (N reflows)
+      var optsCat = '<option value="">Todas ('+d.total+')</option>';
+      d.categorias.forEach(function(c){
+        optsCat += '<option value="'+_escHTML(c)+'"'+(c===cur?' selected':'')+'>'+_escHTML(c)+'</option>';
+      });
+      sel.innerHTML = optsCat;
     }
     var codSel = document.getElementById('mee-codigo-sel');
     if(codSel && d.items){
       var cur2 = codSel.value;
-      codSel.innerHTML = '<option value="">-- Seleccionar material --</option>';
+      var optsCod = '<option value="">-- Seleccionar material --</option>';
       d.items.forEach(function(m){
-        codSel.innerHTML += '<option value="'+m.codigo+'" data-stock="'+m.stock_actual+'" data-unidad="'+m.unidad+'" data-min="'+m.stock_minimo+'">'+m.codigo+' — '+m.descripcion+'</option>';
+        optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' — '+_escHTML(m.descripcion)+'</option>';
       });
+      codSel.innerHTML = optsCod;
       if(cur2) codSel.value = cur2;
     }
     var tb = document.getElementById('mee-stock-tbody');
@@ -13425,13 +13435,20 @@ async function ckMarcar(itemId, estado){
       // Carga por operario
       var carga = d.carga_operarios || [];
       if(carga.length){
+        var rolIconMap = {elaboracion:'👤', envasado:'📦', acondicionamiento:'🏷️', dispensacion:'⚖️'};
+        var rolLabelMap = {elaboracion:'Elab', envasado:'Env', acondicionamiento:'Acond', dispensacion:'Disp'};
         cargaEl.innerHTML = '<h4 style="margin:0 0 6px;color:#0f172a;font-size:12px">📊 Carga semanal por operario</h4>'
           +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
           + carga.map(function(c){
             var color = c.producciones >= 5 ? '#dc2626' : (c.producciones >= 3 ? '#fbbf24' : '#15803d');
-            return '<div style="background:'+color+';color:#fff;padding:5px 10px;border-radius:14px;font-size:11px;font-weight:600">'
-              +c.nombre+' · '+c.producciones+' prods · '+c.kg_total+'kg'
-              +' · ['+(c.roles||[]).join('+')+']</div>';
+            var roles = (c.roles||[]).map(function(r){
+              return (rolIconMap[r]||'')+' '+(rolLabelMap[r]||r);
+            }).join(' · ');
+            var kg = (c.kg_total||0).toLocaleString('es-CO');
+            return '<div style="background:'+color+';color:#fff;padding:6px 12px;border-radius:14px;font-size:11px;font-weight:600;line-height:1.4">'
+              +'<div>'+_escHTML(c.nombre)+' · '+c.producciones+' producciones · '+kg+' kg</div>'
+              +(roles ? '<div style="font-weight:500;opacity:.92;font-size:10px;margin-top:2px">'+roles+'</div>' : '')
+              +'</div>';
           }).join('')
           +'</div>';
       } else {

@@ -621,7 +621,7 @@ def eliminar_solicitud(numero):
 def handle_ordenes_compra():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
-        d = request.json
+        d = request.get_json(silent=True) or {}
         if not d.get('proveedor'): return jsonify({'error': 'Proveedor requerido'}), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
         numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
@@ -726,7 +726,7 @@ def handle_oc_detalle(numero_oc):
         u, err, code = _require_compras_write()
         if err:
             return err, code
-        d = request.json
+        d = request.get_json(silent=True) or {}
         if d.get('estado'):
             c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?",
                       (d['estado'], numero_oc))
@@ -902,8 +902,21 @@ def agregar_item_oc(numero_oc):
     nombre_mp = (d.get('nombre_mp') or '').strip()
     if not nombre_mp:
         return jsonify({'error': 'nombre_mp requerido'}), 400
-    cantidad_g = float(d.get('cantidad_g', 0))
-    precio = float(d.get('precio_unitario', 0))
+    if len(nombre_mp) > 300:
+        return jsonify({'error': 'nombre_mp excede 300 chars'}), 400
+    # Sebastián 1-may-2026 audit: validar cantidad/precio > 0 antes de INSERT.
+    # Antes aceptaba 0 o negativos · creaba items inválidos en OC.
+    try:
+        cantidad_g = float(d.get('cantidad_g', 0))
+        precio = float(d.get('precio_unitario', 0))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'cantidad_g y precio_unitario deben ser numéricos'}), 400
+    if cantidad_g <= 0:
+        return jsonify({'error': 'cantidad_g debe ser > 0'}), 400
+    if precio < 0:
+        return jsonify({'error': 'precio_unitario no puede ser negativo'}), 400
+    if cantidad_g > 1_000_000_000:  # 1 ton en gramos
+        return jsonify({'error': 'cantidad_g excede límite (1.000.000 kg)'}), 400
     subtotal = round(cantidad_g * precio, 2)
     c.execute("""INSERT INTO ordenes_compra_items
                  (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
@@ -1223,7 +1236,7 @@ def sugerir_mp(codigo_mp):
 def handle_proveedores_compras():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
-        d = request.json
+        d = request.get_json(silent=True) or {}
         if not d.get('nombre'): return jsonify({'error': 'Nombre requerido'}), 400
         try:
             c.execute("""INSERT INTO proveedores
@@ -1814,8 +1827,8 @@ def aprobar_solicitud_influencer(numero):
         try:
             r = cur.execute("SELECT nombre FROM marketing_influencers WHERE id=?", (infl_id,)).fetchone()
             if r: benef_nombre = r[0] or ''
-        except Exception:
-            pass
+        except Exception as _e:
+            __import__('logging').getLogger('compras').warning('lookup beneficiario infl_id=%s fallo: %s', infl_id, _e)
     if not benef_nombre and obs_orig:
         m = __import__('re').search(r'BENEFICIARIO:\s*([^|]+)', obs_orig, __import__('re').IGNORECASE)
         if m: benef_nombre = m.group(1).strip()
@@ -3818,7 +3831,7 @@ def buscar_remision(remision_code):
 def handle_mee():
     conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
-        d = request.get_json()
+        d = request.get_json(silent=True) or {}
         if not d.get('codigo') or not d.get('descripcion'):
             return jsonify({'error':'codigo y descripcion requeridos'}), 400
         try:
@@ -3851,7 +3864,7 @@ def handle_mee():
 def handle_mee_item(codigo):
     conn = get_db(); cur = conn.cursor()
     if request.method == 'PUT':
-        d = request.get_json()
+        d = request.get_json(silent=True) or {}
         fields=[]; vals=[]
         for f in ['descripcion','categoria','proveedor','stock_minimo','estado']:
             if f in d: fields.append(f'{f}=?'); vals.append(d[f])
@@ -3869,7 +3882,7 @@ def handle_mee_item(codigo):
 @bp.route('/api/mee/<codigo>/ajuste', methods=['POST'])
 def ajuste_mee(codigo):
     conn = get_db(); cur = conn.cursor()
-    d = request.get_json()
+    d = request.get_json(silent=True) or {}
     nuevo = float(d.get('nuevo_stock',0))
     obs = d.get('observaciones','Ajuste manual')
     oper = d.get('operador','Sistema')
@@ -3888,7 +3901,7 @@ def ajuste_mee(codigo):
 def handle_movimientos_mee():
     conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
-        d = request.get_json()
+        d = request.get_json(silent=True) or {}
         cod  = d.get('codigo_mee') or d.get('mee_codigo', '')
         tipo_raw = d.get('tipo','Entrada'); tipo = tipo_raw[0].upper()+tipo_raw[1:].lower() if tipo_raw else 'Entrada'
         cant = float(d.get('cantidad',0))
@@ -3925,7 +3938,7 @@ def handle_movimientos_mee():
 @bp.route('/api/movimientos-mee/lote', methods=['POST'])
 def movimientos_mee_lote():
     conn = get_db(); cur = conn.cursor()
-    d = request.get_json()
+    d = request.get_json(silent=True) or {}
     movs = d.get('movimientos',[])
     oper = d.get('operador','')
     ref  = d.get('referencia','')
