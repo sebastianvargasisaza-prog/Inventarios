@@ -7865,6 +7865,7 @@ async function ckMarcar(itemId, estado){
       cargarKpisActividades();
       // ── Producciones HOY · cards encima del mapa (Sebastián 1-may-2026)
       renderProduccionesDiaCards(d.producciones_dia || [], k);
+      renderProduccionesDiag(d.producciones_diag || {});
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
@@ -7962,6 +7963,66 @@ async function ckMarcar(itemId, estado){
       html += '</div></div>';
     });
     grid.innerHTML = html;
+  }
+
+  // ── Diagnóstico DB sin match Calendar (Sebastián 1-may-2026:
+  // 'siento que deja todo como lunes · no sabe discriminar · junta todo')
+  function renderProduccionesDiag(diag){
+    var panel = document.getElementById('cm-dia-panel');
+    if(!panel) return;
+    var existing = document.getElementById('cm-diag-banner');
+    if(existing) existing.remove();
+    var orphans = (diag.db_sin_calendar) || [];
+    if(!orphans.length) return;
+    var banner = document.createElement('div');
+    banner.id = 'cm-diag-banner';
+    banner.style.cssText = 'background:#fef3c7;border:1px solid #fbbf24;border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#78350f';
+    var lista = orphans.slice(0,8).map(function(o){
+      return '<li>'+_escHTML(o.producto)+' · '+o.fecha+' · '+(o.kg||0)+'kg'+(o.area_codigo?(' · '+_escHTML(o.area_codigo)):'')+'</li>';
+    }).join('');
+    banner.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +'<div><b>⚠️ '+orphans.length+' producciones DB SIN match en Google Calendar</b><br>'
+      +'<span style="font-size:10px">Pueden ser duplicados de auto-sync antiguo · Calendar es la fuente de verdad</span></div>'
+      +'<button onclick="limpiarDbSinCalendar()" style="padding:5px 12px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🗑 Cancelar '+orphans.length+' filas</button>'
+      +'</div>'
+      +'<details style="margin-top:6px"><summary style="cursor:pointer;font-size:10px">Ver detalle</summary>'
+      +'<ul style="margin:4px 0 0 18px;padding:0">'+lista
+      +(orphans.length > 8 ? '<li>...y '+(orphans.length-8)+' más</li>' : '')
+      +'</ul></details>';
+    // Insertar al inicio del panel (después del header)
+    var firstChild = panel.firstChild;
+    panel.insertBefore(banner, firstChild ? firstChild.nextSibling : null);
+  }
+
+  async function limpiarDbSinCalendar(){
+    if(!confirm('🗑 Cancelar producciones DB sin match Calendar?\\n\\n• Solo afecta filas no iniciadas\\n• Cambia estado a "cancelado" (NO delete · revertible)\\n• Calendar queda como fuente única de verdad\\n\\n¿Continuar?')) return;
+    var msg = document.getElementById('cm-dia-msg');
+    if(msg){
+      msg.style.display='block';
+      msg.style.background='#fef3c7'; msg.style.color='#78350f';
+      msg.innerHTML='⏳ Cancelando filas DB huérfanas...';
+    }
+    try{
+      var fecha = (document.getElementById('plano-fecha')||{value:''}).value || new Date().toISOString().slice(0,10);
+      var r = await fetch('/api/planta/limpiar-db-sin-calendar', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({fecha: fecha}),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      if(msg){
+        msg.style.background='#dcfce7'; msg.style.color='#166534';
+        msg.innerHTML='✅ '+d.mensaje;
+        setTimeout(function(){ msg.style.display='none'; }, 4000);
+      }
+      renderCentroMando();
+    }catch(e){
+      if(msg){
+        msg.style.background='#fef2f2'; msg.style.color='#991b1b';
+        msg.innerHTML='❌ '+e.message;
+      }
+    }
   }
 
   // Event delegation para botones de cards (Sebastián 1-may-2026)

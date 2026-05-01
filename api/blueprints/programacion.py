@@ -3056,7 +3056,9 @@ def planta_centro_mando():
     # Si el día seleccionado está vacío → muestra próximos 7 días para
     # que el jefe siempre vea qué viene (no quedar en blanco un viernes).
     producciones_dia = []
+    db_sin_calendar = []
     fechas_horizonte = [fecha_sel + timedelta(days=i) for i in range(7)]
+    fechas_horizonte_iso = set(f.isoformat() for f in fechas_horizonte)
 
     # Helper IA preview operarios (afinidad ponderada · rotación determinística)
     import hashlib
@@ -3167,7 +3169,6 @@ def planta_centro_mando():
             """).fetchall():
                 skus_aliases[sku_n] = alias_csv
 
-            fechas_horizonte_iso = set(f.isoformat() for f in fechas_horizonte)
             for ev in cal_events:
                 try:
                     f_ev = ev.get('fecha', '')[:10]
@@ -3221,6 +3222,48 @@ def planta_centro_mando():
                          'planeado': 2, 'completado': 3}
             return (p.get('fecha', ''), est_orden.get(p.get('estado', ''), 4))
         producciones_dia.sort(key=_orden_key)
+
+        # ── DIAGNÓSTICO: filas DB sin match en Calendar (orphans/stale)
+        # Sebastián 1-may-2026: 'siento que deja todo como lunes, no sabe
+        # discriminar junta todo' → detectar duplicados de auto-sync antiguo
+        productos_calendar_por_fecha = set()  # (fecha, producto_upper)
+        try:
+            from blueprints.auto_plan import (
+                _calendar_events_cached as _cec, _match_producto_evento as _mpe
+            )
+            cal_events_check = _cec(force_refresh=False) or []
+            for ev in cal_events_check:
+                try:
+                    f_ev = ev.get('fecha', '')[:10]
+                    if f_ev not in fechas_horizonte_iso: continue
+                except Exception:
+                    continue
+                producto_match_d = None
+                best_d = 0
+                for prod_n, alias_csv in skus_aliases.items():
+                    try:
+                        s = _mpe(prod_n, alias_csv, ev.get('titulo'), ev.get('descripcion',''))
+                        if s >= 50 and s > best_d:
+                            best_d = s; producto_match_d = prod_n
+                    except Exception:
+                        continue
+                if producto_match_d:
+                    productos_calendar_por_fecha.add((f_ev, producto_match_d.upper()))
+        except Exception:
+            pass
+        db_sin_calendar = []
+        for p in producciones_dia:
+            if p.get('desde_calendar'): continue  # estos vienen de Calendar
+            if p.get('estado') in ('en_proceso','iniciado','completado'): continue  # ya iniciada
+            key = (p.get('fecha',''), (p.get('producto','') or '').upper())
+            if productos_calendar_por_fecha and key not in productos_calendar_por_fecha:
+                db_sin_calendar.append({
+                    'id': p.get('id'),
+                    'producto': p.get('producto'),
+                    'fecha': p.get('fecha'),
+                    'kg': p.get('kg'),
+                    'area_codigo': (p.get('area') or {}).get('codigo',''),
+                })
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando] producciones_dia falla: {_e}')
 
@@ -3238,8 +3281,113 @@ def planta_centro_mando():
                                                   if p['estado'] in ('planeado','programado')),
         },
         'producciones_dia': producciones_dia,
+        'producciones_diag': {
+            'db_sin_calendar': db_sin_calendar,
+            'db_sin_calendar_count': len(db_sin_calendar),
+        },
         'eventos_recientes': eventos,
         'fecha': hoy,
+    })
+
+
+@bp.route('/api/planta/limpiar-db-sin-calendar', methods=['POST'])
+def limpiar_db_sin_calendar():
+    """Cancela filas produccion_programada que no tienen match en Calendar
+    (en horizonte 7 días). Sebastián 1-may-2026: 'siento que deja todo como
+    lunes · no sabe discriminar · junta todo'.
+
+    Auto-sync antiguo dejó duplicados con fechas erróneas. Este endpoint
+    los marca como 'cancelado' (NO delete · permite revertir si necesario).
+    Solo afecta filas no iniciadas (estado in ('programado','planeado','')).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.json or {}
+    fecha_param = (body.get('fecha') or '').strip()[:10]
+    try:
+        fecha_sel = datetime.strptime(fecha_param, '%Y-%m-%d').date() if fecha_param else date.today()
+    except Exception:
+        fecha_sel = date.today()
+    fechas_horizonte = [fecha_sel + timedelta(days=i) for i in range(7)]
+    fechas_iso = set(f.isoformat() for f in fechas_horizonte)
+
+    conn = get_db(); c = conn.cursor()
+    # 1) Construir set Calendar (fecha, producto_upper)
+    productos_cal = set()
+    try:
+        from blueprints.auto_plan import _calendar_events_cached, _match_producto_evento
+        cal_events = _calendar_events_cached(force_refresh=True) or []
+        skus_aliases = {}
+        for sku_n, alias_csv in c.execute("""
+            SELECT producto_nombre, COALESCE(alias_calendar,'')
+            FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchall():
+            skus_aliases[sku_n] = alias_csv
+        for ev in cal_events:
+            try:
+                f_ev = ev.get('fecha', '')[:10]
+                if f_ev not in fechas_iso: continue
+            except Exception:
+                continue
+            producto_match = None
+            best = 0
+            for prod_n, alias_csv in skus_aliases.items():
+                try:
+                    s = _match_producto_evento(prod_n, alias_csv, ev.get('titulo'), ev.get('descripcion',''))
+                    if s >= 50 and s > best:
+                        best = s; producto_match = prod_n
+                except Exception:
+                    continue
+            if producto_match:
+                productos_cal.add((f_ev, producto_match.upper()))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Calendar fetch falla: {e}'}), 500
+
+    # 2) DB rows en horizonte sin match Calendar (no iniciadas)
+    rows = c.execute("""
+        SELECT id, producto, date(fecha_programada) as f, COALESCE(estado,'')
+        FROM produccion_programada
+        WHERE date(fecha_programada) BETWEEN ? AND ?
+          AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
+    """, (fechas_horizonte[0].isoformat(), fechas_horizonte[-1].isoformat())).fetchall()
+
+    a_cancelar = []
+    for pid, prod, f, _est in rows:
+        key = (f, (prod or '').upper())
+        if productos_cal and key not in productos_cal:
+            a_cancelar.append((pid, prod, f))
+
+    if not a_cancelar:
+        return jsonify({
+            'ok': True,
+            'mensaje': '✅ Sin filas DB huérfanas · todo está sincronizado con Calendar',
+            'cancelados': 0,
+            'productos_calendar_total': len(productos_cal),
+        })
+
+    # 3) Marcar como cancelado (no delete · easy revert)
+    canceladas = 0
+    for pid, prod, f in a_cancelar:
+        try:
+            c.execute("""
+                UPDATE produccion_programada
+                  SET estado='cancelado',
+                      observaciones = COALESCE(observaciones,'') ||
+                        ' [cancelado por limpieza · sin match Calendar · usuario=' || ? || ']'
+                WHERE id=?
+            """, (user, pid))
+            canceladas += 1
+        except Exception:
+            continue
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'mensaje': f'🗑 {canceladas} filas DB marcadas cancelado · sin match en Calendar',
+        'cancelados': canceladas,
+        'detalle': [{'producto': p, 'fecha': f} for _, p, f in a_cancelar[:20]],
+        'productos_calendar_total': len(productos_cal),
     })
 
 
