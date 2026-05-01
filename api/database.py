@@ -3302,6 +3302,46 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (78, "Aliases Calendar · códigos cortos TRIAC/LBHA/CRETT/etc (Sebastián 1-may-2026)", [
+        # Sebastián 1-may-2026: el Calendar usa códigos cortos en eventos
+        # (TRIAC, LBHA, CRETT, NPHA, CMULP, EMLIM, CRCUREA, etc.) pero los
+        # SKUs no tenían esos códigos como aliases → 0 match → IA no asignaba.
+        # Sobrescribimos alias_calendar con lista comprensiva (código + nombres)
+        # para máxima cobertura de matching.
+        "UPDATE sku_planeacion_config SET alias_calendar='SUERO TRIACTIVE, TRIAC, TRIACTIVE, Suero TRIAC, Triactive Retinoid' WHERE producto_nombre='SUERO TRIACTIVE RETINOID NAD+'",
+        "UPDATE sku_planeacion_config SET alias_calendar='LBHA, BHA 2%, Limpiador BHA, BHA, Limpiador Facial BHA' WHERE producto_nombre='LIMPIADOR FACIAL BHA 2%'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CRETT, Contorno Retinal, Retinaldehido Contorno, Contorno Retinaldehido' WHERE producto_nombre='CONTORNO DE OJOS RETINALDEHIDO 0.05%'",
+        "UPDATE sku_planeacion_config SET alias_calendar='NPHA, Nova PHA, Suero PHA, Exfoliante PHA, Exfoliante Nova' WHERE producto_nombre='SUERO EXFOLIANTE NOVA PHA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CMULP, SMULP, Multipeptidos, Suero Multi, Suero Multipeptidos' WHERE producto_nombre='SUERO MULTIPEPTIDOS'",
+        "UPDATE sku_planeacion_config SET alias_calendar='EMLIM, Emulsion Limpiadora, Limpiadora Emulsion' WHERE producto_nombre='EMULSION LIMPIADORA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CRCUREA, Crema Urea, Urea, Crema de Urea' WHERE producto_nombre='CREMA DE UREA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='NIA, Niacinamida, Suero Niacinamida, Niacin' WHERE producto_nombre='SUERO DE NIACINAMIDA 5% FORMULA NUEVA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='BHA, Suero BHA, BHA Suero, Exfoliante BHA' WHERE producto_nombre='Suero Exfoliante BHA 2%'",
+        "UPDATE sku_planeacion_config SET alias_calendar='HYDRAP, Hidratante Antiox, EMULSION ANTIOX, Hidratante Antioxidante, Emulsion Hidratante Antioxidante' WHERE producto_nombre='EMULSION HIDRATANTE ANTIOXIDANTE'",
+        "UPDATE sku_planeacion_config SET alias_calendar='HYDRABAL, Hidratante Bal, Hidratante Iluminadora, EMULSION ILUM' WHERE producto_nombre='EMULSION HIDRATANTE ILUMINADORA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='B3+BHA, Hidratante B3+BHA, Emulsion B3+BHA, B3 BHA, B3 + BHA' WHERE producto_nombre='EMULSION HIDRATANTE  B3+BHA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='GELH, Gel Hidratante, Gel H, Gel Hidra' WHERE producto_nombre='GEL HIDRATANTE'",
+        "UPDATE sku_planeacion_config SET alias_calendar='AZHC, AZ Hibrid, AZ HIBRID, AZ Hibrid Clear, AZ' WHERE producto_nombre='AZ HIBRID CLEAR'",
+        "UPDATE sku_planeacion_config SET alias_calendar='AZ+B3, Suero AZ+B3, AZ B3, AZ + B3' WHERE producto_nombre='SUERO AZ + B3'",
+        "UPDATE sku_planeacion_config SET alias_calendar='SAH, Suero AH, AH 1.5%, AH, Hidratante AH, Suero Hialuronico, Suero Hidratante AH' WHERE producto_nombre='SUERO HIDRATANTE AH 1.5%'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CCAFE, Cafeina, Contorno Cafeina, Contorno de Cafeina' WHERE producto_nombre='CONTORNO DE CAFEINA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='RECN, Renova C10, C10, RENOVA C10, Renova' WHERE producto_nombre='SUERO ANTIOXIDANTE RENOVA C10'",
+        "UPDATE sku_planeacion_config SET alias_calendar='SVITC, Vit C, Vitamina C, Suero Vit C, Suero Vitamina C, Vit C Formula Nueva' WHERE producto_nombre='SUERO DE VITAMINA C+ FORMULA NUEVA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CRB3BHA, Suero C+B3, Suero CB3, Vit C+B3, Vitamina C+B3, C+B3' WHERE producto_nombre='SUERO ANTIOXIDANTE VITAMINA C+B3'",
+        "UPDATE sku_planeacion_config SET alias_calendar='ECENT, Centella, Esencia Centella, Esencia de Centella' WHERE producto_nombre='ESENCIA DE CENTELLA ASIATICA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='EILU, Esencia Iluminadora, Esencia Ilum, Iluminadora Esencia' WHERE producto_nombre='ESENCIA ILUMINADORA'",
+        "UPDATE sku_planeacion_config SET alias_calendar='LAH, Limpiador AH, Limpiador Hialuronico, Limpiador Hidratante AH' WHERE producto_nombre='LIMPIADOR FACIAL HIDRATANTE'",
+        "UPDATE sku_planeacion_config SET alias_calendar='LKJ, Limpiador Kojico, Iluminador Kojico, Kojico, Limpiador Iluminador' WHERE producto_nombre='LIMPIADOR ILUMINADOR ACIDO KOJICO'",
+        "UPDATE sku_planeacion_config SET alias_calendar='MAXLASH, Maxlash, Max Lash' WHERE producto_nombre='MAXLASH'",
+        "UPDATE sku_planeacion_config SET alias_calendar='CMULPP, Contorno Multipeptidos, Multipeptidos Contorno' WHERE producto_nombre='CONTORNO DE OJOS MULTIPEPTIDOS'",
+        "UPDATE sku_planeacion_config SET alias_calendar='HKJ, Hidratante Kojico, Hidrante Iluminadora Kojico' WHERE producto_nombre='EMULSION HIDRATANTE ILUMINADORA' AND alias_calendar NOT LIKE '%HKJ%'",
+        "UPDATE sku_planeacion_config SET alias_calendar='SUERO RETINAL+, Retinal+, Retinal Plus, Suero Retinal' WHERE producto_nombre='Suero RETINAL +'",
+        "UPDATE sku_planeacion_config SET alias_calendar='SUERO ILUMINADOR AHA+AH, Iluminador AHA+AH, AHA+AH, Suero Iluminador' WHERE producto_nombre='SUERO ILUMINADOR AHA+AH.'",
+        "UPDATE sku_planeacion_config SET alias_calendar='Suero Iluminador TRX, TRX, Iluminador TRX' WHERE producto_nombre='SUERO ILUMINADOR TRX'",
+        "UPDATE sku_planeacion_config SET alias_calendar='Mascarilla Hidratante, MAH, Mascarilla H' WHERE producto_nombre='MASCARILLA HIDRATANTE'",
+        "UPDATE sku_planeacion_config SET alias_calendar='RENOVA BODY, Body Crema, Crema Renova Body, Crema Corporal Renova' WHERE producto_nombre='CREMA CORPORAL RENOVA BODY'",
+        "UPDATE sku_planeacion_config SET alias_calendar='SUERO RETINALDEHIDO, Retinaldehido, Suero Retinal' WHERE producto_nombre='SUERO DE RETINALDEHIDO 0.05%'",
+    ]),
     (77, "Self-healing · activar cron + perfil riesgo SKUs faltantes (Sebastián)", [
         # Sebastián 1-may-2026: "que se programe solo automatico, todo perfecto".
         # 1) Habilitar el auto_plan_cron por default (estaba en 0)

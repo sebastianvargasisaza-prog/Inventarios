@@ -7341,20 +7341,27 @@ def diagnostico_calendar():
         diag['eventos_sample'] = []
 
     # Test directo de URL si hay GCAL_ICAL_URL (extra info para debug)
-    if gcal_url and not diag['fetch'].get('total_eventos_60d'):
+    # Test directo URL: solo si está configurada (corre siempre, no solo si falla
+    # el fetch principal). Permite confirmar visualmente que la URL responde OK.
+    if gcal_url:
         try:
             req = _ur.Request(gcal_url, headers={'User-Agent': 'EspagiRIA-Diagnostico/1.0'})
             t1 = _time.time()
             with _ur.urlopen(req, timeout=10) as r:
                 content = r.read()
-                ct = r.headers.get('Content-Type', '')
+                # Bug fix: Content-Type puede venir vacío o None en algunos
+                # endpoints de Google Calendar — validar por BODY no header.
+                ct = r.headers.get('Content-Type', '') or ''
+                # Strip BOM si lo hay (algunos feeds Google lo incluyen)
+                content_clean = content.lstrip(b'\xef\xbb\xbf').lstrip()
+                es_ical = content_clean[:50].startswith(b'BEGIN:VCALENDAR') or b'BEGIN:VCALENDAR' in content[:200]
                 diag['url_test'] = {
                     'status': r.getcode(),
-                    'content_type': ct,
+                    'content_type': ct or '(sin header)',
                     'size_bytes': len(content),
                     'duracion_ms': int((_time.time() - t1) * 1000),
                     'preview_500_chars': content[:500].decode('utf-8', errors='replace'),
-                    'es_ical_valido': content[:15].startswith(b'BEGIN:VCALENDAR'),
+                    'es_ical_valido': bool(es_ical),
                     'cantidad_VEVENT': content.count(b'BEGIN:VEVENT'),
                 }
         except Exception as e:
@@ -7397,27 +7404,42 @@ def diagnostico_calendar():
     except Exception:
         pass
 
-    # Sugerencias específicas según el caso detectado
+    # Sugerencias inteligentes basadas en el caso detectado
+    # Sebastián 1-may-2026: no dar falsos positivos cuando todo OK.
     s = []
-    if not gcal_url and not google_key:
-        s.append('🚨 Configura GCAL_ICAL_URL en Render: Calendar Producciones → Configuración → Integrar calendario → "URL secreta en formato iCal" (formato https://calendar.google.com/calendar/ical/.../basic.ics)')
-    elif gcal_url:
+    eventos_ok = diag['fetch'].get('total_eventos_60d', 0) > 0
+    has_url = bool(gcal_url or google_key)
+
+    if not has_url:
+        s.append('🚨 Configura GCAL_ICAL_URL en Render: Calendar Producciones → Configuración → Integrar calendario → URL secreta en formato iCal (.ics)')
+    elif eventos_ok:
+        # FUNCIONA - solo verificar matching
+        if diag['matching_test']:
+            sin_match = [t for t in diag['matching_test'] if not t['top_matches']]
+            scores_bajos = [t for t in diag['matching_test']
+                              if t['top_matches'] and t['top_matches'][0]['score'] < 60]
+            if len(sin_match) == len(diag['matching_test']):
+                s.append('⚠️ Hay eventos pero NINGÚN producto activo hace match. Configura aliases en sku_planeacion_config.alias_calendar (códigos cortos como TRIAC, LBHA, NPHA del Calendar)')
+            elif len(sin_match) + len(scores_bajos) >= len(diag['matching_test']) - 1:
+                s.append('⚠️ La mayoría de productos tienen match débil o nulo. Revisa aliases en sku_planeacion_config.')
+            else:
+                s.append(f'✅ Calendar funciona correctamente · {diag["fetch"]["total_eventos_60d"]} eventos en 60 días · matching OK')
+        else:
+            s.append(f'✅ Calendar conectado · {diag["fetch"]["total_eventos_60d"]} eventos en 60 días')
+    else:
+        # Hay env var pero NO eventos
         ut = diag.get('url_test', {})
         if ut.get('error'):
-            s.append(f'⚠️ La URL configurada falla: {ut["error"]}. Verifica que esté vigente y que el calendario sea accesible.')
-        elif not ut.get('es_ical_valido'):
-            s.append(f'⚠️ La URL responde pero no devuelve formato iCal. Content-Type: {ut.get("content_type")}. Asegúrate de copiar la URL "iCal" no la URL pública.')
+            s.append(f'⚠️ La URL configurada falla: {ut["error"]}. Verifica que esté vigente.')
+        elif not ut.get('es_ical_valido', True):
+            s.append(f'⚠️ La URL no devuelve formato iCal válido. Content-Type: {ut.get("content_type", "?")}. Usa la URL "iCal" no la URL pública.')
         elif ut.get('cantidad_VEVENT', 0) == 0:
-            s.append('⚠️ El feed iCal no tiene eventos. Crea eventos en el Calendar Producciones (deben aparecer ahí, no en otro calendario).')
-        elif diag['fetch'].get('total_eventos_60d') == 0 and ut.get('cantidad_VEVENT', 0) > 0:
-            s.append(f'⚠️ El feed tiene {ut.get("cantidad_VEVENT")} eventos pero ninguno cae en próximos 60 días. ¿Están en el pasado o muy en el futuro?')
-    if diag['fetch'].get('total_eventos_60d', 0) > 0 and diag['matching_test']:
-        sin_match = [t for t in diag['matching_test'] if not t['top_matches']]
-        if len(sin_match) == len(diag['matching_test']):
-            s.append('⚠️ Hay eventos pero ninguno hace match con productos activos. Revisa que los títulos del Calendar contengan el nombre del producto (o configura sku_planeacion_config.alias_calendar)')
+            s.append('⚠️ El feed iCal no tiene eventos. Crea eventos en el Calendar Producciones.')
+        elif ut.get('cantidad_VEVENT', 0) > 0:
+            s.append(f'⚠️ El feed tiene {ut.get("cantidad_VEVENT")} eventos pero ninguno cae en próximos 60 días (¿están en el pasado o muy en el futuro?).')
+        else:
+            s.append('⚠️ Calendar configurado pero sin eventos detectados en 60d. Revisa que estés usando el Calendar correcto.')
 
-    if not s and diag['fetch'].get('total_eventos_60d', 0) > 0:
-        s.append(f'✅ Calendar funciona correctamente · {diag["fetch"]["total_eventos_60d"]} eventos en 60 días')
     diag['sugerencias'] = s
 
     return jsonify(diag)
