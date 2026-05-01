@@ -5026,6 +5026,41 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Mi Día por Operario · Sebastián 1-may-2026 (Alejandro) ────── -->
+    <div id="plan-mi-dia" style="background:#fff;border:2px solid #1d4ed8;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#1d4ed8">&#128104;&#8205;&#128295; Mi Día · Acomodo del operario · L/Mi/V producir · Ma/J acond.</div>
+          <div id="midia-subtitle" style="font-size:11px;color:#64748b;margin-top:2px">Selecciona un operario para ver sus tareas próximos 7 días</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="midia-operario" onchange="miDiaRecargar()" style="padding:5px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;min-width:200px">
+            <option value="">— elegir operario —</option>
+          </select>
+          <select id="midia-dias" onchange="miDiaRecargar()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px">
+            <option value="7" selected>7 días</option>
+            <option value="14">14 días</option>
+            <option value="30">30 días</option>
+          </select>
+          <button onclick="miDiaRecargar()" style="padding:5px 10px;background:#1d4ed8;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="midia-resumen" style="margin-bottom:10px"></div>
+      <div id="midia-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px"></div>
+    </div>
+
+    <!-- ── Multi-cron status (jobs internos) ─────────────────────────── -->
+    <div id="plan-cron-status" style="background:#0f172a;border-radius:10px;padding:12px 14px;margin-bottom:16px;color:#fff">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:700">&#9881; Crons internos (sin Render Cron Jobs externos)</div>
+          <div style="font-size:10px;opacity:.7;margin-top:2px">5 jobs auto · revisa schedule cada 5 min</div>
+        </div>
+        <button onclick="cronStatusRecargar()" style="padding:4px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:5px;font-size:10px;cursor:pointer">&#8635;</button>
+      </div>
+      <div id="cron-status-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px"></div>
+    </div>
+
     <!-- ── Reporte Ejecutivo Auto-SC IA · Sebastián 1-may-2026 ──────── -->
     <div id="plan-reporte-ejecutivo" style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.12)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -9543,7 +9578,8 @@ async function ckMarcar(itemId, estado){
     var planv2 = document.getElementById('ptab-planv2');
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
-    var ids = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
+    var ids = ['plan-mi-dia', 'plan-cron-status',
+               'plan-reporte-ejecutivo', 'plan-pre-produccion',
                'plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee',
                'mee-asignar-panel', 'mee-config-panel'];
     var current = anchor;
@@ -9566,6 +9602,8 @@ async function ckMarcar(itemId, estado){
     if(typeof alertD20Recargar === 'function') alertD20Recargar();
     if(typeof reporteEjecutivoRecargar === 'function') reporteEjecutivoRecargar();
     if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
+    if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
+    if(typeof cronStatusRecargar === 'function') cronStatusRecargar();
     // Recargar contador de items por asignar (no abre el panel)
     if(typeof meeAsignarRecargar === 'function'){
       try{
@@ -12194,6 +12232,125 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Mi Día por Operario (Sebastián 1-may-2026)
+  var _MI_DIA_OPERARIOS = [];
+  async function miDiaCargarOperarios(){
+    try{
+      var r = await fetch('/api/planta/mi-dia', {credentials:'same-origin'});
+      var d = await r.json();
+      if(d.operarios_disponibles){
+        _MI_DIA_OPERARIOS = d.operarios_disponibles;
+        var sel = document.getElementById('midia-operario');
+        if(sel){
+          sel.innerHTML = '<option value="">— elegir operario —</option>' +
+            _MI_DIA_OPERARIOS.map(function(o){
+              return '<option value="'+o.id+'">'+(o.nombre || o.codigo)+(o.rol?' ['+o.rol+']':'')+'</option>';
+            }).join('');
+        }
+      }
+    }catch(e){}
+  }
+  async function miDiaRecargar(){
+    var opId = (document.getElementById('midia-operario')||{value:''}).value;
+    var dias = (document.getElementById('midia-dias')||{value:'7'}).value;
+    var sub = document.getElementById('midia-subtitle');
+    var grid = document.getElementById('midia-grid');
+    var resumen = document.getElementById('midia-resumen');
+    if(!opId){
+      if(sub) sub.textContent = 'Selecciona un operario para ver sus tareas';
+      if(grid) grid.innerHTML = '';
+      if(resumen) resumen.innerHTML = '';
+      // Cargar lista de operarios si está vacía
+      if(!_MI_DIA_OPERARIOS.length) miDiaCargarOperarios();
+      return;
+    }
+    if(sub) sub.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/mi-dia?operario_id='+opId+'&dias='+dias, {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var op = d.operario || {};
+      var rs = d.resumen || {};
+      if(sub) sub.textContent = (op.nombre||'')+' · '+(rs.total_tareas||0)+' tareas en '+dias+'d · '+(rs.kg_total_semana||0)+'kg total';
+      // Resumen
+      if(resumen){
+        resumen.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px">'
+          +'<span style="background:#dbeafe;color:#1e40af;padding:3px 10px;border-radius:12px"><b>'+(rs.total_tareas||0)+'</b> tareas</span>'
+          +'<span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:12px"><b>'+(rs.kg_total_semana||0)+'kg</b> a producir</span>'
+          +'<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px"><b>'+(rs.dias_con_actividad||0)+'</b> días activos</span>'
+          +'<span style="background:#f3f4f6;color:#475569;padding:3px 10px;border-radius:12px">Rol: '+(op.rol_predeterminado||'—')+'</span>'
+          +'</div>';
+      }
+      // Cards por día
+      var dias_arr = d.dias || [];
+      grid.innerHTML = dias_arr.map(function(dia){
+        var hoy = (dia.fecha === d.fecha_hoy);
+        var bg = hoy ? '#fef3c7' : (dia.es_laboral ? '#fff' : '#f3f4f6');
+        var border = hoy ? '#f59e0b' : (dia.tipo_dia === 'PRODUCCIÓN' ? '#1d4ed8' : (dia.tipo_dia === 'ACONDICIONAR/CONTEO' ? '#7c3aed' : '#94a3b8'));
+        var icon = dia.tipo_dia === 'PRODUCCIÓN' ? '🔬' : (dia.tipo_dia === 'ACONDICIONAR/CONTEO' ? '📦' : '🏠');
+        var html = '<div style="background:'+bg+';border:2px solid '+border+';border-radius:8px;padding:10px;font-size:11px;min-height:140px">';
+        html += '<div style="font-weight:700;color:#0f172a;font-size:12px;display:flex;justify-content:space-between">'+icon+' '+dia.nombre_dia+' '+dia.fecha.substring(5);
+        if(hoy) html += '<span style="background:#f59e0b;color:#fff;padding:1px 6px;border-radius:6px;font-size:9px">HOY</span>';
+        html += '</div>';
+        html += '<div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+dia.tipo_dia+'</div>';
+        if(dia.alerta_limpieza){
+          html += '<div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:4px 6px;border-radius:5px;font-size:10px;margin-bottom:5px">'+dia.alerta_limpieza+'</div>';
+        }
+        if(dia.producciones && dia.producciones.length){
+          dia.producciones.forEach(function(p){
+            var pigCol = p.pigmento ? '#dc2626' : '#1e40af';
+            html += '<div style="background:#dbeafe;color:'+pigCol+';padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px"><b>'+p.producto.substring(0,22)+'</b> ('+p.rol+')<br>'+p.kg+'kg · '+(p.area||'')+(p.pigmento?' · 🎨 PIGMENTO':'')+'</div>';
+          });
+        }
+        if(dia.limpiezas && dia.limpiezas.length){
+          dia.limpiezas.forEach(function(l){
+            html += '<div style="background:#fef3c7;color:#92400e;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px">🧹 Limpieza '+l.area+(l.razon?' · '+l.razon.substring(0,20):'')+'</div>';
+          });
+        }
+        if(dia.conteos && dia.conteos.length){
+          dia.conteos.forEach(function(co){
+            html += '<div style="background:#f3e8ff;color:#6b21a8;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px">📦 '+(co.material||'').substring(0,20)+(co.abc?' ['+co.abc+']':'')+'</div>';
+          });
+        }
+        if(!dia.producciones.length && !dia.limpiezas.length && !dia.conteos.length){
+          html += '<div style="color:#94a3b8;font-style:italic;font-size:10px;margin-top:8px">Sin tareas asignadas</div>';
+        }
+        html += '</div>';
+        return html;
+      }).join('');
+    }catch(e){
+      if(sub) sub.textContent = 'Error: '+(e.message||e);
+    }
+  }
+
+  // ── Cron status interno
+  async function cronStatusRecargar(){
+    var box = document.getElementById('cron-status-list');
+    if(!box) return;
+    box.innerHTML = '<div style="font-size:10px;opacity:.6">Cargando…</div>';
+    try{
+      var r = await fetch('/api/planta/cron-jobs-status', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      box.innerHTML = (d.jobs || []).map(function(j){
+        var statusCol = j.ultima_ejecucion_at ? (j.ultima_ok ? '#10b981' : '#ef4444') : '#64748b';
+        var statusTxt = j.ultima_ejecucion_at ? (j.ultima_ok ? 'OK' : 'FAIL') : 'pendiente';
+        var ult = j.ultima_ejecucion_at ? j.ultima_ejecucion_at.substring(5,16) : 'nunca';
+        return '<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:6px 10px">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px">'
+          +'<b>'+j.job_name+'</b>'
+          +'<span style="background:'+statusCol+';color:#fff;padding:1px 6px;border-radius:8px;font-size:9px">'+statusTxt+'</span>'
+          +'</div>'
+          +'<div style="font-size:9px;opacity:.65;margin-top:2px">📅 '+j.schedule+'</div>'
+          +'<div style="font-size:9px;opacity:.7;margin-top:1px">⏱ Última: '+ult+'</div>'
+          +(j.ultima_error ? '<div style="font-size:9px;color:#fca5a5;margin-top:1px">⚠ '+j.ultima_error.substring(0,40)+'</div>' : '')
+          +'</div>';
+      }).join('');
+    }catch(e){
+      box.innerHTML = '<div style="font-size:10px;color:#fca5a5">Error: '+(e.message||e)+'</div>';
+    }
+  }
+
   // ── Reporte Ejecutivo Auto-SC IA (Sebastián 1-may-2026)
   async function reporteEjecutivoRecargar(){
     var grid = document.getElementById('reporte-grid');

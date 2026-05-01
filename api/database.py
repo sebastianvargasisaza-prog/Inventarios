@@ -3302,6 +3302,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (74, "Cron multi-job interno (Sebastián 1-may-2026: sin cron Render externos)", [
+        # Sebastián: "configurar 4 crons" lo hago internamente para que no
+        # dependa de Render Cron Jobs (que requieren plan paid). Tabla
+        # cron_jobs_runs trackea última ejecución por job + dedupe.
+        """CREATE TABLE IF NOT EXISTS cron_jobs_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_name TEXT NOT NULL,
+            ejecutado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            duracion_ms INTEGER,
+            ok INTEGER NOT NULL DEFAULT 1,
+            resultado_json TEXT,
+            error TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cjr_job ON cron_jobs_runs(job_name, ejecutado_at DESC)",
+    ]),
     (73, "Auto-SC MEE: backfill proveedor desde maestro_mee (normalización Sebastián)", [
         # Sebastian (1-may-2026): "82 MEE configurados, 0 con proveedor". El
         # seed migración 72 dejó proveedor_principal=''. Pero maestro_mee.proveedor

@@ -235,6 +235,14 @@ if not app.config.get("TESTING"):
         _iniciar_auto_plan(app)
     except Exception as _e:
         _log.getLogger(__name__).warning("auto-plan-cron NO arrancó: %s", _e)
+    # Sebastian (1-may-2026): multi-cron interno · sin Render Cron Jobs externos.
+    # Loop cada 5 min ejecuta sync_shopify (6am), auto_d20 (8am), auto-sc mensual
+    # día 1-5 (12:00), auto-sc-mee mensual día 1-5 (12:30), urgente lunes (12:00).
+    try:
+        from blueprints.auto_plan_jobs import iniciar_multi_cron as _iniciar_multi_cron
+        _iniciar_multi_cron(app)
+    except Exception as _e:
+        _log.getLogger(__name__).warning("multi-cron NO arrancó: %s", _e)
 
 
 

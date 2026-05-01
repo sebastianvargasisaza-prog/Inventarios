@@ -537,3 +537,294 @@ def iniciar_cron(app):
     t.start()
     app._auto_plan_cron_started = True
     log.info('[auto-plan-cron] Cron thread arrancado (ejecución gobernada por auto_plan_cron_state.habilitado)')
+
+
+# ════════════════════════════════════════════════════════════════════════
+# MULTI-JOB CRON · scheduler interno (sin Render Cron Jobs externos)
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (1-may-2026): "configurar 4 crons" — lo hago interno para que
+# no dependa de Render Cron Jobs (plan paid). Loop cada 5 min revisa schedule
+# y ejecuta jobs pendientes con dedupe por última ejecución registrada.
+
+JOBS_SCHEDULE = [
+    # (job_name, hora, minuto, días_semana[0=lun..6=dom] o None=todos, días_mes[1-31] o None=todos, callable_name)
+    # Diarios
+    ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
+    ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
+    # Mensuales (primeros 5 días del mes a las 12:00)
+    ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
+    ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
+    # Lunes urgente
+    ('auto_sc_urgente_lun',  12,  0, [0],  None,                'job_auto_sc_urgente'),
+]
+
+
+def _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
+    """¿La fecha 'ahora' coincide con el schedule? (ventana de 5 min)."""
+    if dias_sem is not None and ahora.weekday() not in dias_sem:
+        return False
+    if dias_mes is not None and ahora.day not in dias_mes:
+        return False
+    if ahora.hour != hora:
+        return False
+    if abs(ahora.minute - minuto) > 5:
+        return False
+    return True
+
+
+def _ya_ejecutado_hoy(conn, job_name):
+    """¿Ya se ejecutó este job hoy con éxito?"""
+    try:
+        row = conn.execute("""
+            SELECT 1 FROM cron_jobs_runs
+            WHERE job_name = ?
+              AND ok = 1
+              AND date(ejecutado_at) = date('now')
+            LIMIT 1
+        """, (job_name,)).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+
+def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None):
+    try:
+        import json as _json
+        conn.execute("""
+            INSERT INTO cron_jobs_runs (job_name, ejecutado_at, duracion_ms, ok, resultado_json, error)
+            VALUES (?, datetime('now'), ?, ?, ?, ?)
+        """, (job_name, duracion_ms, 1 if ok else 0,
+              _json.dumps(resultado, default=str) if resultado else None,
+              error))
+        conn.commit()
+    except Exception as e:
+        log.warning(f'[multi-cron] no se pudo registrar {job_name}: {e}')
+
+
+def job_sync_shopify(app):
+    """Sync Shopify orders (jala últimas 250)."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.animus import _cfg
+        conn = get_db()
+        token = _cfg(conn, 'shopify_token')
+        shop = _cfg(conn, 'shopify_shop')
+        if not token or not shop:
+            return False, {'error': 'Shopify no configurado'}, 0
+        import urllib.request as ur
+        import json as _json
+        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+        req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
+        synced = 0
+        with ur.urlopen(req, timeout=30) as r:
+            orders = _json.loads(r.read())["orders"]
+        for o in orders:
+            items_sku = _json.dumps([
+                {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
+                for li in o.get("line_items",[])
+            ])
+            total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+            addr = o.get("billing_address") or {}
+            conn.execute("""
+                INSERT OR REPLACE INTO animus_shopify_orders
+                  (shopify_id, nombre, email, total, moneda, estado, estado_pago,
+                   sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """, (str(o["id"]), o.get("name",""), o.get("email",""),
+                  float(o.get("total_price",0)), o.get("currency","COP"),
+                  o.get("fulfillment_status",""), o.get("financial_status",""),
+                  items_sku, total_uds,
+                  addr.get("city",""), addr.get("country_code","CO"),
+                  o.get("created_at","")[:10]))
+            synced += 1
+        conn.commit()
+        return True, {'orders_synced': synced}, 0
+
+
+def job_auto_d20(app):
+    """Cron diario D-20: dispara SCs decoración."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.auto_plan import (
+            _calendar_events_cached, _alias_calendar_for, _match_producto_evento,
+            _parsear_kg_evento
+        )
+        from datetime import datetime as _dt, timedelta as _td
+        conn = get_db(); c = conn.cursor()
+        fecha_hoy = _dt.now().date()
+        d_min = fecha_hoy + _td(days=15)
+        d_max = fecha_hoy + _td(days=25)
+        eventos = _calendar_events_cached()
+        skus = {r[0]: r[0] for r in c.execute("""
+            SELECT producto_nombre FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchall()}
+        scs = 0
+        for ev in eventos:
+            try:
+                f = _dt.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if f < d_min or f > d_max:
+                continue
+            prod_match = None
+            for prod_nom in skus.keys():
+                try:
+                    alias = _alias_calendar_for(c, prod_nom)
+                    score = _match_producto_evento(prod_nom, alias, ev.get('titulo'), ev.get('descripcion',''))
+                    if score >= 60:
+                        prod_match = prod_nom; break
+                except Exception:
+                    continue
+            if not prod_match:
+                continue
+            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 30
+            unidades = int(kg * 1000 / 30)
+            existe = c.execute("""
+                SELECT 1 FROM solicitudes_compra
+                WHERE categoria='Servicios'
+                  AND observaciones LIKE ?
+                  AND date(fecha) >= date('now','-30 days')
+                LIMIT 1
+            """, (f'%decoración D-20 · {prod_match}%',)).fetchone()
+            if existe:
+                continue
+            # Buscar componentes serigrafia/tampografia
+            rows = c.execute("""
+                SELECT s.mee_codigo, s.componente_tipo, s.cantidad_por_unidad,
+                       m.descripcion, cfg.proveedor_principal, cfg.precio_unit
+                FROM sku_mee_config s
+                  LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+                  LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+                WHERE s.aplica = 1
+                  AND s.componente_tipo IN ('serigrafia','tampografia')
+                  AND COALESCE(cfg.disparo_d20,0) = 1
+                  AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+            """, (prod_match,)).fetchall()
+            if not rows:
+                continue
+            por_prov = {}
+            for cod, tipo, cant_pu, desc, prov, prec in rows:
+                if not prov: continue
+                cant = unidades * float(cant_pu or 1)
+                por_prov.setdefault(prov, []).append({
+                    'mee_codigo': cod, 'tipo': tipo, 'nombre': desc or cod,
+                    'cantidad': cant, 'proveedor': prov,
+                    'precio_unit': float(prec or 0),
+                    'valor': cant * float(prec or 0),
+                })
+            for prov, items in por_prov.items():
+                n = c.execute("""
+                    SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+                    FROM solicitudes_compra WHERE numero LIKE ?
+                """, (f"SOL-{_dt.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+                numero = f"SOL-{_dt.now().strftime('%Y')}-{n:04d}"
+                observ = f'🎨 Cron D-20 · decoración D-20 · {prod_match} · producción {f.isoformat()} · {unidades} ud · proveedor {prov}'
+                c.execute("""
+                    INSERT INTO solicitudes_compra
+                      (numero, fecha, estado, solicitante, urgencia, observaciones,
+                       area, empresa, categoria, tipo, fecha_requerida, valor)
+                    VALUES (?, ?, 'Pendiente', 'cron-d20-auto', 'Alta', ?, 'Produccion',
+                            'Espagiria', 'Servicios', 'Compra', ?, ?)
+                """, (numero, _dt.now().isoformat(), observ, f.isoformat(),
+                      sum(it['valor'] for it in items)))
+                for it in items:
+                    try:
+                        c.execute("""
+                            INSERT INTO solicitudes_compra_items
+                              (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                               justificacion, valor_estimado, proveedor_sugerido)
+                            VALUES (?, ?, ?, ?, 'und', ?, ?, ?)
+                        """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                              f"{it['tipo']} D-20 · {prod_match}",
+                              it['valor'], it['proveedor']))
+                    except sqlite3.OperationalError:
+                        c.execute("""
+                            INSERT INTO solicitudes_compra_items
+                              (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                               justificacion, valor_estimado)
+                            VALUES (?, ?, ?, ?, 'und', ?, ?)
+                        """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                              f"{it['tipo']} D-20", it['valor']))
+                scs += 1
+        conn.commit()
+        return True, {'scs_creadas': scs}, 0
+
+
+def job_auto_sc_mensual(app):
+    """Cron mensual día 1-5: SCs MP."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.auto_plan import _calcular_auto_sc
+        conn = get_db()
+        plan = _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo='mensual')
+        return True, {'kpis': plan.get('kpis', {})}, 0
+
+
+def job_auto_sc_mee_mensual(app):
+    """Cron mensual día 1-5: SCs MEE."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.auto_plan import _calcular_auto_sc_mee
+        conn = get_db()
+        plan = _calcular_auto_sc_mee(conn, modo='mensual')
+        return True, {'kpis': plan.get('kpis', {})}, 0
+
+
+def job_auto_sc_urgente(app):
+    """Cron lunes 12:00: SCs urgentes."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.auto_plan import _calcular_auto_sc
+        conn = get_db()
+        plan = _calcular_auto_sc(conn, horizontes_dias=(14, 30), modo='urgente')
+        return True, {'kpis': plan.get('kpis', {})}, 0
+
+
+def _loop_multi_cron(app):
+    """Loop cada 5 min revisa schedule de jobs y ejecuta los que apliquen."""
+    log.info('[multi-cron] Loop iniciado · 5 jobs configurados')
+    import time as _time
+    import time as time_mod
+    from datetime import datetime as _dt
+    while True:
+        try:
+            with app.app_context():
+                from database import get_db
+                conn = get_db()
+                ahora = _dt.now()
+                for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
+                    if not _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
+                        continue
+                    if _ya_ejecutado_hoy(conn, job_name):
+                        continue
+                    fn = globals().get(callable_name)
+                    if not fn:
+                        log.warning(f'[multi-cron] {job_name}: callable {callable_name} no existe')
+                        continue
+                    log.info(f'[multi-cron] Ejecutando {job_name}...')
+                    t0 = _time.time()
+                    try:
+                        ok, resultado, _ = fn(app)
+                        dur = int((_time.time() - t0) * 1000)
+                        _registrar_ejecucion(conn, job_name, ok, resultado, dur)
+                        log.info(f'[multi-cron] {job_name} ok={ok} · {dur}ms · {resultado}')
+                    except Exception as e:
+                        dur = int((_time.time() - t0) * 1000)
+                        log.exception(f'[multi-cron] {job_name} excepción')
+                        _registrar_ejecucion(conn, job_name, False, None, dur, str(e))
+        except Exception as e:
+            log.exception(f'[multi-cron] error en loop: {e}')
+        time_mod.sleep(300)  # cada 5 min
+
+
+def iniciar_multi_cron(app):
+    """Lanza el thread del scheduler multi-job al arranque.
+    Sebastián 1-may-2026: sin dependencia de Render Cron Jobs externos."""
+    if getattr(app, '_multi_cron_started', False):
+        return
+    t = threading.Thread(target=_loop_multi_cron, args=(app,), daemon=True)
+    t.start()
+    app._multi_cron_started = True
+    log.info('[multi-cron] Multi-cron thread arrancado · jobs: ' +
+             ', '.join(j[0] for j in JOBS_SCHEDULE))

@@ -6789,6 +6789,237 @@ def sync_shopify_cron():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
+# ════════════════════════════════════════════════════════════════════════
+# MULTI-CRON STATUS · monitoreo de jobs internos
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/cron-jobs-status', methods=['GET'])
+def cron_jobs_status():
+    """Status de los 5 jobs internos del multi-cron.
+    Sebastián 1-may-2026: cron interno sin Render externos.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        from blueprints.auto_plan_jobs import JOBS_SCHEDULE
+    except Exception:
+        return jsonify({'error': 'multi-cron no inicializado'}), 500
+
+    jobs_info = []
+    for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
+        try:
+            ult = c.execute("""
+                SELECT ejecutado_at, ok, duracion_ms, resultado_json, error
+                FROM cron_jobs_runs
+                WHERE job_name = ?
+                ORDER BY id DESC LIMIT 1
+            """, (job_name,)).fetchone()
+        except Exception:
+            ult = None
+        # Schedule legible
+        if dias_mes:
+            sched = f"día {','.join(map(str, dias_mes))} mes a las {hora:02d}:{minuto:02d}"
+        elif dias_sem:
+            nombres = ['L','M','Mi','J','V','S','D']
+            sched = f"{','.join(nombres[d] for d in dias_sem)} a las {hora:02d}:{minuto:02d}"
+        else:
+            sched = f"diario {hora:02d}:{minuto:02d}"
+        jobs_info.append({
+            'job_name': job_name,
+            'schedule': sched,
+            'ultima_ejecucion_at': ult[0] if ult else None,
+            'ultima_ok': bool(ult[1]) if ult else None,
+            'ultima_duracion_ms': ult[2] if ult else None,
+            'ultima_resultado': ult[3] if ult else None,
+            'ultima_error': ult[4] if ult else None,
+        })
+    return jsonify({
+        'jobs': jobs_info,
+        'total': len(jobs_info),
+        'mensaje': 'Multi-cron interno corriendo · revisa cada 5 min',
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# MI DÍA · vista por operario (Sebastián 1-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/mi-dia', methods=['GET'])
+def mi_dia():
+    """Vista 'Mi día' por operario: tareas próximos 7 días.
+    Sebastián 1-may-2026: "preproducción que es que todos sepan que les
+    toca hacer". Reglas Alejandro (memoria):
+      · L/Mi/V → producir
+      · Ma/J → acondicionar/conteo/limpieza
+      · Limpieza profunda obligatoria si producto previo tiene pigmento alto
+        (riesgo_arrastre_pct >= 50)
+
+    Query: ?operario_id=X o ?usuario=catalina (auto-detect del operario)
+           ?dias=7 (default 7)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    operario_id = request.args.get('operario_id', type=int)
+    usuario = (request.args.get('usuario') or session.get('compras_user') or '').strip()
+    dias = int(request.args.get('dias', 7))
+
+    # Resolver operario_id si solo viene usuario
+    if not operario_id and usuario:
+        row = c.execute("""
+            SELECT id, nombre, apellido, rol_predeterminado
+            FROM operarios_planta
+            WHERE LOWER(nombre) LIKE LOWER(?)
+               OR LOWER(nombre || ' ' || COALESCE(apellido,'')) LIKE LOWER(?)
+            LIMIT 1
+        """, (f'%{usuario}%', f'%{usuario}%')).fetchone()
+        if row:
+            operario_id = row[0]
+
+    if not operario_id:
+        # Listar operarios para que el frontend deje al usuario elegir
+        rows = c.execute("""
+            SELECT id, nombre || ' ' || COALESCE(apellido,'') as nombre,
+                   rol_predeterminado, activo
+            FROM operarios_planta WHERE COALESCE(activo,1)=1
+            ORDER BY nombre
+        """).fetchall()
+        return jsonify({
+            'sin_operario_resuelto': True,
+            'usuario_query': usuario,
+            'operarios_disponibles': [
+                {'id': r[0], 'codigo': '', 'nombre': (r[1] or '').strip(),
+                 'rol': r[2] or '', 'activo': bool(r[3])}
+                for r in rows
+            ],
+        })
+
+    # Datos del operario
+    op = c.execute("""
+        SELECT id, nombre, apellido, rol_predeterminado,
+               COALESCE(fija_en_dispensacion,0), COALESCE(es_jefe_produccion,0)
+        FROM operarios_planta WHERE id = ?
+    """, (operario_id,)).fetchone()
+    if not op:
+        return jsonify({'error': 'Operario no encontrado'}), 404
+    op_info = {
+        'id': op[0], 'codigo': '',
+        'nombre': (op[1] or '').strip() + ' ' + (op[2] or '').strip(),
+        'rol_predeterminado': op[3] or '',
+        'fija_en_dispensacion': bool(op[4]),
+        'es_jefe_produccion': bool(op[5]),
+    }
+
+    fecha_hoy = datetime.now().date()
+    fecha_max = fecha_hoy + timedelta(days=dias)
+    nombres_dia = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+    DIAS_PRODUCCION = (0, 2, 4)  # L, Mi, V
+    DIAS_ACONDICIONAR = (1, 3)   # Ma, J
+
+    # Tareas por día
+    dias_data = []
+    for d_offset in range(dias):
+        f = fecha_hoy + timedelta(days=d_offset)
+        wd = f.weekday()
+        dia_label = 'PRODUCCIÓN' if wd in DIAS_PRODUCCION else (
+                    'ACONDICIONAR/CONTEO' if wd in DIAS_ACONDICIONAR else 'FIN DE SEMANA')
+        es_lab = wd < 5
+
+        # Producciones donde participa este operario
+        prods = c.execute("""
+            SELECT pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
+                   ap.codigo as area, pp.estado,
+                   CASE
+                     WHEN pp.operario_dispensacion_id = ? THEN 'dispensacion'
+                     WHEN pp.operario_elaboracion_id = ? THEN 'elaboracion'
+                     WHEN pp.operario_envasado_id = ? THEN 'envasado'
+                     WHEN pp.operario_acondicionamiento_id = ? THEN 'acondicionamiento'
+                     ELSE 'apoyo'
+                   END as rol_en_prod,
+                   pr.tiene_pigmento, pr.color_descripcion, pr.riesgo_arrastre_pct
+            FROM produccion_programada pp
+              LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+              LEFT JOIN producto_perfil_riesgo pr
+                ON UPPER(TRIM(pr.producto_nombre)) = UPPER(TRIM(pp.producto))
+            WHERE date(pp.fecha_programada) = ?
+              AND COALESCE(pp.estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (pp.operario_dispensacion_id = ? OR pp.operario_elaboracion_id = ?
+                   OR pp.operario_envasado_id = ? OR pp.operario_acondicionamiento_id = ?)
+        """, (operario_id, operario_id, operario_id, operario_id, f.isoformat(),
+              operario_id, operario_id, operario_id, operario_id)).fetchall()
+
+        prods_data = [{
+            'id': p[0], 'producto': p[1], 'lotes': p[2], 'kg': p[3],
+            'area': p[4] or '', 'estado': p[5], 'rol': p[6],
+            'pigmento': bool(p[7]) if p[7] is not None else False,
+            'color_descripcion': p[8] or '',
+            'riesgo_arrastre_pct': p[9] or 0,
+        } for p in prods]
+
+        # Limpiezas profundas asignadas a este operario
+        try:
+            limps = c.execute("""
+                SELECT id, area_codigo, asignado_a, estado, razon_asignacion
+                FROM limpieza_profunda_calendario
+                WHERE date(fecha) = ?
+                  AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
+            """, (f.isoformat(), op_info['nombre'], op_info['nombre'])).fetchall()
+            limps_data = [{'id': l[0], 'area': l[1], 'asignado_a': l[2],
+                            'estado': l[3], 'razon': l[4] or ''} for l in limps]
+        except Exception:
+            limps_data = []
+
+        # Conteos cíclicos asignados
+        try:
+            conts = c.execute("""
+                SELECT id, material_id, material_nombre, estado, categoria_abc
+                FROM conteo_ciclico_calendario
+                WHERE date(fecha) = ?
+                  AND (asignado_a = ? OR LOWER(asignado_a) = LOWER(?))
+            """, (f.isoformat(), op_info['nombre'], op_info['nombre'])).fetchall()
+            cont_data = [{'id': c_[0], 'material_id': c_[1], 'material': c_[2],
+                           'estado': c_[3], 'abc': c_[4] or ''} for c_ in conts]
+        except Exception:
+            cont_data = []
+
+        # Limpieza obligatoria si producción anterior tiene pigmento alto
+        alerta_limpieza = None
+        if prods_data:
+            for p in prods_data:
+                if p['riesgo_arrastre_pct'] >= 50:
+                    alerta_limpieza = (f"⚠️ Limpieza profunda OBLIGATORIA antes de "
+                                        f"siguiente producción (anterior tuvo pigmento "
+                                        f"{p['color_descripcion']}, riesgo {p['riesgo_arrastre_pct']}%)")
+                    break
+
+        dias_data.append({
+            'fecha': f.isoformat(),
+            'nombre_dia': nombres_dia[wd],
+            'tipo_dia': dia_label,
+            'es_laboral': es_lab,
+            'producciones': prods_data,
+            'limpiezas': limps_data,
+            'conteos': cont_data,
+            'alerta_limpieza': alerta_limpieza,
+            'total_tareas': len(prods_data) + len(limps_data) + len(cont_data),
+        })
+
+    # Resumen
+    total_tareas = sum(d['total_tareas'] for d in dias_data)
+    total_kg = sum(p['kg'] for d in dias_data for p in d['producciones'])
+
+    return jsonify({
+        'operario': op_info,
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'horizonte_dias': dias,
+        'dias': dias_data,
+        'resumen': {
+            'total_tareas': total_tareas,
+            'kg_total_semana': round(total_kg, 0),
+            'dias_con_actividad': sum(1 for d in dias_data if d['total_tareas'] > 0),
+        },
+    })
+
+
 @bp.route('/api/planta/diagnostico-calendar', methods=['GET'])
 def diagnostico_calendar():
     """Diagnostica por qué planv2 dice 'Sin eventos del Calendar'.
