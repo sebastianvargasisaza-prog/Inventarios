@@ -5026,6 +5026,29 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════════════
+         ESTA SEMANA · vista principal jefe de producción · Sebastián 1-may-2026
+         La IA asigna TODO. El operario solo da click para avanzar.
+         ══════════════════════════════════════════════════════════════ -->
+    <div id="plan-esta-semana" style="background:linear-gradient(135deg,#0f766e 0%,#0891b2 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(8,145,178,.25)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+        <div>
+          <div style="font-size:16px;font-weight:800;letter-spacing:.3px">&#128197; Esta semana en planta · qué producir y quién</div>
+          <div id="semana-subtitle" style="font-size:11px;opacity:.92;margin-top:3px">🤖 IA asignó todo automáticamente · solo click para avanzar</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="semanaRecargar()" title="Refrescar" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <!-- KPIs semana -->
+      <div id="semana-kpis" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <!-- 5 cards L-V -->
+      <div id="semana-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px"></div>
+      <!-- Estado salas inline -->
+      <div id="semana-salas" style="margin-top:12px;display:flex;gap:5px;flex-wrap:wrap"></div>
+      <div id="semana-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
+    </div>
+
     <!-- ── Salud del Sistema · self-healing IA · Sebastián 1-may-2026 ─ -->
     <div id="plan-health" style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:10px;padding:12px 14px;margin-bottom:16px;color:#fff">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">
@@ -9616,8 +9639,8 @@ async function ckMarcar(itemId, estado){
     // AVANZADO (detrás de botón ⚙️ collapsable):
     //   6. Reporte ejecutivo · 7. Pre-producción · 8. Crons status
     //   9. Items por asignar · 10. Config MEE
-    var esenciales = ['plan-health', 'plan-salas-vivo', 'plan-mi-dia',
-                       'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
+    var esenciales = ['plan-esta-semana', 'plan-health', 'plan-salas-vivo',
+                       'plan-mi-dia', 'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
     var avanzados = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
                        'plan-cron-status', 'mee-asignar-panel', 'mee-config-panel'];
 
@@ -9657,6 +9680,7 @@ async function ckMarcar(itemId, estado){
 
     window._meePanelsMoved = true;
     // Cargar datos esenciales (los avanzados se cargan al toggle)
+    if(typeof semanaRecargar === 'function') semanaRecargar();
     if(typeof healthRecargar === 'function') healthRecargar();
     if(typeof autoscRecargar === 'function') autoscRecargar();
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
@@ -12310,6 +12334,153 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ══════════════════════════════════════════════════════════════
+  // ESTA SEMANA · vista principal jefe de produccion (Sebastián 1-may-2026)
+  // IA asigna todo · operario solo da click para avanzar
+  // ══════════════════════════════════════════════════════════════
+  async function semanaRecargar(){
+    var sub = document.getElementById('semana-subtitle');
+    var kpis = document.getElementById('semana-kpis');
+    var grid = document.getElementById('semana-grid');
+    var salas = document.getElementById('semana-salas');
+    if(sub) sub.textContent = '⏳ Cargando...';
+    try{
+      var r = await fetch('/api/planta/semana-produccion', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var k = d.kpis || {};
+      if(sub) sub.textContent = '🤖 IA asignó · ' + (k.total_producciones_semana||0) + ' producciones · ' + (k.total_kg_semana||0) + ' kg total · ' + (k.total_limpiezas||0) + ' limpiezas' + (k.sin_asignar_ia ? ' · ⚠️ ' + k.sin_asignar_ia + ' sin asignar' : '');
+
+      // KPIs pills
+      function pill(label, val, color){
+        return '<span style="background:'+(color||'rgba(255,255,255,.18)')+';padding:5px 12px;border-radius:14px;font-size:11px"><b>'+val+'</b> '+label+'</span>';
+      }
+      kpis.innerHTML = pill('producciones', k.total_producciones_semana||0)
+        + pill('kg', (k.total_kg_semana||0).toLocaleString())
+        + pill('limpiezas', k.total_limpiezas||0)
+        + (k.sin_asignar_ia ? pill('sin asignar IA', k.sin_asignar_ia, 'rgba(220,38,38,.7)') : '');
+
+      // 5 cards L-V
+      var dias = d.dias || [];
+      grid.innerHTML = dias.map(function(dia){
+        var bgCard = dia.es_hoy ? '#fef3c7' : (dia.tipo_dia==='PRODUCCIÓN' ? 'rgba(255,255,255,.97)' : 'rgba(255,255,255,.85)');
+        var border = dia.es_hoy ? '3px solid #f59e0b' : '1px solid rgba(255,255,255,.3)';
+        var html = '<div style="background:'+bgCard+';border:'+border+';border-radius:8px;padding:8px;color:#0f172a;min-height:200px;font-size:11px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #e2e8f0;padding-bottom:4px">';
+        html += '<b style="font-size:13px">'+dia.nombre_dia+' '+dia.fecha.substring(5)+'</b>';
+        if(dia.es_hoy) html += '<span style="background:#f59e0b;color:#fff;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700">HOY</span>';
+        html += '</div>';
+        html += '<div style="font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">'+dia.tipo_dia+'</div>';
+
+        // Producciones
+        if(dia.producciones && dia.producciones.length){
+          dia.producciones.forEach(function(p){
+            var stColor = {
+              'completado':'#10b981',
+              'en_proceso':'#1d4ed8',
+              'iniciado':'#1d4ed8',
+              'programado':'#64748b',
+            }[p.estado] || '#64748b';
+            html += '<div style="background:rgba(255,255,255,.6);border-left:3px solid '+stColor+';padding:5px 7px;margin-bottom:4px;border-radius:4px;font-size:10px">';
+            html += '<div style="font-weight:700;color:#0f172a">'+esc(p.producto.substring(0,22))+'</div>';
+            html += '<div style="color:#475569">'+p.kg+'kg · '+p.lotes+' lt';
+            if(p.area && p.area.codigo) html += ' · 🏭 '+p.area.codigo;
+            if(p.envasado) html += ' → '+p.envasado;
+            html += '</div>';
+            // Operarios mini
+            var ops = [];
+            if(p.operarios.dispensacion) ops.push('disp:'+p.operarios.dispensacion.split(' ')[0]);
+            if(p.operarios.elaboracion) ops.push('elab:'+p.operarios.elaboracion.split(' ')[0]);
+            if(p.operarios.envasado) ops.push('env:'+p.operarios.envasado.split(' ')[0]);
+            if(ops.length) html += '<div style="color:#64748b;font-size:9px;margin-top:2px">👤 '+ops.join(' · ')+'</div>';
+            // Acción inline (data-attrs para evitar problemas de quoting)
+            if(p.accion){
+              var btnCol = p.accion === 'iniciar' ? '#10b981' : (p.accion === 'terminar' ? '#1d4ed8' : '#7c3aed');
+              html += '<button class="semana-accion-btn" data-tipo="'+p.accion+'" data-id="'+p.id+'" style="margin-top:3px;width:100%;padding:3px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:10px;font-weight:700;cursor:pointer">'+esc(p.accion_label)+'</button>';
+            } else if(p.estado === 'completado'){
+              html += '<div style="margin-top:3px;color:#10b981;font-size:9px;font-weight:700">✅ Completada</div>';
+            }
+            html += '</div>';
+          });
+        } else if(dia.tipo_dia === 'PRODUCCIÓN'){
+          html += '<div style="color:#94a3b8;font-style:italic;font-size:10px">Sin producciones programadas</div>';
+        }
+        // Limpiezas
+        if(dia.limpiezas && dia.limpiezas.length){
+          dia.limpiezas.forEach(function(l){
+            html += '<div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:4px 6px;margin-bottom:3px;border-radius:3px;font-size:9px;color:#78350f">';
+            html += '<b>🧹 Limpieza '+esc(l.area)+'</b>';
+            if(l.asignado_a) html += '<br>👤 '+esc(l.asignado_a.split(' ')[0]);
+            if(l.accion){
+              html += '<button class="semana-accion-btn" data-tipo="marcar_limpia" data-id="'+l.id+'" style="margin-top:2px;width:100%;padding:2px 6px;background:#10b981;color:#fff;border:none;border-radius:3px;font-size:9px;cursor:pointer">✓ Limpiada</button>';
+            }
+            html += '</div>';
+          });
+        }
+        if(!dia.producciones.length && !dia.limpiezas.length && dia.tipo_dia !== 'PRODUCCIÓN'){
+          html += '<div style="color:#94a3b8;font-style:italic;font-size:10px">Día de acondicionamiento/conteo</div>';
+        }
+        html += '</div>';
+        return html;
+      }).join('');
+
+      // Salas estado mini
+      salas.innerHTML = '<span style="font-size:10px;opacity:.85;margin-right:4px;align-self:center">Salas:</span>' +
+        (d.salas||[]).map(function(s){
+          var col = {'libre':'#10b981','ocupada':'#dc2626','sucia':'#f59e0b','limpiando':'#3b82f6'}[s.estado] || '#94a3b8';
+          var ico = {'libre':'🟢','ocupada':'🔴','sucia':'🟡','limpiando':'🔵'}[s.estado] || '⚪';
+          return '<span title="'+esc(s.nombre)+' · '+s.estado+'" style="background:rgba(255,255,255,.15);padding:3px 8px;border-radius:10px;font-size:10px;border-left:3px solid '+col+';cursor:default">'+ico+' '+s.codigo+'</span>';
+        }).join('');
+
+    }catch(e){
+      if(sub) sub.textContent = '❌ Error: '+(e.message||e);
+    }
+  }
+  // Event delegation · evita quoting issues con onclick inline
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest && ev.target.closest('.semana-accion-btn');
+    if(!btn) return;
+    var tipo = btn.getAttribute('data-tipo');
+    var id = parseInt(btn.getAttribute('data-id') || '0', 10);
+    if(tipo && id) accionRapida(tipo, id);
+  });
+  async function accionRapida(tipo, id){
+    var labels = {
+      'iniciar': '▶ Iniciar producción',
+      'iniciar_produccion': '▶ Iniciar producción',
+      'terminar': '✓ Terminar producción (mp/mee se descontarán)',
+      'terminar_produccion': '✓ Terminar producción',
+      'marcar_limpia': '✓ Marcar área como LIMPIA',
+      'asignar_ia': '🤖 Que IA asigne área + operarios',
+    };
+    if(!confirm(labels[tipo]+'?')) return;
+    var msg = document.getElementById('semana-msg');
+    msg.style.display='block';
+    msg.innerHTML = '⏳ Ejecutando...';
+    try{
+      // Mapear tipo a tipo del backend
+      var tipoBack = tipo;
+      if(tipo === 'iniciar') tipoBack = 'iniciar_produccion';
+      if(tipo === 'terminar') tipoBack = 'terminar_produccion';
+      var body = {tipo: tipoBack};
+      if(tipoBack === 'marcar_limpia') body.limpieza_id = id;
+      else body.produccion_id = id;
+      var r = await fetch('/api/planta/accion-rapida', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if(!r.ok || (d.ok === false && d.error)) throw new Error(d.error || 'HTTP '+r.status);
+      msg.innerHTML = '✅ '+ (d.mensaje || 'OK');
+      setTimeout(function(){ msg.style.display='none'; }, 3000);
+      semanaRecargar();
+      if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
+    }catch(e){
+      msg.innerHTML = '❌ Error: '+(e.message||e);
+    }
+  }
+
   // ── Salud del sistema + Self-heal (Sebastián 1-may-2026)
   async function healthRecargar(){
     var sum_ = document.getElementById('health-summary');

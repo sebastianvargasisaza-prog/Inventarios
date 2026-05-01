@@ -1623,7 +1623,12 @@ def mis_solicitudes_con_ciclo():
     estado_q = (request.args.get('estado') or 'abiertas').strip().lower()
 
     conn = get_db(); c = conn.cursor()
-    rows = c.execute("""
+    # Sebastián 1-may-2026: las solicitudes de Influencer/Marketing
+    # (Cuenta de Cobro · empresa ANIMUS · area Marketing) NO deben aparecer
+    # acá — entran a Compras directo en pestaña "Influencer" para que
+    # Catalina no se enrede mezclándolas con producción.
+    incluir_influencer = request.args.get('incluir_influencer', '0').strip() in ('1','true','yes')
+    sql_solic = """
         SELECT s.numero, s.fecha, s.estado as estado_sol, s.solicitante,
                s.urgencia, s.observaciones, s.numero_oc, s.area, s.empresa,
                s.categoria, s.tipo, s.fecha_requerida, s.valor,
@@ -1632,10 +1637,14 @@ def mis_solicitudes_con_ciclo():
                oc.valor_total as oc_valor, oc.recibido_por
         FROM solicitudes_compra s
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = s.numero_oc
-        WHERE LOWER(COALESCE(s.solicitante,''))=?
-        ORDER BY s.fecha DESC
-        LIMIT 200
-    """, (usuario_filtro,)).fetchall()
+        WHERE LOWER(COALESCE(s.solicitante,''))=?"""
+    params_solic = [usuario_filtro]
+    if not incluir_influencer:
+        sql_solic += """
+          AND COALESCE(s.categoria,'') NOT IN ('Cuenta de Cobro','Influencer/Marketing Digital')
+          AND LOWER(COALESCE(s.area,'')) NOT IN ('marketing','marketing/animus')"""
+    sql_solic += " ORDER BY s.fecha DESC LIMIT 200"
+    rows = c.execute(sql_solic, params_solic).fetchall()
 
     cols = [d[0] for d in c.description]
     out = []

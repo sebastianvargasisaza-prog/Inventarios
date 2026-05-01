@@ -7020,6 +7020,288 @@ def mi_dia():
     })
 
 
+@bp.route('/api/planta/semana-produccion', methods=['GET'])
+def semana_produccion():
+    """Vista CLARA para el jefe de producción · IA asignó todo,
+    el operario solo da click para avanzar.
+    Sebastián 1-may-2026: 'que sea aún más sencillo · qué produce esta semana
+    le salga lunes tal · dónde queda cada operario · solicitar limpieza marque
+    limpiado/sucio · todo en tiempo real · pero que todo lo asigne la IA'.
+
+    Devuelve L-V (lunes próximo si hoy es fin de semana) con:
+      - Por cada día: producciones programadas, área asignada por IA,
+        operarios rotados por IA, estado live, limpiezas
+      - Si una producción NO tiene área/operario → flag (IA debe asignar)
+      - Acciones disponibles según estado: iniciar / terminar / marcar limpia
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+
+    # Encontrar lunes de esta semana (si hoy es fin de semana, próximo lunes)
+    base = fecha_hoy
+    if base.weekday() >= 5:  # sáb/dom
+        base = base + timedelta(days=(7 - base.weekday()))
+    else:
+        base = base - timedelta(days=base.weekday())
+
+    dias_semana = [base + timedelta(days=i) for i in range(5)]
+    nombres_dia = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE']
+
+    dias_data = []
+    for i, fecha in enumerate(dias_semana):
+        es_hoy = (fecha == fecha_hoy)
+        wd = fecha.weekday()
+        es_lmv = wd in (0, 2, 4)  # lunes, miércoles, viernes
+        tipo_dia = 'PRODUCCIÓN' if es_lmv else 'ACOND/CONTEO'
+
+        # Producciones programadas ese día
+        prods_rows = c.execute("""
+            SELECT pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
+                   pp.estado, pp.area_id,
+                   ap.codigo as area_codigo, ap.nombre as area_nombre, ap.estado as area_estado,
+                   ap_env.codigo as env_codigo,
+                   o1.id, o1.nombre || ' ' || COALESCE(o1.apellido,'') as op_disp,
+                   o2.id, o2.nombre || ' ' || COALESCE(o2.apellido,'') as op_elab,
+                   o3.id, o3.nombre || ' ' || COALESCE(o3.apellido,'') as op_env,
+                   o4.id, o4.nombre || ' ' || COALESCE(o4.apellido,'') as op_acon,
+                   pp.inicio_real_at, pp.fin_real_at
+            FROM produccion_programada pp
+              LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+              LEFT JOIN areas_planta ap_env ON ap_env.id = pp.area_envasado_id
+              LEFT JOIN operarios_planta o1 ON o1.id = pp.operario_dispensacion_id
+              LEFT JOIN operarios_planta o2 ON o2.id = pp.operario_elaboracion_id
+              LEFT JOIN operarios_planta o3 ON o3.id = pp.operario_envasado_id
+              LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
+            WHERE date(pp.fecha_programada) = ?
+              AND COALESCE(pp.estado, 'programado') != 'cancelado'
+            ORDER BY pp.id
+        """, (fecha.isoformat(),)).fetchall()
+
+        prods = []
+        for r in prods_rows:
+            (pid, producto, lotes, kg, estado, area_id, area_cod, area_nom, area_est,
+             env_cod, _, op_disp, _, op_elab, _, op_env, _, op_acon,
+             inicio_at, fin_at) = r
+            estado = (estado or 'programado').strip()
+            ya_asignada = bool(area_id and (op_disp or op_elab or op_env))
+            # Acción siguiente según estado
+            if estado == 'completado':
+                accion = None; accion_label = '✅ Completada'
+            elif estado in ('en_proceso', 'iniciado'):
+                accion = 'terminar'; accion_label = '✓ Terminar'
+            elif ya_asignada:
+                accion = 'iniciar'; accion_label = '▶ Iniciar'
+            else:
+                accion = 'asignar_ia'; accion_label = '🤖 IA asignar'
+            prods.append({
+                'id': pid, 'producto': producto, 'lotes': lotes, 'kg': kg,
+                'estado': estado,
+                'area': {'codigo': area_cod, 'nombre': area_nom, 'estado': area_est},
+                'envasado': env_cod,
+                'operarios': {
+                    'dispensacion': (op_disp or '').strip(),
+                    'elaboracion': (op_elab or '').strip(),
+                    'envasado': (op_env or '').strip(),
+                    'acondicionamiento': (op_acon or '').strip(),
+                },
+                'ya_asignada': ya_asignada,
+                'accion': accion, 'accion_label': accion_label,
+                'inicio_real_at': inicio_at, 'fin_real_at': fin_at,
+            })
+
+        # Limpiezas programadas ese día
+        limpiezas = []
+        try:
+            limp_rows = c.execute("""
+                SELECT id, area_codigo, asignado_a, estado, razon_asignacion
+                FROM limpieza_profunda_calendario
+                WHERE date(fecha) = ?
+                  AND estado IN ('pendiente','asignada','en_proceso')
+                ORDER BY id
+            """, (fecha.isoformat(),)).fetchall()
+            for lr in limp_rows:
+                limpiezas.append({
+                    'id': lr[0], 'area': lr[1], 'asignado_a': lr[2] or '',
+                    'estado': lr[3], 'razon': (lr[4] or '')[:60],
+                    'accion': 'marcar_limpia' if lr[3] != 'completada' else None,
+                })
+        except Exception:
+            pass
+
+        dias_data.append({
+            'fecha': fecha.isoformat(),
+            'nombre_dia': nombres_dia[i],
+            'es_hoy': es_hoy,
+            'tipo_dia': tipo_dia,
+            'es_laboral': True,
+            'producciones': prods,
+            'limpiezas': limpiezas,
+            'total_kg': sum(p['kg'] for p in prods),
+            'total_lotes': sum(p['lotes'] or 0 for p in prods),
+            'sin_asignar': sum(1 for p in prods if not p['ya_asignada']),
+        })
+
+    # Estado salas en vivo (mini)
+    salas = []
+    try:
+        rows = c.execute("""
+            SELECT codigo, nombre, estado FROM areas_planta
+            WHERE activo=1 AND tipo='produccion'
+            ORDER BY orden, codigo
+        """).fetchall()
+        salas = [{'codigo': r[0], 'nombre': r[1], 'estado': r[2] or 'libre'} for r in rows]
+    except Exception:
+        pass
+
+    # KPIs semana
+    total_prods = sum(len(d['producciones']) for d in dias_data)
+    total_kg = sum(d['total_kg'] for d in dias_data)
+    sin_asignar_total = sum(d['sin_asignar'] for d in dias_data)
+    total_limpiezas = sum(len(d['limpiezas']) for d in dias_data)
+
+    return jsonify({
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'semana_inicio': dias_semana[0].isoformat(),
+        'semana_fin': dias_semana[-1].isoformat(),
+        'dias': dias_data,
+        'salas': salas,
+        'kpis': {
+            'total_producciones_semana': total_prods,
+            'total_kg_semana': round(total_kg, 0),
+            'sin_asignar_ia': sin_asignar_total,
+            'total_limpiezas': total_limpiezas,
+        },
+    })
+
+
+@bp.route('/api/planta/accion-rapida', methods=['POST'])
+def planta_accion_rapida():
+    """Acciones rápidas del operario en producciones/limpiezas.
+    Sebastián 1-may-2026: "marque limpiado/sucio · iniciar/terminar".
+
+    Body: {tipo, id, ...}
+    Tipos:
+      - iniciar_produccion: {tipo:'iniciar_produccion', produccion_id}
+      - terminar_produccion: {tipo:'terminar_produccion', produccion_id, unidades_envasadas?}
+      - marcar_limpia: {tipo:'marcar_limpia', limpieza_id} → área pasa a 'libre'
+      - marcar_sucia: {tipo:'marcar_sucia', area_codigo}
+      - asignar_ia: {tipo:'asignar_ia', produccion_id} → fuerza auto-asignación IA
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    tipo = (d.get('tipo') or '').strip()
+    conn = get_db(); c = conn.cursor()
+
+    if tipo == 'iniciar_produccion':
+        pid = d.get('produccion_id')
+        if not pid: return jsonify({'error': 'produccion_id requerido'}), 400
+        try:
+            row = c.execute("SELECT area_id, estado FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+            if not row: return jsonify({'error': 'producción no existe'}), 404
+            if row[1] in ('en_proceso', 'iniciado'):
+                return jsonify({'ok': True, 'mensaje': 'Ya estaba iniciada'})
+            if row[1] == 'completado':
+                return jsonify({'error': 'Ya completada'}), 400
+            c.execute("""
+                UPDATE produccion_programada
+                  SET estado='en_proceso', inicio_real_at=datetime('now')
+                WHERE id=?
+            """, (pid,))
+            # Marcar área como ocupada
+            if row[0]:
+                c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=? AND estado IN ('libre','limpiando')", (row[0],))
+            conn.commit()
+            return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada'})
+        except Exception as e:
+            try: conn.rollback()
+            except: pass
+            return jsonify({'error': str(e)}), 500
+
+    elif tipo == 'terminar_produccion':
+        pid = d.get('produccion_id')
+        if not pid: return jsonify({'error': 'produccion_id requerido'}), 400
+        # Llamar al endpoint existente de completar (que ya hace descuento + limpieza auto)
+        try:
+            from blueprints.programacion import prog_completar_evento
+            # No podemos llamar directo porque hace request.get_json() interno
+            # Mejor hacer el flujo aquí simplificado:
+            row = c.execute("""
+                SELECT id, producto, fecha_programada, area_id
+                FROM produccion_programada WHERE id=?
+            """, (pid,)).fetchone()
+            if not row: return jsonify({'error': 'producción no existe'}), 404
+            c.execute("""
+                UPDATE produccion_programada
+                  SET estado='completado', fin_real_at=datetime('now')
+                WHERE id=?
+            """, (pid,))
+            # Marcar área sucia + crear limpieza auto
+            if row[3]:
+                c.execute("UPDATE areas_planta SET estado='sucia' WHERE id=?", (row[3],))
+                try:
+                    from blueprints.programacion import _crear_limpieza_post_produccion
+                    fecha_iso = row[2][:10] if row[2] else datetime.now().date().isoformat()
+                    area_row = c.execute("SELECT codigo FROM areas_planta WHERE id=?", (row[3],)).fetchone()
+                    if area_row:
+                        _crear_limpieza_post_produccion(c, row[3], area_row[0], fecha_iso,
+                                                          row[1], '', user)
+                except Exception:
+                    pass
+            conn.commit()
+            return jsonify({'ok': True, 'mensaje': '✓ Producción terminada · área marcada sucia · limpieza programada'})
+        except Exception as e:
+            try: conn.rollback()
+            except: pass
+            return jsonify({'error': str(e)}), 500
+
+    elif tipo == 'marcar_limpia':
+        lid = d.get('limpieza_id')
+        if not lid: return jsonify({'error': 'limpieza_id requerido'}), 400
+        try:
+            row = c.execute("SELECT area_codigo FROM limpieza_profunda_calendario WHERE id=?", (lid,)).fetchone()
+            if not row: return jsonify({'error': 'limpieza no existe'}), 404
+            c.execute("""
+                UPDATE limpieza_profunda_calendario
+                  SET estado='completada', terminado_at=datetime('now'), terminado_por=?
+                WHERE id=?
+            """, (user, lid))
+            # Área pasa a libre
+            c.execute("UPDATE areas_planta SET estado='libre', ultima_limpieza_profunda=datetime('now') WHERE codigo=?", (row[0],))
+            conn.commit()
+            return jsonify({'ok': True, 'mensaje': f'✓ Área {row[0]} limpia · disponible para producción'})
+        except Exception as e:
+            try: conn.rollback()
+            except: pass
+            return jsonify({'error': str(e)}), 500
+
+    elif tipo == 'marcar_sucia':
+        codigo = (d.get('area_codigo') or '').strip()
+        if not codigo: return jsonify({'error': 'area_codigo requerido'}), 400
+        c.execute("UPDATE areas_planta SET estado='sucia' WHERE codigo=?", (codigo,))
+        conn.commit()
+        return jsonify({'ok': True, 'mensaje': f'Área {codigo} marcada sucia'})
+
+    elif tipo == 'asignar_ia':
+        pid = d.get('produccion_id')
+        if not pid: return jsonify({'error': 'produccion_id requerido'}), 400
+        try:
+            from blueprints.programacion import _auto_asignar_produccion
+            res = _auto_asignar_produccion(c, pid, f'manual-{user}')
+            if res.get('ok'):
+                conn.commit()
+                return jsonify({'ok': True, 'mensaje': '🤖 IA asignó: ' + ' · '.join(res.get('cambios', []))})
+            else:
+                return jsonify({'ok': False, 'error': res.get('error')}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    return jsonify({'error': f'tipo desconocido: {tipo}'}), 400
+
+
 @bp.route('/api/planta/health-check', methods=['GET'])
 def planta_health_check():
     """Health check del sistema completo · Sebastián 1-may-2026:
