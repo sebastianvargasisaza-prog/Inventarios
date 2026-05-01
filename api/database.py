@@ -3326,6 +3326,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_wll_lunes ON workflow_lunes_log(fecha_lunes DESC)",
     ]),
+    (80, "Índices de performance planta + gcal_event_id (Sebastián 1-may-2026)", [
+        # Auditoría: queries filtraban por semana_workflow_id sin índice.
+        "CREATE INDEX IF NOT EXISTS idx_pp_workflow ON produccion_programada(semana_workflow_id)",
+        # Para dedupe robusto si en futuro se reactiva sync (por ahora Calendar-first)
+        "ALTER TABLE produccion_programada ADD COLUMN gcal_event_id TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_pp_gcal ON produccion_programada(gcal_event_id)",
+        # Índice para queries del centro-mando que filtran por fecha + estado
+        "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
+    ]),
     (78, "Aliases Calendar · códigos cortos TRIAC/LBHA/CRETT/etc (Sebastián 1-may-2026)", [
         # Sebastián 1-may-2026: el Calendar usa códigos cortos en eventos
         # (TRIAC, LBHA, CRETT, NPHA, CMULP, EMLIM, CRCUREA, etc.) pero los

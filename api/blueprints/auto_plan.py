@@ -3712,47 +3712,18 @@ def maquila_pedido_cancelar(pedido_id):
 # Asignación automática de operarios (Mayerlin fija + rotación inteligente)
 # ════════════════════════════════════════════════════════════════════════
 def _asignar_operarios_a_produccion(conn, produccion_id):
-    """Asigna automáticamente operarios a una producción según reglas:
-       - Dispensación: SIEMPRE Mayerlin (regla dura)
-       - Elaboración/Envasado/Acondicionamiento: rotan según historial reciente
+    """Wrapper Calendar-first: delega a _auto_asignar_produccion (programacion.py)
+    Sebastián 1-may-2026: la lógica antigua (Mayerlin fija + least-assigned) fue
+    reemplazada por hash-rotation con afinidad ponderada. Esta función queda
+    como wrapper para no romper callers legacy.
     """
-    c = conn.cursor()
-    # Buscar Mayerlin
-    mayerlin = c.execute(
-        "SELECT id FROM operarios_planta WHERE LOWER(nombre)='mayerlin' AND activo=1 LIMIT 1"
-    ).fetchone()
-    op_disp_id = mayerlin[0] if mayerlin else None
-
-    # Para las otras fases: encontrar operario con MENOS asignaciones en últimos 7 días
-    def operario_menos_asignado(rol_excluir=None):
-        rows = c.execute(f"""
-            SELECT op.id, op.nombre,
-                   (SELECT COUNT(*) FROM produccion_programada pp
-                    WHERE pp.fecha_programada >= date('now','-7 days')
-                      AND (pp.operario_elaboracion_id=op.id
-                        OR pp.operario_envasado_id=op.id
-                        OR pp.operario_acondicionamiento_id=op.id)) AS carga
-            FROM operarios_planta op
-            WHERE op.activo=1
-              AND op.fija_en_dispensacion=0
-              AND op.es_jefe_produccion=0
-              AND LOWER(op.nombre) != 'mayerlin'
-            ORDER BY carga ASC, op.nombre LIMIT 1
-        """).fetchone()
-        return rows[0] if rows else None
-
-    op_elab_id = operario_menos_asignado()
-    op_env_id = operario_menos_asignado()
-    op_acond_id = operario_menos_asignado()
-
-    c.execute("""
-        UPDATE produccion_programada SET
-          operario_dispensacion_id = COALESCE(operario_dispensacion_id, ?),
-          operario_elaboracion_id = COALESCE(operario_elaboracion_id, ?),
-          operario_envasado_id = COALESCE(operario_envasado_id, ?),
-          operario_acondicionamiento_id = COALESCE(operario_acondicionamiento_id, ?)
-        WHERE id=?
-    """, (op_disp_id, op_elab_id, op_env_id, op_acond_id, produccion_id))
+    try:
+        from blueprints.programacion import _auto_asignar_produccion
+        c = conn.cursor()
+        return _auto_asignar_produccion(c, produccion_id, 'legacy-wrapper')
+    except Exception as _e:
+        log.warning(f'[_asignar_operarios_a_produccion] wrapper falla pid={produccion_id}: {_e}')
+        return {'ok': False, 'error': str(_e)}
 
 
 @bp.route('/api/planta/produccion/<int:prod_id>/asignar-operarios-auto', methods=['POST'])
@@ -8354,6 +8325,8 @@ def planta_self_heal():
         acciones.append(f'⚠ Error habilitar cron: {e}')
 
     # 1b) Reset salas con estado stale: 'ocupada' pero sin producción activa
+    # Sebastián 1-may-2026: ventana ajustada a 1 día (era 3) y COALESCE
+    # para capturar filas legacy con estado NULL
     try:
         rows = c.execute("""
             SELECT a.id, a.codigo FROM areas_planta a
@@ -8361,8 +8334,8 @@ def planta_self_heal():
               AND NOT EXISTS (
                 SELECT 1 FROM produccion_programada pp
                 WHERE pp.area_id = a.id
-                  AND pp.estado IN ('programado','en_proceso','iniciado')
-                  AND date(pp.fecha_programada) >= date('now', '-3 days')
+                  AND COALESCE(pp.estado,'programado') IN ('programado','en_proceso','iniciado')
+                  AND date(pp.fecha_programada) >= date('now', '-1 day')
               )
         """).fetchall()
         for area_id, codigo in rows:

@@ -1648,6 +1648,51 @@ async function guardarProveedor(){
 
 // ─── Helpers globales de formato ───────────────────────────────────────────
 function _escHTML(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+
+/**
+ * jsonFetch · helper resiliente para fetch + JSON.parse.
+ * Sebastián 1-may-2026: Render devuelve HTML en 502/503 → JSON.parse crash.
+ * Este helper intenta JSON, si falla detecta HTML/text y devuelve {error}.
+ *
+ * Uso:
+ *   var d = await jsonFetch('/api/x');           // GET con credentials
+ *   var d = await jsonFetch('/api/x', {method:'POST', body: JSON.stringify({})});
+ *
+ * Throws solo si network fail. Para errores HTTP/parse devuelve objeto:
+ *   { ok: false, status: N, error: '...', _raw: '...' }
+ */
+async function jsonFetch(url, opts){
+  opts = opts || {};
+  if(!opts.credentials) opts.credentials = 'same-origin';
+  if(opts.body && !(opts.headers && opts.headers['Content-Type'])){
+    opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  }
+  var r;
+  try { r = await fetch(url, opts); }
+  catch(e){ return {ok:false, status:0, error:'Sin conexión: '+(e.message||e)}; }
+  var text = '';
+  try { text = await r.text(); } catch(e){ text = ''; }
+  // Detectar HTML (Render 502, login redirect, etc)
+  if(text && (text.charAt(0) === '<' || text.indexOf('<!DOCTYPE') === 0 || text.indexOf('<html') >= 0)){
+    return {
+      ok: false, status: r.status,
+      error: r.status === 502 || r.status === 503
+        ? 'Servidor reiniciando · espera 10s y reintenta'
+        : (r.status === 401 ? 'Sesión expirada · recarga la página' : 'Error '+r.status+' (HTML)'),
+      _raw: text.substring(0, 200),
+    };
+  }
+  // Intentar JSON
+  var d = null;
+  try { d = text ? JSON.parse(text) : {}; }
+  catch(e){
+    return {ok:false, status:r.status, error:'Respuesta no es JSON: '+(text.substring(0,80)||'(vacío)')};
+  }
+  // Adjuntar status si no lo trae
+  if(typeof d.ok === 'undefined') d.ok = r.ok && !d.error;
+  if(typeof d.status === 'undefined') d.status = r.status;
+  return d;
+}
 // _fmtMiles: separador de miles estilo Colombia (1.234.567). Usado por
 // MP rolling forecast y otros paneles. (Sebastian 1-may-2026: error global
 // "_fmtMiles no está definido" reportado en producción.)
@@ -13850,6 +13895,7 @@ async function ckMarcar(itemId, estado){
 
   async function cargarPlanificacion(dias){
     _planDias=dias;
+    _planLoaded=false;  // Sebastián 1-may-2026: reset flag para que switchTab recargue
     _setPlanHorizonBtn(dias);
     document.getElementById('plan-empty').style.display='none';
     document.getElementById('plan-loading').style.display='block';

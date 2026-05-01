@@ -577,17 +577,31 @@ def _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
     return True
 
 
-def _ya_ejecutado_hoy(conn, job_name):
-    """¿Ya se ejecutó este job hoy con éxito?"""
+def _ya_ejecutado_hoy(conn, job_name, retry_si_fallo_horas=2):
+    """¿Ya se ejecutó este job hoy?
+    Sebastián 1-may-2026: si falló (ok=0), permitir retry pero solo si la
+    última ejecución fue hace >2h (evita loop de 12 retries cada 5min que
+    duplican datos cuando el fallo es post-commit parcial).
+
+    Returns: True si ya hay éxito hoy, O si hubo fallo reciente (<2h).
+    """
     try:
-        row = conn.execute("""
+        # ¿Éxito hoy?
+        row_ok = conn.execute("""
             SELECT 1 FROM cron_jobs_runs
-            WHERE job_name = ?
-              AND ok = 1
+            WHERE job_name = ? AND ok = 1
               AND date(ejecutado_at) = date('now')
             LIMIT 1
         """, (job_name,)).fetchone()
-        return bool(row)
+        if row_ok: return True
+        # ¿Fallo reciente (<retry_si_fallo_horas)?
+        row_fail = conn.execute("""
+            SELECT 1 FROM cron_jobs_runs
+            WHERE job_name = ? AND ok = 0
+              AND ejecutado_at >= datetime('now', '-' || ? || ' hours')
+            LIMIT 1
+        """, (job_name, retry_si_fallo_horas)).fetchone()
+        return bool(row_fail)
     except Exception:
         return False
 
@@ -816,73 +830,15 @@ def job_auto_sc_mee_mensual(app):
 
 
 def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
-    """Sincroniza eventos del Calendar a produccion_programada en un rango.
+    """DEPRECATED 1-may-2026 (Calendar-first): NO inserta nada.
+    En la arquitectura nueva, Calendar es la única fuente de verdad y
+    la DB solo recibe filas cuando el usuario clickea ▶ Iniciar (Calendar)
+    desde Operación Live. Este helper queda como stub no-op para no
+    romper crons legacy que aún lo invoquen.
 
-    Sebastián 1-may-2026: 'no se activa solo · los eventos aparecen pero
-    sin sincronizar'. Ahora el cron ejecuta el sync automáticamente.
-    Devuelve: (insertadas, ya_existian)
+    Devuelve (0, 0) siempre.
     """
-    from blueprints.auto_plan import (
-        _calendar_events_cached, _match_producto_evento, _parsear_kg_evento,
-    )
-    from datetime import datetime as _dt
-    cal_events = _calendar_events_cached(force_refresh=True) or []
-    skus_aliases = {}
-    for sku_n, alias_csv in c.execute("""
-        SELECT producto_nombre, COALESCE(alias_calendar, '')
-        FROM sku_planeacion_config
-        WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
-    """).fetchall():
-        skus_aliases[sku_n] = alias_csv
-
-    import re as _re_local
-    insertadas = 0
-    ya_existian = 0
-    for ev in cal_events:
-        try:
-            f_ev = _dt.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
-        except Exception:
-            continue
-        if f_ev < fecha_inicio or f_ev > fecha_fin:
-            continue
-        # Match producto · umbral 50 (más permisivo)
-        producto_match = None
-        best_score = 0
-        for prod_n, alias_csv in skus_aliases.items():
-            try:
-                score = _match_producto_evento(prod_n, alias_csv,
-                                                 ev.get('titulo'), ev.get('descripcion',''))
-                if score >= 50 and score > best_score:
-                    best_score = score
-                    producto_match = prod_n
-            except Exception:
-                continue
-        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-        # FALLBACK: si no hay match, usar título crudo (Sebastián: insertar siempre)
-        if producto_match:
-            producto_final = producto_match
-        else:
-            t_clean = (ev.get('titulo') or '').strip()
-            t_clean = _re_local.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', t_clean, flags=_re_local.IGNORECASE)
-            t_clean = _re_local.sub(r'\s*\(.*?\)\s*$', '', t_clean)
-            t_clean = _re_local.sub(r'\s*\d+\s*kg.*$', '', t_clean, flags=_re_local.IGNORECASE)
-            producto_final = t_clean.strip().upper() or 'EVENTO SIN MATCH'
-        exists = c.execute("""
-            SELECT id FROM produccion_programada
-            WHERE producto = ? AND date(fecha_programada) = ?
-        """, (producto_final, f_ev.isoformat())).fetchone()
-        if exists:
-            ya_existian += 1
-            continue
-        c.execute("""
-            INSERT INTO produccion_programada
-              (producto, fecha_programada, lotes, cantidad_kg,
-               estado, observaciones, origen)
-            VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
-        """, (producto_final, f_ev.isoformat(), kg,
-              f'[auto-sync {user}] {(ev.get("titulo") or "")[:200]}'))
-        insertadas += 1
-    return insertadas, ya_existian
+    return 0, 0
 
 
 def job_auto_asignar_areas(app):
@@ -1143,7 +1099,11 @@ def job_lunes_7am_workflow(app):
 
 def job_self_heal(app):
     """Self-heal diario 7am: arregla problemas comunes detectados.
-    Sebastián 1-may-2026: 'que se ejecute perfecto · todo automático'."""
+    Sebastián 1-may-2026: 'que se ejecute perfecto · todo automático'.
+
+    Skip si lunes_7am_workflow YA corrió con éxito hoy (ese workflow ya
+    cubre auto-asignación · evita duplicados en logs).
+    """
     with app.app_context():
         from database import get_db
         from datetime import datetime as _dt, timedelta as _td, date as _date
@@ -1151,6 +1111,9 @@ def job_self_heal(app):
             _crear_limpieza_post_produccion, _auto_asignar_produccion
         )
         conn = get_db(); c = conn.cursor()
+        # Skip si lunes_7am corrió con éxito (solo lunes obviamente)
+        if _dt.now().weekday() == 0 and _ya_ejecutado_hoy(conn, 'lunes_7am_workflow'):
+            return True, {'skipped': True, 'razon': 'lunes_7am ya cubrió esto'}, 0
         acciones = []
 
         # 1) Habilitar cron si está deshabilitado
