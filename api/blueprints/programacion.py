@@ -3310,6 +3310,10 @@ def planta_centro_mando():
             })
 
         # 2) Eventos Calendar del horizonte que no están en DB → preview con IA
+        # Sebastián 1-may-2026: 'mala lectura · solo hay 2 producciones, no 7'
+        # FIX: filtrar SOLO eventos que parecen producciones (Fabricación,
+        # Producción, código SKU). Los Comité/Cita/Etapa/Ritual NO son
+        # producciones aunque el matcher pueda encontrarles partial match.
         try:
             from blueprints.auto_plan import (
                 _calendar_events_cached, _match_producto_evento, _parsear_kg_evento
@@ -3324,13 +3328,35 @@ def planta_centro_mando():
             """).fetchall():
                 skus_aliases[sku_n] = alias_csv
 
+            # Patrones que indican PRODUCCIÓN real (no reuniones/comités)
+            PROD_PATTERNS = _re.compile(
+                r'(fabric|produc|elabor|envas|maquila)',
+                _re.IGNORECASE
+            )
+            # Patrones que indican NO-producción (Comité, Cita, etc.)
+            NO_PROD_PATTERNS = _re.compile(
+                r'^\s*(comité|comite|cita|reunión|reunion|etapa|ritual|kickoff|'
+                r'inventario|rrhh|capacitación|capacitacion|ducha|fumigación|'
+                r'fumigacion|comité|alerta|booster\s+tensor|programado\s*:|'
+                r'generar.*actas|decisión|decision|lanzami)',
+                _re.IGNORECASE
+            )
+
+            # Deduplicación por (fecha, producto_final) Calendar
+            productos_calendar_por_fecha = set()
+
             for ev in cal_events:
                 try:
                     f_ev = ev.get('fecha', '')[:10]
                     if f_ev not in fechas_horizonte_iso: continue
                 except Exception:
                     continue
-                # Match SKU
+                titulo_orig = (ev.get('titulo') or '').strip()
+                # FILTRO 1: rechazar eventos que claramente no son producciones
+                if NO_PROD_PATTERNS.search(titulo_orig):
+                    continue
+                # FILTRO 2: aceptar solo si tiene match SKU O patrón producción
+                tiene_match_sku = False
                 producto_match = None
                 best = 0
                 for prod_n, alias_csv in skus_aliases.items():
@@ -3342,8 +3368,12 @@ def planta_centro_mando():
                         continue
                 if producto_match:
                     producto_final = producto_match
+                    tiene_match_sku = True
                 else:
-                    titulo = (ev.get('titulo') or '').strip()
+                    # Sin match SKU · solo aceptar si título indica fabricación
+                    if not PROD_PATTERNS.search(titulo_orig):
+                        continue  # ej. "Comité Mensual" no es producción
+                    titulo = titulo_orig
                     titulo = _re.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', titulo, flags=_re.IGNORECASE)
                     titulo = _re.sub(r'\s*\(.*?\)\s*$', '', titulo)
                     titulo = _re.sub(r'\s*\d+\s*kg.*$', '', titulo, flags=_re.IGNORECASE)
@@ -3351,6 +3381,11 @@ def planta_centro_mando():
                 # Skip si ya está en DB para esa fecha (no duplicar)
                 if (f_ev, producto_final.upper()) in productos_db_por_fecha:
                     continue
+                # DEDUP entre eventos Calendar del mismo día con mismo producto
+                key_cal = (f_ev, producto_final.upper())
+                if key_cal in productos_calendar_por_fecha:
+                    continue
+                productos_calendar_por_fecha.add(key_cal)
                 kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
                 ops = _ops_para(producto_final, f_ev)
                 producciones_dia.append({
@@ -3362,10 +3397,11 @@ def planta_centro_mando():
                     'accion': 'iniciar_calendar',
                     'accion_label': '▶ Iniciar (Calendar)',
                     'desde_calendar': True,
-                    'titulo_calendar': (ev.get('titulo') or '')[:120],
+                    'tiene_match_sku': tiene_match_sku,
+                    'titulo_calendar': titulo_orig[:120],
                     'payload_iniciar': {
                         'producto': producto_final, 'fecha': f_ev,
-                        'kg': kg, 'titulo': (ev.get('titulo') or '')[:200],
+                        'kg': kg, 'titulo': titulo_orig[:200],
                     },
                 })
         except Exception as _e:
