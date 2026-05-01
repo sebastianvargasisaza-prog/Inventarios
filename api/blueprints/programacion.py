@@ -2954,7 +2954,15 @@ def planta_centro_mando():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
-    hoy = date.today().isoformat()
+    # Sebastián 1-may-2026: respeta selector de fecha + horizonte 7 días
+    # si el día seleccionado está vacío, muestra próximos 7 días (no dejar
+    # vacío al jefe cuando hoy es viernes y todo está programado para lunes)
+    fecha_param = (request.args.get('fecha') or '').strip()[:10]
+    try:
+        fecha_sel = datetime.strptime(fecha_param, '%Y-%m-%d').date() if fecha_param else date.today()
+    except Exception:
+        fecha_sel = date.today()
+    hoy = fecha_sel.isoformat()
 
     # Areas con producciones activas (in progress: inicio_real_at NOT NULL,
     # fin_real_at NULL)
@@ -3045,12 +3053,58 @@ def planta_centro_mando():
     # ── PRODUCCIONES DEL DÍA · Calendar-first (Sebastián 1-may-2026) ──
     # Unifica todo en el mapa: cards arriba muestran lo que toca HOY pero
     # aún no se ha iniciado · click ▶ los marca en proceso en su sala IA.
+    # Si el día seleccionado está vacío → muestra próximos 7 días para
+    # que el jefe siempre vea qué viene (no quedar en blanco un viernes).
     producciones_dia = []
+    fechas_horizonte = [fecha_sel + timedelta(days=i) for i in range(7)]
+
+    # Helper IA preview operarios (afinidad ponderada · rotación determinística)
+    import hashlib
+    op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower())
+               for r in conn.execute("""
+                    SELECT id, nombre || ' ' || COALESCE(apellido,''),
+                           COALESCE(rol_predeterminado,'')
+                    FROM operarios_planta
+                    WHERE COALESCE(activo,1)=1 AND COALESCE(es_jefe_produccion,0)=0
+                    ORDER BY id
+               """).fetchall()]
+    AFINIDAD_CM = {
+        'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'todero': 2},
+        'elaboracion':  {'dispensacion': 3, 'elaboracion': 4, 'todero': 2},
+        'envasado':     {'envasado': 4, 'todero': 2},
+        'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'todero': 2},
+    }
+    def _hash_cm(s):
+        return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
+    def _ops_para(producto_n, fecha_iso):
+        if not op_pool: return {}
+        roles = ('dispensacion','elaboracion','envasado','acondicionamiento')
+        usados = set()
+        out = {}
+        for rol in roles:
+            cands = [(oid, nom, rp) for (oid, nom, rp) in op_pool if oid not in usados]
+            if not cands:
+                out[rol] = ''
+                continue
+            afin = AFINIDAD_CM.get(rol, {})
+            weighted = [(afin.get(rp, 1) if rp else 1, oid, nom) for (oid, nom, rp) in cands]
+            total = sum(w for w, _, _ in weighted)
+            target = _hash_cm(f'{producto_n}|{fecha_iso}|{rol}') % max(total, 1)
+            cum = 0
+            chosen = weighted[0]
+            for w, oid, nom in weighted:
+                cum += w
+                if target < cum:
+                    chosen = (w, oid, nom); break
+            out[rol] = chosen[2]
+            usados.add(chosen[1])
+        return out
+
     try:
-        # 1) Filas DB del día (incluye iniciadas, en_proceso, programadas)
+        # 1) Filas DB del horizonte (incluye iniciadas, en_proceso, programadas)
         rows_db = conn.execute("""
             SELECT pp.id, pp.producto, COALESCE(pp.cantidad_kg,0), pp.lotes,
-                   pp.estado, pp.area_id,
+                   pp.estado, pp.area_id, date(pp.fecha_programada) as f,
                    ap.codigo as area_cod, ap.nombre as area_nom,
                    o1.nombre || ' ' || COALESCE(o1.apellido,'') as op_disp,
                    o2.nombre || ' ' || COALESCE(o2.apellido,'') as op_elab,
@@ -3063,15 +3117,16 @@ def planta_centro_mando():
             LEFT JOIN operarios_planta o2 ON o2.id = pp.operario_elaboracion_id
             LEFT JOIN operarios_planta o3 ON o3.id = pp.operario_envasado_id
             LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
-            WHERE date(pp.fecha_programada) = ?
+            WHERE date(pp.fecha_programada) BETWEEN ? AND ?
               AND COALESCE(pp.estado, 'programado') != 'cancelado'
-            ORDER BY pp.id
-        """, (hoy,)).fetchall()
-        productos_db = set()
+            ORDER BY pp.fecha_programada, pp.id
+        """, (fechas_horizonte[0].isoformat(), fechas_horizonte[-1].isoformat())).fetchall()
+        productos_db_por_fecha = set()  # (fecha, producto_upper)
         for r in rows_db:
-            (pid, prod_n, kg, lotes, estado, area_id, area_cod, area_nom,
+            (pid, prod_n, kg, lotes, estado, area_id, f_iso,
+             area_cod, area_nom,
              op_disp, op_elab, op_env, op_acon, inicio, fin) = r
-            productos_db.add((prod_n or '').upper())
+            productos_db_por_fecha.add((f_iso, (prod_n or '').upper()))
             estado = (estado or 'programado').strip()
             # Acción según estado
             if estado == 'completado':
@@ -3084,7 +3139,7 @@ def planta_centro_mando():
                 accion, accion_label = 'asignar_ia', '🤖 IA asignar'
             producciones_dia.append({
                 'id': pid, 'producto': prod_n, 'kg': kg, 'lotes': lotes or 1,
-                'estado': estado,
+                'estado': estado, 'fecha': f_iso,
                 'area': {'codigo': area_cod or '', 'nombre': area_nom or ''},
                 'operarios': {
                     'dispensacion': (op_disp or '').strip(),
@@ -3097,8 +3152,7 @@ def planta_centro_mando():
                 'inicio_real_at': inicio, 'fin_real_at': fin,
             })
 
-        # 2) Eventos Calendar de HOY que no están en DB → preview con IA
-        # Importar lazy las funciones de auto_plan
+        # 2) Eventos Calendar del horizonte que no están en DB → preview con IA
         try:
             from blueprints.auto_plan import (
                 _calendar_events_cached, _match_producto_evento, _parsear_kg_evento
@@ -3113,52 +3167,11 @@ def planta_centro_mando():
             """).fetchall():
                 skus_aliases[sku_n] = alias_csv
 
-            # Pool operarios + áreas (para IA preview)
-            import hashlib
-            op_pool = [(r[0], (r[1] or '').strip(), (r[2] or '').strip().lower())
-                       for r in conn.execute("""
-                            SELECT id, nombre || ' ' || COALESCE(apellido,''),
-                                   COALESCE(rol_predeterminado,'')
-                            FROM operarios_planta
-                            WHERE COALESCE(activo,1)=1 AND COALESCE(es_jefe_produccion,0)=0
-                            ORDER BY id
-                       """).fetchall()]
-            AFINIDAD_CM = {
-                'dispensacion': {'dispensacion': 4, 'elaboracion': 1, 'todero': 2},
-                'elaboracion':  {'dispensacion': 3, 'elaboracion': 4, 'todero': 2},
-                'envasado':     {'envasado': 4, 'todero': 2},
-                'acondicionamiento': {'acondicionamiento': 4, 'envasado': 2, 'todero': 2},
-            }
-            def _hash_cm(s):
-                return int(hashlib.md5(s.encode('utf-8')).hexdigest()[:8], 16)
-            def _ops_para(producto_n, fecha_iso):
-                if not op_pool: return {}
-                roles = ('dispensacion','elaboracion','envasado','acondicionamiento')
-                usados = set()
-                out = {}
-                for rol in roles:
-                    cands = [(oid, nom, rp) for (oid, nom, rp) in op_pool if oid not in usados]
-                    if not cands:
-                        out[rol] = ''
-                        continue
-                    afin = AFINIDAD_CM.get(rol, {})
-                    weighted = [(afin.get(rp, 1) if rp else 1, oid, nom) for (oid, nom, rp) in cands]
-                    total = sum(w for w, _, _ in weighted)
-                    target = _hash_cm(f'{producto_n}|{fecha_iso}|{rol}') % max(total, 1)
-                    cum = 0
-                    chosen = weighted[0]
-                    for w, oid, nom in weighted:
-                        cum += w
-                        if target < cum:
-                            chosen = (w, oid, nom); break
-                    out[rol] = chosen[2]
-                    usados.add(chosen[1])
-                return out
-
+            fechas_horizonte_iso = set(f.isoformat() for f in fechas_horizonte)
             for ev in cal_events:
                 try:
                     f_ev = ev.get('fecha', '')[:10]
-                    if f_ev != hoy: continue
+                    if f_ev not in fechas_horizonte_iso: continue
                 except Exception:
                     continue
                 # Match SKU
@@ -3179,15 +3192,15 @@ def planta_centro_mando():
                     titulo = _re.sub(r'\s*\(.*?\)\s*$', '', titulo)
                     titulo = _re.sub(r'\s*\d+\s*kg.*$', '', titulo, flags=_re.IGNORECASE)
                     producto_final = titulo.strip().upper() or 'EVENTO SIN TÍTULO'
-                # Skip si ya está en DB (no duplicar)
-                if producto_final.upper() in productos_db:
+                # Skip si ya está en DB para esa fecha (no duplicar)
+                if (f_ev, producto_final.upper()) in productos_db_por_fecha:
                     continue
                 kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-                ops = _ops_para(producto_final, hoy)
+                ops = _ops_para(producto_final, f_ev)
                 producciones_dia.append({
                     'id': None, 'producto': producto_final,
                     'kg': kg, 'lotes': 1,
-                    'estado': 'planeado',
+                    'estado': 'planeado', 'fecha': f_ev,
                     'area': {'codigo': '', 'nombre': ''},
                     'operarios': ops,
                     'accion': 'iniciar_calendar',
@@ -3195,12 +3208,19 @@ def planta_centro_mando():
                     'desde_calendar': True,
                     'titulo_calendar': (ev.get('titulo') or '')[:120],
                     'payload_iniciar': {
-                        'producto': producto_final, 'fecha': hoy,
+                        'producto': producto_final, 'fecha': f_ev,
                         'kg': kg, 'titulo': (ev.get('titulo') or '')[:200],
                     },
                 })
         except Exception as _e:
             logging.getLogger('programacion').warning(f'[centro-mando] preview Calendar falla: {_e}')
+
+        # Ordenar por fecha + estado (en_proceso primero, completado al final)
+        def _orden_key(p):
+            est_orden = {'en_proceso': 0, 'iniciado': 0, 'programado': 1,
+                         'planeado': 2, 'completado': 3}
+            return (p.get('fecha', ''), est_orden.get(p.get('estado', ''), 4))
+        producciones_dia.sort(key=_orden_key)
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando] producciones_dia falla: {_e}')
 

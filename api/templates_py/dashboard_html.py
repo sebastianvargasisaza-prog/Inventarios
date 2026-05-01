@@ -7800,7 +7800,7 @@ async function ckMarcar(itemId, estado){
     var fechaInp = document.getElementById('plano-fecha');
     if(!fechaInp.value){ fechaInp.value = new Date().toISOString().slice(0,10); }
     try{
-      var r = await fetch('/api/planta/centro-mando');
+      var r = await fetch('/api/planta/centro-mando?fecha='+encodeURIComponent(fechaInp.value));
       var d = await r.json();
       _CM_LAST = d;
       // Pintar KPIs
@@ -7877,16 +7877,34 @@ async function ckMarcar(itemId, estado){
     var grid = document.getElementById('cm-dia-cards');
     if(!grid) return;
     if(!prods.length){
-      if(sub) sub.textContent = 'Sin producciones programadas para hoy';
-      grid.innerHTML = '<div style="color:#94a3b8;font-style:italic;font-size:11px;padding:10px;text-align:center">Sin producciones · revisa Calendar o Plan</div>';
+      if(sub) sub.textContent = 'Sin producciones programadas en próximos 7 días';
+      grid.innerHTML = '<div style="color:#94a3b8;font-style:italic;font-size:11px;padding:10px;text-align:center">Sin producciones · revisa Google Calendar (configurado en Configuración → Calendar)</div>';
       return;
     }
-    var n_pendientes = (kpis||{}).producciones_dia_pendientes || 0;
+    var n_pendientes = prods.filter(function(p){ return p.estado === 'planeado' || p.estado === 'programado'; }).length;
     var n_iniciadas = prods.filter(function(p){ return p.estado === 'en_proceso' || p.estado === 'iniciado'; }).length;
     var n_terminadas = prods.filter(function(p){ return p.estado === 'completado'; }).length;
-    if(sub) sub.textContent = prods.length + ' total · ' + n_pendientes + ' pendientes · ' + n_iniciadas + ' en proceso · ' + n_terminadas + ' terminadas';
+    if(sub) sub.textContent = prods.length + ' total · ' + n_pendientes + ' pendientes · ' + n_iniciadas + ' en proceso · ' + n_terminadas + ' terminadas (próximos 7 días)';
 
-    grid.innerHTML = prods.map(function(p){
+    // Agrupar por fecha
+    var porFecha = {};
+    prods.forEach(function(p){
+      var f = p.fecha || 'sin-fecha';
+      if(!porFecha[f]) porFecha[f] = [];
+      porFecha[f].push(p);
+    });
+    var fechasOrdenadas = Object.keys(porFecha).sort();
+    var hoyIso = new Date().toISOString().slice(0,10);
+    var nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    function _fmtFechaCorta(iso){
+      try{
+        var d = new Date(iso+'T00:00:00');
+        return nombresDia[d.getDay()] + ' ' + iso.substring(5);
+      }catch(e){ return iso; }
+    }
+
+    function _renderCard(p){
       // Color border según estado
       var borderCol = '#cbd5e1';
       var bgCol = '#fff';
@@ -7927,7 +7945,23 @@ async function ckMarcar(itemId, estado){
       }
       html += '</div>';
       return html;
-    }).join('');
+    }
+
+    // Render con cabecera por día
+    grid.style.display = 'block';
+    var html = '';
+    fechasOrdenadas.forEach(function(fecha){
+      var esHoy = fecha === hoyIso;
+      var bgCab = esHoy ? '#fbbf24' : '#f1f5f9';
+      var fgCab = esHoy ? '#78350f' : '#475569';
+      var label = (esHoy ? '🟡 HOY · ' : '') + _fmtFechaCorta(fecha);
+      html += '<div style="margin-bottom:10px">';
+      html += '<div style="background:'+bgCab+';color:'+fgCab+';padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;margin-bottom:6px;display:inline-block">'+label+' · '+porFecha[fecha].length+' producciones</div>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">';
+      html += porFecha[fecha].map(_renderCard).join('');
+      html += '</div></div>';
+    });
+    grid.innerHTML = html;
   }
 
   // Event delegation para botones de cards (Sebastián 1-may-2026)
