@@ -7049,6 +7049,50 @@ def semana_produccion():
     dias_semana = [base + timedelta(days=i) for i in range(5)]
     nombres_dia = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE']
 
+    # Pre-cargar eventos del Calendar para los próximos 14d (para mergear cuando
+    # produccion_programada esté vacía o tenga menos que el Calendar)
+    calendar_eventos_por_fecha = {}
+    try:
+        cal_events = _calendar_events_cached() or []
+        skus_aliases = {}
+        try:
+            for sku_n, alias_csv in c.execute("""
+                SELECT producto_nombre, COALESCE(alias_calendar,'')
+                FROM sku_planeacion_config
+                WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+            """).fetchall():
+                skus_aliases[sku_n] = alias_csv
+        except Exception:
+            pass
+        for ev in cal_events:
+            try:
+                f_ev = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if f_ev < dias_semana[0] or f_ev > dias_semana[-1]:
+                continue
+            # Match producto
+            producto_match = None
+            best_score = 0
+            for prod_n, alias_csv in skus_aliases.items():
+                try:
+                    score = _match_producto_evento(prod_n, alias_csv,
+                                                     ev.get('titulo'), ev.get('descripcion',''))
+                    if score >= 60 and score > best_score:
+                        best_score = score
+                        producto_match = prod_n
+                except Exception:
+                    continue
+            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+            calendar_eventos_por_fecha.setdefault(f_ev.isoformat(), []).append({
+                'titulo': ev.get('titulo', ''),
+                'producto_match': producto_match,
+                'kg': kg,
+                'desde_calendar': True,
+            })
+    except Exception:
+        pass
+
     dias_data = []
     for i, fecha in enumerate(dias_semana):
         es_hoy = (fecha == fecha_hoy)
@@ -7056,7 +7100,7 @@ def semana_produccion():
         es_lmv = wd in (0, 2, 4)  # lunes, miércoles, viernes
         tipo_dia = 'PRODUCCIÓN' if es_lmv else 'ACOND/CONTEO'
 
-        # Producciones programadas ese día
+        # Producciones programadas ese día (desde produccion_programada)
         prods_rows = c.execute("""
             SELECT pp.id, pp.producto, pp.lotes, COALESCE(pp.cantidad_kg, 0),
                    pp.estado, pp.area_id,
@@ -7111,6 +7155,29 @@ def semana_produccion():
                 'inicio_real_at': inicio_at, 'fin_real_at': fin_at,
             })
 
+        # MERGE: agregar eventos del Calendar que NO tienen contraparte en DB
+        # (para que aparezcan aunque la sync calendar→produccion_programada no
+        # haya corrido aún)
+        productos_en_db = {p['producto'] for p in prods if p.get('producto')}
+        for cev in calendar_eventos_por_fecha.get(fecha.isoformat(), []):
+            prod_n = cev.get('producto_match') or cev.get('titulo','').split('–')[0].strip()
+            if not prod_n: continue
+            # Si ya está en DB, skip (evita duplicados)
+            if any(prod_n.upper() == (p.get('producto') or '').upper() for p in prods):
+                continue
+            prods.append({
+                'id': None, 'producto': prod_n,
+                'lotes': 1, 'kg': cev.get('kg') or 0,
+                'estado': 'calendar_sin_sync',
+                'area': {'codigo': '', 'nombre': '', 'estado': ''},
+                'envasado': '',
+                'operarios': {'dispensacion':'','elaboracion':'','envasado':'','acondicionamiento':''},
+                'ya_asignada': False,
+                'accion': 'sincronizar', 'accion_label': '🔄 Sync Calendar',
+                'desde_calendar': True,
+                'titulo_calendar': cev.get('titulo', '')[:60],
+            })
+
         # Limpiezas programadas ese día
         limpiezas = []
         try:
@@ -7141,6 +7208,7 @@ def semana_produccion():
             'total_kg': sum(p['kg'] for p in prods),
             'total_lotes': sum(p['lotes'] or 0 for p in prods),
             'sin_asignar': sum(1 for p in prods if not p['ya_asignada']),
+            'sin_sync': sum(1 for p in prods if p.get('desde_calendar')),
         })
 
     # Estado salas en vivo (mini)

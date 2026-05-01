@@ -7734,6 +7734,18 @@ async function ckMarcar(itemId, estado){
       if(tab==='planv2' && typeof planV2Init==='function') planV2Init();
       if(tab==='asignacion' && typeof asigInit==='function') asigInit();
       if(tab==='config' && typeof cfgInit==='function') cfgInit();
+      // Sebastián 1-may-2026: paneles operativos viven en Asignación
+      if(tab==='asignacion'){
+        if(typeof semanaRecargar === 'function') semanaRecargar();
+        if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
+        if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
+        if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
+      }
+      if(tab==='config'){
+        if(typeof healthRecargar === 'function') healthRecargar();
+        if(typeof reporteEjecutivoRecargar === 'function') reporteEjecutivoRecargar();
+        if(typeof cronStatusRecargar === 'function') cronStatusRecargar();
+      }
     } catch(err) {
       _toast('Error en switchProgTab: ' + err.message, 0);
     }
@@ -9632,17 +9644,37 @@ async function ckMarcar(itemId, estado){
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
 
-    // Sebastián 1-may-2026: "consolida claro". 2 niveles:
-    // ESENCIALES (siempre visibles, orden de uso diario):
-    //   1. Salas vivo · 2. Mi Día · 3. Alertas etiquetas+D20 ·
-    //   4. Auto-SC MP · 5. Auto-SC MEE
-    // AVANZADO (detrás de botón ⚙️ collapsable):
-    //   6. Reporte ejecutivo · 7. Pre-producción · 8. Crons status
-    //   9. Items por asignar · 10. Config MEE
-    var esenciales = ['plan-esta-semana', 'plan-health', 'plan-salas-vivo',
-                       'plan-mi-dia', 'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
-    var avanzados = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
-                       'plan-cron-status', 'mee-asignar-panel', 'mee-config-panel'];
+    // Sebastián 1-may-2026 (revisión): "Plan = necesidades del mes simple ·
+    // Asignación Semanal = donde se hará todo · Centro de Mando = mapa".
+    // PLAN: sólo necesidades (qué solicitar) + alertas
+    // ASIGNACION: Esta Semana + Mi Día + Salas Vivo
+    // CONFIG: Salud + Reporte + Crons + Items asignar + Config MEE
+    var esenciales = ['plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
+    var avanzados = ['mee-asignar-panel', 'mee-config-panel'];
+
+    // Mover paneles operativos al tab Asignación Semanal
+    var asignacion = document.getElementById('ptab-asignacion');
+    var asigGrid = document.getElementById('asig-grid');
+    if(asignacion && asigGrid){
+      var panelesAsig = ['plan-esta-semana', 'plan-salas-vivo', 'plan-mi-dia', 'plan-pre-produccion'];
+      panelesAsig.forEach(function(id){
+        var el = document.getElementById(id);
+        if(el && asigGrid.parentNode){
+          // Insertar ANTES del grid existente (Esta Semana arriba)
+          asigGrid.parentNode.insertBefore(el, asigGrid);
+        }
+      });
+    }
+
+    // Mover paneles admin/config al tab Configuración
+    var config = document.getElementById('ptab-config');
+    if(config){
+      var panelesConfig = ['plan-health', 'plan-reporte-ejecutivo', 'plan-cron-status'];
+      panelesConfig.forEach(function(id){
+        var el = document.getElementById(id);
+        if(el) config.appendChild(el);
+      });
+    }
 
     // Crear contenedor de avanzados (oculto por default)
     var avBtn = document.createElement('div');
@@ -9680,14 +9712,11 @@ async function ckMarcar(itemId, estado){
 
     window._meePanelsMoved = true;
     // Cargar datos esenciales (los avanzados se cargan al toggle)
-    if(typeof semanaRecargar === 'function') semanaRecargar();
-    if(typeof healthRecargar === 'function') healthRecargar();
+    // Plan = sólo necesidades del mes a solicitar (simple)
     if(typeof autoscRecargar === 'function') autoscRecargar();
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
     if(typeof alertD20Recargar === 'function') alertD20Recargar();
-    if(typeof miDiaCargarOperarios === 'function') miDiaCargarOperarios();
-    if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
     // Counter del botón asignar (sin abrir panel)
     try{
       fetch('/api/planta/items-por-asignar', {credentials:'same-origin'})
