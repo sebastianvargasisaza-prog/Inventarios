@@ -4969,16 +4969,21 @@ def auto_sc_status():
 #     van por cron diario D-20, fase aparte)
 
 
-def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
+def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None, generico=False):
     """Calcula SCs MEE proyectando ventas por SKU.
 
     Args:
       modo: 'mensual' (default, horizonte por origen) o 'urgente' (30d todos)
       origen_filtro: 'China'|'Local'|None (None = todos)
+      generico: si True, para SKUs SIN mapping en sku_mee_config genera items
+                "abiertos" tipo envase/tapa/etiqueta sin código MEE específico.
+                Catalina los asigna en Compras y el sistema aprende.
+                Sebastián (1-may-2026): "el sistema ya sabe envase que necesita,
+                que se solicite automatico, y sea catalina quien asigne".
 
     Returns:
       {scs_por_proveedor (clave='Proveedor (Origen)'), items_huerfanos,
-       kpis, fecha_analisis, modo, origen_filtro}
+       items_genericos, kpis, fecha_analisis, modo, origen_filtro}
     """
     c = conn.cursor()
     fecha_hoy = datetime.now().date()
@@ -5117,6 +5122,61 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
                 'unidades_mee_estimadas': round(cant_mee, 0),
             })
 
+    # 7) MODO GENÉRICO: para SKUs sin mapping, generar items "abiertos"
+    # tipo envase + tapa + etiqueta + (serigrafia si aplica) que Catalina
+    # asignará en Compras. El sistema aprende del mapeo (PUT sc-mee-asignar).
+    items_genericos = []
+    if generico:
+        for sku in skus_lista:
+            # Si ya tiene mappings, NO generar genéricos (los reales toman precedencia)
+            if sku in sku_components:
+                continue
+            try:
+                v180 = _ventas_diarias_por_sku(c, sku, dias=180)
+                v180_total = sum(q for _, q in v180)
+            except Exception:
+                v180_total = 0
+            vel_diaria = v180_total / 180.0 if v180_total else 0
+            if vel_diaria <= 0:
+                continue
+            try:
+                buf_ia = _factor_buffer_ia(c, sku)
+            except Exception:
+                buf_ia = 1.0
+            # Horizonte por default Local 90d (Catalina ajusta luego)
+            horizonte = HORIZONTE_URGENTE if modo == 'urgente' else HORIZONTE_LOCAL
+            fecha_medio = fecha_hoy + timedelta(days=horizonte // 2)
+            buf_est = _factor_buffer_estacional(fecha_medio)
+            cant_estimada = round(vel_diaria * horizonte * buf_ia * buf_est, 0)
+            if cant_estimada <= 0:
+                continue
+            # Componentes "estándar" que necesita TODO SKU vendido
+            componentes_default = [
+                ('envase', '📦 Envase primario'),
+                ('tapa', '🔘 Tapa o sistema dosificador'),
+                ('etiqueta', '🏷️ Etiqueta del producto'),
+            ]
+            for tipo, label in componentes_default:
+                items_genericos.append({
+                    'sku_codigo': sku,
+                    'componente_tipo': tipo,
+                    'descripcion': f'{label} para {sku}',
+                    'cantidad_unidades': cant_estimada,
+                    'velocidad_diaria': round(vel_diaria, 2),
+                    'horizonte_dias': horizonte,
+                    'buf_ia': buf_ia,
+                    'buf_est': round(buf_est, 2),
+                    'mee_codigo': '',  # vacío = por asignar
+                    'proveedor_sugerido': '',  # vacío = por asignar
+                    'justificacion': (
+                        f'🎯 GENÉRICO · {label} para {sku} · '
+                        f'{cant_estimada:.0f} ud (vel {vel_diaria:.2f}/d × {horizonte}d × '
+                        f'IA {buf_ia} × est {buf_est:.2f}) · '
+                        f'CATALINA: asignar código MEE específico + proveedor; '
+                        f'el sistema guardará el mapping para futuras SCs.'
+                    ),
+                })
+
     # 6) Déficit + MOQ + agrupar por (proveedor, origen)
     scs_por_proveedor = {}
     items_huerfanos = []
@@ -5171,10 +5231,12 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
 
     return {
         'modo': modo,
+        'generico': generico,
         'origen_filtro': origen_filtro,
         'fecha_analisis': fecha_hoy.isoformat(),
         'scs_por_proveedor': scs_por_proveedor,
         'items_huerfanos': items_huerfanos,
+        'items_genericos': items_genericos,
         'kpis': {
             'total_items': total_items,
             'total_proveedores': len(scs_por_proveedor),
@@ -5183,6 +5245,8 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
             'mee_huerfanas': len(items_huerfanos),
             'skus_evaluados': len(skus_lista),
             'mee_evaluados': len(demanda_mee),
+            'items_genericos_pendientes': len(items_genericos),
+            'skus_genericos': len(set(it['sku_codigo'] for it in items_genericos)),
         },
     }
 
@@ -5195,10 +5259,12 @@ def _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy, razon=''):
         'fecha_analisis': fecha_hoy.isoformat(),
         'scs_por_proveedor': {},
         'items_huerfanos': [],
+        'items_genericos': [],
         'kpis': {
             'total_items': 0, 'total_proveedores': 0, 'total_unidades': 0,
             'total_valor_estimado': 0, 'mee_huerfanas': 0,
             'skus_evaluados': 0, 'mee_evaluados': 0,
+            'items_genericos_pendientes': 0, 'skus_genericos': 0,
         },
         'razon_vacio': razon,
     }
@@ -5208,15 +5274,18 @@ def _empty_auto_sc_mee_result(modo, origen_filtro, fecha_hoy, razon=''):
 def auto_sc_mee_preview():
     """Preview Auto-SC MEE sin crear SCs reales.
 
-    Query: ?modo=mensual|urgente  ?origen=China|Local
+    Query: ?modo=mensual|urgente  ?origen=China|Local  ?generico=1
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     modo = (request.args.get('modo') or 'mensual').strip()
     origen = (request.args.get('origen') or '').strip() or None
+    generico = request.args.get('generico', '0') in ('1','true','yes')
     if origen and origen not in ('China', 'Local', 'Mixto'):
         return jsonify({'error': 'origen debe ser China, Local o Mixto'}), 400
-    return jsonify(_calcular_auto_sc_mee(get_db(), modo=modo, origen_filtro=origen))
+    return jsonify(_calcular_auto_sc_mee(get_db(), modo=modo,
+                                           origen_filtro=origen,
+                                           generico=generico))
 
 
 @bp.route('/api/planta/auto-sc-mee-generar', methods=['POST'])
@@ -5224,7 +5293,7 @@ def auto_sc_mee_generar():
     """Crea las SCs MEE reales en estado 'Pendiente'.
 
     Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
-    Body: {modo, origen?, enviar_email?}
+    Body: {modo, origen?, enviar_email?, generico?}
     """
     clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
     clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
@@ -5238,10 +5307,11 @@ def auto_sc_mee_generar():
     if origen and origen not in ('China', 'Local', 'Mixto'):
         return jsonify({'error': 'origen invalido'}), 400
     enviar_email = d.get('enviar_email', True)
+    generico = bool(d.get('generico', False))
     user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
 
     conn = get_db(); c = conn.cursor()
-    plan = _calcular_auto_sc_mee(conn, modo=modo, origen_filtro=origen)
+    plan = _calcular_auto_sc_mee(conn, modo=modo, origen_filtro=origen, generico=generico)
 
     scs_creadas = []
     fecha_hoy_iso = datetime.now().date().isoformat()
@@ -5301,6 +5371,56 @@ def auto_sc_mee_generar():
             'items_count': len(items),
             'total_unidades': round(sum(it['cantidad_unidades'] for it in items), 0),
             'valor_estimado': round(sum(it.get('valor_estimado', 0) for it in items), 2),
+        })
+    # 2) SC GENÉRICA (Sebastián 1-may-2026): items abiertos para SKUs sin
+    # mapping. 1 sola SC con todos los items a asignar por Catalina.
+    if generico and plan.get('items_genericos'):
+        items_gen = plan['items_genericos']
+        c.execute("""
+            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+            FROM solicitudes_compra WHERE numero LIKE ?
+        """, (f"SOL-{datetime.now().strftime('%Y')}-%",))
+        n_gen = (c.fetchone()[0] or 0) + 1
+        numero_gen = f"SOL-{datetime.now().strftime('%Y')}-{n_gen:04d}"
+        n_skus = len(set(it['sku_codigo'] for it in items_gen))
+        observ_gen = (f'🎯 SC GENÉRICA Auto-MEE ({modo}) · {len(items_gen)} items '
+                      f'de {n_skus} SKUs SIN mapping · Catalina debe asignar '
+                      f'mee_codigo + proveedor en cada item · el sistema '
+                      f'aprende y guarda en sku_mee_config para futuras SCs')
+        c.execute("""
+            INSERT INTO solicitudes_compra
+              (numero, fecha, estado, solicitante, urgencia, observaciones,
+               area, empresa, categoria, tipo, fecha_requerida, valor)
+            VALUES (?, ?, 'Pendiente', ?, 'Normal', ?, 'Produccion', 'Espagiria',
+                    'Material de Empaque', 'Compra', ?, 0)
+        """, (numero_gen, datetime.now().isoformat(), user, observ_gen,
+              fecha_hoy_iso))
+        for it in items_gen:
+            try:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado, proveedor_sugerido)
+                    VALUES (?, '', ?, ?, 'und', ?, 0, '')
+                """, (numero_gen,
+                      f"[POR-ASIGNAR] {it['descripcion']}",
+                      it['cantidad_unidades'], it['justificacion']))
+            except sqlite3.OperationalError:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado)
+                    VALUES (?, '', ?, ?, 'und', ?, 0)
+                """, (numero_gen,
+                      f"[POR-ASIGNAR] {it['descripcion']}",
+                      it['cantidad_unidades'], it['justificacion']))
+        scs_creadas.append({
+            'numero': numero_gen,
+            'proveedor': '(POR ASIGNAR)',
+            'origen': 'generico',
+            'items_count': len(items_gen),
+            'total_unidades': sum(it['cantidad_unidades'] for it in items_gen),
+            'valor_estimado': 0,
         })
 
     conn.commit()
@@ -5872,6 +5992,156 @@ def _score_fuzzy(palabras_a, palabras_b):
     if palabras_a.issubset(palabras_b):
         score = min(100, score + 25)
     return round(score, 1)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# APRENDIZAJE MEE · Catalina asigna código MEE a item genérico
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (1-may-2026): "sea catalina quien asigne que se hace en compras,
+# serigrafia, tampografia etiqueta, proveerdor y a cual corresponde y cuando
+# se use se descuenta automatico? y asi se van guardando para el futuro
+# porque hoy en dia no sabemos a quien corresponde cada cosa".
+
+@bp.route('/api/planta/sc-mee-asignar', methods=['POST'])
+def sc_mee_asignar():
+    """Catalina asigna un código MEE específico a un item de SC genérica
+    y el sistema APRENDE: guarda el mapping en sku_mee_config para próximas
+    SCs (no vuelve a generar genérico para ese SKU+componente).
+
+    Body:
+      sc_item_id: int — id del solicitudes_compra_items
+      mee_codigo: str — código MEE asignado (de maestro_mee)
+      proveedor: str (opcional) — actualizar también mee_lead_time_config
+      cantidad_por_unidad: float (default 1)
+
+    Acciones:
+      1. UPDATE solicitudes_compra_items: codigo_mp = mee_codigo,
+         nombre_mp = descripción real, proveedor_sugerido
+      2. INSERT OR IGNORE sku_mee_config: aprende para futuro
+      3. Si proveedor pasado, UPDATE mee_lead_time_config.proveedor_principal
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    sc_item_id = d.get('sc_item_id')
+    mee_codigo = (d.get('mee_codigo') or '').strip()
+    proveedor = (d.get('proveedor') or '').strip()
+    cantidad_pu = float(d.get('cantidad_por_unidad', 1))
+    if not sc_item_id or not mee_codigo:
+        return jsonify({'error': 'sc_item_id y mee_codigo requeridos'}), 400
+
+    conn = get_db(); c = conn.cursor()
+
+    # Validar mee_codigo existe
+    mee = c.execute(
+        "SELECT codigo, descripcion, categoria FROM maestro_mee WHERE codigo = ?",
+        (mee_codigo,)
+    ).fetchone()
+    if not mee:
+        return jsonify({'error': f'MEE {mee_codigo} no existe'}), 400
+
+    # Recuperar item original (para extraer SKU + componente del nombre_mp)
+    item = c.execute("""
+        SELECT id, numero, codigo_mp, nombre_mp, justificacion
+        FROM solicitudes_compra_items WHERE id = ?
+    """, (sc_item_id,)).fetchone()
+    if not item:
+        return jsonify({'error': 'Item de SC no encontrado'}), 404
+    item_id, sc_numero, codigo_actual, nombre, justif = item
+
+    # Extraer SKU + tipo componente del nombre/justificación
+    # Formato esperado: "[POR-ASIGNAR] 📦 Envase primario para SUERO HIDRATANTE AH 1.5%"
+    sku = ''
+    componente_tipo = 'envase'  # default
+    import re
+    m = re.search(r'para\s+([^·]+?)(?:\s*·|$)', nombre or '', re.IGNORECASE)
+    if m:
+        sku = m.group(1).strip()
+    if 'envase' in (nombre or '').lower():
+        componente_tipo = 'envase'
+    elif 'tapa' in (nombre or '').lower():
+        componente_tipo = 'tapa'
+    elif 'etiqueta' in (nombre or '').lower():
+        componente_tipo = 'etiqueta'
+    elif 'serigraf' in (nombre or '').lower():
+        componente_tipo = 'serigrafia'
+    elif 'tampograf' in (nombre or '').lower():
+        componente_tipo = 'tampografia'
+    elif 'caja' in (nombre or '').lower():
+        componente_tipo = 'caja'
+    # Permitir override explícito desde body
+    if d.get('sku_codigo'):
+        sku = d['sku_codigo'].strip()
+    if d.get('componente_tipo'):
+        componente_tipo = d['componente_tipo'].strip()
+
+    if not sku:
+        return jsonify({'error': 'No pude inferir SKU; pasa sku_codigo explícito en body'}), 400
+
+    # 1) UPDATE item de la SC
+    nuevo_nombre = mee[1] or mee_codigo
+    try:
+        c.execute("""
+            UPDATE solicitudes_compra_items
+               SET codigo_mp = ?, nombre_mp = ?, proveedor_sugerido = ?,
+                   actualizado_at = datetime('now'), actualizado_por = ?
+             WHERE id = ?
+        """, (mee_codigo, nuevo_nombre, proveedor or '', user, item_id))
+    except sqlite3.OperationalError:
+        c.execute("""
+            UPDATE solicitudes_compra_items
+               SET codigo_mp = ?, nombre_mp = ?
+             WHERE id = ?
+        """, (mee_codigo, nuevo_nombre, item_id))
+
+    # 2) APRENDER: guardar en sku_mee_config (idempotente)
+    aprendizaje = False
+    try:
+        c.execute("""
+            INSERT OR IGNORE INTO sku_mee_config
+              (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad,
+               aplica, notas)
+            VALUES (?, ?, ?, ?, 1, ?)
+        """, (sku, mee_codigo, componente_tipo, cantidad_pu,
+              f'Aprendido de SC {sc_numero} item #{item_id} por {user}'))
+        if c.rowcount > 0:
+            aprendizaje = True
+    except sqlite3.IntegrityError:
+        pass  # ya existe el mapping
+
+    # 3) Si pasaron proveedor, actualizar mee_lead_time_config (upsert)
+    if proveedor:
+        existing = c.execute(
+            "SELECT 1 FROM mee_lead_time_config WHERE mee_codigo = ?", (mee_codigo,)
+        ).fetchone()
+        if existing:
+            c.execute("""
+                UPDATE mee_lead_time_config
+                   SET proveedor_principal = ?, actualizado_en = datetime('now'),
+                       actualizado_por = ?
+                 WHERE mee_codigo = ?
+            """, (proveedor, user, mee_codigo))
+        else:
+            c.execute("""
+                INSERT INTO mee_lead_time_config
+                  (mee_codigo, proveedor_principal, origen, lead_time_dias,
+                   moq_unidades, precio_unit, aplica, notas, actualizado_en, actualizado_por)
+                VALUES (?, ?, 'Local', 30, 0, 0, 1, 'Auto-creado por sc-mee-asignar', datetime('now'), ?)
+            """, (mee_codigo, proveedor, user))
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'sc_item_id': item_id,
+        'mee_codigo': mee_codigo,
+        'sku_inferido': sku,
+        'componente_tipo': componente_tipo,
+        'aprendizaje_nuevo': aprendizaje,
+        'mensaje': (f'✅ Item asignado a {mee_codigo}'
+                    + (f' · aprendido mapping {sku} → {mee_codigo} ({componente_tipo})' if aprendizaje else ' · mapping ya existía')),
+    })
 
 
 @bp.route('/api/planta/diagnostico-calendar', methods=['GET'])

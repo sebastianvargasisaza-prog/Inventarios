@@ -5072,6 +5072,7 @@ function _renderProgramacion(d){
           <button onclick="autoscMeePreview('mensual')" style="padding:6px 12px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128270; Preview</button>
           <button onclick="autoscMeeGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#115e59;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
           <button onclick="autoscMeeGenerar('urgente')" style="padding:6px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128680; Urgente 30d</button>
+          <button onclick="autoscMeeGenerar('mensual', true)" title="Genera SCs para SKUs SIN mapping. Catalina asigna código MEE en Compras y el sistema aprende para futuras SCs (Sebastián 1-may-2026)." style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#127919; Genérica (Catalina asigna)</button>
           <button onclick="autoscMeeRecargar()" title="Refrescar" style="padding:6px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
         </div>
       </div>
@@ -12389,15 +12390,19 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  async function autoscMeeGenerar(modo){
+  async function autoscMeeGenerar(modo, generico){
+    generico = !!generico;
     var origen = (document.getElementById('autosc-mee-origen')||{value:''}).value || '';
-    var nombreModo = modo === 'urgente' ? 'URGENTE (30d)' : 'MENSUAL (China 9m + Local 90d)';
-    if(!confirm('Vas a crear las SCs MEE reales '+nombreModo+(origen?' / origen '+origen:'')+'.\\n\\nCatalina y Alejandro revisarán en /solicitudes.\\n\\n¿Continuar?')) return;
+    var nombreModo = generico ? '🎯 GENÉRICA · Catalina asigna' : (modo === 'urgente' ? 'URGENTE (30d)' : 'MENSUAL (China 9m + Local 90d)');
+    var aviso = generico
+      ? 'Vas a crear UNA SC genérica con items "POR-ASIGNAR" para todos los SKUs SIN mapping.\\n\\nCatalina debe abrir cada item en /solicitudes y asignar:\\n  • código MEE específico\\n  • proveedor\\n\\nAl asignar, el sistema aprende y guarda el mapping para futuras SCs.\\n\\n¿Continuar?'
+      : 'Vas a crear las SCs MEE reales '+nombreModo+(origen?' / origen '+origen:'')+'.\\n\\nCatalina y Alejandro revisarán en /solicitudes.\\n\\n¿Continuar?';
+    if(!confirm(aviso)) return;
     var msg = document.getElementById('autosc-mee-msg');
     msg.style.display='block';
-    msg.innerHTML = '⏳ Generando SCs MEE ('+modo+')…';
+    msg.innerHTML = '⏳ Generando SCs MEE '+(generico ? 'genéricas' : '('+modo+')')+'…';
     try{
-      var body = {modo: modo, enviar_email: true};
+      var body = {modo: modo, enviar_email: true, generico: generico};
       if(origen) body.origen = origen;
       var r = await fetch('/api/planta/auto-sc-mee-generar', {
         method:'POST', credentials:'same-origin',
@@ -12410,7 +12415,11 @@ async function ckMarcar(itemId, estado){
         msg.innerHTML = '⚠️ '+data.razon_vacio;
         return;
       }
-      msg.innerHTML = '✅ '+data.mensaje + ' · <a href="/solicitudes" style="color:#fff;text-decoration:underline">ver en Compras</a>';
+      var extra = '';
+      if(data.kpis && data.kpis.items_genericos_pendientes){
+        extra = '<br>🎯 <b>'+data.kpis.items_genericos_pendientes+' items genéricos</b> pendientes de asignar por Catalina ('+data.kpis.skus_genericos+' SKUs)';
+      }
+      msg.innerHTML = '✅ '+data.mensaje + extra + ' · <a href="/solicitudes" style="color:#fff;text-decoration:underline;font-weight:700">ver en Compras →</a>';
       autoscMeeRecargar();
     }catch(e){
       msg.innerHTML = '❌ Error generando SCs MEE: '+(e.message||e);
