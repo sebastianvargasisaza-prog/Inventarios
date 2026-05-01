@@ -5037,6 +5037,7 @@ function _renderProgramacion(d){
           <div id="semana-subtitle" style="font-size:11px;opacity:.92;margin-top:3px">🤖 IA asignó todo automáticamente · solo click para avanzar</div>
         </div>
         <div style="display:flex;gap:6px">
+          <button onclick="forzarSyncSemana()" title="Forzar sync Calendar→DB + auto-asignar IA" style="padding:5px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#129302; Forzar sync IA</button>
           <button onclick="semanaRecargar()" title="Refrescar" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
         </div>
       </div>
@@ -12618,6 +12619,26 @@ async function ckMarcar(itemId, estado){
     var id = parseInt(btn.getAttribute('data-id') || '0', 10);
     if(tipo && id) accionRapida(tipo, id);
   });
+  async function forzarSyncSemana(){
+    if(!confirm('🤖 Forzar sync Calendar→DB + auto-asignar IA semana actual?\\n\\n• Insertar eventos del Calendar pendientes\\n• Auto-asignar área + 4 operarios rotando\\n\\n¿Continuar?')) return;
+    var msg = document.getElementById('semana-msg');
+    msg.style.display='block';
+    msg.innerHTML='⏳ Forzando sync IA...';
+    try{
+      var r = await fetch('/api/planta/forzar-sync-semana', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'}, body:'{}'
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      msg.innerHTML='✅ '+d.mensaje;
+      setTimeout(function(){ msg.style.display='none'; }, 4000);
+      semanaRecargar();
+    }catch(e){
+      msg.innerHTML='❌ Error: '+(e.message||e);
+    }
+  }
+
   async function accionRapida(tipo, id){
     var labels = {
       'iniciar': '▶ Iniciar producción',

@@ -7104,11 +7104,14 @@ def semana_produccion():
 
     # AUTO-SYNC ON LOAD: si hay eventos del Calendar sin sincronizar,
     # ejecutar sync inmediatamente (Sebastián 1-may-2026: 'no se activa solo').
-    # Pre-cargar eventos del Calendar y mergear los que falten en DB.
+    # FORCE_REFRESH para evitar cache stale (60s puede estar vacío si primera
+    # lectura falló) · UMBRAL match 50 (no 60) para mayor cobertura.
     calendar_eventos_por_fecha = {}
-    eventos_a_sincronizar = []  # eventos NO existentes en DB
+    eventos_a_sincronizar = []
+    auto_sync_diag = {'cal_events_total': 0, 'en_semana': 0, 'con_match': 0, 'sin_match': []}
     try:
-        cal_events = _calendar_events_cached() or []
+        cal_events = _calendar_events_cached(force_refresh=True) or []
+        auto_sync_diag['cal_events_total'] = len(cal_events)
         skus_aliases = {}
         try:
             for sku_n, alias_csv in c.execute("""
@@ -7126,19 +7129,24 @@ def semana_produccion():
                 continue
             if f_ev < dias_semana[0] or f_ev > dias_semana[-1]:
                 continue
-            # Match producto
+            auto_sync_diag['en_semana'] += 1
+            # Match producto · umbral 50 (más permisivo)
             producto_match = None
             best_score = 0
             for prod_n, alias_csv in skus_aliases.items():
                 try:
                     score = _match_producto_evento(prod_n, alias_csv,
                                                      ev.get('titulo'), ev.get('descripcion',''))
-                    if score >= 60 and score > best_score:
+                    if score >= 50 and score > best_score:
                         best_score = score
                         producto_match = prod_n
                 except Exception:
                     continue
             kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+            if producto_match:
+                auto_sync_diag['con_match'] += 1
+            else:
+                auto_sync_diag['sin_match'].append((ev.get('titulo','')[:60], f_ev.isoformat()))
             calendar_eventos_por_fecha.setdefault(f_ev.isoformat(), []).append({
                 'titulo': ev.get('titulo', ''),
                 'producto_match': producto_match,
@@ -7156,8 +7164,8 @@ def semana_produccion():
                         'producto': producto_match, 'fecha': f_ev.isoformat(),
                         'kg': kg, 'titulo': ev.get('titulo','')[:200],
                     })
-    except Exception:
-        pass
+    except Exception as _e:
+        log.warning(f'[semana_produccion] sync diag falla: {_e}')
 
     # AUTO-SYNC: insertar eventos pendientes + auto-asignar IA (sin esperar cron)
     auto_sincronizadas = 0
@@ -7183,10 +7191,34 @@ def semana_produccion():
                         pass
             conn.commit()
             # Re-cargar producciones después del sync
-            calendar_eventos_por_fecha = {}  # reset · ya están en DB ahora
-        except Exception:
+            calendar_eventos_por_fecha = {}
+        except Exception as _e:
+            log.warning(f'[semana_produccion] auto-sync insert falla: {_e}')
             try: conn.rollback()
             except: pass
+
+    # ADICIONAL: producciones SIN operarios (existentes en DB pero no asignadas)
+    # → forzar auto-asignación IA inmediatamente
+    try:
+        from blueprints.programacion import _auto_asignar_produccion
+        sin_op_rows = c.execute("""
+            SELECT id FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN ? AND ?
+              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (operario_dispensacion_id IS NULL
+                   AND operario_elaboracion_id IS NULL
+                   AND operario_envasado_id IS NULL)
+        """, (dias_semana[0].isoformat(), dias_semana[-1].isoformat())).fetchall()
+        for (pid,) in sin_op_rows:
+            try:
+                res = _auto_asignar_produccion(c, pid, 'auto-asignar-on-load')
+                if res.get('ok'): auto_asignadas += 1
+            except Exception:
+                continue
+        if sin_op_rows:
+            conn.commit()
+    except Exception:
+        pass
 
     dias_data = []
     for i, fecha in enumerate(dias_semana):
@@ -7343,6 +7375,14 @@ def semana_produccion():
             'total_kg_semana': round(total_kg, 0),
             'sin_asignar_ia': sin_asignar_total,
             'total_limpiezas': total_limpiezas,
+        },
+        'auto_sync': {
+            'sincronizadas_esta_carga': auto_sincronizadas,
+            'asignadas_esta_carga': auto_asignadas,
+            'cal_events_total': auto_sync_diag.get('cal_events_total', 0),
+            'en_semana': auto_sync_diag.get('en_semana', 0),
+            'con_match': auto_sync_diag.get('con_match', 0),
+            'sin_match_sample': auto_sync_diag.get('sin_match', [])[:5],
         },
     })
 
@@ -7550,6 +7590,57 @@ def planta_accion_rapida():
             return jsonify({'error': str(e)}), 500
 
     return jsonify({'error': f'tipo desconocido: {tipo}'}), 400
+
+
+@bp.route('/api/planta/forzar-sync-semana', methods=['POST'])
+def forzar_sync_semana():
+    """Forzar sync Calendar→DB + auto-asignar IA para semana actual.
+    Sebastián 1-may-2026: 'sigue diciendo Sync Calendar · que se active solo'.
+    Botón manual de respaldo si por cualquier razón el auto-sync falló.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    base = fecha_hoy
+    if base.weekday() >= 5:
+        base = base + timedelta(days=(7 - base.weekday()))
+    else:
+        base = base - timedelta(days=base.weekday())
+    fecha_inicio = base
+    fecha_fin = base + timedelta(days=14)  # semana actual + próxima
+
+    try:
+        from blueprints.auto_plan_jobs import _sync_calendar_a_db
+        from blueprints.programacion import _auto_asignar_produccion
+        ins, ya_ex = _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, f'manual-{user}')
+        # Auto-asignar todo lo que quede sin operarios
+        rows = c.execute("""
+            SELECT id FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN ? AND ?
+              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (area_id IS NULL OR (
+                operario_dispensacion_id IS NULL
+                AND operario_elaboracion_id IS NULL
+                AND operario_envasado_id IS NULL))
+        """, (fecha_inicio.isoformat(), fecha_fin.isoformat())).fetchall()
+        asign = 0
+        for (pid,) in rows:
+            res = _auto_asignar_produccion(c, pid, f'manual-{user}')
+            if res.get('ok'): asign += 1
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'sincronizadas': ins,
+            'ya_existian': ya_ex,
+            'asignadas': asign,
+            'mensaje': f'🔄 Sync forzado · {ins} nuevas · {asign} asignadas IA · {ya_ex} ya existían',
+        })
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @bp.route('/api/planta/scs-pedidas-resumen', methods=['GET'])
