@@ -25,6 +25,8 @@ Si dudas algo de MP → genera tarea "verificar existencia real".
 """
 from flask import Blueprint, jsonify, request, session
 from datetime import datetime, timedelta, date
+from collections import defaultdict
+import os
 import sqlite3
 import json
 import logging
@@ -4156,6 +4158,182 @@ def cron_toggle():
                   ('Desactivado desde UI',))
     conn.commit()
     return jsonify({'ok': True, 'habilitado': habilitar})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# AUDITOR SEMANAL — email cada lunes 7AM con plan + alertas críticas
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "auditor diario automático (email 9 AM lunes
+# con plan semanal + alertas)". Se dispara desde cron Render externo
+# o manual desde la app.
+
+def _generar_html_auditor_semanal(c):
+    """Genera el HTML del email auditor con plan próxima semana + alertas."""
+    fecha_hoy = datetime.now().date()
+    nombres_dia = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
+
+    # 1. Eventos del Calendar próximos 7 días
+    eventos = _calendar_events_cached()
+    eventos_semana = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if fecha_hoy <= f <= fecha_hoy + timedelta(days=7):
+            eventos_semana.append({'fecha': f, 'titulo': ev.get('titulo', ''), 'desc': ev.get('descripcion', '')})
+    eventos_semana.sort(key=lambda x: x['fecha'])
+
+    # 2. Alertas críticas (vendes 20%+ rápido o lento)
+    alertas_criticas = []
+    skus_act = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, fh.lote_size_kg
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+          AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado', 'pausado')
+    """).fetchall()
+    for producto, cad_cfg, lote_kg in skus_act:
+        alias = _alias_calendar_for(c, producto)
+        evs_fut = []
+        for ev in eventos:
+            try:
+                f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if f < fecha_hoy or (f - fecha_hoy).days > 60:
+                continue
+            score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+            if score < 60: continue
+            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+            evs_fut.append({'fecha': f, 'kg': kg})
+        if not evs_fut: continue
+        evs_fut.sort(key=lambda x: x['fecha'])
+        kg_prox = evs_fut[0]['kg'] or lote_kg or 30
+        cad_real = (evs_fut[1]['fecha'] - evs_fut[0]['fecha']).days if len(evs_fut) >= 2 else (cad_cfg or 60)
+        fg = _factor_g_por_unidad(c, producto)
+        u_lote = (kg_prox * 1000) / max(fg, 1)
+        vel_plan = u_lote / max(cad_real + 20, 30)
+        vel_real, ftend = _velocidad_total_producto(c, producto)
+        vel_real_p = vel_real * (ftend or 1)
+        if vel_real_p < 0.05 or vel_plan < 0.05: continue
+        ratio = vel_real_p / vel_plan
+        if ratio >= 1.20 or ratio <= 0.65:
+            alertas_criticas.append({
+                'producto': producto,
+                'estado': 'ADELANTAR ' + str(int((ratio-1)*100)) + '%' if ratio >= 1.20 else 'REDUCIR LOTE ' + str(int((1-ratio)*100)) + '% menos',
+                'urg': 'red' if ratio >= 1.20 else 'purple',
+                'proxima': evs_fut[0]['fecha'].isoformat(),
+            })
+
+    # 3. Render HTML
+    html_eventos = ''
+    por_dia = defaultdict(list)
+    for e in eventos_semana:
+        por_dia[e['fecha']].append(e)
+    for delta in range(8):
+        d = fecha_hoy + timedelta(days=delta)
+        evs = por_dia.get(d, [])
+        if not evs and delta > 0: continue  # solo hoy aunque vacío
+        col = '#dc2626' if delta == 0 else '#0f172a'
+        html_eventos += f'<div style="border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;background:#f8fafc;border-radius:0 6px 6px 0">'
+        html_eventos += f'<b>{nombres_dia[d.weekday()]} {d.strftime("%d-%b")}</b>'
+        if not evs:
+            html_eventos += '<div style="font-size:12px;color:#94a3b8;margin-top:3px">Sin producciones</div>'
+        else:
+            for e in evs:
+                html_eventos += f'<div style="font-size:12px;color:#475569;margin-top:3px">• {e["titulo"]}</div>'
+        html_eventos += '</div>'
+
+    html_alertas = ''
+    if alertas_criticas:
+        for a in alertas_criticas[:8]:
+            colores = {'red': '#dc2626', 'purple': '#a855f7'}
+            col = colores.get(a['urg'], '#dc2626')
+            html_alertas += f'<div style="background:{col}15;border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;border-radius:0 6px 6px 0"><b>{a["producto"]}</b> · {a["estado"]} · próx {a["proxima"]}</div>'
+    else:
+        html_alertas = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:8px;color:#065f46">✅ Sin alertas críticas — todos los SKUs alineados con su plan</div>'
+
+    html = f'''<!DOCTYPE html>
+<html><body style="font-family:-apple-system,Segoe UI,sans-serif;background:#f3f4f6;padding:20px;margin:0">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:20px">
+      <h2 style="margin:0;font-size:20px">📅 Auditor Semanal Producción</h2>
+      <p style="margin:4px 0 0;opacity:.9;font-size:13px">Lunes {fecha_hoy.strftime("%d-%b-%Y")} · Ánimus Lab</p>
+    </div>
+    <div style="padding:20px">
+      <h3 style="color:#0f172a;font-size:15px;margin:0 0 10px">🗓️ Producciones esta semana</h3>
+      {html_eventos}
+      <h3 style="color:#0f172a;font-size:15px;margin:18px 0 10px">🚨 Alertas críticas</h3>
+      {html_alertas}
+      <div style="margin-top:18px;padding:12px;background:#f1f5f9;border-radius:8px;font-size:11px;color:#64748b">
+        Generado automáticamente por EOS Inventarios.<br>
+        Para cambiar destinatarios: Plan → Configuración → Email destinatarios.
+      </div>
+    </div>
+  </div>
+</body></html>'''
+    return html
+
+
+@bp.route('/api/planta/auditor-semanal-enviar', methods=['POST'])
+def auditor_semanal_enviar():
+    """Genera y envía el email auditor semanal a los destinatarios configurados.
+
+    Acepta también ?clave=XXX para disparo desde cron externo (Render Cron Job).
+    """
+    # Auth: sesión compras O clave de cron
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    conn = get_db(); c = conn.cursor()
+
+    # Destinatarios
+    rows = c.execute("SELECT email FROM email_destinatarios WHERE activo = 1").fetchall()
+    destinatarios = [r[0] for r in rows if r[0]]
+    if not destinatarios:
+        return jsonify({'error': 'Sin destinatarios configurados. Plan → Configuración → Email'}), 400
+
+    # Generar HTML
+    html = _generar_html_auditor_semanal(c)
+    fecha_hoy = datetime.now().date()
+    asunto = f'📅 Auditor Semanal Producción · Sem {fecha_hoy.strftime("%d-%b")}'
+
+    # Enviar
+    try:
+        import threading, sys, os as _os
+        sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        from notificaciones import SistemaNotificaciones
+        notif = SistemaNotificaciones()
+        threading.Thread(
+            target=notif._enviar_email,
+            args=(asunto, html, destinatarios),
+            daemon=True
+        ).start()
+        # Log
+        c.execute("""
+            INSERT INTO auto_plan_runs (tipo, usuario, productos_planeados, errores, notas, ejecutado_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, ('auditor_semanal', 'cron' if es_cron else session.get('compras_user', '?'),
+              0, 0, f'Email enviado a {len(destinatarios)}', datetime.now().isoformat()))
+        conn.commit()
+        return jsonify({'ok': True, 'destinatarios': len(destinatarios), 'mensaje': f'Email enviado a {len(destinatarios)} destinatarios'})
+    except Exception as e:
+        log.exception(f'Auditor semanal email error')
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/planta/auditor-semanal-preview', methods=['GET'])
+def auditor_semanal_preview():
+    """Devuelve el HTML del auditor sin enviar (para previsualizar)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    html = _generar_html_auditor_semanal(c)
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
 # ════════════════════════════════════════════════════════════════════════
