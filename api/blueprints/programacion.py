@@ -3193,6 +3193,123 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     return distribucion
 
 
+# ── Helper: descuento MEE al terminar envasado ────────────────────────────
+# Sebastian (1-may-2026): "en produccion dicen envasado, para que coloquen
+# cuanto fue y de alli mismo descuenta automaticamente envases y demas".
+# Hoy el descuento ocurre al COMPLETAR producción usando cantidad planificada.
+# Esta función mueve el descuento al TERMINAR envasado, usando la cantidad
+# REAL envasada (proporcional al plan).
+#
+# Filosofía:
+#   - Se descuentan SOLO los componentes que se usan físicamente al envasar:
+#     envase_primario, envase_secundario, tapa, caja_exterior, etiquetas.
+#   - Serigrafía/tampografía se descuentan en el evento de decoración (D-20),
+#     no aquí (su movimiento se hace cuando el operario saca de bodega).
+#   - Si unidades_envasadas < unidades_planeadas → descuenta proporcional
+#     (la merma queda implícita: stock MEE = stock_actual - real_consumido).
+#   - Marca consumido_at + consumido_contexto='envasado' en checklist para
+#     que prog_completar_evento NO vuelva a descontar el mismo ítem.
+TIPOS_MEE_AL_ENVASAR = (
+    'envase_primario', 'envase_secundario', 'envase',
+    'tapa',
+    'caja_exterior', 'caja',
+    'etiqueta_frontal', 'etiqueta_posterior', 'etiqueta_lateral', 'etiqueta',
+    'etiqueta_adhesiva',
+)
+
+
+def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
+                             unidades_planeadas, user):
+    """Descuenta MEE de envase/tapa/etiqueta al terminar envasado.
+
+    Args:
+      c: cursor SQLite
+      produccion_id: int — produccion_programada.id (lote padre)
+      lote: str — lote del envasado (para batch_ref en movimientos)
+      unidades_envasadas: int — cantidad REAL envasada (registrada por operario)
+      unidades_planeadas: int — cantidad planeada de envasado (de produccion_envasado)
+      user: str — operador que termina el envasado
+
+    Returns: lista de dicts con descontados, o [] si no aplica.
+    """
+    if not produccion_id or not unidades_envasadas or unidades_envasadas <= 0:
+        return []
+
+    # Ratio para cantidades 1:1 con unidades. Si planeadas no está, asume 100%.
+    if unidades_planeadas and unidades_planeadas > 0:
+        ratio = float(unidades_envasadas) / float(unidades_planeadas)
+    else:
+        ratio = 1.0
+
+    # Construir whitelist de tipos en SQL
+    placeholders = ','.join(['?'] * len(TIPOS_MEE_AL_ENVASAR))
+    sql = f"""
+        SELECT id, mee_codigo_asignado, descripcion, cantidad_unidades, item_tipo
+        FROM produccion_checklist
+        WHERE produccion_id = ?
+          AND COALESCE(mee_codigo_asignado, '') != ''
+          AND COALESCE(cantidad_unidades, 0) > 0
+          AND COALESCE(consumido_at, '') = ''
+          AND LOWER(COALESCE(item_tipo, '')) IN ({placeholders})
+    """
+    params = (produccion_id,) + tuple(t.lower() for t in TIPOS_MEE_AL_ENVASAR)
+    try:
+        items = c.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        return []  # tabla no existe → no descontar
+
+    if not items:
+        return []
+
+    fecha_iso = datetime.now().isoformat(timespec='seconds')
+    obs_base = (f"Envasado terminado: produccion #{produccion_id} "
+                f"lote {lote or 'sin-lote'} — {unidades_envasadas}/"
+                f"{unidades_planeadas or '?'} ud (ratio {ratio:.2f})")
+
+    descontados = []
+    for item_id, mee_cod, desc, cant_plan, tipo_item in items:
+        cant_plan_f = float(cant_plan or 0)
+        cant_real = round(cant_plan_f * ratio, 0)
+        if cant_real <= 0:
+            continue
+        try:
+            c.execute("""
+                INSERT INTO movimientos_mee
+                  (mee_codigo, tipo, cantidad, observaciones, responsable,
+                   fecha, lote_ref, batch_ref)
+                VALUES (?, 'Salida', ?, ?, ?, ?, ?, ?)
+            """, (mee_cod, cant_real, obs_base, user, fecha_iso,
+                  str(produccion_id), lote or ''))
+            c.execute(
+                "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
+                "WHERE codigo=?",
+                (cant_real, mee_cod)
+            )
+            c.execute("""
+                UPDATE produccion_checklist
+                   SET consumido_at = ?,
+                       consumido_por = ?,
+                       cantidad_consumida_real = ?,
+                       consumido_contexto = 'envasado',
+                       actualizado_at = datetime('now')
+                 WHERE id = ?
+            """, (fecha_iso, user, cant_real, item_id))
+            descontados.append({
+                'codigo': mee_cod,
+                'descripcion': desc or '',
+                'tipo_item': tipo_item or '',
+                'cantidad_planeada': cant_plan_f,
+                'cantidad_real': cant_real,
+                'merma': max(0, cant_plan_f - cant_real),
+            })
+        except sqlite3.OperationalError as e:
+            # Si maestro_mee o movimientos_mee no existe, dejamos pasar
+            log.warning(f'Descuento MEE skip {mee_cod}: {e}')
+            continue
+
+    return descontados
+
+
 @bp.route('/api/programacion/programar/<int:evento_id>/completar', methods=['POST'])
 def prog_completar_evento(evento_id):
     """Marca una produccion como completada Y descuenta inventario.
@@ -3203,6 +3320,7 @@ def prog_completar_evento(evento_id):
          (o si no hay cantidad_g_por_lote, usa porcentaje * cantidad_kg * 1000).
       2. Calcula consumo de MEEs desde produccion_checklist (items con
          mee_codigo_asignado en estado verificado_ok / recibido / listo).
+         · Excluye items con consumido_at != NULL (ya descontados al envasar).
       3. Inserta movimientos de Salida por cada MP.
       4. Inserta movimientos_mee + actualiza maestro_mee.stock_actual por MEE.
       5. UPDATE produccion_programada estado='completado',
@@ -3271,23 +3389,32 @@ def prog_completar_evento(evento_id):
     except Exception as e:
         return jsonify({'error': f'Error calculando MPs: {e}'}), 500
 
-    # ── 2. Calcular MEEs a consumir desde checklist (solo recibidos/verificados) ──
+    # ── 2. Calcular MEEs a consumir desde checklist (solo recibidos/verificados
+    #       y NO consumidos previamente al envasar) ──
+    # Sebastian (1-may-2026): los items envase/tapa/etiqueta se descuentan al
+    # terminar envasado con cantidad REAL (helper _descontar_mee_envasado).
+    # Aquí solo descontamos lo que NO se consumió aún (serigrafía/tampografía/
+    # caja_master si vienen al final).
     mees_a_consumir = []
+    mee_item_ids = []  # ids del checklist para marcar consumido_at después
     try:
         crows = c.execute("""
-            SELECT mee_codigo_asignado, descripcion, cantidad_unidades, item_tipo
+            SELECT id, mee_codigo_asignado, descripcion, cantidad_unidades, item_tipo
             FROM produccion_checklist
             WHERE produccion_id = ?
               AND COALESCE(mee_codigo_asignado,'') != ''
               AND COALESCE(cantidad_unidades, 0) > 0
+              AND COALESCE(consumido_at, '') = ''
               AND estado IN ('verificado_ok','recibido','listo')
         """, (pid,)).fetchall()
-        for mee_cod, desc, cant_ud, tipo_item in crows:
+        for item_id, mee_cod, desc, cant_ud, tipo_item in crows:
             mees_a_consumir.append({
+                'item_id': item_id,
                 'codigo': mee_cod, 'descripcion': desc or '',
                 'cantidad_unidades': int(cant_ud or 0),
                 'tipo_item': tipo_item or '',
             })
+            mee_item_ids.append(item_id)
     except Exception:
         # Si la tabla checklist no existe o falla, seguimos sin MEEs (no bloqueamos MPs)
         pass
@@ -3342,18 +3469,32 @@ def prog_completar_evento(evento_id):
                 })
             descontados_mps.append(mp)
         # MEEs → INSERT INTO movimientos_mee + UPDATE maestro_mee
+        # lote_ref=produccion_id permite reversión limpia sin LIKE en obs.
         for me in mees_a_consumir:
             try:
                 c.execute("""
                     INSERT INTO movimientos_mee
-                      (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
-                    VALUES (?, 'Salida', ?, ?, ?, ?)
-                """, (me['codigo'], me['cantidad_unidades'], obs_base, user, fecha_iso))
+                      (mee_codigo, tipo, cantidad, observaciones, responsable,
+                       fecha, lote_ref, batch_ref)
+                    VALUES (?, 'Salida', ?, ?, ?, ?, ?, ?)
+                """, (me['codigo'], me['cantidad_unidades'], obs_base, user,
+                      fecha_iso, str(pid), str(fecha or '')))
                 c.execute(
                     "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
                     "WHERE codigo=?",
                     (me['cantidad_unidades'], me['codigo'])
                 )
+                # Marcar consumido en checklist (contexto='completar')
+                if me.get('item_id'):
+                    c.execute("""
+                        UPDATE produccion_checklist
+                           SET consumido_at = ?,
+                               consumido_por = ?,
+                               cantidad_consumida_real = ?,
+                               consumido_contexto = 'completar',
+                               actualizado_at = datetime('now')
+                         WHERE id = ?
+                    """, (fecha_iso, user, me['cantidad_unidades'], me['item_id']))
                 descontados_mees.append(me)
             except sqlite3.OperationalError:
                 # Si tabla mee no existe, seguimos
@@ -3445,27 +3586,63 @@ def prog_revertir_completado(evento_id):
                 'cantidad_g': cant, 'lote': lote,
             })
 
-        # Reversión de MEEs: insertar movimientos_mee de entrada + UPDATE stock
+        # Reversión de MEEs: doble fuente
+        #   1) movimientos por lote_ref = produccion_id (descuentos al envasar
+        #      o al completar usan ese lote_ref desde 1-may-2026).
+        #   2) Fallback legacy: observaciones LIKE 'Producción COMPLETADA%'
+        # Sebastian (1-may-2026): el descuento puede ocurrir en envasado o en
+        # completar, ambos quedan vinculados a produccion_id por lote_ref.
         try:
+            # Primero por lote_ref (preciso, sin LIKE)
             rows_mee = c.execute("""
                 SELECT id, mee_codigo, cantidad
                 FROM movimientos_mee
-                WHERE LOWER(tipo)='salida' AND observaciones LIKE ?
+                WHERE LOWER(tipo)='salida'
+                  AND COALESCE(lote_ref,'') = ?
+                  AND COALESCE(anulado,0) = 0
+            """, (str(evento_id),)).fetchall()
+            ids_revertidos = set(r[0] for r in rows_mee)
+            # Luego fallback legacy (sin lote_ref) por observación
+            rows_legacy = c.execute("""
+                SELECT id, mee_codigo, cantidad
+                FROM movimientos_mee
+                WHERE LOWER(tipo)='salida'
+                  AND COALESCE(lote_ref,'') = ''
+                  AND observaciones LIKE ?
+                  AND COALESCE(anulado,0) = 0
             """, (f"{obs_filtro}%",)).fetchall()
+            for r in rows_legacy:
+                if r[0] not in ids_revertidos:
+                    rows_mee = list(rows_mee) + [r]
             for mid, mee_cod, cant in rows_mee:
                 c.execute("""
                     INSERT INTO movimientos_mee
-                      (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
-                    VALUES (?, 'Entrada', ?, ?, ?, ?)
+                      (mee_codigo, tipo, cantidad, observaciones, responsable,
+                       fecha, lote_ref)
+                    VALUES (?, 'Entrada', ?, ?, ?, ?, ?)
                 """, (mee_cod, cant,
                       f"REVERSIÓN producción completada — original mov_mee #{mid}",
-                      user, fecha_iso))
+                      user, fecha_iso, str(evento_id)))
                 c.execute(
                     "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
                     "WHERE codigo=?",
                     (cant, mee_cod)
                 )
+                # Marcar el movimiento original como anulado
+                c.execute(
+                    "UPDATE movimientos_mee SET anulado = 1 WHERE id = ?",
+                    (mid,)
+                )
                 revertidos_mees.append({'codigo': mee_cod, 'cantidad_unidades': cant})
+            # Resetear flags consumido_at en el checklist para esta producción
+            c.execute("""
+                UPDATE produccion_checklist
+                   SET consumido_at = NULL,
+                       consumido_por = '',
+                       cantidad_consumida_real = 0,
+                       consumido_contexto = ''
+                 WHERE produccion_id = ?
+            """, (evento_id,))
         except sqlite3.OperationalError:
             pass
 
@@ -8000,7 +8177,13 @@ def planta_envasado_iniciar():
 
 @bp.route('/api/planta/envasado/<int:envasado_id>/terminar', methods=['POST'])
 def planta_envasado_terminar(envasado_id):
-    """Operario marca fin de envasado. Body opcional: {unidades_envasadas, notas}"""
+    """Operario marca fin de envasado. Body: {unidades_envasadas, notas}.
+
+    Sebastian (1-may-2026): "que coloquen cuanto fue y de alli mismo
+    descuente automaticamente envases y demas del inventario". Al terminar
+    envasado se descuentan envase/tapa/etiqueta del checklist usando la
+    cantidad real envasada (proporcional al plan).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
@@ -8023,8 +8206,32 @@ def planta_envasado_terminar(envasado_id):
             "UPDATE cola_liberacion SET unidades=? WHERE envasado_id=?",
             (d.get('unidades_envasadas'), envasado_id)
         )
+
+    # ── Descuento MEE proporcional al envasado real (envase/tapa/etiqueta) ──
+    descontados_mees = []
+    try:
+        env_row = c.execute("""
+            SELECT produccion_id, lote, unidades_planeadas, unidades_envasadas
+            FROM produccion_envasado WHERE id = ?
+        """, (envasado_id,)).fetchone()
+        if env_row:
+            prod_id, lote_env, ud_plan, ud_env = env_row
+            ud_env = int(ud_env or 0)
+            if prod_id and ud_env > 0:
+                descontados_mees = _descontar_mee_envasado(
+                    c, prod_id, lote_env or '', ud_env,
+                    int(ud_plan or 0), user
+                )
+    except Exception as e:
+        log.warning(f'Descuento MEE envasado fallo (envasado_id={envasado_id}): {e}')
+
     conn.commit()
-    return jsonify({'ok': True, 'envasado_id': envasado_id})
+    return jsonify({
+        'ok': True,
+        'envasado_id': envasado_id,
+        'mees_descontados': descontados_mees,
+        'total_mees': len(descontados_mees),
+    })
 
 
 @bp.route('/api/planta/cola-liberacion', methods=['GET'])

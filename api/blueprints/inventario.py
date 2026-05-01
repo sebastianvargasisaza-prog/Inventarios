@@ -4076,11 +4076,31 @@ def envasado_list():
                 c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
                           (nuevo_stock, codigo_mee))
                 c.execute("""INSERT INTO movimientos_mee
-                    (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha)
-                    VALUES (?,?,?,?,?,?,?)""",
-                    (codigo_mee, 'Salida', cant, lote,
+                    (mee_codigo, tipo, cantidad, lote_ref, batch_ref, observaciones, responsable, fecha)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (codigo_mee, 'Salida', cant,
+                     str(produccion_id) if produccion_id else lote,
+                     lote,
                      'Envasado ' + lote + ' - ' + producto + ' ' + presentacion,
                      operador, fecha))
+                # Sebastian (1-may-2026): marcar consumido_at en checklist para
+                # evitar doble descuento al completar producción.
+                if produccion_id:
+                    try:
+                        c.execute("""
+                            UPDATE produccion_checklist
+                               SET consumido_at = ?,
+                                   consumido_por = ?,
+                                   cantidad_consumida_real = ?,
+                                   consumido_contexto = 'envasado',
+                                   actualizado_at = datetime('now')
+                             WHERE produccion_id = ?
+                               AND mee_codigo_asignado = ?
+                               AND COALESCE(consumido_at,'') = ''
+                        """, (datetime.now().isoformat(timespec='seconds'),
+                              operador, cant, produccion_id, codigo_mee))
+                    except Exception:
+                        pass  # tabla puede no tener las columnas (DB legacy)
                 if (stock_minimo or 0) > 0 and nuevo_stock < stock_minimo:
                     deficit = stock_minimo - nuevo_stock
                     alertas_mee.append({

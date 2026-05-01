@@ -3288,6 +3288,20 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "ALTER TABLE sku_planeacion_config ADD COLUMN razon_estado TEXT",
         # Estados validos: activo, sin_ventas, baja_rotacion, descontinuado, pausado, nuevo
     ]),
+    (70, "envasado: consumo MEE real al terminar (cantidad envasada vs planificada)", [
+        # Sebastian (1-may-2026): "en produccion dicen envasado, para que coloquen
+        # cuanto fue y de alli mismo descuenta automaticamente envases y demas".
+        # Hoy el descuento MEE ocurre al COMPLETAR producción usando cantidad
+        # planificada del checklist. Se mueve al terminar envasado, descontando
+        # la cantidad REAL envasada (proporcional). Flag consumido_at evita doble
+        # descuento cuando luego se completa la producción.
+        "ALTER TABLE produccion_checklist ADD COLUMN consumido_at TEXT",
+        "ALTER TABLE produccion_checklist ADD COLUMN consumido_por TEXT DEFAULT ''",
+        "ALTER TABLE produccion_checklist ADD COLUMN cantidad_consumida_real REAL DEFAULT 0",
+        "ALTER TABLE produccion_checklist ADD COLUMN consumido_contexto TEXT DEFAULT ''",
+        # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
+        "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
+    ]),
     (68, "planta MRP: alias_calendar + log eventos + auto-area producciones", [
         # Sebastian (30-abr-2026, ULTRATHINK): "en calendar dice kg, revisa
         # bien y que sea perfecto, zero-error-enterprise". El motor MRP
