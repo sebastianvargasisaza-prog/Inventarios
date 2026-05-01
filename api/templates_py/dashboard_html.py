@@ -9307,6 +9307,45 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // ✓ MARCAR LOTE HECHO — Mayerlin/operario reporta kg reales
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2MarcarLoteHecho(producto, kgSugerido){
+    var kgStr = prompt('✓ Marcar lote como hecho\\n\\nProducto: '+producto+'\\n\\n¿Cuántos kg se produjeron realmente?', kgSugerido);
+    if(kgStr === null) return;
+    var kgReal = parseFloat(kgStr);
+    if(isNaN(kgReal) || kgReal <= 0){ alert('kg inválido'); return; }
+    var operador = prompt('¿Quién operó? (nombre)', '') || '';
+    var lote = prompt('Número de lote (opcional)', '') || '';
+    var observ = prompt('Observaciones (opcional)', '') || '';
+    var descontarMP = confirm('¿Descontar MP automáticamente del inventario según fórmula?\\n\\nAceptar = sí (recomendado)\\nCancelar = solo registrar el lote sin tocar MP');
+    try {
+      var r = await fetch('/api/planta/registrar-lote-real', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          producto: producto,
+          kg_real: kgReal,
+          operador: operador,
+          lote: lote,
+          observaciones: observ,
+          descontar_mp: descontarMP,
+        })
+      });
+      var d = await r.json();
+      if(d.error){ alert('Error: '+d.error); return; }
+      var msg = d.mensaje || '✓ Registrado';
+      if(d.aviso_mp_faltante){
+        msg += '\\n\\n⚠️ MPs en stock negativo:\\n' + (d.mp_faltante||[]).slice(0,5).map(function(m){return '- '+m.material_nombre+' (faltó '+(m.requerido_g - m.stock_g).toFixed(0)+'g)';}).join('\\n');
+      }
+      alert(msg);
+      // Recargar centro de acción
+      planV2CargarCentroAccion();
+    } catch(e){
+      alert('Error: '+(e.message||'desconocido'));
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
   // STATUS LINE CONSOLIDADA — 1 línea con cobertura + calendar + margen
   // ════════════════════════════════════════════════════════════════════
   async function planV2CargarStatusLine(){
@@ -9430,6 +9469,8 @@ async function ckMarcar(itemId, estado){
       function fila(a){
         var col = colDeEstado(a.estado);
         var bg = col + '12';
+        var safeProducto = (a.producto||'').replace(/\\x27/g,"\\\\\\x27");
+        var kgSugerido = a.kg || 30;
         return '<div style="background:'+bg+';border-left:4px solid '+col+';padding:10px 12px;margin-bottom:6px;border-radius:0 6px 6px 0">'
           +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
           +'<div style="flex:1"><b style="color:#0f172a;font-size:13px">'+_escHTML(a.producto)+'</b>'
@@ -9437,9 +9478,10 @@ async function ckMarcar(itemId, estado){
           +(a.proxima_fecha?'<div style="font-size:10px;color:#64748b;margin-top:3px">📅 Próximo: '+_escHTML(a.proxima_fecha)+(a.dias_hasta!=null?(' (en '+a.dias_hasta+'d)'):'')+(a.kg?(' · '+a.kg+' kg'):'')+'</div>':'')
           +(a.velocidad_real?'<div style="font-size:10px;color:#64748b">📊 Vel real: '+a.velocidad_real+' u/d'+(a.velocidad_planeada?(' · plan: '+a.velocidad_planeada+' u/d · ratio '+a.ratio+'×'):'')+'</div>':'')
           +'</div>'
-          +'<div style="text-align:right">'
+          +'<div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">'
           +'<span style="background:'+col+';color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:800;white-space:nowrap">'+labelEstado(a.estado)+'</span>'
-          +(a.diff_dias?('<div style="font-size:10px;color:'+col+';margin-top:4px;font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
+          +(a.diff_dias?('<div style="font-size:10px;color:'+col+';font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
+          +'<button onclick="planV2MarcarLoteHecho(\\''+safeProducto+'\\','+kgSugerido+')" style="background:#15803d;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer">✓ Hecho</button>'
           +'</div></div></div>';
       }
       criticos.forEach(function(a){html+=fila(a);});
