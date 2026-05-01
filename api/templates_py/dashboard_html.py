@@ -11002,8 +11002,10 @@ async function ckMarcar(itemId, estado){
   // VISTA CALENDARIO GRID — pinta los eventos del Calendar como grid mensual
   // ════════════════════════════════════════════════════════════════════
   function planV2RenderCalendarGrid(events, diasHorizonte){
+    // Sebastián 1-may-2026: si no hay eventos, NO devolver caja — el empty
+    // state del Timeline ya lo cubre con mensaje + botón Diagnosticar.
     if(!events || !events.length){
-      return '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:18px;margin-bottom:14px;text-align:center;color:#94a3b8;font-size:13px">📅 Sin eventos del Calendar en los próximos '+diasHorizonte+' días</div>';
+      return '';
     }
     // Agrupar eventos por fecha
     var porFecha = {};
