@@ -5854,6 +5854,195 @@ def sc_etiqueta_rapida():
     })
 
 
+@bp.route('/api/planta/auto-d20-cron', methods=['POST'])
+def auto_d20_cron():
+    """Cron diario: revisa producciones futuras D-15..D-25 y crea SCs
+    automáticas para serigrafía/tampografía si aún no existen.
+
+    Sebastián (1-may-2026): "cron diario automatico" para D-20.
+
+    Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
+    Body opcional: {dry_run: bool, dias_ventana: 5}
+    """
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = 'auto-plan-ia' if es_cron else session.get('compras_user', 'manual')
+    d = request.json or {}
+    dry_run = bool(d.get('dry_run', False))
+
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+
+    # Llamar internamente a la lógica de alerta-d20
+    eventos = _calendar_events_cached()
+    d_min = fecha_hoy + timedelta(days=15)
+    d_max = fecha_hoy + timedelta(days=25)
+
+    skus_activos = {}
+    try:
+        rows = c.execute("""
+            SELECT producto_nombre FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchall()
+        skus_activos = {r[0]: r[0] for r in rows}
+    except Exception:
+        pass
+
+    candidatos = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f < d_min or f > d_max:
+            continue
+        producto_match = None
+        for prod_nom in skus_activos.keys():
+            try:
+                alias = _alias_calendar_for(c, prod_nom)
+                score = _match_producto_evento(prod_nom, alias, ev.get('titulo'),
+                                                ev.get('descripcion', ''))
+                if score >= 60:
+                    producto_match = prod_nom
+                    break
+            except Exception:
+                continue
+        if not producto_match:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 30
+        unidades_estimadas = int(kg * 1000 / 30)
+        # Verificar si ya existe SC d20 para esta fecha+producto
+        existe = c.execute("""
+            SELECT 1 FROM solicitudes_compra
+            WHERE categoria='Servicios'
+              AND observaciones LIKE ?
+              AND date(fecha) >= date('now','-30 days')
+            LIMIT 1
+        """, (f'%decoración D-20 · {producto_match}%',)).fetchone()
+        if existe:
+            continue
+        candidatos.append({
+            'producto': producto_match,
+            'fecha': f.isoformat(),
+            'unidades_estimadas': unidades_estimadas,
+            'kg': kg,
+        })
+
+    scs_creadas = []
+    for cand in candidatos:
+        # Buscar componentes serigrafía/tampografía mapeados al SKU
+        rows = c.execute("""
+            SELECT s.mee_codigo, s.componente_tipo, s.cantidad_por_unidad,
+                   m.descripcion, cfg.proveedor_principal, cfg.precio_unit
+            FROM sku_mee_config s
+              LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+              LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+            WHERE s.aplica = 1
+              AND s.componente_tipo IN ('serigrafia','tampografia')
+              AND COALESCE(cfg.disparo_d20,0) = 1
+              AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+        """, (cand['producto'],)).fetchall()
+        if not rows:
+            continue
+
+        items_por_prov = {}
+        for cod, tipo, cant_pu, desc, prov, prec in rows:
+            cant = cand['unidades_estimadas'] * float(cant_pu or 1)
+            it = {'mee_codigo': cod, 'tipo': tipo, 'nombre': desc or cod,
+                  'cantidad': cant, 'proveedor': prov or '',
+                  'precio_unit': float(prec or 0),
+                  'valor_estimado': cant * float(prec or 0)}
+            if it['proveedor']:
+                items_por_prov.setdefault(prov, []).append(it)
+
+        for prov, prov_items in items_por_prov.items():
+            if dry_run:
+                scs_creadas.append({
+                    'producto': cand['producto'],
+                    'fecha': cand['fecha'],
+                    'proveedor': prov,
+                    'items': len(prov_items),
+                    'unidades': cand['unidades_estimadas'],
+                    'dry_run': True,
+                })
+                continue
+            n = c.execute("""
+                SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+                FROM solicitudes_compra WHERE numero LIKE ?
+            """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+            numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
+            observ = (f'🎨 Cron D-20 · decoración D-20 · {cand["producto"]} · '
+                      f'producción {cand["fecha"]} · {cand["unidades_estimadas"]} ud · '
+                      f'proveedor {prov}')
+            c.execute("""
+                INSERT INTO solicitudes_compra
+                  (numero, fecha, estado, solicitante, urgencia, observaciones,
+                   area, empresa, categoria, tipo, fecha_requerida, valor)
+                VALUES (?, ?, 'Pendiente', ?, 'Alta', ?, 'Produccion', 'Espagiria',
+                        'Servicios', 'Compra', ?, ?)
+            """, (numero, datetime.now().isoformat(), user, observ, cand['fecha'],
+                  sum(it['valor_estimado'] for it in prov_items)))
+            for it in prov_items:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'und', ?, ?, ?)
+                    """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                          f"{it['tipo']} D-20 cron · {cand['producto']} · {cand['unidades_estimadas']} ud",
+                          it['valor_estimado'], it['proveedor']))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'und', ?, ?)
+                    """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                          f"{it['tipo']} D-20 cron · {cand['producto']}",
+                          it['valor_estimado']))
+            scs_creadas.append({
+                'numero': numero,
+                'producto': cand['producto'],
+                'fecha': cand['fecha'],
+                'proveedor': prov,
+                'items': len(prov_items),
+                'unidades': cand['unidades_estimadas'],
+            })
+
+    if not dry_run:
+        conn.commit()
+        # Log
+        try:
+            c.execute("""
+                INSERT INTO auto_plan_runs
+                  (ejecutado_at, ejecutado_por, tipo, horizonte_dias,
+                   producciones_creadas, compras_creadas, alertas_criticas,
+                   emails_enviados, error, payload_json)
+                VALUES (?, ?, 'auto_d20_cron', 20, 0, ?, 0, 0, NULL, ?)
+            """, (datetime.now().isoformat(), user, len(scs_creadas),
+                  json.dumps({'scs': scs_creadas, 'candidatos': len(candidatos)},
+                              default=str)))
+            conn.commit()
+        except Exception:
+            pass
+
+    return jsonify({
+        'ok': True,
+        'dry_run': dry_run,
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'producciones_en_ventana': len(candidatos),
+        'scs_creadas': scs_creadas,
+        'mensaje': (f'{"DRY RUN: " if dry_run else ""}'
+                    f'{len(scs_creadas)} SCs decoración '
+                    f'{"a crear" if dry_run else "creadas"} '
+                    f'para {len(set(s.get("producto") for s in scs_creadas))} producciones'),
+    })
+
+
 @bp.route('/api/planta/sc-d20-rapida', methods=['POST'])
 def sc_d20_rapida():
     """Crea SC rápida de serigrafía/tampografía para una producción D-20.
@@ -6199,6 +6388,405 @@ def sc_mee_asignar():
         'mensaje': (f'✅ Item asignado a {mee_codigo}'
                     + (f' · aprendido mapping {sku} → {mee_codigo} ({componente_tipo})' if aprendizaje else ' · mapping ya existía')),
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# REPORTE EJECUTIVO · métricas Auto-SC + aprendizaje + valor agregado
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/reporte-ejecutivo', methods=['GET'])
+def reporte_ejecutivo():
+    """Métricas ejecutivas del sistema Auto-SC IA en últimos 30/90/365 días.
+
+    Sebastián (1-may-2026): "reporte ejecutivo".
+
+    Devuelve:
+      · SCs creadas por la IA vs total (% automatización)
+      · Items aprendidos (mappings nuevos en sku_mee_config)
+      · MEE configurados vs sin proveedor
+      · Cobertura del sistema (SKUs con mapping vs total activos)
+      · Top proveedores por volumen
+      · Buffer IA promedio aplicado
+      · Próximas ventanas (mensual + lunes + D-20)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    inicio_30 = (fecha_hoy - timedelta(days=30)).isoformat()
+    inicio_90 = (fecha_hoy - timedelta(days=90)).isoformat()
+
+    rep = {'fecha': fecha_hoy.isoformat(), 'ventanas': {}}
+
+    # 1) SCs Auto-SC IA totales
+    try:
+        n_total_30 = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE date(fecha) >= ?
+        """, (inicio_30,)).fetchone()[0]
+        n_ia_30 = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE solicitante='auto-plan-ia' AND date(fecha) >= ?
+        """, (inicio_30,)).fetchone()[0]
+        n_ia_90 = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE solicitante='auto-plan-ia' AND date(fecha) >= ?
+        """, (inicio_90,)).fetchone()[0]
+        rep['scs'] = {
+            'total_30d': n_total_30,
+            'ia_30d': n_ia_30,
+            'ia_90d': n_ia_90,
+            'pct_automatizacion_30d': round((n_ia_30 / max(n_total_30,1)) * 100, 1),
+        }
+    except Exception:
+        rep['scs'] = {}
+
+    # 2) Aprendizaje (mappings creados)
+    try:
+        n_aprendidos = c.execute("""
+            SELECT COUNT(*) FROM sku_mee_config
+            WHERE COALESCE(notas,'') LIKE '%Aprendido%'
+              OR COALESCE(notas,'') LIKE '%Auto-mapeo%'
+        """).fetchone()[0]
+        n_total_mappings = c.execute("SELECT COUNT(*) FROM sku_mee_config").fetchone()[0]
+        n_skus_activos = c.execute("""
+            SELECT COUNT(*) FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchone()[0]
+        n_skus_mapeados = c.execute("""
+            SELECT COUNT(DISTINCT sku_codigo) FROM sku_mee_config WHERE aplica=1
+        """).fetchone()[0]
+        rep['aprendizaje'] = {
+            'mappings_aprendidos': n_aprendidos,
+            'mappings_totales': n_total_mappings,
+            'skus_activos': n_skus_activos,
+            'skus_mapeados': n_skus_mapeados,
+            'pct_cobertura_skus': round((n_skus_mapeados / max(n_skus_activos,1)) * 100, 1),
+        }
+    except Exception:
+        rep['aprendizaje'] = {}
+
+    # 3) MEE configurados
+    try:
+        n_mee_total = c.execute("SELECT COUNT(*) FROM mee_lead_time_config").fetchone()[0]
+        n_mee_aplica = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1").fetchone()[0]
+        n_mee_prov = c.execute("""
+            SELECT COUNT(*) FROM mee_lead_time_config
+            WHERE aplica=1 AND COALESCE(proveedor_principal,'') != ''
+        """).fetchone()[0]
+        n_mee_precio = c.execute("""
+            SELECT COUNT(*) FROM mee_lead_time_config
+            WHERE aplica=1 AND COALESCE(precio_unit,0) > 0
+        """).fetchone()[0]
+        rep['mee_config'] = {
+            'total_maestro': n_mee_total,
+            'aplica': n_mee_aplica,
+            'con_proveedor': n_mee_prov,
+            'con_precio': n_mee_precio,
+            'pct_completos': round((n_mee_precio / max(n_mee_aplica,1)) * 100, 1),
+        }
+    except Exception:
+        rep['mee_config'] = {}
+
+    # 4) Top proveedores 90d
+    try:
+        rows = c.execute("""
+            SELECT s.observaciones, COUNT(*) as n, SUM(COALESCE(s.valor,0)) as v
+            FROM solicitudes_compra s
+            WHERE s.solicitante='auto-plan-ia' AND date(s.fecha) >= ?
+            GROUP BY s.observaciones
+            ORDER BY n DESC LIMIT 8
+        """, (inicio_90,)).fetchall()
+        rep['top_proveedores'] = [
+            {'observacion': (r[0] or '')[:60], 'scs': r[1], 'valor_total': round(r[2] or 0, 0)}
+            for r in rows
+        ]
+    except Exception:
+        rep['top_proveedores'] = []
+
+    # 5) Próximas ventanas
+    def _proximo_lunes(d):
+        dias = (7 - d.weekday()) % 7
+        if dias == 0: dias = 7
+        return d + timedelta(days=dias)
+    def _prox_ventana_mensual(d):
+        if d.day <= 5:
+            return d
+        if d.month == 12:
+            return date(d.year+1, 1, 1)
+        return date(d.year, d.month+1, 1)
+    rep['ventanas'] = {
+        'proximo_lunes': _proximo_lunes(fecha_hoy).isoformat(),
+        'proxima_ventana_mensual': _prox_ventana_mensual(fecha_hoy).isoformat(),
+        'ventana_d20_min': (fecha_hoy + timedelta(days=15)).isoformat(),
+        'ventana_d20_max': (fecha_hoy + timedelta(days=25)).isoformat(),
+    }
+
+    # 6) Items POR-ASIGNAR pendientes
+    try:
+        n_por_asignar = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra_items i
+              JOIN solicitudes_compra s ON s.numero = i.numero
+            WHERE COALESCE(i.codigo_mp,'')=''
+              AND i.nombre_mp LIKE '%POR-ASIGNAR%'
+              AND s.estado IN ('Pendiente','En Revision')
+        """).fetchone()[0]
+        rep['items_por_asignar'] = n_por_asignar
+    except Exception:
+        rep['items_por_asignar'] = 0
+
+    return jsonify(rep)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PRE-PRODUCCIÓN · acomodo del equipo (Alejandro · Sebastián 1-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/pre-produccion-equipo', methods=['GET'])
+def pre_produccion_equipo():
+    """Resumen pre-producción próximos 7 días: producciones programadas
+    con su asignación de operarios + estado de MPs/MEEs + alertas.
+
+    Sebastián (1-may-2026): "después de planificar y solicitar tenemos que
+    pasar a pre-produccion lo que queria alejandro como se acomoda el equipo".
+
+    Por cada producción en los próximos 7 días devuelve:
+      · producto + fecha + lote + cantidad_kg + area
+      · operario_elaboracion + operario_envasado + operario_acondicionamiento
+      · estado MPs (cuántos verificados vs pendientes vs déficit)
+      · estado MEEs (envases/tapas/etiquetas listos vs faltantes)
+      · alertas (operario en 2 sitios · MP en déficit · MEE faltante)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    dias = int(request.args.get('dias', 7))
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    fecha_max = fecha_hoy + timedelta(days=dias)
+
+    # Producciones programadas (área desde JOIN areas_planta vía area_id)
+    rows = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               COALESCE(pp.cantidad_kg, 0),
+               COALESCE(ap.codigo, '') as area_codigo,
+               COALESCE(pp.estado, 'programado'),
+               pp.operario_elaboracion_id, pp.operario_envasado_id,
+               pp.operario_acondicionamiento_id,
+               COALESCE(oe.nombre || ' ' || COALESCE(oe.apellido,''), '') as op_elab,
+               COALESCE(oen.nombre || ' ' || COALESCE(oen.apellido,''), '') as op_env,
+               COALESCE(oa.nombre || ' ' || COALESCE(oa.apellido,''), '') as op_acond
+        FROM produccion_programada pp
+          LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+          LEFT JOIN operarios_planta oe ON oe.id = pp.operario_elaboracion_id
+          LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+          LEFT JOIN operarios_planta oa ON oa.id = pp.operario_acondicionamiento_id
+        WHERE date(pp.fecha_programada) >= ?
+          AND date(pp.fecha_programada) <= ?
+          AND COALESCE(pp.estado, 'programado') NOT IN ('completado', 'cancelado')
+        ORDER BY pp.fecha_programada ASC, pp.id ASC
+    """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+
+    cols = ['id','producto','fecha','lotes','cantidad_kg','area','estado',
+            'op_elab_id','op_env_id','op_acond_id',
+            'op_elaboracion','op_envasado','op_acondicionamiento']
+    producciones = []
+    for r in rows:
+        p = dict(zip(cols, r))
+        p['op_elaboracion'] = (p['op_elaboracion'] or '').strip()
+        p['op_envasado'] = (p['op_envasado'] or '').strip()
+        p['op_acondicionamiento'] = (p['op_acondicionamiento'] or '').strip()
+        # Estado MPs/MEEs desde checklist
+        try:
+            checklist = c.execute("""
+                SELECT item_tipo, estado, COUNT(*) as n
+                FROM produccion_checklist
+                WHERE produccion_id = ?
+                GROUP BY item_tipo, estado
+            """, (p['id'],)).fetchall()
+            mp_ok, mp_pend, mee_ok, mee_pend = 0, 0, 0, 0
+            for tipo, est, n in checklist:
+                tipo_low = (tipo or '').lower()
+                est_low = (est or '').lower()
+                es_listo = est_low in ('verificado_ok', 'recibido', 'listo', 'consumido')
+                if 'envase' in tipo_low or 'tapa' in tipo_low or 'etiqueta' in tipo_low or 'caja' in tipo_low or 'serigraf' in tipo_low or 'tampograf' in tipo_low:
+                    if es_listo: mee_ok += n
+                    else: mee_pend += n
+                else:
+                    if es_listo: mp_ok += n
+                    else: mp_pend += n
+            p['mp_ok'] = mp_ok
+            p['mp_pendientes'] = mp_pend
+            p['mee_ok'] = mee_ok
+            p['mee_pendientes'] = mee_pend
+        except Exception:
+            p['mp_ok'] = 0
+            p['mp_pendientes'] = 0
+            p['mee_ok'] = 0
+            p['mee_pendientes'] = 0
+        # Días hasta producción
+        try:
+            f_prod = datetime.strptime(p['fecha'][:10], '%Y-%m-%d').date()
+            p['dias_hasta'] = (f_prod - fecha_hoy).days
+        except Exception:
+            p['dias_hasta'] = 0
+        # Estado de listo
+        p['listo_para_producir'] = (p['mp_pendientes'] == 0 and p['mee_pendientes'] == 0)
+        producciones.append(p)
+
+    # Detectar conflictos: mismo operario en >1 producción mismo día
+    operarios_dia = {}  # (op_id, fecha) → [producciones]
+    conflictos = []
+    for p in producciones:
+        for op_field, op_id in (('op_elaboracion', p['op_elab_id']),
+                                  ('op_envasado', p['op_env_id']),
+                                  ('op_acondicionamiento', p['op_acond_id'])):
+            if not op_id:
+                continue
+            key = (op_id, p['fecha'][:10])
+            if key not in operarios_dia:
+                operarios_dia[key] = []
+            operarios_dia[key].append({'prod_id': p['id'], 'producto': p['producto'],
+                                        'rol': op_field, 'op_nombre': p[op_field]})
+    for key, lst in operarios_dia.items():
+        if len(lst) > 1:
+            conflictos.append({
+                'operario_id': key[0],
+                'operario_nombre': lst[0]['op_nombre'],
+                'fecha': key[1],
+                'producciones': lst,
+            })
+
+    # Por operario: total carga semanal
+    carga_operario = {}
+    for p in producciones:
+        for op_field, op_id, nombre in (
+            ('elaboracion', p['op_elab_id'], p['op_elaboracion']),
+            ('envasado', p['op_env_id'], p['op_envasado']),
+            ('acondicionamiento', p['op_acond_id'], p['op_acondicionamiento']),
+        ):
+            if not op_id or not nombre:
+                continue
+            if op_id not in carga_operario:
+                carga_operario[op_id] = {'nombre': nombre, 'producciones': 0,
+                                           'kg_total': 0, 'roles': set()}
+            carga_operario[op_id]['producciones'] += 1
+            carga_operario[op_id]['kg_total'] += p['cantidad_kg']
+            carga_operario[op_id]['roles'].add(op_field)
+    carga_operario_list = []
+    for op_id, info in carga_operario.items():
+        carga_operario_list.append({
+            'operario_id': op_id,
+            'nombre': info['nombre'],
+            'producciones': info['producciones'],
+            'kg_total': round(info['kg_total'], 0),
+            'roles': sorted(info['roles']),
+        })
+    carga_operario_list.sort(key=lambda x: x['producciones'], reverse=True)
+
+    # Producciones por estado
+    n_listas = sum(1 for p in producciones if p['listo_para_producir'])
+    n_con_pendientes = sum(1 for p in producciones if not p['listo_para_producir'])
+    n_sin_operarios = sum(1 for p in producciones
+                            if not (p['op_elaboracion'] or p['op_envasado']))
+
+    return jsonify({
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'horizonte_dias': dias,
+        'producciones': producciones,
+        'kpis': {
+            'total': len(producciones),
+            'listas': n_listas,
+            'con_pendientes': n_con_pendientes,
+            'sin_operarios_asignados': n_sin_operarios,
+            'conflictos_operario': len(conflictos),
+        },
+        'conflictos': conflictos,
+        'carga_operarios': carga_operario_list,
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# SYNC SHOPIFY · cron diario para mantener velocidades actualizadas
+# ════════════════════════════════════════════════════════════════════════
+@bp.route('/api/planta/sync-shopify-cron', methods=['POST'])
+def sync_shopify_cron():
+    """Cron diario que sincroniza órdenes Shopify (Animus). Sebastián
+    1-may-2026: "si sincroniza shopy".
+
+    Acepta sesión 'compras_user' o ?clave=AUTO_PLAN_CRON_KEY (cron Render).
+    Llama internamente a /api/animus/sync/shopify y registra el resultado.
+    """
+    clave_cron = request.args.get('clave', '') or (request.json or {}).get('clave', '')
+    clave_esperada = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+    es_cron = bool(clave_esperada and clave_cron == clave_esperada)
+    if not es_cron and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    user = 'cron-shopify' if es_cron else session.get('compras_user', 'manual')
+    conn = get_db(); c = conn.cursor()
+
+    # Ejecutar sync Shopify usando el endpoint existente en animus.py
+    # Reutilizamos la lógica directamente.
+    try:
+        from blueprints.animus import _cfg
+        token = _cfg(conn, 'shopify_token')
+        shop = _cfg(conn, 'shopify_shop')
+        if not token or not shop:
+            return jsonify({
+                'ok': False,
+                'error': 'Shopify no configurado (shopify_token/shopify_shop en config)',
+                'mensaje': 'Configura las credenciales en /admin antes del cron',
+            }), 400
+
+        import urllib.request as ur
+        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+        req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
+        synced = 0
+        try:
+            with ur.urlopen(req, timeout=30) as r:
+                orders = json.loads(r.read())["orders"]
+            for o in orders:
+                items_sku = json.dumps([
+                    {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
+                    for li in o.get("line_items", [])
+                ])
+                total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+                addr = o.get("billing_address") or {}
+                conn.execute("""
+                    INSERT OR REPLACE INTO animus_shopify_orders
+                      (shopify_id, nombre, email, total, moneda, estado, estado_pago,
+                       sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                """, (str(o["id"]), o.get("name",""), o.get("email",""),
+                      float(o.get("total_price",0)), o.get("currency","COP"),
+                      o.get("fulfillment_status",""), o.get("financial_status",""),
+                      items_sku, total_uds,
+                      addr.get("city",""), addr.get("country_code","CO"),
+                      o.get("created_at","")[:10]))
+                synced += 1
+            conn.commit()
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'Shopify API: {e}'}), 502
+
+        # Log
+        try:
+            c.execute("""
+                INSERT INTO auto_plan_runs
+                  (ejecutado_at, ejecutado_por, tipo, horizonte_dias,
+                   producciones_creadas, compras_creadas, alertas_criticas,
+                   emails_enviados, error, payload_json)
+                VALUES (?, ?, 'sync_shopify_cron', 0, 0, 0, 0, 0, NULL, ?)
+            """, (datetime.now().isoformat(), user,
+                  json.dumps({'orders_synced': synced})))
+            conn.commit()
+        except Exception:
+            pass
+
+        return jsonify({
+            'ok': True,
+            'orders_synced': synced,
+            'mensaje': f'✅ {synced} órdenes Shopify sincronizadas',
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @bp.route('/api/planta/diagnostico-calendar', methods=['GET'])

@@ -5026,6 +5026,41 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Reporte Ejecutivo Auto-SC IA · Sebastián 1-may-2026 ──────── -->
+    <div id="plan-reporte-ejecutivo" style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.12)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;letter-spacing:.3px">&#128202; Reporte Ejecutivo · Auto-SC IA</div>
+          <div style="font-size:11px;opacity:.8;margin-top:2px">Métricas + aprendizaje + cobertura del sistema</div>
+        </div>
+        <button onclick="reporteEjecutivoRecargar()" style="padding:5px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+      </div>
+      <div id="reporte-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px"></div>
+      <div id="reporte-detalle" style="margin-top:10px;font-size:11px;opacity:.85"></div>
+    </div>
+
+    <!-- ── Pre-producción · Acomodo del equipo · Alejandro ───────────── -->
+    <div id="plan-pre-produccion" style="background:#fff;border:2px solid #15803d;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#15803d">&#128104;&#8205;&#127981;&#65039; Pre-producción · Acomodo del equipo (próximos 7 días)</div>
+          <div id="prep-subtitle" style="font-size:11px;color:#64748b;margin-top:2px">Cargando…</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="prep-dias" onchange="preProduccionRecargar()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:11px">
+            <option value="7" selected>7 días</option>
+            <option value="14">14 días</option>
+            <option value="30">30 días</option>
+          </select>
+          <button onclick="preProduccionRecargar()" style="padding:4px 10px;background:#15803d;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="prep-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:10px"></div>
+      <div id="prep-conflictos" style="margin-bottom:10px"></div>
+      <div id="prep-producciones" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div id="prep-carga-operarios" style="margin-top:14px"></div>
+    </div>
+
     <!-- ── Centro de Alertas MEE · etiquetas post-envasado + D-20 ───────
          Sebastián (1-may-2026): "etiquetas las pedimos el día que sabemos
          cuanto envasamos. serigrafía ideal pedir 20 días antes". Sistema
@@ -9508,7 +9543,9 @@ async function ckMarcar(itemId, estado){
     var planv2 = document.getElementById('ptab-planv2');
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
-    var ids = ['plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee', 'mee-asignar-panel', 'mee-config-panel'];
+    var ids = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
+               'plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee',
+               'mee-asignar-panel', 'mee-config-panel'];
     var current = anchor;
     ids.forEach(function(id){
       var el = document.getElementById(id);
@@ -9527,6 +9564,8 @@ async function ckMarcar(itemId, estado){
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
     if(typeof alertD20Recargar === 'function') alertD20Recargar();
+    if(typeof reporteEjecutivoRecargar === 'function') reporteEjecutivoRecargar();
+    if(typeof preProduccionRecargar === 'function') preProduccionRecargar();
     // Recargar contador de items por asignar (no abre el panel)
     if(typeof meeAsignarRecargar === 'function'){
       try{
@@ -12155,6 +12194,140 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Reporte Ejecutivo Auto-SC IA (Sebastián 1-may-2026)
+  async function reporteEjecutivoRecargar(){
+    var grid = document.getElementById('reporte-grid');
+    var detalle = document.getElementById('reporte-detalle');
+    if(!grid) return;
+    grid.innerHTML = '<div style="color:#94a3b8;font-size:11px">Cargando…</div>';
+    try{
+      var r = await fetch('/api/planta/reporte-ejecutivo', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      function tile(label, val, sub, color){
+        return '<div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 12px">'
+          +'<div style="font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.75">'+label+'</div>'
+          +'<div style="font-size:20px;font-weight:800;color:'+(color||'#fff')+';margin-top:2px">'+val+'</div>'
+          +(sub?'<div style="font-size:10px;opacity:.7;margin-top:2px">'+sub+'</div>':'')
+        +'</div>';
+      }
+      var s = d.scs || {};
+      var a = d.aprendizaje || {};
+      var m = d.mee_config || {};
+      var v = d.ventanas || {};
+      grid.innerHTML = ''
+        + tile('SCs IA · 30d', s.ia_30d || 0, (s.pct_automatizacion_30d||0)+'% del total', '#22d3ee')
+        + tile('SCs IA · 90d', s.ia_90d || 0, 'cumulado trimestre', '#22d3ee')
+        + tile('Cobertura SKUs', (a.pct_cobertura_skus||0)+'%', (a.skus_mapeados||0)+' de '+(a.skus_activos||0)+' SKUs', '#a3e635')
+        + tile('Mappings aprendidos', a.mappings_aprendidos||0, 'de '+(a.mappings_totales||0)+' totales', '#a3e635')
+        + tile('MEE configurados', (m.con_proveedor||0)+'/'+(m.aplica||0), (m.pct_completos||0)+'% con precio', '#fbbf24')
+        + tile('Items POR-ASIGNAR', d.items_por_asignar||0, 'pendientes Catalina', d.items_por_asignar > 0 ? '#fbbf24' : '#a3e635');
+      var html = '<b>📅 Próximas ventanas:</b> '
+        +'mensual '+v.proxima_ventana_mensual+' · lunes '+v.proximo_lunes
+        +' · D-20 desde '+v.ventana_d20_min+' hasta '+v.ventana_d20_max;
+      if(d.top_proveedores && d.top_proveedores.length){
+        html += '<br><br><b>🏭 Top SCs por proveedor (90d):</b><br>'
+          + d.top_proveedores.slice(0,5).map(function(p){
+            return '  • '+(p.observacion||'').substring(0,50)+' · '+p.scs+' SCs · $'+(p.valor_total||0).toLocaleString();
+          }).join('<br>');
+      }
+      if(detalle) detalle.innerHTML = html;
+    }catch(e){
+      grid.innerHTML = '<div style="color:#fca5a5;font-size:11px">Error: '+(e.message||e)+'</div>';
+    }
+  }
+
+  // ── Pre-producción · Acomodo del equipo
+  async function preProduccionRecargar(){
+    var sub = document.getElementById('prep-subtitle');
+    var kpisEl = document.getElementById('prep-kpis');
+    var prodsEl = document.getElementById('prep-producciones');
+    var conflEl = document.getElementById('prep-conflictos');
+    var cargaEl = document.getElementById('prep-carga-operarios');
+    if(sub) sub.textContent = 'Cargando…';
+    var dias = (document.getElementById('prep-dias')||{value:'7'}).value;
+    try{
+      var r = await fetch('/api/planta/pre-produccion-equipo?dias='+dias, {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var k = d.kpis || {};
+      if(sub) sub.textContent = (k.total||0)+' producciones próximos '+dias+' días · '+(k.listas||0)+' listas · '+(k.con_pendientes||0)+' con pendientes';
+      // KPIs tiles
+      function tile(label, val, color){
+        return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:8px 10px">'
+          +'<div style="font-size:9px;color:#64748b;text-transform:uppercase">'+label+'</div>'
+          +'<div style="font-size:18px;font-weight:800;color:'+(color||'#0f172a')+'">'+val+'</div>'
+        +'</div>';
+      }
+      kpisEl.innerHTML = ''
+        + tile('Total', k.total||0)
+        + tile('Listas', k.listas||0, '#15803d')
+        + tile('Con pendientes', k.con_pendientes||0, k.con_pendientes ? '#dc2626' : '#15803d')
+        + tile('Sin operario', k.sin_operarios_asignados||0, k.sin_operarios_asignados ? '#dc2626' : '#15803d')
+        + tile('Conflictos', k.conflictos_operario||0, k.conflictos_operario ? '#dc2626' : '#15803d');
+
+      // Conflictos (operario en 2 sitios mismo día)
+      var conflictos = d.conflictos || [];
+      conflEl.innerHTML = '';
+      if(conflictos.length){
+        conflEl.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;font-size:11px">'
+          +'<b style="color:#991b1b">⚠️ '+conflictos.length+' conflicto(s) de operario:</b><ul style="margin:4px 0 0 18px;padding:0;color:#7f1d1d">'
+          + conflictos.map(function(c){
+            return '<li>'+c.operario_nombre+' el '+c.fecha+' asignado a '+c.producciones.length+' producciones: '
+              + c.producciones.map(function(p){return p.producto+'('+p.rol+')';}).join(', ')+'</li>';
+          }).join('')
+          +'</ul></div>';
+      }
+
+      // Producciones cards
+      var prods = d.producciones || [];
+      if(!prods.length){
+        prodsEl.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;font-size:11px;font-style:italic">Sin producciones programadas en próximos '+dias+' días</div>';
+      } else {
+        prodsEl.innerHTML = prods.map(function(p){
+          var border = p.listo_para_producir ? '#15803d' : (p.dias_hasta <= 2 ? '#dc2626' : '#fbbf24');
+          var bg = p.listo_para_producir ? '#f0fdf4' : (p.dias_hasta <= 2 ? '#fef2f2' : '#fefce8');
+          var statusIcon = p.listo_para_producir ? '✅' : '⏳';
+          var statusTxt = p.listo_para_producir ? 'LISTA' : 'pendiente';
+          return '<div style="background:'+bg+';border-left:4px solid '+border+';padding:10px 12px;border-radius:6px;font-size:11px">'
+            +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'
+            +'<div><b style="color:#0f172a">'+statusIcon+' '+_escHTML(p.producto.substring(0,40))+'</b>'
+            +' · D-'+p.dias_hasta+' · '+p.fecha.substring(0,10)+' · '+p.cantidad_kg+'kg ('+p.lotes+' lote)'
+            +(p.area ? ' · 🏭 '+p.area : '')
+            +'</div>'
+            +'<span style="background:'+border+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">'+statusTxt+'</span>'
+            +'</div>'
+            +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:6px;font-size:10px">'
+            +'<div>👤 <b>Elaboración:</b> '+(p.op_elaboracion || '<span style="color:#dc2626">SIN ASIGNAR</span>')+'</div>'
+            +'<div>📦 <b>Envasado:</b> '+(p.op_envasado || '<span style="color:#dc2626">SIN ASIGNAR</span>')+'</div>'
+            +'<div>🏷️ <b>Acondicionar:</b> '+(p.op_acondicionamiento || '<span style="color:#94a3b8">—</span>')+'</div>'
+            +'<div>🧪 <b>MPs:</b> '+(p.mp_ok||0)+' OK · '+(p.mp_pendientes||0)+' pend</div>'
+            +'<div>📦 <b>MEEs:</b> '+(p.mee_ok||0)+' OK · '+(p.mee_pendientes||0)+' pend</div>'
+            +'</div>'
+            +'</div>';
+        }).join('');
+      }
+
+      // Carga por operario
+      var carga = d.carga_operarios || [];
+      if(carga.length){
+        cargaEl.innerHTML = '<h4 style="margin:0 0 6px;color:#0f172a;font-size:12px">📊 Carga semanal por operario</h4>'
+          +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
+          + carga.map(function(c){
+            var color = c.producciones >= 5 ? '#dc2626' : (c.producciones >= 3 ? '#fbbf24' : '#15803d');
+            return '<div style="background:'+color+';color:#fff;padding:5px 10px;border-radius:14px;font-size:11px;font-weight:600">'
+              +c.nombre+' · '+c.producciones+' prods · '+c.kg_total+'kg'
+              +' · ['+(c.roles||[]).join('+')+']</div>';
+          }).join('')
+          +'</div>';
+      } else {
+        cargaEl.innerHTML = '';
+      }
+    }catch(e){
+      if(sub) sub.textContent = 'Error: '+(e.message||e);
+    }
+  }
+
   // ── Diagnosticar Calendar (Sebastián 1-may-2026)
   async function diagnosticarCalendar(){
     try{
