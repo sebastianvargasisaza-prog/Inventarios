@@ -3009,46 +3009,49 @@ def planta_centro_mando():
             logging.getLogger('programacion').warning(f'[centro-mando auto-clean] cal fetch falla: {_e}')
         auto_clean_diag['cal_set_size'] = len(_productos_cal)
 
-        # Solo limpiar si Calendar tiene eventos (guard contra feed caído)
-        if _productos_cal:
-            # DB rows en horizonte no iniciadas
-            _db_rows = _ac.execute("""
-                SELECT id, producto, date(fecha_programada)
-                FROM produccion_programada
-                WHERE date(fecha_programada) BETWEEN ? AND ?
-                  AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
-                LIMIT 200
-            """, (_f_inicio, _f_fin)).fetchall()
-            auto_clean_diag['db_rows_check'] = len(_db_rows)
-            for pid, prod, fecha in _db_rows:
-                key = (fecha, (prod or '').upper())
-                if key in _productos_cal:
-                    auto_clean_diag['matched'] += 1
-                    continue
-                # NO match en Calendar → cancelar
-                _ac.execute("""
-                    UPDATE produccion_programada
-                      SET estado='cancelado',
-                          observaciones = COALESCE(observaciones,'') ||
-                            ' [auto-cancelado · sin match Calendar]'
-                    WHERE id=?
-                """, (pid,))
-                auto_canceladas_inicial += 1
-                if len(auto_cancel_detalle_inicial) < 5:
-                    auto_cancel_detalle_inicial.append(f"{(prod or '?')[:30]} {fecha}")
-            # FORZAR commit siempre (incluso 0 canceladas para liberar lock)
-            conn.commit()
-            logging.getLogger('programacion').info(
-                f'[centro-mando auto-clean] cal_set={auto_clean_diag["cal_set_size"]} '
-                f'db_rows={auto_clean_diag["db_rows_check"]} '
-                f'matched={auto_clean_diag["matched"]} '
-                f'canceladas={auto_canceladas_inicial}'
-            )
-        else:
-            logging.getLogger('programacion').warning(
-                f'[centro-mando auto-clean] Calendar set vacío · skip cleanup '
-                f'(horizonte {_f_inicio} a {_f_fin})'
-            )
+        # Sebastián 1-may-2026 estricto Calendar-first: cancelar TODAS las
+        # filas DB no iniciadas en horizonte. Calendar es la única fuente
+        # de verdad. Si una fila DB no tiene inicio_real_at, es estale o
+        # placeholder · debe desaparecer. Si necesita mostrarse, Calendar
+        # debe tenerla.
+        # Guard único: máximo 200 por GET.
+        _db_rows = _ac.execute("""
+            SELECT id, producto, date(fecha_programada)
+            FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN ? AND ?
+              AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
+              AND inicio_real_at IS NULL
+            LIMIT 200
+        """, (_f_inicio, _f_fin)).fetchall()
+        auto_clean_diag['db_rows_check'] = len(_db_rows)
+        for pid, prod, fecha in _db_rows:
+            key = (fecha, (prod or '').upper())
+            if _productos_cal and key in _productos_cal:
+                # Tiene match Calendar exacto → mantener (Calendar la pre-asigna)
+                auto_clean_diag['matched'] += 1
+                continue
+            # No tiene match O Calendar set vacío → cancelar
+            # (si Calendar set está vacío puede ser que feed esté caído,
+            # PERO también puede ser que Calendar simplemente no tenga
+            # esa producción · eligir limpieza estricta)
+            _ac.execute("""
+                UPDATE produccion_programada
+                  SET estado='cancelado',
+                      observaciones = COALESCE(observaciones,'') ||
+                        ' [auto-cancelado · estricto Calendar-first]'
+                WHERE id=?
+            """, (pid,))
+            auto_canceladas_inicial += 1
+            if len(auto_cancel_detalle_inicial) < 5:
+                auto_cancel_detalle_inicial.append(f"{(prod or '?')[:30]} {fecha}")
+        # FORZAR commit siempre
+        conn.commit()
+        logging.getLogger('programacion').info(
+            f'[centro-mando auto-clean] cal_set={auto_clean_diag["cal_set_size"]} '
+            f'db_rows={auto_clean_diag["db_rows_check"]} '
+            f'matched={auto_clean_diag["matched"]} '
+            f'canceladas={auto_canceladas_inicial}'
+        )
     except Exception as _e:
         logging.getLogger('programacion').warning(f'[centro-mando auto-clean inicial] falla: {_e}')
         try: conn.rollback()
@@ -3194,7 +3197,13 @@ def planta_centro_mando():
         return out
 
     try:
-        # 1) Filas DB del horizonte (incluye iniciadas, en_proceso, programadas)
+        # 1) Filas DB del horizonte SOLO si están INICIADAS o COMPLETADAS.
+        # Sebastián 1-may-2026 (estricto Calendar-first): 'se lleva todo lo
+        # que hay los lunes sin importar las fechas'. Las filas DB no
+        # iniciadas pueden tener fechas erróneas o productos antiguos →
+        # ignorarlas completamente. Calendar es la única fuente para 'qué
+        # toca'. Solo lo que el operario YA inició (con inicio_real_at) o
+        # YA terminó persiste como card.
         rows_db = conn.execute("""
             SELECT pp.id, pp.producto, COALESCE(pp.cantidad_kg,0), pp.lotes,
                    pp.estado, pp.area_id, date(pp.fecha_programada) as f,
@@ -3212,6 +3221,8 @@ def planta_centro_mando():
             LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
             WHERE date(pp.fecha_programada) BETWEEN ? AND ?
               AND COALESCE(pp.estado, 'programado') != 'cancelado'
+              AND (pp.inicio_real_at IS NOT NULL
+                   OR COALESCE(pp.estado, 'programado') IN ('en_proceso','iniciado','completado'))
             ORDER BY pp.fecha_programada, pp.id
         """, (fechas_horizonte[0].isoformat(), fechas_horizonte[-1].isoformat())).fetchall()
         productos_db_por_fecha = set()  # (fecha, producto_upper)
