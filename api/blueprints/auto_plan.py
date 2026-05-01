@@ -6002,6 +6002,63 @@ def _score_fuzzy(palabras_a, palabras_b):
 # se use se descuenta automatico? y asi se van guardando para el futuro
 # porque hoy en dia no sabemos a quien corresponde cada cosa".
 
+@bp.route('/api/planta/items-por-asignar', methods=['GET'])
+def items_por_asignar():
+    """Lista items de SCs MEE genéricas con codigo_mp vacío + nombre POR-ASIGNAR.
+    Para que Catalina los asigne desde el panel Auto-SC MEE.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT i.id, i.numero, i.codigo_mp, i.nombre_mp, i.cantidad_g,
+               i.unidad, i.justificacion, s.fecha, s.estado, s.solicitante
+        FROM solicitudes_compra_items i
+          JOIN solicitudes_compra s ON s.numero = i.numero
+        WHERE COALESCE(i.codigo_mp, '') = ''
+          AND (i.nombre_mp LIKE '%POR-ASIGNAR%' OR i.nombre_mp LIKE '%POR ASIGNAR%')
+          AND s.categoria = 'Material de Empaque'
+          AND s.estado IN ('Pendiente', 'En Revision')
+        ORDER BY s.fecha DESC, i.id ASC
+    """).fetchall()
+    cols = ['id','numero','codigo_mp','nombre_mp','cantidad_g','unidad',
+            'justificacion','fecha_sc','estado_sc','solicitante']
+    items = [dict(zip(cols, r)) for r in rows]
+
+    # Catálogo MEE para dropdown (codigo + descripcion + categoria)
+    mees = []
+    try:
+        for r in c.execute("""
+            SELECT codigo, descripcion, categoria, stock_actual
+            FROM maestro_mee
+            WHERE COALESCE(estado,'Activo')='Activo'
+            ORDER BY categoria, codigo
+        """).fetchall():
+            mees.append({'codigo': r[0], 'descripcion': r[1] or r[0],
+                          'categoria': r[2] or '', 'stock': r[3] or 0})
+    except Exception:
+        pass
+
+    # Catálogo proveedores
+    proveedores = []
+    try:
+        for r in c.execute("SELECT DISTINCT nombre FROM proveedores WHERE activo=1 ORDER BY nombre").fetchall():
+            proveedores.append(r[0])
+    except Exception:
+        try:
+            for r in c.execute("SELECT DISTINCT proveedor FROM maestro_mee WHERE COALESCE(proveedor,'') != '' ORDER BY proveedor").fetchall():
+                proveedores.append(r[0])
+        except Exception:
+            pass
+
+    return jsonify({
+        'items': items,
+        'total': len(items),
+        'maestro_mee': mees,
+        'proveedores': proveedores,
+    })
+
+
 @bp.route('/api/planta/sc-mee-asignar', methods=['POST'])
 def sc_mee_asignar():
     """Catalina asigna un código MEE específico a un item de SC genérica

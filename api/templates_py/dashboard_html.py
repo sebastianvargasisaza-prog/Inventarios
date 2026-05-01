@@ -5087,9 +5087,38 @@ function _renderProgramacion(d){
       </div>
       <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
         <button onclick="meeConfigToggle()" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#9881; Configurar MEE (proveedor / MOQ / origen / flags)</button>
+        <button onclick="meeAsignarToggle()" id="btn-mee-asignar" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#127919; Items por asignar <span id="btn-asignar-count" style="background:#fff;color:#5b21b6;padding:1px 6px;border-radius:8px;margin-left:4px;font-size:10px">—</span></button>
         <button onclick="meeNormalizar()" title="Backfill proveedor desde maestro_mee + auto-mapping fuzzy SKU→etiqueta/serigrafía por similitud" style="padding:5px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#129668; Normalizar (proveedor + mappings)</button>
       </div>
       <div id="autosc-mee-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
+    </div>
+
+    <!-- Items POR-ASIGNAR (Catalina los completa) -->
+    <div id="mee-asignar-panel" style="display:none;background:#fff;border:2px solid #7c3aed;border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h4 style="margin:0;color:#5b21b6;font-size:14px">&#127919; Items por asignar (SCs genéricas) · Catalina</h4>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="mee-asignar-count" style="font-size:11px;color:#64748b;font-weight:700"></span>
+          <button onclick="meeAsignarRecargar()" style="padding:4px 8px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635; Refrescar</button>
+        </div>
+      </div>
+      <div id="mee-asignar-empty" style="display:none;text-align:center;padding:18px;color:#94a3b8;font-size:11px;font-style:italic">Sin items pendientes ✓</div>
+      <div style="overflow-x:auto;max-height:520px;overflow-y:auto">
+        <table id="mee-asignar-table" style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead style="position:sticky;top:0;background:#7c3aed;color:#fff;z-index:1">
+            <tr>
+              <th style="padding:6px;text-align:left">SC</th>
+              <th style="padding:6px;text-align:left">Item (POR-ASIGNAR)</th>
+              <th style="padding:6px;text-align:right">Cant</th>
+              <th style="padding:6px;text-align:left">Código MEE *</th>
+              <th style="padding:6px;text-align:left">Proveedor</th>
+              <th style="padding:6px;text-align:center">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="mee-asignar-tbody"></tbody>
+        </table>
+      </div>
+      <div id="mee-asignar-status" style="margin-top:8px;font-size:11px;color:#64748b"></div>
     </div>
 
     <!-- Tabla configuración MEE (collapsable) -->
@@ -9479,7 +9508,7 @@ async function ckMarcar(itemId, estado){
     var planv2 = document.getElementById('ptab-planv2');
     var anchor = document.getElementById('pv2-kpis');
     if(!planv2 || !anchor) return;
-    var ids = ['plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee', 'mee-config-panel'];
+    var ids = ['plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee', 'mee-asignar-panel', 'mee-config-panel'];
     var current = anchor;
     ids.forEach(function(id){
       var el = document.getElementById(id);
@@ -9498,6 +9527,17 @@ async function ckMarcar(itemId, estado){
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
     if(typeof alertD20Recargar === 'function') alertD20Recargar();
+    // Recargar contador de items por asignar (no abre el panel)
+    if(typeof meeAsignarRecargar === 'function'){
+      try{
+        fetch('/api/planta/items-por-asignar', {credentials:'same-origin'})
+          .then(function(r){return r.json();})
+          .then(function(d){
+            var btn = document.getElementById('btn-asignar-count');
+            if(btn) btn.textContent = (d.total || 0);
+          }).catch(function(){});
+      }catch(e){}
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -12199,6 +12239,123 @@ async function ckMarcar(itemId, estado){
       autoscMeeRecargar();
     }catch(e){
       msg.innerHTML = '❌ Error aplicando: '+(e.message||e);
+    }
+  }
+
+  // ── Items POR-ASIGNAR (Catalina) — Sebastián 1-may-2026
+  var _MEE_ASIGNAR_DATA = {items: [], maestro_mee: [], proveedores: []};
+  function meeAsignarToggle(){
+    var p = document.getElementById('mee-asignar-panel');
+    if(!p) return;
+    if(p.style.display === 'none'){
+      p.style.display = 'block';
+      meeAsignarRecargar();
+    } else {
+      p.style.display = 'none';
+    }
+  }
+  async function meeAsignarRecargar(){
+    var status = document.getElementById('mee-asignar-status');
+    if(status) status.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/items-por-asignar', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      _MEE_ASIGNAR_DATA = d;
+      var btnCount = document.getElementById('btn-asignar-count');
+      if(btnCount) btnCount.textContent = d.total || 0;
+      var countSpan = document.getElementById('mee-asignar-count');
+      if(countSpan) countSpan.textContent = (d.total || 0) + ' items pendientes';
+      meeAsignarRender();
+    }catch(e){
+      if(status) status.textContent = 'Error: '+(e.message||e);
+    }
+  }
+  function meeAsignarRender(){
+    var tb = document.getElementById('mee-asignar-tbody');
+    var empty = document.getElementById('mee-asignar-empty');
+    if(!tb) return;
+    var items = _MEE_ASIGNAR_DATA.items || [];
+    if(!items.length){
+      tb.innerHTML = '';
+      if(empty) empty.style.display = 'block';
+      return;
+    }
+    if(empty) empty.style.display = 'none';
+    var mees = _MEE_ASIGNAR_DATA.maestro_mee || [];
+    var provs = _MEE_ASIGNAR_DATA.proveedores || [];
+    // Inferir tipo del nombre para filtrar dropdown
+    function tipoComponente(nombre){
+      var n = (nombre || '').toLowerCase();
+      if(n.indexOf('envase') >= 0) return 'envase';
+      if(n.indexOf('tapa') >= 0) return 'tapa';
+      if(n.indexOf('etiqueta') >= 0) return 'etiqueta';
+      if(n.indexOf('serigraf') >= 0) return 'serigrafia';
+      if(n.indexOf('tampograf') >= 0) return 'tampografia';
+      if(n.indexOf('caja') >= 0) return 'caja';
+      return 'otro';
+    }
+    function categoriaCompatible(tipo){
+      // map tipo componente → categoría maestro_mee
+      if(tipo === 'envase') return ['Envase','Frasco'];
+      if(tipo === 'tapa') return ['Tapa','Gotero'];
+      if(tipo === 'etiqueta') return ['Etiqueta'];
+      if(tipo === 'serigrafia') return ['Serigrafia'];
+      if(tipo === 'tampografia') return ['Serigrafia','Tampografia'];
+      if(tipo === 'caja') return ['Plegable','Contorno'];
+      return [];
+    }
+    tb.innerHTML = items.map(function(it){
+      var tipo = tipoComponente(it.nombre_mp);
+      var cats = categoriaCompatible(tipo);
+      var meesFiltrados = cats.length ? mees.filter(function(m){return cats.indexOf(m.categoria) >= 0;}) : mees;
+      var optsMee = '<option value="">— seleccionar código MEE —</option>' +
+        meesFiltrados.map(function(m){
+          return '<option value="'+m.codigo+'">'+m.codigo+' · '+(m.descripcion||'').substring(0,40)+' (stock '+m.stock+')</option>';
+        }).join('');
+      var optsProv = '<option value="">— proveedor —</option>' +
+        provs.map(function(p){return '<option value="'+esc(p)+'">'+esc(p)+'</option>';}).join('');
+      return '<tr data-id="'+it.id+'" style="border-bottom:1px solid #e2e8f0">' +
+        '<td style="padding:5px;font-family:monospace;font-size:10px">'+it.numero+'</td>' +
+        '<td style="padding:5px"><div style="font-size:10px;color:#5b21b6;font-weight:700">'+esc(it.nombre_mp).substring(0,60)+'</div><div style="font-size:9px;color:#94a3b8">tipo: '+tipo+'</div></td>' +
+        '<td style="padding:5px;text-align:right;font-family:monospace">'+(Math.round(it.cantidad_g||0)).toLocaleString()+' '+(it.unidad||'und')+'</td>' +
+        '<td style="padding:3px"><select id="mee-cod-'+it.id+'" style="width:100%;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px">'+optsMee+'</select></td>' +
+        '<td style="padding:3px"><input id="mee-prov-'+it.id+'" list="dl-prov-'+it.id+'" placeholder="proveedor..." style="width:120px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px"><datalist id="dl-prov-'+it.id+'">'+optsProv+'</datalist></td>' +
+        '<td style="padding:3px;text-align:center"><button onclick="meeAsignarItem('+it.id+',\\''+tipo+'\\')" style="padding:4px 10px;background:#10b981;color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">Asignar</button></td>' +
+      '</tr>';
+    }).join('');
+  }
+  function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  async function meeAsignarItem(itemId, tipo){
+    var meeSel = document.getElementById('mee-cod-'+itemId);
+    var provInput = document.getElementById('mee-prov-'+itemId);
+    var meeCod = (meeSel||{value:''}).value;
+    var prov = (provInput||{value:''}).value.trim();
+    if(!meeCod){
+      alert('Debes seleccionar un código MEE'); return;
+    }
+    var status = document.getElementById('mee-asignar-status');
+    if(status) status.textContent = '⏳ Asignando '+meeCod+'…';
+    try{
+      var r = await fetch('/api/planta/sc-mee-asignar', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          sc_item_id: itemId,
+          mee_codigo: meeCod,
+          proveedor: prov,
+          componente_tipo: tipo,
+        }),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      if(status) status.textContent = '✅ '+d.mensaje;
+      // remover fila visualmente
+      var tr = document.querySelector('tr[data-id="'+itemId+'"]');
+      if(tr) tr.style.opacity = '0.4';
+      setTimeout(meeAsignarRecargar, 600);
+    }catch(e){
+      if(status) status.textContent = '❌ Error: '+(e.message||e);
     }
   }
 
