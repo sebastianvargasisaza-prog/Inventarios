@@ -7020,6 +7020,260 @@ def mi_dia():
     })
 
 
+@bp.route('/api/planta/health-check', methods=['GET'])
+def planta_health_check():
+    """Health check del sistema completo · Sebastián 1-may-2026:
+    'meta que todo se programe solo automático'.
+
+    Devuelve estado de cada componente con verde/amarillo/rojo + sugerencias.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    items = []  # [{categoria, status, nombre, valor, sugerencia}]
+
+    # 1) Cron auto-plan habilitado
+    try:
+        r = c.execute("SELECT habilitado, errores_consecutivos FROM auto_plan_cron_state WHERE id=1").fetchone()
+        habilitado = bool(r[0]) if r else False
+        items.append({
+            'categoria': 'cron',
+            'nombre': 'Auto-plan cron habilitado',
+            'status': 'ok' if habilitado else 'error',
+            'valor': 'sí' if habilitado else 'no',
+            'sugerencia': '' if habilitado else 'Habilita en /api/auto-plan/cron/toggle',
+        })
+        if r and r[1] > 0:
+            items.append({
+                'categoria': 'cron',
+                'nombre': 'Errores consecutivos cron',
+                'status': 'warn' if r[1] < 3 else 'error',
+                'valor': str(r[1]),
+                'sugerencia': 'Revisa logs si >3',
+            })
+    except Exception as e:
+        items.append({'categoria':'cron','nombre':'Auto-plan cron state','status':'error','valor':str(e),'sugerencia':''})
+
+    # 2) Multi-cron · 6 jobs ejecutándose
+    try:
+        from blueprints.auto_plan_jobs import JOBS_SCHEDULE
+        for job_name, h, m, _, _, _ in JOBS_SCHEDULE:
+            ult = c.execute("""
+                SELECT ejecutado_at, ok FROM cron_jobs_runs
+                WHERE job_name=? ORDER BY id DESC LIMIT 1
+            """, (job_name,)).fetchone()
+            sched = f'{h:02d}:{m:02d}'
+            if not ult:
+                items.append({'categoria':'multi-cron','nombre':f'Job {job_name}','status':'warn',
+                                'valor':f'nunca · {sched}','sugerencia':'Esperando primera ejecución'})
+            else:
+                ago = (datetime.now() - datetime.fromisoformat(ult[0])).total_seconds() / 3600
+                if ult[1]:
+                    items.append({'categoria':'multi-cron','nombre':f'Job {job_name}','status':'ok',
+                                    'valor':f'hace {ago:.1f}h ({sched})','sugerencia':''})
+                else:
+                    items.append({'categoria':'multi-cron','nombre':f'Job {job_name}','status':'error',
+                                    'valor':'último FALLÓ','sugerencia':'Revisar cron_jobs_runs.error'})
+    except Exception:
+        pass
+
+    # 3) Calendar conectado
+    try:
+        from blueprints.programacion import _fetch_calendar_events
+        result = _fetch_calendar_events(days_ahead=60) or {}
+        eventos = result.get('events') or []
+        if result.get('source') == 'none':
+            items.append({'categoria':'calendar','nombre':'Calendar conectado','status':'error',
+                            'valor':'no configurado','sugerencia':'Configura GCAL_ICAL_URL en Render'})
+        elif result.get('error'):
+            items.append({'categoria':'calendar','nombre':'Calendar fetch','status':'error',
+                            'valor':result['error'][:60],'sugerencia':'Revisa URL iCal'})
+        elif not eventos:
+            items.append({'categoria':'calendar','nombre':'Eventos próximos 60d','status':'warn',
+                            'valor':'0 eventos','sugerencia':'Crea eventos en Calendar Producciones'})
+        else:
+            items.append({'categoria':'calendar','nombre':'Eventos próximos 60d','status':'ok',
+                            'valor':f'{len(eventos)} eventos','sugerencia':''})
+    except Exception as e:
+        items.append({'categoria':'calendar','nombre':'Calendar','status':'error','valor':str(e)[:60],'sugerencia':''})
+
+    # 4) Email destinatarios
+    try:
+        n = c.execute("SELECT COUNT(*) FROM email_destinatarios_config WHERE activo=1 AND email != ''").fetchone()[0]
+        items.append({'categoria':'email','nombre':'Destinatarios email','status':'ok' if n > 0 else 'warn',
+                        'valor':f'{n} configurados','sugerencia':'Configura emails en /admin para que lleguen las alertas' if n == 0 else ''})
+    except Exception:
+        pass
+
+    # 5) MEE config completa
+    try:
+        n_total = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1").fetchone()[0]
+        n_prov = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1 AND COALESCE(proveedor_principal,'')!=''").fetchone()[0]
+        n_precio = c.execute("SELECT COUNT(*) FROM mee_lead_time_config WHERE aplica=1 AND COALESCE(precio_unit,0)>0").fetchone()[0]
+        pct_prov = (n_prov/max(n_total,1))*100
+        pct_precio = (n_precio/max(n_total,1))*100
+        items.append({'categoria':'mee','nombre':'MEE con proveedor','status':'ok' if pct_prov>=90 else ('warn' if pct_prov>=50 else 'error'),
+                        'valor':f'{n_prov}/{n_total} ({pct_prov:.0f}%)','sugerencia':'Botón Normalizar para backfill' if pct_prov<90 else ''})
+        items.append({'categoria':'mee','nombre':'MEE con precio_unit','status':'ok' if pct_precio>=70 else ('warn' if pct_precio>=30 else 'error'),
+                        'valor':f'{n_precio}/{n_total} ({pct_precio:.0f}%)','sugerencia':'Catalina llena precio cuando recibe SCs'})
+    except Exception:
+        pass
+
+    # 6) SKUs activos con mappings MEE
+    try:
+        n_skus = c.execute("""
+            SELECT COUNT(*) FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado','sin_ventas')
+        """).fetchone()[0]
+        n_mapeados = c.execute("SELECT COUNT(DISTINCT sku_codigo) FROM sku_mee_config WHERE aplica=1").fetchone()[0]
+        pct = (n_mapeados/max(n_skus,1))*100
+        items.append({'categoria':'mee','nombre':'SKUs mapeados a MEE','status':'ok' if pct>=80 else ('warn' if pct>=30 else 'warn'),
+                        'valor':f'{n_mapeados}/{n_skus} ({pct:.0f}%)','sugerencia':'Auto-mapeo + IA aprende cuando Catalina asigna' if pct<80 else ''})
+    except Exception:
+        pass
+
+    # 7) Áreas sucias sin limpieza
+    try:
+        rows = c.execute("""
+            SELECT a.codigo, a.nombre FROM areas_planta a
+            WHERE a.activo=1 AND a.estado='sucia'
+              AND NOT EXISTS (
+                SELECT 1 FROM limpieza_profunda_calendario l
+                WHERE l.area_codigo = a.codigo
+                  AND l.estado IN ('pendiente','asignada','en_proceso')
+                  AND date(l.fecha) >= date('now')
+              )
+        """).fetchall()
+        if rows:
+            items.append({'categoria':'salas','nombre':'Áreas sucias sin limpieza programada','status':'warn',
+                            'valor':f'{len(rows)} áreas','sugerencia':'Click "Auto-asignar pendientes" o el cron 06:30 lo asigna mañana'})
+        else:
+            items.append({'categoria':'salas','nombre':'Áreas sucias','status':'ok','valor':'todas atendidas','sugerencia':''})
+    except Exception:
+        pass
+
+    # 8) Producciones próximas sin asignar
+    try:
+        fecha_max = (fecha_hoy + timedelta(days=7)).isoformat()
+        n_pend = c.execute("""
+            SELECT COUNT(*) FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN ? AND ?
+              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (area_id IS NULL OR (operario_dispensacion_id IS NULL
+                   AND operario_elaboracion_id IS NULL
+                   AND operario_envasado_id IS NULL))
+        """, (fecha_hoy.isoformat(), fecha_max)).fetchone()[0]
+        items.append({'categoria':'produccion','nombre':'Producciones próximas sin asignar','status':'ok' if n_pend==0 else 'warn',
+                        'valor':str(n_pend),'sugerencia':'Cron 06:30 asigna · o click manual' if n_pend>0 else ''})
+    except Exception:
+        pass
+
+    # Resumen
+    n_ok = sum(1 for it in items if it['status']=='ok')
+    n_warn = sum(1 for it in items if it['status']=='warn')
+    n_err = sum(1 for it in items if it['status']=='error')
+
+    overall = 'ok' if n_err==0 and n_warn<=2 else ('warn' if n_err==0 else 'error')
+    return jsonify({
+        'fecha': fecha_hoy.isoformat(),
+        'overall_status': overall,
+        'kpis': {'ok': n_ok, 'warn': n_warn, 'error': n_err, 'total': len(items)},
+        'items': items,
+    })
+
+
+@bp.route('/api/planta/self-heal', methods=['POST'])
+def planta_self_heal():
+    """Self-healing: arregla problemas comunes detectados.
+    Sebastián 1-may-2026: "que todo se programe solo automatico".
+
+    Acciones:
+      1. Habilita auto_plan_cron si está deshabilitado
+      2. Crea limpieza para áreas sucias sin limpieza programada
+      3. Auto-asigna producciones próximos 7d sin área/operarios
+      4. Limpia logs viejos (cron_jobs_runs > 30d, auto_plan_runs > 90d)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', 'manual')
+    conn = get_db(); c = conn.cursor()
+    acciones = []
+
+    # 1) Habilitar cron
+    try:
+        r = c.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()
+        if r and not r[0]:
+            c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal habilitado por '||?, activado_por=?, activado_at=datetime('now') WHERE id=1",
+                      (user, user))
+            acciones.append('Auto-plan cron HABILITADO')
+    except Exception as e:
+        acciones.append(f'⚠ Error habilitar cron: {e}')
+
+    # 2) Crear limpieza para sucias sin programación
+    try:
+        from blueprints.programacion import _crear_limpieza_post_produccion
+        rows = c.execute("""
+            SELECT a.id, a.codigo, a.nombre FROM areas_planta a
+            WHERE a.activo=1 AND a.estado='sucia'
+              AND NOT EXISTS (
+                SELECT 1 FROM limpieza_profunda_calendario l
+                WHERE l.area_codigo = a.codigo
+                  AND l.estado IN ('pendiente','asignada','en_proceso')
+                  AND date(l.fecha) >= date('now')
+              )
+        """).fetchall()
+        from datetime import date as _d
+        for area_id, area_cod, area_nom in rows:
+            limp = _crear_limpieza_post_produccion(c, area_id, area_cod, _d.today().isoformat(),
+                                                    'self-heal', '', user)
+            if limp:
+                acciones.append(f'Limpieza creada para {area_cod} (#{limp})')
+    except Exception as e:
+        acciones.append(f'⚠ Error crear limpiezas: {e}')
+
+    # 3) Auto-asignar producciones pendientes
+    try:
+        from blueprints.programacion import _auto_asignar_produccion
+        from datetime import datetime as _dt, timedelta as _td
+        fecha_hoy = _dt.now().date()
+        fecha_max = fecha_hoy + _td(days=7)
+        rows = c.execute("""
+            SELECT id FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN ? AND ?
+              AND COALESCE(estado, 'programado') NOT IN ('completado', 'cancelado')
+              AND (area_id IS NULL OR (operario_dispensacion_id IS NULL
+                   AND operario_elaboracion_id IS NULL
+                   AND operario_envasado_id IS NULL))
+        """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+        n_asign = 0
+        for (pid,) in rows:
+            res = _auto_asignar_produccion(c, pid, f'self-heal-{user}')
+            if res.get('ok'):
+                n_asign += 1
+        if n_asign:
+            acciones.append(f'{n_asign} producciones auto-asignadas')
+    except Exception as e:
+        acciones.append(f'⚠ Error auto-asignar: {e}')
+
+    # 4) Cleanup logs viejos
+    try:
+        n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-30 days')").rowcount
+        n_apr = c.execute("DELETE FROM auto_plan_runs WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
+        if n_runs or n_apr:
+            acciones.append(f'Limpieza logs: {n_runs} cron_jobs_runs + {n_apr} auto_plan_runs')
+    except Exception as e:
+        acciones.append(f'⚠ Error cleanup logs: {e}')
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'acciones': acciones,
+        'total': len(acciones),
+        'mensaje': f'✅ Self-heal completado · {len(acciones)} acciones' if acciones else '✅ Sistema en buen estado · nada que reparar',
+    })
+
+
 @bp.route('/api/planta/diagnostico-calendar', methods=['GET'])
 def diagnostico_calendar():
     """Diagnóstico production-grade del Calendar feed.

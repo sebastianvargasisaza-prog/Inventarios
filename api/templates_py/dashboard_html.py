@@ -5026,6 +5026,21 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Salud del Sistema · self-healing IA · Sebastián 1-may-2026 ─ -->
+    <div id="plan-health" style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:10px;padding:12px 14px;margin-bottom:16px;color:#fff">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:700;letter-spacing:.3px">&#129505; Salud del sistema · IA monitorea y auto-repara</div>
+          <div id="health-summary" style="font-size:11px;opacity:.8;margin-top:2px">Cargando…</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="selfHealEjecutar()" title="Ejecuta self-heal AHORA: habilita cron, asigna producciones pendientes, crea limpiezas, limpia logs viejos" style="padding:5px 12px;background:#10b981;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#129505; Self-heal</button>
+          <button onclick="healthRecargar()" style="padding:5px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+        </div>
+      </div>
+      <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px"></div>
+    </div>
+
     <!-- ── Estado Salas en Vivo · Sebastián 1-may-2026 ─────────────── -->
     <div id="plan-salas-vivo" style="background:#fff;border:2px solid #0891b2;border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -9601,8 +9616,8 @@ async function ckMarcar(itemId, estado){
     // AVANZADO (detrás de botón ⚙️ collapsable):
     //   6. Reporte ejecutivo · 7. Pre-producción · 8. Crons status
     //   9. Items por asignar · 10. Config MEE
-    var esenciales = ['plan-salas-vivo', 'plan-mi-dia', 'plan-mee-alerts',
-                       'plan-autosc', 'plan-autosc-mee'];
+    var esenciales = ['plan-health', 'plan-salas-vivo', 'plan-mi-dia',
+                       'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
     var avanzados = ['plan-reporte-ejecutivo', 'plan-pre-produccion',
                        'plan-cron-status', 'mee-asignar-panel', 'mee-config-panel'];
 
@@ -9642,6 +9657,7 @@ async function ckMarcar(itemId, estado){
 
     window._meePanelsMoved = true;
     // Cargar datos esenciales (los avanzados se cargan al toggle)
+    if(typeof healthRecargar === 'function') healthRecargar();
     if(typeof autoscRecargar === 'function') autoscRecargar();
     if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
     if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
@@ -12294,6 +12310,57 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Salud del sistema + Self-heal (Sebastián 1-may-2026)
+  async function healthRecargar(){
+    var sum_ = document.getElementById('health-summary');
+    var grid = document.getElementById('health-grid');
+    if(sum_) sum_.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/health-check', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var k = d.kpis || {};
+      var emoji = d.overall_status === 'ok' ? '✅' : (d.overall_status === 'warn' ? '⚠️' : '🚨');
+      if(sum_) sum_.textContent = emoji+' '+(k.ok||0)+' OK · '+(k.warn||0)+' avisos · '+(k.error||0)+' errores';
+      var items = d.items || [];
+      grid.innerHTML = items.map(function(it){
+        var col, ico;
+        switch(it.status){
+          case 'ok':    col='#10b981'; ico='✓'; break;
+          case 'warn':  col='#fbbf24'; ico='⚠'; break;
+          case 'error': col='#ef4444'; ico='✗'; break;
+          default:      col='#94a3b8'; ico='?';
+        }
+        var html = '<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);border-left:3px solid '+col+';border-radius:5px;padding:6px 10px;font-size:11px">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center"><b>'+ico+' '+esc(it.nombre)+'</b><span style="color:'+col+';font-weight:700">'+esc(it.valor||'')+'</span></div>';
+        if(it.sugerencia) html += '<div style="font-size:10px;opacity:.7;margin-top:2px">→ '+esc(it.sugerencia)+'</div>';
+        html += '</div>';
+        return html;
+      }).join('');
+    }catch(e){
+      if(sum_) sum_.textContent = 'Error: '+(e.message||e);
+    }
+  }
+  async function selfHealEjecutar(){
+    if(!confirm('Self-heal IA: habilitar cron · auto-asignar producciones pendientes · crear limpiezas faltantes · limpiar logs viejos.\\n\\n¿Continuar?')) return;
+    var sum_ = document.getElementById('health-summary');
+    if(sum_) sum_.textContent = '⏳ Ejecutando self-heal…';
+    try{
+      var r = await fetch('/api/planta/self-heal', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'});
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      var msg = '✅ '+d.mensaje;
+      if(d.acciones && d.acciones.length){
+        msg += '\\n\\nAcciones:\\n' + d.acciones.map(function(a){return '  • '+a;}).join('\\n');
+      }
+      alert(msg);
+      healthRecargar();
+      if(typeof salasVivoRecargar === 'function') salasVivoRecargar();
+    }catch(e){
+      alert('❌ Error: '+(e.message||e));
+    }
+  }
+
   // ── Estado Salas en Vivo · IA auto-asigna áreas + operarios + limpieza
   async function salasVivoRecargar(){
     var sub = document.getElementById('salas-subtitle');

@@ -6126,7 +6126,7 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                 if not exists:
                     # origen='calendar' para que planificacion_estrategica las
                     # filtre y no duplique con su lectura directa del calendar.
-                    conn.execute(
+                    cur_ins = conn.execute(
                         """INSERT INTO produccion_programada
                            (producto, fecha_programada, lotes, cantidad_kg,
                             estado, observaciones, origen)
@@ -6135,6 +6135,15 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                          f'[auto-sync calendar] {titulo[:200]}')
                     )
                     inserted += 1
+                    # Sebastián 1-may-2026: "todo automático". Auto-asignar
+                    # área + operarios INMEDIATAMENTE al insertar (no esperar
+                    # cron 06:30). Si falla, sigue → cron lo intentará después.
+                    try:
+                        new_id = cur_ins.lastrowid
+                        if new_id and cantidad_kg_calc and cantidad_kg_calc > 0:
+                            _auto_asignar_produccion(conn.cursor(), new_id, 'auto-sync-calendar')
+                    except Exception:
+                        pass
                 elif (exists[1] or 0) <= 0 and cantidad_kg_calc > 0:
                     # Backfill: la fila existe pero sin cantidad_kg — actualizar.
                     conn.execute(

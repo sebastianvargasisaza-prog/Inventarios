@@ -3302,6 +3302,32 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (77, "Self-healing · activar cron + perfil riesgo SKUs faltantes (Sebastián)", [
+        # Sebastián 1-may-2026: "que se programe solo automatico, todo perfecto".
+        # 1) Habilitar el auto_plan_cron por default (estaba en 0)
+        "UPDATE auto_plan_cron_state SET habilitado=1, notas='Auto-habilitado migración 77' WHERE id=1 AND habilitado=0",
+        # 2) Asegurar entrada del cron state si no existe
+        "INSERT OR IGNORE INTO auto_plan_cron_state (id, habilitado, activado_por, activado_at, notas) VALUES (1, 1, 'auto-migracion', datetime('now'), 'Seed migración 77')",
+        # 3) Seed perfil riesgo para SKUs sin perfil (default sin pigmento, riesgo bajo)
+        """INSERT OR IGNORE INTO producto_perfil_riesgo
+           (producto_nombre, tiene_pigmento, color_descripcion, es_acido,
+            requiere_asepsia_extra, riesgo_arrastre_pct, notas, actualizado_en)
+           SELECT spc.producto_nombre, 0, 'transparente', 0, 0, 5,
+                  'Auto-seed default (sin pigmento, riesgo bajo)',
+                  datetime('now')
+           FROM sku_planeacion_config spc
+           WHERE spc.activo=1
+             AND COALESCE(spc.estado,'activo') NOT IN ('descontinuado','pausado')
+             AND spc.producto_nombre NOT IN (SELECT producto_nombre FROM producto_perfil_riesgo)""",
+        # Tabla para errores acumulados de jobs (notificación)
+        """CREATE TABLE IF NOT EXISTS cron_jobs_health (
+            job_name TEXT PRIMARY KEY,
+            errores_consecutivos INTEGER NOT NULL DEFAULT 0,
+            ultimo_error_at TEXT,
+            ultimo_error_msg TEXT,
+            notificado_at TEXT
+        )""",
+    ]),
     (76, "produccion_programada: area_envasado_id (Sebastián 1-may-2026 · IA asigna FAB+ENV)", [
         # Sebastián: "asigna el area de produccion y el area de envasado".
         # El motor IA mapea FAB1→ENV1, FAB2/3/FLOAT→ENV2 y necesita persistirlo.

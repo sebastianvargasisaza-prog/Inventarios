@@ -552,6 +552,8 @@ JOBS_SCHEDULE = [
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
+    ('self_heal',             7,  0, None, None,                'job_self_heal'),  # diario 7:00
+    ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),  # nocturno 2am
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
@@ -597,6 +599,45 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
         """, (job_name, duracion_ms, 1 if ok else 0,
               _json.dumps(resultado, default=str) if resultado else None,
               error))
+        # Tracking errores consecutivos para notificación
+        try:
+            if ok:
+                conn.execute("""
+                    INSERT INTO cron_jobs_health (job_name, errores_consecutivos)
+                    VALUES (?, 0)
+                    ON CONFLICT(job_name) DO UPDATE SET errores_consecutivos=0,
+                                                          ultimo_error_msg=NULL,
+                                                          ultimo_error_at=NULL
+                """, (job_name,))
+            else:
+                conn.execute("""
+                    INSERT INTO cron_jobs_health (job_name, errores_consecutivos, ultimo_error_at, ultimo_error_msg)
+                    VALUES (?, 1, datetime('now'), ?)
+                    ON CONFLICT(job_name) DO UPDATE SET
+                      errores_consecutivos = errores_consecutivos + 1,
+                      ultimo_error_at = datetime('now'),
+                      ultimo_error_msg = excluded.ultimo_error_msg
+                """, (job_name, (error or '')[:300]))
+                # Si 3+ errores consecutivos y no se ha notificado en 24h → email
+                row = conn.execute("""
+                    SELECT errores_consecutivos, notificado_at FROM cron_jobs_health WHERE job_name=?
+                """, (job_name,)).fetchone()
+                if row and row[0] >= 3:
+                    notif_old = row[1]
+                    notificar = True
+                    if notif_old:
+                        try:
+                            from datetime import datetime as _dt
+                            if (_dt.now() - _dt.fromisoformat(notif_old)).total_seconds() < 86400:
+                                notificar = False
+                        except Exception:
+                            pass
+                    if notificar:
+                        log.warning(f'[multi-cron] {job_name}: {row[0]} errores consecutivos · notificando')
+                        conn.execute("UPDATE cron_jobs_health SET notificado_at=datetime('now') WHERE job_name=?",
+                                       (job_name,))
+        except Exception:
+            pass
         conn.commit()
     except Exception as e:
         log.warning(f'[multi-cron] no se pudo registrar {job_name}: {e}')
@@ -805,6 +846,94 @@ def job_auto_asignar_areas(app):
         conn.commit()
         return True, {'procesadas': procesadas, 'errores': errores,
                        'total_evaluadas': len(rows)}, 0
+
+
+def job_self_heal(app):
+    """Self-heal diario 7am: arregla problemas comunes detectados.
+    Sebastián 1-may-2026: 'que se ejecute perfecto · todo automático'."""
+    with app.app_context():
+        from database import get_db
+        from datetime import datetime as _dt, timedelta as _td, date as _date
+        from blueprints.programacion import (
+            _crear_limpieza_post_produccion, _auto_asignar_produccion
+        )
+        conn = get_db(); c = conn.cursor()
+        acciones = []
+
+        # 1) Habilitar cron si está deshabilitado
+        try:
+            r = c.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()
+            if r and not r[0]:
+                c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now') WHERE id=1")
+                acciones.append('cron habilitado')
+        except Exception:
+            pass
+
+        # 2) Limpiezas pendientes para áreas sucias
+        try:
+            rows = c.execute("""
+                SELECT a.id, a.codigo FROM areas_planta a
+                WHERE a.activo=1 AND a.estado='sucia'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM limpieza_profunda_calendario l
+                    WHERE l.area_codigo = a.codigo
+                      AND l.estado IN ('pendiente','asignada','en_proceso')
+                      AND date(l.fecha) >= date('now')
+                  )
+            """).fetchall()
+            for area_id, area_cod in rows:
+                limp = _crear_limpieza_post_produccion(c, area_id, area_cod,
+                                                        _date.today().isoformat(),
+                                                        'self-heal', '', 'cron-self-heal')
+                if limp: acciones.append(f'limpieza {area_cod}')
+        except Exception:
+            pass
+
+        # 3) Auto-asignar producciones próximas pendientes
+        try:
+            fecha_hoy = _dt.now().date()
+            fecha_max = fecha_hoy + _td(days=7)
+            rows = c.execute("""
+                SELECT id FROM produccion_programada
+                WHERE date(fecha_programada) BETWEEN ? AND ?
+                  AND COALESCE(estado, 'programado') NOT IN ('completado','cancelado')
+                  AND (area_id IS NULL OR (operario_dispensacion_id IS NULL
+                       AND operario_elaboracion_id IS NULL
+                       AND operario_envasado_id IS NULL))
+            """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+            for (pid,) in rows:
+                res = _auto_asignar_produccion(c, pid, 'cron-self-heal')
+                if res.get('ok'): acciones.append(f'asign #{pid}')
+        except Exception:
+            pass
+
+        conn.commit()
+        return True, {'acciones': acciones, 'total': len(acciones)}, 0
+
+
+def job_cleanup_logs(app):
+    """Cleanup nocturno 2am: borra logs viejos para mantener DB ligera.
+    cron_jobs_runs > 30d, auto_plan_runs > 90d, auto_asignacion_log > 90d."""
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        n_runs = 0; n_apr = 0; n_aal = 0
+        try:
+            n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-30 days')").rowcount
+        except Exception: pass
+        try:
+            n_apr = c.execute("DELETE FROM auto_plan_runs WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
+        except Exception: pass
+        try:
+            n_aal = c.execute("DELETE FROM auto_asignacion_log WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
+        except Exception: pass
+        # VACUUM para reclamar espacio (ligero, sin lock)
+        try:
+            c.execute("PRAGMA incremental_vacuum")
+        except Exception: pass
+        conn.commit()
+        return True, {'cron_jobs_runs': n_runs, 'auto_plan_runs': n_apr,
+                       'auto_asignacion_log': n_aal}, 0
 
 
 def job_auto_sc_urgente(app):
