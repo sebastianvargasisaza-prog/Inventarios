@@ -3302,6 +3302,81 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # contexto = 'envasado' (envase/tapa/etiqueta al terminar) o 'completar' (legacy/resto)
         "CREATE INDEX IF NOT EXISTS idx_pc_consumido ON produccion_checklist(produccion_id, consumido_at)",
     ]),
+    (72, "Auto-SC MEE: seed inteligente + flag disparo_post_envasado (etiquetas)", [
+        # Sebastian (1-may-2026): "etiquetas las pedimos el dia que sabemos
+        # cuanto envasamos". Flag disparo_post_envasado=1 las saca del cron
+        # mensual proyectivo y las muestra en alerta post-envasado.
+        "ALTER TABLE mee_lead_time_config ADD COLUMN disparo_post_envasado INTEGER NOT NULL DEFAULT 0",
+
+        # Seed inteligente desde maestro_mee.categoria. INSERT OR IGNORE para
+        # no pisar configs manuales previas.
+        # Envase/Frasco → China 180d MOQ 5000
+        """INSERT OR IGNORE INTO mee_lead_time_config
+           (mee_codigo, proveedor_principal, origen, lead_time_dias, moq_unidades,
+            precio_unit, disparo_d20, disparo_post_envasado, aplica, notas, actualizado_en)
+           SELECT codigo, '', 'China', 180, 5000, 0, 0, 0, 1,
+                  'Seed automático cat=' || COALESCE(categoria,'?'),
+                  datetime('now')
+           FROM maestro_mee
+           WHERE COALESCE(categoria,'') IN ('Envase','Frasco')
+             AND COALESCE(estado,'Activo')='Activo'""",
+        # Tapa/Gotero/Contorno → Local 30d
+        """INSERT OR IGNORE INTO mee_lead_time_config
+           (mee_codigo, proveedor_principal, origen, lead_time_dias, moq_unidades,
+            precio_unit, disparo_d20, disparo_post_envasado, aplica, notas, actualizado_en)
+           SELECT codigo, '', 'Local', 30, 0, 0, 0, 0, 1,
+                  'Seed automático cat=' || COALESCE(categoria,'?'),
+                  datetime('now')
+           FROM maestro_mee
+           WHERE COALESCE(categoria,'') IN ('Tapa','Gotero','Contorno')
+             AND COALESCE(estado,'Activo')='Activo'""",
+        # Etiqueta → Local 15d disparo_post_envasado=1
+        """INSERT OR IGNORE INTO mee_lead_time_config
+           (mee_codigo, proveedor_principal, origen, lead_time_dias, moq_unidades,
+            precio_unit, disparo_d20, disparo_post_envasado, aplica, notas, actualizado_en)
+           SELECT codigo, '', 'Local', 15, 0, 0, 0, 1, 1,
+                  'Seed automático: etiqueta se pide post-envasado',
+                  datetime('now')
+           FROM maestro_mee
+           WHERE COALESCE(categoria,'')='Etiqueta'
+             AND COALESCE(estado,'Activo')='Activo'""",
+        # Serigrafia → Local 20d disparo_d20=1
+        """INSERT OR IGNORE INTO mee_lead_time_config
+           (mee_codigo, proveedor_principal, origen, lead_time_dias, moq_unidades,
+            precio_unit, disparo_d20, disparo_post_envasado, aplica, notas, actualizado_en)
+           SELECT codigo, '', 'Local', 20, 0, 0, 1, 0, 1,
+                  'Seed automático: serigrafía D-20 antes de producción',
+                  datetime('now')
+           FROM maestro_mee
+           WHERE COALESCE(categoria,'')='Serigrafia'
+             AND COALESCE(estado,'Activo')='Activo'""",
+        # Plegable → no aplica (Sebastián: "plegadiza no estamos usando")
+        """INSERT OR IGNORE INTO mee_lead_time_config
+           (mee_codigo, proveedor_principal, origen, lead_time_dias, moq_unidades,
+            precio_unit, disparo_d20, disparo_post_envasado, aplica, notas, actualizado_en)
+           SELECT codigo, '', 'Local', 30, 0, 0, 0, 0, 0,
+                  'Seed automático: plegadiza no usamos (Sebastián 1-may-2026)',
+                  datetime('now')
+           FROM maestro_mee
+           WHERE COALESCE(categoria,'')='Plegable'
+             AND COALESCE(estado,'Activo')='Activo'""",
+
+        # Seed sku_mee_config desde envasado histórico (DISTINCT producto+codigo)
+        """INSERT OR IGNORE INTO sku_mee_config
+           (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, aplica, notas)
+           SELECT DISTINCT e.producto, e.envase_codigo, 'envase', 1, 1,
+                  'Seed desde envasado histórico'
+           FROM envasado e
+           WHERE COALESCE(e.envase_codigo,'') != ''
+             AND e.envase_codigo IN (SELECT codigo FROM maestro_mee)""",
+        """INSERT OR IGNORE INTO sku_mee_config
+           (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, aplica, notas)
+           SELECT DISTINCT e.producto, e.tapa_codigo, 'tapa', 1, 1,
+                  'Seed desde envasado histórico'
+           FROM envasado e
+           WHERE COALESCE(e.tapa_codigo,'') != ''
+             AND e.tapa_codigo IN (SELECT codigo FROM maestro_mee)""",
+    ]),
     (71, "Auto-SC MEE: mee_lead_time_config + sku_mee_config (para proyección 9m China + 90d local)", [
         # Sebastian (1-may-2026): "envases China 9m, etiquetas las pedimos al
         # envasar, serigrafía 20d antes, plegadiza no aplica, el resto local

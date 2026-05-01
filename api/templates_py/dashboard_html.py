@@ -5018,6 +5018,33 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Centro de Alertas MEE · etiquetas post-envasado + D-20 ───────
+         Sebastián (1-may-2026): "etiquetas las pedimos el día que sabemos
+         cuanto envasamos. serigrafía ideal pedir 20 días antes". Sistema
+         alerta + acción rápida (1 click crea SC). -->
+    <div id="plan-mee-alerts" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:13px;font-weight:700;color:#92400e">&#127991; Etiquetas pendientes (post-envasado)</div>
+          <div>
+            <button onclick="alertEtiquetasRecargar()" title="Refrescar" style="padding:4px 8px;background:#f59e0b;color:#fff;border:none;border-radius:5px;font-size:10px;cursor:pointer">&#8635;</button>
+          </div>
+        </div>
+        <div id="alert-etiq-subtitle" style="font-size:11px;color:#78350f;margin-bottom:8px">Cargando…</div>
+        <div id="alert-etiq-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
+      </div>
+      <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+          <div style="font-size:13px;font-weight:700;color:#991b1b">&#127912; Decoración D-20 (serigrafía/tampografía)</div>
+          <div>
+            <button onclick="alertD20Recargar()" title="Refrescar" style="padding:4px 8px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:10px;cursor:pointer">&#8635;</button>
+          </div>
+        </div>
+        <div id="alert-d20-subtitle" style="font-size:11px;color:#7f1d1d;margin-bottom:8px">Cargando…</div>
+        <div id="alert-d20-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
+      </div>
+    </div>
+
     <!-- ── Auto-SC IA · MEE (Material de Empaque) ─────────────────────
          Sebastián (1-may-2026): envases China 9m, etiquetas se piden al
          envasar (no acá), serigrafía 20d antes (cron diario aparte),
@@ -5047,9 +5074,55 @@ function _renderProgramacion(d){
         <div class="autosc-tile"><div class="autosc-lbl">Última run</div><div id="autosc-mee-last" class="autosc-val">—</div><div id="autosc-mee-last-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
       </div>
       <div id="autosc-mee-config-warn" style="display:none;margin-top:10px;padding:8px 10px;background:#fbbf24;color:#78350f;border-radius:6px;font-size:11px">
-        ⚠️ Configura primero <code>mee_lead_time_config</code> (proveedor, origen, MOQ) y <code>sku_mee_config</code> (SKU → componentes). Sin esto, Auto-SC MEE no genera nada.
+        ⚠️ Configura proveedor + MOQ (botón ⚙️ abajo) y mappings SKU→componentes para activar el Auto-SC MEE.
+      </div>
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="meeConfigToggle()" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#9881; Configurar MEE (proveedor / MOQ / origen / flags)</button>
       </div>
       <div id="autosc-mee-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
+    </div>
+
+    <!-- Tabla configuración MEE (collapsable) -->
+    <div id="mee-config-panel" style="display:none;background:#fff;border:2px solid #0f766e;border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h4 style="margin:0;color:#0f766e;font-size:14px">&#9881; Configuración MEE · proveedor + MOQ + origen + flags</h4>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="mee-config-filter" oninput="meeConfigRender()" placeholder="Filtrar código/descripción/proveedor..." style="padding:4px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:11px;width:220px">
+          <select id="mee-config-categoria" onchange="meeConfigRender()" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:11px">
+            <option value="">Todas categorías</option>
+            <option value="Envase">Envase</option>
+            <option value="Tapa">Tapa</option>
+            <option value="Etiqueta">Etiqueta</option>
+            <option value="Serigrafia">Serigrafía</option>
+            <option value="Plegable">Plegable</option>
+            <option value="Gotero">Gotero</option>
+            <option value="Frasco">Frasco</option>
+            <option value="Contorno">Contorno</option>
+          </select>
+          <button onclick="meeConfigRecargar()" style="padding:4px 8px;background:#0f766e;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635; Refrescar</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
+        <table id="mee-config-table" style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead style="position:sticky;top:0;background:#0f766e;color:#fff;z-index:1">
+            <tr>
+              <th style="padding:6px;text-align:left">Código</th>
+              <th style="padding:6px;text-align:left">Descripción</th>
+              <th style="padding:6px;text-align:left">Cat.</th>
+              <th style="padding:6px;text-align:left">Proveedor *</th>
+              <th style="padding:6px">Origen</th>
+              <th style="padding:6px;text-align:right">Lead</th>
+              <th style="padding:6px;text-align:right">MOQ</th>
+              <th style="padding:6px;text-align:right">$/ud</th>
+              <th style="padding:6px;text-align:center">Aplica</th>
+              <th style="padding:6px;text-align:center">D-20</th>
+              <th style="padding:6px;text-align:center">Post-Env</th>
+            </tr>
+          </thead>
+          <tbody id="mee-config-tbody"></tbody>
+        </table>
+      </div>
+      <div id="mee-config-status" style="margin-top:8px;font-size:11px;color:#64748b"></div>
     </div>
 
     <!-- ── Auto-SC IA ──────────────────────────────────────────────────
@@ -7480,6 +7553,8 @@ async function ckMarcar(itemId, estado){
       }
       if(tab==='plan' && typeof autoscRecargar==='function') autoscRecargar();
       if(tab==='plan' && typeof autoscMeeRecargar==='function') autoscMeeRecargar();
+      if(tab==='plan' && typeof alertEtiquetasRecargar==='function') alertEtiquetasRecargar();
+      if(tab==='plan' && typeof alertD20Recargar==='function') alertD20Recargar();
       // Estilos botones — los 6 oficiales
       function _bg(id, activeStyle, activeClass){
         var b = document.getElementById(id);
@@ -11969,6 +12044,194 @@ async function ckMarcar(itemId, estado){
       msg.innerHTML = '❌ Error preview MEE: '+(e.message||e);
     }
   }
+  // ── Config MEE (proveedor + MOQ + origen + flags)
+  var _meeConfigData = [];
+  function meeConfigToggle(){
+    var panel = document.getElementById('mee-config-panel');
+    if(!panel) return;
+    if(panel.style.display === 'none'){
+      panel.style.display = 'block';
+      meeConfigRecargar();
+    } else {
+      panel.style.display = 'none';
+    }
+  }
+  async function meeConfigRecargar(){
+    var status = document.getElementById('mee-config-status');
+    if(status) status.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/mee-config', {credentials:'same-origin'});
+      var d = await r.json();
+      _meeConfigData = d.mees || [];
+      if(status) status.textContent = _meeConfigData.length + ' MEEs · click en cualquier celda para editar';
+      meeConfigRender();
+    }catch(e){
+      if(status) status.textContent = 'Error: '+(e.message||e);
+    }
+  }
+  function meeConfigRender(){
+    var tb = document.getElementById('mee-config-tbody');
+    if(!tb) return;
+    var filtro = ((document.getElementById('mee-config-filter')||{value:''}).value||'').toLowerCase();
+    var cat = (document.getElementById('mee-config-categoria')||{value:''}).value || '';
+    var rows = _meeConfigData.filter(function(m){
+      if(cat && m.categoria !== cat) return false;
+      if(!filtro) return true;
+      var s = (m.codigo+' '+m.descripcion+' '+(m.proveedor_principal||'')+' '+(m.notas||'')).toLowerCase();
+      return s.indexOf(filtro) >= 0;
+    });
+    if(!rows.length){
+      tb.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#94a3b8">Sin coincidencias</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(m){
+      var faltaProv = !(m.proveedor_principal||'').trim();
+      var hl = faltaProv ? 'background:#fef3c7' : '';
+      return '<tr data-codigo="'+m.codigo+'" style="border-bottom:1px solid #e2e8f0;'+hl+'">' +
+        '<td style="padding:4px 6px;font-family:monospace;font-size:10px">'+m.codigo+'</td>' +
+        '<td style="padding:4px 6px;font-size:10px">'+(m.descripcion||'').substring(0,32)+'</td>' +
+        '<td style="padding:4px 6px"><span style="background:#f1f5f9;padding:1px 6px;border-radius:8px;font-size:9px">'+(m.categoria||'')+'</span></td>' +
+        '<td style="padding:2px"><input type="text" value="'+(m.proveedor_principal||'').replace(/"/g,"&quot;")+'" placeholder="proveedor..." onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'proveedor_principal\\')" style="width:130px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px"></td>' +
+        '<td style="padding:2px"><select onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'origen\\')" style="padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px">' +
+          ['China','Local','Mixto'].map(function(o){return '<option value="'+o+'"'+(m.origen===o?' selected':'')+'>'+o+'</option>';}).join('') +
+        '</select></td>' +
+        '<td style="padding:2px"><input type="number" value="'+(m.lead_time_dias||30)+'" onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'lead_time_dias\\')" style="width:50px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px;text-align:right"></td>' +
+        '<td style="padding:2px"><input type="number" value="'+(m.moq_unidades||0)+'" onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'moq_unidades\\')" style="width:60px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px;text-align:right"></td>' +
+        '<td style="padding:2px"><input type="number" step="0.01" value="'+(m.precio_unit||0)+'" onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'precio_unit\\')" style="width:60px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px;text-align:right"></td>' +
+        '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.aplica?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'aplica\\')"></td>' +
+        '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.disparo_d20?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'disparo_d20\\')" title="Cron D-20 (serigrafía/tampografía)"></td>' +
+        '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.disparo_post_envasado?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'disparo_post_envasado\\')" title="Etiqueta — se pide post-envasado"></td>' +
+      '</tr>';
+    }).join('');
+  }
+  async function meeConfigSave(el, codigo, field){
+    var val = el.type === 'checkbox' ? el.checked : el.value;
+    var status = document.getElementById('mee-config-status');
+    el.style.background = '#fef9c3';
+    try{
+      var body = {}; body[field] = val;
+      var r = await fetch('/api/planta/mee-config/'+encodeURIComponent(codigo), {
+        method:'PUT', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || 'HTTP '+r.status);
+      el.style.background = '#dcfce7';
+      setTimeout(function(){ el.style.background = ''; }, 800);
+      // Update cached data
+      var item = _meeConfigData.find(function(m){return m.codigo === codigo;});
+      if(item) item[field] = val;
+      if(status) status.textContent = '✓ '+codigo+' · '+field+' guardado';
+    }catch(e){
+      el.style.background = '#fee2e2';
+      if(status) status.textContent = '❌ '+e.message;
+    }
+  }
+
+  // ── Alerta etiquetas post-envasado
+  async function alertEtiquetasRecargar(){
+    var sub = document.getElementById('alert-etiq-subtitle');
+    var list = document.getElementById('alert-etiq-list');
+    if(sub) sub.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/alerta-etiquetas-pendientes?dias=14', {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var d = await r.json();
+      var k = d.kpis || {};
+      if(sub) sub.textContent = (k.pendientes_etiqueta||0)+' / '+(k.total_envasados||0)+' envasados últimos 14d sin SC etiqueta · '+(k.unidades_pendientes||0).toLocaleString()+' ud';
+      var pendientes = (d.pendientes||[]);
+      if(!pendientes.length){
+        list.innerHTML = '<div style="text-align:center;color:#92400e;font-size:11px;padding:8px;font-style:italic">Sin envasados pendientes ✓</div>';
+        return;
+      }
+      list.innerHTML = pendientes.slice(0,15).map(function(e){
+        var etqs = (e.etiquetas_sku||[]).map(function(et){
+          return et.codigo+' (stock '+(et.stock||0)+')';
+        }).join(', ') || '<span style="color:#dc2626">⚠️ Sin etiquetas configuradas para SKU</span>';
+        var btn = (e.etiquetas_sku && e.etiquetas_sku.length)
+          ? '<button onclick="alertEtiquetaCrearSC('+e.id+')" style="padding:3px 8px;background:#92400e;color:#fff;border:none;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700">📥 Crear SC</button>'
+          : '<span style="font-size:10px;color:#dc2626">configura sku_mee_config</span>';
+        return '<div style="background:#fff;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;font-size:11px">' +
+               '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">' +
+               '<b style="color:#92400e">'+e.lote+'</b> · '+(e.producto||'').substring(0,30)+' · '+e.unidades+' ud · '+(e.fecha||'').substring(0,10) +
+               btn + '</div>' +
+               '<div style="font-size:10px;color:#78350f;margin-top:2px">'+etqs+'</div>' +
+               '</div>';
+      }).join('');
+    }catch(err){
+      if(sub) sub.textContent = 'Error cargando: '+(err.message||err);
+    }
+  }
+  async function alertEtiquetaCrearSC(envId){
+    if(!confirm('¿Crear SC de etiquetas para este envasado? Estado: Pendiente. Catalina la verá en /solicitudes.')) return;
+    try{
+      var r = await fetch('/api/planta/sc-etiqueta-rapida', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({envasado_id: envId}),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP '+r.status));
+      alert('✅ '+d.mensaje + (d.scs_creadas.length ? '\\n\\nNúmeros: '+d.scs_creadas.map(function(s){return s.numero;}).join(', ') : ''));
+      alertEtiquetasRecargar();
+    }catch(e){
+      alert('❌ Error: '+(e.message||e));
+    }
+  }
+
+  // ── Alerta serigrafía/tampografía D-20
+  async function alertD20Recargar(){
+    var sub = document.getElementById('alert-d20-subtitle');
+    var list = document.getElementById('alert-d20-list');
+    if(sub) sub.textContent = 'Cargando…';
+    try{
+      var r = await fetch('/api/planta/alerta-d20-pendientes', {credentials:'same-origin'});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      var d = await r.json();
+      var k = d.kpis || {};
+      if(sub) sub.textContent = (k.total||0)+' producciones en ventana D-15..D-25 · '+(k.criticas||0)+' críticas · '+(k.sin_decoraciones||0)+' sin decoración configurada';
+      var prods = (d.producciones||[]);
+      if(!prods.length){
+        list.innerHTML = '<div style="text-align:center;color:#7f1d1d;font-size:11px;padding:8px;font-style:italic">Sin producciones en ventana D-20 ✓</div>';
+        return;
+      }
+      list.innerHTML = prods.slice(0,15).map(function(p){
+        var decos = (p.decoraciones||[]).map(function(d){
+          return d.tipo+': '+d.codigo+' (stock '+(d.stock||0)+', lead '+(d.lead_time||20)+'d)';
+        }).join(', ');
+        var btn = (p.decoraciones && p.decoraciones.length)
+          ? '<button onclick="alertD20CrearSC(\\''+p.producto.replace(/\\\\/g,"\\\\\\\\").replace(/\\x27/g,"\\\\\\x27")+'\\',\\''+p.fecha+'\\','+p.unidades_estimadas+')" style="padding:3px 8px;background:#991b1b;color:#fff;border:none;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700">🎨 Crear SC</button>'
+          : '<span style="font-size:10px;color:#7f1d1d">sin decoración configurada</span>';
+        var color = p.critico ? '#dc2626' : '#92400e';
+        return '<div style="background:#fff;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;font-size:11px">' +
+               '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">' +
+               '<span><b style="color:'+color+'">D-'+p.dias_hasta+'</b> · '+(p.producto||'').substring(0,30)+' · '+p.kg+'kg ('+p.unidades_estimadas+' ud)</span>' +
+               btn + '</div>' +
+               (decos ? '<div style="font-size:10px;color:#7f1d1d;margin-top:2px">'+decos+'</div>' : '') +
+               '</div>';
+      }).join('');
+    }catch(err){
+      if(sub) sub.textContent = 'Error cargando: '+(err.message||err);
+    }
+  }
+  async function alertD20CrearSC(producto, fecha, unidades){
+    if(!confirm('¿Crear SC de serigrafía/tampografía para '+producto+'? Lead típico 20d.')) return;
+    try{
+      var r = await fetch('/api/planta/sc-d20-rapida', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto: producto, fecha_produccion: fecha, unidades_estimadas: unidades}),
+      });
+      var d = await r.json();
+      if(!r.ok || !d.ok) throw new Error(d.error || ('HTTP '+r.status));
+      alert('✅ '+d.mensaje + (d.scs_creadas.length ? '\\n\\nNúmeros: '+d.scs_creadas.map(function(s){return s.numero;}).join(', ') : ''));
+      alertD20Recargar();
+    }catch(e){
+      alert('❌ Error: '+(e.message||e));
+    }
+  }
+
   async function autoscMeeGenerar(modo){
     var origen = (document.getElementById('autosc-mee-origen')||{value:''}).value || '';
     var nombreModo = modo === 'urgente' ? 'URGENTE (30d)' : 'MENSUAL (China 9m + Local 90d)';

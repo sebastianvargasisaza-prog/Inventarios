@@ -5006,19 +5006,31 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None):
                                           razon='sku_mee_config no existe')
 
     # 2) Config MEE (lead time, MOQ, proveedor, origen)
+    # Filtros: aplica=1, NOT disparo_d20 (van por cron diario), NOT
+    # disparo_post_envasado (etiquetas se piden al envasar, alerta aparte)
     mee_config = {}
     try:
-        rows = c.execute("""
-            SELECT mee_codigo, proveedor_principal, origen, lead_time_dias,
-                   moq_unidades, precio_unit, disparo_d20, aplica
-            FROM mee_lead_time_config
-            WHERE aplica = 1
-        """).fetchall()
-        for mc, prov, ori, lt, moq, prec, d20, ap in rows:
+        try:
+            rows = c.execute("""
+                SELECT mee_codigo, proveedor_principal, origen, lead_time_dias,
+                       moq_unidades, precio_unit, disparo_d20,
+                       COALESCE(disparo_post_envasado, 0), aplica
+                FROM mee_lead_time_config
+                WHERE aplica = 1
+                  AND COALESCE(disparo_d20, 0) = 0
+                  AND COALESCE(disparo_post_envasado, 0) = 0
+            """).fetchall()
+        except sqlite3.OperationalError:
+            # Esquema legacy sin disparo_post_envasado
+            rows = c.execute("""
+                SELECT mee_codigo, proveedor_principal, origen, lead_time_dias,
+                       moq_unidades, precio_unit, disparo_d20, 0, aplica
+                FROM mee_lead_time_config
+                WHERE aplica = 1 AND COALESCE(disparo_d20, 0) = 0
+            """).fetchall()
+        for mc, prov, ori, lt, moq, prec, d20, post_env, ap in rows:
             if origen_filtro and ori != origen_filtro:
                 continue
-            if d20:
-                continue  # serigrafía/tampografía van por D-20
             mee_config[mc] = {
                 'proveedor': (prov or '').strip() or '(sin proveedor)',
                 'origen': ori or 'Local',
@@ -5420,6 +5432,592 @@ def _generar_html_auto_sc_mee(plan, scs_creadas, modo):
     </div>
   </div>
 </body></html>'''
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ALERTAS MEE · etiquetas post-envasado + serigrafía/tampografía D-20
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián (1-may-2026): etiquetas se piden al envasar (no proyectivo).
+# Serigrafía/tampografía 20d antes (D-20). Esta capa no PIDE solo, sino
+# que ALERTA. Catalina/Alejandro deciden con un click.
+
+@bp.route('/api/planta/alerta-etiquetas-pendientes', methods=['GET'])
+def alerta_etiquetas_pendientes():
+    """Lista envasados recientes para que Catalina valide si ya pidió etiquetas.
+
+    Query: ?dias=14 (default 14)
+    Returns: lista de envasados + flag si ya hay SC etiqueta asociada.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    dias = int(request.args.get('dias', 14))
+    conn = get_db(); c = conn.cursor()
+
+    # Envasados últimos N días
+    envasados = []
+    try:
+        rows = c.execute("""
+            SELECT id, lote, producto, presentacion, unidades, fecha,
+                   COALESCE(envase_codigo,''), COALESCE(tapa_codigo,'')
+            FROM envasado
+            WHERE COALESCE(estado,'Completado')='Completado'
+              AND date(fecha) >= date('now','-' || ? || ' days')
+            ORDER BY fecha DESC, id DESC
+        """, (dias,)).fetchall()
+        envasados = [dict(zip(['id','lote','producto','presentacion','unidades',
+                                'fecha','envase_codigo','tapa_codigo'], r)) for r in rows]
+    except Exception:
+        pass
+
+    # Para cada envasado, ¿hay SC de etiqueta creada después?
+    # Heurística: SC con categoria='Material de Empaque' Y solicitudes_compra_items
+    # contiene el producto en justificación o nombre_mp tiene 'etiqueta'.
+    for env in envasados:
+        try:
+            tiene_sc = c.execute("""
+                SELECT COUNT(DISTINCT s.id)
+                FROM solicitudes_compra s
+                  JOIN solicitudes_compra_items i ON i.numero = s.numero
+                WHERE s.categoria='Material de Empaque'
+                  AND date(s.fecha) >= ?
+                  AND (LOWER(i.nombre_mp) LIKE '%etiqueta%'
+                       OR LOWER(s.observaciones) LIKE '%etiqueta%')
+                  AND (LOWER(s.observaciones) LIKE ? OR LOWER(i.justificacion) LIKE ?)
+            """, (env['fecha'], f"%{env['lote'].lower()}%",
+                  f"%{env['lote'].lower()}%")).fetchone()[0]
+            env['tiene_sc_etiqueta'] = bool(tiene_sc)
+        except Exception:
+            env['tiene_sc_etiqueta'] = False
+
+        # Etiquetas asignadas al SKU/producto en sku_mee_config
+        try:
+            etqs = c.execute("""
+                SELECT DISTINCT s.mee_codigo, m.descripcion, m.stock_actual,
+                       cfg.proveedor_principal
+                FROM sku_mee_config s
+                  LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+                  LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+                WHERE s.aplica = 1
+                  AND s.componente_tipo = 'etiqueta'
+                  AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+            """, (env['producto'],)).fetchall()
+            env['etiquetas_sku'] = [{'codigo': r[0], 'nombre': r[1] or r[0],
+                                      'stock': r[2] or 0,
+                                      'proveedor': r[3] or ''} for r in etqs]
+        except Exception:
+            env['etiquetas_sku'] = []
+
+    return jsonify({
+        'dias_horizonte': dias,
+        'envasados': envasados,
+        'pendientes': [e for e in envasados if not e['tiene_sc_etiqueta']],
+        'kpis': {
+            'total_envasados': len(envasados),
+            'pendientes_etiqueta': sum(1 for e in envasados if not e['tiene_sc_etiqueta']),
+            'unidades_pendientes': sum(e['unidades'] or 0 for e in envasados if not e['tiene_sc_etiqueta']),
+        },
+    })
+
+
+@bp.route('/api/planta/alerta-d20-pendientes', methods=['GET'])
+def alerta_d20_pendientes():
+    """Lista producciones próximas (D-15 a D-25) que necesitan serigrafía/tampografía.
+
+    Sebastian: "serigrafia ideal pedir 20 dias antes de la producción al
+    igual que tampografia". Esta alerta lista producciones futuras que caen
+    en ventana D-20 ± 5d, con sus componentes de decoración asociados.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+    d_min = fecha_hoy + timedelta(days=15)
+    d_max = fecha_hoy + timedelta(days=25)
+
+    # Eventos del Calendar en ventana
+    eventos = _calendar_events_cached()
+    skus_activos = {}
+    try:
+        rows = c.execute("""
+            SELECT producto_nombre FROM sku_planeacion_config
+            WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+        """).fetchall()
+        skus_activos = {r[0]: r[0] for r in rows}
+    except Exception:
+        pass
+
+    producciones_d20 = []
+    for ev in eventos:
+        try:
+            f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f < d_min or f > d_max:
+            continue
+        # Match con SKU activo
+        producto_match = None
+        for prod_nom in skus_activos.keys():
+            try:
+                alias = _alias_calendar_for(c, prod_nom)
+                score = _match_producto_evento(prod_nom, alias, ev.get('titulo'),
+                                                ev.get('descripcion', ''))
+                if score >= 60:
+                    producto_match = prod_nom
+                    break
+            except Exception:
+                continue
+        if not producto_match:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 30
+        dias_hasta = (f - fecha_hoy).days
+
+        # Buscar serigrafía/tampografía asociada al SKU/producto
+        decoraciones = []
+        try:
+            rows = c.execute("""
+                SELECT DISTINCT s.mee_codigo, s.componente_tipo, m.descripcion,
+                       m.stock_actual, cfg.proveedor_principal, cfg.lead_time_dias
+                FROM sku_mee_config s
+                  LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+                  LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+                WHERE s.aplica = 1
+                  AND s.componente_tipo IN ('serigrafia','tampografia')
+                  AND COALESCE(cfg.disparo_d20, 0) = 1
+                  AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+            """, (producto_match,)).fetchall()
+            decoraciones = [{
+                'codigo': r[0], 'tipo': r[1], 'nombre': r[2] or r[0],
+                'stock': r[3] or 0, 'proveedor': r[4] or '',
+                'lead_time': r[5] or 20,
+            } for r in rows]
+        except Exception:
+            pass
+
+        producciones_d20.append({
+            'fecha': f.isoformat(),
+            'dias_hasta': dias_hasta,
+            'titulo': ev.get('titulo', ''),
+            'producto': producto_match,
+            'kg': kg,
+            'unidades_estimadas': int(kg * 1000 / 30),  # asume 30g/SKU promedio
+            'decoraciones': decoraciones,
+            'critico': dias_hasta <= 18 and bool(decoraciones),
+        })
+
+    # Sort por urgencia (más cercanas primero)
+    producciones_d20.sort(key=lambda p: p['dias_hasta'])
+
+    return jsonify({
+        'fecha_hoy': fecha_hoy.isoformat(),
+        'ventana': {'desde': d_min.isoformat(), 'hasta': d_max.isoformat()},
+        'producciones': producciones_d20,
+        'kpis': {
+            'total': len(producciones_d20),
+            'criticas': sum(1 for p in producciones_d20 if p['critico']),
+            'sin_decoraciones': sum(1 for p in producciones_d20 if not p['decoraciones']),
+        },
+    })
+
+
+@bp.route('/api/planta/sc-etiqueta-rapida', methods=['POST'])
+def sc_etiqueta_rapida():
+    """Crea SC rápida de etiquetas para un envasado específico.
+
+    Body: {envasado_id, codigos_etiqueta?: [str]}
+    Si codigos_etiqueta no se pasa, toma todas las etiquetas mapeadas al SKU.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    env_id = d.get('envasado_id')
+    if not env_id:
+        return jsonify({'error': 'envasado_id requerido'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    env = c.execute("""
+        SELECT lote, producto, presentacion, unidades, fecha
+        FROM envasado WHERE id = ?
+    """, (env_id,)).fetchone()
+    if not env:
+        return jsonify({'error': 'envasado no encontrado'}), 404
+    lote, producto, presentacion, unidades, fecha = env
+
+    # Etiquetas del SKU
+    rows = c.execute("""
+        SELECT s.mee_codigo, s.cantidad_por_unidad, m.descripcion,
+               cfg.proveedor_principal, cfg.precio_unit
+        FROM sku_mee_config s
+          LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+          LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+        WHERE s.aplica = 1
+          AND s.componente_tipo = 'etiqueta'
+          AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    if not rows:
+        return jsonify({'error': f'No hay etiquetas configuradas para SKU {producto}'}), 400
+
+    codigos_filtro = d.get('codigos_etiqueta') or []
+    items = []
+    for cod, cant_pu, desc, prov, prec in rows:
+        if codigos_filtro and cod not in codigos_filtro:
+            continue
+        cant = (unidades or 0) * float(cant_pu or 1)
+        items.append({
+            'mee_codigo': cod, 'nombre': desc or cod,
+            'cantidad': cant, 'proveedor': prov or '',
+            'precio_unit': float(prec or 0),
+            'valor_estimado': cant * float(prec or 0),
+        })
+    if not items:
+        return jsonify({'error': 'Sin items para crear'}), 400
+
+    # 1 SC por proveedor (igual que el Auto-SC general)
+    scs_creadas = []
+    items_huerfanos = []
+    items_por_prov = {}
+    for it in items:
+        prov = it['proveedor'] or '(sin proveedor)'
+        if prov == '(sin proveedor)':
+            items_huerfanos.append(it)
+            continue
+        items_por_prov.setdefault(prov, []).append(it)
+
+    fecha_hoy_iso = datetime.now().date().isoformat()
+    for prov, prov_items in items_por_prov.items():
+        n = c.execute("""
+            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+            FROM solicitudes_compra WHERE numero LIKE ?
+        """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
+        observ = (f'🏷️ SC etiqueta post-envasado · lote {lote} · {producto} '
+                  f'· {presentacion} · {unidades} ud · proveedor {prov}')
+        c.execute("""
+            INSERT INTO solicitudes_compra
+              (numero, fecha, estado, solicitante, urgencia, observaciones,
+               area, empresa, categoria, tipo, fecha_requerida, valor)
+            VALUES (?, ?, 'Pendiente', ?, 'Alta', ?, 'Produccion', 'Espagiria',
+                    'Material de Empaque', 'Compra', ?, ?)
+        """, (numero, datetime.now().isoformat(), user, observ, fecha_hoy_iso,
+              sum(it['valor_estimado'] for it in prov_items)))
+        for it in prov_items:
+            try:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado, proveedor_sugerido)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?, ?)
+                """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                      f"Etiqueta para envasado lote {lote} · {it['cantidad']:.0f} ud",
+                      it['valor_estimado'], it['proveedor']))
+            except sqlite3.OperationalError:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?)
+                """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                      f"Etiqueta para envasado lote {lote}", it['valor_estimado']))
+        scs_creadas.append({'numero': numero, 'proveedor': prov,
+                             'items': len(prov_items),
+                             'total_valor': sum(it['valor_estimado'] for it in prov_items)})
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'envasado_id': env_id,
+        'lote': lote,
+        'producto': producto,
+        'scs_creadas': scs_creadas,
+        'items_huerfanos': items_huerfanos,
+        'mensaje': f'✅ {len(scs_creadas)} SCs etiqueta creadas',
+    })
+
+
+@bp.route('/api/planta/sc-d20-rapida', methods=['POST'])
+def sc_d20_rapida():
+    """Crea SC rápida de serigrafía/tampografía para una producción D-20.
+
+    Body: {producto, fecha_produccion, unidades_estimadas}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    producto = (d.get('producto') or '').strip()
+    fecha_prod = (d.get('fecha_produccion') or '').strip()
+    unidades = int(d.get('unidades_estimadas') or 0)
+    if not producto or not fecha_prod or unidades <= 0:
+        return jsonify({'error': 'producto, fecha_produccion, unidades_estimadas requeridos'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT s.mee_codigo, s.componente_tipo, s.cantidad_por_unidad,
+               m.descripcion, cfg.proveedor_principal, cfg.precio_unit
+        FROM sku_mee_config s
+          LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+          LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+        WHERE s.aplica = 1
+          AND s.componente_tipo IN ('serigrafia','tampografia')
+          AND COALESCE(cfg.disparo_d20,0) = 1
+          AND UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    if not rows:
+        return jsonify({'error': f'No hay serigrafía/tampografía D-20 configurada para {producto}'}), 400
+
+    items_por_prov = {}
+    items_huerfanos = []
+    for cod, tipo, cant_pu, desc, prov, prec in rows:
+        cant = unidades * float(cant_pu or 1)
+        item = {
+            'mee_codigo': cod, 'tipo': tipo, 'nombre': desc or cod,
+            'cantidad': cant, 'proveedor': prov or '',
+            'precio_unit': float(prec or 0),
+            'valor_estimado': cant * float(prec or 0),
+        }
+        if not item['proveedor']:
+            items_huerfanos.append(item)
+            continue
+        items_por_prov.setdefault(prov, []).append(item)
+
+    scs_creadas = []
+    fecha_hoy_iso = datetime.now().date().isoformat()
+    for prov, prov_items in items_por_prov.items():
+        n = c.execute("""
+            SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)), 0)
+            FROM solicitudes_compra WHERE numero LIKE ?
+        """, (f"SOL-{datetime.now().strftime('%Y')}-%",)).fetchone()[0] + 1
+        numero = f"SOL-{datetime.now().strftime('%Y')}-{n:04d}"
+        observ = (f'🎨 SC decoración D-20 · {producto} · producción {fecha_prod} '
+                  f'· {unidades} ud · proveedor {prov}')
+        c.execute("""
+            INSERT INTO solicitudes_compra
+              (numero, fecha, estado, solicitante, urgencia, observaciones,
+               area, empresa, categoria, tipo, fecha_requerida, valor)
+            VALUES (?, ?, 'Pendiente', ?, 'Alta', ?, 'Produccion', 'Espagiria',
+                    'Servicios', 'Compra', ?, ?)
+        """, (numero, datetime.now().isoformat(), user, observ, fecha_prod,
+              sum(it['valor_estimado'] for it in prov_items)))
+        for it in prov_items:
+            try:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado, proveedor_sugerido)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?, ?)
+                """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                      f"{it['tipo']} para producción {fecha_prod} · {producto} · {unidades} ud",
+                      it['valor_estimado'], it['proveedor']))
+            except sqlite3.OperationalError:
+                c.execute("""
+                    INSERT INTO solicitudes_compra_items
+                      (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       justificacion, valor_estimado)
+                    VALUES (?, ?, ?, ?, 'und', ?, ?)
+                """, (numero, it['mee_codigo'], it['nombre'], it['cantidad'],
+                      f"{it['tipo']} para producción {fecha_prod}",
+                      it['valor_estimado']))
+        scs_creadas.append({'numero': numero, 'proveedor': prov,
+                             'items': len(prov_items),
+                             'total_valor': sum(it['valor_estimado'] for it in prov_items)})
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'producto': producto,
+        'fecha_produccion': fecha_prod,
+        'unidades': unidades,
+        'scs_creadas': scs_creadas,
+        'items_huerfanos': items_huerfanos,
+        'mensaje': f'✅ {len(scs_creadas)} SCs decoración creadas',
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CRUD config MEE · proveedor + origen + MOQ + lead time + flags
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/api/planta/mee-config', methods=['GET'])
+def mee_config_listar():
+    """Lista combinada maestro_mee + mee_lead_time_config para que Sebastián
+    pueda configurar proveedor/MOQ/origen sin tocar SQL."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.stock_minimo,
+               m.estado,
+               COALESCE(cfg.proveedor_principal, ''),
+               COALESCE(cfg.origen, 'Local'),
+               COALESCE(cfg.lead_time_dias, 30),
+               COALESCE(cfg.moq_unidades, 0),
+               COALESCE(cfg.precio_unit, 0),
+               COALESCE(cfg.disparo_d20, 0),
+               COALESCE(cfg.disparo_post_envasado, 0),
+               COALESCE(cfg.aplica, 1),
+               COALESCE(cfg.notas, ''),
+               COALESCE(cfg.actualizado_en, ''),
+               COALESCE(cfg.actualizado_por, '')
+        FROM maestro_mee m
+          LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = m.codigo
+        ORDER BY
+          CASE COALESCE(m.categoria,'') WHEN 'Envase' THEN 1 WHEN 'Frasco' THEN 2
+            WHEN 'Tapa' THEN 3 WHEN 'Gotero' THEN 4 WHEN 'Etiqueta' THEN 5
+            WHEN 'Serigrafia' THEN 6 WHEN 'Plegable' THEN 7 ELSE 8 END,
+          m.codigo
+    """).fetchall()
+    cols = ['codigo','descripcion','categoria','stock_actual','stock_minimo','estado',
+            'proveedor_principal','origen','lead_time_dias','moq_unidades','precio_unit',
+            'disparo_d20','disparo_post_envasado','aplica','notas',
+            'actualizado_en','actualizado_por']
+    return jsonify({'mees': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/planta/mee-config/<path:codigo>', methods=['PUT'])
+def mee_config_actualizar(codigo):
+    """Actualiza configuración de un MEE. Body: cualquier subset de campos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+
+    # Verificar que existe en maestro_mee
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone():
+        return jsonify({'error': 'MEE no existe en maestro_mee'}), 404
+
+    # Validaciones
+    origen = (d.get('origen') or '').strip()
+    if origen and origen not in ('China', 'Local', 'Mixto'):
+        return jsonify({'error': "origen debe ser China, Local o Mixto"}), 400
+
+    # UPSERT: si no hay fila, crear; si hay, actualizar
+    existing = c.execute("SELECT 1 FROM mee_lead_time_config WHERE mee_codigo=?", (codigo,)).fetchone()
+    if not existing:
+        c.execute("""
+            INSERT INTO mee_lead_time_config
+              (mee_codigo, proveedor_principal, origen, lead_time_dias,
+               moq_unidades, precio_unit, disparo_d20, disparo_post_envasado,
+               aplica, notas, actualizado_en, actualizado_por)
+            VALUES (?, '', 'Local', 30, 0, 0, 0, 0, 1, '', datetime('now'), ?)
+        """, (codigo, user))
+
+    # UPDATE de campos provistos
+    sets = []
+    params = []
+    field_map = {
+        'proveedor_principal': str,
+        'origen': str,
+        'lead_time_dias': int,
+        'moq_unidades': int,
+        'precio_unit': float,
+        'disparo_d20': lambda x: 1 if x else 0,
+        'disparo_post_envasado': lambda x: 1 if x else 0,
+        'aplica': lambda x: 1 if x else 0,
+        'notas': str,
+    }
+    for field, conv in field_map.items():
+        if field in d and d[field] is not None:
+            try:
+                sets.append(f"{field} = ?")
+                params.append(conv(d[field]))
+            except (ValueError, TypeError):
+                return jsonify({'error': f'{field}: valor inválido'}), 400
+    if not sets:
+        return jsonify({'ok': True, 'mensaje': 'Sin cambios'})
+    sets.append("actualizado_en = datetime('now')")
+    sets.append("actualizado_por = ?")
+    params.append(user)
+    params.append(codigo)
+    c.execute(f"UPDATE mee_lead_time_config SET {', '.join(sets)} WHERE mee_codigo = ?", params)
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'campos_actualizados': len(sets)-2})
+
+
+@bp.route('/api/planta/sku-mee-config', methods=['GET'])
+def sku_mee_config_listar():
+    """Lista mappings SKU → componente MEE con detalle del MEE."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    sku_filtro = (request.args.get('sku') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    sql = """
+        SELECT s.id, s.sku_codigo, s.mee_codigo, s.componente_tipo,
+               s.cantidad_por_unidad, s.aplica, COALESCE(s.notas, ''),
+               m.descripcion, m.categoria, m.stock_actual,
+               COALESCE(cfg.proveedor_principal, ''), COALESCE(cfg.origen, '')
+        FROM sku_mee_config s
+          LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+          LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = s.mee_codigo
+    """
+    params = ()
+    if sku_filtro:
+        sql += " WHERE UPPER(TRIM(s.sku_codigo)) = UPPER(TRIM(?))"
+        params = (sku_filtro,)
+    sql += " ORDER BY s.sku_codigo, s.componente_tipo, s.mee_codigo"
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','sku_codigo','mee_codigo','componente_tipo','cantidad_por_unidad',
+            'aplica','notas','mee_descripcion','mee_categoria','stock_actual',
+            'proveedor','origen']
+    return jsonify({'mappings': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/planta/sku-mee-config', methods=['POST'])
+def sku_mee_config_crear():
+    """Crea un mapping SKU → MEE.
+    Body: {sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad?, aplica?, notas?}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    sku = (d.get('sku_codigo') or '').strip()
+    mee = (d.get('mee_codigo') or '').strip()
+    comp = (d.get('componente_tipo') or '').strip()
+    if not sku or not mee or not comp:
+        return jsonify({'error': 'sku_codigo, mee_codigo, componente_tipo requeridos'}), 400
+    if comp not in ('envase','tapa','etiqueta','caja','serigrafia','tampografia','plegadiza','otro'):
+        return jsonify({'error': 'componente_tipo inválido'}), 400
+    cant = float(d.get('cantidad_por_unidad', 1))
+    aplica = 1 if d.get('aplica', True) else 0
+    notas = (d.get('notas') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE codigo=?", (mee,)).fetchone():
+        return jsonify({'error': f'MEE {mee} no existe en maestro_mee'}), 400
+    try:
+        c.execute("""
+            INSERT INTO sku_mee_config
+              (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, aplica, notas)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (sku, mee, comp, cant, aplica, notas))
+        conn.commit()
+        return jsonify({'ok': True, 'id': c.lastrowid})
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Ya existe ese mapping (sku, mee)'}), 409
+
+
+@bp.route('/api/planta/sku-mee-config/<int:mid>', methods=['PUT', 'DELETE'])
+def sku_mee_config_modificar(mid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("DELETE FROM sku_mee_config WHERE id=?", (mid,))
+        conn.commit()
+        return jsonify({'ok': True, 'eliminado': mid})
+    d = request.json or {}
+    sets = []
+    params = []
+    for f, conv in [('cantidad_por_unidad', float),
+                     ('aplica', lambda x: 1 if x else 0),
+                     ('componente_tipo', str), ('notas', str)]:
+        if f in d and d[f] is not None:
+            sets.append(f"{f} = ?"); params.append(conv(d[f]))
+    if not sets:
+        return jsonify({'ok': True, 'mensaje': 'Sin cambios'})
+    params.append(mid)
+    c.execute(f"UPDATE sku_mee_config SET {', '.join(sets)} WHERE id = ?", params)
+    conn.commit()
+    return jsonify({'ok': True, 'id': mid})
 
 
 @bp.route('/api/planta/auto-sc-mee-status', methods=['GET'])
