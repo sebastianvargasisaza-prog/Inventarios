@@ -1650,8 +1650,16 @@ async function guardarProveedor(){
   }
 }
 
-// ─── Limpieza de Proveedores (detectar y unificar duplicados) ──────────────
+// ─── Helpers globales de formato ───────────────────────────────────────────
 function _escHTML(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+// _fmtMiles: separador de miles estilo Colombia (1.234.567). Usado por
+// MP rolling forecast y otros paneles. (Sebastian 1-may-2026: error global
+// "_fmtMiles no está definido" reportado en producción.)
+function _fmtMiles(n){
+  if(n===null||n===undefined||isNaN(n)) return '0';
+  try{ return Math.round(Number(n)).toLocaleString('es-CO'); }
+  catch(e){ return String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
+}
 async function abrirLimpiezaProveedores(){
   document.getElementById('modal-limpieza-prov').style.display='flex';
   await _renderLimpiezaProveedores();
@@ -9458,6 +9466,36 @@ async function ckMarcar(itemId, estado){
     planV2CargarStatusLine();
     planV2CargarCentroAccion();
     planV2CargarMpRolling();
+    // Sebastián (1-may-2026): paneles MEE + Auto-SC + Alertas viven en
+    // ptab-plan (legacy) pero Sebastián trabaja en planv2. Movemos los
+    // nodos DOM una sola vez para que aparezcan aquí sin duplicar HTML.
+    planV2InjectMeePanels();
+  }
+
+  function planV2InjectMeePanels(){
+    if(window._meePanelsMoved) return;
+    var planv2 = document.getElementById('ptab-planv2');
+    var anchor = document.getElementById('pv2-kpis');
+    if(!planv2 || !anchor) return;
+    var ids = ['plan-autosc', 'plan-mee-alerts', 'plan-autosc-mee', 'mee-config-panel'];
+    var current = anchor;
+    ids.forEach(function(id){
+      var el = document.getElementById(id);
+      if(!el) return;
+      // Mover después del nodo current (mantiene orden)
+      if(current.nextSibling){
+        planv2.insertBefore(el, current.nextSibling);
+      } else {
+        planv2.appendChild(el);
+      }
+      current = el;
+    });
+    window._meePanelsMoved = true;
+    // Cargar todos los datos
+    if(typeof autoscRecargar === 'function') autoscRecargar();
+    if(typeof autoscMeeRecargar === 'function') autoscMeeRecargar();
+    if(typeof alertEtiquetasRecargar === 'function') alertEtiquetasRecargar();
+    if(typeof alertD20Recargar === 'function') alertD20Recargar();
   }
 
   // ════════════════════════════════════════════════════════════════════
