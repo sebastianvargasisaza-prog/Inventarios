@@ -11493,11 +11493,25 @@ async function ckMarcar(itemId, estado){
   function planV2RenderTimeline(d, vista, meses){
     // Agrupar producciones por SKU
     var prods = d.producciones_proyectadas || [];
+    var resumen = d.resumen_mensual || {};
     var porSku = {};
     prods.forEach(function(p){ porSku[p.producto] = porSku[p.producto] || []; porSku[p.producto].push(p); });
+
+    // Sebastián 1-may-2026: empty state limpio cuando no hay producciones
+    // proyectadas. Antes renderizaba headers vacíos (Timeline + Resumen
+    // mensual con solo títulos de columna) que se veía feo.
+    if(!prods.length && !Object.keys(resumen).length){
+      vista.innerHTML = '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:32px 18px;text-align:center;color:#64748b">'
+        +'<div style="font-size:32px;margin-bottom:8px">📊</div>'
+        +'<div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px">Sin producciones proyectadas en '+meses+' meses</div>'
+        +'<div style="font-size:12px;color:#64748b">El motor MRP no encontró eventos del Calendar ni necesidades por velocidad de venta. '
+        +'Si esperabas verlas, revisa: <b>velocidades de venta Shopify</b> · <b>SKUs activos</b> · <b>fórmulas con lote_size_kg</b>.</div>'
+        +'</div>';
+      return;
+    }
+
     var hoy = new Date(d.fecha_inicio);
     var fin = new Date(d.fecha_fin);
-    var dias = Math.round((fin - hoy) / (1000*60*60*24));
 
     var html = '<h3 style="margin:0 0 10px;color:#0f172a;font-size:15px">📊 Timeline · '+meses+' meses</h3>';
     html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;overflow-x:auto">';
@@ -11510,31 +11524,36 @@ async function ckMarcar(itemId, estado){
       html += '<div style="text-align:center">'+d2.toLocaleString('es-CO',{month:'short',year:'2-digit'}).toUpperCase()+'</div>';
     }
     html += '</div></div>';
-    // Filas SKU
-    Object.keys(porSku).sort().forEach(function(sku){
-      html += '<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:5px 0;border-top:1px solid #f1f5f9;font-size:11px">';
-      html += '<div style="font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(sku)+'">'+_escHTML(sku)+'</div>';
-      html += '<div style="position:relative;height:20px;background:#f8fafc;border-radius:3px">';
-      porSku[sku].forEach(function(p){
-        var pf = new Date(p.fecha);
-        var offset = (pf - hoy) / (fin - hoy) * 100;
-        if(offset < 0 || offset > 100) return;
-        html += '<div title="'+_escAttr(p.fecha+' · '+p.kg_con_merma+'kg')+'" style="position:absolute;left:'+offset+'%;top:2px;width:8px;height:16px;background:#0f766e;border-radius:2px"></div>';
+    // Filas SKU (solo si hay datos)
+    if(Object.keys(porSku).length){
+      Object.keys(porSku).sort().forEach(function(sku){
+        html += '<div style="display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center;padding:5px 0;border-top:1px solid #f1f5f9;font-size:11px">';
+        html += '<div style="font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escAttr(sku)+'">'+_escHTML(sku)+'</div>';
+        html += '<div style="position:relative;height:20px;background:#f8fafc;border-radius:3px">';
+        porSku[sku].forEach(function(p){
+          var pf = new Date(p.fecha);
+          var offset = (pf - hoy) / (fin - hoy) * 100;
+          if(offset < 0 || offset > 100) return;
+          html += '<div title="'+_escAttr(p.fecha+' · '+p.kg_con_merma+'kg')+'" style="position:absolute;left:'+offset+'%;top:2px;width:8px;height:16px;background:#0f766e;border-radius:2px"></div>';
+        });
+        html += '</div></div>';
       });
-      html += '</div></div>';
-    });
+    } else {
+      html += '<div style="text-align:center;padding:18px;color:#94a3b8;font-size:11px;font-style:italic">Sin producciones en horizonte</div>';
+    }
     html += '</div>';
 
-    // Tabla resumen mensual
-    html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:15px">📈 Resumen mensual</h3>';
-    html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-    html += '<thead style="background:#f9fafb"><tr><th style="padding:8px 12px;text-align:left">Mes</th><th style="padding:8px;text-align:right">Lotes</th><th style="padding:8px;text-align:right">Kg total</th><th style="padding:8px;text-align:right">SKUs</th></tr></thead><tbody>';
-    var resumen = d.resumen_mensual || {};
-    Object.keys(resumen).sort().forEach(function(m){
-      var r = resumen[m];
-      html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 12px;font-weight:700">'+_escHTML(m)+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.lotes+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.kg_total+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.productos_distintos+'</td></tr>';
-    });
-    html += '</tbody></table></div>';
+    // Tabla resumen mensual (solo si hay datos)
+    if(Object.keys(resumen).length){
+      html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:15px">📈 Resumen mensual</h3>';
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead style="background:#f9fafb"><tr><th style="padding:8px 12px;text-align:left">Mes</th><th style="padding:8px;text-align:right">Lotes</th><th style="padding:8px;text-align:right">Kg total</th><th style="padding:8px;text-align:right">SKUs</th></tr></thead><tbody>';
+      Object.keys(resumen).sort().forEach(function(m){
+        var r = resumen[m];
+        html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 12px;font-weight:700">'+_escHTML(m)+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.lotes+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.kg_total+'</td><td style="padding:7px;text-align:right;font-family:monospace">'+r.productos_distintos+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
 
     vista.innerHTML = html;
   }
@@ -11544,6 +11563,16 @@ async function ckMarcar(itemId, estado){
     var prods = d.producciones_proyectadas || [];
     var skus = [...new Set(prods.map(function(p){return p.producto}))].sort();
     var meses_keys = Object.keys(d.resumen_mensual || {}).sort();
+
+    // Sebastián 1-may-2026: empty state limpio
+    if(!prods.length && !meses_keys.length){
+      vista.innerHTML = '<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:32px 18px;text-align:center;color:#64748b">'
+        +'<div style="font-size:32px;margin-bottom:8px">🌡</div>'
+        +'<div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px">Sin datos para heatmap '+meses+' meses</div>'
+        +'<div style="font-size:12px">El motor MRP no proyectó producciones en este horizonte.</div>'
+        +'</div>';
+      return;
+    }
 
     // Calcular max kg por celda para normalizar color
     var celda = {};
