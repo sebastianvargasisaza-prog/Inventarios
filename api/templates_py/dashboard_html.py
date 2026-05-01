@@ -6342,22 +6342,12 @@ function _renderProgramacion(d){
   </div><!-- /ptab-planv2 -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <!-- ptab-asignacion: Asignación semanal por área (qué hace FAB1 hoy?)    -->
+  <!-- ptab-asignacion: contenedor que recibe paneles inyectados (Esta      -->
+  <!-- Semana, Mi Día, Pre-producción, Salas Vivo). El grid antiguo se      -->
+  <!-- eliminó por redundancia con Calendar-first.                          -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div id="ptab-asignacion" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-      <div>
-        <h2 style="margin:0 0 4px;color:#1a4a7a">📍 Asignación Semanal por Área</h2>
-        <p style="color:#666;font-size:13px;margin:0">Qué se hace en cada sala cada día (L/M/V producir · Ma/Ju acondicionar/conteo)</p>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <button onclick="asigSemana(-1)" style="background:#fff;border:1px solid #cbd5e1;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:600">← Anterior</button>
-        <input id="asig-fecha" type="date" onchange="asigCargar()" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-        <button onclick="asigSemana(1)" style="background:#fff;border:1px solid #cbd5e1;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:600">Siguiente →</button>
-        <button onclick="asigSemana(0)" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:700">Hoy</button>
-      </div>
-    </div>
-    <div id="asig-grid"></div>
+    <div id="asig-anchor"></div>
   </div><!-- /ptab-asignacion -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
@@ -7753,7 +7743,7 @@ async function ckMarcar(itemId, estado){
       _bg('prog-tab-config',     '#1f2937',                                  tab==='config');
       // === Hooks de inicialización para las 4 pestañas oficiales ===
       if(tab==='planv2' && typeof planV2Init==='function') planV2Init();
-      if(tab==='asignacion' && typeof asigInit==='function') asigInit();
+      // 'asignacion' ya no llama asigInit (grid antiguo eliminado · paneles Calendar-first)
       if(tab==='config' && typeof cfgInit==='function') cfgInit();
       // Sebastián 1-may-2026: paneles operativos viven en Asignación
       if(tab==='asignacion'){
@@ -9673,17 +9663,15 @@ async function ckMarcar(itemId, estado){
     var esenciales = ['plan-estado-solicitudes', 'plan-mee-alerts', 'plan-autosc', 'plan-autosc-mee'];
     var avanzados = ['mee-asignar-panel', 'mee-config-panel'];
 
-    // Mover paneles operativos al tab Asignación Semanal
+    // Mover paneles operativos al tab Asignación
+    // (grid antiguo eliminado · solo paneles Calendar-first)
     var asignacion = document.getElementById('ptab-asignacion');
-    var asigGrid = document.getElementById('asig-grid');
-    if(asignacion && asigGrid){
+    var asigAnchor = document.getElementById('asig-anchor');
+    if(asignacion && asigAnchor){
       var panelesAsig = ['plan-esta-semana', 'plan-salas-vivo', 'plan-mi-dia', 'plan-pre-produccion'];
       panelesAsig.forEach(function(id){
         var el = document.getElementById(id);
-        if(el && asigGrid.parentNode){
-          // Insertar ANTES del grid existente (Esta Semana arriba)
-          asigGrid.parentNode.insertBefore(el, asigGrid);
-        }
+        if(el) asignacion.appendChild(el);
       });
     }
 
@@ -11919,84 +11907,9 @@ async function ckMarcar(itemId, estado){
   // ════════════════════════════════════════════════════════════════════════
   // ASIGNACIÓN SEMANAL · qué hace cada área cada día
   // ════════════════════════════════════════════════════════════════════════
-  var _ASIG_FECHA = null;
-  function asigInit(){
-    var hoy = new Date();
-    document.getElementById('asig-fecha').value = hoy.toISOString().substring(0,10);
-    _ASIG_FECHA = hoy;
-    asigCargar();
-  }
-  function asigSemana(delta){
-    var input = document.getElementById('asig-fecha');
-    var f = input.value ? new Date(input.value) : new Date();
-    if(delta === 0) f = new Date();
-    else f.setDate(f.getDate() + delta*7);
-    input.value = f.toISOString().substring(0,10);
-    asigCargar();
-  }
-  async function asigCargar(){
-    var grid = document.getElementById('asig-grid');
-    var fecha = document.getElementById('asig-fecha').value;
-    grid.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8">Cargando...</div>';
-    try {
-      var r = await fetch('/api/planta/asignacion-semanal?fecha='+fecha);
-      var d = await r.json();
-      var dias = d.dias || [];
-      var areas = d.areas || [];
-      var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
-      // Header
-      html += '<thead><tr style="background:#1f2937;color:#fff">';
-      html += '<th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Área</th>';
-      dias.forEach(function(dia){
-        var bg = dia.es_lmv ? '#0f766e' : '#475569';
-        var ico = dia.es_lmv ? '⚙️' : '📦';
-        html += '<th style="padding:10px 8px;text-align:center;font-size:11px;background:'+bg+';text-transform:uppercase;letter-spacing:.3px">'+ico+' '+_escHTML(dia.nombre)+'<br><span style="font-weight:400;font-size:9px;opacity:.85">'+_escHTML(dia.fecha.substring(5))+'</span></th>';
-      });
-      html += '</tr></thead><tbody>';
-      areas.forEach(function(area){
-        if(!area.puede_producir && !area.puede_envasar && area.tipo!=='apoyo_asignable') return;
-        html += '<tr style="border-top:1px solid #e2e8f0">';
-        var areaCol = area.requiere_limpieza_profunda ? '#0891b2' : '#94a3b8';
-        html += '<td style="padding:10px 12px;background:#f8fafc"><b style="color:#0f172a">'+_escHTML(area.nombre)+'</b><br><code style="color:'+areaCol+';font-size:10px">'+_escHTML(area.codigo)+'</code>'+(area.requiere_limpieza_profunda?'<br><span style="font-size:9px;color:#0891b2;font-weight:700">🧹 LIMP. PROF.</span>':'')+'</td>';
-        ['lunes','martes','miercoles','jueves','viernes'].forEach(function(nd){
-          var datos = area.dias[nd] || {};
-          var prods = datos.producciones || [];
-          var limps = datos.limpiezas || [];
-          var conts = datos.conteos || [];
-          var celda = '';
-          prods.forEach(function(p){
-            celda += '<div style="background:#dbeafe;color:#1e40af;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px"><b>🔬 '+_escHTML(p.producto.substring(0,22))+'</b>'+(p.lotes>1?' ×'+p.lotes:'')+(p.op_elaboracion?'<br>👤 '+_escHTML(p.op_elaboracion.substring(0,20)):'')+'</div>';
-          });
-          limps.forEach(function(l){
-            celda += '<div style="background:#fef3c7;color:#92400e;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:700">🧹 Limpieza profunda<br><span style="font-weight:400">'+_escHTML(l.asignado_a||'—')+'</span></div>';
-          });
-          conts.forEach(function(c){
-            celda += '<div style="background:#f3e8ff;color:#6b21a8;padding:4px 6px;border-radius:4px;margin-bottom:3px;font-size:10px">📦 '+_escHTML((c.material||'').substring(0,18))+'</div>';
-          });
-          if(!celda) celda = '<div style="color:#cbd5e1;text-align:center;font-size:11px;padding:8px">—</div>';
-          html += '<td style="padding:6px;vertical-align:top;background:'+(datos.es_dia_produccion?'#fff':'#fafafa')+'">'+celda+'</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-
-      // Tareas globales (sin área)
-      var tareasG = d.tareas_globales || [];
-      if(tareasG.length){
-        html += '<h3 style="margin:18px 0 10px;color:#0f172a;font-size:14px">📋 Tareas operativas (sin área específica)</h3>';
-        html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;font-size:12px">';
-        tareasG.forEach(function(t){
-          html += '<div style="padding:6px 0;border-bottom:1px solid #f1f5f9"><b>'+_escHTML(t.fecha)+'</b> · '+_escHTML(t.titulo)+' · '+_escHTML(t.asignado_a||'')+'</div>';
-        });
-        html += '</div>';
-      }
-
-      grid.innerHTML = html;
-    } catch(e){
-      grid.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>';
-    }
-  }
+  // Sebastián 1-may-2026: grid 'Asignación Semanal por Área' eliminado.
+  // Era redundante con 'Esta Semana en planta' (Calendar-first) y aparecía
+  // vacío en semanas pasadas. Funciones asigInit/asigSemana/asigCargar removidas.
 
   // ════════════════════════════════════════════════════════════════════════
   // CONFIGURACIÓN · sub-tabs (Presentaciones, Equipos, Cadencias, etc.)
