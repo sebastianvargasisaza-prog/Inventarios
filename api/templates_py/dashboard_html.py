@@ -9377,41 +9377,88 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // ✓ MARCAR LOTE HECHO — Mayerlin/operario reporta kg reales
+  // 🔍 VERIFICAR LISTO PARA PRODUCIR — chequea MP/envases ANTES de producir
   // ════════════════════════════════════════════════════════════════════
-  async function planV2MarcarLoteHecho(producto, kgSugerido){
-    var kgStr = prompt('✓ Marcar lote como hecho\\n\\nProducto: '+producto+'\\n\\n¿Cuántos kg se produjeron realmente?', kgSugerido);
-    if(kgStr === null) return;
-    var kgReal = parseFloat(kgStr);
-    if(isNaN(kgReal) || kgReal <= 0){ alert('kg inválido'); return; }
-    var operador = prompt('¿Quién operó? (nombre)', '') || '';
-    var lote = prompt('Número de lote (opcional)', '') || '';
-    var observ = prompt('Observaciones (opcional)', '') || '';
-    var descontarMP = confirm('¿Descontar MP automáticamente del inventario según fórmula?\\n\\nAceptar = sí (recomendado)\\nCancelar = solo registrar el lote sin tocar MP');
+  // Programación = aquí se verifica que TODO está listo antes de mandar a
+  // Producción. El registro real (kg producidos + descuento FEFO MP) se
+  // hace en el módulo Producción existente (/produccion).
+  async function planV2VerificarListo(producto, kgSugerido){
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = function(e){if(e.target===modal)modal.remove();};
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:40px;text-align:center"><div style="font-size:32px">🔍</div><div style="margin-top:10px;color:#64748b">Verificando MP para '+_escHTML(producto)+'...</div></div>';
+    document.body.appendChild(modal);
     try {
-      var r = await fetch('/api/planta/registrar-lote-real', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          producto: producto,
-          kg_real: kgReal,
-          operador: operador,
-          lote: lote,
-          observaciones: observ,
-          descontar_mp: descontarMP,
-        })
-      });
+      var r = await fetch('/api/planta/mp-para-lote?producto='+encodeURIComponent(producto)+'&kg='+kgSugerido);
       var d = await r.json();
-      if(d.error){ alert('Error: '+d.error); return; }
-      var msg = d.mensaje || '✓ Registrado';
-      if(d.aviso_mp_faltante){
-        msg += '\\n\\n⚠️ MPs en stock negativo:\\n' + (d.mp_faltante||[]).slice(0,5).map(function(m){return '- '+m.material_nombre+' (faltó '+(m.requerido_g - m.stock_g).toFixed(0)+'g)';}).join('\\n');
+      if(d.error){ modal.remove(); alert('Error: '+d.error); return; }
+      var mps = d.mps || [];
+      var k = d.kpis || {};
+      var alcanza = d.alcanza;
+      var faltantes = mps.filter(function(m){return m.estado==='faltante';});
+      var ajustados = mps.filter(function(m){return m.estado==='ajustado';});
+      var html = '<div style="background:#fff;border-radius:12px;width:780px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
+      var bgHeader = alcanza ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#dc2626,#ea580c)';
+      html += '<div style="background:'+bgHeader+';color:#fff;border-radius:10px;padding:14px 18px;margin-bottom:16px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">';
+      html += '<div><h2 style="margin:0;font-size:18px">🔍 '+_escHTML(producto)+' · '+kgSugerido+' kg</h2>';
+      html += '<p style="font-size:12px;margin:4px 0 0;opacity:.95">'+_escHTML(d.mensaje||'')+'</p></div>';
+      html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:700">Cerrar</button>';
+      html += '</div></div>';
+
+      // KPIs
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px">';
+      html += '<div style="background:#ecfdf5;padding:10px;border-radius:8px;border:1px solid #6ee7b7"><div style="font-size:10px;color:#065f46">✓ OK</div><div style="font-size:22px;font-weight:800;color:#047857">'+(k.ok||0)+'</div></div>';
+      if(k.ajustado) html += '<div style="background:#fef3c7;padding:10px;border-radius:8px;border:1px solid #fcd34d"><div style="font-size:10px;color:#92400e">⚠ Ajustado</div><div style="font-size:22px;font-weight:800;color:#b45309">'+k.ajustado+'</div></div>';
+      if(k.faltante) html += '<div style="background:#fef2f2;padding:10px;border-radius:8px;border:1px solid #fca5a5"><div style="font-size:10px;color:#991b1b">🔴 Faltante</div><div style="font-size:22px;font-weight:800;color:#dc2626">'+k.faltante+'</div></div>';
+      html += '<div style="background:#f1f5f9;padding:10px;border-radius:8px"><div style="font-size:10px;color:#475569">Total MPs</div><div style="font-size:22px;font-weight:800;color:#1e293b">'+(k.total_mps||0)+'</div></div>';
+      html += '</div>';
+
+      // Acción
+      if(alcanza){
+        html += '<div style="background:#ecfdf5;border:2px solid #10b981;padding:14px;border-radius:8px;margin-bottom:14px;text-align:center">';
+        html += '<div style="font-size:14px;color:#065f46;font-weight:700">✅ Listo para producir</div>';
+        html += '<div style="font-size:11px;color:#047857;margin-top:4px">Cuando termines el lote, registra el resultado real en <b>Producción → Nueva</b> (descuento FEFO automático).</div>';
+        html += '<a href="/inventarios/produccion" target="_blank" style="display:inline-block;margin-top:10px;background:#10b981;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:700;font-size:12px">→ Ir a Producción</a>';
+        html += '</div>';
+      } else {
+        html += '<div style="background:#fef2f2;border:2px solid #dc2626;padding:14px;border-radius:8px;margin-bottom:14px">';
+        html += '<div style="font-size:14px;color:#991b1b;font-weight:700">🔴 NO PRODUCIR — falta MP</div>';
+        html += '<div style="font-size:11px;color:#7f1d1d;margin-top:6px">Compra/recibe las siguientes MPs antes de iniciar:</div>';
+        html += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#7f1d1d">';
+        faltantes.slice(0,8).forEach(function(m){
+          html += '<li><b>'+_escHTML(m.material_nombre)+'</b>: faltan '+m.falta_g+' g (req '+m.requerido_g+' · stock '+m.stock_g+')</li>';
+        });
+        html += '</ul></div>';
       }
-      alert(msg);
-      // Recargar centro de acción
-      planV2CargarCentroAccion();
+
+      // Tabla MPs
+      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+      html += '<thead style="background:#f1f5f9"><tr>';
+      html += '<th style="padding:6px;text-align:left">Material</th>';
+      html += '<th style="padding:6px;text-align:right">%</th>';
+      html += '<th style="padding:6px;text-align:right">Requerido</th>';
+      html += '<th style="padding:6px;text-align:right">Stock</th>';
+      html += '<th style="padding:6px;text-align:right">Falta</th>';
+      html += '<th style="padding:6px;text-align:left">Estado</th>';
+      html += '</tr></thead><tbody>';
+      var estCol = {ok:'#10b981',ajustado:'#f59e0b',faltante:'#dc2626'};
+      mps.forEach(function(m){
+        var c = estCol[m.estado] || '#64748b';
+        html += '<tr style="border-top:1px solid #e2e8f0">';
+        html += '<td style="padding:5px 6px"><b>'+_escHTML(m.material_nombre)+'</b><div style="font-size:9px;color:#64748b">'+_escHTML(m.material_id)+'</div></td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.porcentaje+'%</td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.requerido_g+' g</td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.stock_g+' g</td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:'+c+';font-weight:700">'+(m.falta_g>0?m.falta_g+' g':'—')+'</td>';
+        html += '<td style="padding:5px 6px"><span style="background:'+c+'22;color:'+c+';padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase">'+m.estado+'</span></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '</div>';
+      modal.innerHTML = html;
     } catch(e){
-      alert('Error: '+(e.message||'desconocido'));
+      modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#dc2626">Error: '+(e.message||'desconocido')+'<br><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="margin-top:14px;padding:6px 14px">Cerrar</button></div>';
     }
   }
 
@@ -9551,7 +9598,7 @@ async function ckMarcar(itemId, estado){
           +'<div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">'
           +'<span style="background:'+col+';color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:800;white-space:nowrap">'+labelEstado(a.estado)+'</span>'
           +(a.diff_dias?('<div style="font-size:10px;color:'+col+';font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
-          +'<button onclick="planV2MarcarLoteHecho(\\''+safeProducto+'\\','+kgSugerido+')" style="background:#15803d;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer">✓ Hecho</button>'
+          +'<button onclick="planV2VerificarListo(\\''+safeProducto+'\\','+kgSugerido+')" style="background:#0891b2;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer" title="Verificar MP, envases y capacidad antes de producir">🔍 Verificar listo</button>'
           +'</div></div></div>';
       }
       criticos.forEach(function(a){html+=fila(a);});
