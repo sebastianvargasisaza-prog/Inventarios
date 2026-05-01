@@ -1413,12 +1413,26 @@ def handle_solicitudes_compra():
                        d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
                        area, emp, cat, tip, email_sol, fecha_req, val_sol))
             for it in (d.get('items') or []):
-                c.execute("""INSERT INTO solicitudes_compra_items
-                             (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
-                             VALUES (?,?,?,?,?,?,?)""",
-                          (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
-                           it.get('cantidad_g',0), it.get('unidad','g'),
-                           it.get('justificacion',''), it.get('valor_estimado',0)))
+                # proveedor_sugerido es opcional. Migración 19xx aseguró que la
+                # columna exista. Si por alguna razón no, fallback al INSERT
+                # mínimo. Solicitudes generadas desde Plan MP rolling envían
+                # proveedor_sugerido tomado de mp_lead_time_config.
+                try:
+                    c.execute("""INSERT INTO solicitudes_compra_items
+                                 (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado,proveedor_sugerido)
+                                 VALUES (?,?,?,?,?,?,?,?)""",
+                              (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                               it.get('cantidad_g',0), it.get('unidad','g'),
+                               it.get('justificacion',''), it.get('valor_estimado',0),
+                               it.get('proveedor_sugerido','')))
+                except sqlite3.OperationalError:
+                    # Esquema antiguo sin proveedor_sugerido — fallback
+                    c.execute("""INSERT INTO solicitudes_compra_items
+                                 (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
+                                 VALUES (?,?,?,?,?,?,?)""",
+                              (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
+                               it.get('cantidad_g',0), it.get('unidad','g'),
+                               it.get('justificacion',''), it.get('valor_estimado',0)))
             conn.commit()
             return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
         except Exception as e:

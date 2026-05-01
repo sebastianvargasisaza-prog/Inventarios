@@ -4536,11 +4536,12 @@ def mp_rolling_forecast():
         # Urgencia: cuándo hay que comprar
         # Lead time + buffer (si está en mp_lead_time_config)
         lt_row = c.execute("""
-            SELECT lead_time_dias, origen
+            SELECT lead_time_dias, origen, proveedor_principal
             FROM mp_lead_time_config WHERE material_id=?
         """, (info['material_id'],)).fetchone()
         lead = lt_row[0] if lt_row else 14
         origen = lt_row[1] if lt_row else 'local'
+        proveedor_sugerido = lt_row[2] if lt_row else ''
 
         comprar_antes = None
         comprar_g = 0
@@ -4569,6 +4570,7 @@ def mp_rolling_forecast():
             'dias_hasta_stockout': dias_hasta_stockout,
             'lead_time_dias': lead,
             'origen': origen,
+            'proveedor_sugerido': proveedor_sugerido,
             'comprar_antes_de': comprar_antes,
             'comprar_g_recomendado': comprar_g,
             'consumos': info['consumos'],

@@ -308,13 +308,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
   </header>
   <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+  <!-- Sebastián 30-abr-2026: orden lógico → primero Programación, después Producción.
+       "Después de programar sigue producción". -->
   <div class="tabs">
     <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
     <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
     <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
+    <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
-    <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
@@ -5969,13 +5971,10 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">+ Nuevo</button>
-          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Diagnóstico SKU">🔍 Diag</button>
-          <button onclick="planV2VerSemanaShopify()" style="background:#fbbf24;color:#7c2d12;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan semana solo Shopify">🛒 Sem</button>
-          <button onclick="planV2VerLargoShopify(6)" style="background:#10b981;color:#064e3b;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 6 meses">📆 6m</button>
-          <button onclick="planV2VerLargoShopify(12)" style="background:#06b6d4;color:#083344;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Plan 1 año">🗓️ 1a</button>
+          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Diagnóstico SKU: stock + ventas + alcance">🔍 Diag SKU</button>
           <button onclick="planV2VerForecastBF()" style="background:#a855f7;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Pre-stock Black Friday">🛍️ BF</button>
-          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📥</button>
-          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">↻</button>
+          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" title="Descargar Excel">📥</button>
+          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" title="Recargar">↻</button>
         </div>
       </div>
       <!-- Switcher de horizonte (1 línea) -->
@@ -9358,7 +9357,7 @@ async function ckMarcar(itemId, estado){
       // Selector de horizonte
       html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
       html += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
-      [15,30,60,90,180].forEach(function(d){
+      [15,30,60,90,180,365].forEach(function(d){
         var act = d === dias;
         html += '<button onclick="planV2MpRollingHorizonte('+d+')" style="padding:5px 12px;border:none;border-radius:5px;background:'+(act?'#fff':'rgba(255,255,255,.18)')+';color:'+(act?'#7c3aed':'#fff')+';font-weight:'+(act?'800':'600')+';cursor:pointer;font-size:11px">'+d+'d</button>';
       });
@@ -9491,8 +9490,9 @@ async function ckMarcar(itemId, estado){
             nombre_mp: it.material.material_nombre,
             cantidad_g: it.cantidad_g,
             unidad: 'g',
-            justificacion: it.justificacion,
+            justificacion: it.justificacion + (it.material.lead_time_dias ? ' · Lead time '+it.material.lead_time_dias+'d ('+(it.material.origen||'local')+')' : ''),
             valor_estimado: 0,
+            proveedor_sugerido: it.material.proveedor_sugerido || '',
           };
         }),
       };
