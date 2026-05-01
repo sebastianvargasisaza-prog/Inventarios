@@ -9314,12 +9314,22 @@ async function ckMarcar(itemId, estado){
   // ════════════════════════════════════════════════════════════════════
   // 📦 MP ROLLING FORECAST — consumo MP acumulado en el horizonte
   // ════════════════════════════════════════════════════════════════════
+  // Horizonte seleccionable 15/30/60/90/180 días — Sebastián 30-abr-2026:
+  // "Alejandro puede decidir qué trae de más. Pedidos en bloque o individual".
+  var _MP_ROLLING_DIAS = 60;  // default
+
+  function planV2MpRollingHorizonte(dias){
+    _MP_ROLLING_DIAS = dias;
+    planV2CargarMpRolling();
+  }
+
   async function planV2CargarMpRolling(){
     var box = document.getElementById('pv2-mp-rolling');
     if(!box) return;
-    box.innerHTML = '<div style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;color:#64748b">⏳ Calculando consumo MP acumulado próximos 60 días...</div>';
+    var dias = _MP_ROLLING_DIAS;
+    box.innerHTML = '<div style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;color:#64748b">⏳ Calculando consumo MP acumulado próximos '+dias+' días...</div>';
     try {
-      var r = await fetch('/api/planta/mp-rolling-forecast?dias=60');
+      var r = await fetch('/api/planta/mp-rolling-forecast?dias='+dias);
       var d = await r.json();
       if(d.error){ box.innerHTML=''; return; }
       var mats = d.materias || [];
@@ -9336,31 +9346,48 @@ async function ckMarcar(itemId, estado){
 
       var bgHeader = stockouts.length ? 'linear-gradient(135deg,#7c3aed,#dc2626)' : 'linear-gradient(135deg,#0891b2,#059669)';
       var html = '<div style="background:#fff;border:2px solid '+(stockouts.length?'#7c3aed':'#0891b2')+';border-radius:10px;overflow:hidden">';
-      html += '<div style="background:'+bgHeader+';color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
-      html += '<div><b style="font-size:15px">📦 Plan MP rolling · '+(d.horizonte_dias||60)+' días</b><div style="font-size:11px;color:#fce7f3;margin-top:2px">Consumo MP acumulado de TODAS las producciones planeadas (sumando lunes + martes + ...)</div></div>';
-      html += '<div style="display:flex;gap:6px;font-size:11px;flex-wrap:wrap">';
-      if(criticas.length) html += '<span style="background:rgba(220,38,38,.5);padding:4px 10px;border-radius:6px;font-weight:800">🔴 '+criticas.length+' críticas (15d)</span>';
-      if(altas.length) html += '<span style="background:rgba(249,115,22,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟠 '+altas.length+' altas (30d)</span>';
-      if(medias.length) html += '<span style="background:rgba(234,179,8,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟡 '+medias.length+' medias</span>';
-      if(ok.length) html += '<span style="background:rgba(34,197,94,.5);padding:4px 10px;border-radius:6px;font-weight:800">🟢 '+ok.length+' OK</span>';
+      html += '<div style="background:'+bgHeader+';color:#fff;padding:12px 16px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px">';
+      html += '<div><b style="font-size:15px">📦 Plan MP rolling · '+dias+' días</b><div style="font-size:11px;color:#fce7f3;margin-top:2px">Consumo MP acumulado de TODAS las producciones planeadas (sumando lunes + martes + ...)</div></div>';
+      html += '<div style="display:flex;gap:5px;flex-wrap:wrap;font-size:10px">';
+      if(criticas.length) html += '<span style="background:rgba(220,38,38,.5);padding:3px 8px;border-radius:5px;font-weight:800">🔴 '+criticas.length+' críticas</span>';
+      if(altas.length) html += '<span style="background:rgba(249,115,22,.5);padding:3px 8px;border-radius:5px;font-weight:800">🟠 '+altas.length+' altas</span>';
+      if(medias.length) html += '<span style="background:rgba(234,179,8,.5);padding:3px 8px;border-radius:5px;font-weight:800">🟡 '+medias.length+' medias</span>';
+      if(ok.length) html += '<span style="background:rgba(34,197,94,.5);padding:3px 8px;border-radius:5px;font-weight:800">🟢 '+ok.length+' OK</span>';
       html += '</div></div>';
+      // Selector de horizonte
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+      html += '<div style="display:flex;gap:4px;flex-wrap:wrap">';
+      [15,30,60,90,180].forEach(function(d){
+        var act = d === dias;
+        html += '<button onclick="planV2MpRollingHorizonte('+d+')" style="padding:5px 12px;border:none;border-radius:5px;background:'+(act?'#fff':'rgba(255,255,255,.18)')+';color:'+(act?'#7c3aed':'#fff')+';font-weight:'+(act?'800':'600')+';cursor:pointer;font-size:11px">'+d+'d</button>';
+      });
+      html += '</div>';
+      // Botón solicitar bloque
+      if(stockouts.length){
+        html += '<button onclick="planV2SolicitarBloque()" style="background:#fbbf24;color:#7c2d12;border:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">📋 Solicitar a Compras (bloque)</button>';
+      }
+      html += '</div>';
+      html += '</div>';  // /header
       html += '<div style="padding:10px 14px">';
-      html += '<div style="font-size:11px;color:#64748b;margin-bottom:8px">📊 '+(k.total_producciones||0)+' producciones planeadas · '+(k.mps_afectadas||0)+' MPs distintas se consumirán</div>';
+      html += '<div style="font-size:11px;color:#64748b;margin-bottom:8px">📊 '+(k.total_producciones||0)+' producciones planeadas · '+(k.mps_afectadas||0)+' MPs distintas · ☑️ Marca las que quieras pedir en bloque</div>';
 
       // Tabla MP
       html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
       html += '<thead style="background:#f1f5f9"><tr>';
+      html += '<th style="padding:6px;width:30px"><input type="checkbox" id="mp-rolling-todos" onclick="planV2MpToggleTodos(this)" title="Marcar todos los stockouts"></th>';
       html += '<th style="padding:6px;text-align:left">Material</th>';
       html += '<th style="padding:6px;text-align:right">Stock hoy</th>';
-      html += '<th style="padding:6px;text-align:right">Consumo total</th>';
+      html += '<th style="padding:6px;text-align:right">Consumo</th>';
       html += '<th style="padding:6px;text-align:right">Saldo final</th>';
       html += '<th style="padding:6px;text-align:right">Lotes</th>';
       html += '<th style="padding:6px;text-align:left">Stockout</th>';
       html += '<th style="padding:6px;text-align:left">Comprar antes</th>';
       html += '<th style="padding:6px;text-align:right">Pedir</th>';
+      html += '<th style="padding:6px;text-align:center">Solo</th>';
       html += '</tr></thead><tbody>';
       var urgCol = {critica:'#dc2626', alta:'#f97316', media:'#eab308', ok:'#10b981'};
-      var maxFilas = stockouts.length + Math.min(8, ok.length);  // mostrar todos los stockouts + máx 8 ok
+      var maxFilas = stockouts.length + Math.min(8, ok.length);
       var idx = 0;
       var todas = stockouts.concat(ok);
       todas.forEach(function(m){
@@ -9368,8 +9395,14 @@ async function ckMarcar(itemId, estado){
         idx++;
         var col = urgCol[m.urgencia] || '#64748b';
         var safeId = (m.material_id||'').replace(/\\x27/g,"\\\\\\x27");
-        html += '<tr style="border-top:1px solid #e2e8f0;cursor:pointer" onclick="planV2VerMpDetalle(\\''+safeId+'\\')">';
-        html += '<td style="padding:5px 6px"><b>'+_escHTML(m.material_nombre)+'</b><div style="font-size:9px;color:#64748b">'+_escHTML(m.material_id)+'</div></td>';
+        var puedePedir = !!m.fecha_stockout;
+        html += '<tr style="border-top:1px solid #e2e8f0">';
+        if(puedePedir){
+          html += '<td style="padding:5px 6px;text-align:center"><input type="checkbox" class="mp-rolling-check" data-id="'+_escHTML(m.material_id)+'"></td>';
+        } else {
+          html += '<td style="padding:5px 6px"></td>';
+        }
+        html += '<td style="padding:5px 6px;cursor:pointer" onclick="planV2VerMpDetalle(\\''+safeId+'\\')"><b>'+_escHTML(m.material_nombre)+'</b><div style="font-size:9px;color:#64748b">'+_escHTML(m.material_id)+'</div></td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+_fmtMiles(Math.round(m.stock_inicial_g))+' g</td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+_fmtMiles(Math.round(m.consumo_total_g))+' g</td>';
         var saldoCol = m.saldo_final_g < 0 ? '#dc2626' : '#10b981';
@@ -9379,10 +9412,12 @@ async function ckMarcar(itemId, estado){
           html += '<td style="padding:5px 6px"><span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">'+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+'d)</span></td>';
           html += '<td style="padding:5px 6px;font-size:10px;color:'+col+';font-weight:700">'+_escHTML(m.comprar_antes_de||'—')+'</td>';
           html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;font-weight:700;color:'+col+'">'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</td>';
+          html += '<td style="padding:5px 6px;text-align:center"><button onclick="planV2SolicitarMP(\\''+safeId+'\\')" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">📋</button></td>';
         } else {
           html += '<td style="padding:5px 6px;color:#10b981">✓ alcanza</td>';
           html += '<td style="padding:5px 6px;color:#94a3b8">—</td>';
           html += '<td style="padding:5px 6px;text-align:right;color:#94a3b8">—</td>';
+          html += '<td style="padding:5px 6px"></td>';
         }
         html += '</tr>';
       });
@@ -9390,13 +9425,89 @@ async function ckMarcar(itemId, estado){
       if(ok.length > 8){
         html += '<div style="margin-top:6px;font-size:10px;color:#64748b">+ '+(ok.length-8)+' MPs adicionales con stock suficiente (no listadas)</div>';
       }
-      html += '<div style="margin-top:10px;font-size:10px;color:#64748b">💡 Click en una MP para ver el detalle día por día</div>';
+      html += '<div style="margin-top:10px;font-size:10px;color:#64748b">💡 Click en nombre MP = ver detalle día por día · ☑️ marca y pulsa <b>"Solicitar bloque"</b> · 📋 = pedir individual</div>';
       html += '</div></div>';
       box.innerHTML = html;
-      // Guardar para detalle
       window._mpRollingData = mats;
     } catch(e){
       box.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;padding:10px;border-radius:8px;font-size:12px;color:#991b1b">Error MP rolling: '+(e.message||'desconocido')+'</div>';
+    }
+  }
+
+  function planV2MpToggleTodos(cb){
+    document.querySelectorAll('.mp-rolling-check').forEach(function(c){c.checked = cb.checked;});
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 📋 SOLICITAR A COMPRAS — individual o en bloque
+  // ════════════════════════════════════════════════════════════════════
+  async function planV2SolicitarMP(materialId){
+    var mats = window._mpRollingData || [];
+    var m = mats.find(function(x){return x.material_id === materialId;});
+    if(!m){ alert('MP no encontrada'); return; }
+    if(!m.fecha_stockout){ alert('Esta MP tiene stock suficiente, no requiere SC'); return; }
+    var qty = prompt('📋 Solicitud de Compra individual\\n\\nMP: '+m.material_nombre+'\\nID: '+m.material_id+'\\nStockout: '+m.fecha_stockout+' (en '+m.dias_hasta_stockout+'d)\\nLead time: '+(m.lead_time_dias||14)+'d\\n\\n¿Cuántos gramos pedir?', m.comprar_g_recomendado || 1000);
+    if(qty === null) return;
+    var cantidad = parseFloat(qty);
+    if(isNaN(cantidad) || cantidad <= 0){ alert('Cantidad inválida'); return; }
+    var justif = prompt('Justificación (opcional):', 'Stockout proyectado '+m.fecha_stockout+' por '+m.num_lotes_que_la_usan+' lotes en '+_MP_ROLLING_DIAS+'d') || '';
+    await _planV2CrearSC([{material: m, cantidad_g: cantidad, justificacion: justif}], false);
+  }
+
+  async function planV2SolicitarBloque(){
+    var checks = document.querySelectorAll('.mp-rolling-check:checked');
+    var ids = Array.from(checks).map(function(c){return c.dataset.id;});
+    if(!ids.length){ alert('Marca al menos una MP en stockout para incluir en el bloque'); return; }
+    var mats = window._mpRollingData || [];
+    var seleccion = mats.filter(function(m){return ids.indexOf(m.material_id) >= 0 && m.fecha_stockout;});
+    if(!seleccion.length){ alert('Las MPs marcadas no requieren SC'); return; }
+    var resumen = seleccion.map(function(m){return '  • '+m.material_nombre+': '+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g (stockout '+m.fecha_stockout+')';}).join('\\n');
+    var ok = confirm('📋 Crear UNA solicitud de compra con '+seleccion.length+' MPs:\\n\\n'+resumen+'\\n\\n¿Confirmar?');
+    if(!ok) return;
+    var items = seleccion.map(function(m){
+      return {
+        material: m,
+        cantidad_g: m.comprar_g_recomendado || 1000,
+        justificacion: 'Stockout proyectado '+m.fecha_stockout+' (' + m.num_lotes_que_la_usan + ' lotes la usan)',
+      };
+    });
+    await _planV2CrearSC(items, true);
+  }
+
+  async function _planV2CrearSC(items, esBloque){
+    try {
+      var body = {
+        empresa: 'Espagiria',
+        categoria: 'Materia Prima',
+        tipo: 'Compra',
+        area: 'Produccion',
+        urgencia: 'Alta',
+        observaciones: esBloque
+          ? 'SC en bloque generada desde Plan MP rolling ('+_MP_ROLLING_DIAS+'d)'
+          : 'SC individual generada desde Plan MP rolling ('+_MP_ROLLING_DIAS+'d)',
+        items: items.map(function(it){
+          return {
+            codigo_mp: it.material.material_id,
+            nombre_mp: it.material.material_nombre,
+            cantidad_g: it.cantidad_g,
+            unidad: 'g',
+            justificacion: it.justificacion,
+            valor_estimado: 0,
+          };
+        }),
+      };
+      var r = await fetch('/api/solicitudes-compra', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if(d.error){ alert('Error: '+d.error); return; }
+      alert('✅ Solicitud creada: '+d.numero+'\\n\\nCompras la verá en su bandeja.\\nIr a /solicitudes para ver/aprobar.');
+      // Refrescar panel
+      planV2CargarMpRolling();
+    } catch(e){
+      alert('Error creando SC: '+(e.message||'desconocido'));
     }
   }
 
