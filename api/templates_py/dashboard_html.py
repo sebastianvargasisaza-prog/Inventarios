@@ -7918,40 +7918,48 @@ async function ckMarcar(itemId, estado){
     }
   }
 
+  // CALENDARIO SEMANAL (Sebastián 1-may-2026: 'estilo calendario donde dice
+  // día y producción'). 5 columnas L-V con producciones apiladas en cada día.
   function renderProduccionesDiaCards(prods, kpis){
     var sub = document.getElementById('cm-dia-sub');
     var grid = document.getElementById('cm-dia-cards');
     if(!grid) return;
-    if(!prods.length){
-      if(sub) sub.textContent = 'Sin producciones programadas en próximos 7 días';
-      grid.innerHTML = '<div style="color:#94a3b8;font-style:italic;font-size:11px;padding:10px;text-align:center">Sin producciones · revisa Google Calendar (configurado en Configuración → Calendar)</div>';
-      return;
-    }
     var n_pendientes = prods.filter(function(p){ return p.estado === 'planeado' || p.estado === 'programado'; }).length;
     var n_iniciadas = prods.filter(function(p){ return p.estado === 'en_proceso' || p.estado === 'iniciado'; }).length;
     var n_terminadas = prods.filter(function(p){ return p.estado === 'completado'; }).length;
-    if(sub) sub.textContent = prods.length + ' total · ' + n_pendientes + ' pendientes · ' + n_iniciadas + ' en proceso · ' + n_terminadas + ' terminadas (próximos 7 días)';
+    if(sub) sub.textContent = prods.length + ' total · ' + n_pendientes + ' pendientes · ' + n_iniciadas + ' en proceso · ' + n_terminadas + ' terminadas';
 
-    // Agrupar por fecha
+    // Calcular semana (lunes-viernes) basada en fecha selector o hoy
+    var hoyIso = new Date().toISOString().slice(0,10);
+    var hoy = new Date(hoyIso+'T00:00:00');
+    var fechaSel = (document.getElementById('plano-fecha')||{value:''}).value;
+    var ref = fechaSel ? new Date(fechaSel+'T00:00:00') : hoy;
+    // si es sábado/domingo → próximo lunes
+    var dow = ref.getDay();
+    var lunes = new Date(ref);
+    if(dow === 0) lunes.setDate(ref.getDate() + 1);  // dom → lun
+    else if(dow === 6) lunes.setDate(ref.getDate() + 2);  // sáb → lun
+    else lunes.setDate(ref.getDate() - (dow - 1));  // L=0d, M=−1, etc
+
+    var diasSemana = [];
+    var nombresDia = ['LUN','MAR','MIÉ','JUE','VIE'];
+    var tiposDia = ['PRODUCCIÓN','ACOND/CONTEO','PRODUCCIÓN','ACOND/CONTEO','PRODUCCIÓN'];
+    for(var i=0; i<5; i++){
+      var d = new Date(lunes); d.setDate(lunes.getDate()+i);
+      var iso = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      diasSemana.push({iso: iso, nombre: nombresDia[i], tipo: tiposDia[i], es_hoy: iso === hoyIso});
+    }
+
+    // Agrupar producciones por fecha
     var porFecha = {};
     prods.forEach(function(p){
-      var f = p.fecha || 'sin-fecha';
+      var f = p.fecha || '';
       if(!porFecha[f]) porFecha[f] = [];
       porFecha[f].push(p);
     });
-    var fechasOrdenadas = Object.keys(porFecha).sort();
-    var hoyIso = new Date().toISOString().slice(0,10);
-    var nombresDia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
-    function _fmtFechaCorta(iso){
-      try{
-        var d = new Date(iso+'T00:00:00');
-        return nombresDia[d.getDay()] + ' ' + iso.substring(5);
-      }catch(e){ return iso; }
-    }
-
-    function _renderCard(p){
-      // Color border según estado
+    // ── render mini-card de producción
+    function _renderProdMini(p){
       var borderCol = '#cbd5e1';
       var bgCol = '#fff';
       var icon = '';
@@ -7964,50 +7972,60 @@ async function ckMarcar(itemId, estado){
       } else {
         borderCol = '#0f766e'; bgCol = '#f0fdfa'; icon = '⏳';
       }
-      var html = '<div style="background:'+bgCol+';border-left:4px solid '+borderCol+';border-radius:6px;padding:8px 10px;font-size:11px">';
-      html += '<div style="font-weight:700;color:#0f172a;font-size:12px" title="'+_escHTML(p.titulo_calendar||p.producto)+'">'+icon+' '+_escHTML(p.producto.substring(0,28))+'</div>';
-      html += '<div style="color:#475569;font-size:10px;margin-top:2px">'+(p.kg||0)+'kg · '+(p.lotes||1)+' lt';
-      if(p.area && p.area.codigo) html += ' · 🏭 '+_escHTML(p.area.codigo);
-      html += '</div>';
-      // Operarios mini
+      var h = '<div style="background:'+bgCol+';border-left:3px solid '+borderCol+';border-radius:4px;padding:5px 7px;margin-bottom:5px;font-size:10px">';
+      h += '<div style="font-weight:700;color:#0f172a" title="'+_escHTML(p.titulo_calendar||p.producto)+'">'+icon+' '+_escHTML((p.producto||'').substring(0,24))+'</div>';
+      h += '<div style="color:#475569;font-size:9px;margin-top:1px">'+(p.kg||0)+'kg';
+      if(p.area && p.area.codigo) h += ' · 🏭 '+_escHTML(p.area.codigo);
+      h += '</div>';
+      // Operarios compactos (1 línea)
       var ops = [];
-      if(p.operarios.dispensacion) ops.push('D:'+p.operarios.dispensacion.split(' ')[0]);
-      if(p.operarios.elaboracion) ops.push('E:'+p.operarios.elaboracion.split(' ')[0]);
-      if(p.operarios.envasado) ops.push('Env:'+p.operarios.envasado.split(' ')[0]);
-      if(p.operarios.acondicionamiento) ops.push('Ac:'+p.operarios.acondicionamiento.split(' ')[0]);
-      if(ops.length) html += '<div style="color:#64748b;font-size:9px;margin-top:2px">👤 '+_escHTML(ops.join(' · '))+'</div>';
-      // Botón acción
+      if(p.operarios.dispensacion) ops.push(p.operarios.dispensacion.split(' ')[0]);
+      if(p.operarios.elaboracion && !ops.includes(p.operarios.elaboracion.split(' ')[0])) ops.push(p.operarios.elaboracion.split(' ')[0]);
+      if(p.operarios.envasado && !ops.includes(p.operarios.envasado.split(' ')[0])) ops.push(p.operarios.envasado.split(' ')[0]);
+      if(p.operarios.acondicionamiento && !ops.includes(p.operarios.acondicionamiento.split(' ')[0])) ops.push(p.operarios.acondicionamiento.split(' ')[0]);
+      if(ops.length) h += '<div style="color:#64748b;font-size:9px;margin-top:1px">👤 '+_escHTML(ops.slice(0,3).join('·'))+'</div>';
+      // Botón acción mini
       if(p.accion){
         var btnCol = (p.accion === 'iniciar' || p.accion === 'iniciar_calendar') ? '#10b981' :
                      (p.accion === 'terminar' ? '#1d4ed8' : '#7c3aed');
         if(p.accion === 'iniciar_calendar' && p.payload_iniciar){
           var payB64 = btoa(unescape(encodeURIComponent(JSON.stringify(p.payload_iniciar))));
-          html += '<button class="cm-dia-btn" data-tipo="iniciar_calendar" data-payload="'+payB64+'" style="margin-top:5px;width:100%;padding:4px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">'+_escHTML(p.accion_label)+'</button>';
+          h += '<button class="cm-dia-btn" data-tipo="iniciar_calendar" data-payload="'+payB64+'" style="margin-top:3px;width:100%;padding:3px 6px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer">▶</button>';
         } else {
-          html += '<button class="cm-dia-btn" data-tipo="'+p.accion+'" data-id="'+(p.id||0)+'" style="margin-top:5px;width:100%;padding:4px 8px;background:'+btnCol+';color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">'+_escHTML(p.accion_label)+'</button>';
+          var lbl = (p.accion === 'terminar') ? '✓ Terminar' : (p.accion === 'asignar_ia' ? '🤖 IA' : '▶');
+          h += '<button class="cm-dia-btn" data-tipo="'+p.accion+'" data-id="'+(p.id||0)+'" style="margin-top:3px;width:100%;padding:3px 6px;background:'+btnCol+';color:#fff;border:none;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer">'+lbl+'</button>';
         }
-      } else if(p.estado === 'completado'){
-        html += '<div style="margin-top:5px;color:#16a34a;font-size:10px;font-weight:700">✅ Completada · esperar limpieza</div>';
       }
-      html += '</div>';
-      return html;
+      h += '</div>';
+      return h;
     }
 
-    // Render con cabecera por día
-    grid.style.display = 'block';
-    var html = '';
-    fechasOrdenadas.forEach(function(fecha){
-      var esHoy = fecha === hoyIso;
-      var bgCab = esHoy ? '#fbbf24' : '#f1f5f9';
-      var fgCab = esHoy ? '#78350f' : '#475569';
-      var label = (esHoy ? '🟡 HOY · ' : '') + _fmtFechaCorta(fecha);
-      html += '<div style="margin-bottom:10px">';
-      html += '<div style="background:'+bgCab+';color:'+fgCab+';padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;margin-bottom:6px;display:inline-block">'+label+' · '+porFecha[fecha].length+' producciones</div>';
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">';
-      html += porFecha[fecha].map(_renderCard).join('');
+    // Render calendario semanal (5 columnas L-V)
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+    grid.style.gap = '8px';
+    grid.innerHTML = diasSemana.map(function(dia){
+      var prodsDia = porFecha[dia.iso] || [];
+      var bgHeader = dia.es_hoy ? '#f59e0b' : (dia.tipo === 'PRODUCCIÓN' ? '#0f766e' : '#64748b');
+      var bgBody = dia.es_hoy ? '#fef3c7' : '#fff';
+      var html = '<div style="background:'+bgBody+';border:'+(dia.es_hoy?'2px solid #f59e0b':'1px solid #e2e8f0')+';border-radius:8px;overflow:hidden;min-height:200px">';
+      // Header
+      html += '<div style="background:'+bgHeader+';color:#fff;padding:6px 8px;text-align:center">';
+      html += '<div style="font-weight:800;font-size:13px">'+dia.nombre+' '+dia.iso.substring(5)+'</div>';
+      html += '<div style="font-size:9px;opacity:.9">'+dia.tipo+(prodsDia.length?' · '+prodsDia.length+' prods':'')+'</div>';
+      if(dia.es_hoy) html += '<div style="font-size:9px;font-weight:700;background:rgba(255,255,255,.3);border-radius:3px;padding:1px 6px;display:inline-block;margin-top:2px">HOY</div>';
+      html += '</div>';
+      // Body
+      html += '<div style="padding:6px">';
+      if(prodsDia.length){
+        html += prodsDia.map(_renderProdMini).join('');
+      } else {
+        var msg = dia.tipo === 'PRODUCCIÓN' ? 'Sin producciones · agrega evento al Calendar' : 'Día de acond/conteo';
+        html += '<div style="color:#94a3b8;font-style:italic;font-size:9px;text-align:center;padding:14px 4px">'+msg+'</div>';
+      }
       html += '</div></div>';
-    });
-    grid.innerHTML = html;
+      return html;
+    }).join('');
   }
 
   // ── Diagnóstico DB sin match Calendar (Sebastián 1-may-2026:
