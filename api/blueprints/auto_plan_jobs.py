@@ -815,10 +815,77 @@ def job_auto_sc_mee_mensual(app):
         return True, {'kpis': plan.get('kpis', {})}, 0
 
 
+def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
+    """Sincroniza eventos del Calendar a produccion_programada en un rango.
+
+    Sebastián 1-may-2026: 'no se activa solo · los eventos aparecen pero
+    sin sincronizar'. Ahora el cron ejecuta el sync automáticamente.
+    Devuelve: (insertadas, ya_existian)
+    """
+    from blueprints.auto_plan import (
+        _calendar_events_cached, _match_producto_evento, _parsear_kg_evento,
+    )
+    from datetime import datetime as _dt
+    cal_events = _calendar_events_cached(force_refresh=True) or []
+    skus_aliases = {}
+    for sku_n, alias_csv in c.execute("""
+        SELECT producto_nombre, COALESCE(alias_calendar, '')
+        FROM sku_planeacion_config
+        WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+    """).fetchall():
+        skus_aliases[sku_n] = alias_csv
+
+    insertadas = 0
+    ya_existian = 0
+    for ev in cal_events:
+        try:
+            f_ev = _dt.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+        except Exception:
+            continue
+        if f_ev < fecha_inicio or f_ev > fecha_fin:
+            continue
+        # Match producto via aliases (TRIAC/LBHA/CRETT/etc)
+        producto_match = None
+        best_score = 0
+        for prod_n, alias_csv in skus_aliases.items():
+            try:
+                score = _match_producto_evento(prod_n, alias_csv,
+                                                 ev.get('titulo'), ev.get('descripcion',''))
+                if score >= 60 and score > best_score:
+                    best_score = score
+                    producto_match = prod_n
+            except Exception:
+                continue
+        if not producto_match:
+            continue
+        kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+        # Skip si ya existe
+        exists = c.execute("""
+            SELECT id FROM produccion_programada
+            WHERE producto = ? AND date(fecha_programada) = ?
+        """, (producto_match, f_ev.isoformat())).fetchone()
+        if exists:
+            ya_existian += 1
+            continue
+        c.execute("""
+            INSERT INTO produccion_programada
+              (producto, fecha_programada, lotes, cantidad_kg,
+               estado, observaciones, origen)
+            VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
+        """, (producto_match, f_ev.isoformat(), kg,
+              f'[auto-sync {user}] {(ev.get("titulo") or "")[:200]}'))
+        insertadas += 1
+    return insertadas, ya_existian
+
+
 def job_auto_asignar_areas(app):
-    """Cron diario 6:30: auto-asigna área + envasado + operarios para
-    producciones próximos 7d sin asignación.
-    Sebastián 1-may-2026: 'haz todo automático con IA'.
+    """Cron diario 6:30: SINCRONIZA Calendar→DB primero, luego auto-asigna
+    área + envasado + operarios para producciones próximos 7d.
+
+    Sebastián 1-may-2026: 'haz todo automático con IA · no se activa solo'.
+    Ahora el cron ejecuta los 2 pasos en sucesión:
+      1. Sync Calendar→DB (insertar eventos nuevos)
+      2. Auto-asignar IA para producciones sin área/operarios
     """
     with app.app_context():
         from database import get_db
@@ -826,7 +893,20 @@ def job_auto_asignar_areas(app):
         from datetime import datetime as _dt, timedelta as _td
         conn = get_db(); c = conn.cursor()
         fecha_hoy = _dt.now().date()
-        fecha_max = fecha_hoy + _td(days=7)
+        # Ventana 14d (semana actual + próxima)
+        fecha_inicio = fecha_hoy - _td(days=fecha_hoy.weekday())  # lunes esta semana
+        fecha_fin = fecha_inicio + _td(days=14)
+
+        # PASO 1: Sync Calendar → DB
+        insertadas = 0; ya_existian = 0
+        try:
+            insertadas, ya_existian = _sync_calendar_a_db(
+                conn, c, fecha_inicio, fecha_fin, 'cron-6:30'
+            )
+        except Exception as _e:
+            log.warning(f'[auto-asignar-areas] sync calendar falla: {_e}')
+
+        # PASO 2: Auto-asignar producciones sin área/operarios
         rows = c.execute("""
             SELECT id FROM produccion_programada
             WHERE date(fecha_programada) >= ?
@@ -837,7 +917,7 @@ def job_auto_asignar_areas(app):
                        AND operario_elaboracion_id IS NULL
                        AND operario_envasado_id IS NULL))
             ORDER BY fecha_programada ASC
-        """, (fecha_hoy.isoformat(), fecha_max.isoformat())).fetchall()
+        """, (fecha_hoy.isoformat(), fecha_fin.isoformat())).fetchall()
         procesadas, errores = 0, 0
         for (pid,) in rows:
             res = _auto_asignar_produccion(c, pid, 'cron-auto-asignar')
@@ -846,8 +926,13 @@ def job_auto_asignar_areas(app):
             else:
                 errores += 1
         conn.commit()
-        return True, {'procesadas': procesadas, 'errores': errores,
-                       'total_evaluadas': len(rows)}, 0
+        return True, {
+            'sync_insertadas': insertadas,
+            'sync_ya_existian': ya_existian,
+            'asignadas': procesadas,
+            'errores': errores,
+            'total_evaluadas': len(rows),
+        }, 0
 
 
 def job_lunes_7am_workflow(app):

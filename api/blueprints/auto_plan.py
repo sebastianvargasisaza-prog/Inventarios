@@ -7102,9 +7102,11 @@ def semana_produccion():
     dias_semana = [base + timedelta(days=i) for i in range(5)]
     nombres_dia = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE']
 
-    # Pre-cargar eventos del Calendar para los próximos 14d (para mergear cuando
-    # produccion_programada esté vacía o tenga menos que el Calendar)
+    # AUTO-SYNC ON LOAD: si hay eventos del Calendar sin sincronizar,
+    # ejecutar sync inmediatamente (Sebastián 1-may-2026: 'no se activa solo').
+    # Pre-cargar eventos del Calendar y mergear los que falten en DB.
     calendar_eventos_por_fecha = {}
+    eventos_a_sincronizar = []  # eventos NO existentes en DB
     try:
         cal_events = _calendar_events_cached() or []
         skus_aliases = {}
@@ -7143,8 +7145,48 @@ def semana_produccion():
                 'kg': kg,
                 'desde_calendar': True,
             })
+            # ¿Existe ya en DB? Si no Y tiene match → sincronizar
+            if producto_match:
+                existe = c.execute("""
+                    SELECT id FROM produccion_programada
+                    WHERE producto=? AND date(fecha_programada)=?
+                """, (producto_match, f_ev.isoformat())).fetchone()
+                if not existe:
+                    eventos_a_sincronizar.append({
+                        'producto': producto_match, 'fecha': f_ev.isoformat(),
+                        'kg': kg, 'titulo': ev.get('titulo','')[:200],
+                    })
     except Exception:
         pass
+
+    # AUTO-SYNC: insertar eventos pendientes + auto-asignar IA (sin esperar cron)
+    auto_sincronizadas = 0
+    auto_asignadas = 0
+    if eventos_a_sincronizar:
+        try:
+            for ev in eventos_a_sincronizar:
+                cur_ins = c.execute("""
+                    INSERT INTO produccion_programada
+                      (producto, fecha_programada, lotes, cantidad_kg,
+                       estado, observaciones, origen)
+                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
+                """, (ev['producto'], ev['fecha'], ev['kg'],
+                      f'[auto-sync semana_produccion] {ev["titulo"]}'))
+                new_id = cur_ins.lastrowid
+                auto_sincronizadas += 1
+                if ev['kg'] > 0 and new_id:
+                    try:
+                        from blueprints.programacion import _auto_asignar_produccion
+                        res = _auto_asignar_produccion(c, new_id, 'auto-sync-on-load')
+                        if res.get('ok'): auto_asignadas += 1
+                    except Exception:
+                        pass
+            conn.commit()
+            # Re-cargar producciones después del sync
+            calendar_eventos_por_fecha = {}  # reset · ya están en DB ahora
+        except Exception:
+            try: conn.rollback()
+            except: pass
 
     dias_data = []
     for i, fecha in enumerate(dias_semana):
