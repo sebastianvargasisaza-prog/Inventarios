@@ -5610,8 +5610,9 @@ function _renderProgramacion(d){
       <div id="cm-dia-msg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:5px;font-size:11px"></div>
     </div>
 
-    <!-- KPIs actividades operarios (turnos, horas) -->
-    <div id="cm-act-kpis" style="margin-bottom:14px"></div>
+    <!-- Sebastián 1-may-2026: panel 'Turnos operarios' eliminado · era
+         legacy · requería iniciar turno manual que nadie usaba. Las horas
+         se infieren de inicio_real_at / fin_real_at de produccion_programada -->
 
     <!-- Leyenda de estados -->
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;color:#475569">
@@ -7907,7 +7908,7 @@ async function ckMarcar(itemId, estado){
       cargarTimelineEventos(d.eventos_recientes || []);
       cargarRotacionOperarios();
       cargarTablaOperarios();
-      cargarKpisActividades();
+      // cargarKpisActividades() ELIMINADO 1-may-2026 · panel turnos era legacy
       // ── Producciones HOY · cards encima del mapa (Sebastián 1-may-2026)
       renderProduccionesDiaCards(d.producciones_dia || [], k);
       renderProduccionesDiag(d.producciones_diag || {});
