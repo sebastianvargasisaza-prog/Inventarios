@@ -325,31 +325,45 @@ def _match_producto_evento(producto_nombre, alias_csv, titulo_evento, descripcio
 
     Algoritmo:
       - Score 100: alias EXACTO encontrado en título
+      - Score 90: nombre del producto (parcial substring) en título
       - Score 80-95: alias parcial + match palabras clave
       - Score 50-79: solo palabras clave únicas matchean
-      - Score < 50: no match (probable falso positivo)
+      - Score 30-49: substring de palabra significativa
+      - Score < 30: no match
     """
     if not titulo_evento:
         return 0
     texto = _normalizar(titulo_evento + ' ' + (descripcion or ''))
 
-    # 1) Alias exact match (máxima confianza)
+    # 1) Alias exact match (máxima confianza · word boundary)
     if alias_csv:
         for alias in alias_csv.split(','):
             alias_norm = _normalizar(alias)
             if not alias_norm or len(alias_norm) < 3:
                 continue
-            # Match palabra completa con boundaries
             patron = r'(^|[^A-Z0-9+])' + _re_match.escape(alias_norm) + r'($|[^A-Z0-9+])'
             if _re_match.search(patron, texto):
                 return 100
 
-    # 2) Match por palabras clave únicas del producto
+    # 2) Match nombre del producto como substring (parcial)
+    nombre_norm = _normalizar(producto_nombre)
+    if nombre_norm and len(nombre_norm) >= 5:
+        # ¿El nombre completo (o gran parte) está en el título?
+        # Strip palabras genéricas del producto para comparar
+        nombre_keywords = [w for w in nombre_norm.split()
+                            if w not in _MATCH_STOPWORDS and len(w) >= 3]
+        if nombre_keywords:
+            # ¿Cuántas palabras significativas aparecen?
+            matches = sum(1 for w in nombre_keywords
+                            if _re_match.search(r'(^|[^A-Z0-9+])' + _re_match.escape(w) + r'($|[^A-Z0-9+])', texto))
+            if matches == len(nombre_keywords) and matches > 0:
+                return 90  # todas las palabras del nombre en evento
+
+    # 3) Match por palabras clave únicas del producto
     palabras_clave = _palabras_clave_unicas(producto_nombre)
     if not palabras_clave:
         return 0
 
-    # Cuántas palabras clave del producto aparecen en el evento
     matched = 0
     for p in palabras_clave:
         if _re_match.search(r'(^|[^A-Z0-9+])' + _re_match.escape(p) + r'($|[^A-Z0-9+])', texto):
@@ -357,9 +371,7 @@ def _match_producto_evento(producto_nombre, alias_csv, titulo_evento, descripcio
     if matched == 0:
         return 0
 
-    # Score: porcentaje de palabras clave matcheadas
-    score = int((matched / len(palabras_clave)) * 80)  # max 80 sin alias
-    # Bonus si el producto tiene UNA palabra clave única y aparece
+    score = int((matched / len(palabras_clave)) * 80)
     if len(palabras_clave) == 1 and matched == 1:
         score = max(score, 75)
     return score
@@ -7143,27 +7155,38 @@ def semana_produccion():
                 except Exception:
                     continue
             kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
+            # Fallback: si no hay match, usar el TÍTULO COMPLETO como producto.
+            # Sebastián 1-may-2026: 'que se active solo, todo automático'.
+            # Mejor crear producción con título raro que perder el evento.
             if producto_match:
                 auto_sync_diag['con_match'] += 1
+                producto_final = producto_match
             else:
                 auto_sync_diag['sin_match'].append((ev.get('titulo','')[:60], f_ev.isoformat()))
+                # Producto fallback = título limpio (sin kg, sin estado entre paréntesis)
+                titulo_clean = (ev.get('titulo') or '').strip()
+                # quitar kg al final, descriptors comunes
+                titulo_clean = _re_match.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', titulo_clean, flags=_re_match.IGNORECASE)
+                titulo_clean = _re_match.sub(r'\s*\(.*?\)\s*$', '', titulo_clean)
+                titulo_clean = _re_match.sub(r'\s*\d+\s*kg.*$', '', titulo_clean, flags=_re_match.IGNORECASE)
+                producto_final = titulo_clean.strip().upper() or 'EVENTO SIN MATCH'
             calendar_eventos_por_fecha.setdefault(f_ev.isoformat(), []).append({
                 'titulo': ev.get('titulo', ''),
-                'producto_match': producto_match,
+                'producto_match': producto_final,
                 'kg': kg,
                 'desde_calendar': True,
             })
-            # ¿Existe ya en DB? Si no Y tiene match → sincronizar
-            if producto_match:
-                existe = c.execute("""
-                    SELECT id FROM produccion_programada
-                    WHERE producto=? AND date(fecha_programada)=?
-                """, (producto_match, f_ev.isoformat())).fetchone()
-                if not existe:
-                    eventos_a_sincronizar.append({
-                        'producto': producto_match, 'fecha': f_ev.isoformat(),
-                        'kg': kg, 'titulo': ev.get('titulo','')[:200],
-                    })
+            # Sincronizar SIEMPRE (con o sin match perfecto · fallback con título)
+            existe = c.execute("""
+                SELECT id FROM produccion_programada
+                WHERE producto=? AND date(fecha_programada)=?
+            """, (producto_final, f_ev.isoformat())).fetchone()
+            if not existe:
+                eventos_a_sincronizar.append({
+                    'producto': producto_final, 'fecha': f_ev.isoformat(),
+                    'kg': kg, 'titulo': ev.get('titulo','')[:200],
+                    'tiene_match': bool(producto_match),
+                })
     except Exception as _e:
         log.warning(f'[semana_produccion] sync diag falla: {_e}')
 

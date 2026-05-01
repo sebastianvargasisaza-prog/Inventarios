@@ -369,7 +369,10 @@ def _fetch_calendar_events(days_ahead=90):
         return {'events': [], 'error': 'Configura GCAL_ICAL_URL en Render para leer el calendario', 'source': 'none'}
 
     now = datetime.utcnow()
-    time_min = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+    # Sebastián 1-may-2026: 'lunes vacío' · cambiar time_min al LUNES de esta
+    # semana (no a now) para incluir eventos de lun-mar-mié-jue cuando hoy es vie.
+    lunes_semana = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0)
+    time_min = lunes_semana.strftime('%Y-%m-%dT%H:%M:%SZ')
     time_max = (now + timedelta(days=days_ahead)).strftime('%Y-%m-%dT%H:%M:%SZ')
     params = urllib.parse.urlencode({
         'key': GOOGLE_API_KEY,

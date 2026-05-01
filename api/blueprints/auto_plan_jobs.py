@@ -835,6 +835,7 @@ def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
     """).fetchall():
         skus_aliases[sku_n] = alias_csv
 
+    import re as _re_local
     insertadas = 0
     ya_existian = 0
     for ev in cal_events:
@@ -844,26 +845,32 @@ def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
             continue
         if f_ev < fecha_inicio or f_ev > fecha_fin:
             continue
-        # Match producto via aliases (TRIAC/LBHA/CRETT/etc)
+        # Match producto · umbral 50 (más permisivo)
         producto_match = None
         best_score = 0
         for prod_n, alias_csv in skus_aliases.items():
             try:
                 score = _match_producto_evento(prod_n, alias_csv,
                                                  ev.get('titulo'), ev.get('descripcion',''))
-                if score >= 60 and score > best_score:
+                if score >= 50 and score > best_score:
                     best_score = score
                     producto_match = prod_n
             except Exception:
                 continue
-        if not producto_match:
-            continue
         kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-        # Skip si ya existe
+        # FALLBACK: si no hay match, usar título crudo (Sebastián: insertar siempre)
+        if producto_match:
+            producto_final = producto_match
+        else:
+            t_clean = (ev.get('titulo') or '').strip()
+            t_clean = _re_local.sub(r'\s*[-–]\s*Fab(rica|ric)?[a-z]*\s+\d.*$', '', t_clean, flags=_re_local.IGNORECASE)
+            t_clean = _re_local.sub(r'\s*\(.*?\)\s*$', '', t_clean)
+            t_clean = _re_local.sub(r'\s*\d+\s*kg.*$', '', t_clean, flags=_re_local.IGNORECASE)
+            producto_final = t_clean.strip().upper() or 'EVENTO SIN MATCH'
         exists = c.execute("""
             SELECT id FROM produccion_programada
             WHERE producto = ? AND date(fecha_programada) = ?
-        """, (producto_match, f_ev.isoformat())).fetchone()
+        """, (producto_final, f_ev.isoformat())).fetchone()
         if exists:
             ya_existian += 1
             continue
@@ -872,7 +879,7 @@ def _sync_calendar_a_db(conn, c, fecha_inicio, fecha_fin, user='cron-sync'):
               (producto, fecha_programada, lotes, cantidad_kg,
                estado, observaciones, origen)
             VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
-        """, (producto_match, f_ev.isoformat(), kg,
+        """, (producto_final, f_ev.isoformat(), kg,
               f'[auto-sync {user}] {(ev.get("titulo") or "")[:200]}'))
         insertadas += 1
     return insertadas, ya_existian

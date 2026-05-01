@@ -12524,7 +12524,24 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(!r.ok) throw new Error(d.error || 'HTTP '+r.status);
       var k = d.kpis || {};
-      if(sub) sub.textContent = '🤖 IA asignó · ' + (k.total_producciones_semana||0) + ' producciones · ' + (k.total_kg_semana||0) + ' kg total · ' + (k.total_limpiezas||0) + ' limpiezas' + (k.sin_asignar_ia ? ' · ⚠️ ' + k.sin_asignar_ia + ' sin asignar' : '');
+      var asy = d.auto_sync || {};
+      var subText = '🤖 IA asignó · ' + (k.total_producciones_semana||0) + ' producciones · ' + (k.total_kg_semana||0) + ' kg total · ' + (k.total_limpiezas||0) + ' limpiezas';
+      if(asy.sincronizadas_esta_carga > 0){
+        subText += ' · ✨ ' + asy.sincronizadas_esta_carga + ' nuevas sincronizadas · ' + asy.asignadas_esta_carga + ' asignadas IA';
+      }
+      if(k.sin_asignar_ia) subText += ' · ⚠️ ' + k.sin_asignar_ia + ' sin asignar';
+      if(sub) sub.textContent = subText;
+      // Banner debug si hay eventos sin match (Sebastián: visibilidad anti-bug)
+      var msgEl = document.getElementById('semana-msg');
+      if(asy.sin_match_sample && asy.sin_match_sample.length){
+        if(msgEl){
+          msgEl.style.display='block';
+          msgEl.style.background='rgba(251,191,36,.2)';
+          msgEl.innerHTML = '⚠️ <b>'+asy.sin_match_sample.length+' eventos sin match preciso a SKU</b> (insertados con título crudo): ' +
+            asy.sin_match_sample.slice(0,3).map(function(s){return '<code>'+esc(s[0])+'</code>';}).join(', ') +
+            ' · si necesitas que matcheen a un SKU específico, agrega el código a sku_planeacion_config.alias_calendar';
+        }
+      }
 
       // KPIs pills
       function pill(label, val, color){
