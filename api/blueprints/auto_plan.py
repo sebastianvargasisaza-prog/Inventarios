@@ -2013,6 +2013,190 @@ def diagnostico_sku():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# ALERTAS CALENDAR — cruce de cadencia planeada vs velocidad real
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian (30-abr-2026): "ese calendario debería ir unido a una alerta
+# que diga: se está vendiendo más, si está bien, o mejor adelanten".
+
+@bp.route('/api/planta/alertas-calendar', methods=['GET'])
+def alertas_calendar():
+    """Para cada SKU con próximo lote en Calendar (próximos 60 días),
+    compara la velocidad implícita en la cadencia (lo que asumimos al
+    programar) vs la velocidad real medida en Shopify últimos 30 días.
+
+    Devuelve alerta:
+      - 🔴 ADELANTAR (vendes 20%+ más rápido)
+      - 🟠 ADELANTAR_LIGERO (5-20% más)
+      - 🟢 OK (±5%)
+      - 🟡 ATRASAR_LIGERO (15-35% menos)
+      - ⚠️ REDUCIR_LOTE (35%+ menos vendes)
+      - ❓ SIN_DATOS (no hay velocidad real medible)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date()
+
+    # Leer todos los eventos del Calendar (próximos 60 días)
+    eventos = _calendar_events_cached()
+
+    # Para cada producto activo, calcular alerta
+    skus = c.execute("""
+        SELECT spc.producto_nombre, spc.cadencia_dias, fh.lote_size_kg,
+               COALESCE(spc.estado, 'activo')
+        FROM sku_planeacion_config spc
+        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(spc.producto_nombre))
+        WHERE spc.activo = 1
+          AND COALESCE(spc.estado, 'activo') NOT IN ('descontinuado', 'pausado')
+        ORDER BY spc.prioridad ASC
+    """).fetchall()
+
+    alertas = []
+    for sku_row in skus:
+        producto, cadencia_cfg, lote_kg, estado = sku_row
+        alias = _alias_calendar_for(c, producto)
+
+        # Buscar próxima fecha programada en Calendar (futuro <= 60 días)
+        proxima_fecha = None
+        proximo_titulo = None
+        kg_proximo = None
+        eventos_futuros = []
+        for ev in eventos:
+            try:
+                f = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+            except Exception:
+                continue
+            if f < fecha_hoy or (f - fecha_hoy).days > 60:
+                continue
+            score = _match_producto_evento(producto, alias, ev.get('titulo'), ev.get('descripcion', ''))
+            if score < 60:
+                continue
+            kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', ''))
+            eventos_futuros.append({'fecha': f, 'titulo': ev.get('titulo'), 'kg': kg})
+
+        if not eventos_futuros:
+            # Sin lote programado en próximos 60 días
+            continue
+
+        eventos_futuros.sort(key=lambda x: x['fecha'])
+        proxima_fecha = eventos_futuros[0]['fecha']
+        proximo_titulo = eventos_futuros[0]['titulo']
+        kg_proximo = eventos_futuros[0]['kg'] or lote_kg or 30
+
+        # Cadencia entre próximo lote y siguiente (si hay) → si no, usar cadencia configurada
+        if len(eventos_futuros) >= 2:
+            cadencia_real_cal = (eventos_futuros[1]['fecha'] - eventos_futuros[0]['fecha']).days
+        else:
+            cadencia_real_cal = cadencia_cfg or 60
+
+        # Velocidad implícita: cuánto necesitarías vender para que el lote aguante esa cadencia
+        factor_g = _factor_g_por_unidad(c, producto)
+        unidades_lote = (kg_proximo * 1000) / max(factor_g, 1)
+        velocidad_planeada = unidades_lote / max(cadencia_real_cal + 20, 30)  # con margen 20d
+
+        # Velocidad real
+        velocidad_real, factor_tend = _velocidad_total_producto(c, producto)
+        velocidad_real_proj = velocidad_real * factor_tend if factor_tend > 0 else velocidad_real
+
+        # Si velocidad real prácticamente cero, no es alerta accionable
+        if velocidad_real_proj < 0.05 and velocidad_planeada > 0.5:
+            alertas.append({
+                'producto': producto,
+                'proxima_fecha': proxima_fecha.isoformat(),
+                'dias_hasta_proximo': (proxima_fecha - fecha_hoy).days,
+                'kg_proximo': kg_proximo,
+                'cadencia_calendar_dias': cadencia_real_cal,
+                'velocidad_planeada': round(velocidad_planeada, 2),
+                'velocidad_real': round(velocidad_real_proj, 2),
+                'ratio': 0,
+                'estado': 'sin_ventas',
+                'mensaje': 'Sin ventas detectadas. Considerar pausar o evaluar lote.',
+                'titulo_evento': proximo_titulo,
+            })
+            continue
+
+        ratio = velocidad_real_proj / max(velocidad_planeada, 0.01)
+
+        # Calcular días de adelanto/atraso
+        # Nuevo alcance del próximo lote = unidades_lote / velocidad_real
+        nuevo_alcance = unidades_lote / max(velocidad_real_proj, 0.01)
+        # Idealmente lote dura cadencia + 20d margen. Diferencia = días adelantar/atrasar
+        ideal_dura = cadencia_real_cal + 20
+        diff_dias = round(ideal_dura - nuevo_alcance)  # positivo: hay que adelantar
+
+        if ratio >= 1.20:
+            estado = 'adelantar'
+            mensaje = f'🔴 Vendes {int((ratio-1)*100)}% más rápido. Adelantar lote ~{abs(diff_dias)}d'
+            urg = 'alta'
+        elif ratio >= 1.05:
+            estado = 'adelantar_ligero'
+            mensaje = f'🟠 Vendes {int((ratio-1)*100)}% más. Considera adelantar ~{abs(diff_dias)}d'
+            urg = 'media'
+        elif ratio >= 0.85:
+            estado = 'ok'
+            mensaje = f'🟢 Velocidad coincide con plan ({int((ratio-1)*100):+d}%). Sigue como está.'
+            urg = 'ok'
+        elif ratio >= 0.65:
+            estado = 'atrasar_ligero'
+            mensaje = f'🟡 Vendes {int((1-ratio)*100)}% menos. Considera atrasar lote ~{abs(diff_dias)}d'
+            urg = 'media'
+        else:
+            estado = 'reducir_lote'
+            mensaje = f'⚠️ Vendes {int((1-ratio)*100)}% menos. Evaluar reducir kg del lote o atrasar mucho'
+            urg = 'media'
+
+        alertas.append({
+            'producto': producto,
+            'proxima_fecha': proxima_fecha.isoformat(),
+            'dias_hasta_proximo': (proxima_fecha - fecha_hoy).days,
+            'kg_proximo': round(kg_proximo, 1),
+            'unidades_lote': int(unidades_lote),
+            'cadencia_calendar_dias': cadencia_real_cal,
+            'velocidad_planeada': round(velocidad_planeada, 2),
+            'velocidad_real': round(velocidad_real_proj, 2),
+            'ratio': round(ratio, 2),
+            'diff_dias': diff_dias,
+            'estado': estado,
+            'urgencia': urg,
+            'mensaje': mensaje,
+            'titulo_evento': proximo_titulo,
+            'nuevo_alcance_dias': round(nuevo_alcance),
+        })
+
+    # Ordenar: las más urgentes primero
+    orden_estado = {'adelantar': 0, 'adelantar_ligero': 1, 'reducir_lote': 2,
+                    'atrasar_ligero': 3, 'sin_ventas': 4, 'ok': 5}
+    alertas.sort(key=lambda a: (orden_estado.get(a['estado'], 9), a.get('dias_hasta_proximo', 999)))
+
+    # KPIs
+    kpis = {
+        'total': len(alertas),
+        'adelantar': sum(1 for a in alertas if a['estado'] == 'adelantar'),
+        'adelantar_ligero': sum(1 for a in alertas if a['estado'] == 'adelantar_ligero'),
+        'ok': sum(1 for a in alertas if a['estado'] == 'ok'),
+        'atrasar_ligero': sum(1 for a in alertas if a['estado'] == 'atrasar_ligero'),
+        'reducir_lote': sum(1 for a in alertas if a['estado'] == 'reducir_lote'),
+        'sin_ventas': sum(1 for a in alertas if a['estado'] == 'sin_ventas'),
+    }
+
+    return jsonify({
+        'alertas': alertas,
+        'kpis': kpis,
+        'fecha_analisis': datetime.now().isoformat(),
+        'reglas': [
+            'Velocidad real = ventas Shopify últimos 30d',
+            'Velocidad planeada = unidades_lote / (cadencia_calendar + 20d margen)',
+            'Ratio ≥ 1.20 → 🔴 ADELANTAR (vendes 20%+ rápido)',
+            'Ratio 1.05-1.20 → 🟠 ADELANTAR LIGERO',
+            'Ratio 0.85-1.05 → 🟢 OK',
+            'Ratio 0.65-0.85 → 🟡 ATRASAR LIGERO',
+            'Ratio < 0.65 → ⚠️ REDUCIR LOTE',
+        ],
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # PLAN PURO SHOPIFY — vista por día (próximo lunes → viernes siguiente)
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "no tengas en cuenta el calendario, si tuvieras

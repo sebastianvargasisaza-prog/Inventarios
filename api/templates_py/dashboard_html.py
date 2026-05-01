@@ -5993,6 +5993,9 @@ function _renderProgramacion(d){
     <!-- KPIs siempre visibles -->
     <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- 🚨 ALERTAS Calendar vs Velocidad real (vendes más / igual / menos) -->
+    <div id="pv2-alertas-wrap" style="margin-bottom:16px"></div>
+
     <!-- 🎯 RECOMENDACIONES INTELIGENTES — siempre visible arriba -->
     <div id="pv2-recomendaciones-wrap" style="margin-bottom:16px"></div>
 
@@ -9298,8 +9301,74 @@ async function ckMarcar(itemId, estado){
     planV2DetectarCambios();
     planV2CargarCobertura();
     planV2CargarCalendarStatus();
+    planV2CargarAlertas();
     planV2CargarRecomendaciones();
     planV2CargarAuditoria();
+  }
+
+  async function planV2CargarAlertas(){
+    var box = document.getElementById('pv2-alertas-wrap');
+    if(!box) return;
+    box.innerHTML = '<div style="background:#f1f5f9;padding:12px;border-radius:8px;font-size:12px;color:#64748b">⏳ Cargando alertas Calendar vs ventas...</div>';
+    try {
+      var r = await fetch('/api/planta/alertas-calendar');
+      var d = await r.json();
+      if(d.error){ box.innerHTML=''; return; }
+      var alertas = d.alertas||[];
+      var k = d.kpis||{};
+      if(!alertas.length){
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin alertas — todos los SKUs están alineados con su cadencia o sin lotes próximos en 60 días</div>';
+        return;
+      }
+      var critical = alertas.filter(function(a){return a.estado==="adelantar"||a.estado==="reducir_lote";});
+      var warn = alertas.filter(function(a){return a.estado==="adelantar_ligero"||a.estado==="atrasar_ligero"||a.estado==="sin_ventas";});
+      var ok = alertas.filter(function(a){return a.estado==="ok";});
+      var html = '<div style="background:#fff;border:2px solid #fb923c;border-radius:10px;overflow:hidden">';
+      html += '<div style="background:linear-gradient(135deg,#dc2626,#ea580c);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">';
+      html += '<div><b style="font-size:15px">🚨 Alertas Calendar vs Ventas</b><div style="font-size:11px;color:#fed7aa;margin-top:2px">Cruce de cadencia planeada con velocidad real Shopify (30d)</div></div>';
+      html += '<div style="display:flex;gap:8px;font-size:11px">';
+      if(k.adelantar) html += '<span style="background:rgba(220,38,38,.4);padding:4px 10px;border-radius:6px;font-weight:800">🔴 '+k.adelantar+' adelantar</span>';
+      if(k.adelantar_ligero) html += '<span style="background:rgba(249,115,22,.4);padding:4px 10px;border-radius:6px;font-weight:800">🟠 '+k.adelantar_ligero+' adelantar light</span>';
+      if(k.ok) html += '<span style="background:rgba(34,197,94,.4);padding:4px 10px;border-radius:6px;font-weight:800">🟢 '+k.ok+' OK</span>';
+      if(k.atrasar_ligero) html += '<span style="background:rgba(234,179,8,.4);padding:4px 10px;border-radius:6px;font-weight:800">🟡 '+k.atrasar_ligero+' atrasar</span>';
+      if(k.reducir_lote) html += '<span style="background:rgba(168,85,247,.4);padding:4px 10px;border-radius:6px;font-weight:800">⚠ '+k.reducir_lote+' reducir lote</span>';
+      if(k.sin_ventas) html += '<span style="background:rgba(100,116,139,.4);padding:4px 10px;border-radius:6px;font-weight:800">∅ '+k.sin_ventas+' sin ventas</span>';
+      html += '</div></div>';
+      html += '<div style="padding:8px 12px;max-height:340px;overflow:auto">';
+
+      function colDeEstado(s){
+        return s==='adelantar'?'#dc2626':s==='adelantar_ligero'?'#f97316':s==='ok'?'#10b981':s==='atrasar_ligero'?'#eab308':s==='reducir_lote'?'#a855f7':'#64748b';
+      }
+
+      function fila(a){
+        var col = colDeEstado(a.estado);
+        var bg  = col + '12';
+        return '<div style="background:'+bg+';border-left:4px solid '+col+';padding:10px 12px;margin-bottom:6px;border-radius:0 6px 6px 0">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'
+          +'<div style="flex:1"><b style="color:#0f172a;font-size:13px">'+_escHTML(a.producto)+'</b>'
+          +'<div style="font-size:11px;color:#475569;margin-top:3px">'+_escHTML(a.mensaje)+'</div>'
+          +'<div style="font-size:10px;color:#64748b;margin-top:3px">📅 Próximo lote: '+_escHTML(a.proxima_fecha)+' (en '+a.dias_hasta_proximo+'d) · '+a.kg_proximo+' kg · '+(a.unidades_lote||0)+' u</div>'
+          +'<div style="font-size:10px;color:#64748b">📊 Velocidad real: '+(a.velocidad_real||0)+' u/d · planeada: '+(a.velocidad_planeada||0)+' u/d · ratio: '+(a.ratio||0)+'×</div>'
+          +'</div>'
+          +'<div style="text-align:right"><span style="background:'+col+';color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:800;text-transform:uppercase">'+a.estado.replace(/_/g," ")+'</span>'
+          +(a.diff_dias?('<div style="font-size:10px;color:'+col+';margin-top:4px;font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
+          +'</div></div></div>';
+      }
+
+      // Críticos primero
+      critical.forEach(function(a){ html += fila(a); });
+      warn.forEach(function(a){ html += fila(a); });
+      // OK colapsado
+      if(ok.length){
+        html += '<details style="margin-top:8px"><summary style="cursor:pointer;color:#475569;font-size:12px;padding:6px">🟢 '+ok.length+' SKUs en plan correcto (clic para expandir)</summary>';
+        ok.forEach(function(a){ html += fila(a); });
+        html += '</details>';
+      }
+      html += '</div></div>';
+      box.innerHTML = html;
+    } catch(e){
+      box.innerHTML = '<div style="background:#fef2f2;border:1px solid #fca5a5;padding:10px;border-radius:8px;font-size:12px;color:#991b1b">Error cargando alertas: '+(e.message||'desconocido')+'</div>';
+    }
   }
 
   async function planV2CargarAuditoria(){
