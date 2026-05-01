@@ -7367,6 +7367,85 @@ def planta_accion_rapida():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    elif tipo == 'sincronizar':
+        # Sebastián 1-may-2026: sync del Calendar a produccion_programada
+        # + auto-asignar IA inmediatamente. Procesa TODOS los pendientes
+        # (no solo uno) porque vienen del Calendar feed.
+        try:
+            from blueprints.programacion import (
+                _calendar_events_cached, _auto_asignar_produccion
+            )
+            cal_events = _calendar_events_cached(force_refresh=True) or []
+            skus_aliases = {}
+            for sku_n, alias_csv in c.execute("""
+                SELECT producto_nombre, COALESCE(alias_calendar, '')
+                FROM sku_planeacion_config
+                WHERE activo = 1
+                  AND COALESCE(estado, 'activo') NOT IN ('descontinuado', 'pausado')
+            """).fetchall():
+                skus_aliases[sku_n] = alias_csv
+            insertados = 0
+            asignados = 0
+            for ev in cal_events:
+                try:
+                    f_ev = datetime.strptime((ev.get('fecha') or '')[:10], '%Y-%m-%d').date()
+                except Exception:
+                    continue
+                if f_ev < datetime.now().date():
+                    continue
+                # Match producto
+                producto_match = None
+                best_score = 0
+                for prod_n, alias_csv in skus_aliases.items():
+                    try:
+                        score = _match_producto_evento(prod_n, alias_csv,
+                                                         ev.get('titulo'), ev.get('descripcion', ''))
+                        if score >= 60 and score > best_score:
+                            best_score = score
+                            producto_match = prod_n
+                    except Exception:
+                        continue
+                if not producto_match:
+                    continue
+                kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion', '')) or 0
+                # Skip si ya existe
+                exists = c.execute("""
+                    SELECT id FROM produccion_programada
+                    WHERE producto = ? AND date(fecha_programada) = ?
+                """, (producto_match, f_ev.isoformat())).fetchone()
+                if exists:
+                    pid_existente = exists[0]
+                    # Si no tiene área/operarios, auto-asignar
+                    row = c.execute("SELECT area_id, operario_dispensacion_id FROM produccion_programada WHERE id=?", (pid_existente,)).fetchone()
+                    if row and not row[0] and not row[1]:
+                        res = _auto_asignar_produccion(c, pid_existente, f'sync-{user}')
+                        if res.get('ok'):
+                            asignados += 1
+                    continue
+                # Insertar y asignar
+                cur_ins = c.execute("""
+                    INSERT INTO produccion_programada
+                      (producto, fecha_programada, lotes, cantidad_kg,
+                       estado, observaciones, origen)
+                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
+                """, (producto_match, f_ev.isoformat(), kg,
+                      f'[sync manual] {(ev.get("titulo") or "")[:200]}'))
+                new_id = cur_ins.lastrowid
+                insertados += 1
+                if kg > 0 and new_id:
+                    res = _auto_asignar_produccion(c, new_id, f'sync-{user}')
+                    if res.get('ok'):
+                        asignados += 1
+            conn.commit()
+            return jsonify({
+                'ok': True,
+                'mensaje': f'🔄 Sync Calendar: {insertados} producciones nuevas · {asignados} asignadas por IA',
+            })
+        except Exception as e:
+            try: conn.rollback()
+            except: pass
+            return jsonify({'error': str(e)}), 500
+
     return jsonify({'error': f'tipo desconocido: {tipo}'}), 400
 
 
@@ -7559,6 +7638,24 @@ def planta_self_heal():
             acciones.append('Auto-plan cron HABILITADO')
     except Exception as e:
         acciones.append(f'⚠ Error habilitar cron: {e}')
+
+    # 1b) Reset salas con estado stale: 'ocupada' pero sin producción activa
+    try:
+        rows = c.execute("""
+            SELECT a.id, a.codigo FROM areas_planta a
+            WHERE a.activo = 1 AND a.estado = 'ocupada'
+              AND NOT EXISTS (
+                SELECT 1 FROM produccion_programada pp
+                WHERE pp.area_id = a.id
+                  AND pp.estado IN ('programado','en_proceso','iniciado')
+                  AND date(pp.fecha_programada) >= date('now', '-3 days')
+              )
+        """).fetchall()
+        for area_id, codigo in rows:
+            c.execute("UPDATE areas_planta SET estado='libre' WHERE id=?", (area_id,))
+            acciones.append(f'Reset {codigo}: ocupada→libre (sin producción activa)')
+    except Exception as e:
+        acciones.append(f'⚠ Error reset salas: {e}')
 
     # 2) Crear limpieza para sucias sin programación
     try:

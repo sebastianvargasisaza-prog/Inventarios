@@ -7797,7 +7797,7 @@ def _operarios_libres_en_dia(c, fecha_iso):
                operario_envasado_id, operario_acondicionamiento_id
         FROM produccion_programada
         WHERE date(fecha_programada) = ?
-          AND COALESCE(estado, 'programado') NOT IN ('cancelado',)
+          AND COALESCE(estado, 'programado') != 'cancelado'
     """, (fecha_iso,)).fetchall()
     ocupados = set()
     for r in ocupados_rows:
@@ -7807,19 +7807,35 @@ def _operarios_libres_en_dia(c, fecha_iso):
 
 
 def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
-    """Asigna 4 roles rotando entre operarios disponibles ese día.
-    Sebastián 1-may-2026: TODOS rotan, sin fijos."""
-    libres, todos = _operarios_libres_en_dia(c, fecha_iso)
-    pool_ids = [o[0] for o in (libres if libres else todos)]
+    """Asigna 4 roles rotando entre operarios activos.
+    Sebastián 1-may-2026: TODOS rotan, sin fijos.
+
+    Bug fix 1-may-2026: usa SIEMPRE el pool completo de operarios activos
+    (no solo los 'libres' del día). Razón: con sólo 5 operarios y 6+
+    producciones/día se agotan los 'libres' → fallback ponía el MISMO
+    operario en TODOS los 4 roles de la misma producción → conflictos.
+    Ahora garantizamos 4 operarios DISTINTOS por producción · si hay
+    overlap entre producciones del mismo día (inevitable con 5 operarios
+    + 6 producciones), eso lo flagea conflictos en pre-produccion.
+    """
+    # Pool = TODOS los operarios activos (5)
+    todos_rows = c.execute("""
+        SELECT id FROM operarios_planta
+        WHERE COALESCE(activo, 1) = 1 ORDER BY id
+    """).fetchall()
+    pool_ids = [r[0] for r in todos_rows]
     if not pool_ids:
         return None
 
     asignaciones = {}
     usados = set()
     for rol in ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento'):
+        # NUNCA reusar operario dentro de la misma producción
         candidatos = [oid for oid in pool_ids if oid not in usados]
         if not candidatos:
-            candidatos = pool_ids  # si se acaban, permitir reuso
+            # Solo pasa si hay menos de 4 operarios totales — permitir reuso
+            # como último recurso
+            candidatos = pool_ids
         elegido = _siguiente_operario_rotando(c, rol, candidatos)
         if elegido:
             asignaciones[rol] = elegido
