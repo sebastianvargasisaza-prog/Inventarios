@@ -739,6 +739,13 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="CREAR_CAPA">CREAR_CAPA</option>
             <option value="CREAR_AUDITORIA">CREAR_AUDITORIA</option>
             <option value="CREAR_HALLAZGO">CREAR_HALLAZGO</option>
+            <option value="ACTUALIZAR_HALLAZGO">ACTUALIZAR_HALLAZGO</option>
+            <option value="CERRAR_HALLAZGO">CERRAR_HALLAZGO</option>
+            <option value="CREAR_CAPA_DESV">CREAR_CAPA_DESV</option>
+            <option value="ACTUALIZAR_CAPA_DESV">ACTUALIZAR_CAPA_DESV</option>
+            <option value="CERRAR_CAPA_DESV">CERRAR_CAPA_DESV</option>
+            <option value="CRONOGRAMA_CUMPLIR">CRONOGRAMA_CUMPLIR</option>
+            <option value="AGENDAR_CRONOGRAMA">AGENDAR_CRONOGRAMA</option>
             <option disabled>── Técnica/SGD ──</option>
             <option value="CREAR_FORMULA">CREAR_FORMULA</option>
             <option value="MODIFICAR_FORMULA">MODIFICAR_FORMULA</option>

@@ -88,6 +88,9 @@ def cronograma_ejecuciones(cron_id):
     conn = get_db(); c = conn.cursor()
 
     if request.method == 'POST':
+        # Solo responsables BPM pueden agendar ejecuciones de cronograma
+        if not _is_responsable(user):
+            return jsonify({'error': 'Solo responsables BPM pueden agendar'}), 403
         d = request.get_json(force=True, silent=True) or {}
         fecha_planeada = (d.get('fecha_planeada') or '').strip()
         if not fecha_planeada:
@@ -96,8 +99,18 @@ def cronograma_ejecuciones(cron_id):
             (cronograma_id, fecha_planeada, estado, observaciones)
             VALUES (?, ?, 'pendiente', ?)""",
             (cron_id, fecha_planeada, (d.get('observaciones') or '').strip() or None))
+        ej_id = c.lastrowid
+        try:
+            audit_log(c, usuario=user, accion='AGENDAR_CRONOGRAMA',
+                      tabla='cronograma_ejecuciones', registro_id=ej_id,
+                      despues={'cronograma_id': cron_id,
+                                'fecha_planeada': fecha_planeada,
+                                'observaciones': (d.get('observaciones') or '')[:200]},
+                      detalle=f"Agendó ejecución cronograma #{cron_id} para {fecha_planeada}")
+        except Exception as e:
+            log.warning('audit_log AGENDAR_CRONOGRAMA fallo: %s', e)
         conn.commit()
-        return jsonify({'ok': True, 'id': c.lastrowid}), 201
+        return jsonify({'ok': True, 'id': ej_id}), 201
 
     rows = c.execute("""SELECT id, fecha_planeada, fecha_real, ejecutado_por,
                               evidencia_url, observaciones, estado, creado_en
@@ -250,6 +263,22 @@ def capa_actualizar(cid):
         return jsonify({'error': 'Solo responsable puede actualizar'}), 403
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); c = conn.cursor()
+    # Capturar estado anterior para audit log (transiciones regulatorias)
+    antes_row = c.execute(
+        "SELECT codigo, estado, severidad, responsable FROM capa_desviaciones WHERE id=?",
+        (cid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'CAPA no encontrada'}), 404
+    antes = dict(antes_row)
+    # Si va a cerrar, exigir causa_raiz registrada (INVIMA art. 11)
+    nuevo_estado = d.get('estado')
+    if nuevo_estado == 'cerrada':
+        existing_causa = c.execute(
+            "SELECT causa_raiz FROM capa_desviaciones WHERE id=?", (cid,)).fetchone()
+        causa_actual = (existing_causa[0] if existing_causa else '') or ''
+        causa_nueva = (d.get('causa_raiz') or '').strip()
+        if not causa_actual.strip() and len(causa_nueva) < 10:
+            return jsonify({'error': 'causa_raiz (≥10 chars) requerida para cerrar CAPA'}), 400
     sets = []; params = []
     for col in ('descripcion','causa_raiz','accion_correctiva','accion_preventiva',
                 'evidencia_url','accion_inmediata','responsable','severidad',
@@ -267,6 +296,17 @@ def capa_actualizar(cid):
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(cid)
     cur = c.execute(f"UPDATE capa_desviaciones SET {', '.join(sets)} WHERE id=?", params)
+    # Audit log INVIMA · separa CERRAR_CAPA_DESV de modificaciones regulares
+    accion = 'CERRAR_CAPA_DESV' if nuevo_estado == 'cerrada' else 'ACTUALIZAR_CAPA_DESV'
+    try:
+        audit_log(c, usuario=user, accion=accion, tabla='capa_desviaciones',
+                  registro_id=cid, antes=antes,
+                  despues={k: d.get(k) for k in d
+                            if k in ('estado','severidad','responsable','causa_raiz',
+                                     'accion_correctiva','accion_preventiva')},
+                  detalle=f"{accion} {antes.get('codigo','—')} (id={cid})")
+    except Exception as e:
+        log.warning('audit_log %s fallo: %s', accion, e)
     conn.commit()
     return jsonify({'ok': True, 'actualizado': cur.rowcount > 0})
 
@@ -384,6 +424,24 @@ def hallazgo_actualizar(hid):
         return jsonify({'error': 'Solo responsable puede actualizar'}), 403
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT codigo, estado, severidad, origen, responsable FROM hallazgos WHERE id=?",
+        (hid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Hallazgo no encontrado'}), 404
+    antes = dict(antes_row)
+    nuevo_estado = d.get('estado')
+    # Si va a cerrar un hallazgo INVIMA o crítico, exigir evidencia
+    if nuevo_estado == 'cerrado':
+        existing = c.execute(
+            "SELECT origen, severidad, evidencia_cierre_url FROM hallazgos WHERE id=?",
+            (hid,)).fetchone()
+        if existing:
+            origen_h, sev_h, evidencia_h = existing[0], existing[1], (existing[2] or '')
+            evidencia_nueva = (d.get('evidencia_cierre_url') or '').strip()
+            evidencia_final = evidencia_nueva or evidencia_h
+            if (origen_h == 'INVIMA' or sev_h in ('critico','mayor')) and not evidencia_final:
+                return jsonify({'error': 'evidencia_cierre_url requerida para cerrar hallazgo INVIMA/crítico'}), 400
     sets = []; params = []
     for col in ('descripcion','area','severidad','fecha_limite','responsable',
                 'accion_propuesta','evidencia_cierre_url','capa_relacionada_id'):
@@ -400,6 +458,17 @@ def hallazgo_actualizar(hid):
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(hid)
     cur = c.execute(f"UPDATE hallazgos SET {', '.join(sets)} WHERE id=?", params)
+    accion = 'CERRAR_HALLAZGO' if nuevo_estado == 'cerrado' else 'ACTUALIZAR_HALLAZGO'
+    try:
+        audit_log(c, usuario=user, accion=accion, tabla='hallazgos',
+                  registro_id=hid, antes=antes,
+                  despues={k: d.get(k) for k in d
+                            if k in ('estado','severidad','responsable',
+                                     'accion_propuesta','evidencia_cierre_url',
+                                     'capa_relacionada_id')},
+                  detalle=f"{accion} {antes.get('codigo','—')} (id={hid})")
+    except Exception as e:
+        log.warning('audit_log %s fallo: %s', accion, e)
     conn.commit()
     return jsonify({'ok': True, 'actualizado': cur.rowcount > 0})
 
