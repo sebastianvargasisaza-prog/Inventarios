@@ -6836,7 +6836,16 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
     # producciones fantasma que ya no estan programadas.
     # Solo toca origen='calendar' — las manuales (origen NULL/manual) NO
     # se tocan jamas porque no tienen contraparte en el calendar.
+    #
+    # Audit zero-error 2-may-2026 (CERO SESGO):
+    # GUARD CRÍTICO · NO cancelar producciones que ya iniciaron o ya
+    # descontaron inventario. Si Sebastián borra un evento del Calendar
+    # MIENTRAS la producción está en curso, hacerla 'cancelado' aquí
+    # corromperia el estado y crearía drift de inventario. En ese caso,
+    # hay que dejarla activa y registrar la acción en audit_log para que
+    # alguien revise manualmente (probablemente fue un error en Calendar).
     archived = 0
+    skipped_in_progress = []
     try:
         # Set de (producto, fecha) que SI existen actualmente en calendar
         keys_calendar = set()
@@ -6852,14 +6861,32 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                 if prod and prod in formulas:
                     keys_calendar.add((prod, fecha_s))
                     break
-        # Filas activas con origen='calendar' que NO estan en el calendar actual
+        # Filas activas con origen='calendar' que NO estan en el calendar actual.
+        # IMPORTANTE: capturar inicio_real_at + inventario_descontado_at para
+        # decidir si es seguro cancelar (no corromper inventario en curso).
         candidatos = conn.execute(
-            "SELECT id, producto, fecha_programada FROM produccion_programada "
-            "WHERE origen='calendar' "
-            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
-            "AND fecha_programada >= date('now','-1 day')"
+            """SELECT id, producto, fecha_programada,
+                      COALESCE(inicio_real_at,'') as inicio,
+                      COALESCE(inventario_descontado_at,'') as descontado
+               FROM produccion_programada
+               WHERE origen='calendar'
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND fecha_programada >= date('now','-1 day')"""
         ).fetchall()
-        huerfanos = [r[0] for r in candidatos if (r[1], r[2]) not in keys_calendar]
+        huerfanos = []
+        for r in candidatos:
+            id_, prod, fecha, inicio, descontado = r
+            if (prod, fecha) in keys_calendar:
+                continue  # sigue en calendar, no es huérfano
+            # GUARD: si ya inició o ya descontó inventario, NO cancelar
+            if inicio or descontado:
+                skipped_in_progress.append({
+                    'id': id_, 'producto': prod, 'fecha': fecha,
+                    'inicio_real_at': inicio or None,
+                    'inventario_descontado_at': descontado or None,
+                })
+                continue
+            huerfanos.append(id_)
         if huerfanos:
             placeholders = ','.join(['?'] * len(huerfanos))
             conn.execute(
@@ -6869,9 +6896,42 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                 huerfanos
             )
             archived = len(huerfanos)
+            # Audit log · cada cancelación auto debe quedar trazada
+            try:
+                from audit_helpers import audit_log as _audit_log
+                cur = conn.cursor()
+                for prod_id in huerfanos:
+                    _audit_log(cur, usuario='sistema_calendar_sync',
+                               accion='AUTO_CANCELAR_PRODUCCION',
+                               tabla='produccion_programada',
+                               registro_id=prod_id,
+                               despues={'estado': 'cancelado',
+                                         'razon': 'evento ya no existe en calendar'},
+                               detalle=f"Sync calendar auto-canceló producción id={prod_id}")
+            except Exception:
+                pass
             conn.commit()
+        # Audit log para producciones que se SALTARON cancelar (en curso)
+        if skipped_in_progress:
+            try:
+                from audit_helpers import audit_log as _audit_log
+                cur = conn.cursor()
+                for sk in skipped_in_progress:
+                    _audit_log(cur, usuario='sistema_calendar_sync',
+                               accion='SYNC_CALENDAR_SKIP_EN_CURSO',
+                               tabla='produccion_programada',
+                               registro_id=sk['id'],
+                               detalle=(f"Producción {sk['producto']} ({sk['fecha']}) "
+                                         f"removida del calendar pero está EN CURSO "
+                                         f"(inicio={sk['inicio_real_at']}, "
+                                         f"descontado={sk['inventario_descontado_at']}). "
+                                         f"NO se canceló · revisar manualmente."))
+                conn.commit()
+            except Exception:
+                pass
     except Exception:
         archived = 0
+        skipped_in_progress = []
 
     # Registrar timestamp del sync (independiente de si hubo nuevas)
     _record_sync(conn, 'calendar', inserted + archived, error=cal.get('error'))
