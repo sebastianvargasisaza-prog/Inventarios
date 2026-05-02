@@ -496,6 +496,22 @@ def health_check():
     except Exception as e:
         return jsonify({"status": "error", "detail": str(e)}), 503
 
+@app.route('/admin/system-health')
+def admin_system_health_page():
+    """Dashboard ejecutivo de salud del sistema · solo Admin.
+
+    Renderiza UI compacta consumiendo /api/admin/health-detailed.
+    Una sola pantalla con todos los semáforos operacionales.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/system-health')
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return Response('<h1>403</h1><p>Solo administradores</p>', status=403, mimetype='text/html')
+    from templates_py.system_health_html import SYSTEM_HEALTH_HTML
+    return Response(SYSTEM_HEALTH_HTML, mimetype='text/html')
+
+
 @app.route('/api/admin/health-detailed')
 def health_detailed():
     """Diagnóstico exhaustivo del sistema · audit zero-error · solo Admin.
@@ -645,6 +661,178 @@ def health_detailed():
     }
     if not sentry_dsn:
         out['sections']['sentry']['hint'] = 'SENTRY_DSN no configurado · errores no se reportan'
+
+    # ── INVIMA · registros vencidos o por vencer ──────────────────────────
+    try:
+        invima_row = db.execute("""
+            SELECT
+              SUM(CASE WHEN fecha_vencimiento != '' AND fecha_vencimiento < date('now') THEN 1 ELSE 0 END) as vencidos,
+              SUM(CASE WHEN fecha_vencimiento != '' AND fecha_vencimiento BETWEEN date('now') AND date('now','+30 days') THEN 1 ELSE 0 END) as por_vencer_30d,
+              SUM(CASE WHEN fecha_vencimiento != '' AND fecha_vencimiento BETWEEN date('now','+30 days') AND date('now','+90 days') THEN 1 ELSE 0 END) as por_vencer_90d
+            FROM registros_invima WHERE estado='Vigente'
+        """).fetchone()
+        venc = (invima_row[0] or 0)
+        v30 = (invima_row[1] or 0)
+        v90 = (invima_row[2] or 0)
+        st_invima = 'ok' if (venc == 0 and v30 == 0) else ('error' if venc > 0 else 'warning')
+        out['sections']['invima'] = {
+            'status': st_invima,
+            'vencidos': venc, 'por_vencer_30d': v30, 'por_vencer_90d': v90,
+        }
+        if venc > 0:
+            out['sections']['invima']['hint'] = f'{venc} registro(s) INVIMA vencido(s) · acción inmediata'
+            overall_ok = False
+    except Exception as e:
+        out['sections']['invima'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Recalls activos ──────────────────────────────────────────────────
+    try:
+        rcl_row = db.execute("""
+            SELECT
+              COUNT(*) as total_abiertos,
+              SUM(CASE WHEN clase_recall IS NULL OR clase_recall='' THEN 1 ELSE 0 END) as sin_clasificar,
+              SUM(CASE WHEN notificacion_invima_at IS NULL THEN 1 ELSE 0 END) as sin_invima,
+              SUM(CASE WHEN clase_recall='clase_I' AND estado != 'cerrado' THEN 1 ELSE 0 END) as clase_I_abiertos
+            FROM recalls
+            WHERE estado NOT IN ('cerrado', 'cancelado')
+        """).fetchone()
+        total_r = (rcl_row[0] or 0)
+        sin_cl = (rcl_row[1] or 0)
+        sin_inv = (rcl_row[2] or 0)
+        c1 = (rcl_row[3] or 0)
+        st_rcl = 'ok' if total_r == 0 else ('error' if c1 > 0 else 'warning')
+        out['sections']['recalls'] = {
+            'status': st_rcl,
+            'total_abiertos': total_r, 'sin_clasificar': sin_cl,
+            'sin_notificacion_invima': sin_inv, 'clase_I_abiertos': c1,
+        }
+        if c1 > 0:
+            out['sections']['recalls']['hint'] = f'{c1} recall(s) Clase I abiertos · riesgo crítico'
+            overall_ok = False
+    except Exception as e:
+        out['sections']['recalls'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Lotes en cuarentena por mucho tiempo ─────────────────────────────
+    try:
+        cuar_row = db.execute("""
+            SELECT
+              SUM(CASE WHEN julianday('now') - julianday(fecha) > 5 THEN 1 ELSE 0 END) as cuarentena_5d,
+              SUM(CASE WHEN julianday('now') - julianday(fecha) > 10 THEN 1 ELSE 0 END) as cuarentena_10d
+            FROM movimientos
+            WHERE tipo='Entrada' AND estado_lote IN ('Cuarentena','CUARENTENA')
+        """).fetchone()
+        c5 = (cuar_row[0] or 0)
+        c10 = (cuar_row[1] or 0)
+        out['sections']['cuarentena'] = {
+            'status': 'ok' if c5 == 0 else ('error' if c10 > 0 else 'warning'),
+            'esperando_5d_o_mas': c5, 'esperando_10d_o_mas': c10,
+        }
+        if c10 > 0:
+            out['sections']['cuarentena']['hint'] = f'{c10} lote(s) en cuarentena >10 días · liberar o rechazar'
+    except Exception as e:
+        out['sections']['cuarentena'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Cola de liberación PT ────────────────────────────────────────────
+    try:
+        lib_row = db.execute("""
+            SELECT
+              SUM(CASE WHEN estado='listo_revisar' THEN 1 ELSE 0 END) as listos,
+              SUM(CASE WHEN estado='listo_revisar'
+                       AND julianday('now') - julianday(COALESCE(fecha_min_liberacion, fecha_envasado)) > 5
+                       THEN 1 ELSE 0 END) as atrasados_5d
+            FROM cola_liberacion
+        """).fetchone()
+        listos = (lib_row[0] or 0)
+        atras = (lib_row[1] or 0)
+        out['sections']['liberacion_pt'] = {
+            'status': 'ok' if atras == 0 else 'warning',
+            'listos_para_liberar': listos, 'atrasados_5d_o_mas': atras,
+        }
+        if atras > 0:
+            out['sections']['liberacion_pt']['hint'] = f'{atras} lote(s) PT esperan liberación >5 días'
+    except Exception as e:
+        out['sections']['liberacion_pt'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Hallazgos vencidos (INVIMA / crítico / mayor) ────────────────────
+    try:
+        hall_row = db.execute("""
+            SELECT
+              SUM(CASE WHEN estado != 'cerrado' AND fecha_limite < date('now') THEN 1 ELSE 0 END) as vencidos,
+              SUM(CASE WHEN estado != 'cerrado' AND fecha_limite < date('now')
+                       AND (origen='INVIMA' OR severidad IN ('critico','mayor')) THEN 1 ELSE 0 END) as criticos
+            FROM hallazgos
+            WHERE COALESCE(fecha_limite,'') != ''
+        """).fetchone()
+        venc_h = (hall_row[0] or 0)
+        crit_h = (hall_row[1] or 0)
+        out['sections']['hallazgos_vencidos'] = {
+            'status': 'ok' if venc_h == 0 else ('error' if crit_h > 0 else 'warning'),
+            'vencidos_total': venc_h, 'vencidos_criticos': crit_h,
+        }
+        if crit_h > 0:
+            out['sections']['hallazgos_vencidos']['hint'] = f'{crit_h} hallazgo(s) crítico(s)/INVIMA vencido(s)'
+            overall_ok = False
+    except Exception as e:
+        out['sections']['hallazgos_vencidos'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Caja vs commitments ──────────────────────────────────────────────
+    try:
+        ult = db.execute("""SELECT periodo, saldo_caja FROM gerencia_inputs
+                            ORDER BY periodo DESC LIMIT 1""").fetchone()
+        saldo = float(ult[1] or 0) if ult else 0.0
+        # OCs autorizadas pero no pagadas (committed)
+        committed = db.execute("""
+            SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra
+            WHERE estado IN ('Autorizada','Recibida','Parcial')
+        """).fetchone()[0]
+        committed = float(committed or 0)
+        runway_ratio = (saldo / committed) if committed > 0 else None
+        st_caja = 'ok'
+        if committed > 0 and saldo < committed * 0.5:
+            st_caja = 'error'
+        elif committed > 0 and saldo < committed:
+            st_caja = 'warning'
+        out['sections']['caja'] = {
+            'status': st_caja,
+            'saldo_ultimo_input': saldo,
+            'periodo_input': ult[0] if ult else None,
+            'committed_ocs_autorizadas': committed,
+            'cobertura_ratio': round(runway_ratio, 2) if runway_ratio else None,
+        }
+    except Exception as e:
+        out['sections']['caja'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Salas de planta · estado actual ──────────────────────────────────
+    try:
+        sala_rows = db.execute("""SELECT estado, COUNT(*) FROM areas_planta
+                                   GROUP BY estado""").fetchall()
+        sala_dict = {r[0] or 'sin_estado': r[1] for r in sala_rows}
+        out['sections']['salas'] = {'status': 'ok', **sala_dict}
+    except Exception as e:
+        out['sections']['salas'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── MFA enrollment de admins ─────────────────────────────────────────
+    try:
+        mfa_rows = db.execute("""SELECT username FROM users_mfa
+                                  WHERE enabled=1""").fetchall()
+        enrolled = {r[0] for r in mfa_rows}
+        admins_list = sorted(ADMIN_USERS)
+        admins_with_mfa = [a for a in admins_list if a in enrolled]
+        admins_without = [a for a in admins_list if a not in enrolled]
+        out['sections']['mfa_admins'] = {
+            'status': 'ok' if not admins_without else 'warning',
+            'admins_total': len(admins_list),
+            'admins_con_mfa': admins_with_mfa,
+            'admins_sin_mfa': admins_without,
+        }
+        if admins_without:
+            out['sections']['mfa_admins']['hint'] = (
+                f"{len(admins_without)} admin(s) sin MFA · /api/mfa/setup"
+            )
+    except Exception as e:
+        # users_mfa puede no existir si migración 58 no corrió
+        out['sections']['mfa_admins'] = {'status': 'warning',
+                                          'detail': f'tabla users_mfa no accesible: {str(e)[:100]}'}
 
     out['overall'] = 'ok' if overall_ok else 'warning'
     return jsonify(out)

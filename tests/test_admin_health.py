@@ -100,3 +100,80 @@ def test_health_detailed_asg_workflows_existen(app, db_clean):
     assert asg["status"] == "ok"
     for tabla in ("desviaciones", "control_cambios", "quejas_clientes", "recalls"):
         assert asg[tabla] >= 0, f"Tabla {tabla} no existe"
+
+
+# ─── Secciones operacionales nuevas ──────────────────────────────────
+
+def test_health_detailed_secciones_operacionales(app, db_clean):
+    """Las 7 secciones operacionales nuevas deben estar presentes."""
+    c = _login(app, "sebastian")
+    r = c.get("/api/admin/health-detailed")
+    sections = r.get_json()["sections"]
+    for k in ("invima", "recalls", "cuarentena", "liberacion_pt",
+              "hallazgos_vencidos", "caja", "salas", "mfa_admins"):
+        assert k in sections, f"falta sección {k}"
+        assert "status" in sections[k]
+
+
+def test_health_detailed_invima_estructura(app, db_clean):
+    c = _login(app, "sebastian")
+    r = c.get("/api/admin/health-detailed")
+    invima = r.get_json()["sections"]["invima"]
+    assert "vencidos" in invima
+    assert "por_vencer_30d" in invima
+    assert "por_vencer_90d" in invima
+
+
+def test_health_detailed_recalls_estructura(app, db_clean):
+    c = _login(app, "sebastian")
+    r = c.get("/api/admin/health-detailed")
+    rcl = r.get_json()["sections"]["recalls"]
+    assert "total_abiertos" in rcl
+    assert "sin_clasificar" in rcl
+    assert "clase_I_abiertos" in rcl
+
+
+def test_health_detailed_caja_calcula_committed(app, db_clean):
+    """Sección caja debe traer saldo + committed + ratio."""
+    c = _login(app, "sebastian")
+    r = c.get("/api/admin/health-detailed")
+    caja = r.get_json()["sections"]["caja"]
+    assert "saldo_ultimo_input" in caja
+    assert "committed_ocs_autorizadas" in caja
+    assert "cobertura_ratio" in caja
+
+
+def test_health_detailed_mfa_admins(app, db_clean):
+    c = _login(app, "sebastian")
+    r = c.get("/api/admin/health-detailed")
+    mfa = r.get_json()["sections"]["mfa_admins"]
+    assert "admins_total" in mfa
+    assert "admins_con_mfa" in mfa
+    assert "admins_sin_mfa" in mfa
+
+
+# ─── UI page /admin/system-health ────────────────────────────────────
+
+def test_system_health_page_requires_auth(client, db_clean):
+    r = client.get("/admin/system-health", follow_redirects=False)
+    assert r.status_code == 302  # redirect to /login
+
+
+def test_system_health_page_no_admin_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.get("/admin/system-health")
+    assert r.status_code == 403
+
+
+def test_system_health_page_admin_renderiza(app, db_clean):
+    c = _login(app, "sebastian")
+    r = c.get("/admin/system-health")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # Verificar elementos clave del template
+    assert "System Health" in body
+    assert "/api/admin/health-detailed" in body
+    # Section labels esperados
+    for label in ("Recalls activos", "Hallazgos vencidos",
+                   "Caja vs commitments", "Salas planta"):
+        assert label in body
