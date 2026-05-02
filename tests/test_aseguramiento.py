@@ -214,6 +214,177 @@ def test_mis_tareas_requiere_auth(client, db_clean):
     assert r.status_code == 401
 
 
+# ─── Audit log regulatorio (Resolución 2214/2021) ─────────────────────
+
+def test_audit_log_columnas_antes_despues(app, db_clean):
+    """Migración 91 garantiza que audit_log tenga columnas antes/despues."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(audit_log)").fetchall()]
+    conn.close()
+    assert 'antes' in cols, f"falta columna antes en audit_log. Tiene: {cols}"
+    assert 'despues' in cols, f"falta columna despues en audit_log. Tiene: {cols}"
+
+
+def test_audit_log_sgd_pdf_se_inserta(app, db_clean):
+    """Actualizar PDF debe quedar en audit_log."""
+    cal = _login(app, "laura")
+    cal.post("/api/aseguramiento/sgd",
+             json={"codigo": "COC-PRO-080", "titulo": "Test audit"},
+             headers=csrf_headers())
+    cal.post("/api/aseguramiento/sgd/COC-PRO-080/pdf",
+             json={"archivo_pdf_url": "https://x.com/y.pdf"},
+             headers=csrf_headers())
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    rows = conn.execute("""
+        SELECT usuario, accion, tabla, registro_id, despues
+        FROM audit_log WHERE accion='SGD_PDF' AND registro_id='COC-PRO-080'
+        ORDER BY id DESC LIMIT 1
+    """).fetchall()
+    conn.close()
+    assert len(rows) == 1
+    assert rows[0][0] == 'laura'
+    assert rows[0][2] == 'sgd_documentos'
+    assert 'archivo_pdf_url' in (rows[0][4] or '')
+
+
+def test_audit_log_capacitacion_firma(app, db_clean):
+    """Firma de SOP es evidencia INVIMA primaria · debe ir a audit_log."""
+    cal = _login(app, "laura")
+    cal.post("/api/aseguramiento/sgd",
+             json={"codigo": "COC-PRO-070", "titulo": "Test firma"},
+             headers=csrf_headers())
+    cal.post("/api/aseguramiento/capacitaciones/asignar",
+             json={"sgd_codigo": "COC-PRO-070", "sgd_version": "1",
+                   "personas": ["miguel"]},
+             headers=csrf_headers())
+    miguel = _login(app, "miguel")
+    miguel.post("/api/aseguramiento/capacitaciones/firmar",
+                json={"sgd_codigo": "COC-PRO-070", "sgd_version": "1"},
+                headers=csrf_headers())
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    rows = conn.execute("""
+        SELECT usuario, accion, tabla
+        FROM audit_log WHERE accion='SGD_FIRMAR_CAP'
+        AND registro_id LIKE 'COC-PRO-070%'
+    """).fetchall()
+    conn.close()
+    assert len(rows) >= 1, "firma no llegó a audit_log"
+    assert rows[0][0] == 'miguel'
+
+
+def test_kpis_no_limitados_a_500_pagina(app, db_clean):
+    """KPIs deben reflejar TOTAL en BD, no la página de 500."""
+    cal = _login(app, "laura")
+    # Estructura del response: total + sin_evaluar + ...
+    r = cal.get("/api/aseguramiento/cambios")
+    assert r.status_code == 200
+    kpis = r.get_json()['kpis']
+    assert isinstance(kpis['total'], int)
+    # Crear 1 cambio y verificar que el total sube en 1
+    total_antes = kpis['total']
+    cal.post("/api/aseguramiento/cambios",
+             json={"tipo": "otro", "titulo": "Test KPI",
+                   "descripcion": "Test que KPIs reflejan COUNT real, no len(items) de la página"},
+             headers=csrf_headers())
+    r = cal.get("/api/aseguramiento/cambios")
+    assert r.get_json()['kpis']['total'] == total_antes + 1
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM control_cambios WHERE titulo='Test KPI'")
+    conn.commit(); conn.close()
+
+
+def test_cambio_implementar_bloquea_sin_invima_notif(app, db_clean):
+    """cambio_implementar debe bloquear si requiere_invima=1 y no se notificó."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/cambios",
+               json={"tipo": "formulacion", "titulo": "Cambio crítico INVIMA",
+                     "descripcion": "Cambio fórmula con impacto regulatorio que requiere INVIMA",
+                     "impacto_regulatorio": True},
+               headers=csrf_headers())
+    cid = r.get_json()["id"]
+    # Evaluar marcando requiere_invima
+    c.post(f"/api/aseguramiento/cambios/{cid}/evaluar",
+           json={"severidad": "mayor",
+                 "evaluacion_descripcion": "Mayor · requiere notificación INVIMA",
+                 "requiere_invima": True},
+           headers=csrf_headers())
+    # Aprobar
+    c.post(f"/api/aseguramiento/cambios/{cid}/aprobar",
+           json={"decision": "aprobar",
+                 "observaciones": "Aprobado pero pendiente INVIMA",
+                 "plan_implementacion": "Implementar tras notificación INVIMA + esperar respuesta"},
+           headers=csrf_headers())
+    # Intentar implementar SIN notificar INVIMA → 409
+    r = c.post(f"/api/aseguramiento/cambios/{cid}/implementar",
+               json={"observaciones": "Test sin notif"},
+               headers=csrf_headers())
+    assert r.status_code == 409
+    assert 'INVIMA' in r.get_json()['error']
+    # Notificar INVIMA y reintentar → 200
+    c.post(f"/api/aseguramiento/cambios/{cid}/notificar-invima",
+           json={"referencia": "INVIMA-2026-X"},
+           headers=csrf_headers())
+    r = c.post(f"/api/aseguramiento/cambios/{cid}/implementar",
+               json={"observaciones": "Implementado tras INVIMA"},
+               headers=csrf_headers())
+    assert r.status_code == 200
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM control_cambios WHERE id=?", (cid,))
+    conn.execute("DELETE FROM control_cambios_eventos WHERE cambio_id=?", (cid,))
+    conn.commit(); conn.close()
+
+
+def test_audit_log_recall_iniciar(app, db_clean):
+    """INICIAR_RECALL debe llegar a audit_log (regulatorio crítico INVIMA)."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/recalls",
+               json={"producto": "PROD-X-test", "lotes_afectados": "LOTE-T01",
+                     "motivo": "Test audit_log debe registrar inicio de recall siempre"},
+               headers=csrf_headers())
+    rid = r.get_json()["id"]
+    codigo = r.get_json()["codigo"]
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    rows = conn.execute("""
+        SELECT accion, tabla, registro_id, despues FROM audit_log
+        WHERE accion='INICIAR_RECALL' AND registro_id=?
+    """, (codigo,)).fetchall()
+    assert len(rows) == 1
+    assert 'PROD-X-test' in (rows[0][3] or '')
+    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
+    conn.execute("DELETE FROM recalls_eventos WHERE recall_id=?", (rid,))
+    conn.commit(); conn.close()
+
+
+def test_audit_log_recall_clasificar_y_notif_invima(app, db_clean):
+    """Clasificar recall + notificar INVIMA debe quedar en audit_log."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/recalls",
+               json={"producto": "PROD-Y-test", "lotes_afectados": "LOTE-T02",
+                     "motivo": "Test audit clasificación + notificación INVIMA"},
+               headers=csrf_headers())
+    rid = r.get_json()["id"]
+    codigo = r.get_json()["codigo"]
+    c.post(f"/api/aseguramiento/recalls/{rid}/clasificar",
+           json={"clase_recall": "clase_I", "alcance_geografico": "nacional",
+                 "justificacion_clasificacion": "Riesgo grave salud · Clase I por norma"},
+           headers=csrf_headers())
+    c.post(f"/api/aseguramiento/recalls/{rid}/notificar-invima",
+           json={"referencia": "INVIMA-2026-RCL-T02"},
+           headers=csrf_headers())
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    acciones = [r[0] for r in conn.execute("""
+        SELECT accion FROM audit_log WHERE registro_id=? ORDER BY id
+    """, (codigo,)).fetchall()]
+    assert 'INICIAR_RECALL' in acciones
+    assert 'RECALL_CLASIFICAR' in acciones
+    assert 'RECALL_NOTIFICAR_INVIMA' in acciones
+    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
+    conn.execute("DELETE FROM recalls_eventos WHERE recall_id=?", (rid,))
+    conn.commit(); conn.close()
+
+
 def test_dashboard_kpis_workflows_se_actualizan(app, db_clean):
     """Crear desviación + queja crítica → KPIs del dashboard reflejan cambios."""
     c = _login(app, "laura")

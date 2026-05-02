@@ -74,6 +74,84 @@ def _autorizados_escritura():
     return set(CALIDAD_USERS) | set(ADMIN_USERS)
 
 
+def _siguiente_codigo_secuencial(c, prefijo, tabla, anio=None):
+    """Genera código <prefijo>-AAAA-NNNN secuencial · race-safe vs concurrencia.
+
+    Lee MAX(NNNN) actual y devuelve el siguiente. El caller debe reintentar
+    si el INSERT subsiguiente falla por UNIQUE constraint (race ganada por
+    otro request). Auditoría 2-may-2026 detectó que la versión anterior
+    (sin retry) producía 500 al cliente bajo concurrencia.
+    """
+    if anio is None:
+        anio = datetime.now().year
+    row = c.execute(
+        f"SELECT codigo FROM {tabla} WHERE codigo LIKE ? "
+        f"ORDER BY id DESC LIMIT 1",
+        (f'{prefijo}-{anio}-%',),
+    ).fetchone()
+    if row and row[0]:
+        try:
+            return f'{prefijo}-{anio}-{int(row[0].split("-")[-1])+1:04d}'
+        except (ValueError, IndexError):
+            pass
+    return f'{prefijo}-{anio}-0001'
+
+
+def _intentar_insert_con_retry(insert_fn, *, max_intentos=5):
+    """Ejecuta insert_fn() con retry si falla por UNIQUE (race condition).
+
+    insert_fn debe devolver (codigo_intentado, lastrowid) en éxito.
+    Si UNIQUE constraint en `codigo`, reintenta hasta max_intentos veces.
+    Para otros errores, propaga.
+    """
+    import sqlite3 as _sq
+    for intento in range(max_intentos):
+        try:
+            return insert_fn()
+        except _sq.IntegrityError as e:
+            if 'codigo' in str(e).lower() and intento < max_intentos - 1:
+                # Race con otro request · reintentar
+                log.info('codigo race · reintento %d/%d: %s', intento+1, max_intentos, e)
+                continue
+            raise
+
+
+def _audit_log(c, *, usuario, accion, registro_id, tabla=None,
+                antes=None, despues=None, detalle=None):
+    """Helper centralizado para audit_log (Resolución 2214/2021).
+
+    Loguea en `audit_log` con todas las columnas del schema actual:
+    (usuario, accion, tabla, registro_id, detalle, antes, despues, fecha, ip).
+    Errores NO se silencian: se levantan para que el endpoint pueda
+    rollback la transacción regulatoria.
+    """
+    import json as _json
+    try:
+        antes_s = _json.dumps(antes) if antes is not None and not isinstance(antes, str) else antes
+        despues_s = _json.dumps(despues) if despues is not None and not isinstance(despues, str) else despues
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')[:45]
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, tabla, registro_id,
+                                     detalle, antes, despues, ip, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (usuario or '', accion, tabla, str(registro_id) if registro_id is not None else None,
+              detalle, antes_s, despues_s, ip))
+    except Exception as e:
+        # Si la columna antes/despues no existe (DB pre-migración 91)
+        # caer al schema mínimo para no perder el evento.
+        log.warning('audit_log con antes/despues fallo (%s) · usando fallback', e)
+        try:
+            c.execute("""
+                INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (usuario or '', accion, tabla,
+                  str(registro_id) if registro_id is not None else None,
+                  detalle, ip))
+        except Exception as e2:
+            log.exception('audit_log fallback también falló: %s', e2)
+            raise  # ahora sí: regulatorio · debe rollback la operación
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Página HTML del módulo
 # ════════════════════════════════════════════════════════════════════════
@@ -524,15 +602,10 @@ def sgd_crear_o_actualizar():
                   d.get('aprobado_por'), d.get('observaciones'), user))
             accion = 'creado'
 
-        # Audit log
-        try:
-            import json as _json
-            c.execute("""
-                INSERT INTO audit_log (usuario, accion, registro_id, despues)
-                VALUES (?, 'SGD_GUARDAR', ?, ?)
-            """, (user, codigo, _json.dumps({'version': version, 'estado': estado, 'titulo': titulo})))
-        except Exception:
-            pass
+        # Audit log regulatorio
+        _audit_log(c, usuario=user, accion='SGD_GUARDAR', tabla='sgd_documentos',
+                   registro_id=codigo,
+                   despues={'version': version, 'estado': estado, 'titulo': titulo[:200]})
         conn.commit()
     except Exception as e:
         try: conn.rollback()
@@ -572,14 +645,8 @@ def sgd_actualizar_pdf(codigo):
         SET archivo_pdf_url=?, actualizado_en=datetime('now')
         WHERE codigo=?
     """, (url or None, codigo))
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, despues)
-            VALUES (?, 'SGD_PDF', ?, ?)
-        """, (user, codigo, _json.dumps({'archivo_pdf_url': url[:200]})))
-    except Exception:
-        pass
+    _audit_log(c, usuario=user, accion='SGD_PDF', tabla='sgd_documentos',
+               registro_id=codigo, despues={'archivo_pdf_url': url[:200]})
     conn.commit()
     return jsonify({'ok': True, 'archivo_pdf_url': url or None})
 
@@ -800,7 +867,13 @@ def capacitaciones_firmar():
 
     import hmac as _hmac
     import hashlib
-    secret = (os.environ.get('SECRET_KEY','') or 'fallback').encode()
+    secret_env = os.environ.get('SECRET_KEY', '')
+    if not secret_env:
+        # Sin SECRET_KEY no podemos garantizar integridad de la firma INVIMA.
+        # NO usar fallback determinístico (audit hallazgo crítico).
+        log.error('capacitaciones_firmar: SECRET_KEY no configurado · firma rechazada')
+        return jsonify({'error': 'Sistema mal configurado · contactar admin'}), 503
+    secret = secret_env.encode()
     msg = f'{sgd_codigo}|{sgd_version}|{user}|{datetime.now().isoformat()}'.encode()
     firma_hash = _hmac.new(secret, msg, hashlib.sha256).hexdigest()[:32]
 
@@ -815,6 +888,11 @@ def capacitaciones_firmar():
     """, (firma_hash, sgd_codigo, sgd_version, user))
     if r.rowcount == 0:
         return jsonify({'error': 'no tienes esta capacitación asignada'}), 404
+    # Audit log INVIMA · firma de SOP es evidencia regulatoria primaria
+    _audit_log(c, usuario=user, accion='SGD_FIRMAR_CAP', tabla='sgd_capacitaciones',
+               registro_id=f'{sgd_codigo}#v{sgd_version}',
+               despues={'sgd_codigo': sgd_codigo, 'sgd_version': sgd_version,
+                         'firma_hash': firma_hash})
     conn.commit()
     return jsonify({'ok': True, 'firma_hash': firma_hash})
 
@@ -861,15 +939,16 @@ def desviaciones_endpoint():
         if tipo not in valid_tipos:
             return jsonify({'error': f'tipo inválido. Uno de: {", ".join(valid_tipos)}'}), 400
 
-        codigo = _generar_codigo_desviacion(c)
-        try:
+        # Race-safe: reintenta si UNIQUE(codigo) por concurrencia
+        def _insertar_desv():
+            cod = _generar_codigo_desviacion(c)
             c.execute("""
                 INSERT INTO desviaciones
                   (codigo, fecha_deteccion, hora_deteccion, detectado_por,
                    tipo, area_origen, descripcion, contencion_inmediata,
                    impacto_producto, lotes_afectados, estado)
                 VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'detectada')
-            """, (codigo,
+            """, (cod,
                   (d.get('hora_deteccion') or datetime.now().strftime('%H:%M')),
                   user, tipo,
                   (d.get('area_origen') or '').strip()[:80],
@@ -877,7 +956,9 @@ def desviaciones_endpoint():
                   (d.get('contencion_inmediata') or '')[:1000],
                   1 if d.get('impacto_producto') else 0,
                   (d.get('lotes_afectados') or '')[:500]))
-            desv_id = c.lastrowid
+            return cod, c.lastrowid
+        try:
+            codigo, desv_id = _intentar_insert_con_retry(_insertar_desv)
             # Evento inicial
             c.execute("""
                 INSERT INTO desviaciones_eventos
@@ -928,17 +1009,21 @@ def desviaciones_endpoint():
             'impacto_producto','capa_responsable','capa_fecha_limite',
             'fecha_cierre','dias_abierta']
     items = [dict(zip(cols, r)) for r in rows]
-    # KPIs rápidos
+    # KPIs reales: queries dedicadas (no limitadas por LIMIT 500 de la página)
+    kpi_where = ('WHERE ' + ' AND '.join(where)) if where else ''
+    kpi_row = c.execute(f"""
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN clasificacion='critica' AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
+          COUNT(CASE WHEN clasificacion IS NULL AND estado!='rechazada' THEN 1 END) as sin_clasificar,
+          COUNT(CASE WHEN estado='en_investigacion' THEN 1 END) as investigando,
+          COUNT(CASE WHEN estado='cerrada' AND fecha_cierre >= ? THEN 1 END) as cerradas_30d
+        FROM desviaciones {kpi_where}
+    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
-        'total': len(items),
-        'criticas_abiertas': sum(1 for it in items
-                                  if it['clasificacion']=='critica' and it['estado']!='cerrada'),
-        'sin_clasificar': sum(1 for it in items if not it['clasificacion']
-                                                    and it['estado']!='rechazada'),
-        'investigando': sum(1 for it in items if it['estado']=='en_investigacion'),
-        'cerradas_30d': sum(1 for it in items
-                             if it['estado']=='cerrada' and it.get('fecha_cierre')
-                             and (it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat())),
+        'total': kpi_row[0] or 0, 'criticas_abiertas': kpi_row[1] or 0,
+        'sin_clasificar': kpi_row[2] or 0, 'investigando': kpi_row[3] or 0,
+        'cerradas_30d': kpi_row[4] or 0,
     }
     return jsonify({'items': items, 'kpis': kpis})
 
@@ -1144,19 +1229,13 @@ def desviacion_cerrar(desv_id):
         VALUES (?, 'cerrada', ?, 'cerrada', ?, ?)
     """, (desv_id, estado_ant, user,
           f'Cerrada · efectividad {"OK" if efectividad_ok else "NO_OK"}: {verificacion[:200]}'))
-    # Audit log INVIMA
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, antes, despues)
-            VALUES (?, 'CERRAR_DESVIACION', ?, ?, ?)
-        """, (user, codigo_d or str(desv_id),
-              _json.dumps({'estado_anterior': estado_ant}),
-              _json.dumps({'efectividad_ok': efectividad_ok,
-                            'verificacion': verificacion[:500],
-                            'observaciones': obs[:500]})))
-    except Exception as _e:
-        log.debug('audit cerrar desviacion fallo: %s', _e)
+    # Audit log INVIMA · regulatorio
+    _audit_log(c, usuario=user, accion='CERRAR_DESVIACION', tabla='desviaciones',
+               registro_id=codigo_d or desv_id,
+               antes={'estado': estado_ant, 'efectividad_ok': None},
+               despues={'efectividad_ok': efectividad_ok,
+                         'verificacion': verificacion[:500],
+                         'observaciones': obs[:500]})
     conn.commit()
 
     # Sugerir recall si crítica + efectividad NO OK + lotes en mercado
@@ -1233,20 +1312,22 @@ def cambios_endpoint():
         if tipo not in valid_tipos:
             return jsonify({'error': f'tipo inválido. Uno de: {", ".join(valid_tipos)}'}), 400
 
-        codigo = _generar_codigo_cambio(c)
-        try:
+        def _insertar_cambio():
+            cod = _generar_codigo_cambio(c)
             c.execute("""
                 INSERT INTO control_cambios
                   (codigo, fecha_solicitud, solicitado_por, tipo, titulo,
                    descripcion, justificacion, areas_afectadas,
                    impacto_bpm, impacto_regulatorio, estado)
                 VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'solicitado')
-            """, (codigo, user, tipo, titulo[:200], descripcion[:3000],
+            """, (cod, user, tipo, titulo[:200], descripcion[:3000],
                   (d.get('justificacion') or '')[:1000],
                   (d.get('areas_afectadas') or '')[:300],
                   1 if d.get('impacto_bpm') else 0,
                   1 if d.get('impacto_regulatorio') else 0))
-            cid = c.lastrowid
+            return cod, c.lastrowid
+        try:
+            codigo, cid = _intentar_insert_con_retry(_insertar_cambio)
             c.execute("""
                 INSERT INTO control_cambios_eventos
                   (cambio_id, evento_tipo, estado_nuevo, usuario, comentario)
@@ -1293,16 +1374,21 @@ def cambios_endpoint():
             'severidad','estado','impacto_bpm','requiere_invima',
             'aprobado_por','fecha_implementacion_propuesta','fecha_cierre','dias_abierto']
     items = [dict(zip(cols, r)) for r in rows]
+    kpi_where = ('WHERE ' + ' AND '.join(where)) if where else ''
+    kpi_row = c.execute(f"""
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN estado='solicitado' THEN 1 END) as sin_evaluar,
+          COUNT(CASE WHEN estado='en_evaluacion' THEN 1 END) as en_evaluacion,
+          COUNT(CASE WHEN estado IN ('aprobado','en_implementacion') THEN 1 END) as aprobados_pendientes,
+          COUNT(CASE WHEN requiere_invima=1 AND estado NOT IN ('cerrado','rechazado') THEN 1 END) as requieren_invima,
+          COUNT(CASE WHEN estado='cerrado' AND fecha_cierre >= ? THEN 1 END) as cerrados_30d
+        FROM control_cambios {kpi_where}
+    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
-        'total': len(items),
-        'sin_evaluar': sum(1 for it in items if it['estado'] == 'solicitado'),
-        'en_evaluacion': sum(1 for it in items if it['estado'] == 'en_evaluacion'),
-        'aprobados_pendientes': sum(1 for it in items if it['estado'] in ('aprobado','en_implementacion')),
-        'requieren_invima': sum(1 for it in items
-                                  if it['requiere_invima'] and it['estado'] not in ('cerrado','rechazado')),
-        'cerrados_30d': sum(1 for it in items
-                              if it['estado']=='cerrado' and it.get('fecha_cierre')
-                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+        'total': kpi_row[0] or 0, 'sin_evaluar': kpi_row[1] or 0,
+        'en_evaluacion': kpi_row[2] or 0, 'aprobados_pendientes': kpi_row[3] or 0,
+        'requieren_invima': kpi_row[4] or 0, 'cerrados_30d': kpi_row[5] or 0,
     }
     return jsonify({'items': items, 'kpis': kpis})
 
@@ -1406,16 +1492,13 @@ def cambio_aprobar(cid):
           (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (cid, decision, estado_ant, nuevo_estado, user, obs[:200]))
-    # Audit
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, despues)
-            VALUES (?, 'CAMBIO_APROBACION', ?, ?)
-        """, (user, row[2] or str(cid),
-              _json.dumps({'decision': decision, 'observaciones': obs[:300]})))
-    except Exception:
-        pass
+    # Audit INVIMA · decisión regulatoria
+    _audit_log(c, usuario=user, accion='CAMBIO_APROBACION', tabla='control_cambios',
+               registro_id=row[2] or cid,
+               antes={'estado': estado_ant},
+               despues={'decision': decision, 'observaciones': obs[:300],
+                         'plan_implementacion': (plan or '')[:300] if plan else None,
+                         'requiere_invima': bool(row[1])})
     conn.commit()
 
     # Si requiere INVIMA → recordatorio
@@ -1445,7 +1528,7 @@ def cambio_notificar_invima(cid):
     if not ref:
         return jsonify({'error': 'referencia (radicado/oficio) requerido'}), 400
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado, requiere_invima FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    row = c.execute("SELECT estado, requiere_invima, codigo FROM control_cambios WHERE id=?", (cid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     if not row[1]:
         return jsonify({'error': 'este cambio no requiere INVIMA'}), 400
@@ -1460,22 +1543,37 @@ def cambio_notificar_invima(cid):
           (cambio_id, evento_tipo, usuario, comentario)
         VALUES (?, 'notificado_invima', ?, ?)
     """, (cid, user, f'Notificado INVIMA · ref: {ref[:100]}'))
+    # Audit log INVIMA · regulatorio (Resolución 2214/2021)
+    _audit_log(c, usuario=user, accion='CAMBIO_NOTIFICAR_INVIMA', tabla='control_cambios',
+               registro_id=row[2] or cid,
+               despues={'referencia': ref[:200]})
     conn.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/aseguramiento/cambios/<int:cid>/implementar', methods=['POST'])
 def cambio_implementar(cid):
-    """Marca cambio como implementado. RBAC Calidad/Admin."""
+    """Marca cambio como implementado. RBAC Calidad/Admin.
+
+    BLOQUEA si requiere_invima=1 y aún no se notificó (Resolución 2214/2021
+    exige notificación previa a la implementación).
+    """
     user = session.get('compras_user', '')
     if user not in _autorizados_escritura():
         return jsonify({'error': 'Solo Calidad/Admin'}), 403
     d = request.get_json(silent=True) or {}
     obs = (d.get('observaciones') or '').strip()
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    row = c.execute("""
+        SELECT estado, requiere_invima, notificacion_invima_at, codigo
+        FROM control_cambios WHERE id=?
+    """, (cid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     estado_ant = row[0]
+    # Bloquear implementación si requiere INVIMA pero no se ha notificado
+    if row[1] and not row[2]:
+        return jsonify({'error': 'No se puede implementar: requiere INVIMA y no se ha notificado · '
+                                  'Notifique INVIMA primero (Resolución 2214/2021)'}), 409
     if estado_ant not in ('aprobado', 'en_implementacion'):
         return jsonify({'error': f'no se puede implementar en estado {estado_ant}'}), 409
     c.execute("""
@@ -1489,6 +1587,10 @@ def cambio_implementar(cid):
           (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'implementado', ?, 'implementado', ?, ?)
     """, (cid, estado_ant, user, obs[:200] or 'Implementación completada'))
+    _audit_log(c, usuario=user, accion='CAMBIO_IMPLEMENTAR', tabla='control_cambios',
+               registro_id=row[3] or cid,
+               antes={'estado': estado_ant},
+               despues={'observaciones': obs[:200]})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1530,16 +1632,11 @@ def cambio_cerrar(cid):
         VALUES (?, 'cerrado', ?, 'cerrado', ?, ?)
     """, (cid, estado_ant, user,
           f'Cerrado · verif {"OK" if d.get("verificacion_ok") else "NO_OK"}: {verif[:200]}'))
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, despues)
-            VALUES (?, 'CERRAR_CAMBIO', ?, ?)
-        """, (user, row[1] or str(cid),
-              _json.dumps({'verificacion_ok': bool(d.get('verificacion_ok')),
-                            'verificacion': verif[:500]})))
-    except Exception:
-        pass
+    _audit_log(c, usuario=user, accion='CERRAR_CAMBIO', tabla='control_cambios',
+               registro_id=row[1] or cid,
+               antes={'estado': estado_ant},
+               despues={'verificacion_ok': bool(d.get('verificacion_ok')),
+                         'verificacion': verif[:500]})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1594,8 +1691,8 @@ def quejas_endpoint():
         if cliente_tipo and cliente_tipo not in ('consumidor_final','distribuidor','retail','medico','otro'):
             return jsonify({'error': 'cliente_tipo inválido'}), 400
 
-        codigo = _generar_codigo_queja(c)
-        try:
+        def _insertar_queja():
+            cod = _generar_codigo_queja(c)
             c.execute("""
                 INSERT INTO quejas_clientes
                   (codigo, fecha_recepcion, recibido_por, canal,
@@ -1603,7 +1700,7 @@ def quejas_endpoint():
                    producto, lote, fecha_compra, establecimiento_compra,
                    tipo_queja, descripcion, impacto_salud, estado)
                 VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')
-            """, (codigo, user, canal,
+            """, (cod, user, canal,
                   cliente_nombre[:200],
                   (d.get('cliente_contacto') or '')[:200],
                   cliente_tipo,
@@ -1614,7 +1711,9 @@ def quejas_endpoint():
                   tipo_queja,
                   descripcion[:3000],
                   1 if d.get('impacto_salud') else 0))
-            qid = c.lastrowid
+            return cod, c.lastrowid
+        try:
+            codigo, qid = _intentar_insert_con_retry(_insertar_queja)
             c.execute("""
                 INSERT INTO quejas_clientes_eventos
                   (queja_id, evento_tipo, estado_nuevo, usuario, comentario)
@@ -1659,17 +1758,22 @@ def quejas_endpoint():
             'producto','lote','tipo_queja','severidad','estado',
             'impacto_salud','requiere_recall','fecha_compromiso','fecha_cierre','dias_abierta']
     items = [dict(zip(cols, r)) for r in rows]
+    kpi_where = ('WHERE ' + ' AND '.join(where)) if where else ''
+    kpi_row = c.execute(f"""
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN estado='nueva' THEN 1 END) as nuevas,
+          COUNT(CASE WHEN estado='en_investigacion' THEN 1 END) as en_investigacion,
+          COUNT(CASE WHEN estado='respondida' THEN 1 END) as pendientes_cierre,
+          COUNT(CASE WHEN (severidad='critica' OR impacto_salud=1)
+                       AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
+          COUNT(CASE WHEN estado='cerrada' AND fecha_cierre >= ? THEN 1 END) as cerradas_30d
+        FROM quejas_clientes {kpi_where}
+    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
-        'total': len(items),
-        'nuevas': sum(1 for it in items if it['estado'] == 'nueva'),
-        'en_investigacion': sum(1 for it in items if it['estado'] == 'en_investigacion'),
-        'pendientes_cierre': sum(1 for it in items if it['estado'] == 'respondida'),
-        'criticas_abiertas': sum(1 for it in items
-                                    if (it['severidad']=='critica' or it['impacto_salud'])
-                                    and it['estado'] not in ('cerrada','rechazada')),
-        'cerradas_30d': sum(1 for it in items
-                              if it['estado']=='cerrada' and it.get('fecha_cierre')
-                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+        'total': kpi_row[0] or 0, 'nuevas': kpi_row[1] or 0,
+        'en_investigacion': kpi_row[2] or 0, 'pendientes_cierre': kpi_row[3] or 0,
+        'criticas_abiertas': kpi_row[4] or 0, 'cerradas_30d': kpi_row[5] or 0,
     }
     return jsonify({'items': items, 'kpis': kpis})
 
@@ -1746,14 +1850,15 @@ def queja_triaje(qid):
     desviacion_codigo = None
 
     # Crear desviación AUTOMÁTICA si triaje pide y no había una ya
+    # Si falla, abortar todo el triaje (atomicidad regulatoria).
     if requiere_desv and not desv_existente:
-        try:
-            tipo_desv = _tipo_desv_desde_queja(tipo_queja)
+        tipo_desv = _tipo_desv_desde_queja(tipo_queja)
+        desv_descripcion = (
+            f'[Origen: Queja {codigo_q}] {(desc_q or "")[:1500]}\n\n'
+            f'Triaje: {triaje_desc[:500]}'
+        )[:3000]
+        def _insertar_desv_desde_queja():
             cod_desv = _generar_codigo_desviacion(c)
-            desv_descripcion = (
-                f'[Origen: Queja {codigo_q}] {(desc_q or "")[:1500]}\n\n'
-                f'Triaje: {triaje_desc[:500]}'
-            )[:3000]
             c.execute("""
                 INSERT INTO desviaciones
                   (codigo, fecha_deteccion, detectado_por, tipo, area_origen,
@@ -1763,8 +1868,9 @@ def queja_triaje(qid):
                   desv_descripcion,
                   1 if impacto_salud else 0,
                   (lote_q or '')[:300] or None))
-            desviacion_id = c.lastrowid
-            desviacion_codigo = cod_desv
+            return cod_desv, c.lastrowid
+        try:
+            desviacion_codigo, desviacion_id = _intentar_insert_con_retry(_insertar_desv_desde_queja)
             c.execute("""
                 INSERT INTO desviaciones_eventos
                   (desviacion_id, evento_tipo, estado_nuevo, usuario, comentario)
@@ -1772,9 +1878,12 @@ def queja_triaje(qid):
             """, (desviacion_id, user,
                   f'Desviación creada automáticamente desde queja {codigo_q}'))
         except Exception as e:
-            log.warning('crear desv desde queja fallo: %s', e)
-            # No bloquear el triaje si la auto-creación falla
-            desviacion_id = desv_existente
+            try: conn.rollback()
+            except Exception: pass
+            log.exception('crear desv desde queja fallo: %s', e)
+            return jsonify({
+                'error': 'Error creando desviación enlazada · triaje no aplicado'
+            }), 500
 
     c.execute("""
         UPDATE quejas_clientes
@@ -1927,16 +2036,11 @@ def queja_cerrar(qid):
         VALUES (?, 'cerrada', ?, 'cerrada', ?, ?)
     """, (qid, estado_ant, user,
           f'Cerrada · cliente {"satisfecho" if d.get("cliente_satisfecho") else "NO satisfecho"}: {accion[:200]}'))
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, despues)
-            VALUES (?, 'CERRAR_QUEJA', ?, ?)
-        """, (user, row[1] or str(qid),
-              _json.dumps({'cliente_satisfecho': bool(d.get('cliente_satisfecho')),
-                            'accion': accion[:500]})))
-    except Exception:
-        pass
+    _audit_log(c, usuario=user, accion='CERRAR_QUEJA', tabla='quejas_clientes',
+               registro_id=row[1] or qid,
+               antes={'estado': estado_ant},
+               despues={'cliente_satisfecho': bool(d.get('cliente_satisfecho')),
+                         'accion': accion[:500]})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -2217,8 +2321,8 @@ def recalls_endpoint():
         if origen not in valid_origenes:
             return jsonify({'error': f'origen inválido. Uno de: {", ".join(valid_origenes)}'}), 400
 
-        codigo = _generar_codigo_recall(c)
-        try:
+        def _insertar_recall():
+            cod = _generar_codigo_recall(c)
             c.execute("""
                 INSERT INTO recalls
                   (codigo, fecha_inicio, iniciado_por, origen, origen_referencia,
@@ -2226,7 +2330,7 @@ def recalls_endpoint():
                    cantidad_fabricada, cantidad_distribuida,
                    motivo, riesgo_descripcion, estado)
                 VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iniciado')
-            """, (codigo, user, origen,
+            """, (cod, user, origen,
                   (d.get('origen_referencia') or '')[:200],
                   d.get('desviacion_id'),
                   d.get('queja_id'),
@@ -2236,23 +2340,19 @@ def recalls_endpoint():
                   d.get('cantidad_distribuida'),
                   motivo[:3000],
                   (d.get('riesgo_descripcion') or '')[:2000]))
-            rid = c.lastrowid
+            return cod, c.lastrowid
+        try:
+            codigo, rid = _intentar_insert_con_retry(_insertar_recall)
             c.execute("""
                 INSERT INTO recalls_eventos
                   (recall_id, evento_tipo, estado_nuevo, usuario, comentario)
                 VALUES (?, 'iniciado', 'iniciado', ?, ?)
             """, (rid, user, f'Recall iniciado · origen {origen} · {producto[:80]}'))
-            # Audit log INVIMA - SIEMPRE para recalls
-            try:
-                import json as _json
-                c.execute("""
-                    INSERT INTO audit_log (usuario, accion, registro_id, despues)
-                    VALUES (?, 'INICIAR_RECALL', ?, ?)
-                """, (user, codigo,
-                      _json.dumps({'producto': producto[:200], 'lotes': lotes[:500],
-                                    'origen': origen, 'motivo': motivo[:500]})))
-            except Exception:
-                pass
+            # Audit log INVIMA · regulatorio crítico para recalls
+            _audit_log(c, usuario=user, accion='INICIAR_RECALL', tabla='recalls',
+                       registro_id=codigo,
+                       despues={'producto': producto[:200], 'lotes': lotes[:500],
+                                 'origen': origen, 'motivo': motivo[:500]})
             conn.commit()
         except Exception as e:
             try: conn.rollback()
@@ -2293,19 +2393,23 @@ def recalls_endpoint():
             'notificacion_invima_at','cantidad_distribuida','cantidad_recolectada',
             'fecha_cierre','dias_abierto']
     items = [dict(zip(cols, r)) for r in rows]
+    kpi_where = ('WHERE ' + ' AND '.join(where)) if where else ''
+    kpi_row = c.execute(f"""
+        SELECT
+          COUNT(*) as total,
+          COUNT(CASE WHEN estado='iniciado' THEN 1 END) as sin_clasificar,
+          COUNT(CASE WHEN clase_recall='clase_I'
+                       AND estado NOT IN ('cerrado','cancelado') THEN 1 END) as clase_I_abiertos,
+          COUNT(CASE WHEN estado IN ('iniciado','clasificado')
+                       AND notificacion_invima_at IS NULL THEN 1 END) as invima_pendiente,
+          COUNT(CASE WHEN estado='en_recoleccion' THEN 1 END) as en_recoleccion,
+          COUNT(CASE WHEN estado='cerrado' AND fecha_cierre >= ? THEN 1 END) as cerrados_30d
+        FROM recalls {kpi_where}
+    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
-        'total': len(items),
-        'sin_clasificar': sum(1 for it in items if it['estado'] == 'iniciado'),
-        'clase_I_abiertos': sum(1 for it in items
-                                  if it['clase_recall']=='clase_I'
-                                  and it['estado'] not in ('cerrado','cancelado')),
-        'invima_pendiente': sum(1 for it in items
-                                  if it['estado'] in ('iniciado','clasificado')
-                                  and not it['notificacion_invima_at']),
-        'en_recoleccion': sum(1 for it in items if it['estado'] == 'en_recoleccion'),
-        'cerrados_30d': sum(1 for it in items
-                              if it['estado']=='cerrado' and it.get('fecha_cierre')
-                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+        'total': kpi_row[0] or 0, 'sin_clasificar': kpi_row[1] or 0,
+        'clase_I_abiertos': kpi_row[2] or 0, 'invima_pendiente': kpi_row[3] or 0,
+        'en_recoleccion': kpi_row[4] or 0, 'cerrados_30d': kpi_row[5] or 0,
     }
     return jsonify({'items': items, 'kpis': kpis})
 
@@ -2365,6 +2469,12 @@ def recall_clasificar(rid):
           (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'clasificado', ?, 'clasificado', ?, ?)
     """, (rid, estado_ant, user, f'{clase} · alcance {alcance}: {just[:200]}'))
+    # Audit log INVIMA · clasificación regulatoria
+    _audit_log(c, usuario=user, accion='RECALL_CLASIFICAR', tabla='recalls',
+               registro_id=row[1] or rid,
+               antes={'estado': estado_ant, 'clase_recall': None},
+               despues={'clase_recall': clase, 'alcance_geografico': alcance,
+                         'justificacion': just[:500]})
     conn.commit()
     # Si Clase I → notificar INVIMA es URGENTE (24h)
     if clase == 'clase_I':
@@ -2409,6 +2519,10 @@ def recall_notificar_invima(rid):
           (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'invima_notificado', ?, 'invima_notificado', ?, ?)
     """, (rid, estado_ant, user, f'INVIMA notificado · ref: {ref[:100]}'))
+    # Audit log INVIMA · regulatorio crítico (Resolución 2214/2021)
+    _audit_log(c, usuario=user, accion='RECALL_NOTIFICAR_INVIMA', tabla='recalls',
+               registro_id=row[1] or rid,
+               despues={'referencia': ref[:200]})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -2424,7 +2538,7 @@ def recall_notificar_distribuidores(rid):
     if len(distribuidores) < 5:
         return jsonify({'error': 'distribuidores_notificados requerido (lista o descripción)'}), 400
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado FROM recalls WHERE id=?", (rid,)).fetchone()
+    row = c.execute("SELECT estado, codigo FROM recalls WHERE id=?", (rid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     estado_ant = row[0]
     if estado_ant not in ('invima_notificado','distribuidores_notificados','en_recoleccion'):
@@ -2443,6 +2557,9 @@ def recall_notificar_distribuidores(rid):
           (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'distribuidores_notificados', ?, 'distribuidores_notificados', ?, ?)
     """, (rid, estado_ant, user, distribuidores[:200]))
+    _audit_log(c, usuario=user, accion='RECALL_NOTIFICAR_DIST', tabla='recalls',
+               registro_id=row[1] or rid,
+               despues={'distribuidores': distribuidores[:500]})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -2537,17 +2654,12 @@ def recall_cerrar(rid):
         VALUES (?, 'cerrado', ?, 'cerrado', ?, ?)
     """, (rid, estado_ant, user,
           f'Cerrado · {disposicion}' + (f' · efectividad {efectividad}%' if efectividad is not None else '')))
-    try:
-        import json as _json
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, registro_id, despues)
-            VALUES (?, 'CERRAR_RECALL', ?, ?)
-        """, (user, row[1] or str(rid),
-              _json.dumps({'disposicion': disposicion,
-                            'efectividad_porcentaje': efectividad,
-                            'descripcion': disp_desc[:500]})))
-    except Exception:
-        pass
+    _audit_log(c, usuario=user, accion='CERRAR_RECALL', tabla='recalls',
+               registro_id=row[1] or rid,
+               antes={'estado': estado_ant},
+               despues={'disposicion': disposicion,
+                         'efectividad_porcentaje': efectividad,
+                         'descripcion': disp_desc[:500]})
     conn.commit()
     return jsonify({'ok': True})
 

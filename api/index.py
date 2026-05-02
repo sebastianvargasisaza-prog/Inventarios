@@ -9,6 +9,45 @@ import time as _time_module
 # útil para dev local y tests donde no queremos generar ruido.
 _sentry_dsn = os.environ.get("SENTRY_DSN", "").strip()
 if _sentry_dsn and not os.environ.get("PYTEST_CURRENT_TEST"):
+    # Filtros PII y ruido (definidos antes del init para usarlos como callback)
+    _PII_KEYS = {'cliente_nombre','cliente_contacto','cliente_email','email',
+                  'telefono','phone','nit','password','secret','token','api_key',
+                  'firma_hash','referencia','radicado'}
+
+    def _scrub_pii(obj, depth=0):
+        """Reemplaza valores de claves PII por '<redacted>' en cualquier nivel."""
+        if depth > 6 or obj is None:
+            return obj
+        if isinstance(obj, dict):
+            return {k: ('<redacted>' if str(k).lower() in _PII_KEYS else _scrub_pii(v, depth+1))
+                       for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(_scrub_pii(v, depth+1) for v in obj)
+        return obj
+
+    def _sentry_before_send(event, hint):
+        # No enviar 4xx (auth fails, validation errors) — son user error, no bug.
+        try:
+            extra = (event.get('extra') or {})
+            req = (event.get('request') or {})
+            status = extra.get('status_code')
+            if isinstance(status, int) and 400 <= status < 500:
+                return None
+            # Filtrar PII de extras, contexts y breadcrumbs
+            if 'extra' in event: event['extra'] = _scrub_pii(event['extra'])
+            if 'contexts' in event: event['contexts'] = _scrub_pii(event['contexts'])
+            if 'breadcrumbs' in event:
+                bs = event['breadcrumbs']
+                if isinstance(bs, dict) and 'values' in bs:
+                    bs['values'] = [_scrub_pii(b) for b in bs['values']]
+            # Quitar query strings con credenciales del request URL
+            url = (req.get('url') or '')
+            if 'password=' in url or 'token=' in url:
+                event['request']['url'] = url.split('?')[0] + '?<redacted>'
+        except Exception:
+            pass  # nunca romper el envío por nuestro propio filtro
+        return event
+
     try:
         import sentry_sdk
         from sentry_sdk.integrations.flask import FlaskIntegration
@@ -23,7 +62,8 @@ if _sentry_dsn and not os.environ.get("PYTEST_CURRENT_TEST"):
             environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
             # No enviar PII automáticamente (passwords, headers de auth).
             send_default_pii=False,
-            # Filtrar antes de enviar — útil para excluir endpoints ruidosos.
+            # Filtrar antes de enviar: PII (clientes) + ruido (4xx).
+            before_send=_sentry_before_send,
             release=os.environ.get("RENDER_GIT_COMMIT", "unknown"),
         )
     except ImportError:

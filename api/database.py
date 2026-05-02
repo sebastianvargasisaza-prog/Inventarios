@@ -3335,6 +3335,35 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (91, "Audit log regulatorio: agregar columnas antes/despues + indexes", [
+        # Sebastián 2-may-2026: los inserts en aseguramiento.py usaban
+        # columnas `antes` y `despues` que no existían en audit_log
+        # (creado en init_db() con schema mínimo). Como estaban envueltos
+        # en `try: except: pass`, INVIMA tiene cero trazabilidad de cierres
+        # regulatorios desde el commit 60e399f. Esta migración cierra el gap.
+
+        # Agregar columnas SIN romper inserts existentes
+        "ALTER TABLE audit_log ADD COLUMN antes TEXT",
+        "ALTER TABLE audit_log ADD COLUMN despues TEXT",
+
+        # Indexes para búsqueda rápida en auditoría INVIMA
+        "CREATE INDEX IF NOT EXISTS idx_audit_accion ON audit_log(accion, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_registro ON audit_log(registro_id, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_usuario ON audit_log(usuario, fecha DESC)",
+
+        # Backfill: si hay timestamps viejos en formato no ISO, no tocamos
+        # (el campo `fecha` es TEXT). Las nuevas filas usarán datetime('now').
+    ]),
+    (92, "Aseguramiento: indexes de performance para mis-tareas (4 columnas frecuentes)", [
+        # Sebastián 2-may-2026: auditoría detectó que mis-tareas hace
+        # full-scan en columnas de "creado_por" porque no había index.
+        # Con 1k-10k rows, esto pasaba de 1ms a 50-100ms por columna.
+        "CREATE INDEX IF NOT EXISTS idx_desv_detectado ON desviaciones(detectado_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_solicitante ON control_cambios(solicitado_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_responsable ON control_cambios(responsable_implementacion, estado) WHERE responsable_implementacion IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_qc_recibido ON quejas_clientes(recibido_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_iniciado ON recalls(iniciado_por, estado)",
+    ]),
     (90, "Aseguramiento: tabla recalls (ASG-PRO-004) retiro producto del mercado", [
         # Sebastián 2-may-2026: workflow de recall según ASG-PRO-004 + Resolución
         # 2214/2021 INVIMA. Cuando se descubre un defecto que pone en riesgo al
