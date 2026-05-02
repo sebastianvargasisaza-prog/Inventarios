@@ -579,6 +579,8 @@ JOBS_SCHEDULE = [
     ('auto_sc_urgente_lun',  12,  0, [0],  None,                'job_auto_sc_urgente'),
     # ⭐ Calidad · L-V 12:00 · alerta si falta registro sistema agua hoy (COC-PRO-008)
     ('agua_recordatorio',    12,  0, [0,1,2,3,4], None,         'job_agua_recordatorio'),
+    # ⭐ Calidad · diario 7:30 · alerta equipos próximos a vencer + vencidos (COC-PRO-012)
+    ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
 ]
 
 
@@ -1342,6 +1344,88 @@ def job_agua_recordatorio(app):
             log.warning('agua_recordatorio push_notif fallo: %s', e)
         return True, {'mensaje': 'Alerta enviada · falta registro de agua hoy',
                        'destinatarios': 6}, 0
+
+
+def job_equipos_vencimientos(app):
+    """COC-PRO-012 · Diario 7:30 · alerta equipos vencidos + próximos 30d.
+
+    Sebastián 1-may-2026: el sistema audita los 104 equipos del listado
+    maestro vs eventos_planta y notifica a Calidad de:
+    - Equipos VENCIDOS (calibración expirada) → bloqueo operativo
+    - Equipos próximos a vencer en ≤30d → planear calibración
+
+    Idempotente: si no hay vencidos ni próximos, no notifica.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            # Equipos con fecha_proxima vencida o próxima 30d
+            rows = c.execute("""
+                SELECT ep.codigo, ep.nombre, ep.area_codigo,
+                       MAX(ee.fecha_proxima) as fecha_proxima
+                FROM equipos_planta ep
+                LEFT JOIN equipos_eventos ee
+                  ON ee.equipo_codigo = ep.codigo
+                  AND ee.tipo_evento IN ('calibracion','verificacion_semestral')
+                  AND ee.fecha_proxima IS NOT NULL
+                WHERE COALESCE(ep.activo,1) = 1
+                GROUP BY ep.codigo
+                HAVING fecha_proxima IS NOT NULL
+                  AND date(fecha_proxima) <= date('now', '+30 days')
+                ORDER BY fecha_proxima ASC
+                LIMIT 100
+            """).fetchall()
+        except Exception as e:
+            log.warning('equipos_vencimientos read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        from datetime import date as _date
+        hoy = _date.today()
+        vencidos = []
+        proximos = []
+        for cod, nom, area, prox in rows:
+            try:
+                f = _date.fromisoformat(prox)
+                dias = (f - hoy).days
+            except Exception:
+                continue
+            entry = {'codigo': cod, 'nombre': nom or '', 'area': area or '', 'dias': dias}
+            if dias < 0:
+                vencidos.append(entry)
+            else:
+                proximos.append(entry)
+
+        if not vencidos and not proximos:
+            return True, {'mensaje': 'Sin equipos vencidos ni próximos · sin alerta'}, 0
+
+        # Notificar a Calidad si hay vencidos (urgente) o muchos próximos
+        if vencidos or len(proximos) >= 3:
+            try:
+                from blueprints.notif import push_notif_multi
+                destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                                 'laura','miguel','yuliel','sebastian']
+                titulo = (f'⛔ {len(vencidos)} equipos VENCIDOS · {len(proximos)} próximos 30d'
+                          if vencidos else
+                          f'⏰ {len(proximos)} equipos próximos a vencer (30d)')
+                cuerpo_lines = []
+                for v in vencidos[:5]:
+                    cuerpo_lines.append(f'⛔ {v["codigo"]} · vence hace {abs(v["dias"])}d')
+                for p in proximos[:5]:
+                    cuerpo_lines.append(f'⏰ {p["codigo"]} · vence en {p["dias"]}d')
+                push_notif_multi(
+                    destinatarios, 'capa', titulo,
+                    body='\n'.join(cuerpo_lines),
+                    link='/calidad', remitente='cron-equipos',
+                    importante=bool(vencidos),
+                )
+            except Exception as e:
+                log.warning('equipos_vencimientos push_notif fallo: %s', e)
+
+        return True, {
+            'vencidos': len(vencidos),
+            'proximos_30d': len(proximos),
+        }, 0
 
 
 def job_auto_sc_urgente(app):

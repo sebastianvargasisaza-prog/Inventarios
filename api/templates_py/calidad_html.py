@@ -134,6 +134,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
   <div class="tab" onclick="goTab('tab-micro')">&#x1F9EB; Micro &amp; Heatmap</div>
   <div class="tab" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
+  <div class="tab" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
   <div class="tab" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
 </div>
 <div class="main">
@@ -367,6 +368,139 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
+<!-- EQUIPOS Y CALIBRACIONES · COC-PRO-006 + COC-PRO-012 + PRD-PRO-004 -->
+<div id="tab-equipos" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div>
+      <div class="card-title" style="margin:0">&#x1F527; Equipos &amp; Calibraciones</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px">104 equipos del listado maestro · cronograma 2026 PRD-PRO-004 · hoja de vida por equipo</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="loadEquiposCompleto()">&#x21BB; Refrescar</button>
+    </div>
+  </div>
+
+  <!-- KPIs estado equipos -->
+  <div id="eq-kpis" class="kpi-row" style="margin-bottom:14px">
+    <div class="kpi"><div class="kpi-label">Activos</div><div class="kpi-val" id="eq-kpi-total">—</div></div>
+    <div class="kpi"><div class="kpi-label">Vigentes</div><div class="kpi-val good" id="eq-kpi-vig">—</div></div>
+    <div class="kpi"><div class="kpi-label">Próximos 30d</div><div class="kpi-val warn" id="eq-kpi-prox">—</div></div>
+    <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="eq-kpi-venc">—</div></div>
+    <div class="kpi"><div class="kpi-label">Sin tracking</div><div class="kpi-val" id="eq-kpi-sin">—</div></div>
+  </div>
+
+  <!-- Card 1: Vencidos (rojos arriba) -->
+  <div class="card" style="margin-bottom:14px;border-left:4px solid #ef4444">
+    <div class="card-title">&#x26A0;&#xFE0F; Vencidos · BLOQUEADOS</div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">Estos equipos NO se pueden usar hasta registrar una calibración nueva.</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Equipo</th><th>Área</th><th>Tipo</th><th>Vencido hace</th><th>Última calibración</th><th>Acción</th></tr></thead>
+        <tbody id="eq-venc-tbody"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Card 2: Próximos 30d -->
+  <div class="card" style="margin-bottom:14px;border-left:4px solid #fbbf24">
+    <div class="card-title">&#x23F0; Próximos 30 días</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Equipo</th><th>Área</th><th>Vence en</th><th>Fecha próxima</th><th>Acción</th></tr></thead>
+        <tbody id="eq-prox-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Card 3: Cronograma del mes -->
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">&#x1F4C5; Cronograma del mes (PRD-PRO-004)</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <select id="eq-cron-mes" onchange="loadEquiposCronograma()" style="padding:4px 8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px">
+          <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+        <span id="eq-cron-resumen" style="color:#94a3b8"></span>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Equipo</th><th>Tipo</th><th>Estado</th><th>Completado</th><th>Acción</th></tr></thead>
+        <tbody id="eq-cron-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Card 4: Sin tracking -->
+  <div class="card">
+    <div class="card-title" style="color:#64748b">Sin tracking de calibración (no urgente)</div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">Equipos del listado maestro sin ningún evento registrado todavía.</div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Equipo</th><th>Área</th><th>Tipo</th><th>Acción</th></tr></thead>
+        <tbody id="eq-sin-tbody"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: hoja de vida del equipo -->
+<div class="modal-overlay" id="m-eq-hv">
+  <div class="modal" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('m-eq-hv')">&times;</button>
+    <div class="modal-title" id="m-eq-hv-title">Hoja de vida</div>
+    <div id="m-eq-hv-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
+<!-- Modal: registrar evento -->
+<div class="modal-overlay" id="m-eq-ev">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-eq-ev')">&times;</button>
+    <div class="modal-title" id="m-eq-ev-title">Registrar evento</div>
+    <input type="hidden" id="m-eq-ev-codigo">
+    <div class="form-group"><label>Tipo de evento *</label>
+      <select id="m-eq-ev-tipo">
+        <option value="calibracion">Calibración (externa ONAC)</option>
+        <option value="verificacion_diaria">Verificación diaria</option>
+        <option value="verificacion_semestral">Verificación semestral</option>
+        <option value="mantenimiento_preventivo">Mantenimiento preventivo</option>
+        <option value="mantenimiento_correctivo">Mantenimiento correctivo</option>
+        <option value="reparacion">Reparación</option>
+        <option value="validacion">Validación (IQ/OQ/PQ)</option>
+        <option value="reactivacion">Reactivación post-mantenimiento</option>
+        <option value="baja">Baja del equipo</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Fecha</label><input id="m-eq-ev-fecha" type="date"></div>
+      <div class="form-group"><label>Próxima vence</label><input id="m-eq-ev-prox" type="date"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Responsable</label><input id="m-eq-ev-resp" placeholder="Quién ejecutó"></div>
+      <div class="form-group"><label>Empresa externa</label><input id="m-eq-ev-emp" placeholder="(si aplica) ONAC, etc."></div>
+    </div>
+    <div class="form-group"><label>Resultado</label>
+      <select id="m-eq-ev-res">
+        <option value="aprobado">Aprobado · dentro de tolerancia</option>
+        <option value="rechazado">Rechazado · fuera de tolerancia</option>
+        <option value="con_observaciones">Con observaciones</option>
+        <option value="">(sin resultado)</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Certificado URL</label><input id="m-eq-ev-cert" placeholder="opcional"></div>
+    <div class="form-group"><label>Observaciones</label><textarea id="m-eq-ev-obs" style="min-height:60px"></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-eq-ev')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEventoEquipo()">Registrar</button>
+    </div>
+    <div id="m-eq-ev-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
 <!-- OOS -->
 <div id="tab-oos" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
@@ -498,7 +632,7 @@ function fmtH(s){return s?s.substring(0,5):'â';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds=['tab-bandeja','tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-oos'];
+var _tabIds=['tab-bandeja','tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -511,7 +645,209 @@ function goTab(id){
   else if(id==='tab-cal') loadCal();
   else if(id==='tab-micro') loadMicroHeatmap();
   else if(id==='tab-agua') loadAguaRegistros();
+  else if(id==='tab-equipos') loadEquiposCompleto();
   else if(id==='tab-oos') loadOOS();
+}
+
+// === EQUIPOS Y CALIBRACIONES (COC-PRO-006/012 + PRD-PRO-004) ===========
+async function loadEquiposCompleto(){
+  // Setear mes actual en el dropdown
+  var mesEl = document.getElementById('eq-cron-mes');
+  if(mesEl && !mesEl.value){ mesEl.value = (new Date().getMonth() + 1); }
+  await Promise.all([loadEquiposDashboard(), loadEquiposCronograma()]);
+}
+
+async function loadEquiposDashboard(){
+  try{
+    var r = await fetch('/api/calidad/equipos/dashboard');
+    if(!r.ok){ console.error('equipos dashboard fallo', r.status); return; }
+    var d = await r.json();
+    var k = d.kpis || {};
+    document.getElementById('eq-kpi-total').textContent = k.total_activos || 0;
+    document.getElementById('eq-kpi-vig').textContent = k.vigentes || 0;
+    document.getElementById('eq-kpi-prox').textContent = k.proximos_30d || 0;
+    document.getElementById('eq-kpi-venc').textContent = k.vencidos || 0;
+    document.getElementById('eq-kpi-sin').textContent = k.sin_tracking || 0;
+
+    // Vencidos
+    var vencTb = document.getElementById('eq-venc-tbody');
+    if((d.vencidos||[]).length === 0){
+      vencTb.innerHTML = '<tr><td colspan="7" class="empty" style="color:#15803d">&#x2705; Sin equipos vencidos</td></tr>';
+    } else {
+      vencTb.innerHTML = d.vencidos.map(function(it){
+        return '<tr style="background:#fef2f2">'
+          +'<td><b><code>'+_escBan(it.codigo)+'</code></b></td>'
+          +'<td>'+_escBan(it.nombre||'')+'</td>'
+          +'<td>'+_escBan(it.area||'')+'</td>'
+          +'<td>'+_escBan(it.tipo||'')+'</td>'
+          +'<td style="color:#ef4444;font-weight:700">+'+(it.dias_vencido||0)+'d</td>'
+          +'<td>'+_escBan(it.ultima_calibracion||'—')+'</td>'
+          +'<td><button class="btn btn-primary btn-sm" onclick="abrirEventoEquipo(\''+_escBan(it.codigo)+'\',\''+_escBan(it.nombre||'')+'\')">+ Calibrar</button> '
+          +'<button class="btn btn-ghost btn-sm" onclick="abrirHojaVidaEquipo(\''+_escBan(it.codigo)+'\')">Hoja vida</button></td>'
+          +'</tr>';
+      }).join('');
+    }
+
+    // Próximos 30d
+    var proxTb = document.getElementById('eq-prox-tbody');
+    if((d.proximos_30d||[]).length === 0){
+      proxTb.innerHTML = '<tr><td colspan="6" class="empty">Sin equipos próximos a vencer</td></tr>';
+    } else {
+      proxTb.innerHTML = d.proximos_30d.map(function(it){
+        return '<tr>'
+          +'<td><b><code>'+_escBan(it.codigo)+'</code></b></td>'
+          +'<td>'+_escBan(it.nombre||'')+'</td>'
+          +'<td>'+_escBan(it.area||'')+'</td>'
+          +'<td style="color:#fbbf24;font-weight:600">'+(it.dias_para_vencer||0)+'d</td>'
+          +'<td>'+_escBan(it.fecha_proxima||'—')+'</td>'
+          +'<td><button class="btn btn-primary btn-sm" onclick="abrirEventoEquipo(\''+_escBan(it.codigo)+'\',\''+_escBan(it.nombre||'')+'\')">+ Calibrar</button></td>'
+          +'</tr>';
+      }).join('');
+    }
+
+    // Sin tracking
+    var sinTb = document.getElementById('eq-sin-tbody');
+    if((d.sin_tracking||[]).length === 0){
+      sinTb.innerHTML = '<tr><td colspan="5" class="empty">Todos los equipos tienen tracking &#x2705;</td></tr>';
+    } else {
+      sinTb.innerHTML = d.sin_tracking.slice(0, 30).map(function(it){
+        return '<tr>'
+          +'<td><b><code>'+_escBan(it.codigo)+'</code></b></td>'
+          +'<td>'+_escBan(it.nombre||'')+'</td>'
+          +'<td>'+_escBan(it.area||'')+'</td>'
+          +'<td>'+_escBan(it.tipo||'')+'</td>'
+          +'<td><button class="btn btn-ghost btn-sm" onclick="abrirEventoEquipo(\''+_escBan(it.codigo)+'\',\''+_escBan(it.nombre||'')+'\')">+ Iniciar tracking</button></td>'
+          +'</tr>';
+      }).join('');
+    }
+  }catch(e){ console.error('loadEquiposDashboard error:', e); }
+}
+
+async function loadEquiposCronograma(){
+  var mesEl = document.getElementById('eq-cron-mes');
+  var mes = mesEl ? mesEl.value : (new Date().getMonth() + 1);
+  var tb = document.getElementById('eq-cron-tbody');
+  var resumen = document.getElementById('eq-cron-resumen');
+  try{
+    var r = await fetch('/api/calidad/equipos/cronograma?mes='+mes);
+    var d = await r.json();
+    var k = d.kpis || {};
+    if(resumen) resumen.textContent = (k.completados||0)+'/'+(k.total||0)+' completados ('+(k.cumplimiento_pct!=null?k.cumplimiento_pct+'%':'—')+')';
+    if(!d.items || d.items.length === 0){
+      tb.innerHTML = '<tr><td colspan="6" class="empty">Sin items programados este mes</td></tr>';
+      return;
+    }
+    tb.innerHTML = d.items.map(function(it){
+      var col = it.estado === 'completado' ? '#15803d' : (it.estado === 'reprogramado' ? '#fbbf24' : '#64748b');
+      var btn = it.estado === 'completado'
+        ? '<span style="color:#15803d;font-size:0.85em">&#x2713; '+_escBan(it.fecha_completado||'')+'</span>'
+        : '<button class="btn btn-primary btn-sm" onclick="completarCronogramaEq('+it.id+')">Completar</button>';
+      return '<tr>'
+        +'<td><b><code>'+_escBan(it.equipo_codigo)+'</code></b></td>'
+        +'<td>'+_escBan(it.equipo_nombre||'')+'</td>'
+        +'<td><span style="text-transform:uppercase;font-weight:600;font-size:0.78em">'+_escBan(it.tipo_actividad)+'</span></td>'
+        +'<td><span style="color:'+col+';font-weight:600">'+_escBan(it.estado)+'</span></td>'
+        +'<td>'+_escBan(it.completado_por||'—')+'</td>'
+        +'<td>'+btn+'</td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ tb.innerHTML = '<tr><td colspan="6" class="empty" style="color:#c00">Error: '+_escBan(e.message||String(e))+'</td></tr>'; }
+}
+
+function abrirEventoEquipo(codigo, nombre){
+  document.getElementById('m-eq-ev-codigo').value = codigo;
+  document.getElementById('m-eq-ev-title').textContent = 'Registrar evento · '+codigo+(nombre ? ' · '+nombre : '');
+  document.getElementById('m-eq-ev-fecha').value = new Date().toISOString().slice(0,10);
+  ['m-eq-ev-prox','m-eq-ev-resp','m-eq-ev-emp','m-eq-ev-cert','m-eq-ev-obs','m-eq-ev-msg'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('m-eq-ev-msg').innerHTML = '';
+  openModal('m-eq-ev');
+}
+
+async function guardarEventoEquipo(){
+  var codigo = document.getElementById('m-eq-ev-codigo').value;
+  var msg = document.getElementById('m-eq-ev-msg');
+  var body = {
+    tipo_evento: document.getElementById('m-eq-ev-tipo').value,
+    fecha: document.getElementById('m-eq-ev-fecha').value || null,
+    fecha_proxima: document.getElementById('m-eq-ev-prox').value || null,
+    responsable: document.getElementById('m-eq-ev-resp').value || null,
+    empresa_externa: document.getElementById('m-eq-ev-emp').value || null,
+    certificado_url: document.getElementById('m-eq-ev-cert').value || null,
+    resultado: document.getElementById('m-eq-ev-res').value || null,
+    observaciones: document.getElementById('m-eq-ev-obs').value || null,
+  };
+  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  try{
+    var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(codigo)+'/registrar-evento', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if(d.ok){
+      msg.innerHTML = '<span style="color:#15803d;font-weight:600">&#x2705; Evento #'+d.evento_id+' registrado</span>';
+      setTimeout(function(){ closeModal('m-eq-ev'); loadEquiposCompleto(); }, 800);
+    } else {
+      msg.innerHTML = '<span style="color:#ef4444">Error: '+_escBan(d.error||'?')+'</span>';
+    }
+  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_escBan(e.message||String(e))+'</span>'; }
+}
+
+async function completarCronogramaEq(cronId){
+  var obs = prompt('Observaciones (opcional):');
+  if(obs === null) return;
+  try{
+    var r = await fetch('/api/calidad/equipos/cronograma/'+cronId+'/completar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({observaciones: obs}),
+    });
+    var d = await r.json();
+    if(d.ok){ loadEquiposCronograma(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+async function abrirHojaVidaEquipo(codigo){
+  var body = document.getElementById('m-eq-hv-body');
+  document.getElementById('m-eq-hv-title').textContent = 'Hoja de vida · '+codigo;
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-eq-hv');
+  try{
+    var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(codigo)+'/hoja-vida');
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_escBan(d.error||'?')+'</p>'; return; }
+    var eq = d.equipo;
+    var html = '<div class="card" style="background:#0f172a;color:#f1f5f9;margin-bottom:10px">'
+      +'<div style="font-size:0.78em;color:#94a3b8">'+_escBan(eq.codigo)+'</div>'
+      +'<div style="font-size:1.2em;font-weight:700">'+_escBan(eq.nombre||'')+'</div>'
+      +'<div style="font-size:0.85em;color:#cbd5e1;margin-top:4px">'
+      +_escBan(eq.tipo||'')+' · '+_escBan(eq.area||'')+' · '+_escBan(eq.ubicacion||'')
+      +(eq.capacidad_raw ? ' · capacidad: '+_escBan(eq.capacidad_raw) : '')
+      +'</div>'
+      +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Estado: <b>'+_escBan(eq.estado_operacional||'?')+'</b> · Activo: '+(eq.activo?'sí':'no')+'</div>'
+      +'</div>';
+    html += '<div class="card-title" style="margin-top:10px">Eventos ('+(d.eventos||[]).length+')</div>';
+    if(!d.eventos || d.eventos.length === 0){
+      html += '<p class="empty">Sin eventos registrados</p>';
+    } else {
+      html += '<table style="font-size:0.85em"><thead><tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th>Próxima</th><th>Responsable</th><th>Resultado</th></tr></thead><tbody>';
+      d.eventos.forEach(function(ev){
+        var col = ev.resultado === 'aprobado' ? '#15803d' : (ev.resultado === 'rechazado' ? '#ef4444' : '#64748b');
+        html += '<tr>'
+          +'<td>'+_escBan(ev.fecha||'')+'</td>'
+          +'<td><b>'+_escBan(ev.tipo_evento||'')+'</b></td>'
+          +'<td>'+_escBan(ev.estado||'')+'</td>'
+          +'<td>'+_escBan(ev.fecha_proxima||'—')+'</td>'
+          +'<td>'+_escBan(ev.responsable||'')+(ev.empresa_externa ? ' ('+_escBan(ev.empresa_externa)+')' : '')+'</td>'
+          +'<td><span style="color:'+col+'">'+_escBan(ev.resultado||'—')+'</span></td>'
+          +'</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '<div style="margin-top:10px;text-align:right"><button class="btn btn-primary" onclick="closeModal(\'m-eq-hv\');abrirEventoEquipo(\''+_escBan(eq.codigo)+'\',\''+_escBan(eq.nombre||'')+'\')">+ Nuevo evento</button></div>';
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_escBan(e.message||String(e))+'</p>'; }
 }
 
 // === BANDEJA QC DEL DIA · centro de mando ==============================

@@ -1537,3 +1537,387 @@ def calidad_oos_update(oos_id):
     c.execute(f"UPDATE calidad_oos SET {', '.join(sets)} WHERE id=?", params)
     conn.commit()
     return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# EQUIPOS Y CALIBRACIONES · COC-PRO-006 + COC-PRO-012 + PRD-PRO-004
+# Sebastián 1-may-2026: integra los 104 equipos del seed con tracking de
+# vigencia, hoja de vida y cronograma 2026 importado del xlsx oficial.
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/api/calidad/equipos/dashboard', methods=['GET'])
+def calidad_equipos_dashboard():
+    """KPIs + lista de equipos vencidos/próximos. Pantalla principal del módulo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    # Total equipos activos
+    total_activos = c.execute(
+        "SELECT COUNT(DISTINCT codigo) FROM equipos_planta WHERE COALESCE(activo,1)=1"
+    ).fetchone()[0] or 0
+
+    # Por equipo, calcular última fecha_proxima del último evento de calibración o verificación
+    # Si no hay evento, queda como "sin tracking"
+    rows = c.execute("""
+        SELECT ep.codigo, ep.nombre, ep.area_codigo, ep.ubicacion_raw, ep.tipo,
+               (SELECT MAX(fecha_proxima) FROM equipos_eventos
+                WHERE equipo_codigo = ep.codigo
+                  AND tipo_evento IN ('calibracion','verificacion_semestral')
+                  AND fecha_proxima IS NOT NULL) as fecha_proxima_cal,
+               (SELECT MAX(fecha) FROM equipos_eventos
+                WHERE equipo_codigo = ep.codigo
+                  AND tipo_evento = 'calibracion') as ultima_cal
+        FROM equipos_planta ep
+        WHERE COALESCE(ep.activo,1) = 1
+        GROUP BY ep.codigo
+        ORDER BY ep.codigo
+    """).fetchall()
+
+    vencidos = []
+    proximos_30d = []
+    sin_tracking = []
+    vigentes = 0
+    for cod, nom, area, ubic, tipo, prox, ult in rows:
+        if not prox:
+            sin_tracking.append({
+                'codigo': cod, 'nombre': nom, 'area': area,
+                'ubicacion': ubic, 'tipo': tipo,
+                'ultima_calibracion': ult,
+            })
+            continue
+        # Calcular días
+        try:
+            from datetime import date as _date
+            f_prox = _date.fromisoformat(prox)
+            dias = (f_prox - _date.today()).days
+        except Exception:
+            sin_tracking.append({'codigo': cod, 'nombre': nom, 'tipo': tipo})
+            continue
+        item = {
+            'codigo': cod, 'nombre': nom, 'area': area,
+            'ubicacion': ubic, 'tipo': tipo,
+            'fecha_proxima': prox, 'ultima_calibracion': ult,
+            'dias_para_vencer': dias,
+        }
+        if dias < 0:
+            item['dias_vencido'] = abs(dias)
+            vencidos.append(item)
+        elif dias <= 30:
+            proximos_30d.append(item)
+        else:
+            vigentes += 1
+    vencidos.sort(key=lambda x: x['dias_vencido'], reverse=True)
+    proximos_30d.sort(key=lambda x: x['dias_para_vencer'])
+
+    return jsonify({
+        'kpis': {
+            'total_activos': total_activos,
+            'vigentes': vigentes,
+            'proximos_30d': len(proximos_30d),
+            'vencidos': len(vencidos),
+            'sin_tracking': len(sin_tracking),
+        },
+        'vencidos': vencidos[:50],
+        'proximos_30d': proximos_30d[:50],
+        'sin_tracking': sin_tracking[:50],
+    })
+
+
+@bp.route('/api/calidad/equipos/cronograma', methods=['GET'])
+def calidad_equipos_cronograma():
+    """Cronograma del mes (default mes actual). Querystring: ?mes=N&anio=YYYY."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import date as _date
+    hoy = _date.today()
+    try:
+        mes = int(request.args.get('mes', hoy.month))
+        anio = int(request.args.get('anio', hoy.year))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'mes y anio deben ser enteros'}), 400
+    if not (1 <= mes <= 12):
+        return jsonify({'error': 'mes fuera de rango'}), 400
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT cron.id, cron.equipo_codigo, ep.nombre, ep.area_codigo,
+               cron.tipo_actividad, cron.estado, cron.fecha_completado,
+               cron.completado_por, cron.observaciones
+        FROM equipos_cronograma cron
+        LEFT JOIN equipos_planta ep ON ep.codigo = cron.equipo_codigo
+        WHERE cron.anio = ? AND cron.mes = ?
+        ORDER BY cron.tipo_actividad, cron.equipo_codigo
+        LIMIT 500
+    """, (anio, mes)).fetchall()
+    items = [{
+        'id': r[0], 'equipo_codigo': r[1], 'equipo_nombre': r[2] or '',
+        'area': r[3] or '', 'tipo_actividad': r[4],
+        'estado': r[5], 'fecha_completado': r[6],
+        'completado_por': r[7], 'observaciones': r[8],
+    } for r in rows]
+    completados = sum(1 for i in items if i['estado'] == 'completado')
+    return jsonify({
+        'anio': anio, 'mes': mes,
+        'items': items,
+        'kpis': {
+            'total': len(items),
+            'completados': completados,
+            'pendientes': len(items) - completados,
+            'cumplimiento_pct': round(completados * 100 / len(items), 1) if items else None,
+        },
+    })
+
+
+@bp.route('/api/calidad/equipos/<path:codigo>/hoja-vida', methods=['GET'])
+def calidad_equipos_hoja_vida(codigo):
+    """Histórico completo del equipo: datos + todos los eventos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    eq = c.execute("""
+        SELECT codigo, nombre, area_codigo, ubicacion_raw, tipo,
+               capacidad_raw, capacidad_litros, capacidad_kg,
+               estado_operacional, activo, notas, creado_en
+        FROM equipos_planta
+        WHERE codigo = ?
+        LIMIT 1
+    """, (codigo,)).fetchone()
+    if not eq:
+        return jsonify({'error': f'equipo {codigo} no encontrado'}), 404
+    eventos = c.execute("""
+        SELECT id, tipo_evento, fecha, fecha_proxima, estado, responsable,
+               empresa_externa, certificado_url, resultado, observaciones, creado_por
+        FROM equipos_eventos
+        WHERE equipo_codigo = ?
+        ORDER BY fecha DESC, id DESC
+        LIMIT 200
+    """, (codigo,)).fetchall()
+    cronograma = c.execute("""
+        SELECT anio, mes, tipo_actividad, estado, fecha_completado
+        FROM equipos_cronograma
+        WHERE equipo_codigo = ?
+        ORDER BY anio DESC, mes DESC
+        LIMIT 50
+    """, (codigo,)).fetchall()
+    return jsonify({
+        'equipo': {
+            'codigo': eq[0], 'nombre': eq[1], 'area': eq[2],
+            'ubicacion': eq[3], 'tipo': eq[4],
+            'capacidad_raw': eq[5], 'capacidad_litros': eq[6], 'capacidad_kg': eq[7],
+            'estado_operacional': eq[8], 'activo': bool(eq[9]),
+            'notas': eq[10], 'creado_en': eq[11],
+        },
+        'eventos': [{
+            'id': r[0], 'tipo_evento': r[1], 'fecha': r[2],
+            'fecha_proxima': r[3], 'estado': r[4], 'responsable': r[5],
+            'empresa_externa': r[6], 'certificado_url': r[7],
+            'resultado': r[8], 'observaciones': r[9], 'creado_por': r[10],
+        } for r in eventos],
+        'cronograma': [{
+            'anio': r[0], 'mes': r[1], 'tipo_actividad': r[2],
+            'estado': r[3], 'fecha_completado': r[4],
+        } for r in cronograma],
+    })
+
+
+@bp.route('/api/calidad/equipos/<path:codigo>/registrar-evento', methods=['POST'])
+def calidad_equipos_registrar_evento(codigo):
+    """Registra un evento (calibración, verificación, mantenimiento, etc.) en hoja de vida.
+
+    Body: {
+      tipo_evento: str (req · uno de los CHECK constraint),
+      fecha_proxima: str opt (cuándo vence)
+      estado: str opt (default 'completado'),
+      responsable, empresa_externa, certificado_url, resultado, observaciones
+    }
+
+    RBAC: solo CALIDAD_USERS o ADMIN_USERS pueden registrar.
+    """
+    user = session.get('compras_user', '')
+    try:
+        from config import CALIDAD_USERS, ADMIN_USERS
+        autorizados = set(CALIDAD_USERS) | set(ADMIN_USERS)
+    except ImportError:
+        from config import ADMIN_USERS
+        autorizados = set(ADMIN_USERS)
+    if user not in autorizados:
+        return jsonify({'error': 'Solo Calidad o Admin pueden registrar eventos de equipos'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    eq = c.execute("SELECT 1 FROM equipos_planta WHERE codigo=?", (codigo,)).fetchone()
+    if not eq:
+        return jsonify({'error': f'equipo {codigo} no encontrado'}), 404
+
+    d = request.get_json(silent=True) or {}
+    tipo = (d.get('tipo_evento') or '').strip()
+    valid_tipos = ('calibracion','verificacion_diaria','verificacion_semestral',
+                    'mantenimiento_preventivo','mantenimiento_correctivo',
+                    'baja','reparacion','validacion','reactivacion')
+    if tipo not in valid_tipos:
+        return jsonify({'error': f'tipo_evento inválido. Uno de: {", ".join(valid_tipos)}'}), 400
+
+    fecha = (d.get('fecha') or datetime.now().date().isoformat()).strip()
+    fecha_proxima = (d.get('fecha_proxima') or '').strip() or None
+    estado = (d.get('estado') or 'completado').strip()
+    if estado not in ('completado','programado','en_curso','cancelado'):
+        return jsonify({'error': 'estado inválido'}), 400
+
+    try:
+        c.execute("""
+            INSERT INTO equipos_eventos
+              (equipo_codigo, tipo_evento, fecha, fecha_proxima, estado,
+               responsable, empresa_externa, certificado_url, resultado,
+               observaciones, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (codigo, tipo, fecha, fecha_proxima, estado,
+              d.get('responsable'), d.get('empresa_externa'),
+              d.get('certificado_url'), d.get('resultado'),
+              d.get('observaciones'), user))
+        evento_id = c.lastrowid
+        # Si es completado y reactiva, actualizar estado_operacional
+        if tipo in ('reactivacion','calibracion','verificacion_semestral') and estado == 'completado':
+            c.execute("UPDATE equipos_planta SET estado_operacional='operativo' "
+                      "WHERE codigo=? AND estado_operacional!='baja'", (codigo,))
+        elif tipo == 'baja':
+            c.execute("UPDATE equipos_planta SET estado_operacional='baja' "
+                      "WHERE codigo=?", (codigo,))
+        elif tipo in ('mantenimiento_correctivo','reparacion'):
+            c.execute("UPDATE equipos_planta SET estado_operacional='mantenimiento' "
+                      "WHERE codigo=? AND estado_operacional!='baja'", (codigo,))
+        # Audit log
+        try:
+            import json as _json
+            c.execute("""
+                INSERT INTO audit_log (usuario, accion, registro_id, despues)
+                VALUES (?, 'EQUIPOS_REGISTRAR_EVENTO', ?, ?)
+            """, (user, codigo, _json.dumps({
+                'tipo': tipo, 'fecha': fecha, 'fecha_proxima': fecha_proxima,
+                'estado': estado, 'evento_id': evento_id,
+            })))
+        except Exception as _e:
+            logging.getLogger('calidad').debug('audit equipos registrar fallo: %s', _e)
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'evento_id': evento_id})
+
+
+@bp.route('/api/calidad/equipos/cronograma/<int:cron_id>/completar', methods=['POST'])
+def calidad_equipos_cronograma_completar(cron_id):
+    """Marca un item del cronograma como completado y crea evento asociado.
+
+    Body opcional: {observaciones, responsable}
+    """
+    user = session.get('compras_user', '')
+    try:
+        from config import CALIDAD_USERS, ADMIN_USERS
+        autorizados = set(CALIDAD_USERS) | set(ADMIN_USERS)
+    except ImportError:
+        from config import ADMIN_USERS
+        autorizados = set(ADMIN_USERS)
+    if user not in autorizados:
+        return jsonify({'error': 'Solo Calidad o Admin'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""
+        SELECT equipo_codigo, anio, mes, tipo_actividad, estado
+        FROM equipos_cronograma WHERE id=?
+    """, (cron_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'cronograma no encontrado'}), 404
+    if row[4] == 'completado':
+        return jsonify({'error': 'ya está completado'}), 409
+
+    d = request.get_json(silent=True) or {}
+    obs = (d.get('observaciones') or '').strip()
+    resp = (d.get('responsable') or user).strip()
+    fecha_hoy = datetime.now().date().isoformat()
+
+    try:
+        # Mapear tipo_actividad → tipo_evento
+        tipo_map = {
+            'preventivo': 'mantenimiento_preventivo',
+            'correctivo': 'mantenimiento_correctivo',
+            'verificacion': 'verificacion_semestral',
+            'calibracion': 'calibracion',
+        }
+        tipo_evento = tipo_map.get(row[3], 'mantenimiento_preventivo')
+        c.execute("""
+            INSERT INTO equipos_eventos
+              (equipo_codigo, tipo_evento, fecha, estado, responsable,
+               observaciones, creado_por)
+            VALUES (?, ?, ?, 'completado', ?, ?, ?)
+        """, (row[0], tipo_evento, fecha_hoy, resp, obs or None, user))
+        evento_id = c.lastrowid
+        c.execute("""
+            UPDATE equipos_cronograma
+            SET estado='completado', fecha_completado=?, completado_por=?,
+                evento_id=?, observaciones=?
+            WHERE id=?
+        """, (fecha_hoy, user, evento_id, obs or None, cron_id))
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'evento_id': evento_id})
+
+
+@bp.route('/api/calidad/equipos/importar-cronograma', methods=['POST'])
+def calidad_equipos_importar_cronograma():
+    """Importa items del cronograma anual desde JSON. RBAC admin.
+
+    Body: {
+      anio: int (default 2026),
+      items: [{equipo_codigo, mes, tipo_actividad}, ...]
+    }
+    Idempotente · UNIQUE(equipo_codigo, anio, mes, tipo_actividad).
+    """
+    user = session.get('compras_user', '')
+    from config import ADMIN_USERS
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        anio = int(d.get('anio', 2026))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'anio inválido'}), 400
+    items = d.get('items') or []
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items debe ser lista no vacía'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    insertados = 0
+    saltados = 0
+    errores = []
+    for it in items[:5000]:  # límite anti-bomb
+        try:
+            eq = (it.get('equipo_codigo') or '').strip()
+            mes = int(it.get('mes', 0))
+            tipo = (it.get('tipo_actividad') or '').strip()
+            if not eq or not (1 <= mes <= 12):
+                errores.append(f'invalid: {it}')
+                continue
+            if tipo not in ('preventivo','correctivo','verificacion','calibracion'):
+                errores.append(f'tipo invalido: {it}')
+                continue
+            r = c.execute("""
+                INSERT OR IGNORE INTO equipos_cronograma
+                  (equipo_codigo, anio, mes, tipo_actividad)
+                VALUES (?, ?, ?, ?)
+            """, (eq, anio, mes, tipo))
+            if r.rowcount > 0:
+                insertados += 1
+            else:
+                saltados += 1
+        except Exception as e:
+            errores.append(f'{it}: {e}')
+    conn.commit()
+    return jsonify({
+        'ok': True, 'anio': anio,
+        'insertados': insertados,
+        'saltados_ya_existian': saltados,
+        'errores': errores[:20],
+    })

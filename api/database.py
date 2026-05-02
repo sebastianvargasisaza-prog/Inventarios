@@ -3335,6 +3335,62 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (85, "Calidad VIVA: equipos_eventos (hoja de vida) + equipos_cronograma (calendario 2026)", [
+        # Sebastián 1-may-2026: Calidad necesita VER cuándo vence cada equipo
+        # y BLOQUEAR si calibración expiró. La tabla `calibraciones_instrumentos`
+        # existente sirve para 5 instrumentos genéricos, pero los 104 equipos
+        # del seed (`equipos_planta`) no tienen tracking de calibración/
+        # mantenimiento. Esta migración agrega tracking por código de equipo
+        # del listado maestro real (BL-PRD-001, AG-PRD-001, etc.).
+
+        # Hoja de vida unificada por equipo: cada calibración, verificación,
+        # mantenimiento, baja, etc. queda registrado.
+        """CREATE TABLE IF NOT EXISTS equipos_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_codigo TEXT NOT NULL,
+            tipo_evento TEXT NOT NULL
+              CHECK(tipo_evento IN (
+                'calibracion','verificacion_diaria','verificacion_semestral',
+                'mantenimiento_preventivo','mantenimiento_correctivo',
+                'baja','reparacion','validacion','reactivacion'
+              )),
+            fecha TEXT NOT NULL DEFAULT (date('now')),
+            fecha_proxima TEXT,
+            estado TEXT NOT NULL DEFAULT 'completado'
+              CHECK(estado IN ('completado','programado','en_curso','cancelado')),
+            responsable TEXT,
+            empresa_externa TEXT,
+            certificado_url TEXT,
+            resultado TEXT,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_eq_ev_codigo ON equipos_eventos(equipo_codigo, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_eq_ev_proxima ON equipos_eventos(fecha_proxima)",
+        "CREATE INDEX IF NOT EXISTS idx_eq_ev_tipo ON equipos_eventos(tipo_evento, fecha DESC)",
+
+        # Cronograma anual: para cada (equipo, año, mes) qué tipo de actividad
+        # toca. Importado del xlsx PRD-PRO-004-C01 vía endpoint o seed manual.
+        """CREATE TABLE IF NOT EXISTS equipos_cronograma (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_codigo TEXT NOT NULL,
+            anio INTEGER NOT NULL DEFAULT 2026,
+            mes INTEGER NOT NULL CHECK(mes BETWEEN 1 AND 12),
+            tipo_actividad TEXT NOT NULL
+              CHECK(tipo_actividad IN ('preventivo','correctivo','verificacion','calibracion')),
+            estado TEXT NOT NULL DEFAULT 'programado'
+              CHECK(estado IN ('programado','completado','reprogramado','cancelado')),
+            fecha_completado TEXT,
+            completado_por TEXT,
+            evento_id INTEGER,
+            observaciones TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(equipo_codigo, anio, mes, tipo_actividad)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_eq_cron_mes ON equipos_cronograma(anio, mes, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_eq_cron_codigo ON equipos_cronograma(equipo_codigo, anio)",
+    ]),
     (84, "UNIQUE constraints contra duplicados de numero (OC/SOL/factura)", [
         # Sebastián 1-may-2026 round 3: race condition en MAX(numero)+1.
         # Si 2 requests concurrentes generan número, ambos pueden insertar el
