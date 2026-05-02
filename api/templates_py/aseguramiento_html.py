@@ -1047,6 +1047,14 @@ async function verDesviacion(id){
         +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
         +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
         +'</div>';
+      // Sugerir recall si crítica + efectividad NO OK + lotes en mercado
+      if(d.clasificacion === 'critica' && !d.efectividad_ok){
+        html += '<div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-top:10px">'
+          +'<div style="font-weight:700;color:#991b1b">🚨 CAPA NO efectivo en desviación crítica</div>'
+          +'<div style="font-size:0.85em;color:#991b1b;margin-top:4px">El producto/lote afectado podría seguir representando riesgo en el mercado. Considerar iniciar recall (Resolución 2214/2021).</div>'
+          +'<div style="margin-top:8px"><button class="btn btn-primary btn-sm" style="background:#ef4444;color:#fff" onclick="iniciarRecallDesdeDesv('+id+')">🚨 Iniciar recall desde esta desviación</button></div>'
+          +'</div>';
+      }
     } else if(d.capa_descripcion){
       html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
         +'<div><b>4. Cerrar con verificación</b></div>'
@@ -1111,9 +1119,49 @@ async function _postDesvAccion(id, accion, body){
   try{
     var r = await fetch('/api/aseguramiento/desviaciones/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     var d = await r.json();
-    if(d.ok){ verDesviacion(id); loadDesviaciones(); }
-    else alert('Error: '+(d.error||'?'));
+    if(d.ok){
+      // Cierre con efectividad NO OK en desv crítica → backend sugiere recall
+      if(accion === 'cerrar' && d.sugiere_recall){
+        if(confirm('⚠ CAPA NO efectivo en desviación crítica.\n\n¿Iniciar recall ahora con datos pre-rellenados?')){
+          _abrirRecallPrefill(d.recall_prefill || {});
+          loadDesviaciones();
+          return;
+        }
+      }
+      verDesviacion(id); loadDesviaciones();
+    } else { alert('Error: '+(d.error||'?')); }
   }catch(e){ alert('Error red: '+e.message); }
+}
+
+async function iniciarRecallDesdeDesv(desvId){
+  if(!confirm('Iniciar recall desde esta desviación. ¿Confirmas?')) return;
+  // Cargar la desv para extraer datos y pre-rellenar el modal de recall
+  try{
+    var r = await fetch('/api/aseguramiento/desviaciones/'+desvId);
+    var d = await r.json();
+    _abrirRecallPrefill({
+      origen: 'desviacion',
+      origen_referencia: d.codigo,
+      desviacion_id: desvId,
+      lotes_afectados: d.lotes_afectados || '',
+      motivo: 'Desviación crítica '+d.codigo+' cerrada con CAPA no efectivo. '+((d.descripcion||'').slice(0,500)),
+    });
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+function _abrirRecallPrefill(prefill){
+  closeModal('m-desv-det');
+  goTab('tab-recalls');
+  setTimeout(function(){
+    abrirNuevoRecall();  // tiene confirm propio
+    setTimeout(function(){
+      var el;
+      el = document.getElementById('m-rcl-origen'); if(el) el.value = prefill.origen || 'desviacion';
+      el = document.getElementById('m-rcl-origen-ref'); if(el) el.value = prefill.origen_referencia || '';
+      el = document.getElementById('m-rcl-lotes'); if(el) el.value = prefill.lotes_afectados || '';
+      el = document.getElementById('m-rcl-motivo'); if(el) el.value = prefill.motivo || '';
+    }, 250);
+  }, 250);
 }
 
 // === CONTROL DE CAMBIOS (ASG-PRO-007) =================================
@@ -1516,6 +1564,7 @@ async function verQueja(id){
         +(d.requiere_desviacion?' · <span style="color:#c2410c">requiere desviación</span>':'')
         +(d.requiere_recall?' · <span style="color:#c2410c">RECALL</span>':'')+'</div>'
         +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.triaje_descripcion||'')+'</div>'
+        +(d.desviacion_id ? '<div style="font-size:0.85em;margin-top:6px"><b>📢 Desviación enlazada:</b> <a href="javascript:void(0)" onclick="closeModal(\'m-qc-det\');goTab(\'tab-desv\');setTimeout(function(){verDesviacion('+d.desviacion_id+')},300)" style="color:#0ea5e9">abrir DESV-#'+d.desviacion_id+' →</a></div>' : '')
         +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.triaje_por||'')+' · '+_esc(d.triaje_at||'')+'</div>'
         +'</div>';
     } else {
@@ -1609,7 +1658,21 @@ async function triarQueja(id){
   var desc = document.getElementById('qc-tr-desc').value;
   if(!sev){ alert('Elige severidad'); return; }
   if(!desc || desc.length < 10){ alert('Análisis ≥10 chars'); return; }
-  await _postQuejaAccion(id, 'triaje', {severidad: sev, triaje_descripcion: desc, requiere_desviacion: desv, requiere_recall: recall});
+  // Llamada directa para capturar respuesta con desviacion_codigo
+  try{
+    var r = await fetch('/api/aseguramiento/quejas/'+id+'/triaje', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({severidad: sev, triaje_descripcion: desc,
+                              requiere_desviacion: desv, requiere_recall: recall}),
+    });
+    var d = await r.json();
+    if(d.ok){
+      if(d.desviacion_codigo){
+        alert('✅ Triaje OK · Desviación auto-creada: '+d.desviacion_codigo);
+      }
+      verQueja(id); loadQuejas();
+    } else { alert('Error: '+(d.error||'?')); }
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 async function investigarQueja(id){

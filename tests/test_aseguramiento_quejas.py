@@ -241,6 +241,77 @@ def test_quejas_codigo_secuencial(app, db_clean):
         _cleanup(qid)
 
 
+def test_quejas_triaje_con_requiere_desv_crea_desv_auto(app, db_clean):
+    """Triaje con requiere_desviacion=True crea desv enlazada automáticamente."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/quejas",
+               json={"canal": "email",
+                     "tipo_queja": "calidad_producto",
+                     "cliente_nombre": "Cliente cross-link test",
+                     "producto": "SAH-30ml",
+                     "lote": "LOTE-2026-CL01",
+                     "descripcion": "Producto vino con grumos visibles que afectan aplicación normal"},
+               headers=csrf_headers())
+    qid = r.get_json()["id"]
+    queja_codigo = r.get_json()["codigo"]
+
+    r = c.post(f"/api/aseguramiento/quejas/{qid}/triaje",
+               json={"severidad": "mayor",
+                     "triaje_descripcion": "Grumos detectados en lote LOTE-2026-CL01, requiere desviación de proceso",
+                     "requiere_desviacion": True,
+                     "requiere_recall": False},
+               headers=csrf_headers())
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["desviacion_id"] is not None
+    assert data["desviacion_codigo"] is not None
+    assert data["desviacion_codigo"].startswith("DESV-")
+    desv_id = data["desviacion_id"]
+
+    # Verificar que la queja tiene desviacion_id
+    r = c.get(f"/api/aseguramiento/quejas/{qid}")
+    assert r.get_json()["desviacion_id"] == desv_id
+
+    # Verificar que la desviación tiene los datos esperados
+    r = c.get(f"/api/aseguramiento/desviaciones/{desv_id}")
+    data_d = r.get_json()
+    assert data_d["estado"] == "detectada"
+    assert data_d["area_origen"] == "Quejas"
+    assert queja_codigo in (data_d["descripcion"] or "")
+    assert data_d["lotes_afectados"] == "LOTE-2026-CL01"
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
+    conn.execute("DELETE FROM quejas_clientes_eventos WHERE queja_id=?", (qid,))
+    conn.execute("DELETE FROM quejas_clientes WHERE id=?", (qid,))
+    conn.commit(); conn.close()
+
+
+def test_quejas_triaje_sin_requiere_desv_no_crea_desv(app, db_clean):
+    """Triaje sin requiere_desviacion → no crea desv."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/quejas",
+               json={"cliente_nombre": "Test", "descripcion": "Descripción suficiente para crear queja"},
+               headers=csrf_headers())
+    qid = r.get_json()["id"]
+    r = c.post(f"/api/aseguramiento/quejas/{qid}/triaje",
+               json={"severidad": "menor",
+                     "triaje_descripcion": "Solo informativa, no requiere desviación",
+                     "requiere_desviacion": False},
+               headers=csrf_headers())
+    data = r.get_json()
+    assert data["desviacion_id"] is None
+    assert data["desviacion_codigo"] is None
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM quejas_clientes_eventos WHERE queja_id=?", (qid,))
+    conn.execute("DELETE FROM quejas_clientes WHERE id=?", (qid,))
+    conn.commit(); conn.close()
+
+
 def test_quejas_endpoints_requieren_auth(client, db_clean):
     for path in ["/api/aseguramiento/quejas"]:
         r = client.get(path)

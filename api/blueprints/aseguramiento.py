@@ -1116,15 +1116,19 @@ def desviacion_cerrar(desv_id):
     obs = (d.get('observaciones_cierre') or '').strip()
 
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado, codigo FROM desviaciones WHERE id=?", (desv_id,)).fetchone()
+    row = c.execute("""
+        SELECT estado, codigo, clasificacion, lotes_afectados, descripcion
+        FROM desviaciones WHERE id=?
+    """, (desv_id,)).fetchone()
     if not row:
         return jsonify({'error': 'no encontrada'}), 404
-    estado_ant = row[0]
+    estado_ant, codigo_d, clasif, lotes, desc_d = row[0], row[1], row[2], row[3], row[4]
     if estado_ant == 'cerrada':
         return jsonify({'error': 'ya está cerrada'}), 409
     if estado_ant not in ('capa_propuesto', 'capa_implementado'):
         return jsonify({'error': f'no se puede cerrar en estado {estado_ant} · primero CAPA'}), 409
 
+    efectividad_ok = bool(d.get('efectividad_ok'))
     c.execute("""
         UPDATE desviaciones
         SET estado='cerrada', fecha_cierre=date('now'), cerrado_por=?,
@@ -1132,29 +1136,57 @@ def desviacion_cerrar(desv_id):
             efectividad_ok=?, observaciones_cierre=?,
             actualizado_en=datetime('now')
         WHERE id=?
-    """, (user, verificacion, user, 1 if d.get('efectividad_ok') else 0,
+    """, (user, verificacion, user, 1 if efectividad_ok else 0,
           obs[:500] or None, desv_id))
     c.execute("""
         INSERT INTO desviaciones_eventos
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'cerrada', ?, 'cerrada', ?, ?)
     """, (desv_id, estado_ant, user,
-          f'Cerrada · efectividad {"OK" if d.get("efectividad_ok") else "NO_OK"}: {verificacion[:200]}'))
+          f'Cerrada · efectividad {"OK" if efectividad_ok else "NO_OK"}: {verificacion[:200]}'))
     # Audit log INVIMA
     try:
         import json as _json
         c.execute("""
             INSERT INTO audit_log (usuario, accion, registro_id, antes, despues)
             VALUES (?, 'CERRAR_DESVIACION', ?, ?, ?)
-        """, (user, row[1] or str(desv_id),
+        """, (user, codigo_d or str(desv_id),
               _json.dumps({'estado_anterior': estado_ant}),
-              _json.dumps({'efectividad_ok': bool(d.get('efectividad_ok')),
+              _json.dumps({'efectividad_ok': efectividad_ok,
                             'verificacion': verificacion[:500],
                             'observaciones': obs[:500]})))
     except Exception as _e:
         log.debug('audit cerrar desviacion fallo: %s', _e)
     conn.commit()
-    return jsonify({'ok': True})
+
+    # Sugerir recall si crítica + efectividad NO OK + lotes en mercado
+    sugiere_recall = (clasif == 'critica' and not efectividad_ok)
+    resp = {'ok': True, 'sugiere_recall': sugiere_recall}
+    if sugiere_recall:
+        # Pre-rellenar contexto para que el frontend pueda iniciar recall
+        # con un click. El producto se infiere de los lotes (si hay).
+        resp['recall_prefill'] = {
+            'origen': 'desviacion',
+            'origen_referencia': codigo_d,
+            'desviacion_id': desv_id,
+            'lotes_afectados': lotes or '',
+            'motivo': (
+                f'Desviación crítica {codigo_d} cerrada con CAPA '
+                f'NO efectivo. {(desc_d or "")[:500]}'
+            )[:1500],
+        }
+        # Notificar Calidad+Sebastián de que se sugiere recall
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                'capa', f'⚠ Desv {codigo_d} cerrada · CAPA NO efectivo · evaluar recall',
+                body=f'Desviación crítica con efectividad NO OK. Lotes afectados: {(lotes or "?")[:200]}',
+                link='/aseguramiento', remitente=user, importante=True,
+            )
+        except Exception as _e:
+            log.warning('notif sugerir recall fallo: %s', _e)
+    return jsonify(resp)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1663,9 +1695,28 @@ def queja_detalle(qid):
     return jsonify(detalle)
 
 
+def _tipo_desv_desde_queja(tipo_queja: str) -> str:
+    """Mapea el tipo de queja al tipo de desviación más cercano."""
+    return {
+        'reaccion_adversa': 'materia_prima',
+        'calidad_producto': 'proceso',
+        'envase_empaque': 'envase',
+        'cantidad_volumen': 'proceso',
+        'fecha_vencimiento': 'documental',
+        'sabor_olor_textura': 'materia_prima',
+        'eficacia': 'proceso',
+        'documentacion': 'documental',
+        'servicio': 'otra',
+    }.get(tipo_queja or '', 'otra')
+
+
 @bp.route('/api/aseguramiento/quejas/<int:qid>/triaje', methods=['POST'])
 def queja_triaje(qid):
-    """Triaje · RBAC Calidad/Admin · severidad + ¿requiere desviación/recall?"""
+    """Triaje · RBAC Calidad/Admin · severidad + ¿requiere desviación/recall?
+
+    Si requiere_desviacion=True, crea una desviación enlazada
+    automáticamente y devuelve `desviacion_id` + `desviacion_codigo`.
+    """
     user = session.get('compras_user', '')
     if user not in _autorizados_escritura():
         return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
@@ -1679,20 +1730,68 @@ def queja_triaje(qid):
     requiere_desv = bool(d.get('requiere_desviacion'))
     requiere_recall = bool(d.get('requiere_recall'))
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado, codigo, impacto_salud FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    # Cargar queja completa para tener datos al crear desviación
+    row = c.execute("""
+        SELECT estado, codigo, impacto_salud, tipo_queja, descripcion,
+               producto, lote, desviacion_id
+        FROM quejas_clientes WHERE id=?
+    """, (qid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrada'}), 404
-    estado_ant = row[0]
+    estado_ant, codigo_q, impacto_salud, tipo_queja = row[0], row[1], row[2], row[3]
+    desc_q, prod_q, lote_q, desv_existente = row[4], row[5], row[6], row[7]
     if estado_ant not in ('nueva','en_triaje'):
         return jsonify({'error': f'no se puede triar en estado {estado_ant}'}), 409
+
+    desviacion_id = desv_existente  # Mantener si ya estaba enlazada
+    desviacion_codigo = None
+
+    # Crear desviación AUTOMÁTICA si triaje pide y no había una ya
+    if requiere_desv and not desv_existente:
+        try:
+            tipo_desv = _tipo_desv_desde_queja(tipo_queja)
+            cod_desv = _generar_codigo_desviacion(c)
+            desv_descripcion = (
+                f'[Origen: Queja {codigo_q}] {(desc_q or "")[:1500]}\n\n'
+                f'Triaje: {triaje_desc[:500]}'
+            )[:3000]
+            c.execute("""
+                INSERT INTO desviaciones
+                  (codigo, fecha_deteccion, detectado_por, tipo, area_origen,
+                   descripcion, impacto_producto, lotes_afectados, estado)
+                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, 'detectada')
+            """, (cod_desv, user, tipo_desv, 'Quejas',
+                  desv_descripcion,
+                  1 if impacto_salud else 0,
+                  (lote_q or '')[:300] or None))
+            desviacion_id = c.lastrowid
+            desviacion_codigo = cod_desv
+            c.execute("""
+                INSERT INTO desviaciones_eventos
+                  (desviacion_id, evento_tipo, estado_nuevo, usuario, comentario)
+                VALUES (?, 'detectada_desde_queja', 'detectada', ?, ?)
+            """, (desviacion_id, user,
+                  f'Desviación creada automáticamente desde queja {codigo_q}'))
+        except Exception as e:
+            log.warning('crear desv desde queja fallo: %s', e)
+            # No bloquear el triaje si la auto-creación falla
+            desviacion_id = desv_existente
+
     c.execute("""
         UPDATE quejas_clientes
         SET severidad=?, triaje_descripcion=?, triaje_por=?,
             triaje_at=datetime('now'),
             requiere_desviacion=?, requiere_recall=?,
+            desviacion_id=?,
             estado='en_triaje', actualizado_en=datetime('now')
         WHERE id=?
     """, (severidad, triaje_desc, user,
-          1 if requiere_desv else 0, 1 if requiere_recall else 0, qid))
+          1 if requiere_desv else 0, 1 if requiere_recall else 0,
+          desviacion_id, qid))
+    extra = ''
+    if desviacion_codigo:
+        extra = f' · desviación auto-creada {desviacion_codigo}'
+    elif requiere_desv and desv_existente:
+        extra = ' · ya enlazada a desviación previa'
     c.execute("""
         INSERT INTO quejas_clientes_eventos
           (queja_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
@@ -1701,7 +1800,7 @@ def queja_triaje(qid):
           f'Severidad {severidad}'+
           (' · requiere desviación' if requiere_desv else '')+
           (' · requiere recall' if requiere_recall else '')+
-          f': {triaje_desc[:200]}'))
+          f': {triaje_desc[:200]}'+extra))
     conn.commit()
     # Notificar si crítica + impacto salud + requiere recall
     if severidad == 'critica' or requiere_recall:
@@ -1709,14 +1808,18 @@ def queja_triaje(qid):
             from blueprints.notif import push_notif_multi
             push_notif_multi(
                 ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
-                'capa', f'⚠ Queja {row[1]} · severidad {severidad}'+
+                'capa', f'⚠ Queja {codigo_q} · severidad {severidad}'+
                           (' · RECALL POTENCIAL' if requiere_recall else ''),
-                body=triaje_desc[:200],
+                body=triaje_desc[:200]+extra,
                 link='/aseguramiento', remitente=user, importante=True,
             )
         except Exception as _e:
             log.warning('notif triaje fallo: %s', _e)
-    return jsonify({'ok': True})
+    return jsonify({
+        'ok': True,
+        'desviacion_id': desviacion_id,
+        'desviacion_codigo': desviacion_codigo,
+    })
 
 
 @bp.route('/api/aseguramiento/quejas/<int:qid>/investigar', methods=['POST'])

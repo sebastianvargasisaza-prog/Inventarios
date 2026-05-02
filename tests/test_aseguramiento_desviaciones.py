@@ -196,6 +196,83 @@ def test_desv_codigo_secuencial(app, db_clean):
     conn.commit(); conn.close()
 
 
+def test_desv_critica_efectividad_no_ok_sugiere_recall(app, db_clean):
+    """Desv crítica cerrada con efectividad NO OK devuelve sugiere_recall=True."""
+    c = _login(app, "laura")
+    # Crear y avanzar a CAPA implementado
+    r = c.post("/api/aseguramiento/desviaciones",
+               json={"tipo": "proceso",
+                     "area_origen": "Producción",
+                     "descripcion": "OOS pH lote producido afecta calidad final"},
+               headers=csrf_headers())
+    desv_id = r.get_json()["id"]
+    codigo = r.get_json()["codigo"]
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/clasificar",
+           json={"clasificacion": "critica",
+                 "justificacion": "OOS afecta producto final · clase crítica"},
+           headers=csrf_headers())
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/investigar",
+           json={"metodo_investigacion": "5_porques",
+                 "causa_raiz": "Equipo descalibrado durante mes pasado afectó múltiples lotes"},
+           headers=csrf_headers())
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/capa",
+           json={"capa_descripcion": "Recalibrar y agregar verificación diaria de pH",
+                 "capa_responsable": "miguel",
+                 "capa_fecha_limite": "2026-06-15"},
+           headers=csrf_headers())
+    # Cerrar con efectividad NO OK
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/cerrar",
+               json={"efectividad_ok": False,
+                     "verificacion_efectividad": "Verificación posterior detectó que 2 lotes adicionales también están OOS"},
+               headers=csrf_headers())
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
+    assert data["sugiere_recall"] is True
+    prefill = data["recall_prefill"]
+    assert prefill["origen"] == "desviacion"
+    assert prefill["origen_referencia"] == codigo
+    assert prefill["desviacion_id"] == desv_id
+    assert codigo in prefill["motivo"]
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM desviaciones WHERE codigo=?", (codigo,))
+    conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.commit(); conn.close()
+
+
+def test_desv_critica_efectividad_ok_no_sugiere_recall(app, db_clean):
+    """Desv crítica cerrada con efectividad OK NO sugiere recall."""
+    c = _login(app, "laura")
+    r = c.post("/api/aseguramiento/desviaciones",
+               json={"tipo": "proceso", "descripcion": "Test efectividad OK no recall"},
+               headers=csrf_headers())
+    desv_id = r.get_json()["id"]
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/clasificar",
+           json={"clasificacion": "critica", "justificacion": "Test crítica efectividad OK"},
+           headers=csrf_headers())
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/investigar",
+           json={"metodo_investigacion":"otro", "causa_raiz":"Causa raíz suficiente para test"},
+           headers=csrf_headers())
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/capa",
+           json={"capa_descripcion":"CAPA suficiente para cerrar test crítica",
+                 "capa_responsable":"miguel"},
+           headers=csrf_headers())
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/cerrar",
+               json={"efectividad_ok": True,
+                     "verificacion_efectividad": "CAPA verificado funcionando correctamente"},
+               headers=csrf_headers())
+    data = r.get_json()
+    assert data["sugiere_recall"] is False
+    assert "recall_prefill" not in data
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.commit(); conn.close()
+
+
 def test_desv_endpoints_requieren_auth(client, db_clean):
     for path in ["/api/aseguramiento/desviaciones"]:
         r = client.get(path)
