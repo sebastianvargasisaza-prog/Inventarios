@@ -786,6 +786,23 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="FACTURA_ANULAR">FACTURA_ANULAR</option>
             <option value="APROBAR_NOMINA">APROBAR_NOMINA</option>
             <option value="PAGAR_NOMINA">PAGAR_NOMINA</option>
+            <option disabled>── Compras / OC / Solicitudes ──</option>
+            <option value="CREAR_OC">CREAR_OC</option>
+            <option value="EDITAR_OC">EDITAR_OC</option>
+            <option value="REVISAR_OC">REVISAR_OC</option>
+            <option value="RECIBIR_OC">RECIBIR_OC</option>
+            <option value="RECHAZAR_OC">RECHAZAR_OC</option>
+            <option value="AGREGAR_ITEM_OC">AGREGAR_ITEM_OC</option>
+            <option value="MODIFICAR_ITEM_OC">MODIFICAR_ITEM_OC</option>
+            <option value="ELIMINAR_ITEM_OC">ELIMINAR_ITEM_OC</option>
+            <option value="CONFIRMAR_PROVEEDOR_OC">CONFIRMAR_PROVEEDOR_OC</option>
+            <option value="ACTUALIZAR_PRECIOS_OC">ACTUALIZAR_PRECIOS_OC</option>
+            <option value="CREAR_SOLICITUD">CREAR_SOLICITUD</option>
+            <option value="ACTUALIZAR_ESTADO_SOL">ACTUALIZAR_ESTADO_SOL</option>
+            <option value="RECHAZAR_SOLICITUD">RECHAZAR_SOLICITUD</option>
+            <option value="APROBAR_SOLICITUD_INFLUENCER">APROBAR_SOLICITUD_INFLUENCER</option>
+            <option value="MARCAR_RECIBIDO_SOLICITANTE">MARCAR_RECIBIDO_SOLICITANTE</option>
+            <option value="ELEGIR_COTIZACION_GANADORA">ELEGIR_COTIZACION_GANADORA</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>

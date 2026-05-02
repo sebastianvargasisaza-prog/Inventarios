@@ -626,6 +626,9 @@ def eliminar_solicitud(numero):
 def handle_ordenes_compra():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
+        usuario, err, code = _require_compras_write()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         if not d.get('proveedor'): return jsonify({'error': 'Proveedor requerido'}), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
@@ -691,6 +694,19 @@ def handle_ordenes_compra():
         )
         if valor_total_calc > 0:
             c.execute("UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?", (valor_total_calc, numero_oc))
+        try:
+            audit_log(c, usuario=usuario, accion='CREAR_OC',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      despues={'proveedor': d['proveedor'][:200],
+                                'categoria': categoria,
+                                'estado': 'Borrador',
+                                'items_count': len(d.get('items') or []),
+                                'valor_total': valor_total_calc,
+                                'fecha_entrega_est': d.get('fecha_entrega_est','')[:30]},
+                      detalle=f"Creó OC {numero_oc} · {d['proveedor']} · "
+                              f"{len(d.get('items') or [])} items · total {valor_total_calc:.0f}")
+        except Exception as e:
+            log.warning('audit_log CREAR_OC fallo: %s', e)
         conn.commit()
         return jsonify({'message': f'OC {numero_oc} creada', 'numero_oc': numero_oc}), 201
     cat_filter = request.args.get('categoria', '')
@@ -853,6 +869,18 @@ def editar_oc(numero_oc):
             ).fetchone()[0] or 0.0
             valor_total = round(sub * 1.19, 2) if con_iva else round(sub, 2)
             c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (valor_total, numero_oc))
+        try:
+            audit_log(c, usuario=user, accion='EDITAR_OC',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      antes={'proveedor': cur_prov, 'categoria': cur_cat,
+                              'con_iva': cur_iva, 'valor_sin_iva': cur_vsi},
+                      despues={k: d.get(k) for k in d
+                                if k in ('proveedor','categoria','observaciones',
+                                         'fecha_entrega_est','con_iva','valor_sin_iva',
+                                         'items')},
+                      detalle=f"Editó OC {numero_oc} ({estado})")
+        except Exception as e:
+            log.warning('audit_log EDITAR_OC fallo: %s', e)
         conn.commit()
         return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) actualizada'})
 
@@ -866,6 +894,14 @@ def editar_oc(numero_oc):
             return jsonify({'error': f'En estado {estado} solo se puede editar observaciones / fecha_entrega_est'}), 400
         params.append(numero_oc)
         c.execute(f'UPDATE ordenes_compra SET {", ".join(sets)} WHERE numero_oc=?', params)
+        try:
+            audit_log(c, usuario=user, accion='EDITAR_OC',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      despues={k: d.get(k) for k in d
+                                if k in ('observaciones','observaciones_recepcion','fecha_entrega_est')},
+                      detalle=f"Editó OC {numero_oc} ({estado}) — campos limitados")
+        except Exception as e:
+            log.warning('audit_log EDITAR_OC fallo: %s', e)
         conn.commit()
         return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) — campos limitados actualizados',
                         'campos_actualizados': [s.split('=')[0] for s in sets]})
@@ -939,6 +975,17 @@ def agregar_item_oc(numero_oc):
     if con_iva:
         suma = round(suma * 1.19, 2)
     c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (suma, numero_oc))
+    try:
+        audit_log(c, usuario=user, accion='AGREGAR_ITEM_OC',
+                  tabla='ordenes_compra_items', registro_id=numero_oc,
+                  despues={'item_id': item_id, 'codigo_mp': d.get('codigo_mp',''),
+                            'nombre_mp': nombre_mp[:200], 'cantidad_g': cantidad_g,
+                            'precio_unitario': precio, 'subtotal': subtotal,
+                            'estado_oc': estado},
+                  detalle=f"Agregó item {nombre_mp[:60]} a OC {numero_oc} · "
+                          f"{cantidad_g}g @ {precio:.0f}")
+    except Exception as e:
+        log.warning('audit_log AGREGAR_ITEM_OC fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'item_id': item_id, 'valor_total': suma})
 
@@ -997,6 +1044,17 @@ def modificar_item_oc(numero_oc, item_id):
     if con_iva:
         suma = round(suma * 1.19, 2)
     c.execute('UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?', (suma, numero_oc))
+    try:
+        usuario_act = session.get('compras_user', '')
+        accion_audit = 'ELIMINAR_ITEM_OC' if request.method == 'DELETE' else 'MODIFICAR_ITEM_OC'
+        audit_log(c, usuario=usuario_act, accion=accion_audit,
+                  tabla='ordenes_compra_items', registro_id=numero_oc,
+                  despues={'item_id': item_id,
+                            'valor_total_nuevo': suma,
+                            'estado_oc': estado},
+                  detalle=f"{accion_audit.replace('_',' ').title()} item {item_id} en OC {numero_oc}")
+    except Exception as e:
+        log.warning('audit_log MODIFICAR_ITEM_OC fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'valor_total': suma})
 
@@ -1070,6 +1128,18 @@ def confirmar_proveedor_oc(numero_oc):
         'UPDATE ordenes_compra SET proveedor=? WHERE numero_oc=?',
         (nuevo_prov, numero_oc)
     )
+    try:
+        usuario_act = session.get('compras_user', '')
+        cambio = proveedor_actual.lower() != nuevo_prov.lower()
+        audit_log(c, usuario=usuario_act, accion='CONFIRMAR_PROVEEDOR_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  antes={'proveedor': proveedor_actual},
+                  despues={'proveedor': nuevo_prov, 'creado_catalogo': creado_nuevo,
+                            'cambio': cambio},
+                  detalle=f"{'Cambió' if cambio else 'Confirmó'} proveedor OC {numero_oc} "
+                          f"de '{proveedor_actual}' a '{nuevo_prov}'")
+    except Exception as e:
+        log.warning('audit_log CONFIRMAR_PROVEEDOR_OC fallo: %s', e)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -1167,6 +1237,17 @@ def actualizar_precios_items_oc(numero_oc):
         'UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?',
         (round(float(total), 2), numero_oc)
     )
+    try:
+        usuario_act = session.get('compras_user', '')
+        audit_log(c, usuario=usuario_act, accion='ACTUALIZAR_PRECIOS_OC',
+                  tabla='ordenes_compra_items', registro_id=numero_oc,
+                  despues={'items_actualizados': actualizados,
+                            'valor_total_nuevo': round(float(total), 2),
+                            'proveedor': proveedor[:200]},
+                  detalle=f"Actualizó precios de {actualizados} items en OC {numero_oc} "
+                          f"· nuevo total {float(total):.0f}")
+    except Exception as e:
+        log.warning('audit_log ACTUALIZAR_PRECIOS_OC fallo: %s', e)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -1456,6 +1537,20 @@ def handle_solicitudes_compra():
                               (numero, it.get('codigo_mp',''), it.get('nombre_mp',''),
                                it.get('cantidad_g',0), it.get('unidad','g'),
                                it.get('justificacion',''), it.get('valor_estimado',0)))
+            try:
+                usuario_act = session.get('compras_user', '') or d.get('solicitante','')
+                audit_log(c, usuario=usuario_act, accion='CREAR_SOLICITUD',
+                          tabla='solicitudes_compra', registro_id=numero,
+                          despues={'empresa': emp, 'categoria': cat, 'tipo': tip,
+                                    'area': area,
+                                    'solicitante': d.get('solicitante','')[:100],
+                                    'urgencia': d.get('urgencia','Normal'),
+                                    'valor': val_sol,
+                                    'items_count': len(d.get('items') or [])},
+                          detalle=f"Creó solicitud {numero} · {emp} · {cat} · "
+                                  f"{len(d.get('items') or [])} items · valor {val_sol:.0f}")
+            except Exception as e:
+                log.warning('audit_log CREAR_SOLICITUD fallo: %s', e)
             conn.commit()
             return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
         except Exception as e:
@@ -1788,6 +1883,15 @@ def marcar_recibido_solicitante(numero):
             """, (numero_oc,))
         except sqlite3.OperationalError:
             pass
+        try:
+            audit_log(c, usuario=user, accion='MARCAR_RECIBIDO_SOLICITANTE',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      antes={'estado': oc_estado},
+                      despues={'estado': 'Recibida', 'recibido_por': user,
+                                'observaciones': obs[:300] if obs else None},
+                      detalle=f"Solicitante {user} marcó OC {numero_oc} como Recibida (desde SOL {numero})")
+        except Exception as e:
+            log.warning('audit_log MARCAR_RECIBIDO_SOLICITANTE fallo: %s', e)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -1897,6 +2001,17 @@ def aprobar_solicitud_influencer(numero):
                   obs_orig[:200] if obs_orig else 'Cuenta de cobro', oc_num))
     except sqlite3.OperationalError:
         pass  # tabla puede no existir en instancias muy viejas
+    try:
+        audit_log(cur, usuario=user, accion='APROBAR_SOLICITUD_INFLUENCER',
+                  tabla='solicitudes_compra', registro_id=numero,
+                  antes={'estado': sol_estado, 'numero_oc': numero_oc_actual},
+                  despues={'estado': 'Aprobada', 'valor': monto,
+                            'numero_oc': oc_num, 'beneficiario': benef_nombre[:200],
+                            'aprobado_por': user},
+                  detalle=f"Aprobó solicitud {numero} influencer · OC {oc_num} · "
+                          f"beneficiario {benef_nombre[:60]} · ${monto:,.0f}")
+    except Exception as e:
+        log.warning('audit_log APROBAR_SOLICITUD_INFLUENCER fallo: %s', e)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -1934,6 +2049,14 @@ def rechazar_solicitud(numero):
         "WHERE numero=?",
         (motivo, numero)
     )
+    try:
+        audit_log(cur, usuario=user, accion='RECHAZAR_SOLICITUD',
+                  tabla='solicitudes_compra', registro_id=numero,
+                  antes={'solicitante': sol[0], 'categoria': sol[3]},
+                  despues={'estado': 'Rechazada', 'motivo': motivo[:300]},
+                  detalle=f"Rechazó solicitud {numero} · motivo: {motivo}")
+    except Exception as e:
+        log.warning('audit_log RECHAZAR_SOLICITUD fallo: %s', e)
     conn.commit()
     # Notificar al solicitante. Sebastian (29-abr-2026): "cuando doy rechazar
     # en compras a una cuenta de influencer me esta llegando a mi deberia
@@ -2107,18 +2230,36 @@ def solicitudes_page():
 def actualizar_estado_solicitud(numero):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user_act = session.get('compras_user', '')
     d = request.get_json() or {}
     nuevo = d.get('estado', 'Aprobada')
     numero_oc_param = d.get('numero_oc', '')
     obs = d.get('observaciones', '')
     conn = get_db(); cur = conn.cursor()
+    # Capturar antes para audit (estado anterior y SOL existence check)
+    antes_row = cur.execute(
+        "SELECT estado, numero_oc, categoria FROM solicitudes_compra WHERE numero=?",
+        (numero.upper(),)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    antes = {'estado': antes_row[0], 'numero_oc': antes_row[1], 'categoria': antes_row[2]}
     cur.execute("""UPDATE solicitudes_compra SET estado=?, aprobado_por=?, fecha_aprobacion=?
                  WHERE numero=?""",
-              (nuevo, session.get('compras_user',''), datetime.now().isoformat(), numero.upper()))
+              (nuevo, user_act, datetime.now().isoformat(), numero.upper()))
     if numero_oc_param:
         cur.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?", (numero_oc_param, numero.upper()))
     if nuevo == 'Rechazada' and obs:
         cur.execute("UPDATE solicitudes_compra SET observaciones=? WHERE numero=?", (obs, numero.upper()))
+    try:
+        audit_log(cur, usuario=user_act, accion='ACTUALIZAR_ESTADO_SOL',
+                  tabla='solicitudes_compra', registro_id=numero.upper(),
+                  antes=antes,
+                  despues={'estado': nuevo, 'numero_oc': numero_oc_param or antes_row[1],
+                            'observaciones': obs[:300] if obs else None,
+                            'aprobado_por': user_act},
+                  detalle=f"Solicitud {numero.upper()}: {antes['estado']} → {nuevo}")
+    except Exception as e:
+        log.warning('audit_log ACTUALIZAR_ESTADO_SOL fallo: %s', e)
     conn.commit()
     oc_creada = ''
     if d.get('crear_oc'):
@@ -2363,6 +2504,18 @@ def recibir_oc(numero_oc):
             """, (numero_oc,))
         except Exception:
             pass
+    try:
+        audit_log(cur, usuario=operador, accion='RECIBIR_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  despues={'estado': nuevo_estado, 'fecha_recepcion': fecha,
+                            'parcial': es_parcial, 'ingresos': ingresos,
+                            'tiene_discrepancias': bool(disc_r),
+                            'receptor': receptor_nombre[:200],
+                            'observaciones_recepcion': (obs_r or '')[:200]},
+                  detalle=f"Recibió OC {numero_oc} ({'PARCIAL' if es_parcial else 'COMPLETA'}) "
+                          f"· {ingresos} items · receptor {receptor_nombre[:60]}")
+    except Exception as e:
+        log.warning('audit_log RECIBIR_OC fallo: %s', e)
     conn.commit()
     return jsonify({
         'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos,
@@ -2402,6 +2555,17 @@ def revisar_oc(numero_oc):
     sets.append('valor_sin_iva=?'); params.append(float(d.get('valor_sin_iva') or 0))
     params.append(numero_oc)
     cur.execute(f"UPDATE ordenes_compra SET {', '.join(sets)} WHERE numero_oc=?", params)
+    try:
+        audit_log(cur, usuario=user, accion='REVISAR_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  antes={'estado': estado_row[0] if estado_row else None},
+                  despues={'estado': 'Revisada',
+                            'proveedor': d.get('proveedor'),
+                            'valor_total': d.get('valor_total'),
+                            'con_iva': bool(d.get('con_iva'))},
+                  detalle=f"Revisó OC {numero_oc}")
+    except Exception as e:
+        log.warning('audit_log REVISAR_OC fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'estado': 'Revisada'})
 
@@ -3832,6 +3996,14 @@ def rechazar_oc(numero_oc):
     # Mark OC as Rechazada
     cur.execute("UPDATE ordenes_compra SET estado='Rechazada', observaciones=COALESCE(observaciones,'')||' | RECHAZADA: '||? WHERE numero_oc=?",
                 (motivo, numero_oc))
+    try:
+        audit_log(cur, usuario=usuario_actual, accion='RECHAZAR_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  antes={'estado': row[0], 'categoria': row[1]},
+                  despues={'estado': 'Rechazada', 'motivo': motivo[:300]},
+                  detalle=f"Rechazó OC {numero_oc} · motivo: {motivo[:120]}")
+    except Exception as e:
+        log.warning('audit_log RECHAZAR_OC fallo: %s', e)
     # Revert linked solicitud to Pendiente so requester can resubmit
     cur.execute("SELECT numero FROM solicitudes_compra WHERE numero_oc=?", (numero_oc,))
     sol = cur.fetchone()
@@ -5305,11 +5477,12 @@ def elegir_ganadora(cot_id):
     numero_oc = (d.get('numero_oc') or '').strip()
 
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT ronda_id FROM cotizaciones WHERE id=?", (cot_id,))
+    c.execute("""SELECT ronda_id, proveedor, valor_total, descripcion
+                 FROM cotizaciones WHERE id=?""", (cot_id,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Cotización no encontrada'}), 404
-    ronda_id = row[0]
+    ronda_id, prov_ganador, valor_ganador, descripcion = row
 
     # Marcar ganadora + las demás como no seleccionadas
     c.execute("""UPDATE cotizaciones SET ganadora=1,
@@ -5318,6 +5491,18 @@ def elegir_ganadora(cot_id):
     c.execute("""UPDATE cotizaciones SET ganadora=0, estado='No seleccionada'
                  WHERE ronda_id=? AND id!=? AND estado != 'No seleccionada'""",
               (ronda_id, cot_id))
+    try:
+        audit_log(c, usuario=u, accion='ELEGIR_COTIZACION_GANADORA',
+                  tabla='cotizaciones', registro_id=cot_id,
+                  despues={'ronda_id': ronda_id,
+                            'proveedor_ganador': (prov_ganador or '')[:200],
+                            'valor_ganador': valor_ganador,
+                            'numero_oc_vinculada': numero_oc or None,
+                            'descripcion': (descripcion or '')[:200]},
+                  detalle=f"Eligió cotización id={cot_id} (ronda {ronda_id}) · "
+                          f"ganador {prov_ganador} · {valor_ganador or 0:.0f}")
+    except Exception as e:
+        log.warning('audit_log ELEGIR_COTIZACION_GANADORA fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'cot_id': cot_id, 'ronda_id': ronda_id,
                     'numero_oc': numero_oc})
