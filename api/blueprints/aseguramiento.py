@@ -430,21 +430,27 @@ def sgd_conflictos_listar():
 def sgd_importar():
     """Importa documentos masivos del SGD (1-shot del directorio Downloads).
 
-    Body: { items: [{codigo, area, tipo_doc, numero, subtipo, titulo,
-                       version, archivo_origen, padre_codigo, ...}] }
-    Idempotente · usa INSERT OR IGNORE.
+    Body: {
+        items: [{codigo, area, tipo_doc, numero, subtipo, titulo,
+                  version, archivo_origen, padre_codigo, ...}],
+        conflictos: [{codigo, archivos, temas}]   # opcional
+    }
+    Idempotente · usa INSERT OR IGNORE en docs Y en conflictos (por código).
     """
     user = session.get('compras_user', '')
     if user not in ADMIN_USERS:
         return jsonify({'error': 'Solo Admin puede importar SGD masivo'}), 403
     d = request.get_json(silent=True) or {}
     items = d.get('items') or []
+    conflictos = d.get('conflictos') or []
     if not isinstance(items, list) or not items:
         return jsonify({'error': 'items debe ser lista no vacía'}), 400
 
     conn = get_db(); c = conn.cursor()
     insertados = 0
     saltados = 0
+    conflictos_insertados = 0
+    conflictos_saltados = 0
     errores = []
     for it in items[:5000]:
         try:
@@ -480,11 +486,45 @@ def sgd_importar():
                 saltados += 1
         except Exception as e:
             errores.append(f'{it.get("codigo","?")}: {str(e)[:80]}')
+
+    # Persistir conflictos detectados (si vienen en el payload).
+    # Idempotente: si ya hay un conflicto pendiente para ese código, no
+    # duplicar. Se actualiza temas/archivos por si el set cambió.
+    for cf in (conflictos or [])[:200]:
+        try:
+            cod = (cf.get('codigo') or '').strip().upper()
+            if not cod:
+                continue
+            archivos = (cf.get('archivos') or '')[:1000]
+            temas = (cf.get('temas') or '')[:1000]
+            existing = c.execute(
+                "SELECT id FROM sgd_conflictos WHERE codigo=? AND estado='pendiente' LIMIT 1",
+                (cod,)
+            ).fetchone()
+            if existing:
+                c.execute("""
+                    UPDATE sgd_conflictos
+                    SET archivos_detectados=?, temas_detectados=?
+                    WHERE id=?
+                """, (archivos, temas, existing[0]))
+                conflictos_saltados += 1
+            else:
+                c.execute("""
+                    INSERT INTO sgd_conflictos
+                      (codigo, archivos_detectados, temas_detectados, estado)
+                    VALUES (?, ?, ?, 'pendiente')
+                """, (cod, archivos, temas))
+                conflictos_insertados += 1
+        except Exception as e:
+            errores.append(f'conflicto {cf.get("codigo","?")}: {str(e)[:80]}')
+
     conn.commit()
     return jsonify({
         'ok': True,
         'insertados': insertados,
         'saltados_ya_existian': saltados,
+        'conflictos_insertados': conflictos_insertados,
+        'conflictos_actualizados': conflictos_saltados,
         'errores': errores[:30],
     })
 

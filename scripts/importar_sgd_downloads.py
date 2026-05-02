@@ -141,9 +141,21 @@ def escanear(directorio: str) -> tuple[list, list]:
     return items, conflictos, sin_codigo
 
 
+class _NoRedirect(request.HTTPRedirectHandler):
+    """Para no seguir el 302 del login y poder leer Set-Cookie."""
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 def login(base_url: str, user: str, password: str) -> str | None:
-    """Login y retorna cookie."""
+    """Login y retorna cookie de sesión.
+
+    El endpoint /login retorna 302 con Set-Cookie en éxito. urllib seguiría el
+    redirect y perdería la cookie, así que usamos un opener que NO sigue
+    redirects.
+    """
     data = parse.urlencode({'username': user, 'password': password}).encode()
+    opener = request.build_opener(_NoRedirect)
     req = request.Request(
         f'{base_url}/login',
         data=data,
@@ -152,24 +164,38 @@ def login(base_url: str, user: str, password: str) -> str | None:
         method='POST',
     )
     try:
-        with request.urlopen(req, timeout=15) as resp:
-            cookies = resp.headers.get('Set-Cookie', '')
+        resp = opener.open(req, timeout=15)
+        # 200 sin redirect = login fail (página re-renderizada con error)
+        cookies = resp.headers.get('Set-Cookie', '')
+        if resp.status != 302:
+            return None
         return cookies.split(';')[0] if cookies else None
     except error.HTTPError as e:
         if e.code == 302:
             cookies = e.headers.get('Set-Cookie', '')
             return cookies.split(';')[0] if cookies else None
+        print(f'login HTTPError {e.code}')
     except Exception as e:
         print(f'login error: {e}')
     return None
 
 
-def post_importar(base_url: str, cookie: str, items: list) -> dict:
-    """POST al endpoint de importación. Hace batches de 500."""
-    resultados = {'insertados': 0, 'saltados': 0, 'errores': []}
+def post_importar(base_url: str, cookie: str, items: list, conflictos: list | None = None) -> dict:
+    """POST al endpoint de importación. Hace batches de 500.
+
+    Los conflictos se mandan UNA sola vez en el primer batch (no son
+    paginables — son metadatos del set completo).
+    """
+    resultados = {'insertados': 0, 'saltados': 0,
+                  'conflictos_insertados': 0, 'conflictos_actualizados': 0,
+                  'errores': []}
     for i in range(0, len(items), 500):
         batch = items[i:i+500]
-        body = json.dumps({'items': batch}).encode()
+        payload: dict = {'items': batch}
+        # Mandar conflictos solo en el primer batch para evitar duplicados.
+        if i == 0 and conflictos:
+            payload['conflictos'] = conflictos
+        body = json.dumps(payload).encode()
         req = request.Request(
             f'{base_url}/api/aseguramiento/sgd/importar',
             data=body,
@@ -185,6 +211,8 @@ def post_importar(base_url: str, cookie: str, items: list) -> dict:
                 d = json.loads(resp.read())
             resultados['insertados'] += d.get('insertados', 0)
             resultados['saltados'] += d.get('saltados_ya_existian', 0)
+            resultados['conflictos_insertados'] += d.get('conflictos_insertados', 0)
+            resultados['conflictos_actualizados'] += d.get('conflictos_actualizados', 0)
             resultados['errores'].extend(d.get('errores', []))
         except error.HTTPError as e:
             print(f'batch {i}: HTTP {e.code}: {e.read()[:200]}')
@@ -236,10 +264,12 @@ def main():
         sys.exit(1)
     print(f'Login OK · cookie obtenida')
 
-    print(f'\nEnviando {len(items)} items al servidor...')
-    res = post_importar(args.base_url, cookie, items)
-    print(f'  Insertados: {res["insertados"]}')
-    print(f'  Saltados (ya existían): {res["saltados"]}')
+    print(f'\nEnviando {len(items)} items + {len(conflictos)} conflictos al servidor...')
+    res = post_importar(args.base_url, cookie, items, conflictos)
+    print(f'  Docs insertados: {res["insertados"]}')
+    print(f'  Docs saltados (ya existían): {res["saltados"]}')
+    print(f'  Conflictos insertados: {res["conflictos_insertados"]}')
+    print(f'  Conflictos actualizados: {res["conflictos_actualizados"]}')
     if res['errores']:
         print(f'  Errores ({len(res["errores"])}):')
         for e in res['errores'][:10]:
