@@ -136,6 +136,84 @@ def test_sgd_pdf_doc_inexistente_404(app, db_clean):
     assert r.status_code == 404
 
 
+def test_mis_tareas_estructura(app, db_clean):
+    """GET /api/aseguramiento/mis-tareas devuelve estructura correcta."""
+    c = _login(app, "luis")
+    r = c.get("/api/aseguramiento/mis-tareas")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["usuario"] == "luis"
+    assert data["es_calidad"] is False  # luis no es Calidad
+    for k in ("capacitaciones","mis_creados","calidad_queue","urgentes","resumen"):
+        assert k in data
+    assert isinstance(data["capacitaciones"], list)
+    assert isinstance(data["mis_creados"], list)
+
+
+def test_mis_tareas_user_calidad_ve_queue(app, db_clean):
+    """Usuario en CALIDAD_USERS ve la cola consolidada."""
+    cal = _login(app, "laura")
+    r = cal.get("/api/aseguramiento/mis-tareas")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["usuario"] == "laura"
+    assert data["es_calidad"] is True
+
+
+def test_mis_tareas_no_ve_de_otros(app, db_clean):
+    """Items que creó luis NO aparecen en mis_creados de laura."""
+    luis = _login(app, "luis")
+    r = luis.post("/api/aseguramiento/desviaciones",
+                  json={"tipo": "otra", "descripcion": "Desviación reportada por luis para test mis tareas"},
+                  headers=csrf_headers())
+    desv_id = r.get_json()["id"]
+
+    laura = _login(app, "laura")
+    r = laura.get("/api/aseguramiento/mis-tareas")
+    creados = r.get_json()["mis_creados"]
+    # laura no creó nada → su lista de mis_creados no tiene la desviación de luis
+    for it in creados:
+        assert it.get("modulo") != "desviaciones" or "luis" not in str(it)
+
+    # Pero luis SÍ ve su desviación
+    r = luis.get("/api/aseguramiento/mis-tareas")
+    creados_luis = r.get_json()["mis_creados"]
+    assert any(it["modulo"]=="desviaciones" for it in creados_luis)
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.commit(); conn.close()
+
+
+def test_mis_tareas_queue_calidad_aparece_queja_nueva(app, db_clean):
+    """Una queja nueva aparece en calidad_queue para Calidad."""
+    luis = _login(app, "luis")
+    r = luis.post("/api/aseguramiento/quejas",
+                  json={"cliente_nombre": "Cliente test queue",
+                        "descripcion": "Queja para verificar que aparece en cola Calidad"},
+                  headers=csrf_headers())
+    qid = r.get_json()["id"]
+
+    laura = _login(app, "laura")
+    r = laura.get("/api/aseguramiento/mis-tareas")
+    queue = r.get_json()["calidad_queue"]
+    quejas_en_queue = [it for it in queue if it["modulo"]=="quejas"]
+    assert len(quejas_en_queue) >= 1
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM quejas_clientes_eventos WHERE queja_id=?", (qid,))
+    conn.execute("DELETE FROM quejas_clientes WHERE id=?", (qid,))
+    conn.commit(); conn.close()
+
+
+def test_mis_tareas_requiere_auth(client, db_clean):
+    r = client.get("/api/aseguramiento/mis-tareas")
+    assert r.status_code == 401
+
+
 def test_dashboard_kpis_workflows_se_actualizan(app, db_clean):
     """Crear desviación + queja crítica → KPIs del dashboard reflejan cambios."""
     c = _login(app, "laura")

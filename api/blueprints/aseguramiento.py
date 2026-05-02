@@ -1838,6 +1838,231 @@ def queja_cerrar(qid):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/aseguramiento/mis-tareas', methods=['GET'])
+def mis_tareas():
+    """Vista consolidada de tareas pendientes del usuario actual.
+
+    Devuelve por sección:
+    - capacitaciones: SOPs asignados sin firmar (cualquier user)
+    - mis_creados: items que el user creó y siguen abiertos
+        (desviaciones, cambios, quejas, recalls)
+    - calidad_queue: ítems pendientes de acción de Calidad
+        (solo si user en CALIDAD_USERS o ADMIN_USERS) - cola universal
+    - urgentes: items críticos que requieren acción inmediata
+
+    Cada item lleva: codigo, modulo, titulo, dias_abierto, accion_sugerida.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    es_calidad = user in (set(CALIDAD_USERS) | set(ADMIN_USERS))
+    conn = get_db(); c = conn.cursor()
+
+    out = {
+        'usuario': user, 'es_calidad': es_calidad,
+        'capacitaciones': [], 'mis_creados': [],
+        'calidad_queue': [], 'urgentes': [],
+    }
+
+    # ── Capacitaciones pendientes del usuario ──
+    try:
+        rows = c.execute("""
+            SELECT cap.sgd_codigo, cap.sgd_version, doc.titulo, doc.archivo_pdf_url,
+                   cap.asignado_at, cap.fecha_limite, cap.estado,
+                   CAST(julianday('now') - julianday(cap.asignado_at) AS INTEGER) as dias
+            FROM sgd_capacitaciones cap
+            LEFT JOIN sgd_documentos doc ON doc.codigo=cap.sgd_codigo
+            WHERE cap.persona_username=? AND cap.estado IN ('asignada','leida')
+            ORDER BY cap.fecha_limite IS NULL, cap.fecha_limite ASC, cap.asignado_at ASC
+            LIMIT 50
+        """, (user,)).fetchall()
+        out['capacitaciones'] = [{
+            'sgd_codigo': r[0], 'sgd_version': r[1], 'titulo': r[2],
+            'archivo_pdf_url': r[3], 'asignado_at': r[4],
+            'fecha_limite': r[5], 'estado': r[6], 'dias': r[7],
+        } for r in rows]
+    except Exception as e:
+        log.warning('mis_tareas capacitaciones: %s', e)
+
+    # ── Items que el usuario creó y siguen abiertos ──
+    try:
+        # Desviaciones que detectó
+        for r in c.execute("""
+            SELECT codigo, descripcion, estado, fecha_deteccion,
+                   CAST(julianday('now') - julianday(fecha_deteccion) AS INTEGER) as dias
+            FROM desviaciones
+            WHERE detectado_por=? AND estado NOT IN ('cerrada','rechazada')
+            ORDER BY fecha_deteccion DESC LIMIT 20
+        """, (user,)).fetchall():
+            out['mis_creados'].append({
+                'modulo': 'desviaciones', 'codigo': r[0],
+                'titulo': (r[1] or '')[:80], 'estado': r[2],
+                'fecha': r[3], 'dias': r[4],
+                'accion': _accion_desv_por_estado(r[2]),
+            })
+        # Cambios solicitados o donde es responsable de implementación
+        for r in c.execute("""
+            SELECT codigo, titulo, estado, fecha_solicitud, solicitado_por,
+                   responsable_implementacion,
+                   CAST(julianday('now') - julianday(fecha_solicitud) AS INTEGER) as dias
+            FROM control_cambios
+            WHERE (solicitado_por=? OR responsable_implementacion=?)
+              AND estado NOT IN ('cerrado','rechazado')
+            ORDER BY fecha_solicitud DESC LIMIT 20
+        """, (user, user)).fetchall():
+            es_resp = r[5] == user and r[2] in ('aprobado','en_implementacion')
+            out['mis_creados'].append({
+                'modulo': 'cambios', 'codigo': r[0],
+                'titulo': (r[1] or '')[:80], 'estado': r[2],
+                'fecha': r[3], 'dias': r[6],
+                'accion': 'Implementar' if es_resp else _accion_cambio_por_estado(r[2]),
+            })
+        # Quejas recibidas
+        for r in c.execute("""
+            SELECT codigo, cliente_nombre, estado, fecha_recepcion,
+                   CAST(julianday('now') - julianday(fecha_recepcion) AS INTEGER) as dias
+            FROM quejas_clientes
+            WHERE recibido_por=? AND estado NOT IN ('cerrada','rechazada')
+            ORDER BY fecha_recepcion DESC LIMIT 20
+        """, (user,)).fetchall():
+            out['mis_creados'].append({
+                'modulo': 'quejas', 'codigo': r[0],
+                'titulo': f'Cliente: {(r[1] or "")[:60]}', 'estado': r[2],
+                'fecha': r[3], 'dias': r[4],
+                'accion': _accion_queja_por_estado(r[2]),
+            })
+        # Recalls iniciados (siempre Calidad/Admin pero por completar el patrón)
+        for r in c.execute("""
+            SELECT codigo, producto, estado, fecha_inicio,
+                   CAST(julianday('now') - julianday(fecha_inicio) AS INTEGER) as dias
+            FROM recalls
+            WHERE iniciado_por=? AND estado NOT IN ('cerrado','cancelado')
+            ORDER BY fecha_inicio DESC LIMIT 20
+        """, (user,)).fetchall():
+            out['mis_creados'].append({
+                'modulo': 'recalls', 'codigo': r[0],
+                'titulo': (r[1] or '')[:80], 'estado': r[2],
+                'fecha': r[3], 'dias': r[4],
+                'accion': _accion_recall_por_estado(r[2]),
+            })
+    except Exception as e:
+        log.warning('mis_tareas creados: %s', e)
+
+    # ── Cola Calidad: solo para Calidad/Admin ──
+    if es_calidad:
+        try:
+            # Desviaciones sin clasificar (≥1d) — todas
+            for r in c.execute("""
+                SELECT codigo, descripcion, fecha_deteccion,
+                       CAST(julianday('now') - julianday(fecha_deteccion) AS INTEGER) as dias
+                FROM desviaciones
+                WHERE estado='detectada'
+                  AND date(fecha_deteccion) <= date('now')
+                ORDER BY fecha_deteccion ASC LIMIT 20
+            """).fetchall():
+                out['calidad_queue'].append({
+                    'modulo': 'desviaciones', 'codigo': r[0],
+                    'titulo': (r[1] or '')[:80], 'fecha': r[2], 'dias': r[3],
+                    'accion': 'Clasificar', 'urgencia': 'alta' if (r[3] or 0) >= 1 else 'media',
+                })
+            # Cambios sin evaluar
+            for r in c.execute("""
+                SELECT codigo, titulo, fecha_solicitud,
+                       CAST(julianday('now') - julianday(fecha_solicitud) AS INTEGER) as dias
+                FROM control_cambios
+                WHERE estado='solicitado'
+                ORDER BY fecha_solicitud ASC LIMIT 20
+            """).fetchall():
+                out['calidad_queue'].append({
+                    'modulo': 'cambios', 'codigo': r[0],
+                    'titulo': (r[1] or '')[:80], 'fecha': r[2], 'dias': r[3],
+                    'accion': 'Evaluar', 'urgencia': 'alta' if (r[3] or 0) >= 5 else 'media',
+                })
+            # Quejas nuevas
+            for r in c.execute("""
+                SELECT codigo, cliente_nombre, fecha_recepcion, impacto_salud,
+                       CAST(julianday('now') - julianday(fecha_recepcion) AS INTEGER) as dias
+                FROM quejas_clientes
+                WHERE estado='nueva'
+                ORDER BY impacto_salud DESC, fecha_recepcion ASC LIMIT 20
+            """).fetchall():
+                urg = 'super_alta' if r[3] else ('alta' if (r[4] or 0) >= 1 else 'media')
+                out['calidad_queue'].append({
+                    'modulo': 'quejas', 'codigo': r[0],
+                    'titulo': f'Cliente: {(r[1] or "")[:60]}',
+                    'fecha': r[2], 'dias': r[4],
+                    'accion': 'Triaje', 'urgencia': urg,
+                })
+            # Recalls sin clasificar
+            for r in c.execute("""
+                SELECT codigo, producto, fecha_inicio,
+                       CAST(julianday('now') - julianday(fecha_inicio) AS INTEGER) as dias
+                FROM recalls
+                WHERE estado='iniciado'
+                ORDER BY fecha_inicio ASC LIMIT 20
+            """).fetchall():
+                out['calidad_queue'].append({
+                    'modulo': 'recalls', 'codigo': r[0],
+                    'titulo': (r[1] or '')[:80], 'fecha': r[2], 'dias': r[3],
+                    'accion': 'Clasificar URGENTE', 'urgencia': 'super_alta',
+                })
+        except Exception as e:
+            log.warning('mis_tareas calidad_queue: %s', e)
+
+    # ── Urgentes: subset de calidad_queue + mis_creados marcadas como super_alta ──
+    out['urgentes'] = [it for it in out['calidad_queue']
+                          if it.get('urgencia') == 'super_alta']
+
+    # Resumen
+    out['resumen'] = {
+        'capacitaciones_pendientes': len(out['capacitaciones']),
+        'mis_creados_abiertos': len(out['mis_creados']),
+        'calidad_queue': len(out['calidad_queue']) if es_calidad else 0,
+        'urgentes': len(out['urgentes']),
+    }
+    return jsonify(out)
+
+
+def _accion_desv_por_estado(estado):
+    return {
+        'detectada': 'Esperando clasificación de Calidad',
+        'clasificada': 'Esperando investigación',
+        'en_investigacion': 'Investigación en curso',
+        'capa_propuesto': 'CAPA propuesto · esperando implementación',
+        'capa_implementado': 'CAPA implementado · esperando cierre',
+    }.get(estado, 'En proceso')
+
+
+def _accion_cambio_por_estado(estado):
+    return {
+        'solicitado': 'Esperando evaluación',
+        'en_evaluacion': 'Esperando aprobación',
+        'aprobado': 'Aprobado · esperando implementación',
+        'en_implementacion': 'Implementación en curso',
+        'implementado': 'Esperando cierre',
+    }.get(estado, 'En proceso')
+
+
+def _accion_queja_por_estado(estado):
+    return {
+        'nueva': 'Esperando triaje de Calidad',
+        'en_triaje': 'Esperando investigación',
+        'en_investigacion': 'Investigación en curso',
+        'respondida': 'Respondida · esperando cierre',
+    }.get(estado, 'En proceso')
+
+
+def _accion_recall_por_estado(estado):
+    return {
+        'iniciado': 'Esperando clasificación URGENTE',
+        'clasificado': 'Esperando notificación INVIMA',
+        'invima_notificado': 'INVIMA OK · notificar distribuidores',
+        'distribuidores_notificados': 'Distribuidores OK · iniciar recolección',
+        'en_recoleccion': 'Recolección en curso',
+        'completado': 'Esperando cierre con efectividad',
+    }.get(estado, 'En proceso')
+
+
 # ════════════════════════════════════════════════════════════════════
 # RECALL · ASG-PRO-004 · Retiro de producto del mercado
 # ════════════════════════════════════════════════════════════════════

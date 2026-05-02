@@ -83,6 +83,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
+  <div class="tab" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
   <div class="tab" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
   <div class="tab" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
   <div class="tab" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
@@ -146,6 +147,44 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card" style="margin-top:14px">
     <div class="card-title">Resumen del SGD por área</div>
     <div id="dash-areas"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
+<!-- MIS TAREAS · vista personalizada por usuario -->
+<div id="tab-mis-tareas" class="pane">
+  <div id="mt-loading" style="text-align:center;padding:30px;color:#94a3b8">Cargando...</div>
+  <div id="mt-content" style="display:none">
+    <div style="margin-bottom:14px">
+      <span style="font-size:1.1em;font-weight:700">Tareas para </span>
+      <span id="mt-user" style="font-size:1.1em;font-weight:700;color:#7ACFCC"></span>
+      <span id="mt-rol" style="font-size:0.78em;color:#94a3b8;margin-left:6px"></span>
+    </div>
+
+    <!-- Banner urgentes (rojo) -->
+    <div id="mt-urgentes-wrap" style="display:none">
+      <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-bottom:14px">
+        <div style="font-weight:700;color:#991b1b;margin-bottom:6px">🚨 Urgente · acción inmediata</div>
+        <div id="mt-urgentes-list" style="font-size:0.85em"></div>
+      </div>
+    </div>
+
+    <!-- Capacitaciones pendientes -->
+    <div class="card">
+      <div class="card-title">🎓 Capacitaciones pendientes <span id="mt-cap-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div id="mt-cap-body"><p class="empty">Sin capacitaciones pendientes</p></div>
+    </div>
+
+    <!-- Mis ítems abiertos -->
+    <div class="card">
+      <div class="card-title">📋 Items que reporté/creé y siguen abiertos <span id="mt-mc-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div id="mt-mc-body"><p class="empty">Sin ítems abiertos</p></div>
+    </div>
+
+    <!-- Cola Calidad (solo si rol Calidad) -->
+    <div class="card" id="mt-queue-card" style="display:none">
+      <div class="card-title">⚙️ Cola de Calidad · pendientes de tu acción <span id="mt-q-cnt" style="color:#94a3b8;font-weight:400;font-size:0.85em"></span></div>
+      <div id="mt-queue-body"><p class="empty">Cola vacía 👏</p></div>
+    </div>
   </div>
 </div>
 
@@ -712,12 +751,13 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-conf'];
+var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if(id==='tab-dash') loadDashboard();
+  else if(id==='tab-mis-tareas') loadMisTareas();
   else if(id==='tab-sgd') loadSGD();
   else if(id==='tab-mis-cap') loadMisCapacitaciones();
   else if(id==='tab-desv') loadDesviaciones();
@@ -725,6 +765,119 @@ function goTab(id){
   else if(id==='tab-quejas') loadQuejas();
   else if(id==='tab-recalls') loadRecalls();
   else if(id==='tab-conf') loadConflictos();
+}
+
+// === MIS TAREAS · vista consolidada del usuario =======================
+async function loadMisTareas(){
+  document.getElementById('mt-loading').style.display = 'block';
+  document.getElementById('mt-content').style.display = 'none';
+  try{
+    var r = await fetch('/api/aseguramiento/mis-tareas');
+    var d = await r.json();
+    document.getElementById('mt-user').textContent = d.usuario;
+    document.getElementById('mt-rol').textContent = d.es_calidad ? '· Rol Calidad/Admin' : '';
+
+    // Urgentes
+    var urg = d.urgentes || [];
+    var urgWrap = document.getElementById('mt-urgentes-wrap');
+    if(urg.length){
+      urgWrap.style.display = 'block';
+      document.getElementById('mt-urgentes-list').innerHTML = urg.map(function(it){
+        return '<div style="padding:4px 0;border-top:1px solid #fecaca;cursor:pointer" onclick="goTab(\'tab-'+_modBaseTab(it.modulo)+'\')">'
+          +'<b><code>'+_esc(it.codigo)+'</code></b> · '+_esc(it.titulo||'')+' · '
+          +'<span style="color:#991b1b">'+_esc(it.accion)+'</span> · '+(it.dias||0)+'d'
+          +'</div>';
+      }).join('');
+    } else { urgWrap.style.display = 'none'; }
+
+    // Capacitaciones
+    var cap = d.capacitaciones || [];
+    document.getElementById('mt-cap-cnt').textContent = cap.length ? '('+cap.length+')' : '';
+    if(cap.length){
+      document.getElementById('mt-cap-body').innerHTML =
+        '<table><thead><tr><th>Código</th><th>SOP</th><th>Asignado</th><th>Plazo</th><th></th></tr></thead><tbody>'
+        + cap.map(function(it){
+          var pdfBtn = it.archivo_pdf_url
+            ? '<a href="'+_esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" class="btn btn-primary btn-sm" onclick="_marcarPdfAbierto(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\')">📎 Abrir PDF</a> '
+            : '<span style="color:#94a3b8;font-size:0.78em">sin PDF · </span>';
+          return '<tr>'
+            +'<td><code>'+_esc(it.sgd_codigo)+'</code> v'+_esc(it.sgd_version)+'</td>'
+            +'<td>'+_esc(it.titulo||'')+'</td>'
+            +'<td>'+_esc(it.asignado_at||'')+' ('+(it.dias||0)+'d)</td>'
+            +'<td>'+_esc(it.fecha_limite||'—')+'</td>'
+            +'<td style="white-space:nowrap">'+pdfBtn+'<button class="btn btn-ghost btn-sm" onclick="goTab(\'tab-mis-cap\')">Ir a firmas</button></td>'
+            +'</tr>';
+        }).join('') + '</tbody></table>';
+    } else {
+      document.getElementById('mt-cap-body').innerHTML = '<p class="empty">Sin capacitaciones pendientes 👏</p>';
+    }
+
+    // Mis creados
+    var mc = d.mis_creados || [];
+    document.getElementById('mt-mc-cnt').textContent = mc.length ? '('+mc.length+')' : '';
+    if(mc.length){
+      document.getElementById('mt-mc-body').innerHTML =
+        '<table><thead><tr><th>Módulo</th><th>Código</th><th>Título</th><th>Estado</th><th>Días</th><th>Próxima acción</th></tr></thead><tbody>'
+        + mc.map(function(it){
+          var modIcon = _modIcon(it.modulo);
+          return '<tr style="cursor:pointer" onclick="goTab(\'tab-'+_modBaseTab(it.modulo)+'\')">'
+            +'<td>'+modIcon+' '+_esc(it.modulo)+'</td>'
+            +'<td><code>'+_esc(it.codigo)+'</code></td>'
+            +'<td>'+_esc(it.titulo||'')+'</td>'
+            +'<td><span style="font-size:0.85em">'+_esc((it.estado||'').replace(/_/g,' '))+'</span></td>'
+            +'<td>'+(it.dias||0)+'d</td>'
+            +'<td style="font-size:0.85em;color:#475569">'+_esc(it.accion||'')+'</td>'
+            +'</tr>';
+        }).join('') + '</tbody></table>';
+    } else {
+      document.getElementById('mt-mc-body').innerHTML = '<p class="empty">No reportaste nada que siga abierto</p>';
+    }
+
+    // Cola Calidad
+    var queueCard = document.getElementById('mt-queue-card');
+    if(d.es_calidad){
+      queueCard.style.display = 'block';
+      var q = d.calidad_queue || [];
+      document.getElementById('mt-q-cnt').textContent = q.length ? '('+q.length+')' : '';
+      if(q.length){
+        // Ordenar por urgencia
+        var orden = {'super_alta':0,'alta':1,'media':2};
+        q.sort(function(a,b){return (orden[a.urgencia]||9) - (orden[b.urgencia]||9);});
+        document.getElementById('mt-queue-body').innerHTML =
+          '<table><thead><tr><th>Urgencia</th><th>Módulo</th><th>Código</th><th>Título</th><th>Días</th><th>Acción</th></tr></thead><tbody>'
+          + q.map(function(it){
+            var urgBadge = it.urgencia === 'super_alta' ? '<span class="badge badge-venc">URGENTE</span>'
+              : it.urgencia === 'alta' ? '<span class="badge badge-prox">alta</span>'
+              : '<span class="badge badge-bor">media</span>';
+            var modIcon = _modIcon(it.modulo);
+            return '<tr style="cursor:pointer" onclick="goTab(\'tab-'+_modBaseTab(it.modulo)+'\')">'
+              +'<td>'+urgBadge+'</td>'
+              +'<td>'+modIcon+' '+_esc(it.modulo)+'</td>'
+              +'<td><code>'+_esc(it.codigo)+'</code></td>'
+              +'<td>'+_esc(it.titulo||'')+'</td>'
+              +'<td>'+(it.dias||0)+'d</td>'
+              +'<td style="font-weight:600">'+_esc(it.accion||'')+'</td>'
+              +'</tr>';
+          }).join('') + '</tbody></table>';
+      } else {
+        document.getElementById('mt-queue-body').innerHTML = '<p class="empty">Cola vacía 👏</p>';
+      }
+    } else {
+      queueCard.style.display = 'none';
+    }
+
+    document.getElementById('mt-loading').style.display = 'none';
+    document.getElementById('mt-content').style.display = 'block';
+  }catch(e){
+    document.getElementById('mt-loading').innerHTML = '<span style="color:#c00">Error: '+_esc(e.message)+'</span>';
+  }
+}
+
+function _modIcon(m){
+  return {'desviaciones':'📢','cambios':'🔄','quejas':'💬','recalls':'🚨'}[m] || '•';
+}
+function _modBaseTab(m){
+  return {'desviaciones':'desv','cambios':'cambios','quejas':'quejas','recalls':'recalls'}[m] || 'dash';
 }
 
 // === DESVIACIONES (ASG-PRO-001) ========================================
