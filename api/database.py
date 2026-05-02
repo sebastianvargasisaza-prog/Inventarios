@@ -3335,6 +3335,19 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (94, "Re-aplicar indexes mig 92 que fallaron por orden (tablas creadas en 87/88)", [
+        # Bug detectado 2-may-2026: el array de MIGRATIONS está en orden
+        # parcial · 92 (indexes sobre desviaciones/control_cambios) corre
+        # ANTES de 87 (crea desviaciones) y 88 (crea control_cambios).
+        # Como BENIGN_PATTERNS incluye "no such table", CREATE INDEX falla
+        # silenciosamente. Esta migración 94 los re-crea (CREATE IF NOT EXISTS
+        # es idempotente · si ya existen no rompe).
+        "CREATE INDEX IF NOT EXISTS idx_desv_detectado ON desviaciones(detectado_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_solicitante ON control_cambios(solicitado_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_responsable ON control_cambios(responsable_implementacion, estado) WHERE responsable_implementacion IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_qc_recibido ON quejas_clientes(recibido_por, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_iniciado ON recalls(iniciado_por, estado)",
+    ]),
     (93, "Performance: indexes faltantes en pedidos + clientes (audit zero-error)", [
         # Audit zero-error 2-may-2026: clientes.ficha360 hacía full scan por cliente
         # porque pedidos.cliente_id no tenía índice. Con 1k pedidos cada GET llamaba
@@ -4551,7 +4564,14 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
         "no such table",  # ALTER en tabla que aún no se ha creado
     )
 
-    for version, description, stmts in MIGRATIONS:
+    # Audit zero-error 2-may-2026: ordenar por número de versión antes de aplicar.
+    # El array de MIGRATIONS estaba en orden parcial (newer-first arriba,
+    # older-first abajo). Eso causaba que migración 92 (indexes sobre tablas
+    # 87/88) corriera ANTES de las migraciones que creaban esas tablas, con
+    # el resultado de que CREATE INDEX fallaba silenciosamente por "no such
+    # table" (en BENIGN_PATTERNS) y los indexes nunca se creaban.
+    # Ordenar garantiza que dependencias siempre estén aplicadas primero.
+    for version, description, stmts in sorted(MIGRATIONS, key=lambda m: m[0]):
         if version in applied:
             continue
         for stmt in stmts:
