@@ -37,7 +37,47 @@ BACKUPS_DIR = os.environ.get(
 RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "7"))
 BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "23"))
 
+# Off-site backup opcional · Día 5 ROADMAP zero-error
+# Si BACKUP_OFFSITE_URL está configurado (S3/B2/GCS pre-signed PUT URL),
+# después de hacer el backup local se hace upload a la URL.
+# Formato esperado: URL pre-signed PUT con expiración (ej. S3 presigned).
+# La política de generar URLs pre-signed se delega al admin (cron mensual o
+# integración con el SDK del provider).
+BACKUP_OFFSITE_URL = os.environ.get("BACKUP_OFFSITE_URL", "").strip()
+BACKUP_OFFSITE_TIMEOUT = int(os.environ.get("BACKUP_OFFSITE_TIMEOUT", "120"))
+
 _logger = logging.getLogger("inventario.backup")
+
+
+def _upload_offsite(file_path: str) -> dict:
+    """Sube el archivo a BACKUP_OFFSITE_URL vía PUT (S3/B2/GCS presigned).
+
+    Args:
+        file_path: ruta del .db.gz local.
+
+    Returns:
+        dict {ok, status, size, error}.
+    """
+    if not BACKUP_OFFSITE_URL:
+        return {"ok": False, "skipped": True, "reason": "BACKUP_OFFSITE_URL no configurado"}
+    try:
+        from urllib import request as _ur
+        with open(file_path, "rb") as f:
+            data = f.read()
+        size = len(data)
+        # PUT con presigned URL · S3/B2/GCS aceptan este patrón
+        req = _ur.Request(BACKUP_OFFSITE_URL, data=data, method="PUT")
+        req.add_header("Content-Type", "application/gzip")
+        with _ur.urlopen(req, timeout=BACKUP_OFFSITE_TIMEOUT) as resp:
+            status = resp.status
+        if 200 <= status < 300:
+            _logger.info("offsite_upload_ok size=%d status=%d", size, status)
+            return {"ok": True, "status": status, "size": size}
+        _logger.warning("offsite_upload status=%d", status)
+        return {"ok": False, "status": status}
+    except Exception as e:
+        _logger.error("offsite_upload_failed: %s", e)
+        return {"ok": False, "error": str(e)[:200]}
 
 # Lock para evitar múltiples backups simultáneos en el MISMO worker
 # (entre workers, el lock es vía backup_log SQL).
@@ -199,15 +239,23 @@ def do_backup(triggered_by="auto"):
         _do_sqlite_backup_to_gz(target)
         size = os.path.getsize(target)
 
+        # Upload off-site (best effort · no falla el backup local si offsite falla)
+        offsite_result = None
+        if BACKUP_OFFSITE_URL:
+            offsite_result = _upload_offsite(target)
+
         deleted = _rotate_old_backups()
         _close_backup_slot(conn, slot_id, file_path=target, size_bytes=size,
                            status="ok")
         _logger.info(
-            "backup_completed file=%s size=%d rotated=%d trigger=%s",
-            filename, size, deleted, triggered_by
+            "backup_completed file=%s size=%d rotated=%d trigger=%s offsite=%s",
+            filename, size, deleted, triggered_by,
+            'ok' if (offsite_result and offsite_result.get('ok')) else
+            ('skipped' if not BACKUP_OFFSITE_URL else 'failed')
         )
         return {"ok": True, "file_path": target, "filename": filename,
-                "size_bytes": size, "rotated": deleted}
+                "size_bytes": size, "rotated": deleted,
+                "offsite": offsite_result}
 
     except Exception as e:
         _logger.error("backup_failed: %s", e, exc_info=True)
