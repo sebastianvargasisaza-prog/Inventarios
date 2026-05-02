@@ -288,23 +288,82 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
-<!-- SISTEMA DE AGUA -->
+<!-- SISTEMA DE AGUA \u00b7 COC-PRO-008 (v2 con estado-hoy + tendencia + filtros + export) -->
 <div id="tab-agua" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
     <div>
       <div class="card-title" style="margin:0">\u{1F4A7} Sistema de Agua (COC-PRO-008)</div>
-      <div style="color:#94a3b8;font-size:12px;margin-top:2px">Limites USP: pH 5.0-7.5 \u00b7 cond \u2264 1.3 \u00b5S/cm \u00b7 TOC \u2264 500 ppb \u00b7 micro \u2264 100 UFC/100mL</div>
+      <div style="color:#94a3b8;font-size:12px;margin-top:2px">L\u00edmites USP: pH 5.0-7.5 \u00b7 cond \u2264 1.3 \u00b5S/cm \u00b7 TOC \u2264 500 ppb \u00b7 micro \u2264 100 UFC/100mL</div>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-primary btn-sm" onclick="abrirModalNuevoAgua()">+ Registrar lectura</button>
-      <button class="btn btn-ghost btn-sm" onclick="loadAguaRegistros()">\u21bb</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadAguaCompleto()">\u21bb Refrescar</button>
     </div>
   </div>
+
+  <!-- Card 1: Estado de hoy -->
+  <div id="agua-estado-hoy" class="card" style="margin-bottom:14px">
+    <p class="empty">Cargando estado de hoy...</p>
+  </div>
+
+  <!-- Card 2: Form r\u00e1pido inline -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">Registrar lectura</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">
+      <div class="form-group"><label>Punto muestreo *</label>
+        <select id="ag-punto"><option value="">--</option><option>Tanque RO</option><option>Salida RO</option><option>Loop1</option><option>Loop2</option><option>POS-1</option><option>POS-2</option><option>Otro</option></select>
+      </div>
+      <div class="form-group"><label>Tipo agua</label>
+        <select id="ag-tipo"><option value="purificada">Purificada</option><option value="potable">Potable</option><option value="destilada">Destilada</option><option value="wfi">WFI</option></select>
+      </div>
+      <div class="form-group"><label>pH</label><input id="ag-ph" type="number" step="0.01" placeholder="5.0-7.5"></div>
+      <div class="form-group"><label>Cond. \u00b5S/cm</label><input id="ag-cond" type="number" step="0.001" placeholder="\u22641.3"></div>
+      <div class="form-group"><label>TOC ppb</label><input id="ag-toc" type="number" step="0.1" placeholder="\u2264500"></div>
+      <div class="form-group"><label>Micro UFC/mL</label><input id="ag-micro" type="number" step="0.1" placeholder="\u2264100"></div>
+      <div class="form-group"><label>Cloro ppm</label><input id="ag-cloro" type="number" step="0.01"></div>
+      <div class="form-group"><label>Temp \u00b0C</label><input id="ag-temp" type="number" step="0.1"></div>
+    </div>
+    <div class="form-group"><label>Observaciones</label><input id="ag-obs" placeholder="opcional"></div>
+    <div style="text-align:right;margin-top:8px">
+      <button class="btn btn-primary" onclick="guardarLecturaAguaInline()">Registrar</button>
+    </div>
+    <div id="ag-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+
+  <!-- Card 3: Tendencia 30d -->
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Tendencia</div>
+      <select id="ag-dias" onchange="loadAguaTendencia()" style="padding:4px 8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px;font-size:12px">
+        <option value="7">7 d\u00edas</option>
+        <option value="30" selected>30 d\u00edas</option>
+        <option value="90">90 d\u00edas</option>
+      </select>
+    </div>
+    <div id="ag-kpis" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px"></div>
+    <div id="ag-drift-alert" style="margin-bottom:8px"></div>
+    <div id="ag-grafico" style="overflow-x:auto"><p class="empty">Cargando tendencia...</p></div>
+  </div>
+
+  <!-- Card 4: Hist\u00f3rico con filtros + export -->
   <div class="card">
-    <table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Punto</th><th>Tipo</th><th>pH</th><th>Cond.</th><th>TOC</th><th>Micro</th><th>Estado</th><th>Operador</th></tr></thead>
-      <tbody id="agua-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
-    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Hist\u00f3rico</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px">
+        <input id="ag-f-desde" type="date" style="padding:4px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px">
+        <input id="ag-f-hasta" type="date" style="padding:4px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px">
+        <select id="ag-f-estado" style="padding:4px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:4px">
+          <option value="">Todos estados</option><option value="ok">OK</option><option value="alerta">Alerta</option><option value="fuera_spec">Fuera spec</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadAguaRegistros()">Filtrar</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportarAguaCSV()">\u2b07 CSV</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Fecha</th><th>Hora</th><th>Punto</th><th>Tipo</th><th>pH</th><th>Cond.</th><th>TOC</th><th>Micro</th><th>Estado</th><th>Operador</th></tr></thead>
+        <tbody id="agua-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -775,29 +834,230 @@ async function guardarResultadoMicro(){
 }
 
 // === SISTEMA DE AGUA ====================================================
-async function loadAguaRegistros(){
+// === SISTEMA DE AGUA · COC-PRO-008 (versión avanzada) ===================
+// Sebastián 1-may-2026: estado hoy + form inline + tendencia + drift + export
+function loadAguaRegistros(){ loadAguaCompleto(); }
+
+async function loadAguaCompleto(){
+  await Promise.all([
+    loadAguaEstadoHoy(),
+    loadAguaTendencia(),
+    loadAguaTabla(),
+  ]);
+}
+
+async function loadAguaEstadoHoy(){
+  var box = document.getElementById('agua-estado-hoy');
+  if(!box) return;
   try{
-    var r = await fetch('/api/calidad/agua/registros');
+    var r = await fetch('/api/calidad/agua/estado-hoy');
     var d = await r.json();
-    var tb = document.getElementById('agua-tbody');
-    var lst = d.registros || [];
-    if(!lst.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Sin registros. Click "+ Registrar lectura".</td></tr>'; return; }
-    tb.innerHTML = lst.map(function(r){
-      var estColor = {ok:'#34d399',alerta:'#fcd34d',fuera_spec:'#fca5a5'}[r.estado]||'#94a3b8';
+    if(!r.ok){ box.innerHTML = '<p class="empty" style="color:#c00">Error: '+(d.error||r.status)+'</p>'; return; }
+    if(d.registrado){
+      var ur = d.ultimo_registro;
+      var estColor = {ok:'#15803d',alerta:'#fbbf24',fuera_spec:'#ef4444'}[ur.estado]||'#64748b';
+      var estIcon = {ok:'✅',alerta:'⚠️',fuera_spec:'🔴'}[ur.estado]||'';
+      box.style.borderLeft = '4px solid ' + estColor;
+      box.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">'
+        +'<div>'
+        +'<div style="font-size:0.78em;color:#64748b;text-transform:uppercase">Hoy '+_escBan(d.fecha_hoy)+'</div>'
+        +'<div style="font-size:1.4em;font-weight:700;color:'+estColor+'">'+estIcon+' Registrado · '+_escBan(ur.estado)+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'
+        +'pH '+(ur.ph||'?')+' · cond '+(ur.conductividad_us_cm||'?')+' µS/cm · TOC '+(ur.toc_ppb||'?')+' ppb · micro '+(ur.microorganismos_ufc_ml||'?')+' UFC/mL'
+        +'</div>'
+        +'<div style="font-size:0.78em;color:#64748b;margin-top:2px">'
+        +'Punto: '+_escBan(ur.punto_muestreo||'?')+' · Hora: '+_escBan(ur.hora||'?')+' · Por: '+_escBan(ur.operador||'?')
+        +'</div>'
+        +'</div>'
+        +'</div>';
+    } else {
+      var col = d.necesita_alerta ? '#ef4444' : '#fbbf24';
+      var titulo = d.necesita_alerta ? '🔴 FALTA REGISTRO HOY' : '⏳ Sin registro aún';
+      var sub = d.necesita_alerta ? 'Pasada de las 12:00 PM · se notificará al equipo' : 'Recuerda registrar antes del mediodía';
+      box.style.borderLeft = '4px solid ' + col;
+      box.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">'
+        +'<div>'
+        +'<div style="font-size:0.78em;color:#64748b;text-transform:uppercase">Hoy '+_escBan(d.fecha_hoy)+' · '+_escBan(d.hora_actual)+'</div>'
+        +'<div style="font-size:1.4em;font-weight:700;color:'+col+'">'+titulo+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+sub+'</div>'
+        +'</div>'
+        +'</div>';
+    }
+  }catch(e){ box.innerHTML = '<p class="empty" style="color:#c00">Error red: '+_escBan(e.message||String(e))+'</p>'; }
+}
+
+async function loadAguaTendencia(){
+  var graf = document.getElementById('ag-grafico');
+  var kpisEl = document.getElementById('ag-kpis');
+  var driftEl = document.getElementById('ag-drift-alert');
+  if(!graf) return;
+  var dias = (document.getElementById('ag-dias')||{value:30}).value;
+  try{
+    var r = await fetch('/api/calidad/agua/tendencia?dias='+dias);
+    var d = await r.json();
+    if(!r.ok){ graf.innerHTML = '<p class="empty" style="color:#c00">Error tendencia</p>'; return; }
+    var k = d.kpis || {};
+    if(kpisEl){
+      kpisEl.innerHTML =
+        '<div><b>'+(k.dias_con_registro||0)+'/'+(d.dias_ventana||0)+'</b> días con registro ('+(k.cobertura_pct||0)+'%)</div>'
+        +'<div><b>'+(k.lecturas_totales||0)+'</b> lecturas</div>'
+        +'<div style="color:#15803d"><b>'+((k.lecturas_totales||0)-(k.lecturas_fuera_spec||0)-(k.lecturas_alerta||0))+'</b> OK</div>'
+        +'<div style="color:#fbbf24"><b>'+(k.lecturas_alerta||0)+'</b> alerta</div>'
+        +'<div style="color:#ef4444"><b>'+(k.lecturas_fuera_spec||0)+'</b> fuera spec</div>'
+        +'<div><b>'+(k.tasa_ok_pct!=null?k.tasa_ok_pct+'%':'—')+'</b> tasa OK</div>';
+    }
+    if(driftEl){
+      if(d.drift_alerta){
+        driftEl.innerHTML = '<div style="background:#fef2f2;border-left:3px solid #ef4444;padding:8px 12px;border-radius:4px;font-size:0.85em;color:#7f1d1d">⚠ <b>Alerta de drift</b>: conductividad creciendo durante '+(d.drift_dias_consecutivos||3)+' días consecutivos · revisar pre-filtros RO</div>';
+      } else {
+        driftEl.innerHTML = '';
+      }
+    }
+    // SVG simple sparkline para conductividad y pH
+    var serie = (d.serie || []).filter(function(s){ return s.conductividad!=null || s.ph!=null; });
+    if(serie.length === 0){
+      graf.innerHTML = '<p class="empty">Sin datos en el período</p>'; return;
+    }
+    var W = 800, H = 180, pad = 30;
+    var n = serie.length;
+    var condVals = serie.map(function(s){ return s.conductividad; }).filter(function(v){return v!=null;});
+    var phVals = serie.map(function(s){ return s.ph; }).filter(function(v){return v!=null;});
+    var condMax = Math.max.apply(null, condVals.concat([1.3])); // mínimo escala
+    var condMin = 0;
+    var phMax = Math.max.apply(null, phVals.concat([7.5]));
+    var phMin = Math.min.apply(null, phVals.concat([5.0]));
+
+    function xPos(i){ return pad + i * (W - 2*pad) / Math.max(1, n-1); }
+    function yPosCond(v){ return H - pad - (v - condMin) / (condMax - condMin || 1) * (H - 2*pad); }
+    function yPosPH(v){ return H - pad - (v - phMin) / (phMax - phMin || 1) * (H - 2*pad); }
+
+    var pathCond = '', pathPH = '';
+    serie.forEach(function(s, i){
+      if(s.conductividad != null){
+        pathCond += (pathCond ? 'L' : 'M') + xPos(i).toFixed(1) + ',' + yPosCond(s.conductividad).toFixed(1) + ' ';
+      }
+      if(s.ph != null){
+        pathPH += (pathPH ? 'L' : 'M') + xPos(i).toFixed(1) + ',' + yPosPH(s.ph).toFixed(1) + ' ';
+      }
+    });
+
+    // Línea umbral conductividad 1.3
+    var yLimit = yPosCond(1.3);
+
+    // Marcadores fuera_spec
+    var markers = serie.map(function(s, i){
+      if(s.n_fuera_spec > 0){
+        return '<circle cx="'+xPos(i).toFixed(1)+'" cy="'+yPosCond(s.conductividad||0).toFixed(1)+'" r="4" fill="#ef4444" />';
+      }
+      return '';
+    }).join('');
+
+    var labels = '';
+    if(n > 1){
+      [0, Math.floor(n/2), n-1].forEach(function(i){
+        if(serie[i]) labels += '<text x="'+xPos(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#64748b">'+_escBan(serie[i].fecha.slice(5))+'</text>';
+      });
+    }
+
+    graf.innerHTML =
+      '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:'+H+'px;background:#0f172a;border-radius:6px">'
+      +'<line x1="'+pad+'" y1="'+yLimit.toFixed(1)+'" x2="'+(W-pad)+'" y2="'+yLimit.toFixed(1)+'" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,4" opacity="0.6" />'
+      +'<text x="'+(W-pad)+'" y="'+(yLimit-4).toFixed(1)+'" text-anchor="end" font-size="10" fill="#ef4444">USP máx 1.3 µS/cm</text>'
+      +(pathCond ? '<path d="'+pathCond+'" fill="none" stroke="#7ACFCC" stroke-width="2" />' : '')
+      +(pathPH ? '<path d="'+pathPH+'" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="3,3" opacity="0.8" />' : '')
+      +markers
+      +labels
+      +'<text x="'+pad+'" y="14" font-size="11" fill="#7ACFCC" font-weight="700">━ Conductividad</text>'
+      +'<text x="'+(pad+120)+'" y="14" font-size="11" fill="#fbbf24" font-weight="700">┄ pH</text>'
+      +'</svg>';
+  }catch(e){ graf.innerHTML = '<p class="empty" style="color:#c00">Error: '+_escBan(e.message||String(e))+'</p>'; }
+}
+
+async function loadAguaTabla(){
+  var tb = document.getElementById('agua-tbody');
+  if(!tb) return;
+  var desde = (document.getElementById('ag-f-desde')||{value:''}).value;
+  var hasta = (document.getElementById('ag-f-hasta')||{value:''}).value;
+  var estado = (document.getElementById('ag-f-estado')||{value:''}).value;
+  var qs = [];
+  if(desde) qs.push('desde='+encodeURIComponent(desde));
+  if(hasta) qs.push('hasta='+encodeURIComponent(hasta));
+  var url = '/api/calidad/agua/registros' + (qs.length ? '?'+qs.join('&') : '');
+  try{
+    var r = await fetch(url);
+    var d = await r.json();
+    var lst = (d.registros || []).filter(function(rec){
+      return !estado || rec.estado === estado;
+    });
+    if(!lst.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Sin registros</td></tr>'; return; }
+    tb.innerHTML = lst.map(function(rec){
+      var col = {ok:'#34d399',alerta:'#fbbf24',fuera_spec:'#ef4444'}[rec.estado]||'#94a3b8';
       return '<tr>'
-        +'<td>'+esc(r.fecha)+'</td>'
-        +'<td>'+(r.hora||'—')+'</td>'
-        +'<td><b>'+esc(r.punto_muestreo)+'</b></td>'
-        +'<td>'+esc(r.tipo_agua||'')+'</td>'
-        +'<td>'+(r.ph!=null?r.ph:'—')+'</td>'
-        +'<td>'+(r.conductividad_us_cm!=null?r.conductividad_us_cm:'—')+'</td>'
-        +'<td>'+(r.toc_ppb!=null?r.toc_ppb:'—')+'</td>'
-        +'<td>'+(r.microorganismos_ufc_ml!=null?r.microorganismos_ufc_ml:'—')+'</td>'
-        +'<td><span style="color:'+estColor+';font-weight:700;text-transform:uppercase;font-size:10px">'+r.estado+'</span></td>'
-        +'<td>'+esc(r.operador||'')+'</td>'
+        +'<td>'+_escBan(rec.fecha||'')+'</td>'
+        +'<td>'+_escBan(rec.hora||'—')+'</td>'
+        +'<td><b>'+_escBan(rec.punto_muestreo||'')+'</b></td>'
+        +'<td>'+_escBan(rec.tipo_agua||'')+'</td>'
+        +'<td>'+(rec.ph!=null?rec.ph:'—')+'</td>'
+        +'<td>'+(rec.conductividad_us_cm!=null?rec.conductividad_us_cm:'—')+'</td>'
+        +'<td>'+(rec.toc_ppb!=null?rec.toc_ppb:'—')+'</td>'
+        +'<td>'+(rec.microorganismos_ufc_ml!=null?rec.microorganismos_ufc_ml:'—')+'</td>'
+        +'<td><span style="color:'+col+';font-weight:700;text-transform:uppercase;font-size:10px">'+_escBan(rec.estado||'')+'</span></td>'
+        +'<td>'+_escBan(rec.operador||'')+'</td>'
       +'</tr>';
     }).join('');
-  }catch(e){ document.getElementById('agua-tbody').innerHTML = '<tr><td class="empty">Error: '+e.message+'</td></tr>'; }
+  }catch(e){ tb.innerHTML = '<tr><td colspan="10" class="empty" style="color:#c00">Error: '+_escBan(e.message||String(e))+'</td></tr>'; }
+}
+
+async function guardarLecturaAguaInline(){
+  var msg = document.getElementById('ag-msg');
+  var punto = (document.getElementById('ag-punto')||{value:''}).value.trim();
+  if(!punto){ if(msg) msg.innerHTML = '<span style="color:#ef4444">Punto de muestreo requerido</span>'; return; }
+  var body = {
+    punto_muestreo: punto,
+    tipo_agua: (document.getElementById('ag-tipo')||{value:'purificada'}).value,
+    ph: (document.getElementById('ag-ph')||{value:''}).value || null,
+    conductividad_us_cm: (document.getElementById('ag-cond')||{value:''}).value || null,
+    toc_ppb: (document.getElementById('ag-toc')||{value:''}).value || null,
+    microorganismos_ufc_ml: (document.getElementById('ag-micro')||{value:''}).value || null,
+    cloro_residual_ppm: (document.getElementById('ag-cloro')||{value:''}).value || null,
+    temperatura_c: (document.getElementById('ag-temp')||{value:''}).value || null,
+    observaciones: (document.getElementById('ag-obs')||{value:''}).value || null,
+  };
+  if(msg) msg.innerHTML = '<span style="color:#64748b">Registrando...</span>';
+  try{
+    var r = await fetch('/api/calidad/agua/registros', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if(d.ok){
+      var col = d.estado === 'fuera_spec' ? '#ef4444' : (d.estado === 'alerta' ? '#fbbf24' : '#15803d');
+      var msgTxt = '✅ Registrado · estado: '+d.estado;
+      if(d.warnings && d.warnings.length) msgTxt += ' · ⚠ ' + d.warnings.join('; ');
+      if(msg) msg.innerHTML = '<span style="color:'+col+';font-weight:600">'+_escBan(msgTxt)+'</span>';
+      // Limpiar form
+      ['ag-ph','ag-cond','ag-toc','ag-micro','ag-cloro','ag-temp','ag-obs'].forEach(function(id){
+        var el = document.getElementById(id); if(el) el.value='';
+      });
+      // Refrescar todo
+      loadAguaCompleto();
+    } else {
+      if(msg) msg.innerHTML = '<span style="color:#ef4444">Error: '+_escBan(d.error||'?')+'</span>';
+    }
+  }catch(e){
+    if(msg) msg.innerHTML = '<span style="color:#ef4444">Error red: '+_escBan(e.message||String(e))+'</span>';
+  }
+}
+
+function exportarAguaCSV(){
+  var desde = (document.getElementById('ag-f-desde')||{value:''}).value;
+  var hasta = (document.getElementById('ag-f-hasta')||{value:''}).value;
+  var qs = [];
+  if(desde) qs.push('desde='+encodeURIComponent(desde));
+  if(hasta) qs.push('hasta='+encodeURIComponent(hasta));
+  window.open('/api/calidad/agua/exportar-csv' + (qs.length ? '?'+qs.join('&') : ''), '_blank');
 }
 
 function abrirModalNuevoAgua(){

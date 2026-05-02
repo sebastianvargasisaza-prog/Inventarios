@@ -577,6 +577,8 @@ JOBS_SCHEDULE = [
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
     # Lunes urgente (después del workflow lunes 7am)
     ('auto_sc_urgente_lun',  12,  0, [0],  None,                'job_auto_sc_urgente'),
+    # ⭐ Calidad · L-V 12:00 · alerta si falta registro sistema agua hoy (COC-PRO-008)
+    ('agua_recordatorio',    12,  0, [0,1,2,3,4], None,         'job_agua_recordatorio'),
 ]
 
 
@@ -1301,6 +1303,45 @@ def job_cleanup_logs(app):
         return True, {'cron_jobs_runs': n_runs, 'auto_plan_runs': n_apr,
                        'auto_asignacion_log': n_aal,
                        'errores': errores}, 0
+
+
+def job_agua_recordatorio(app):
+    """COC-PRO-008 · Si pasaron las 12 PM y NO hay registro del sistema de
+    agua hoy → push notif a Calidad + email a Sebastián.
+
+    Sebastián 1-may-2026: el control diario del sistema de agua es lo que
+    INVIMA audita más exhaustivamente. Reemplaza Excel manual + WhatsApp.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            row = c.execute("""
+                SELECT 1 FROM calidad_sistema_agua
+                WHERE date(fecha) = date('now')
+                LIMIT 1
+            """).fetchone()
+        except Exception as e:
+            log.warning('agua_recordatorio read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+        if row:
+            return True, {'mensaje': 'Registro de agua hoy presente · sin alerta'}, 0
+        # No hay registro → notificar
+        try:
+            from blueprints.notif import push_notif_multi
+            destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                             'laura','miguel','yuliel','sebastian']
+            push_notif_multi(
+                destinatarios,
+                'capa',
+                '⚠ Falta registro del sistema de agua HOY',
+                body='Son las 12:00 PM y aún no hay lectura registrada en /calidad → tab "Sistema de Agua" (COC-PRO-008).',
+                link='/calidad', remitente='cron-agua', importante=True
+            )
+        except Exception as e:
+            log.warning('agua_recordatorio push_notif fallo: %s', e)
+        return True, {'mensaje': 'Alerta enviada · falta registro de agua hoy',
+                       'destinatarios': 6}, 0
 
 
 def job_auto_sc_urgente(app):

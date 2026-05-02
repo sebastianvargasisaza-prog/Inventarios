@@ -289,19 +289,25 @@ def calidad_bandeja():
         out['secciones']['muestreo_micro_semana'] = {'total': 0, 'items': []}
 
     # ── 6. Registro sistema agua hoy (COC-PRO-008) ──────────────────────
+    # Sebastián 1-may-2026: tabla real es calidad_sistema_agua. Antes apuntaba
+    # a agua_registros (no existía) · resultaba en alerta perpetua falsa.
     try:
         row = c.execute("""
-            SELECT id, fecha, conductividad, ph, tds, observaciones, registrado_por
-            FROM agua_registros
+            SELECT id, fecha, hora, punto_muestreo, tipo_agua, ph,
+                   conductividad_us_cm, toc_ppb, microorganismos_ufc_ml,
+                   estado, observaciones, operador
+            FROM calidad_sistema_agua
             WHERE date(fecha) = date('now')
             ORDER BY id DESC LIMIT 1
         """).fetchone()
         if row:
             out['secciones']['registro_agua_hoy'] = {
                 'registrado': True,
-                'id': row[0], 'fecha': row[1],
-                'conductividad': row[2], 'ph': row[3], 'tds': row[4],
-                'observaciones': row[5], 'registrado_por': row[6],
+                'id': row[0], 'fecha': row[1], 'hora': row[2],
+                'punto_muestreo': row[3], 'tipo_agua': row[4],
+                'ph': row[5], 'conductividad': row[6], 'toc': row[7],
+                'micro': row[8], 'estado': row[9],
+                'observaciones': row[10], 'registrado_por': row[11],
             }
         else:
             out['secciones']['registro_agua_hoy'] = {
@@ -309,9 +315,9 @@ def calidad_bandeja():
                 'alerta': '⚠️ Falta registro del sistema de agua hoy',
             }
     except Exception as e:
-        log.info('bandeja agua_registros: %s', e)
+        log.warning('bandeja calidad_sistema_agua read fallo: %s', e)
         out['secciones']['registro_agua_hoy'] = {
-            'registrado': False, 'alerta': 'Tabla agua_registros no disponible',
+            'registrado': False, 'alerta': 'Error consultando registro de agua',
         }
 
     # ── 7. Cola liberación PT (esperando QC) ───────────────────────────
@@ -1328,6 +1334,163 @@ def calidad_agua_registros():
     cols = [d[0] for d in c.description]
     out = [dict(zip(cols, r)) for r in rows]
     return jsonify({'registros': out})
+
+
+@bp.route('/api/calidad/agua/estado-hoy', methods=['GET'])
+def calidad_agua_estado_hoy():
+    """Estado del registro del sistema de agua HOY.
+
+    Retorna: { registrado: bool, ultimo_registro: {...}, hora_actual,
+               necesita_alerta: bool (si pasaron 12pm sin registro) }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""
+        SELECT id, fecha, hora, punto_muestreo, tipo_agua, ph,
+               conductividad_us_cm, toc_ppb, microorganismos_ufc_ml,
+               cloro_residual_ppm, temperatura_c, estado, observaciones, operador
+        FROM calidad_sistema_agua
+        WHERE date(fecha) = date('now')
+        ORDER BY id DESC LIMIT 1
+    """).fetchone()
+    ahora = datetime.now()
+    out = {
+        'fecha_hoy': ahora.date().isoformat(),
+        'hora_actual': ahora.strftime('%H:%M'),
+        'registrado': bool(row),
+        'necesita_alerta': False,
+        'ultimo_registro': None,
+    }
+    if row:
+        cols = ['id','fecha','hora','punto_muestreo','tipo_agua','ph',
+                'conductividad_us_cm','toc_ppb','microorganismos_ufc_ml',
+                'cloro_residual_ppm','temperatura_c','estado',
+                'observaciones','operador']
+        out['ultimo_registro'] = dict(zip(cols, row))
+    else:
+        # Si pasó del mediodía y no hay registro → alerta
+        out['necesita_alerta'] = ahora.hour >= 12
+    return jsonify(out)
+
+
+@bp.route('/api/calidad/agua/tendencia', methods=['GET'])
+def calidad_agua_tendencia():
+    """Tendencia del sistema de agua últimos N días (default 30).
+
+    Retorna arrays para gráfico + drift detection (3+ lecturas crecientes
+    consecutivas en conductividad), conteo fuera_spec, kpis.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 30))
+    except (ValueError, TypeError):
+        dias = 30
+    if not (1 <= dias <= 365):
+        return jsonify({'error': 'dias fuera de rango (1-365)'}), 400
+    conn = get_db(); c = conn.cursor()
+    # Una lectura por fecha (la más reciente del día)
+    rows = c.execute("""
+        SELECT fecha, MAX(hora) as hora_max,
+               AVG(ph) as ph_avg,
+               AVG(conductividad_us_cm) as cond_avg,
+               AVG(toc_ppb) as toc_avg,
+               AVG(microorganismos_ufc_ml) as micro_avg,
+               SUM(CASE WHEN estado='fuera_spec' THEN 1 ELSE 0 END) as n_fuera,
+               SUM(CASE WHEN estado='alerta' THEN 1 ELSE 0 END) as n_alerta,
+               COUNT(*) as n_total
+        FROM calidad_sistema_agua
+        WHERE date(fecha) >= date('now', '-' || ? || ' days')
+        GROUP BY fecha
+        ORDER BY fecha ASC
+    """, (dias,)).fetchall()
+    serie = [{
+        'fecha': r[0], 'hora_max': r[1],
+        'ph': round(r[2], 2) if r[2] is not None else None,
+        'conductividad': round(r[3], 3) if r[3] is not None else None,
+        'toc': round(r[4], 1) if r[4] is not None else None,
+        'micro': round(r[5], 1) if r[5] is not None else None,
+        'n_fuera_spec': r[6] or 0,
+        'n_alerta': r[7] or 0,
+        'n_total': r[8] or 0,
+    } for r in rows]
+
+    # Drift detection: 3+ lecturas consecutivas crecientes en conductividad
+    drift_alerta = False
+    drift_dias = 0
+    if len(serie) >= 3:
+        cond_vals = [(s['fecha'], s['conductividad']) for s in serie if s['conductividad'] is not None]
+        if len(cond_vals) >= 3:
+            # Ventana móvil de 3
+            for i in range(len(cond_vals) - 2):
+                a, b, c_v = cond_vals[i][1], cond_vals[i+1][1], cond_vals[i+2][1]
+                if a < b < c_v:
+                    drift_dias = 3
+                    if i + 3 < len(cond_vals) and cond_vals[i+3][1] > c_v:
+                        drift_dias = 4
+                    drift_alerta = True
+            # Si la racha continúa hasta hoy, también marca
+            ult3 = cond_vals[-3:]
+            if len(ult3) == 3 and ult3[0][1] < ult3[1][1] < ult3[2][1]:
+                drift_alerta = True
+
+    total_dias_con_registro = sum(1 for s in serie if s['n_total'] > 0)
+    total_fuera_spec = sum(s['n_fuera_spec'] for s in serie)
+    total_alerta = sum(s['n_alerta'] for s in serie)
+    total_lecturas = sum(s['n_total'] for s in serie)
+
+    return jsonify({
+        'dias_ventana': dias,
+        'serie': serie,
+        'drift_alerta': drift_alerta,
+        'drift_dias_consecutivos': drift_dias,
+        'kpis': {
+            'dias_con_registro': total_dias_con_registro,
+            'dias_sin_registro': dias - total_dias_con_registro,
+            'cobertura_pct': round(total_dias_con_registro * 100 / dias, 1) if dias else 0,
+            'lecturas_totales': total_lecturas,
+            'lecturas_fuera_spec': total_fuera_spec,
+            'lecturas_alerta': total_alerta,
+            'tasa_ok_pct': round((total_lecturas - total_fuera_spec - total_alerta) * 100 / total_lecturas, 1) if total_lecturas else None,
+        },
+    })
+
+
+@bp.route('/api/calidad/agua/exportar-csv', methods=['GET'])
+def calidad_agua_exportar_csv():
+    """Exporta registros del sistema de agua en CSV (para INVIMA)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    where = []; params = []
+    if desde: where.append('fecha >= ?'); params.append(desde)
+    if hasta: where.append('fecha <= ?'); params.append(hasta)
+    sql = ("SELECT fecha, hora, punto_muestreo, tipo_agua, ph, "
+           "conductividad_us_cm, toc_ppb, microorganismos_ufc_ml, "
+           "cloro_residual_ppm, temperatura_c, estado, observaciones, operador "
+           "FROM calidad_sistema_agua")
+    if where: sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha DESC, hora DESC LIMIT 10000"
+    rows = c.execute(sql, params).fetchall()
+    import csv
+    from io import StringIO
+    buf = StringIO()
+    w = csv.writer(buf)
+    w.writerow(['Fecha','Hora','Punto','Tipo','pH','Conductividad uS/cm',
+                 'TOC ppb','Micro UFC/mL','Cloro ppm','Temp C',
+                 'Estado','Observaciones','Operador'])
+    for r in rows:
+        w.writerow([str(x) if x is not None else '' for x in r])
+    csv_text = buf.getvalue()
+    fn = f'sistema_agua_{datetime.now().strftime("%Y%m%d_%H%M")}.csv'
+    return Response(
+        csv_text,
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename={fn}'},
+    )
 
 
 @bp.route('/api/calidad/oos', methods=['GET'])

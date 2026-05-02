@@ -160,11 +160,8 @@ def test_bandeja_agua_registrada_hoy_alert(app, db_clean):
     """Si no hay registro de agua hoy, debe aparecer alerta."""
     # Borrar cualquier registro de hoy para garantizar el caso
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    try:
-        conn.execute("DELETE FROM agua_registros WHERE date(fecha) = date('now')")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # tabla puede no existir
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.commit()
     conn.close()
 
     c = _login(app, "laura")
@@ -173,3 +170,145 @@ def test_bandeja_agua_registrada_hoy_alert(app, db_clean):
     sec = data["secciones"]["registro_agua_hoy"]
     assert sec["registrado"] is False
     assert "alerta" in sec
+
+
+def test_bandeja_agua_registrada_detecta_lectura_hoy(app, db_clean):
+    """Si hay lectura hoy en calidad_sistema_agua, bandeja la detecta."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.execute("""INSERT INTO calidad_sistema_agua
+        (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
+         estado, operador)
+        VALUES (date('now'), '08:30', 'Tanque RO', 'purificada',
+                6.8, 0.9, 'ok', 'laura')""")
+    conn.commit(); conn.close()
+
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/bandeja")
+    data = r.get_json()
+    sec = data["secciones"]["registro_agua_hoy"]
+    assert sec["registrado"] is True
+    assert sec["punto_muestreo"] == "Tanque RO"
+    assert sec["estado"] == "ok"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE punto_muestreo='Tanque RO'")
+    conn.commit(); conn.close()
+
+
+# ─── Tests endpoints sistema agua avanzado (COC-PRO-008) ─────────────────
+
+def test_agua_estado_hoy_sin_registro(app, db_clean):
+    """GET /api/calidad/agua/estado-hoy sin registro retorna alerta."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.commit(); conn.close()
+
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/agua/estado-hoy")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["registrado"] is False
+    assert "fecha_hoy" in data
+    assert "hora_actual" in data
+    # necesita_alerta = True si pasaron las 12pm
+    assert "necesita_alerta" in data
+
+
+def test_agua_estado_hoy_con_registro(app, db_clean):
+    """GET con registro retorna detalles del último."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.execute("""INSERT INTO calidad_sistema_agua
+        (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
+         estado, operador)
+        VALUES (date('now'), '09:00', 'Loop1', 'purificada',
+                6.5, 1.0, 'ok', 'miguel')""")
+    conn.commit(); conn.close()
+
+    c = _login(app, "miguel")
+    r = c.get("/api/calidad/agua/estado-hoy")
+    data = r.get_json()
+    assert data["registrado"] is True
+    ur = data["ultimo_registro"]
+    assert ur["punto_muestreo"] == "Loop1"
+    assert ur["operador"] == "miguel"
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE punto_muestreo='Loop1'")
+    conn.commit(); conn.close()
+
+
+def test_agua_tendencia_estructura(app, db_clean):
+    """GET /api/calidad/agua/tendencia retorna serie + kpis + drift_alerta."""
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/agua/tendencia?dias=30")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert "dias_ventana" in data
+    assert data["dias_ventana"] == 30
+    assert "serie" in data
+    assert "drift_alerta" in data
+    assert "kpis" in data
+    for kpi in ["dias_con_registro", "dias_sin_registro", "cobertura_pct",
+                 "lecturas_totales", "lecturas_fuera_spec", "lecturas_alerta"]:
+        assert kpi in data["kpis"]
+
+
+def test_agua_tendencia_detecta_drift(app, db_clean):
+    """3 lecturas consecutivas con conductividad creciente → drift_alerta=True."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE punto_muestreo='TestDrift'")
+    # 3 días consecutivos con cond creciente
+    conn.execute("""INSERT INTO calidad_sistema_agua
+        (fecha, hora, punto_muestreo, tipo_agua, conductividad_us_cm, estado, operador)
+        VALUES (date('now', '-3 days'), '08:00', 'TestDrift', 'purificada', 0.5, 'ok', 'test')""")
+    conn.execute("""INSERT INTO calidad_sistema_agua
+        (fecha, hora, punto_muestreo, tipo_agua, conductividad_us_cm, estado, operador)
+        VALUES (date('now', '-2 days'), '08:00', 'TestDrift', 'purificada', 0.7, 'ok', 'test')""")
+    conn.execute("""INSERT INTO calidad_sistema_agua
+        (fecha, hora, punto_muestreo, tipo_agua, conductividad_us_cm, estado, operador)
+        VALUES (date('now', '-1 days'), '08:00', 'TestDrift', 'purificada', 0.9, 'ok', 'test')""")
+    conn.commit(); conn.close()
+
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/agua/tendencia?dias=10")
+    data = r.get_json()
+    assert data["drift_alerta"] is True
+    assert data["drift_dias_consecutivos"] >= 3
+
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE punto_muestreo='TestDrift'")
+    conn.commit(); conn.close()
+
+
+def test_agua_tendencia_rechaza_dias_invalidos(app, db_clean):
+    """dias < 1 o > 365 → 400."""
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/agua/tendencia?dias=0")
+    assert r.status_code == 400
+    r2 = c.get("/api/calidad/agua/tendencia?dias=400")
+    assert r2.status_code == 400
+
+
+def test_agua_exportar_csv(app, db_clean):
+    """GET /api/calidad/agua/exportar-csv retorna CSV con header correcto."""
+    c = _login(app, "laura")
+    r = c.get("/api/calidad/agua/exportar-csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("Content-Type", "")
+    body = r.data.decode("utf-8")
+    # Header CSV debe tener las 13 columnas esperadas
+    first_line = body.split("\n")[0]
+    assert "Fecha" in first_line
+    assert "Conductividad" in first_line
+    assert "Estado" in first_line
+
+
+def test_agua_endpoints_requieren_auth(client, db_clean):
+    """Sin login, los endpoints retornan 401."""
+    for path in ["/api/calidad/agua/estado-hoy",
+                 "/api/calidad/agua/tendencia",
+                 "/api/calidad/agua/exportar-csv"]:
+        r = client.get(path)
+        assert r.status_code == 401, f"{path} deberí­a 401, got {r.status_code}"
