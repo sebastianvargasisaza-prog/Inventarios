@@ -585,6 +585,8 @@ JOBS_SCHEDULE = [
     ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
     # ⭐ Aseguramiento · diario 8:30 · alerta control de cambios en plazos vencidos (ASG-PRO-007)
     ('cambios_plazos',        8, 30, None, None,                'job_cambios_plazos'),
+    # ⭐ Aseguramiento · diario 9:00 · alerta quejas sin triar/responder/cerrar (ASG-PRO-013)
+    ('quejas_plazos',         9,  0, None, None,                'job_quejas_plazos'),
 ]
 
 
@@ -1582,6 +1584,87 @@ def job_cambios_plazos(app):
             'invima_pendiente_3d': len(invima_pendiente),
             'sin_implementar_30d': len(sin_implementar),
             'sin_cerrar_15d': len(sin_cerrar),
+        }, 0
+
+
+def job_quejas_plazos(app):
+    """ASG-PRO-013 · diario 9:00 · alerta quejas en plazo vencido.
+
+    Plazos:
+    - nuevas sin triar > 1 día → alerta
+    - crítica/impacto_salud sin responder > 2 días → CRÍTICA
+    - cualquiera sin responder > 7 días → alerta
+    - respondidas sin cerrar > 14 días → alerta
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            sin_triar = c.execute("""
+                SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
+                WHERE estado='nueva'
+                  AND date(fecha_recepcion) <= date('now', '-1 day')
+                LIMIT 30
+            """).fetchall()
+            criticas_lentas = c.execute("""
+                SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
+                WHERE estado IN ('en_triaje','en_investigacion')
+                  AND (severidad='critica' OR impacto_salud=1)
+                  AND date(fecha_recepcion) <= date('now', '-2 day')
+                LIMIT 30
+            """).fetchall()
+            sin_responder = c.execute("""
+                SELECT codigo, cliente_nombre, severidad FROM quejas_clientes
+                WHERE estado IN ('en_triaje','en_investigacion')
+                  AND (severidad IS NULL OR severidad NOT IN ('critica'))
+                  AND impacto_salud=0
+                  AND date(fecha_recepcion) <= date('now', '-7 day')
+                LIMIT 30
+            """).fetchall()
+            sin_cerrar = c.execute("""
+                SELECT codigo, cliente_nombre, respondido_at FROM quejas_clientes
+                WHERE estado='respondida'
+                  AND date(respondido_at) <= date('now', '-14 day')
+                LIMIT 30
+            """).fetchall()
+        except Exception as e:
+            log.warning('quejas_plazos read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        if not (sin_triar or criticas_lentas or sin_responder or sin_cerrar):
+            return True, {'mensaje': 'Sin quejas en plazo vencido'}, 0
+
+        try:
+            from blueprints.notif import push_notif_multi
+            destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                             'laura','sebastian']
+            partes = []
+            if sin_triar:
+                partes.append(f'⏰ {len(sin_triar)} nuevas sin triar (>1d)')
+                for r in sin_triar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · {r[2] or "?"}')
+            if criticas_lentas:
+                partes.append(f'🚨 {len(criticas_lentas)} CRÍTICAS sin responder (>2d)')
+                for r in criticas_lentas[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · {r[2] or "?"}')
+            if sin_responder:
+                partes.append(f'📞 {len(sin_responder)} sin responder (>7d)')
+                for r in sin_responder[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]}')
+            if sin_cerrar:
+                partes.append(f'✅ {len(sin_cerrar)} respondidas sin cerrar (>14d)')
+                for r in sin_cerrar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · resp {r[2]}')
+            push_notif_multi(
+                destinatarios, 'capa',
+                f'⚠ Quejas de cliente en plazo vencido (ASG-PRO-013)',
+                body='\n'.join(partes),
+                link='/aseguramiento', remitente='cron-quejas',
+                importante=bool(criticas_lentas),
+            )
+        except Exception as e:
+            log.warning('quejas_plazos notif fallo: %s', e)
+        return True, {
+            'sin_triar_1d': len(sin_triar),
+            'criticas_lentas_2d': len(criticas_lentas),
+            'sin_responder_7d': len(sin_responder),
+            'sin_cerrar_14d': len(sin_cerrar),
         }, 0
 
 

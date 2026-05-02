@@ -1335,6 +1335,332 @@ def cambio_cerrar(cid):
     return jsonify({'ok': True})
 
 
+# ════════════════════════════════════════════════════════════════════
+# QUEJAS DE CLIENTES · ASG-PRO-013
+# ════════════════════════════════════════════════════════════════════
+
+def _generar_codigo_queja(c) -> str:
+    """Genera código QC-AAAA-NNNN secuencial por año."""
+    anio = datetime.now().year
+    row = c.execute("""
+        SELECT codigo FROM quejas_clientes
+        WHERE codigo LIKE ? ORDER BY id DESC LIMIT 1
+    """, (f'QC-{anio}-%',)).fetchone()
+    if row and row[0]:
+        try:
+            return f'QC-{anio}-{int(row[0].split("-")[-1])+1:04d}'
+        except (ValueError, IndexError):
+            pass
+    return f'QC-{anio}-0001'
+
+
+@bp.route('/api/aseguramiento/quejas', methods=['GET', 'POST'])
+def quejas_endpoint():
+    """GET: lista filtrable. POST: nueva queja (cualquier usuario autenticado)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        cliente_nombre = (d.get('cliente_nombre') or '').strip()
+        descripcion = (d.get('descripcion') or '').strip()
+        if len(cliente_nombre) < 2:
+            return jsonify({'error': 'cliente_nombre requerido'}), 400
+        if len(descripcion) < 10:
+            return jsonify({'error': 'descripcion requerida (≥10 chars)'}), 400
+        canal = (d.get('canal') or 'otro').strip()
+        valid_canales = ('email','telefono','whatsapp','redes_sociales',
+                          'presencial','distribuidor','formulario_web','otro')
+        if canal not in valid_canales:
+            return jsonify({'error': f'canal inválido. Uno de: {", ".join(valid_canales)}'}), 400
+        tipo_queja = (d.get('tipo_queja') or 'otro').strip()
+        valid_tipos = ('reaccion_adversa','calidad_producto','envase_empaque',
+                        'cantidad_volumen','fecha_vencimiento','sabor_olor_textura',
+                        'eficacia','documentacion','servicio','otro')
+        if tipo_queja not in valid_tipos:
+            return jsonify({'error': f'tipo_queja inválido. Uno de: {", ".join(valid_tipos)}'}), 400
+        cliente_tipo = (d.get('cliente_tipo') or '').strip() or None
+        if cliente_tipo and cliente_tipo not in ('consumidor_final','distribuidor','retail','medico','otro'):
+            return jsonify({'error': 'cliente_tipo inválido'}), 400
+
+        codigo = _generar_codigo_queja(c)
+        try:
+            c.execute("""
+                INSERT INTO quejas_clientes
+                  (codigo, fecha_recepcion, recibido_por, canal,
+                   cliente_nombre, cliente_contacto, cliente_tipo,
+                   producto, lote, fecha_compra, establecimiento_compra,
+                   tipo_queja, descripcion, impacto_salud, estado)
+                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')
+            """, (codigo, user, canal,
+                  cliente_nombre[:200],
+                  (d.get('cliente_contacto') or '')[:200],
+                  cliente_tipo,
+                  (d.get('producto') or '')[:200],
+                  (d.get('lote') or '')[:100],
+                  (d.get('fecha_compra') or '').strip() or None,
+                  (d.get('establecimiento_compra') or '')[:200],
+                  tipo_queja,
+                  descripcion[:3000],
+                  1 if d.get('impacto_salud') else 0))
+            qid = c.lastrowid
+            c.execute("""
+                INSERT INTO quejas_clientes_eventos
+                  (queja_id, evento_tipo, estado_nuevo, usuario, comentario)
+                VALUES (?, 'recibida', 'nueva', ?, ?)
+            """, (qid, user, f'Queja recibida vía {canal} de {cliente_nombre[:100]}'))
+            conn.commit()
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            log.exception('crear queja fallo: %s', e)
+            return jsonify({'error': str(e)[:200]}), 500
+
+        # Si declaran impacto en salud → notificación inmediata Calidad+Sebastián
+        if d.get('impacto_salud') or tipo_queja == 'reaccion_adversa':
+            try:
+                from blueprints.notif import push_notif_multi
+                push_notif_multi(
+                    ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                    'capa', f'🚨 Queja {codigo} con IMPACTO EN SALUD',
+                    body=f'{tipo_queja} · {cliente_nombre[:100]} · {descripcion[:140]}',
+                    link='/aseguramiento', remitente=user, importante=True,
+                )
+            except Exception as _e:
+                log.warning('notif queja salud fallo: %s', _e)
+        return jsonify({'ok': True, 'id': qid, 'codigo': codigo}), 201
+
+    # GET · lista
+    estado = (request.args.get('estado') or '').strip()
+    severidad = (request.args.get('severidad') or '').strip()
+    where = []; params = []
+    if estado: where.append('estado=?'); params.append(estado)
+    if severidad: where.append('severidad=?'); params.append(severidad)
+    sql = """SELECT id, codigo, fecha_recepcion, canal, cliente_nombre,
+                    producto, lote, tipo_queja, severidad, estado,
+                    impacto_salud, requiere_recall, fecha_compromiso, fecha_cierre,
+                    CAST((julianday('now') - julianday(fecha_recepcion)) AS INTEGER) as dias_abierta
+             FROM quejas_clientes"""
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_recepcion DESC, id DESC LIMIT 500'
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','codigo','fecha_recepcion','canal','cliente_nombre',
+            'producto','lote','tipo_queja','severidad','estado',
+            'impacto_salud','requiere_recall','fecha_compromiso','fecha_cierre','dias_abierta']
+    items = [dict(zip(cols, r)) for r in rows]
+    kpis = {
+        'total': len(items),
+        'nuevas': sum(1 for it in items if it['estado'] == 'nueva'),
+        'en_investigacion': sum(1 for it in items if it['estado'] == 'en_investigacion'),
+        'pendientes_cierre': sum(1 for it in items if it['estado'] == 'respondida'),
+        'criticas_abiertas': sum(1 for it in items
+                                    if (it['severidad']=='critica' or it['impacto_salud'])
+                                    and it['estado'] not in ('cerrada','rechazada')),
+        'cerradas_30d': sum(1 for it in items
+                              if it['estado']=='cerrada' and it.get('fecha_cierre')
+                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+    }
+    return jsonify({'items': items, 'kpis': kpis})
+
+
+@bp.route('/api/aseguramiento/quejas/<int:qid>', methods=['GET'])
+def queja_detalle(qid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'queja no encontrada'}), 404
+    cols = [d[0] for d in c.description]
+    detalle = dict(zip(cols, row))
+    eventos = c.execute("""
+        SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
+        FROM quejas_clientes_eventos WHERE queja_id=? ORDER BY id ASC
+    """, (qid,)).fetchall()
+    detalle['timeline'] = [{
+        'evento_tipo': r[0], 'estado_anterior': r[1], 'estado_nuevo': r[2],
+        'usuario': r[3], 'comentario': r[4], 'creado_en': r[5],
+    } for r in eventos]
+    return jsonify(detalle)
+
+
+@bp.route('/api/aseguramiento/quejas/<int:qid>/triaje', methods=['POST'])
+def queja_triaje(qid):
+    """Triaje · RBAC Calidad/Admin · severidad + ¿requiere desviación/recall?"""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    severidad = (d.get('severidad') or '').strip()
+    if severidad not in ('critica','mayor','menor','informativa'):
+        return jsonify({'error': 'severidad: critica/mayor/menor/informativa'}), 400
+    triaje_desc = (d.get('triaje_descripcion') or '').strip()
+    if len(triaje_desc) < 10:
+        return jsonify({'error': 'triaje_descripcion requerida (≥10 chars)'}), 400
+    requiere_desv = bool(d.get('requiere_desviacion'))
+    requiere_recall = bool(d.get('requiere_recall'))
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo, impacto_salud FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('nueva','en_triaje'):
+        return jsonify({'error': f'no se puede triar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE quejas_clientes
+        SET severidad=?, triaje_descripcion=?, triaje_por=?,
+            triaje_at=datetime('now'),
+            requiere_desviacion=?, requiere_recall=?,
+            estado='en_triaje', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (severidad, triaje_desc, user,
+          1 if requiere_desv else 0, 1 if requiere_recall else 0, qid))
+    c.execute("""
+        INSERT INTO quejas_clientes_eventos
+          (queja_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'triaje', ?, 'en_triaje', ?, ?)
+    """, (qid, estado_ant, user,
+          f'Severidad {severidad}'+
+          (' · requiere desviación' if requiere_desv else '')+
+          (' · requiere recall' if requiere_recall else '')+
+          f': {triaje_desc[:200]}'))
+    conn.commit()
+    # Notificar si crítica + impacto salud + requiere recall
+    if severidad == 'critica' or requiere_recall:
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                'capa', f'⚠ Queja {row[1]} · severidad {severidad}'+
+                          (' · RECALL POTENCIAL' if requiere_recall else ''),
+                body=triaje_desc[:200],
+                link='/aseguramiento', remitente=user, importante=True,
+            )
+        except Exception as _e:
+            log.warning('notif triaje fallo: %s', _e)
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/quejas/<int:qid>/investigar', methods=['POST'])
+def queja_investigar(qid):
+    """Registrar causa raíz. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    causa = (d.get('causa_raiz') or '').strip()
+    if len(causa) < 20:
+        return jsonify({'error': 'causa_raiz requerida (≥20 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('en_triaje','en_investigacion'):
+        return jsonify({'error': f'no se puede investigar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE quejas_clientes
+        SET causa_raiz=?, investigacion_por=?, investigacion_at=datetime('now'),
+            estado='en_investigacion', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (causa[:2000], user, qid))
+    c.execute("""
+        INSERT INTO quejas_clientes_eventos
+          (queja_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'investigada', ?, 'en_investigacion', ?, ?)
+    """, (qid, estado_ant, user, causa[:200]))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/quejas/<int:qid>/responder', methods=['POST'])
+def queja_responder(qid):
+    """Registrar respuesta al cliente. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    resp_desc = (d.get('respuesta_descripcion') or '').strip()
+    if len(resp_desc) < 20:
+        return jsonify({'error': 'respuesta_descripcion requerida (≥20 chars)'}), 400
+    canal_resp = (d.get('respuesta_canal') or '').strip()
+    valid = ('email','telefono','whatsapp','presencial','carta','formulario_web','otro')
+    if canal_resp not in valid:
+        return jsonify({'error': f'respuesta_canal: {", ".join(valid)}'}), 400
+    fecha_comp = (d.get('fecha_compromiso') or '').strip() or None
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('en_investigacion','en_triaje'):
+        return jsonify({'error': f'no se puede responder en estado {estado_ant} · investigar primero'}), 409
+    c.execute("""
+        UPDATE quejas_clientes
+        SET respuesta_descripcion=?, respuesta_canal=?,
+            respondido_por=?, respondido_at=datetime('now'),
+            fecha_compromiso=?, estado='respondida',
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (resp_desc[:2000], canal_resp, user, fecha_comp, qid))
+    c.execute("""
+        INSERT INTO quejas_clientes_eventos
+          (queja_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'respondida', ?, 'respondida', ?, ?)
+    """, (qid, estado_ant, user, f'Respondida vía {canal_resp}: {resp_desc[:200]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/quejas/<int:qid>/cerrar', methods=['POST'])
+def queja_cerrar(qid):
+    """Cierra la queja con análisis efectividad. Audit log."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    if d.get('cliente_satisfecho') is None:
+        return jsonify({'error': 'cliente_satisfecho (true/false) requerido'}), 400
+    accion = (d.get('accion_correctiva') or '').strip()
+    if len(accion) < 20:
+        return jsonify({'error': 'accion_correctiva requerida (≥20 chars)'}), 400
+    obs = (d.get('observaciones_cierre') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant == 'cerrada':
+        return jsonify({'error': 'ya está cerrada'}), 409
+    if estado_ant != 'respondida':
+        return jsonify({'error': f'debe estar respondida primero · actualmente {estado_ant}'}), 409
+
+    c.execute("""
+        UPDATE quejas_clientes
+        SET cliente_satisfecho=?, accion_correctiva=?, observaciones_cierre=?,
+            estado='cerrada', fecha_cierre=date('now'), cerrado_por=?,
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (1 if d.get('cliente_satisfecho') else 0, accion[:2000],
+          obs[:500] or None, user, qid))
+    c.execute("""
+        INSERT INTO quejas_clientes_eventos
+          (queja_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'cerrada', ?, 'cerrada', ?, ?)
+    """, (qid, estado_ant, user,
+          f'Cerrada · cliente {"satisfecho" if d.get("cliente_satisfecho") else "NO satisfecho"}: {accion[:200]}'))
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, despues)
+            VALUES (?, 'CERRAR_QUEJA', ?, ?)
+        """, (user, row[1] or str(qid),
+              _json.dumps({'cliente_satisfecho': bool(d.get('cliente_satisfecho')),
+                            'accion': accion[:500]})))
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/aseguramiento/capacitaciones/mias', methods=['GET'])
 def capacitaciones_mias():
     """Capacitaciones del usuario actual."""

@@ -88,6 +88,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
   <div class="tab" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
   <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
+  <div class="tab" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
@@ -374,6 +375,131 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- QUEJAS CLIENTES · ASG-PRO-013 -->
+<div id="tab-quejas" class="pane">
+  <div class="kpi-row" id="qc-kpis">
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="qc-kp-tot">—</div></div>
+    <div class="kpi"><div class="kpi-label">Nuevas</div><div class="kpi-val warn" id="qc-kp-nue">—</div></div>
+    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="qc-kp-inv">—</div></div>
+    <div class="kpi"><div class="kpi-label">Pendiente cierre</div><div class="kpi-val warn" id="qc-kp-pen">—</div></div>
+    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="qc-kp-crit">—</div></div>
+    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="qc-kp-cer">—</div></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Quejas y reclamos</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <select id="qc-f-estado" onchange="loadQuejas()">
+          <option value="">Todos estados</option>
+          <option value="nueva">Nueva</option>
+          <option value="en_triaje">En triaje</option>
+          <option value="en_investigacion">Investigando</option>
+          <option value="respondida">Respondida</option>
+          <option value="cerrada">Cerrada</option>
+          <option value="rechazada">Rechazada</option>
+        </select>
+        <select id="qc-f-sev" onchange="loadQuejas()">
+          <option value="">Toda severidad</option>
+          <option value="critica">Crítica</option>
+          <option value="mayor">Mayor</option>
+          <option value="menor">Menor</option>
+          <option value="informativa">Informativa</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadQuejas()">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNuevaQueja()">+ Nueva queja</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Fecha</th><th>Canal</th><th>Cliente</th><th>Producto / Lote</th><th>Tipo</th><th>Sev.</th><th>Estado</th><th>Días</th><th></th></tr></thead>
+        <tbody id="qc-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nueva queja -->
+<div class="modal-overlay" id="m-qc-new">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-qc-new')">&times;</button>
+    <div class="modal-title">Registrar queja de cliente</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Canal *</label>
+        <select id="m-qc-canal">
+          <option value="email">Email</option>
+          <option value="telefono">Teléfono</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="redes_sociales">Redes sociales</option>
+          <option value="presencial">Presencial</option>
+          <option value="distribuidor">Distribuidor</option>
+          <option value="formulario_web">Formulario web</option>
+          <option value="otro" selected>Otro</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Tipo de queja *</label>
+        <select id="m-qc-tipo">
+          <option value="reaccion_adversa">Reacción adversa</option>
+          <option value="calidad_producto">Calidad del producto</option>
+          <option value="envase_empaque">Envase / empaque</option>
+          <option value="cantidad_volumen">Cantidad / volumen</option>
+          <option value="fecha_vencimiento">Fecha vencimiento</option>
+          <option value="sabor_olor_textura">Sabor / olor / textura</option>
+          <option value="eficacia">Eficacia</option>
+          <option value="documentacion">Documentación</option>
+          <option value="servicio">Servicio</option>
+          <option value="otro" selected>Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Cliente · nombre *</label>
+      <input id="m-qc-cli-nom" placeholder="Nombre del cliente o empresa">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Contacto (email/tel)</label><input id="m-qc-cli-cont"></div>
+      <div class="form-group"><label>Tipo cliente</label>
+        <select id="m-qc-cli-tipo">
+          <option value="">—</option>
+          <option value="consumidor_final">Consumidor final</option>
+          <option value="distribuidor">Distribuidor</option>
+          <option value="retail">Retail</option>
+          <option value="medico">Médico</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div class="form-group"><label>Producto</label><input id="m-qc-prod" placeholder="Ej: SAH-30ml"></div>
+      <div class="form-group"><label>Lote</label><input id="m-qc-lote" placeholder="LOTE-2026-XXX"></div>
+      <div class="form-group"><label>Fecha compra</label><input id="m-qc-fcompra" type="date"></div>
+    </div>
+    <div class="form-group"><label>Establecimiento de compra</label>
+      <input id="m-qc-est" placeholder="Farmacia, retail, web...">
+    </div>
+    <div class="form-group"><label>Descripción de la queja * (≥10 chars)</label>
+      <textarea id="m-qc-desc" style="min-height:70px" placeholder="Qué reportó el cliente · cuándo · cómo"></textarea>
+    </div>
+    <div class="form-group">
+      <label style="color:#c2410c"><input type="checkbox" id="m-qc-salud"> ⚠ Impacto en salud (notifica inmediato)</label>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-qc-new')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarQueja()">Registrar</button>
+    </div>
+    <div id="m-qc-new-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<!-- Modal detalle queja + workflow -->
+<div class="modal-overlay" id="m-qc-det">
+  <div class="modal" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('m-qc-det')">&times;</button>
+    <div class="modal-title" id="m-qc-det-title">Detalle</div>
+    <input type="hidden" id="m-qc-det-id">
+    <div id="m-qc-det-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
@@ -443,7 +569,7 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-conf'];
+var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -453,6 +579,7 @@ function goTab(id){
   else if(id==='tab-mis-cap') loadMisCapacitaciones();
   else if(id==='tab-desv') loadDesviaciones();
   else if(id==='tab-cambios') loadCambios();
+  else if(id==='tab-quejas') loadQuejas();
   else if(id==='tab-conf') loadConflictos();
 }
 
@@ -965,6 +1092,257 @@ async function _postCambioAccion(id, accion, body){
     var r = await fetch('/api/aseguramiento/cambios/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     var d = await r.json();
     if(d.ok){ verCambio(id); loadCambios(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+// === QUEJAS DE CLIENTES (ASG-PRO-013) ==================================
+async function loadQuejas(){
+  var estado = document.getElementById('qc-f-estado').value;
+  var sev = document.getElementById('qc-f-sev').value;
+  var qs = [];
+  if(estado) qs.push('estado='+estado);
+  if(sev) qs.push('severidad='+sev);
+  var url = '/api/aseguramiento/quejas' + (qs.length ? '?'+qs.join('&') : '');
+  try{
+    var r = await fetch(url);
+    var d = await r.json();
+    var k = d.kpis || {};
+    document.getElementById('qc-kp-tot').textContent = k.total || 0;
+    document.getElementById('qc-kp-nue').textContent = k.nuevas || 0;
+    document.getElementById('qc-kp-inv').textContent = k.en_investigacion || 0;
+    document.getElementById('qc-kp-pen').textContent = k.pendientes_cierre || 0;
+    document.getElementById('qc-kp-crit').textContent = k.criticas_abiertas || 0;
+    document.getElementById('qc-kp-cer').textContent = k.cerradas_30d || 0;
+    var tb = document.getElementById('qc-tbody');
+    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="10" class="empty">Sin quejas</td></tr>'; return; }
+    tb.innerHTML = d.items.map(function(it){
+      var sevBadge = it.severidad === 'critica' ? '<span class="badge badge-venc">crítica</span>'
+        : it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
+        : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
+        : it.severidad === 'informativa' ? '<span class="badge badge-obs">info</span>'
+        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+      var estadoLabel = (it.estado||'').replace('_',' ');
+      var estadoCol = it.estado === 'cerrada' ? '#15803d'
+        : it.estado === 'rechazada' ? '#94a3b8'
+        : it.estado === 'nueva' ? '#ef4444'
+        : it.estado === 'respondida' ? '#0ea5e9'
+        : '#fbbf24';
+      var saludIcon = it.impacto_salud ? '<span title="Impacto salud" style="color:#ef4444">⚠</span> ' : '';
+      var recallIcon = it.requiere_recall ? '<span title="Recall" style="color:#c2410c">●</span> ' : '';
+      var prodLote = (it.producto||'') + (it.lote ? ' / '+it.lote : '');
+      return '<tr>'
+        +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
+        +'<td>'+_esc(it.fecha_recepcion||'')+'</td>'
+        +'<td>'+_esc(it.canal||'')+'</td>'
+        +'<td>'+saludIcon+recallIcon+_esc((it.cliente_nombre||'').slice(0,40))+'</td>'
+        +'<td>'+_esc(prodLote.slice(0,40))+'</td>'
+        +'<td>'+_esc(it.tipo_queja||'')+'</td>'
+        +'<td>'+sevBadge+'</td>'
+        +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
+        +'<td>'+(it.dias_abierta||0)+'d</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verQueja('+it.id+')">Abrir</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('qc-tbody').innerHTML = '<tr><td colspan="10" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
+}
+
+function abrirNuevaQueja(){
+  ['m-qc-cli-nom','m-qc-cli-cont','m-qc-prod','m-qc-lote','m-qc-fcompra',
+   'm-qc-est','m-qc-desc','m-qc-new-msg'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('m-qc-canal').value = 'otro';
+  document.getElementById('m-qc-tipo').value = 'otro';
+  document.getElementById('m-qc-cli-tipo').value = '';
+  document.getElementById('m-qc-salud').checked = false;
+  openModal('m-qc-new');
+}
+
+async function guardarQueja(){
+  var msg = document.getElementById('m-qc-new-msg');
+  var body = {
+    canal: document.getElementById('m-qc-canal').value,
+    tipo_queja: document.getElementById('m-qc-tipo').value,
+    cliente_nombre: document.getElementById('m-qc-cli-nom').value,
+    cliente_contacto: document.getElementById('m-qc-cli-cont').value,
+    cliente_tipo: document.getElementById('m-qc-cli-tipo').value || null,
+    producto: document.getElementById('m-qc-prod').value,
+    lote: document.getElementById('m-qc-lote').value,
+    fecha_compra: document.getElementById('m-qc-fcompra').value || null,
+    establecimiento_compra: document.getElementById('m-qc-est').value,
+    descripcion: document.getElementById('m-qc-desc').value,
+    impacto_salud: document.getElementById('m-qc-salud').checked,
+  };
+  if(!body.cliente_nombre){ msg.innerHTML = '<span style="color:#ef4444">Cliente requerido</span>'; return; }
+  if(!body.descripcion || body.descripcion.length < 10){
+    msg.innerHTML = '<span style="color:#ef4444">Descripción ≥10 chars</span>'; return;
+  }
+  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  try{
+    var r = await fetch('/api/aseguramiento/quejas', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' registrada</span>';
+      setTimeout(function(){ closeModal('m-qc-new'); loadQuejas(); }, 700);
+    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+}
+
+async function verQueja(id){
+  document.getElementById('m-qc-det-id').value = id;
+  var body = document.getElementById('m-qc-det-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-qc-det');
+  try{
+    var r = await fetch('/api/aseguramiento/quejas/'+id);
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    document.getElementById('m-qc-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
+
+    var html = '<div class="card" style="background:#f8fafc">'
+      +'<div style="font-size:0.85em;color:#475569"><b>Recibida:</b> '+_esc(d.fecha_recepcion||'')+' vía <b>'+_esc(d.canal||'')+'</b> · por '+_esc(d.recibido_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Cliente:</b> '+_esc(d.cliente_nombre||'')+(d.cliente_contacto?' · '+_esc(d.cliente_contacto):'')+(d.cliente_tipo?' ['+_esc(d.cliente_tipo)+']':'')+'</div>'
+      +(d.producto || d.lote ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Producto:</b> '+_esc(d.producto||'')+(d.lote?' · Lote '+_esc(d.lote):'')+(d.fecha_compra?' · compra '+_esc(d.fecha_compra):'')+'</div>' : '')
+      +'<div style="margin-top:8px"><b>Tipo:</b> '+_esc(d.tipo_queja||'')+'</div>'
+      +'<div style="margin-top:6px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
+      +(d.impacto_salud ? '<div style="margin-top:6px;color:#ef4444">⚠ <b>IMPACTO EN SALUD declarado</b></div>' : '')
+      +'</div>';
+
+    // Workflow steps
+    html += '<div class="card-title" style="margin-top:12px">Workflow</div>';
+
+    // Paso 1: Triaje
+    if(d.severidad){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>1. Triada</b> · severidad: <b>'+_esc(d.severidad)+'</b>'
+        +(d.requiere_desviacion?' · <span style="color:#c2410c">requiere desviación</span>':'')
+        +(d.requiere_recall?' · <span style="color:#c2410c">RECALL</span>':'')+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.triaje_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.triaje_por||'')+' · '+_esc(d.triaje_at||'')+'</div>'
+        +'</div>';
+    } else {
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>1. Triaje</b> (pendiente)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
+        +'<select id="qc-tr-sev" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Severidad...</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
+        +'<div style="display:flex;gap:8px;align-items:center;font-size:0.85em"><label><input type="checkbox" id="qc-tr-desv"> Crear desviación</label><label><input type="checkbox" id="qc-tr-recall"> Recall</label></div>'
+        +'</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Análisis triaje (≥10 chars)</label><textarea id="qc-tr-desc" style="min-height:50px"></textarea></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="triarQueja('+id+')">Registrar triaje</button></div>'
+        +'</div>';
+    }
+
+    // Paso 2: Investigación
+    if(d.causa_raiz){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>2. Investigada</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.investigacion_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
+        +'</div>';
+    } else if(d.severidad){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>2. Investigar causa raíz</b> (pendiente)</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Causa raíz (≥20 chars)</label><textarea id="qc-inv-causa" style="min-height:50px"></textarea></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="investigarQueja('+id+')">Registrar investigación</button></div>'
+        +'</div>';
+    }
+
+    // Paso 3: Respuesta al cliente
+    if(d.respuesta_descripcion){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>3. Cliente respondido</b> vía <b>'+_esc(d.respuesta_canal||'')+'</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.respuesta_descripcion||'')+'</div>'
+        +(d.fecha_compromiso ? '<div style="font-size:0.78em;color:#94a3b8">Compromiso: '+_esc(d.fecha_compromiso)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.respondido_por||'')+' · '+_esc(d.respondido_at||'')+'</div>'
+        +'</div>';
+    } else if(d.causa_raiz){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>3. Responder al cliente</b> (pendiente)</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Canal de respuesta</label>'
+        +'<select id="qc-r-canal" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="email">Email</option><option value="telefono">Teléfono</option><option value="whatsapp">WhatsApp</option><option value="presencial">Presencial</option><option value="carta">Carta</option><option value="formulario_web">Formulario web</option><option value="otro">Otro</option></select>'
+        +'</div>'
+        +'<div class="form-group"><label>Respuesta al cliente (≥20 chars)</label><textarea id="qc-r-desc" style="min-height:60px"></textarea></div>'
+        +'<div class="form-group"><label>Fecha compromiso (opcional)</label><input id="qc-r-comp" type="date"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="responderQueja('+id+')">Marcar respondido</button></div>'
+        +'</div>';
+    }
+
+    // Paso 4: Cierre
+    if(d.estado === 'cerrada'){
+      var satCol = d.cliente_satisfecho ? '#15803d' : '#ef4444';
+      var satLabel = d.cliente_satisfecho ? '✅ CLIENTE SATISFECHO' : '❌ CLIENTE NO SATISFECHO';
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+satCol+'">'
+        +'<div style="font-size:1em;font-weight:700;color:'+satCol+'">'+satLabel+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Acción correctiva:</b> '+_esc(d.accion_correctiva||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'</div>';
+    } else if(d.estado === 'respondida'){
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>4. Cerrar con análisis efectividad</b></div>'
+        +'<div class="form-group"><label>Acción correctiva tomada (≥20 chars)</label><textarea id="qc-c-accion" style="min-height:50px"></textarea></div>'
+        +'<div class="form-group"><label><input type="checkbox" id="qc-c-sat"> Cliente satisfecho</label></div>'
+        +'<div class="form-group"><label>Observaciones cierre</label><input id="qc-c-obs"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="cerrarQueja('+id+')">Cerrar queja</button></div>'
+        +'</div>';
+    }
+
+    // Timeline
+    if(d.timeline && d.timeline.length){
+      html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
+      html += '<div style="font-size:0.85em">';
+      d.timeline.forEach(function(ev){
+        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+          +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
+          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+}
+
+async function triarQueja(id){
+  var sev = document.getElementById('qc-tr-sev').value;
+  var desv = document.getElementById('qc-tr-desv').checked;
+  var recall = document.getElementById('qc-tr-recall').checked;
+  var desc = document.getElementById('qc-tr-desc').value;
+  if(!sev){ alert('Elige severidad'); return; }
+  if(!desc || desc.length < 10){ alert('Análisis ≥10 chars'); return; }
+  await _postQuejaAccion(id, 'triaje', {severidad: sev, triaje_descripcion: desc, requiere_desviacion: desv, requiere_recall: recall});
+}
+
+async function investigarQueja(id){
+  var causa = document.getElementById('qc-inv-causa').value;
+  if(!causa || causa.length < 20){ alert('Causa raíz ≥20 chars'); return; }
+  await _postQuejaAccion(id, 'investigar', {causa_raiz: causa});
+}
+
+async function responderQueja(id){
+  var canal = document.getElementById('qc-r-canal').value;
+  var desc = document.getElementById('qc-r-desc').value;
+  var comp = document.getElementById('qc-r-comp').value;
+  if(!desc || desc.length < 20){ alert('Respuesta ≥20 chars'); return; }
+  await _postQuejaAccion(id, 'responder', {respuesta_canal: canal, respuesta_descripcion: desc, fecha_compromiso: comp || null});
+}
+
+async function cerrarQueja(id){
+  var accion = document.getElementById('qc-c-accion').value;
+  var sat = document.getElementById('qc-c-sat').checked;
+  var obs = document.getElementById('qc-c-obs').value;
+  if(!accion || accion.length < 20){ alert('Acción correctiva ≥20 chars'); return; }
+  if(!confirm('Confirmas cerrar esta queja con cliente ' + (sat ? 'satisfecho' : 'NO satisfecho') + '?')) return;
+  await _postQuejaAccion(id, 'cerrar', {cliente_satisfecho: sat, accion_correctiva: accion, observaciones_cierre: obs});
+}
+
+async function _postQuejaAccion(id, accion, body){
+  try{
+    var r = await fetch('/api/aseguramiento/quejas/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){ verQueja(id); loadQuejas(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
 }

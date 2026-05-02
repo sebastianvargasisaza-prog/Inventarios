@@ -3335,6 +3335,85 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (89, "Aseguramiento: tabla quejas_clientes (ASG-PRO-013) workflow completo", [
+        # Sebastián 2-may-2026: workflow de quejas/reclamos según ASG-PRO-013.
+        # Toda queja entra como 'nueva' → triaje (severidad + ¿desviación? ¿recall?)
+        # → investigación → respuesta al cliente → cierre con análisis efectividad.
+        # Si severidad crítica con impacto en salud → notificación INVIMA inmediata.
+
+        """CREATE TABLE IF NOT EXISTS quejas_clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            fecha_recepcion TEXT NOT NULL DEFAULT (date('now')),
+            recibido_por TEXT NOT NULL,
+            canal TEXT NOT NULL DEFAULT 'otro'
+              CHECK(canal IN ('email','telefono','whatsapp','redes_sociales',
+                              'presencial','distribuidor','formulario_web','otro')),
+            cliente_nombre TEXT NOT NULL,
+            cliente_contacto TEXT,
+            cliente_tipo TEXT
+              CHECK(cliente_tipo IN ('consumidor_final','distribuidor','retail','medico','otro')
+                    OR cliente_tipo IS NULL),
+            producto TEXT,
+            lote TEXT,
+            fecha_compra TEXT,
+            establecimiento_compra TEXT,
+            tipo_queja TEXT NOT NULL DEFAULT 'otro'
+              CHECK(tipo_queja IN ('reaccion_adversa','calidad_producto','envase_empaque',
+                                    'cantidad_volumen','fecha_vencimiento',
+                                    'sabor_olor_textura','eficacia','documentacion',
+                                    'servicio','otro')),
+            descripcion TEXT NOT NULL,
+            impacto_salud INTEGER NOT NULL DEFAULT 0,
+            severidad TEXT
+              CHECK(severidad IN ('critica','mayor','menor','informativa') OR severidad IS NULL),
+            triaje_descripcion TEXT,
+            triaje_por TEXT,
+            triaje_at TEXT,
+            requiere_desviacion INTEGER NOT NULL DEFAULT 0,
+            desviacion_id INTEGER,
+            requiere_recall INTEGER NOT NULL DEFAULT 0,
+            causa_raiz TEXT,
+            investigacion_por TEXT,
+            investigacion_at TEXT,
+            respuesta_descripcion TEXT,
+            respuesta_canal TEXT
+              CHECK(respuesta_canal IN ('email','telefono','whatsapp','presencial',
+                                          'carta','formulario_web','otro')
+                    OR respuesta_canal IS NULL),
+            respondido_por TEXT,
+            respondido_at TEXT,
+            fecha_compromiso TEXT,
+            cliente_satisfecho INTEGER,
+            accion_correctiva TEXT,
+            cerrado_por TEXT,
+            fecha_cierre TEXT,
+            observaciones_cierre TEXT,
+            estado TEXT NOT NULL DEFAULT 'nueva'
+              CHECK(estado IN ('nueva','en_triaje','en_investigacion',
+                                'respondida','cerrada','rechazada')),
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_qc_estado ON quejas_clientes(estado, fecha_recepcion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_qc_severidad ON quejas_clientes(severidad, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_qc_lote ON quejas_clientes(lote, fecha_recepcion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_qc_salud ON quejas_clientes(impacto_salud, estado) WHERE impacto_salud=1",
+
+        # Eventos del workflow (timeline)
+        """CREATE TABLE IF NOT EXISTS quejas_clientes_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            queja_id INTEGER NOT NULL,
+            evento_tipo TEXT NOT NULL,
+            estado_anterior TEXT,
+            estado_nuevo TEXT,
+            usuario TEXT,
+            comentario TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (queja_id) REFERENCES quejas_clientes(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_qc_ev ON quejas_clientes_eventos(queja_id, creado_en)",
+    ]),
     (88, "Aseguramiento: tabla control_cambios (ASG-PRO-007) workflow completo", [
         # Sebastián 1-may-2026: workflow estructurado de control de cambios
         # según ASG-PRO-007. Si toca BPM → notificación INVIMA. Cumple
