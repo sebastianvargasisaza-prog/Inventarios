@@ -838,6 +838,265 @@ def health_detailed():
     return jsonify(out)
 
 
+@app.route('/mi-bandeja')
+def mi_bandeja_page():
+    """Bandeja CEO · centro de comando con todo lo pendiente cross-módulo.
+
+    Solo Admin. Consume /api/bandeja-ceo cada 60s.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/mi-bandeja')
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return Response('<h1>403</h1><p>Solo administradores</p>',
+                          status=403, mimetype='text/html')
+    from templates_py.bandeja_ceo_html import BANDEJA_CEO_HTML
+    return Response(BANDEJA_CEO_HTML, mimetype='text/html')
+
+
+@app.route('/api/bandeja-ceo')
+def bandeja_ceo():
+    """Agregador de pendientes cross-módulo para el CEO.
+
+    Categorías priorizadas por urgencia:
+    - critical: requieren acción HOY (regulatorias o financieras críticas)
+    - high: revisar en la semana
+    - medium: revisar cuando se pueda
+
+    Cada item lleva: titulo, descripcion, link, edad_dias, severidad,
+    accion_sugerida.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Admin'}), 403
+
+    from database import get_db
+    db = get_db()
+    items = []
+
+    def _add(severidad, modulo, titulo, descripcion, link, edad_dias=None, registro_id=None):
+        items.append({
+            'severidad': severidad, 'modulo': modulo,
+            'titulo': titulo, 'descripcion': descripcion,
+            'link': link, 'edad_dias': edad_dias,
+            'registro_id': registro_id,
+        })
+
+    # ── CRITICAL · Recalls Clase I sin notificar INVIMA ──
+    try:
+        rows = db.execute("""
+            SELECT codigo, producto,
+                   julianday('now') - julianday(clasificado_at) as dias
+            FROM recalls
+            WHERE clase_recall='clase_I'
+              AND notificacion_invima_at IS NULL
+              AND estado NOT IN ('cerrado','cancelado')
+              AND clasificado_at IS NOT NULL
+            ORDER BY clasificado_at LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('critical', 'recalls',
+                  f"Recall Clase I {r[0]} sin notificar INVIMA",
+                  f"Producto: {r[1] or '—'} · {r[2]:.0f}d desde clasificación (regulatorio <24h)",
+                  '/aseguramiento#tab-recalls',
+                  edad_dias=int(r[2] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── CRITICAL · Hallazgos INVIMA / críticos / mayores vencidos ──
+    try:
+        rows = db.execute("""
+            SELECT codigo, titulo, origen, severidad,
+                   julianday('now') - julianday(fecha_limite) as dias_vencido
+            FROM hallazgos
+            WHERE estado NOT IN ('cerrado','rechazado')
+              AND COALESCE(fecha_limite,'') != ''
+              AND fecha_limite < date('now')
+              AND (origen='INVIMA' OR severidad IN ('critico','mayor'))
+            ORDER BY fecha_limite LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('critical', 'compliance',
+                  f"Hallazgo {r[0]} ({r[2]} · {r[3]}) vencido",
+                  f"{(r[1] or '')[:80]} · {r[4]:.0f}d vencido",
+                  '/compliance',
+                  edad_dias=int(r[4] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── CRITICAL · Recalls sin clasificar >12h ──
+    try:
+        rows = db.execute("""
+            SELECT codigo, producto,
+                   (julianday('now') - julianday(creado_en)) * 24 as horas
+            FROM recalls
+            WHERE estado='iniciado'
+              AND datetime(creado_en) <= datetime('now','-12 hours')
+            ORDER BY creado_en LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('critical', 'recalls',
+                  f"Recall {r[0]} sin clasificar",
+                  f"Producto: {r[1] or '—'} · {r[2]:.0f}h sin clasificar",
+                  '/aseguramiento#tab-recalls',
+                  edad_dias=round(float(r[2] or 0)/24, 1), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · Lotes esperando liberación >5d ──
+    try:
+        rows = db.execute("""
+            SELECT id, lote, producto_nombre,
+                   julianday('now') - julianday(COALESCE(fecha_min_liberacion, fecha_envasado)) as dias
+            FROM cola_liberacion
+            WHERE estado='listo_revisar'
+              AND julianday('now') - julianday(COALESCE(fecha_min_liberacion, fecha_envasado)) > 5
+            ORDER BY fecha_min_liberacion LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('high', 'planta',
+                  f"Lote PT {r[1]} esperando liberación {r[3]:.0f}d",
+                  f"{r[2]} · cola_liberacion id={r[0]}",
+                  '/aseguramiento',
+                  edad_dias=int(r[3] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · OCs autorizadas pendientes de pago >7d ──
+    try:
+        rows = db.execute("""
+            SELECT numero_oc, proveedor, valor_total,
+                   julianday('now') - julianday(fecha_autorizacion) as dias
+            FROM ordenes_compra
+            WHERE estado='Autorizada'
+              AND fecha_autorizacion IS NOT NULL
+              AND julianday('now') - julianday(fecha_autorizacion) > 7
+            ORDER BY fecha_autorizacion LIMIT 15
+        """).fetchall()
+        for r in rows:
+            _add('high', 'compras',
+                  f"OC {r[0]} autorizada hace {r[3]:.0f}d sin pagar",
+                  f"{(r[1] or '')[:60]} · ${(r[2] or 0)/1_000_000:.1f}M",
+                  '/compras',
+                  edad_dias=int(r[3] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · Solicitudes influencer pendientes de aprobación ──
+    try:
+        rows = db.execute("""
+            SELECT numero, solicitante, valor,
+                   julianday('now') - julianday(fecha) as dias
+            FROM solicitudes_compra
+            WHERE estado='Pendiente'
+              AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+              AND julianday('now') - julianday(fecha) > 1
+            ORDER BY fecha LIMIT 15
+        """).fetchall()
+        for r in rows:
+            _add('high', 'compras',
+                  f"SOL influencer {r[0]} pendiente {r[3]:.0f}d",
+                  f"{(r[1] or '')[:50]} · ${(r[2] or 0)/1_000_000:.1f}M",
+                  '/compras',
+                  edad_dias=int(r[3] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · Quejas críticas sin responder >48h ──
+    try:
+        rows = db.execute("""
+            SELECT codigo, severidad,
+                   julianday('now') - julianday(fecha_recepcion) as dias
+            FROM quejas_clientes
+            WHERE estado IN ('recibida','en_investigacion')
+              AND severidad IN ('critica','alta')
+              AND julianday('now') - julianday(fecha_recepcion) > 2
+            ORDER BY fecha_recepcion LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('high', 'aseguramiento',
+                  f"Queja {r[0]} ({r[1]}) sin responder {r[2]:.0f}d",
+                  f"Severidad {r[1]} · revisar urgente",
+                  '/aseguramiento#tab-quejas',
+                  edad_dias=int(r[2] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · Cambios pendientes de aprobación ──
+    try:
+        rows = db.execute("""
+            SELECT codigo, titulo,
+                   julianday('now') - julianday(fecha_solicitud) as dias
+            FROM control_cambios
+            WHERE estado='evaluacion'
+              AND julianday('now') - julianday(fecha_solicitud) > 3
+            ORDER BY fecha_solicitud LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('high', 'aseguramiento',
+                  f"Cambio {r[0]} en evaluación {r[2]:.0f}d",
+                  f"{(r[1] or '')[:60]}",
+                  '/aseguramiento#tab-cambios',
+                  edad_dias=int(r[2] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── MEDIUM · Lotes en cuarentena >5d ──
+    try:
+        rows = db.execute("""
+            SELECT id, lote, material_nombre,
+                   julianday('now') - julianday(fecha) as dias
+            FROM movimientos
+            WHERE tipo='Entrada'
+              AND estado_lote IN ('Cuarentena','CUARENTENA')
+              AND julianday('now') - julianday(fecha) > 5
+            ORDER BY fecha LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('medium', 'planta',
+                  f"Lote MP {r[1]} en cuarentena {r[3]:.0f}d",
+                  f"{(r[2] or '')[:60]}",
+                  '/recepcion',
+                  edad_dias=int(r[3] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── MEDIUM · Registros INVIMA por vencer en 30d ──
+    try:
+        rows = db.execute("""
+            SELECT producto, num_registro, fecha_vencimiento,
+                   julianday(fecha_vencimiento) - julianday('now') as dias_restantes
+            FROM registros_invima
+            WHERE estado='Vigente'
+              AND fecha_vencimiento != ''
+              AND fecha_vencimiento BETWEEN date('now') AND date('now','+30 days')
+            ORDER BY fecha_vencimiento LIMIT 10
+        """).fetchall()
+        for r in rows:
+            _add('medium', 'tecnica',
+                  f"Registro INVIMA {r[1]} vence en {r[3]:.0f}d",
+                  f"{(r[0] or '')[:60]} · vence {r[2]}",
+                  '/tecnica',
+                  edad_dias=int(r[3] or 0), registro_id=r[1])
+    except Exception:
+        pass
+
+    # ── Resumen agregado ──
+    counts = {'critical': 0, 'high': 0, 'medium': 0}
+    for it in items:
+        counts[it['severidad']] = counts.get(it['severidad'], 0) + 1
+
+    return jsonify({
+        'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        'usuario': user,
+        'total': len(items),
+        'counts': counts,
+        'items': items,
+    })
+
+
 @app.errorhandler(404)
 def not_found(e):
     h = '<html><body style="background:#0d1117;color:#fff;font-family:sans-serif;text-align:center;padding-top:10vh"><h1>404</h1><p>Pagina no encontrada.</p><a href="/compras" style="color:#7ACFCC;">Volver</a></body></html>'
