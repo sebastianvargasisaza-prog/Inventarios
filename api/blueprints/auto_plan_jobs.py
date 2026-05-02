@@ -583,6 +583,8 @@ JOBS_SCHEDULE = [
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
     ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
+    # ⭐ Aseguramiento · diario 8:30 · alerta control de cambios en plazos vencidos (ASG-PRO-007)
+    ('cambios_plazos',        8, 30, None, None,                'job_cambios_plazos'),
 ]
 
 
@@ -1495,6 +1497,91 @@ def job_desv_plazos(app):
             'sin_clasificar_1d': len(sin_clasif),
             'sin_investigar_5d': len(sin_invest),
             'capa_vencido': len(capa_vencido),
+        }, 0
+
+
+def job_cambios_plazos(app):
+    """ASG-PRO-007 · diario 8:30 · alerta control de cambios en plazo vencido.
+
+    Plazos:
+    - solicitado sin evaluar > 5 días → alerta
+    - aprobado sin notificar INVIMA (cuando aplica) > 3 días → alerta crítica
+    - aprobado/en_implementacion sin implementar > 30 días → alerta
+    - implementado sin cerrar > 15 días → alerta (verificación efectividad pendiente)
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            sin_evaluar = c.execute("""
+                SELECT codigo, titulo, solicitado_por FROM control_cambios
+                WHERE estado='solicitado'
+                  AND date(fecha_solicitud) <= date('now', '-5 days')
+                LIMIT 30
+            """).fetchall()
+            invima_pendiente = c.execute("""
+                SELECT codigo, titulo, aprobado_at FROM control_cambios
+                WHERE estado IN ('aprobado','en_implementacion')
+                  AND requiere_invima=1
+                  AND notificacion_invima_at IS NULL
+                  AND date(aprobado_at) <= date('now', '-3 days')
+                LIMIT 30
+            """).fetchall()
+            sin_implementar = c.execute("""
+                SELECT codigo, titulo, responsable_implementacion, fecha_implementacion_propuesta
+                FROM control_cambios
+                WHERE estado IN ('aprobado','en_implementacion')
+                  AND date(aprobado_at) <= date('now', '-30 days')
+                  AND (requiere_invima=0 OR notificacion_invima_at IS NOT NULL)
+                LIMIT 30
+            """).fetchall()
+            sin_cerrar = c.execute("""
+                SELECT codigo, titulo, implementado_por, implementado_at
+                FROM control_cambios
+                WHERE estado='implementado'
+                  AND date(implementado_at) <= date('now', '-15 days')
+                LIMIT 30
+            """).fetchall()
+        except Exception as e:
+            log.warning('cambios_plazos read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        if not (sin_evaluar or invima_pendiente or sin_implementar or sin_cerrar):
+            return True, {'mensaje': 'Sin cambios en plazo vencido'}, 0
+
+        try:
+            from blueprints.notif import push_notif_multi
+            destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                             'laura','sebastian']
+            partes = []
+            if sin_evaluar:
+                partes.append(f'⏰ {len(sin_evaluar)} solicitudes sin evaluar (>5d)')
+                for r in sin_evaluar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:60]} · sol {r[2]}')
+            if invima_pendiente:
+                partes.append(f'🚨 {len(invima_pendiente)} aprobados sin notificar INVIMA (>3d)')
+                for r in invima_pendiente[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:60]}')
+            if sin_implementar:
+                partes.append(f'🔧 {len(sin_implementar)} aprobados sin implementar (>30d)')
+                for r in sin_implementar[:3]:
+                    fec = r[3] or 'sin fecha'
+                    partes.append(f'  · {r[0]}: resp {r[2] or "?"} · prop {fec}')
+            if sin_cerrar:
+                partes.append(f'✅ {len(sin_cerrar)} implementados sin cerrar (>15d)')
+                for r in sin_cerrar[:3]: partes.append(f'  · {r[0]}: impl {r[3]}')
+            push_notif_multi(
+                destinatarios, 'capa',
+                f'⚠ Control de cambios en plazo vencido (ASG-PRO-007)',
+                body='\n'.join(partes),
+                link='/aseguramiento', remitente='cron-cambios',
+                importante=bool(invima_pendiente),
+            )
+        except Exception as e:
+            log.warning('cambios_plazos notif fallo: %s', e)
+        return True, {
+            'sin_evaluar_5d': len(sin_evaluar),
+            'invima_pendiente_3d': len(invima_pendiente),
+            'sin_implementar_30d': len(sin_implementar),
+            'sin_cerrar_15d': len(sin_cerrar),
         }, 0
 
 

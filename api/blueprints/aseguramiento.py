@@ -940,6 +940,361 @@ def desviacion_cerrar(desv_id):
     return jsonify({'ok': True})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# CONTROL DE CAMBIOS · ASG-PRO-007
+# Workflow: solicitado → en_evaluacion (5d) → aprobado/rechazado →
+# en_implementacion → implementado → cerrado (con verificación post)
+# Si toca BPM → notificación INVIMA obligatoria.
+# ════════════════════════════════════════════════════════════════════════
+
+def _generar_codigo_cambio(c):
+    """Genera código CHG-AAAA-NNNN secuencial por año."""
+    anio = datetime.now().year
+    row = c.execute("""
+        SELECT codigo FROM control_cambios
+        WHERE codigo LIKE ? ORDER BY id DESC LIMIT 1
+    """, (f'CHG-{anio}-%',)).fetchone()
+    if row and row[0]:
+        try:
+            return f'CHG-{anio}-{int(row[0].split("-")[-1])+1:04d}'
+        except (ValueError, IndexError):
+            pass
+    return f'CHG-{anio}-0001'
+
+
+@bp.route('/api/aseguramiento/cambios', methods=['GET', 'POST'])
+def cambios_endpoint():
+    """GET: lista filtrable. POST: nueva solicitud (cualquier user)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        titulo = (d.get('titulo') or '').strip()
+        descripcion = (d.get('descripcion') or '').strip()
+        if len(titulo) < 5:
+            return jsonify({'error': 'titulo requerido (≥5 chars)'}), 400
+        if len(descripcion) < 20:
+            return jsonify({'error': 'descripcion requerida (≥20 chars)'}), 400
+        tipo = (d.get('tipo') or 'otro').strip()
+        valid_tipos = ('formulacion','proceso','equipo','instalacion',
+                        'proveedor','documental','sistema','envase','otro')
+        if tipo not in valid_tipos:
+            return jsonify({'error': f'tipo inválido. Uno de: {", ".join(valid_tipos)}'}), 400
+
+        codigo = _generar_codigo_cambio(c)
+        try:
+            c.execute("""
+                INSERT INTO control_cambios
+                  (codigo, fecha_solicitud, solicitado_por, tipo, titulo,
+                   descripcion, justificacion, areas_afectadas,
+                   impacto_bpm, impacto_regulatorio, estado)
+                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'solicitado')
+            """, (codigo, user, tipo, titulo[:200], descripcion[:3000],
+                  (d.get('justificacion') or '')[:1000],
+                  (d.get('areas_afectadas') or '')[:300],
+                  1 if d.get('impacto_bpm') else 0,
+                  1 if d.get('impacto_regulatorio') else 0))
+            cid = c.lastrowid
+            c.execute("""
+                INSERT INTO control_cambios_eventos
+                  (cambio_id, evento_tipo, estado_nuevo, usuario, comentario)
+                VALUES (?, 'solicitado', 'solicitado', ?, ?)
+            """, (cid, user, f'Solicitud de cambio: {titulo[:200]}'))
+            conn.commit()
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            log.exception('crear cambio fallo: %s', e)
+            return jsonify({'error': str(e)[:200]}), 500
+
+        # Notificar a Calidad si declara impacto BPM/regulatorio
+        if d.get('impacto_bpm') or d.get('impacto_regulatorio') or tipo == 'formulacion':
+            try:
+                from blueprints.notif import push_notif_multi
+                push_notif_multi(
+                    ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                    'capa', f'🔄 Cambio {codigo} pendiente de evaluar',
+                    body=f'{tipo} · {titulo[:140]}',
+                    link='/aseguramiento', remitente=user,
+                    importante=bool(d.get('impacto_bpm')),
+                )
+            except Exception as _e:
+                log.warning('notif cambio fallo: %s', _e)
+
+        return jsonify({'ok': True, 'id': cid, 'codigo': codigo}), 201
+
+    # GET · lista
+    estado = (request.args.get('estado') or '').strip()
+    severidad = (request.args.get('severidad') or '').strip()
+    where = []; params = []
+    if estado: where.append('estado=?'); params.append(estado)
+    if severidad: where.append('severidad=?'); params.append(severidad)
+    sql = """SELECT id, codigo, fecha_solicitud, solicitado_por, tipo, titulo,
+                    severidad, estado, impacto_bpm, requiere_invima,
+                    aprobado_por, fecha_implementacion_propuesta, fecha_cierre,
+                    CAST((julianday('now') - julianday(fecha_solicitud)) AS INTEGER) as dias_abierto
+             FROM control_cambios"""
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_solicitud DESC, id DESC LIMIT 500'
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','codigo','fecha_solicitud','solicitado_por','tipo','titulo',
+            'severidad','estado','impacto_bpm','requiere_invima',
+            'aprobado_por','fecha_implementacion_propuesta','fecha_cierre','dias_abierto']
+    items = [dict(zip(cols, r)) for r in rows]
+    kpis = {
+        'total': len(items),
+        'sin_evaluar': sum(1 for it in items if it['estado'] == 'solicitado'),
+        'en_evaluacion': sum(1 for it in items if it['estado'] == 'en_evaluacion'),
+        'aprobados_pendientes': sum(1 for it in items if it['estado'] in ('aprobado','en_implementacion')),
+        'requieren_invima': sum(1 for it in items
+                                  if it['requiere_invima'] and it['estado'] not in ('cerrado','rechazado')),
+        'cerrados_30d': sum(1 for it in items
+                              if it['estado']=='cerrado' and it.get('fecha_cierre')
+                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+    }
+    return jsonify({'items': items, 'kpis': kpis})
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>', methods=['GET'])
+def cambio_detalle(cid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'cambio no encontrado'}), 404
+    cols = [d[0] for d in c.description]
+    detalle = dict(zip(cols, row))
+    eventos = c.execute("""
+        SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
+        FROM control_cambios_eventos WHERE cambio_id=? ORDER BY id ASC
+    """, (cid,)).fetchall()
+    detalle['timeline'] = [{
+        'evento_tipo': r[0], 'estado_anterior': r[1], 'estado_nuevo': r[2],
+        'usuario': r[3], 'comentario': r[4], 'creado_en': r[5],
+    } for r in eventos]
+    return jsonify(detalle)
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>/evaluar', methods=['POST'])
+def cambio_evaluar(cid):
+    """Evalúa impacto del cambio. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    severidad = (d.get('severidad') or '').strip()
+    if severidad not in ('mayor','menor'):
+        return jsonify({'error': 'severidad debe ser mayor/menor'}), 400
+    eval_desc = (d.get('evaluacion_descripcion') or '').strip()
+    if len(eval_desc) < 20:
+        return jsonify({'error': 'evaluacion_descripcion requerida (≥20 chars)'}), 400
+    requiere_invima = bool(d.get('requiere_invima'))
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('solicitado', 'en_evaluacion'):
+        return jsonify({'error': f'no se puede evaluar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE control_cambios
+        SET severidad=?, evaluacion_descripcion=?, evaluado_por=?,
+            evaluado_at=datetime('now'), requiere_invima=?,
+            estado='en_evaluacion', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (severidad, eval_desc, user, 1 if requiere_invima else 0, cid))
+    c.execute("""
+        INSERT INTO control_cambios_eventos
+          (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'evaluado', ?, 'en_evaluacion', ?, ?)
+    """, (cid, estado_ant, user,
+          f'Severidad {severidad}'+(' · Requiere INVIMA' if requiere_invima else '')+f': {eval_desc[:200]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>/aprobar', methods=['POST'])
+def cambio_aprobar(cid):
+    """Aprueba o rechaza el cambio. RBAC Admin/Director Técnico."""
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({'error': 'Solo Admin o Calidad pueden aprobar/rechazar'}), 403
+    d = request.get_json(silent=True) or {}
+    decision = (d.get('decision') or '').strip()
+    if decision not in ('aprobar', 'rechazar'):
+        return jsonify({'error': 'decision debe ser aprobar/rechazar'}), 400
+    obs = (d.get('observaciones') or '').strip()
+    if len(obs) < 10:
+        return jsonify({'error': 'observaciones requeridas (≥10 chars)'}), 400
+    plan = (d.get('plan_implementacion') or '').strip() if decision == 'aprobar' else None
+    fecha_imp = (d.get('fecha_implementacion_propuesta') or '').strip() or None
+    responsable = (d.get('responsable_implementacion') or '').strip() or None
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, requiere_invima, codigo FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant != 'en_evaluacion':
+        return jsonify({'error': f'no se puede aprobar/rechazar en estado {estado_ant} · debe estar en_evaluacion'}), 409
+
+    nuevo_estado = 'aprobado' if decision == 'aprobar' else 'rechazado'
+    if decision == 'aprobar' and (not plan or len(plan) < 20):
+        return jsonify({'error': 'plan_implementacion requerido (≥20 chars) si aprueba'}), 400
+
+    c.execute("""
+        UPDATE control_cambios
+        SET aprobado_por=?, aprobado_at=datetime('now'),
+            aprobacion_observaciones=?, plan_implementacion=?,
+            fecha_implementacion_propuesta=?, responsable_implementacion=?,
+            estado=?, actualizado_en=datetime('now')
+        WHERE id=?
+    """, (user, obs, plan, fecha_imp, responsable, nuevo_estado, cid))
+    c.execute("""
+        INSERT INTO control_cambios_eventos
+          (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (cid, decision, estado_ant, nuevo_estado, user, obs[:200]))
+    # Audit
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, despues)
+            VALUES (?, 'CAMBIO_APROBACION', ?, ?)
+        """, (user, row[2] or str(cid),
+              _json.dumps({'decision': decision, 'observaciones': obs[:300]})))
+    except Exception:
+        pass
+    conn.commit()
+
+    # Si requiere INVIMA → recordatorio
+    if decision == 'aprobar' and row[1]:
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['aseguramiento.espagiria','sebastian'],
+                'capa', f'⚠ Cambio {row[2]} aprobado · REQUIERE NOTIFICACIÓN INVIMA',
+                body='Notificar a INVIMA antes de implementar (Resolución 2214/2021).',
+                link='/aseguramiento', remitente=user, importante=True,
+            )
+        except Exception as _e:
+            log.warning('notif INVIMA cambio fallo: %s', _e)
+
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>/notificar-invima', methods=['POST'])
+def cambio_notificar_invima(cid):
+    """Marca que se notificó a INVIMA (con referencia)."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    ref = (d.get('referencia') or '').strip()
+    if not ref:
+        return jsonify({'error': 'referencia (radicado/oficio) requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, requiere_invima FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    if not row[1]:
+        return jsonify({'error': 'este cambio no requiere INVIMA'}), 400
+    c.execute("""
+        UPDATE control_cambios
+        SET notificacion_invima_at=datetime('now'),
+            notificacion_invima_ref=?, actualizado_en=datetime('now')
+        WHERE id=?
+    """, (ref[:200], cid))
+    c.execute("""
+        INSERT INTO control_cambios_eventos
+          (cambio_id, evento_tipo, usuario, comentario)
+        VALUES (?, 'notificado_invima', ?, ?)
+    """, (cid, user, f'Notificado INVIMA · ref: {ref[:100]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>/implementar', methods=['POST'])
+def cambio_implementar(cid):
+    """Marca cambio como implementado. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    obs = (d.get('observaciones') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('aprobado', 'en_implementacion'):
+        return jsonify({'error': f'no se puede implementar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE control_cambios
+        SET implementado_at=datetime('now'), implementado_por=?,
+            estado='implementado', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (user, cid))
+    c.execute("""
+        INSERT INTO control_cambios_eventos
+          (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'implementado', ?, 'implementado', ?, ?)
+    """, (cid, estado_ant, user, obs[:200] or 'Implementación completada'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/cambios/<int:cid>/cerrar', methods=['POST'])
+def cambio_cerrar(cid):
+    """Cierra el cambio con verificación post. Audit log INVIMA."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    if d.get('verificacion_ok') is None:
+        return jsonify({'error': 'verificacion_ok (true/false) requerido'}), 400
+    verif = (d.get('verificacion_post') or '').strip()
+    if len(verif) < 20:
+        return jsonify({'error': 'verificacion_post requerida (≥20 chars)'}), 400
+    obs = (d.get('observaciones_cierre') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant == 'cerrado':
+        return jsonify({'error': 'ya está cerrado'}), 409
+    if estado_ant != 'implementado':
+        return jsonify({'error': f'debe estar implementado primero · actualmente {estado_ant}'}), 409
+
+    c.execute("""
+        UPDATE control_cambios
+        SET verificacion_post=?, verificado_por=?, verificado_at=datetime('now'),
+            verificacion_ok=?, observaciones_cierre=?,
+            estado='cerrado', fecha_cierre=date('now'), cerrado_por=?,
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (verif, user, 1 if d.get('verificacion_ok') else 0,
+          obs[:500] or None, user, cid))
+    c.execute("""
+        INSERT INTO control_cambios_eventos
+          (cambio_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'cerrado', ?, 'cerrado', ?, ?)
+    """, (cid, estado_ant, user,
+          f'Cerrado · verif {"OK" if d.get("verificacion_ok") else "NO_OK"}: {verif[:200]}'))
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, despues)
+            VALUES (?, 'CERRAR_CAMBIO', ?, ?)
+        """, (user, row[1] or str(cid),
+              _json.dumps({'verificacion_ok': bool(d.get('verificacion_ok')),
+                            'verificacion': verif[:500]})))
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/aseguramiento/capacitaciones/mias', methods=['GET'])
 def capacitaciones_mias():
     """Capacitaciones del usuario actual."""

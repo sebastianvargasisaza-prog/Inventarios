@@ -3335,6 +3335,72 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (88, "Aseguramiento: tabla control_cambios (ASG-PRO-007) workflow completo", [
+        # Sebastián 1-may-2026: workflow estructurado de control de cambios
+        # según ASG-PRO-007. Si toca BPM → notificación INVIMA. Cumple
+        # Resolución 2214/2021 sobre cambios reportables.
+
+        """CREATE TABLE IF NOT EXISTS control_cambios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            fecha_solicitud TEXT NOT NULL DEFAULT (date('now')),
+            solicitado_por TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'otro'
+              CHECK(tipo IN ('formulacion','proceso','equipo','instalacion',
+                              'proveedor','documental','sistema','envase','otro')),
+            titulo TEXT NOT NULL,
+            descripcion TEXT NOT NULL,
+            justificacion TEXT,
+            impacto_bpm INTEGER NOT NULL DEFAULT 0,
+            impacto_regulatorio INTEGER NOT NULL DEFAULT 0,
+            areas_afectadas TEXT,
+            severidad TEXT
+              CHECK(severidad IN ('mayor','menor') OR severidad IS NULL),
+            evaluado_por TEXT,
+            evaluado_at TEXT,
+            evaluacion_descripcion TEXT,
+            aprobado_por TEXT,
+            aprobado_at TEXT,
+            aprobacion_observaciones TEXT,
+            requiere_invima INTEGER NOT NULL DEFAULT 0,
+            notificacion_invima_at TEXT,
+            notificacion_invima_ref TEXT,
+            plan_implementacion TEXT,
+            fecha_implementacion_propuesta TEXT,
+            responsable_implementacion TEXT,
+            implementado_at TEXT,
+            implementado_por TEXT,
+            verificacion_post TEXT,
+            verificado_por TEXT,
+            verificado_at TEXT,
+            verificacion_ok INTEGER,
+            estado TEXT NOT NULL DEFAULT 'solicitado'
+              CHECK(estado IN ('solicitado','en_evaluacion','aprobado','rechazado',
+                                'en_implementacion','implementado','cerrado')),
+            fecha_cierre TEXT,
+            cerrado_por TEXT,
+            observaciones_cierre TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_chg_estado ON control_cambios(estado, fecha_solicitud DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_severidad ON control_cambios(severidad, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_chg_invima ON control_cambios(requiere_invima, estado) WHERE requiere_invima=1",
+
+        # Eventos del workflow (timeline)
+        """CREATE TABLE IF NOT EXISTS control_cambios_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cambio_id INTEGER NOT NULL,
+            evento_tipo TEXT NOT NULL,
+            estado_anterior TEXT,
+            estado_nuevo TEXT,
+            usuario TEXT,
+            comentario TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (cambio_id) REFERENCES control_cambios(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_chg_ev ON control_cambios_eventos(cambio_id, creado_en)",
+    ]),
     (87, "Aseguramiento: tabla desviaciones (ASG-PRO-001) workflow completo", [
         # Sebastián 1-may-2026: workflow estructurado de manejo de desviaciones
         # según ASG-PRO-001. Plazos: crítica reportar 4h · clasificación 24h ·

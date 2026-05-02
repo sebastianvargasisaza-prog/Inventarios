@@ -87,6 +87,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
   <div class="tab" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
   <div class="tab" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
+  <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
@@ -278,6 +279,101 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- CONTROL DE CAMBIOS · ASG-PRO-007 -->
+<div id="tab-cambios" class="pane">
+  <div class="kpi-row" id="cam-kpis">
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="cam-kp-tot">—</div></div>
+    <div class="kpi"><div class="kpi-label">Sin evaluar</div><div class="kpi-val warn" id="cam-kp-sin">—</div></div>
+    <div class="kpi"><div class="kpi-label">En evaluación</div><div class="kpi-val" id="cam-kp-eva">—</div></div>
+    <div class="kpi"><div class="kpi-label">Aprobados pendientes</div><div class="kpi-val warn" id="cam-kp-apr">—</div></div>
+    <div class="kpi"><div class="kpi-label">Requieren INVIMA</div><div class="kpi-val crit" id="cam-kp-inv">—</div></div>
+    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="cam-kp-cer">—</div></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Solicitudes de cambio</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <select id="cam-f-estado" onchange="loadCambios()">
+          <option value="">Todos estados</option>
+          <option value="solicitado">Solicitado</option>
+          <option value="en_evaluacion">En evaluación</option>
+          <option value="aprobado">Aprobado</option>
+          <option value="rechazado">Rechazado</option>
+          <option value="en_implementacion">En implementación</option>
+          <option value="implementado">Implementado</option>
+          <option value="cerrado">Cerrado</option>
+        </select>
+        <select id="cam-f-sev" onchange="loadCambios()">
+          <option value="">Toda severidad</option>
+          <option value="mayor">Mayor</option>
+          <option value="menor">Menor</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadCambios()">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNuevoCambio()">+ Nueva solicitud</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Fecha</th><th>Tipo</th><th>Título</th><th>Sev.</th><th>Estado</th><th>INVIMA</th><th>Días</th><th></th></tr></thead>
+        <tbody id="cam-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nueva solicitud -->
+<div class="modal-overlay" id="m-cam-new">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-cam-new')">&times;</button>
+    <div class="modal-title">Nueva solicitud de cambio</div>
+    <div class="form-group"><label>Tipo *</label>
+      <select id="m-cam-tipo">
+        <option value="formulacion">Fórmula del producto</option>
+        <option value="proceso">Proceso de fabricación</option>
+        <option value="equipo">Equipo</option>
+        <option value="instalacion">Instalación</option>
+        <option value="proveedor">Proveedor / MP</option>
+        <option value="documental">Documento (SOP/forma)</option>
+        <option value="sistema">Sistema (HVAC/Agua/etc)</option>
+        <option value="envase">Envase / empaque</option>
+        <option value="otro" selected>Otro</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Título * (≥5 chars)</label>
+      <input id="m-cam-titulo" placeholder="Ej: Cambio de proveedor de glicerina">
+    </div>
+    <div class="form-group"><label>Descripción del cambio * (≥20 chars)</label>
+      <textarea id="m-cam-desc" style="min-height:70px" placeholder="Qué se quiere cambiar exactamente"></textarea>
+    </div>
+    <div class="form-group"><label>Justificación / motivo</label>
+      <textarea id="m-cam-just" style="min-height:50px" placeholder="Por qué es necesario"></textarea>
+    </div>
+    <div class="form-group"><label>Áreas afectadas</label>
+      <input id="m-cam-areas" placeholder="Producción, Calidad, Bodega...">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label><input type="checkbox" id="m-cam-bpm"> Impacto en BPM/GMP</label></div>
+      <div class="form-group"><label><input type="checkbox" id="m-cam-reg"> Impacto regulatorio (INVIMA)</label></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-cam-new')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCambio()">Solicitar</button>
+    </div>
+    <div id="m-cam-new-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<!-- Modal detalle cambio + workflow -->
+<div class="modal-overlay" id="m-cam-det">
+  <div class="modal" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('m-cam-det')">&times;</button>
+    <div class="modal-title" id="m-cam-det-title">Detalle</div>
+    <input type="hidden" id="m-cam-det-id">
+    <div id="m-cam-det-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
@@ -347,7 +443,7 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-conf'];
+var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -356,6 +452,7 @@ function goTab(id){
   else if(id==='tab-sgd') loadSGD();
   else if(id==='tab-mis-cap') loadMisCapacitaciones();
   else if(id==='tab-desv') loadDesviaciones();
+  else if(id==='tab-cambios') loadCambios();
   else if(id==='tab-conf') loadConflictos();
 }
 
@@ -591,6 +688,283 @@ async function _postDesvAccion(id, accion, body){
     var r = await fetch('/api/aseguramiento/desviaciones/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     var d = await r.json();
     if(d.ok){ verDesviacion(id); loadDesviaciones(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+// === CONTROL DE CAMBIOS (ASG-PRO-007) =================================
+async function loadCambios(){
+  var estado = document.getElementById('cam-f-estado').value;
+  var sev = document.getElementById('cam-f-sev').value;
+  var qs = [];
+  if(estado) qs.push('estado='+estado);
+  if(sev) qs.push('severidad='+sev);
+  var url = '/api/aseguramiento/cambios' + (qs.length ? '?'+qs.join('&') : '');
+  try{
+    var r = await fetch(url);
+    var d = await r.json();
+    var k = d.kpis || {};
+    document.getElementById('cam-kp-tot').textContent = k.total || 0;
+    document.getElementById('cam-kp-sin').textContent = k.sin_evaluar || 0;
+    document.getElementById('cam-kp-eva').textContent = k.en_evaluacion || 0;
+    document.getElementById('cam-kp-apr').textContent = k.aprobados_pendientes || 0;
+    document.getElementById('cam-kp-inv').textContent = k.requieren_invima || 0;
+    document.getElementById('cam-kp-cer').textContent = k.cerrados_30d || 0;
+    var tb = document.getElementById('cam-tbody');
+    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="9" class="empty">Sin solicitudes de cambio</td></tr>'; return; }
+    tb.innerHTML = d.items.map(function(it){
+      var sevBadge = it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
+        : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
+        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+      var estadoLabel = (it.estado||'').replace('_',' ');
+      var estadoCol = it.estado === 'cerrado' ? '#15803d'
+        : it.estado === 'rechazado' ? '#94a3b8'
+        : it.estado === 'solicitado' ? '#ef4444'
+        : it.estado === 'implementado' ? '#0ea5e9'
+        : '#fbbf24';
+      var invimaIcon = it.requiere_invima ? '<span title="Requiere INVIMA" style="color:#c2410c">⚠</span>' : '';
+      var bpmIcon = it.impacto_bpm ? '<span title="Impacta BPM" style="color:#a16207">●</span> ' : '';
+      return '<tr>'
+        +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
+        +'<td>'+_esc(it.fecha_solicitud||'')+'</td>'
+        +'<td>'+_esc(it.tipo||'')+'</td>'
+        +'<td>'+bpmIcon+_esc((it.titulo||'').slice(0,80))+(it.titulo && it.titulo.length > 80 ? '...' : '')+'</td>'
+        +'<td>'+sevBadge+'</td>'
+        +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
+        +'<td>'+invimaIcon+'</td>'
+        +'<td>'+(it.dias_abierto||0)+'d</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verCambio('+it.id+')">Abrir</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('cam-tbody').innerHTML = '<tr><td colspan="9" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
+}
+
+function abrirNuevoCambio(){
+  ['m-cam-titulo','m-cam-desc','m-cam-just','m-cam-areas','m-cam-new-msg'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('m-cam-bpm').checked = false;
+  document.getElementById('m-cam-reg').checked = false;
+  document.getElementById('m-cam-tipo').value = 'otro';
+  openModal('m-cam-new');
+}
+
+async function guardarCambio(){
+  var msg = document.getElementById('m-cam-new-msg');
+  var body = {
+    tipo: document.getElementById('m-cam-tipo').value,
+    titulo: document.getElementById('m-cam-titulo').value,
+    descripcion: document.getElementById('m-cam-desc').value,
+    justificacion: document.getElementById('m-cam-just').value,
+    areas_afectadas: document.getElementById('m-cam-areas').value,
+    impacto_bpm: document.getElementById('m-cam-bpm').checked,
+    impacto_regulatorio: document.getElementById('m-cam-reg').checked,
+  };
+  if(!body.titulo || body.titulo.length < 5){
+    msg.innerHTML = '<span style="color:#ef4444">Título requerido (≥5 chars)</span>'; return;
+  }
+  if(!body.descripcion || body.descripcion.length < 20){
+    msg.innerHTML = '<span style="color:#ef4444">Descripción requerida (≥20 chars)</span>'; return;
+  }
+  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  try{
+    var r = await fetch('/api/aseguramiento/cambios', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
+      setTimeout(function(){ closeModal('m-cam-new'); loadCambios(); }, 700);
+    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+}
+
+async function verCambio(id){
+  document.getElementById('m-cam-det-id').value = id;
+  var body = document.getElementById('m-cam-det-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-cam-det');
+  try{
+    var r = await fetch('/api/aseguramiento/cambios/'+id);
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    document.getElementById('m-cam-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
+
+    var html = '<div class="card" style="background:#f8fafc">'
+      +'<div style="font-size:0.85em;color:#475569"><b>Solicitada:</b> '+_esc(d.fecha_solicitud||'')+' · por '+_esc(d.solicitado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+(d.areas_afectadas ? ' · <b>Áreas:</b> '+_esc(d.areas_afectadas) : '')+'</div>'
+      +'<div style="margin-top:8px;font-weight:600">'+_esc(d.titulo||'')+'</div>'
+      +'<div style="margin-top:6px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
+      +(d.justificacion ? '<div style="margin-top:6px"><b>Justificación:</b><br>'+_esc(d.justificacion)+'</div>' : '')
+      +(d.impacto_bpm || d.impacto_regulatorio ? '<div style="margin-top:6px;color:#c2410c">'
+          +(d.impacto_bpm?'⚠ Impacta BPM ':'')
+          +(d.impacto_regulatorio?'⚠ Impacto regulatorio':'')+'</div>' : '')
+      +'</div>';
+
+    // Workflow steps
+    html += '<div class="card-title" style="margin-top:12px">Workflow</div>';
+
+    // Paso 1: Evaluación
+    if(d.severidad){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>1. Evaluada</b> · severidad: <b>'+_esc(d.severidad)+'</b>'+(d.requiere_invima?' · <span style="color:#c2410c">REQUIERE INVIMA</span>':'')+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.evaluacion_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.evaluado_por||'')+' · '+_esc(d.evaluado_at||'')+'</div>'
+        +'</div>';
+    } else {
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>1. Evaluar impacto</b> (pendiente)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
+        +'<select id="ev-sev" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Severidad...</option><option value="mayor">Mayor</option><option value="menor">Menor</option></select>'
+        +'<label style="display:flex;align-items:center;gap:4px;font-size:0.85em"><input type="checkbox" id="ev-invima"> Requiere INVIMA</label>'
+        +'</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Evaluación de impacto (≥20 chars)</label><textarea id="ev-desc" style="min-height:50px"></textarea></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="evaluarCambio('+id+')">Registrar evaluación</button></div>'
+        +'</div>';
+    }
+
+    // Paso 2: Aprobación
+    if(d.aprobado_at){
+      var apCol = d.estado === 'rechazado' ? '#94a3b8' : '#15803d';
+      var apLabel = d.estado === 'rechazado' ? 'Rechazado' : 'Aprobado';
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+apCol+'">'
+        +'<div><b>2. '+apLabel+'</b> por '+_esc(d.aprobado_por||'')+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.aprobacion_observaciones||'')+'</div>'
+        +(d.plan_implementacion ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Plan:</b> '+_esc(d.plan_implementacion)+'</div>' : '')
+        +(d.fecha_implementacion_propuesta ? '<div style="font-size:0.78em;color:#94a3b8">Fecha propuesta: '+_esc(d.fecha_implementacion_propuesta)+(d.responsable_implementacion?' · Resp: '+_esc(d.responsable_implementacion):'')+'</div>' : '')
+        +'</div>';
+    } else if(d.severidad){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>2. Aprobar / Rechazar</b> (pendiente)</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Decisión</label>'
+        +'<select id="ap-decision" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="aprobar">Aprobar</option><option value="rechazar">Rechazar</option></select>'
+        +'</div>'
+        +'<div class="form-group"><label>Observaciones (≥10 chars)</label><textarea id="ap-obs" style="min-height:40px"></textarea></div>'
+        +'<div class="form-group"><label>Plan de implementación (≥20 chars · solo si aprueba)</label><textarea id="ap-plan" style="min-height:50px"></textarea></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+        +'<input id="ap-fecha" type="date" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="ap-resp" placeholder="Responsable implementación" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'</div>'
+        +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="aprobarCambio('+id+')">Decidir</button></div>'
+        +'</div>';
+    }
+
+    // Paso 2b: Notificación INVIMA (si aplica)
+    if(d.requiere_invima && d.estado !== 'rechazado'){
+      if(d.notificacion_invima_at){
+        html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+          +'<div><b>2b. INVIMA notificado</b> · ref: <code>'+_esc(d.notificacion_invima_ref||'')+'</code></div>'
+          +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.notificacion_invima_at||'')+'</div>'
+          +'</div>';
+      } else if(d.aprobado_at && d.estado !== 'rechazado'){
+        html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+          +'<div><b>2b. Notificar a INVIMA</b> (Resolución 2214/2021)</div>'
+          +'<div class="form-group" style="margin-top:6px"><label>Radicado / oficio</label><input id="inv-ref" placeholder="Ej: 2026123456"></div>'
+          +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="notificarInvima('+id+')">Registrar notificación</button></div>'
+          +'</div>';
+      }
+    }
+
+    // Paso 3: Implementación
+    if(d.implementado_at){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>3. Implementado</b> por '+_esc(d.implementado_por||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.implementado_at||'')+'</div>'
+        +'</div>';
+    } else if(d.estado === 'aprobado' || d.estado === 'en_implementacion'){
+      var bloqInvima = d.requiere_invima && !d.notificacion_invima_at;
+      html += '<div class="card" style="background:'+(bloqInvima?'#f3f4f6':'#fefce8')+';border-left:3px solid '+(bloqInvima?'#94a3b8':'#fbbf24')+'">'
+        +'<div><b>3. Implementar cambio</b>'+(bloqInvima?' <span style="color:#94a3b8">(notifica INVIMA primero)</span>':'')+'</div>'
+        +(bloqInvima?'':'<div class="form-group" style="margin-top:6px"><label>Observaciones implementación</label><input id="imp-obs"></div>'
+          +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="implementarCambio('+id+')">Marcar implementado</button></div>')
+        +'</div>';
+    }
+
+    // Paso 4: Cierre
+    if(d.estado === 'cerrado'){
+      var vfCol = d.verificacion_ok ? '#15803d' : '#ef4444';
+      var vfLabel = d.verificacion_ok ? '✅ VERIFICACIÓN OK' : '❌ VERIFICACIÓN NO OK';
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+vfCol+'">'
+        +'<div style="font-size:1em;font-weight:700;color:'+vfCol+'">'+vfLabel+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Verificación post:</b> '+_esc(d.verificacion_post||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'</div>';
+    } else if(d.estado === 'implementado'){
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>4. Cerrar con verificación post</b></div>'
+        +'<div class="form-group"><label>Verificación post (≥20 chars)</label><textarea id="cer-cam-verif" style="min-height:50px" placeholder="Cómo se verificó que el cambio funcionó"></textarea></div>'
+        +'<div class="form-group"><label><input type="checkbox" id="cer-cam-ok"> Verificación OK</label></div>'
+        +'<div class="form-group"><label>Observaciones cierre</label><input id="cer-cam-obs"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="cerrarCambio('+id+')">Cerrar cambio</button></div>'
+        +'</div>';
+    }
+
+    // Timeline
+    if(d.timeline && d.timeline.length){
+      html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
+      html += '<div style="font-size:0.85em">';
+      d.timeline.forEach(function(ev){
+        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+          +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
+          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+}
+
+async function evaluarCambio(id){
+  var sev = document.getElementById('ev-sev').value;
+  var inv = document.getElementById('ev-invima').checked;
+  var desc = document.getElementById('ev-desc').value;
+  if(!sev){ alert('Elige severidad'); return; }
+  if(!desc || desc.length < 20){ alert('Evaluación ≥20 chars'); return; }
+  await _postCambioAccion(id, 'evaluar', {severidad: sev, evaluacion_descripcion: desc, requiere_invima: inv});
+}
+
+async function aprobarCambio(id){
+  var dec = document.getElementById('ap-decision').value;
+  var obs = document.getElementById('ap-obs').value;
+  var plan = document.getElementById('ap-plan').value;
+  var fecha = document.getElementById('ap-fecha').value;
+  var resp = document.getElementById('ap-resp').value;
+  if(!obs || obs.length < 10){ alert('Observaciones ≥10 chars'); return; }
+  if(dec === 'aprobar' && (!plan || plan.length < 20)){ alert('Plan implementación ≥20 chars si aprueba'); return; }
+  if(!confirm('Confirmas '+(dec === 'aprobar' ? 'APROBAR' : 'RECHAZAR')+' este cambio?')) return;
+  await _postCambioAccion(id, 'aprobar', {
+    decision: dec, observaciones: obs, plan_implementacion: plan,
+    fecha_implementacion_propuesta: fecha, responsable_implementacion: resp,
+  });
+}
+
+async function notificarInvima(id){
+  var ref = document.getElementById('inv-ref').value;
+  if(!ref){ alert('Referencia requerida'); return; }
+  await _postCambioAccion(id, 'notificar-invima', {referencia: ref});
+}
+
+async function implementarCambio(id){
+  var obs = (document.getElementById('imp-obs')||{}).value || '';
+  if(!confirm('Confirmas que el cambio fue implementado?')) return;
+  await _postCambioAccion(id, 'implementar', {observaciones: obs});
+}
+
+async function cerrarCambio(id){
+  var verif = document.getElementById('cer-cam-verif').value;
+  var ok = document.getElementById('cer-cam-ok').checked;
+  var obs = document.getElementById('cer-cam-obs').value;
+  if(!verif || verif.length < 20){ alert('Verificación post ≥20 chars'); return; }
+  if(!confirm('Confirmas cerrar este cambio con verificación ' + (ok ? 'OK' : 'NO OK') + '?')) return;
+  await _postCambioAccion(id, 'cerrar', {verificacion_post: verif, verificacion_ok: ok, observaciones_cierre: obs});
+}
+
+async function _postCambioAccion(id, accion, body){
+  try{
+    var r = await fetch('/api/aseguramiento/cambios/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){ verCambio(id); loadCambios(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
 }
