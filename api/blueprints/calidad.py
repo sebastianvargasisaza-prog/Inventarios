@@ -1,6 +1,7 @@
 # blueprints/calidad.py — extraído de index.py (Fase C)
 import os
 import json
+import logging
 import sqlite3
 import hmac
 import time
@@ -109,6 +110,307 @@ def calidad_dashboard():
         'tasa_liberacion': tasa_liberacion,
         'actividad_reciente': actividad[:10]
     })
+
+# ════════════════════════════════════════════════════════════════════════
+# BANDEJA QC DEL DÍA · centro de mando de Calidad
+# Sebastián 1-may-2026: "que le resuelva la vida al equipo de Calidad".
+# Una sola pantalla con TODO lo pendiente: lotes a liberar, equipos a
+# calibrar, NCs/OOS abiertas, cronograma muestreo, registro agua de hoy,
+# auditorías próximas. Reemplaza Excel + WhatsApp + 124 docs sueltos.
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/api/calidad/bandeja', methods=['GET'])
+def calidad_bandeja():
+    """Retorna TODO lo pendiente del equipo Calidad en una sola response.
+
+    Secciones:
+      - lotes_cuarentena · MP/ME/MEM esperando liberación
+      - ncs_abiertas · No Conformidades sin cerrar
+      - oos_abiertas · Out of Specification activos
+      - calibraciones · vencidas + próximas 7d
+      - muestreo_micro_semana · cronograma COC-PRO-011
+      - registro_agua_hoy · COC-PRO-008 (null si falta hoy)
+      - cola_liberacion · PT esperando liberación QC
+      - cola_revisar · cola_liberacion en estado listo_revisar
+      - auditorias_proximas · 60 días
+      - estabilidades_pendientes · próximas a fecha de análisis
+
+    Auth: cualquier compras_user (lectura abierta).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().date().isoformat()
+    log = logging.getLogger('calidad')
+
+    out = {'fecha_hoy': fecha_hoy, 'secciones': {}, 'kpis': {}}
+
+    # ── 1. Lotes en cuarentena (MP/ME/MEM) ─────────────────────────────
+    try:
+        rows = c.execute("""
+            SELECT m.material_id, m.material_nombre, m.lote, m.proveedor,
+                   m.cantidad, m.fecha,
+                   CAST((julianday('now') - julianday(m.fecha)) AS INTEGER) as dias_cuarentena,
+                   COALESCE(mp.tipo_material, 'MP') as tipo
+            FROM movimientos m
+            LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
+            WHERE m.tipo = 'Entrada'
+              AND COALESCE(m.estado_lote, '') = 'Cuarentena'
+            ORDER BY m.fecha ASC
+            LIMIT 100
+        """).fetchall()
+        items = [{
+            'material_id': r[0], 'material_nombre': r[1],
+            'lote': r[2], 'proveedor': r[3], 'cantidad': r[4],
+            'fecha_recepcion': r[5], 'dias_cuarentena': r[6],
+            'tipo': r[7], 'critico': (r[6] or 0) > 5,
+        } for r in rows]
+        out['secciones']['lotes_cuarentena'] = {
+            'total': len(items),
+            'criticos': sum(1 for x in items if x['critico']),
+            'items': items[:20],  # solo top 20 más antiguos
+        }
+    except Exception as e:
+        log.warning('bandeja lotes_cuarentena fallo: %s', e)
+        out['secciones']['lotes_cuarentena'] = {'total': 0, 'criticos': 0, 'items': []}
+
+    # ── 2. NCs abiertas ────────────────────────────────────────────────
+    try:
+        rows = c.execute("""
+            SELECT id, fecha, tipo, descripcion, area, responsable, impacto,
+                   CAST((julianday('now') - julianday(fecha)) AS INTEGER) as dias_abierta
+            FROM no_conformidades
+            WHERE estado = 'Abierta'
+            ORDER BY CASE impacto
+                WHEN 'Critico' THEN 0 WHEN 'Alto' THEN 1
+                WHEN 'Medio' THEN 2 ELSE 3 END,
+                fecha ASC
+            LIMIT 50
+        """).fetchall()
+        items = [{
+            'id': r[0], 'fecha': r[1], 'tipo': r[2],
+            'descripcion': (r[3] or '')[:120],
+            'area': r[4], 'responsable': r[5], 'impacto': r[6],
+            'dias_abierta': r[7], 'urgente': (r[7] or 0) > 30,
+        } for r in rows]
+        out['secciones']['ncs_abiertas'] = {
+            'total': len(items),
+            'criticas': sum(1 for x in items if x['impacto'] in ('Critico', 'Alto')),
+            'items': items[:15],
+        }
+    except Exception as e:
+        log.warning('bandeja ncs_abiertas fallo: %s', e)
+        out['secciones']['ncs_abiertas'] = {'total': 0, 'criticas': 0, 'items': []}
+
+    # ── 3. OOS abiertas (Out of Specification) ─────────────────────────
+    try:
+        rows = c.execute("""
+            SELECT id, fecha_deteccion, producto, lote, parametro, valor_obtenido,
+                   especificacion, severidad, estado,
+                   CAST((julianday('now') - julianday(fecha_deteccion)) AS INTEGER) as dias_abierta
+            FROM calidad_oos
+            WHERE COALESCE(estado, 'abierto') NOT IN ('cerrado', 'descartado')
+            ORDER BY fecha_deteccion ASC
+            LIMIT 30
+        """).fetchall()
+        items = [{
+            'id': r[0], 'fecha': r[1], 'producto': r[2], 'lote': r[3],
+            'parametro': r[4], 'valor': r[5], 'spec': r[6],
+            'severidad': r[7], 'estado': r[8], 'dias_abierta': r[9],
+        } for r in rows]
+        out['secciones']['oos_abiertas'] = {
+            'total': len(items),
+            'items': items[:15],
+        }
+    except Exception as e:
+        log.warning('bandeja oos_abiertas fallo: %s', e)
+        out['secciones']['oos_abiertas'] = {'total': 0, 'items': []}
+
+    # ── 4. Calibraciones vencidas + próximas 7d ─────────────────────────
+    try:
+        rows_venc = c.execute("""
+            SELECT id, instrumento, codigo, ubicacion, fecha_proxima, responsable, estado,
+                   CAST((julianday('now') - julianday(fecha_proxima)) AS INTEGER) as dias_vencida
+            FROM calibraciones_instrumentos
+            WHERE date(fecha_proxima) < date('now')
+            ORDER BY fecha_proxima ASC
+            LIMIT 30
+        """).fetchall()
+        rows_prox = c.execute("""
+            SELECT id, instrumento, codigo, ubicacion, fecha_proxima, responsable, estado,
+                   CAST((julianday(fecha_proxima) - julianday('now')) AS INTEGER) as dias_restantes
+            FROM calibraciones_instrumentos
+            WHERE date(fecha_proxima) BETWEEN date('now') AND date('now', '+7 days')
+            ORDER BY fecha_proxima ASC
+            LIMIT 30
+        """).fetchall()
+        out['secciones']['calibraciones'] = {
+            'vencidas': [{
+                'id': r[0], 'instrumento': r[1], 'codigo': r[2],
+                'ubicacion': r[3], 'fecha_proxima': r[4],
+                'responsable': r[5], 'dias_vencida': r[7],
+            } for r in rows_venc],
+            'proximas_7d': [{
+                'id': r[0], 'instrumento': r[1], 'codigo': r[2],
+                'ubicacion': r[3], 'fecha_proxima': r[4],
+                'responsable': r[5], 'dias_restantes': r[7],
+            } for r in rows_prox],
+            'total_vencidas': len(rows_venc),
+            'total_proximas': len(rows_prox),
+        }
+    except Exception as e:
+        log.warning('bandeja calibraciones fallo: %s', e)
+        out['secciones']['calibraciones'] = {
+            'vencidas': [], 'proximas_7d': [],
+            'total_vencidas': 0, 'total_proximas': 0,
+        }
+
+    # ── 5. Cronograma muestreo microbiológico semana ────────────────────
+    try:
+        rows = c.execute("""
+            SELECT fecha, area_codigo, area_nombre, tipo_muestra, frecuencia, estado, asignado_a
+            FROM cronograma_muestreo_micro
+            WHERE date(fecha) BETWEEN date('now') AND date('now', '+7 days')
+              AND COALESCE(estado, 'pendiente') NOT IN ('completado', 'cancelado')
+            ORDER BY fecha ASC, area_codigo
+            LIMIT 50
+        """).fetchall()
+        items = [{
+            'fecha': r[0], 'area_codigo': r[1], 'area_nombre': r[2],
+            'tipo': r[3], 'frecuencia': r[4], 'estado': r[5],
+            'asignado_a': r[6],
+        } for r in rows]
+        out['secciones']['muestreo_micro_semana'] = {
+            'total': len(items), 'items': items,
+        }
+    except Exception as e:
+        # Tabla puede no existir si no se ha implementado el cronograma
+        log.info('bandeja muestreo_micro (tabla puede no existir): %s', e)
+        out['secciones']['muestreo_micro_semana'] = {'total': 0, 'items': []}
+
+    # ── 6. Registro sistema agua hoy (COC-PRO-008) ──────────────────────
+    try:
+        row = c.execute("""
+            SELECT id, fecha, conductividad, ph, tds, observaciones, registrado_por
+            FROM agua_registros
+            WHERE date(fecha) = date('now')
+            ORDER BY id DESC LIMIT 1
+        """).fetchone()
+        if row:
+            out['secciones']['registro_agua_hoy'] = {
+                'registrado': True,
+                'id': row[0], 'fecha': row[1],
+                'conductividad': row[2], 'ph': row[3], 'tds': row[4],
+                'observaciones': row[5], 'registrado_por': row[6],
+            }
+        else:
+            out['secciones']['registro_agua_hoy'] = {
+                'registrado': False,
+                'alerta': '⚠️ Falta registro del sistema de agua hoy',
+            }
+    except Exception as e:
+        log.info('bandeja agua_registros: %s', e)
+        out['secciones']['registro_agua_hoy'] = {
+            'registrado': False, 'alerta': 'Tabla agua_registros no disponible',
+        }
+
+    # ── 7. Cola liberación PT (esperando QC) ───────────────────────────
+    try:
+        rows = c.execute("""
+            SELECT id, producto_nombre, lote, fecha_envasado, fecha_min_liberacion, estado,
+                   CAST((julianday(fecha_min_liberacion) - julianday('now')) AS INTEGER) as dias_para
+            FROM cola_liberacion
+            WHERE COALESCE(estado, '') NOT IN ('liberado', 'rechazado')
+            ORDER BY fecha_min_liberacion ASC
+            LIMIT 30
+        """).fetchall()
+        listo_revisar = [r for r in rows if (r[6] or 0) <= 0]
+        items_all = [{
+            'id': r[0], 'producto': r[1], 'lote': r[2],
+            'fecha_envasado': r[3], 'fecha_min_liberacion': r[4],
+            'estado': r[5], 'dias_para': r[6],
+            'listo_hoy': (r[6] or 0) <= 0,
+        } for r in rows]
+        out['secciones']['cola_liberacion'] = {
+            'total': len(items_all),
+            'listos_revisar_hoy': len(listo_revisar),
+            'items': items_all[:20],
+        }
+    except Exception as e:
+        log.info('bandeja cola_liberacion: %s', e)
+        out['secciones']['cola_liberacion'] = {
+            'total': 0, 'listos_revisar_hoy': 0, 'items': [],
+        }
+
+    # ── 8. Auditorías próximas 60d ─────────────────────────────────────
+    try:
+        rows = c.execute("""
+            SELECT id, fecha, tipo, area, responsable, descripcion, estado
+            FROM auditorias
+            WHERE date(fecha) BETWEEN date('now') AND date('now', '+60 days')
+              AND COALESCE(estado, 'programada') NOT IN ('completada', 'cancelada')
+            ORDER BY fecha ASC
+            LIMIT 20
+        """).fetchall()
+        items = [{
+            'id': r[0], 'fecha': r[1], 'tipo': r[2],
+            'area': r[3], 'responsable': r[4],
+            'descripcion': (r[5] or '')[:80], 'estado': r[6],
+        } for r in rows]
+        out['secciones']['auditorias_proximas'] = {
+            'total': len(items), 'items': items,
+        }
+    except Exception as e:
+        log.info('bandeja auditorias: %s', e)
+        out['secciones']['auditorias_proximas'] = {'total': 0, 'items': []}
+
+    # ── 9. Estabilidades pendientes próximas 30d ───────────────────────
+    try:
+        rows = c.execute("""
+            SELECT id, producto, lote, condicion, fecha_inicio, fecha_proxima_analisis, estado,
+                   CAST((julianday(fecha_proxima_analisis) - julianday('now')) AS INTEGER) as dias
+            FROM estabilidades
+            WHERE date(fecha_proxima_analisis) BETWEEN date('now') AND date('now', '+30 days')
+              AND COALESCE(estado, 'en_curso') = 'en_curso'
+            ORDER BY fecha_proxima_analisis ASC
+            LIMIT 20
+        """).fetchall()
+        items = [{
+            'id': r[0], 'producto': r[1], 'lote': r[2],
+            'condicion': r[3], 'fecha_inicio': r[4],
+            'fecha_proxima': r[5], 'estado': r[6], 'dias': r[7],
+        } for r in rows]
+        out['secciones']['estabilidades_pendientes'] = {
+            'total': len(items), 'items': items,
+        }
+    except Exception as e:
+        log.info('bandeja estabilidades: %s', e)
+        out['secciones']['estabilidades_pendientes'] = {'total': 0, 'items': []}
+
+    # ── KPIs unificados ─────────────────────────────────────────────────
+    out['kpis'] = {
+        'lotes_cuarentena': out['secciones']['lotes_cuarentena']['total'],
+        'lotes_cuarentena_criticos': out['secciones']['lotes_cuarentena']['criticos'],
+        'ncs_abiertas': out['secciones']['ncs_abiertas']['total'],
+        'oos_abiertas': out['secciones']['oos_abiertas']['total'],
+        'calibraciones_vencidas': out['secciones']['calibraciones']['total_vencidas'],
+        'calibraciones_proximas': out['secciones']['calibraciones']['total_proximas'],
+        'muestreo_pendiente_semana': out['secciones']['muestreo_micro_semana']['total'],
+        'cola_liberacion_listos': out['secciones']['cola_liberacion']['listos_revisar_hoy'],
+        'auditorias_proximas': out['secciones']['auditorias_proximas']['total'],
+        'estabilidades_pendientes': out['secciones']['estabilidades_pendientes']['total'],
+        'agua_registrada_hoy': out['secciones']['registro_agua_hoy'].get('registrado', False),
+    }
+    # Total de "items que requieren acción del equipo Calidad"
+    out['kpis']['total_pendientes'] = (
+        out['kpis']['lotes_cuarentena']
+        + out['kpis']['ncs_abiertas']
+        + out['kpis']['oos_abiertas']
+        + out['kpis']['calibraciones_vencidas']
+        + out['kpis']['cola_liberacion_listos']
+    )
+    return jsonify(out)
+
 
 @bp.route('/api/calidad/no-conformidades', methods=['GET', 'POST'])
 def handle_no_conformidades():

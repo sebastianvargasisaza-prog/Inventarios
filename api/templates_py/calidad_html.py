@@ -126,7 +126,8 @@ textarea{resize:vertical;min-height:70px;}
 </header>
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
-  <div class="tab active" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
+  <div class="tab active" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
+  <div class="tab" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
   <div class="tab" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
   <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
@@ -138,7 +139,28 @@ textarea{resize:vertical;min-height:70px;}
 <div class="main">
 
 <!-- Ã¢ÂÂÃ¢ÂÂ DASHBOARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
-<div id="tab-dash" class="pane active">
+<!-- BANDEJA DEL DIA · centro de mando QC -->
+<div id="tab-bandeja" class="pane active">
+  <div class="card" style="background:linear-gradient(135deg,#1e293b,#334155);color:#f1f5f9;border:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:0.78em;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px">Bandeja QC</div>
+        <div id="bandeja-fecha" style="font-size:1.4em;font-weight:700;color:#7ACFCC">Cargando...</div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div style="text-align:center"><div style="font-size:0.7em;color:#94a3b8">PENDIENTES</div><div id="bandeja-total" style="font-size:1.6em;font-weight:800;color:#fbbf24">—</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#94a3b8">CRITICOS</div><div id="bandeja-criticos" style="font-size:1.6em;font-weight:800;color:#ef4444">—</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadBandeja()">&#x21BB; Refrescar</button>
+      </div>
+    </div>
+  </div>
+  <div id="bandeja-secciones" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;margin-top:14px">
+    <p class="empty">Cargando...</p>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="tab-dash" class="pane">
   <div class="kpi-row">
     <div class="kpi"><div class="kpi-label">Cronograma Hoy</div><div class="kpi-val good" id="kv-cron-pct">â</div><div class="kpi-sub">% completado</div></div>
     <div class="kpi"><div class="kpi-label">Lotes en Cuarentena</div><div class="kpi-val warn" id="kv-cuarentena">Ã¢ÂÂ</div><div class="kpi-sub">Pendientes CC</div></div>
@@ -417,12 +439,13 @@ function fmtH(s){return s?s.substring(0,5):'â';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds=['tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-oos'];
+var _tabIds=['tab-bandeja','tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-oos'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  if(id==='tab-dash') loadDash();
+  if(id==='tab-bandeja') loadBandeja();
+  else if(id==='tab-dash') loadDash();
   else if(id==='tab-cron') loadCronograma();
   else if(id==='tab-cc') loadCuarentena();
   else if(id==='tab-nc') loadNC();
@@ -431,6 +454,225 @@ function goTab(id){
   else if(id==='tab-agua') loadAguaRegistros();
   else if(id==='tab-oos') loadOOS();
 }
+
+// === BANDEJA QC DEL DIA · centro de mando ==============================
+// Sebastián 1-may-2026: una sola pantalla con TODO lo pendiente del equipo
+// Calidad. Reemplaza Excel + WhatsApp + revisar 5 tabs distintas.
+function _escBan(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+
+function _bandejaCard(opts){
+  var cls = opts.accent==='red' ? '#ef4444' : (opts.accent==='amber' ? '#fbbf24' : (opts.accent==='green' ? '#15803d' : '#7ACFCC'));
+  var html = '<div class="card" style="border-left:4px solid '+cls+'">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  html += '<div style="font-size:0.95em;font-weight:700;color:#0f172a">'+(opts.icon||'')+' '+_escBan(opts.titulo)+'</div>';
+  html += '<div style="background:'+cls+';color:#fff;padding:3px 10px;border-radius:12px;font-size:0.78em;font-weight:700">'+(opts.total||0)+'</div>';
+  html += '</div>';
+  if(opts.subtitulo){
+    html += '<div style="font-size:0.78em;color:#64748b;margin-bottom:6px">'+opts.subtitulo+'</div>';
+  }
+  if(!opts.items || opts.items.length===0){
+    html += '<div style="padding:12px;text-align:center;color:#94a3b8;font-size:0.82em;font-style:italic">'+(opts.empty_msg||'Sin items')+'</div>';
+  } else {
+    html += '<div style="max-height:280px;overflow-y:auto">';
+    for(var i=0;i<Math.min(opts.items.length,8);i++){
+      html += opts.render_item(opts.items[i]);
+    }
+    if(opts.items.length>8){
+      html += '<div style="text-align:center;padding:6px;font-size:0.78em;color:#64748b">+ '+(opts.items.length-8)+' más</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+async function loadBandeja(){
+  var sec = document.getElementById('bandeja-secciones');
+  var fechaEl = document.getElementById('bandeja-fecha');
+  var totalEl = document.getElementById('bandeja-total');
+  var critEl = document.getElementById('bandeja-criticos');
+  if(sec) sec.innerHTML = '<p class="empty">Cargando...</p>';
+  try{
+    var r = await fetch('/api/calidad/bandeja');
+    if(!r.ok){
+      if(sec) sec.innerHTML = '<p class="empty" style="color:#c00">Error '+r.status+'</p>';
+      return;
+    }
+    var d = await r.json();
+    var s = d.secciones || {};
+    var k = d.kpis || {};
+
+    if(fechaEl){
+      var fecha = new Date(d.fecha_hoy + 'T00:00:00');
+      fechaEl.textContent = fecha.toLocaleDateString('es-CO', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    }
+    if(totalEl) totalEl.textContent = k.total_pendientes || 0;
+    var criticos = (k.lotes_cuarentena_criticos||0) + ((s.ncs_abiertas&&s.ncs_abiertas.criticas)||0) + (k.calibraciones_vencidas||0);
+    if(critEl) critEl.textContent = criticos;
+
+    var html = '';
+
+    // 1. Lotes en cuarentena
+    html += _bandejaCard({
+      titulo:'Lotes en Cuarentena', icon:'&#x1F4E6;',
+      total: s.lotes_cuarentena.total,
+      accent: s.lotes_cuarentena.criticos>0 ? 'red' : (s.lotes_cuarentena.total>0 ? 'amber' : 'green'),
+      subtitulo: s.lotes_cuarentena.criticos>0 ? '&#x26A0;&#xFE0F; '+s.lotes_cuarentena.criticos+' lotes >5 días en cuarentena' : 'Esperando liberación QC',
+      items: s.lotes_cuarentena.items,
+      empty_msg:'Sin lotes en cuarentena',
+      render_item: function(it){
+        var col = it.critico ? '#ef4444' : '#64748b';
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.material_nombre||'')+'</b> · Lote <code>'+_escBan(it.lote||'s/n')+'</code><br>'
+          + '<span style="color:'+col+';font-size:0.92em">' + _escBan(it.tipo||'MP') + ' · '+(it.dias_cuarentena||0)+'d en cuarentena · '+_escBan(it.proveedor||'')+'</span>'
+          + '</div>';
+      }
+    });
+
+    // 2. NCs abiertas
+    html += _bandejaCard({
+      titulo:'No Conformidades Abiertas', icon:'&#x26A0;',
+      total: s.ncs_abiertas.total,
+      accent: s.ncs_abiertas.criticas>0 ? 'red' : (s.ncs_abiertas.total>0 ? 'amber' : 'green'),
+      subtitulo: s.ncs_abiertas.criticas>0 ? s.ncs_abiertas.criticas+' críticas/altas' : null,
+      items: s.ncs_abiertas.items,
+      empty_msg:'Sin NCs abiertas',
+      render_item: function(it){
+        var col = it.urgente ? '#ef4444' : (it.impacto==='Critico'||it.impacto==='Alto' ? '#fbbf24' : '#64748b');
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<span style="background:'+col+';color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-right:4px">'+_escBan(it.impacto||'')+'</span>'
+          + _escBan(it.descripcion||'')
+          + '<br><span style="color:#94a3b8;font-size:0.92em">'+_escBan(it.area||'')+' · '+(it.dias_abierta||0)+'d abierta</span>'
+          + '</div>';
+      }
+    });
+
+    // 3. OOS abiertas
+    html += _bandejaCard({
+      titulo:'OOS Abiertos', icon:'&#x26A0;&#xFE0F;',
+      total: s.oos_abiertas.total,
+      accent: s.oos_abiertas.total>0 ? 'red' : 'green',
+      items: s.oos_abiertas.items,
+      empty_msg:'Sin OOS abiertos',
+      render_item: function(it){
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code><br>'
+          + '<span style="color:#ef4444">'+_escBan(it.parametro||'')+': <b>'+_escBan(String(it.valor||''))+'</b> (spec: '+_escBan(String(it.spec||''))+')</span>'
+          + ' · '+(it.dias_abierta||0)+'d'
+          + '</div>';
+      }
+    });
+
+    // 4. Calibraciones
+    var cal = s.calibraciones;
+    var calItems = (cal.vencidas||[]).concat(cal.proximas_7d||[]);
+    html += _bandejaCard({
+      titulo:'Calibraciones',  icon:'&#x1F527;',
+      total: cal.total_vencidas + cal.total_proximas,
+      accent: cal.total_vencidas>0 ? 'red' : (cal.total_proximas>0 ? 'amber' : 'green'),
+      subtitulo: cal.total_vencidas>0 ? cal.total_vencidas+' vencidas · '+cal.total_proximas+' próximas 7d' : cal.total_proximas+' próximas 7d',
+      items: calItems,
+      empty_msg:'Sin calibraciones pendientes',
+      render_item: function(it){
+        var venc = (it.dias_vencida!==undefined && it.dias_vencida>0);
+        var col = venc ? '#ef4444' : '#fbbf24';
+        var diasTxt = venc ? '+'+it.dias_vencida+'d vencida' : it.dias_restantes+'d restantes';
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.instrumento||'')+'</b> ('+_escBan(it.codigo||'')+')<br>'
+          + '<span style="color:'+col+'">'+diasTxt+'</span> · '+_escBan(it.ubicacion||'')+' · '+_escBan(it.responsable||'')
+          + '</div>';
+      }
+    });
+
+    // 5. Muestreo micro semana
+    html += _bandejaCard({
+      titulo:'Muestreo Microbiológico (semana)', icon:'&#x1F9EB;',
+      total: s.muestreo_micro_semana.total,
+      accent: s.muestreo_micro_semana.total>0 ? 'amber' : 'green',
+      items: s.muestreo_micro_semana.items,
+      empty_msg:'Sin muestreos pendientes esta semana',
+      render_item: function(it){
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.area_nombre||it.area_codigo||'')+'</b> · '+_escBan(it.tipo||'')
+          + '<br><span style="color:#64748b">'+_escBan(it.fecha||'')+' · '+_escBan(it.asignado_a||'sin asignar')+'</span>'
+          + '</div>';
+      }
+    });
+
+    // 6. Agua hoy
+    var agua = s.registro_agua_hoy;
+    var aguaItem = agua.registrado ? [{texto:'Conductividad: '+(agua.conductividad||'?')+' · pH: '+(agua.ph||'?')+' · Por: '+(agua.registrado_por||'?')}] : [];
+    html += _bandejaCard({
+      titulo:'Sistema de Agua (hoy)', icon:'&#x1F4A7;',
+      total: agua.registrado ? 1 : 0,
+      accent: agua.registrado ? 'green' : 'red',
+      subtitulo: agua.registrado ? 'Registrado &#x2713;' : (agua.alerta || 'Falta registro hoy'),
+      items: aguaItem,
+      empty_msg:'&#x26A0;&#xFE0F; Falta registro de agua hoy',
+      render_item: function(it){
+        return '<div style="padding:6px 8px;font-size:0.82em">'+_escBan(it.texto)+'</div>';
+      }
+    });
+
+    // 7. Cola liberación PT
+    var cola = s.cola_liberacion;
+    html += _bandejaCard({
+      titulo:'Liberación PT', icon:'&#x1F510;',
+      total: cola.total,
+      accent: cola.listos_revisar_hoy>0 ? 'amber' : (cola.total>0 ? 'amber' : 'green'),
+      subtitulo: cola.listos_revisar_hoy>0 ? '&#x1F525; '+cola.listos_revisar_hoy+' listos para revisar HOY' : null,
+      items: cola.items,
+      empty_msg:'Sin lotes en cola de liberación',
+      render_item: function(it){
+        var col = it.listo_hoy ? '#fbbf24' : '#64748b';
+        var txt = it.listo_hoy ? 'LISTO HOY' : (it.dias_para||0)+'d';
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code>'
+          + '<br><span style="background:'+col+';color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em">'+txt+'</span>'
+          + ' · '+_escBan(it.estado||'')
+          + '</div>';
+      }
+    });
+
+    // 8. Auditorías próximas
+    html += _bandejaCard({
+      titulo:'Auditorías Próximas (60d)', icon:'&#x1F50D;',
+      total: s.auditorias_proximas.total,
+      accent: 'amber',
+      items: s.auditorias_proximas.items,
+      empty_msg:'Sin auditorías programadas',
+      render_item: function(it){
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.tipo||'')+'</b> · '+_escBan(it.fecha||'')
+          + '<br><span style="color:#64748b">'+_escBan(it.descripcion||'')+'</span>'
+          + '</div>';
+      }
+    });
+
+    // 9. Estabilidades
+    html += _bandejaCard({
+      titulo:'Estabilidades (próximas 30d)', icon:'&#x1F4C8;',
+      total: s.estabilidades_pendientes.total,
+      accent: 'amber',
+      items: s.estabilidades_pendientes.items,
+      empty_msg:'Sin análisis de estabilidad próximos',
+      render_item: function(it){
+        return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+          + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code>'
+          + '<br><span style="color:#64748b">'+_escBan(it.condicion||'')+' · próximo: '+_escBan(it.fecha_proxima||'')+' ('+(it.dias||0)+'d)</span>'
+          + '</div>';
+      }
+    });
+
+    if(sec) sec.innerHTML = html;
+  }catch(e){
+    console.error('loadBandeja error:', e);
+    if(sec) sec.innerHTML = '<p class="empty" style="color:#c00">Error de red: '+_escBan(e.message||String(e))+'</p>';
+  }
+}
+
+// Auto-load bandeja al inicio
+window.addEventListener('DOMContentLoaded', function(){ loadBandeja(); });
 
 // === MICRO HEATMAP =====================================================
 async function loadMicroHeatmap(){
