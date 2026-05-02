@@ -591,6 +591,8 @@ JOBS_SCHEDULE = [
     ('recalls_plazos',        9, 30, None, None,                'job_recalls_plazos'),
     # ⭐ CEO · LUNES 7:30 · executive brief con health snapshot + KPIs semanales
     ('weekly_executive',      7, 30, [0],  None,                'job_weekly_executive_email'),
+    # ⭐ CEO · DÍA 1 8:00 · reporte financiero mensual · P&L + MoM + tops
+    ('monthly_financial',     8,  0, None, [1],                 'job_monthly_financial_summary'),
 ]
 
 
@@ -1990,6 +1992,362 @@ def job_weekly_executive_email(app):
             }, 0
         except Exception as e:
             log.exception('weekly_executive_email fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
+
+
+def _calcular_pnl_mensual(conn, periodo):
+    """Calcula P&L de un período YYYY-MM.
+
+    Retorna dict con: ingresos_total, egresos_total, margen, egresos_por_categoria,
+    mes_anterior_ingresos (para MoM), mom_pct.
+    """
+    c = conn.cursor()
+    pnl = {'periodo': periodo}
+    # Ingresos
+    try:
+        ing = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
+                           WHERE periodo=?""", (periodo,)).fetchone()[0]
+        pnl['ingresos_total'] = float(ing or 0)
+    except Exception:
+        pnl['ingresos_total'] = 0.0
+    # Egresos
+    try:
+        eg = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_egresos
+                          WHERE periodo=?""", (periodo,)).fetchone()[0]
+        pnl['egresos_total'] = float(eg or 0)
+    except Exception:
+        pnl['egresos_total'] = 0.0
+    # Margen
+    pnl['margen'] = pnl['ingresos_total'] - pnl['egresos_total']
+    pnl['margen_pct'] = (pnl['margen'] / pnl['ingresos_total'] * 100) if pnl['ingresos_total'] > 0 else 0
+    # Egresos por categoría (top 5)
+    try:
+        cats = c.execute("""SELECT COALESCE(categoria,'Otro'), SUM(monto)
+                            FROM flujo_egresos WHERE periodo=?
+                            GROUP BY categoria ORDER BY 2 DESC LIMIT 5""",
+                          (periodo,)).fetchall()
+        pnl['egresos_por_categoria'] = [
+            {'categoria': r[0], 'monto': float(r[1] or 0)} for r in cats
+        ]
+    except Exception:
+        pnl['egresos_por_categoria'] = []
+    # MoM: ingresos mes anterior
+    try:
+        from datetime import datetime as _dt
+        y, m = periodo.split('-')
+        anio_a = int(y); mes_a = int(m) - 1
+        if mes_a == 0:
+            mes_a = 12; anio_a -= 1
+        periodo_prev = f"{anio_a:04d}-{mes_a:02d}"
+        ing_prev = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
+                                WHERE periodo=?""", (periodo_prev,)).fetchone()[0]
+        pnl['mes_anterior'] = periodo_prev
+        pnl['mes_anterior_ingresos'] = float(ing_prev or 0)
+        if pnl['mes_anterior_ingresos'] > 0:
+            pnl['mom_pct'] = (pnl['ingresos_total'] - pnl['mes_anterior_ingresos']) / pnl['mes_anterior_ingresos'] * 100
+        else:
+            pnl['mom_pct'] = None
+    except Exception:
+        pnl['mes_anterior'] = None
+        pnl['mes_anterior_ingresos'] = 0.0
+        pnl['mom_pct'] = None
+    return pnl
+
+
+def _calcular_tops_mes(conn, periodo):
+    """Top 5 clientes y top 5 proveedores del mes."""
+    c = conn.cursor()
+    tops = {}
+    # Top clientes (pedidos del mes)
+    try:
+        rows = c.execute("""
+            SELECT COALESCE(cl.nombre, 'Sin cliente') as cliente,
+                   COUNT(p.id) as n_pedidos,
+                   COALESCE(SUM(p.valor_total), 0) as total
+            FROM pedidos p
+              LEFT JOIN clientes cl ON cl.id = p.cliente_id
+            WHERE strftime('%Y-%m', p.fecha) = ?
+            GROUP BY cliente
+            ORDER BY total DESC LIMIT 5
+        """, (periodo,)).fetchall()
+        tops['clientes'] = [
+            {'nombre': r[0], 'pedidos': r[1], 'total': float(r[2] or 0)}
+            for r in rows
+        ]
+    except Exception:
+        tops['clientes'] = []
+    # Top proveedores (OCs del mes)
+    try:
+        rows = c.execute("""
+            SELECT COALESCE(proveedor, 'Sin proveedor'),
+                   COUNT(*) as n_ocs,
+                   COALESCE(SUM(valor_total), 0) as total
+            FROM ordenes_compra
+            WHERE strftime('%Y-%m', fecha) = ?
+              AND estado != 'Rechazada'
+            GROUP BY proveedor
+            ORDER BY total DESC LIMIT 5
+        """, (periodo,)).fetchall()
+        tops['proveedores'] = [
+            {'nombre': r[0], 'ocs': r[1], 'total': float(r[2] or 0)}
+            for r in rows
+        ]
+    except Exception:
+        tops['proveedores'] = []
+    return tops
+
+
+def _calcular_operativos_mes(conn, periodo):
+    """Producciones completadas + lotes liberados/rechazados del mes."""
+    c = conn.cursor()
+    op = {}
+    try:
+        op['producciones_completadas'] = c.execute("""
+            SELECT COUNT(*) FROM produccion_programada
+            WHERE fin_real_at IS NOT NULL
+              AND strftime('%Y-%m', fin_real_at) = ?
+        """, (periodo,)).fetchone()[0] or 0
+    except Exception:
+        op['producciones_completadas'] = 0
+    try:
+        op['lotes_liberados'] = c.execute("""
+            SELECT COUNT(*) FROM cola_liberacion
+            WHERE estado='liberado'
+              AND strftime('%Y-%m', aprobado_at) = ?
+        """, (periodo,)).fetchone()[0] or 0
+    except Exception:
+        op['lotes_liberados'] = 0
+    try:
+        op['lotes_rechazados'] = c.execute("""
+            SELECT COUNT(*) FROM cola_liberacion
+            WHERE estado='rechazado'
+              AND strftime('%Y-%m', aprobado_at) = ?
+        """, (periodo,)).fetchone()[0] or 0
+    except Exception:
+        op['lotes_rechazados'] = 0
+    try:
+        op['facturas_emitidas'] = c.execute("""
+            SELECT COUNT(*) FROM facturas
+            WHERE strftime('%Y-%m', fecha_emision) = ?
+              AND estado != 'Anulada'
+        """, (periodo,)).fetchone()[0] or 0
+    except Exception:
+        op['facturas_emitidas'] = 0
+    return op
+
+
+def _build_monthly_financial_html(pnl, tops, operativos, caja_actual):
+    """HTML del email mensual financiero ejecutivo."""
+    periodo = pnl['periodo']
+    # Formatear fecha amigable
+    try:
+        from datetime import datetime as _dt
+        meses_es = ['enero','febrero','marzo','abril','mayo','junio',
+                    'julio','agosto','septiembre','octubre','noviembre','diciembre']
+        y, m = periodo.split('-')
+        periodo_label = f"{meses_es[int(m)-1]} {y}"
+    except Exception:
+        periodo_label = periodo
+
+    # MoM badge
+    mom = pnl.get('mom_pct')
+    if mom is None:
+        mom_html = '<span style="color:#94a3b8">—</span>'
+    elif mom >= 0:
+        mom_html = f'<span style="color:#15803d;font-weight:700">▲ {mom:+.1f}%</span>'
+    else:
+        mom_html = f'<span style="color:#dc2626;font-weight:700">▼ {mom:.1f}%</span>'
+
+    # Margen color
+    margen_color = '#15803d' if pnl['margen'] >= 0 else '#dc2626'
+
+    # Categorías egresos
+    cat_rows = ''
+    for cat in pnl.get('egresos_por_categoria', []):
+        pct = (cat['monto'] / pnl['egresos_total'] * 100) if pnl['egresos_total'] > 0 else 0
+        cat_rows += f"""
+        <tr>
+          <td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #e5e7eb">{cat['categoria']}</td>
+          <td style="padding:8px 12px;font-size:12px;text-align:right;border-bottom:1px solid #e5e7eb">${cat['monto']/1_000_000:.1f}M</td>
+          <td style="padding:8px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #e5e7eb">{pct:.0f}%</td>
+        </tr>"""
+    if not cat_rows:
+        cat_rows = '<tr><td colspan="3" style="padding:14px;color:#94a3b8;font-size:12px;text-align:center">Sin egresos en el período</td></tr>'
+
+    # Top clientes
+    cli_rows = ''
+    for c in tops.get('clientes', []):
+        cli_rows += f"""
+        <tr>
+          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid #f1f5f9">{c['nombre'][:35]}</td>
+          <td style="padding:6px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #f1f5f9">{c['pedidos']} ped.</td>
+          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid #f1f5f9"><b>${c['total']/1_000_000:.1f}M</b></td>
+        </tr>"""
+    if not cli_rows:
+        cli_rows = '<tr><td colspan="3" style="padding:12px;color:#94a3b8;font-size:11px;text-align:center">Sin pedidos</td></tr>'
+
+    # Top proveedores
+    prov_rows = ''
+    for p in tops.get('proveedores', []):
+        prov_rows += f"""
+        <tr>
+          <td style="padding:6px 12px;font-size:12px;border-bottom:1px solid #f1f5f9">{p['nombre'][:35]}</td>
+          <td style="padding:6px 12px;font-size:11px;color:#64748b;text-align:right;border-bottom:1px solid #f1f5f9">{p['ocs']} OCs</td>
+          <td style="padding:6px 12px;font-size:12px;text-align:right;border-bottom:1px solid #f1f5f9"><b>${p['total']/1_000_000:.1f}M</b></td>
+        </tr>"""
+    if not prov_rows:
+        prov_rows = '<tr><td colspan="3" style="padding:12px;color:#94a3b8;font-size:11px;text-align:center">Sin OCs</td></tr>'
+
+    return f"""<!DOCTYPE html>
+<html><body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;padding:20px;color:#1f2937;margin:0">
+  <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#0f766e,#134e4a);color:#fff;padding:24px 28px">
+      <h1 style="margin:0;font-size:22px">📈 Reporte Mensual · {periodo_label}</h1>
+      <div style="margin-top:6px;font-size:12px;color:#a7f3d0">HHA Group · P&amp;L + tendencias del mes</div>
+    </div>
+
+    <!-- P&L grid -->
+    <div style="padding:0">
+      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid #e5e7eb">
+        <tr>
+          <td style="padding:18px;text-align:center;border-right:1px solid #e5e7eb;background:#f0fdf4">
+            <div style="font-size:11px;color:#166534;text-transform:uppercase;letter-spacing:.5px">Ingresos</div>
+            <div style="font-size:24px;font-weight:700;color:#15803d;margin-top:4px">${pnl['ingresos_total']/1_000_000:.1f}M</div>
+            <div style="font-size:11px;margin-top:4px">vs mes ant: {mom_html}</div>
+          </td>
+          <td style="padding:18px;text-align:center;border-right:1px solid #e5e7eb;background:#fef2f2">
+            <div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.5px">Egresos</div>
+            <div style="font-size:24px;font-weight:700;color:#dc2626;margin-top:4px">${pnl['egresos_total']/1_000_000:.1f}M</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">salida total</div>
+          </td>
+          <td style="padding:18px;text-align:center">
+            <div style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:.5px">Margen</div>
+            <div style="font-size:24px;font-weight:700;color:{margen_color};margin-top:4px">${pnl['margen']/1_000_000:.1f}M</div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px">{pnl['margen_pct']:.1f}%</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Egresos por categoría -->
+    <div style="padding:20px 28px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+        💸 Egresos por categoría
+      </h2>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase">Categoría</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:#64748b;text-transform:uppercase">Monto</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:#64748b;text-transform:uppercase">%</th>
+          </tr>
+        </thead>
+        <tbody>{cat_rows}</tbody>
+      </table>
+    </div>
+
+    <!-- Top clientes -->
+    <div style="padding:0 28px 20px 28px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+        🏆 Top 5 clientes del mes
+      </h2>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>{cli_rows}</tbody>
+      </table>
+    </div>
+
+    <!-- Top proveedores -->
+    <div style="padding:0 28px 20px 28px">
+      <h2 style="margin:0 0 12px 0;font-size:14px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+        🚚 Top 5 proveedores del mes
+      </h2>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>{prov_rows}</tbody>
+      </table>
+    </div>
+
+    <!-- Operativos -->
+    <div style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e5e7eb">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+        ⚙️ Operativos del mes
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:18px;font-size:12px">
+        <span>🏭 Producciones: <b>{operativos['producciones_completadas']}</b></span>
+        <span>✅ Lotes liberados: <b>{operativos['lotes_liberados']}</b></span>
+        <span>❌ Lotes rechazados: <b style="color:#dc2626">{operativos['lotes_rechazados']}</b></span>
+        <span>🧾 Facturas: <b>{operativos['facturas_emitidas']}</b></span>
+      </div>
+      {f'<div style="margin-top:10px;font-size:12px">💰 Caja actual: <b>${caja_actual/1_000_000:.1f}M</b></div>' if caja_actual else ''}
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:16px 28px;background:#0f172a;color:#94a3b8;font-size:11px;text-align:center">
+      Detalle completo: <a href="https://app.eossuite.com/financiero" style="color:#7ACFCC;text-decoration:none">app.eossuite.com/financiero</a><br>
+      <span style="color:#64748b">Generado por cron · monthly_financial · cada día 1 a las 8am COT</span>
+    </div>
+  </div>
+</body></html>"""
+
+
+def job_monthly_financial_summary(app):
+    """Cron día 1 de cada mes 8am · reporte financiero mensual a Sebastián.
+
+    P&L del mes anterior + MoM + tops clientes/proveedores + operativos.
+    Cierra el ciclo de visibilidad ejecutiva (semanal: salud · mensual: $$$).
+    """
+    with app.app_context():
+        from database import get_db
+        from datetime import datetime as _dt
+        try:
+            # Período = mes ANTERIOR (estamos el día 1, miramos el mes que cerró)
+            hoy = _dt.now()
+            anio = hoy.year
+            mes = hoy.month - 1
+            if mes == 0:
+                mes = 12; anio -= 1
+            periodo = f"{anio:04d}-{mes:02d}"
+
+            conn = get_db()
+            pnl = _calcular_pnl_mensual(conn, periodo)
+            tops = _calcular_tops_mes(conn, periodo)
+            operativos = _calcular_operativos_mes(conn, periodo)
+            # Caja del último input
+            caja_actual = 0.0
+            try:
+                r = conn.execute("""SELECT saldo_caja FROM gerencia_inputs
+                                    ORDER BY periodo DESC LIMIT 1""").fetchone()
+                if r:
+                    caja_actual = float(r[0] or 0)
+            except Exception:
+                pass
+
+            html = _build_monthly_financial_html(pnl, tops, operativos, caja_actual)
+
+            from config import USER_EMAILS
+            destino = USER_EMAILS.get('sebastian', '').strip()
+            if not destino:
+                log.warning('monthly_financial_summary · EMAIL_SEBASTIAN no configurado')
+                return False, {'error': 'EMAIL_SEBASTIAN no configurado',
+                                'periodo': periodo}, 0
+            margen_icon = '🟢' if pnl['margen'] >= 0 else '🔴'
+            asunto = (f"{margen_icon} Reporte Mensual HHA · {periodo} · "
+                      f"Margen ${pnl['margen']/1_000_000:.1f}M ({pnl['margen_pct']:.1f}%)")
+            _enviar_email_async(asunto, html, [destino])
+            return True, {
+                'destino': destino, 'periodo': periodo,
+                'ingresos': pnl['ingresos_total'],
+                'egresos': pnl['egresos_total'],
+                'margen': pnl['margen'],
+                'margen_pct': round(pnl['margen_pct'], 1),
+                'mom_pct': pnl.get('mom_pct'),
+                'top_clientes_count': len(tops.get('clientes', [])),
+                'top_proveedores_count': len(tops.get('proveedores', [])),
+                'caja_actual': caja_actual,
+            }, 0
+        except Exception as e:
+            log.exception('monthly_financial_summary fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
 
 
