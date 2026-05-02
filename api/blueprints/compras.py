@@ -917,19 +917,16 @@ def agregar_item_oc(numero_oc):
         return jsonify({'error': 'nombre_mp requerido'}), 400
     if len(nombre_mp) > 300:
         return jsonify({'error': 'nombre_mp excede 300 chars'}), 400
-    # Sebastián 1-may-2026 audit: validar cantidad/precio > 0 antes de INSERT.
-    # Antes aceptaba 0 o negativos · creaba items inválidos en OC.
-    try:
-        cantidad_g = float(d.get('cantidad_g', 0))
-        precio = float(d.get('precio_unitario', 0))
-    except (ValueError, TypeError):
-        return jsonify({'error': 'cantidad_g y precio_unitario deben ser numéricos'}), 400
-    if cantidad_g <= 0:
-        return jsonify({'error': 'cantidad_g debe ser > 0'}), 400
-    if precio < 0:
-        return jsonify({'error': 'precio_unitario no puede ser negativo'}), 400
-    if cantidad_g > 1_000_000_000:  # 1 ton en gramos
-        return jsonify({'error': 'cantidad_g excede límite (1.000.000 kg)'}), 400
+    # Audit zero-error 2-may-2026: usar validate_money para sanity check completo
+    # (NaN/Infinity/cap). Antes solo se validaba >0 y <1B gramos.
+    cantidad_g, err = validate_money(d.get('cantidad_g', 0), allow_zero=False,
+                                       max_value=1_000_000_000, field_name='cantidad_g')
+    if err:
+        return jsonify(err), 400
+    precio, err = validate_money(d.get('precio_unitario', 0), allow_zero=True,
+                                   field_name='precio_unitario')
+    if err:
+        return jsonify(err), 400
     subtotal = round(cantidad_g * precio, 2)
     c.execute("""INSERT INTO ordenes_compra_items
                  (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)

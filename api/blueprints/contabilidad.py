@@ -321,28 +321,32 @@ def cont_facturas_list():
     fecha_desde = request.args.get('desde', '')
     fecha_hasta = request.args.get('hasta', '')
 
-    q = "SELECT * FROM facturas WHERE 1=1"
+    # Audit zero-error 2-may-2026: era N+1 (1 query lista + 200 SUM por factura).
+    # Ahora LEFT JOIN agregado · 1 sola query · ahorra 99.5% de roundtrips.
+    q = """
+        SELECT f.*, COALESCE(p.total_pagado, 0) as monto_pagado
+        FROM facturas f
+        LEFT JOIN (
+            SELECT numero_factura, SUM(monto) as total_pagado
+            FROM facturas_pagos
+            GROUP BY numero_factura
+        ) p ON p.numero_factura = f.numero
+        WHERE 1=1
+    """
     params = []
     if estado:
-        q += " AND estado=?"; params.append(estado)
+        q += " AND f.estado=?"; params.append(estado)
     if empresa:
-        q += " AND empresa=?"; params.append(empresa)
+        q += " AND f.empresa=?"; params.append(empresa)
     if fecha_desde:
-        q += " AND fecha_emision>=?"; params.append(fecha_desde)
+        q += " AND f.fecha_emision>=?"; params.append(fecha_desde)
     if fecha_hasta:
-        q += " AND fecha_emision<=?"; params.append(fecha_hasta)
-    q += " ORDER BY fecha_creacion DESC LIMIT 200"
+        q += " AND f.fecha_emision<=?"; params.append(fecha_hasta)
+    q += " ORDER BY f.fecha_creacion DESC LIMIT 200"
 
     rows = [dict(r) for r in conn.execute(q, params).fetchall()]
-
-    # Calcular monto pagado por factura
     for f in rows:
-        pago = conn.execute(
-            "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?",
-            (f['numero'],)
-        ).fetchone()[0]
-        f['monto_pagado'] = pago
-        f['saldo'] = f['total'] - pago
+        f['saldo'] = (f.get('total') or 0) - (f.get('monto_pagado') or 0)
 
     return jsonify(rows)
 
