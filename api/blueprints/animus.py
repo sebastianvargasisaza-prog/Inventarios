@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from config import DB_PATH, ADMIN_USERS, ANIMUS_ACCESS
 from database import get_db
+from audit_helpers import audit_log
+from http_helpers import validate_money
 
 bp = Blueprint("animus", __name__)
 
@@ -999,12 +1001,9 @@ def animus_caja_registrar():
     concepto = (d.get("concepto") or "").strip()
     if not concepto:
         return jsonify({"error": "concepto requerido"}), 400
-    try:
-        monto = float(d.get("monto") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"error": "monto inválido"}), 400
-    if monto <= 0:
-        return jsonify({"error": "monto debe ser > 0"}), 400
+    monto, err = validate_money(d.get("monto"), allow_zero=False, field_name='monto')
+    if err:
+        return jsonify(err), 400
     fecha = (d.get("fecha") or datetime.now().strftime("%Y-%m-%d")).strip()
     metodo = (d.get("metodo") or "efectivo").strip()
     referencia = (d.get("referencia") or "").strip()
@@ -1016,8 +1015,18 @@ def animus_caja_registrar():
         (fecha, tipo, concepto, monto, metodo, referencia, observaciones, registrado_por)
         VALUES (?,?,?,?,?,?,?,?)""",
         (fecha, tipo, concepto, monto, metodo, referencia, obs, u))
+    mov_id = c.lastrowid
+    try:
+        audit_log(c, usuario=u, accion='ANIMUS_CAJA_MOV',
+                  tabla='animus_caja_menor', registro_id=mov_id,
+                  despues={'tipo': tipo, 'concepto': concepto[:120],
+                            'monto': monto, 'metodo': metodo,
+                            'fecha': fecha},
+                  detalle=f"Caja ÁNIMUS · {tipo} · {concepto[:60]} · ${monto/1000:.0f}K")
+    except Exception:
+        pass
     conn.commit()
-    return jsonify({"ok": True, "id": c.lastrowid})
+    return jsonify({"ok": True, "id": mov_id})
 
 
 @bp.route("/api/animus/caja/<int:mov_id>", methods=["DELETE"])
@@ -1029,7 +1038,22 @@ def animus_caja_eliminar(mov_id):
         return jsonify({"error": "Solo admin puede eliminar movimientos de caja"}), 403
     conn = _db()
     c = conn.cursor()
+    # Capturar antes para audit
+    antes_row = c.execute(
+        "SELECT tipo, concepto, monto FROM animus_caja_menor WHERE id=?", (mov_id,)
+    ).fetchone()
+    if not antes_row:
+        return jsonify({"error": "Movimiento no encontrado"}), 404
+    antes = {'tipo': antes_row[0], 'concepto': antes_row[1], 'monto': antes_row[2]}
     c.execute("DELETE FROM animus_caja_menor WHERE id=?", (mov_id,))
+    try:
+        audit_log(c, usuario=u, accion='ANIMUS_CAJA_ELIMINAR',
+                  tabla='animus_caja_menor', registro_id=mov_id,
+                  antes=antes,
+                  detalle=f"Eliminó movimiento caja ÁNIMUS id={mov_id} "
+                          f"({antes['tipo']} ${antes['monto']/1000:.0f}K)")
+    except Exception:
+        pass
     conn.commit()
     return jsonify({"ok": True, "eliminado": mov_id})
 
