@@ -3920,6 +3920,10 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 f"lote {lote or 'sin-lote'} — {unidades_envasadas}/"
                 f"{unidades_planeadas or '?'} ud (ratio {ratio:.2f})")
 
+    # Audit zero-error 2-may-2026: usar aplicar_movimiento_mee · INSERT
+    # movimiento + UPDATE stock_actual atómicos · garantiza drift=0 +
+    # clamp si stock_nuevo < 0 (no permite stock fantasma negativo).
+    from inventario_helpers import aplicar_movimiento_mee
     descontados = []
     for item_id, mee_cod, desc, cant_plan, tipo_item in items:
         cant_plan_f = float(cant_plan or 0)
@@ -3927,17 +3931,10 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
         if cant_real <= 0:
             continue
         try:
-            c.execute("""
-                INSERT INTO movimientos_mee
-                  (mee_codigo, tipo, cantidad, observaciones, responsable,
-                   fecha, lote_ref, batch_ref)
-                VALUES (?, 'Salida', ?, ?, ?, ?, ?, ?)
-            """, (mee_cod, cant_real, obs_base, user, fecha_iso,
-                  str(produccion_id), lote or ''))
-            c.execute(
-                "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
-                "WHERE codigo=?",
-                (cant_real, mee_cod)
+            aplicar_movimiento_mee(
+                c.connection, mee_cod, 'Salida', cant_real,
+                observaciones=obs_base, responsable=user,
+                lote_ref=str(produccion_id), batch_ref=lote or '',
             )
             c.execute("""
                 UPDATE produccion_checklist
@@ -4122,21 +4119,15 @@ def prog_completar_evento(evento_id):
                     'sin_lote': d['sin_lote'],
                 })
             descontados_mps.append(mp)
-        # MEEs → INSERT INTO movimientos_mee + UPDATE maestro_mee
+        # MEEs → aplicar_movimiento_mee · drift=0 garantizado (audit zero-error)
         # lote_ref=produccion_id permite reversión limpia sin LIKE en obs.
+        from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_inner
         for me in mees_a_consumir:
             try:
-                c.execute("""
-                    INSERT INTO movimientos_mee
-                      (mee_codigo, tipo, cantidad, observaciones, responsable,
-                       fecha, lote_ref, batch_ref)
-                    VALUES (?, 'Salida', ?, ?, ?, ?, ?, ?)
-                """, (me['codigo'], me['cantidad_unidades'], obs_base, user,
-                      fecha_iso, str(pid), str(fecha or '')))
-                c.execute(
-                    "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) - ? "
-                    "WHERE codigo=?",
-                    (me['cantidad_unidades'], me['codigo'])
+                _aplicar_mee_inner(
+                    c.connection, me['codigo'], 'Salida', me['cantidad_unidades'],
+                    observaciones=obs_base, responsable=user,
+                    lote_ref=str(pid), batch_ref=str(fecha or ''),
                 )
                 # Marcar consumido en checklist (contexto='completar')
                 if me.get('item_id'):
@@ -4310,24 +4301,23 @@ def prog_revertir_completado(evento_id):
             for r in rows_legacy:
                 if r[0] not in ids_revertidos:
                     rows_mee = list(rows_mee) + [r]
+            # Audit zero-error 2-may-2026: usar aplicar_movimiento_mee para
+            # la reversión · garantiza drift=0 (Entrada compensatoria atómica).
+            #
+            # IMPORTANTE: NO marcar el movimiento original como anulado.
+            # Hacer AMBAS cosas (entrada compensatoria + anular original) era
+            # un bug preexistente que provocaba drift = -cant en SUM(movs)
+            # porque el calc excluye anulados pero stock_actual sí los suma.
+            #
+            # La entrada compensatoria YA es la "anulación lógica" · ambos
+            # movimientos quedan en historial para auditoría completa
+            # (el operador ve "Salida X · Reversión X" como pares en logs).
+            from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_rev
             for mid, mee_cod, cant in rows_mee:
-                c.execute("""
-                    INSERT INTO movimientos_mee
-                      (mee_codigo, tipo, cantidad, observaciones, responsable,
-                       fecha, lote_ref)
-                    VALUES (?, 'Entrada', ?, ?, ?, ?, ?)
-                """, (mee_cod, cant,
-                      f"REVERSIÓN producción completada — original mov_mee #{mid}",
-                      user, fecha_iso, str(evento_id)))
-                c.execute(
-                    "UPDATE maestro_mee SET stock_actual = COALESCE(stock_actual,0) + ? "
-                    "WHERE codigo=?",
-                    (cant, mee_cod)
-                )
-                # Marcar el movimiento original como anulado
-                c.execute(
-                    "UPDATE movimientos_mee SET anulado = 1 WHERE id = ?",
-                    (mid,)
+                _aplicar_mee_rev(
+                    c.connection, mee_cod, 'Entrada', cant,
+                    observaciones=f"REVERSIÓN producción completada — original mov_mee #{mid}",
+                    responsable=user, lote_ref=str(evento_id),
                 )
                 revertidos_mees.append({'codigo': mee_cod, 'cantidad_unidades': cant})
             # Resetear flags consumido_at en el checklist para esta producción
