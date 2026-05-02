@@ -11,6 +11,7 @@ from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CLIENTE
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
 from http_helpers import validate_money
+from audit_helpers import audit_log
 from templates_py.clientes_html import CLIENTES_HTML
 
 bp = Blueprint('clientes', __name__)
@@ -54,6 +55,13 @@ def handle_clientes():
             return jsonify({'error': 'Nombre requerido'}), 400
         c.execute("SELECT COUNT(*) FROM clientes"); n = (c.fetchone()[0] or 0) + 1
         codigo = d.get('codigo') or f"CLI-{n:03d}"
+        # Validar descuento_pct razonable (0-100)
+        try:
+            descuento = float(d.get('descuento_pct', 0))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'descuento_pct inválido'}), 400
+        if descuento < 0 or descuento > 100:
+            return jsonify({'error': 'descuento_pct debe estar entre 0 y 100'}), 400
         try:
             c.execute("""INSERT INTO clientes
                          (codigo,nombre,empresa,tipo,contacto,email,telefono,nit,
@@ -63,11 +71,22 @@ def handle_clientes():
                       (codigo, d['nombre'], d.get('empresa','ANIMUS'), d.get('tipo','Distribuidor'),
                        d.get('contacto',''), d.get('email',''), d.get('telefono',''),
                        d.get('nit',''), d.get('condiciones_pago','Pago anticipado'),
-                       float(d.get('descuento_pct',0)), d.get('observaciones',''), d.get('ciudad',''),
+                       descuento, d.get('observaciones',''), d.get('ciudad',''),
                        d.get('categoria_profesional',''), d.get('canal_captacion',''),
                        json.dumps(d.get('redes_sociales',{})), d.get('notas_seguimiento','')))
+            cid_new = c.lastrowid
+            try:
+                audit_log(c, usuario=session.get('compras_user','sistema'),
+                          accion='CREAR_CLIENTE', tabla='clientes', registro_id=cid_new,
+                          despues={'codigo': codigo, 'nombre': d['nombre'][:200],
+                                    'empresa': d.get('empresa','ANIMUS'),
+                                    'tipo': d.get('tipo','Distribuidor'),
+                                    'descuento_pct': descuento},
+                          detalle=f"Creó cliente {codigo} · {d['nombre'][:100]}")
+            except Exception:
+                pass
             conn.commit()
-            return jsonify({'message': f"Cliente creado", 'codigo': codigo}), 201
+            return jsonify({'message': f"Cliente creado", 'codigo': codigo, 'id': cid_new}), 201
         except Exception as e:
             return jsonify({'error': str(e)}), 400
     empresa_fil = request.args.get('empresa')
@@ -106,6 +125,20 @@ def handle_cliente_detalle(cid):
     conn = get_db(); c = conn.cursor()
     if request.method == 'PUT':
         d = request.json or {}
+        # Capturar antes para audit
+        antes_row = c.execute("""SELECT codigo, nombre, empresa, descuento_pct, activo
+                                  FROM clientes WHERE id=?""", (cid,)).fetchone()
+        if not antes_row:
+            return jsonify({'error': 'Cliente no encontrado'}), 404
+        antes = dict(antes_row)
+        # Validar descuento_pct si viene
+        if 'descuento_pct' in d:
+            try:
+                desc = float(d['descuento_pct'])
+            except (TypeError, ValueError):
+                return jsonify({'error': 'descuento_pct inválido'}), 400
+            if desc < 0 or desc > 100:
+                return jsonify({'error': 'descuento_pct debe estar entre 0 y 100'}), 400
         campos = ['nombre','empresa','tipo','contacto','email','telefono','nit','condiciones_pago','descuento_pct','observaciones','activo']
         sets = []; vals = []
         for campo in campos:
@@ -113,6 +146,14 @@ def handle_cliente_detalle(cid):
         if sets:
             vals.append(cid)
             c.execute(f"UPDATE clientes SET {','.join(sets)} WHERE id=?", vals)
+            try:
+                audit_log(c, usuario=session.get('compras_user','sistema'),
+                          accion='ACTUALIZAR_CLIENTE', tabla='clientes', registro_id=cid,
+                          antes=antes,
+                          despues={k: d.get(k) for k in d if k in campos},
+                          detalle=f"Actualizó cliente id={cid} ({antes.get('codigo','')})")
+            except Exception:
+                pass
             conn.commit()
         return jsonify({'message': 'Cliente actualizado'})
     c.execute("SELECT id,codigo,nombre,empresa,tipo,contacto,email,telefono,nit,condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones FROM clientes WHERE id=?", (cid,))
@@ -763,6 +804,11 @@ def handle_pedidos():
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM pedidos WHERE numero LIKE ?", (f"PED-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
         numero = f"PED-{datetime.now().strftime('%Y')}-{n:04d}"
         valor_total = sum(it['subtotal'] for it in items_clean)
+        # Validar que cliente_id existe
+        cli_row = c.execute("SELECT id, nombre FROM clientes WHERE id=? AND activo=1",
+                            (d['cliente_id'],)).fetchone()
+        if not cli_row:
+            return jsonify({'error': 'cliente_id no existe o está inactivo'}), 400
         c.execute("""INSERT INTO pedidos (numero,cliente_id,fecha,fecha_entrega_est,estado,empresa,valor_total,observaciones,creado_por)
                      VALUES (?,?,datetime('now'),?,?,?,?,?,?)""",
                   (numero, d['cliente_id'], d.get('fecha_entrega_est',''), d.get('estado','Confirmado'),
@@ -770,6 +816,19 @@ def handle_pedidos():
         for it in items_clean:
             c.execute("INSERT INTO pedidos_items (numero_pedido,sku,descripcion,cantidad,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
                       (numero, it['sku'], it['descripcion'], it['cantidad'], it['precio_unitario'], it['subtotal']))
+        try:
+            audit_log(c, usuario=session.get('compras_user','sistema'),
+                      accion='CREAR_PEDIDO', tabla='pedidos', registro_id=numero,
+                      despues={'cliente_id': d['cliente_id'],
+                                'cliente_nombre': cli_row[1][:100] if cli_row else '',
+                                'empresa': d.get('empresa','ANIMUS'),
+                                'estado': d.get('estado','Confirmado'),
+                                'valor_total': valor_total,
+                                'items_count': len(items_clean)},
+                      detalle=f"Creó pedido {numero} · {cli_row[1] if cli_row else ''} · "
+                              f"${valor_total/1_000_000:.1f}M · {len(items_clean)} items")
+        except Exception:
+            pass
         conn.commit()
         return jsonify({'message': f'Pedido {numero} creado', 'numero': numero}), 201
     estado = request.args.get('estado')
@@ -787,25 +846,78 @@ def handle_pedido_detalle(numero):
     err, code = _require_clientes_access()
     if err: return err, code
     if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
+        usuario_act = session.get('compras_user', '')
+        if usuario_act not in ADMIN_USERS:
             return jsonify({'error':'Solo admins'}), 403
         conn = get_db(); c = conn.cursor()
-        c.execute('DELETE FROM pedidos WHERE numero=?', (numero,))
-        if c.rowcount == 0:
+        # Audit zero-error: guard contra eliminar pedido despachado
+        # (perdería trazabilidad despacho→cliente para recall).
+        antes_row = c.execute(
+            "SELECT numero, cliente_id, estado, valor_total FROM pedidos WHERE numero=?",
+            (numero,)).fetchone()
+        if not antes_row:
             return jsonify({'error':'No encontrado'}), 404
+        antes = dict(antes_row)
+        if (antes.get('estado') or '') in ('Despachado', 'Entregado', 'Pagada', 'Pagado'):
+            return jsonify({
+                'error': f"Pedido en estado '{antes.get('estado')}' no se puede eliminar (trazabilidad). "
+                          f"Cambia el estado a 'Cancelado' en su lugar.",
+                'codigo': 'PEDIDO_DESPACHADO_NO_ELIMINABLE'
+            }), 409
+        # Verificar que no tiene despachos
+        despachos = c.execute(
+            "SELECT COUNT(*) FROM despachos WHERE numero_pedido=?", (numero,)
+        ).fetchone()[0]
+        if despachos > 0:
+            return jsonify({
+                'error': f'Pedido tiene {despachos} despacho(s) asociado(s) · no se puede eliminar',
+                'codigo': 'PEDIDO_CON_DESPACHOS'
+            }), 409
+        c.execute('DELETE FROM pedidos_items WHERE numero_pedido=?', (numero,))
+        c.execute('DELETE FROM pedidos WHERE numero=?', (numero,))
+        try:
+            audit_log(c, usuario=usuario_act, accion='ELIMINAR_PEDIDO',
+                      tabla='pedidos', registro_id=numero, antes=antes,
+                      detalle=f"Eliminó pedido {numero} (estado={antes.get('estado','')})")
+        except Exception:
+            pass
         conn.commit()
         return jsonify({'ok':True, 'eliminado':numero})
     conn = get_db(); c = conn.cursor()
     if request.method == 'PATCH':
         d = request.json or {}
+        # Capturar antes para audit (cambios financieros · monto_pagado/estado/factura)
+        antes_row = c.execute(
+            "SELECT estado, COALESCE(monto_pagado,0), COALESCE(estado_pago,''), COALESCE(numero_factura,'') "
+            "FROM pedidos WHERE numero=?", (numero,)).fetchone()
+        if not antes_row:
+            return jsonify({'error': 'Pedido no encontrado'}), 404
+        antes = {'estado': antes_row[0], 'monto_pagado': antes_row[1],
+                 'estado_pago': antes_row[2], 'numero_factura': antes_row[3]}
+        # Validar money en monto_pagado si viene
+        if 'monto_pagado' in d:
+            mp_v, err = validate_money(d['monto_pagado'], allow_zero=True,
+                                          field_name='monto_pagado')
+            if err:
+                return jsonify(err), 400
         sets = []; vals = []
         if d.get('estado'): sets.append('estado=?'); vals.append(d['estado'])
-        if 'monto_pagado' in d: sets.append('monto_pagado=?'); vals.append(float(d['monto_pagado']))
+        if 'monto_pagado' in d:
+            sets.append('monto_pagado=?'); vals.append(float(d['monto_pagado']))
         if d.get('estado_pago'): sets.append('estado_pago=?'); vals.append(d['estado_pago'])
         if d.get('numero_factura'): sets.append('numero_factura=?'); vals.append(d['numero_factura'])
         if sets:
             vals.append(numero)
             c.execute(f"UPDATE pedidos SET {','.join(sets)} WHERE numero=?", vals)
+            try:
+                audit_log(c, usuario=session.get('compras_user',''),
+                          accion='ACTUALIZAR_PEDIDO', tabla='pedidos',
+                          registro_id=numero, antes=antes,
+                          despues={k: d.get(k) for k in d
+                                    if k in ('estado','monto_pagado','estado_pago','numero_factura')},
+                          detalle=f"Actualizó pedido {numero}")
+            except Exception:
+                pass
             conn.commit()
         return jsonify({'message': f'Pedido {numero} actualizado'})
     c.execute("SELECT p.*,cl.nombre as cliente_nombre FROM pedidos p LEFT JOIN clientes cl ON p.cliente_id=cl.id WHERE p.numero=?", (numero,))
@@ -826,13 +938,45 @@ def handle_stock_pt():
         d = request.json or {}
         if not d.get('sku'):
             return jsonify({'error': 'SKU requerido'}), 400
-        unidades = int(d.get('unidades_inicial', d.get('unidades_disponible', 0)))
+        # Validar unidades (entero positivo) y precio_base (money)
+        try:
+            unidades = int(d.get('unidades_inicial', d.get('unidades_disponible', 0)))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'unidades inválidas'}), 400
+        if unidades <= 0:
+            return jsonify({'error': 'unidades debe ser > 0'}), 400
+        precio_base, err = validate_money(d.get('precio_base', 0), allow_zero=True,
+                                            field_name='precio_base')
+        if err:
+            return jsonify(err), 400
+        # Idempotency: si ya existe stock_pt con mismo sku+lote_produccion, no duplicar
+        lote_prod = (d.get('lote_produccion') or '').strip()
+        if lote_prod:
+            existing = c.execute(
+                "SELECT id FROM stock_pt WHERE sku=? AND lote_produccion=? AND estado='Disponible'",
+                (d['sku'], lote_prod)).fetchone()
+            if existing:
+                return jsonify({
+                    'error': f"Ya existe stock PT con SKU={d['sku']} lote={lote_prod}",
+                    'codigo': 'STOCK_PT_DUPLICADO'
+                }), 409
         c.execute("""INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones)
                      VALUES (?,?,?,datetime('now'),?,?,?,?,?,?)""",
-                  (d['sku'], d.get('descripcion',''), d.get('lote_produccion',''), unidades, unidades,
-                   float(d.get('precio_base',0)), d.get('empresa','ANIMUS'), 'Disponible', d.get('observaciones','')))
+                  (d['sku'], d.get('descripcion',''), lote_prod, unidades, unidades,
+                   precio_base, d.get('empresa','ANIMUS'), 'Disponible', d.get('observaciones','')))
+        spt_id = c.lastrowid
+        try:
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='CREAR_STOCK_PT', tabla='stock_pt', registro_id=spt_id,
+                      despues={'sku': d['sku'], 'lote_produccion': lote_prod,
+                                'unidades': unidades, 'precio_base': precio_base,
+                                'empresa': d.get('empresa', 'ANIMUS')},
+                      detalle=f"Registró stock PT {d['sku']} lote={lote_prod} · {unidades} uds")
+        except Exception:
+            pass
         conn.commit()
-        return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds"}), 201
+        return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds",
+                        'id': spt_id}), 201
     c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base,COUNT(*) as lotes FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
     cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base','lotes']
     rows = c.fetchall()
@@ -845,10 +989,25 @@ def handle_despachos():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        # Validar cliente_id existe (despacho no debe quedar fantasma)
+        if not d.get('cliente_id'):
+            return jsonify({'error': 'cliente_id requerido'}), 400
+        cli_row = c.execute(
+            "SELECT id, nombre FROM clientes WHERE id=?", (d['cliente_id'],)
+        ).fetchone()
+        if not cli_row:
+            return jsonify({'error': 'cliente_id no existe'}), 400
+        # Validar pedido si se especifica
+        numero_ped = d.get('numero_pedido', '')
+        if numero_ped:
+            ped_row = c.execute(
+                "SELECT estado FROM pedidos WHERE numero=?", (numero_ped,)).fetchone()
+            if not ped_row:
+                return jsonify({'error': f'Pedido {numero_ped} no existe'}), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?", (f"DSP-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
         numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
         c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now'),?,?,?)",
-                  (numero, d.get('numero_pedido',''), d.get('cliente_id'), session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
+                  (numero, numero_ped, d['cliente_id'], session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
         # Audit zero-error 2-may-2026: trazabilidad lote→cliente recall-ready.
         # Antes el lote_pt persistido en despachos_items era el que mandó el
         # frontend (string libre). Ahora se persiste el lote REAL que descontó
@@ -889,8 +1048,21 @@ def handle_despachos():
                           VALUES (?,?,?,?,?,?)""",
                       (numero, sku, it.get('descripcion',''),
                        lote_real, cantidad, precio_v))
-        if d.get('numero_pedido'):
-            c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (d['numero_pedido'],))
+        if numero_ped:
+            c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (numero_ped,))
+        try:
+            items_count = len(d.get('items') or [])
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='CREAR_DESPACHO', tabla='despachos', registro_id=numero,
+                      despues={'cliente_id': d['cliente_id'],
+                                'cliente_nombre': cli_row[1][:100],
+                                'numero_pedido': numero_ped or None,
+                                'items_count': items_count},
+                      detalle=f"Despacho {numero} a {cli_row[1][:60]}"
+                              + (f" · pedido {numero_ped}" if numero_ped else "")
+                              + f" · {items_count} items")
+        except Exception:
+            pass
         conn.commit()
         return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
     c.execute("SELECT d.numero,cl.nombre as cliente,d.fecha,d.numero_pedido,d.estado,d.operador FROM despachos d LEFT JOIN clientes cl ON d.cliente_id=cl.id ORDER BY d.fecha DESC LIMIT 100")
@@ -924,8 +1096,27 @@ def patch_aliado(cid):
     if 'notas_seguimiento' in d:
         campos.append('notas_seguimiento=?'); vals.append(d['notas_seguimiento'])
     if campos:
+        # Capturar antes para audit
+        antes_row = c.execute(
+            "SELECT codigo, nombre, semaforo, nivel_aliado FROM clientes WHERE id=?",
+            (cid,)).fetchone()
+        if not antes_row:
+            return jsonify({'error': 'Cliente no encontrado'}), 404
+        antes = dict(antes_row)
         vals.append(cid)
         c.execute(f"UPDATE clientes SET {','.join(campos)} WHERE id=?", vals)
+        try:
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='ACTUALIZAR_ALIADO', tabla='clientes', registro_id=cid,
+                      antes=antes,
+                      despues={k: d.get(k) for k in d
+                                if k in ('semaforo', 'nivel_aliado',
+                                         'fecha_vinculacion', 'ciudad',
+                                         'categoria_profesional', 'canal_captacion',
+                                         'notas_seguimiento')},
+                      detalle=f"Actualizó aliado id={cid} ({antes.get('codigo','')})")
+        except Exception:
+            pass
         conn.commit()
     return jsonify({'ok': True})
 
