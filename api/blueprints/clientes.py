@@ -855,7 +855,16 @@ def handle_despachos():
         # FEFO de stock_pt, garantizando que un recall pueda listar todos los
         # clientes que recibieron el lote afectado.
         for it in (d.get('items') or []):
-            cantidad = int(it.get('cantidad', 0))
+            # Money sanity validation · audit zero-error
+            cantidad_v, err = validate_money(it.get('cantidad', 0), allow_zero=False,
+                                                max_value=100_000, field_name='cantidad')
+            if err:
+                return jsonify(err), 400
+            cantidad = int(cantidad_v)
+            precio_v, err = validate_money(it.get('precio_unitario', 0), allow_zero=True,
+                                              field_name='precio_unitario')
+            if err:
+                return jsonify(err), 400
             sku = it.get('sku', '')
             # 1. Identificar el lote FEFO que se va a descontar
             lote_real = None
@@ -879,7 +888,7 @@ def handle_despachos():
                           (numero_despacho, sku, descripcion, lote_pt, cantidad, precio_unitario)
                           VALUES (?,?,?,?,?,?)""",
                       (numero, sku, it.get('descripcion',''),
-                       lote_real, cantidad, float(it.get('precio_unitario',0))))
+                       lote_real, cantidad, precio_v))
         if d.get('numero_pedido'):
             c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (d['numero_pedido'],))
         conn.commit()

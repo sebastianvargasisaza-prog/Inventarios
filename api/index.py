@@ -496,6 +496,160 @@ def health_check():
     except Exception as e:
         return jsonify({"status": "error", "detail": str(e)}), 503
 
+@app.route('/api/admin/health-detailed')
+def health_detailed():
+    """Diagnóstico exhaustivo del sistema · audit zero-error · solo Admin.
+
+    Verifica:
+    - DB · migraciones aplicadas · indexes presentes
+    - Helpers (audit_helpers, http_helpers) importables
+    - Cron jobs registrados
+    - Tablas críticas con datos esperados
+    - Audit log accesible y reciente
+    - Sentry status
+    - Backups status
+    Retorna por sección con OK/WARNING/ERROR.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Admin'}), 403
+
+    out = {'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+           'commit': os.environ.get('RENDER_GIT_COMMIT', 'unknown')[:8],
+           'sections': {}}
+    overall_ok = True
+
+    # ── DB · migraciones ──────────────────────────────────────────────────
+    try:
+        from database import get_db, MIGRATIONS
+        db = get_db()
+        applied = {r[0] for r in db.execute(
+            "SELECT version FROM schema_migrations").fetchall()}
+        defined = {m[0] for m in MIGRATIONS}
+        missing = sorted(defined - applied)
+        out['sections']['migrations'] = {
+            'status': 'ok' if not missing else 'warning',
+            'applied_count': len(applied),
+            'missing': missing[:10],
+        }
+        if missing:
+            overall_ok = False
+    except Exception as e:
+        out['sections']['migrations'] = {'status': 'error', 'detail': str(e)[:200]}
+        overall_ok = False
+
+    # ── Indexes críticos ──────────────────────────────────────────────────
+    try:
+        critical_idx = ['idx_audit_accion', 'idx_desv_estado', 'idx_chg_estado',
+                         'idx_qc_estado', 'idx_rcl_estado', 'idx_pedidos_cliente',
+                         'idx_desv_detectado', 'idx_chg_solicitante']
+        present = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+        ).fetchall()}
+        missing_idx = [i for i in critical_idx if i not in present]
+        out['sections']['indexes'] = {
+            'status': 'ok' if not missing_idx else 'warning',
+            'critical_present': len(critical_idx) - len(missing_idx),
+            'critical_total': len(critical_idx),
+            'missing': missing_idx,
+        }
+        if missing_idx:
+            overall_ok = False
+    except Exception as e:
+        out['sections']['indexes'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Helpers globales ──────────────────────────────────────────────────
+    helpers_ok = True
+    helper_status = {}
+    try:
+        from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_codigo_secuencial
+        helper_status['audit_helpers'] = 'ok'
+    except Exception as e:
+        helper_status['audit_helpers'] = f'error: {str(e)[:100]}'
+        helpers_ok = False
+    try:
+        from http_helpers import fetch_with_retry, validate_money
+        helper_status['http_helpers'] = 'ok'
+    except Exception as e:
+        helper_status['http_helpers'] = f'error: {str(e)[:100]}'
+        helpers_ok = False
+    out['sections']['helpers'] = {
+        'status': 'ok' if helpers_ok else 'error', **helper_status,
+    }
+    if not helpers_ok:
+        overall_ok = False
+
+    # ── Cron jobs ─────────────────────────────────────────────────────────
+    try:
+        from blueprints.auto_plan_jobs import JOBS_SCHEDULE
+        out['sections']['crons'] = {
+            'status': 'ok',
+            'jobs_count': len(JOBS_SCHEDULE),
+            'jobs': [j[0] for j in JOBS_SCHEDULE],
+        }
+    except Exception as e:
+        out['sections']['crons'] = {'status': 'error', 'detail': str(e)[:200]}
+        overall_ok = False
+
+    # ── Audit log reciente ────────────────────────────────────────────────
+    try:
+        recent = db.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE fecha >= date('now','-7 days')"
+        ).fetchone()[0]
+        out['sections']['audit_log'] = {
+            'status': 'ok' if recent > 0 else 'warning',
+            'entries_last_7d': recent,
+        }
+        if recent == 0:
+            out['sections']['audit_log']['hint'] = 'Sin entries en 7 días · regulatorio sospechoso'
+    except Exception as e:
+        out['sections']['audit_log'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── ASG workflows · totales por tabla ────────────────────────────────
+    try:
+        asg_totals = {}
+        for tabla in ('desviaciones', 'control_cambios', 'quejas_clientes', 'recalls'):
+            try:
+                count = db.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0]
+                asg_totals[tabla] = count
+            except Exception:
+                asg_totals[tabla] = -1  # tabla no existe
+        out['sections']['asg_workflows'] = {'status': 'ok', **asg_totals}
+    except Exception as e:
+        out['sections']['asg_workflows'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Backups ───────────────────────────────────────────────────────────
+    try:
+        from backup import list_backups, BACKUP_OFFSITE_URL
+        backups = list_backups()
+        last = backups[0] if backups else None
+        out['sections']['backups'] = {
+            'status': 'ok' if last else 'warning',
+            'count': len(backups),
+            'latest': last['filename'] if last else None,
+            'latest_size_mb': last['size_mb'] if last else None,
+            'offsite_configured': bool(BACKUP_OFFSITE_URL),
+        }
+        if not last:
+            out['sections']['backups']['hint'] = 'Sin backups · ejecutar manualmente desde /admin'
+    except Exception as e:
+        out['sections']['backups'] = {'status': 'error', 'detail': str(e)[:200]}
+
+    # ── Sentry ────────────────────────────────────────────────────────────
+    sentry_dsn = os.environ.get('SENTRY_DSN', '').strip()
+    out['sections']['sentry'] = {
+        'status': 'ok' if sentry_dsn else 'warning',
+        'configured': bool(sentry_dsn),
+    }
+    if not sentry_dsn:
+        out['sections']['sentry']['hint'] = 'SENTRY_DSN no configurado · errores no se reportan'
+
+    out['overall'] = 'ok' if overall_ok else 'warning'
+    return jsonify(out)
+
+
 @app.errorhandler(404)
 def not_found(e):
     h = '<html><body style="background:#0d1117;color:#fff;font-family:sans-serif;text-align:center;padding-top:10vh"><h1>404</h1><p>Pagina no encontrada.</p><a href="/compras" style="color:#7ACFCC;">Volver</a></body></html>'

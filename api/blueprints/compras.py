@@ -1815,9 +1815,10 @@ def aprobar_solicitud_influencer(numero):
     if user not in ADMIN_USERS:
         return jsonify({'error': 'Solo admin (Sebastian/Alejandro)'}), 403
     d = request.get_json() or {}
-    monto = float(d.get('valor') or 0)
-    if monto <= 0:
-        return jsonify({'error': 'Valor debe ser mayor a 0'}), 400
+    # Money sanity validation · audit zero-error
+    monto, err = validate_money(d.get('valor'), allow_zero=False, field_name='valor')
+    if err:
+        return jsonify(err), 400
     numero = numero.upper()
     conn = get_db(); cur = conn.cursor()
     sol = cur.execute(
