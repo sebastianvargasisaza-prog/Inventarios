@@ -593,6 +593,8 @@ JOBS_SCHEDULE = [
     ('weekly_executive',      7, 30, [0],  None,                'job_weekly_executive_email'),
     # ⭐ CEO · DÍA 1 8:00 · reporte financiero mensual · P&L + MoM + tops
     ('monthly_financial',     8,  0, None, [1],                 'job_monthly_financial_summary'),
+    # ⭐ Planta · diario 6:30am · detector de drift inventario MP/MEE (cero sesgo continuo)
+    ('drift_detector_inv',    6, 30, None, None,                'job_drift_detector_inventario'),
 ]
 
 
@@ -2348,6 +2350,87 @@ def job_monthly_financial_summary(app):
             }, 0
         except Exception as e:
             log.exception('monthly_financial_summary fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
+
+
+def job_drift_detector_inventario(app):
+    """Cron diario 6:30am · detecta drift en inventario MP/MEE y alerta.
+
+    CERO SESGO continuo: si los helpers se usan correctamente, drift=0
+    siempre. Pero data legacy o bugs operacionales pueden introducir drift.
+    Este cron detecta y alerta para que se investigue antes de que
+    contamine cálculos de la IA o reportes.
+
+    Detecta:
+      - MPs con stock NEGATIVO (más salidas que entradas · imposible)
+      - MEEs con drift entre maestro_mee.stock_actual y SUM(movimientos_mee)
+
+    Si encuentra: push_notif al equipo de planta + audit_log + email a CEO
+    si severidad critical (>1000g/und).
+    """
+    with app.app_context():
+        from database import get_db
+        from inventario_helpers import detect_drift_mp, detect_drift_mee
+        try:
+            conn = get_db()
+            mp_neg = detect_drift_mp(conn)
+            mee_drift = detect_drift_mee(conn)
+            total = len(mp_neg) + len(mee_drift)
+            if total == 0:
+                return True, {'mensaje': 'Sin drift · cero sesgo OK'}, 0
+
+            # Severidad crítica si hay stocks negativos o drift > 1000
+            criticos = sum(1 for x in mp_neg if x.get('severidad') == 'critical')
+            criticos += sum(1 for x in mee_drift if x.get('severidad') == 'critical')
+
+            # Notif in-app a planta + sebastian
+            try:
+                from blueprints.notif import push_notif_multi
+                partes = [f'🚨 Inventario · {total} item(s) con sesgo detectado']
+                if mp_neg:
+                    partes.append(f'  · {len(mp_neg)} MP con stock negativo')
+                    for it in mp_neg[:3]:
+                        partes.append(f"    {it['codigo_mp']}: {it['stock_g']:.0f}g")
+                if mee_drift:
+                    partes.append(f'  · {len(mee_drift)} MEE con drift')
+                    for it in mee_drift[:3]:
+                        partes.append(f"    {it['codigo']}: drift {it['drift']:+.0f}")
+                push_notif_multi(
+                    ['sebastian', 'alejandro', 'controlcalidad.espagiria'],
+                    'capa',
+                    f'⚠️ CERO SESGO violado · {total} item(s) con drift',
+                    body='\n'.join(partes),
+                    link='/admin/audit-inventario',
+                    remitente='cron-drift',
+                    importante=(criticos > 0),
+                )
+            except Exception as e:
+                log.warning('drift detector notif fallo: %s', e)
+
+            # Audit log
+            try:
+                from audit_helpers import audit_log
+                audit_log(conn.cursor(), usuario='sistema',
+                          accion='DRIFT_INVENTARIO_DETECTADO',
+                          tabla=None, registro_id=None,
+                          despues={'mp_negativos': len(mp_neg),
+                                    'mee_con_drift': len(mee_drift),
+                                    'criticos': criticos},
+                          detalle=f'Cron drift detector encontró {total} item(s) con sesgo')
+                conn.commit()
+            except Exception as e:
+                log.warning('drift detector audit fallo: %s', e)
+
+            return True, {
+                'mp_negativos': len(mp_neg),
+                'mee_con_drift': len(mee_drift),
+                'total': total,
+                'criticos': criticos,
+                'top_mp': [it['codigo_mp'] for it in mp_neg[:5]],
+                'top_mee': [it['codigo'] for it in mee_drift[:5]],
+            }, 0
+        except Exception as e:
+            log.exception('drift_detector_inventario fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
 
 

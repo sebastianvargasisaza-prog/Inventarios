@@ -811,6 +811,40 @@ def health_detailed():
     except Exception as e:
         out['sections']['salas'] = {'status': 'error', 'detail': str(e)[:200]}
 
+    # ── Drift de inventario · MP negativos + MEE drift persistido vs calc ──
+    try:
+        from inventario_helpers import drift_summary
+        ds = drift_summary(db)
+        total_drift = ds.get('total_items_con_drift', 0)
+        mp_neg = ds.get('mp_negativos', 0)
+        mee_drift = ds.get('mee_drift', 0)
+        if total_drift == 0:
+            st_drift = 'ok'
+        elif mp_neg > 0 or mee_drift > 10:
+            st_drift = 'error'
+        else:
+            st_drift = 'warning'
+        out['sections']['inventario_drift'] = {
+            'status': st_drift,
+            'mp_stocks_negativos': mp_neg,
+            'mee_con_drift': mee_drift,
+            'total_items_afectados': total_drift,
+        }
+        if mp_neg > 0 or mee_drift > 0:
+            top_msg = []
+            for it in ds.get('mp_top', [])[:3]:
+                top_msg.append(f"MP {it['codigo_mp']}: {it['stock_g']:.0f}g")
+            for it in ds.get('mee_top', [])[:3]:
+                top_msg.append(f"MEE {it['codigo']}: drift {it['drift']:+.0f}")
+            out['sections']['inventario_drift']['top'] = top_msg[:5]
+            out['sections']['inventario_drift']['hint'] = (
+                f"{total_drift} item(s) con drift · revisar /admin/audit-inventario"
+            )
+            if st_drift == 'error':
+                overall_ok = False
+    except Exception as e:
+        out['sections']['inventario_drift'] = {'status': 'error', 'detail': str(e)[:200]}
+
     # ── MFA enrollment de admins ─────────────────────────────────────────
     try:
         mfa_rows = db.execute("""SELECT username FROM users_mfa
@@ -1060,6 +1094,26 @@ def bandeja_ceo():
                   f"{(r[2] or '')[:60]}",
                   '/recepcion',
                   edad_dias=int(r[3] or 0), registro_id=r[0])
+    except Exception:
+        pass
+
+    # ── HIGH · Drift de inventario (MP negativos o MEE drift persistido) ──
+    try:
+        from inventario_helpers import drift_summary
+        ds = drift_summary(db)
+        total = ds.get('total_items_con_drift', 0)
+        if total > 0:
+            mp_neg = ds.get('mp_negativos', 0)
+            mee_drift = ds.get('mee_drift', 0)
+            sev = 'critical' if mp_neg > 0 else 'high'
+            partes = []
+            if mp_neg: partes.append(f"{mp_neg} MP con stock NEGATIVO")
+            if mee_drift: partes.append(f"{mee_drift} MEE con drift")
+            _add(sev, 'planta',
+                  f"Inventario · {total} item(s) con sesgo (cero sesgo violado)",
+                  ' · '.join(partes),
+                  '/admin/audit-inventario',
+                  edad_dias=None, registro_id=None)
     except Exception:
         pass
 

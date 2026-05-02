@@ -257,3 +257,121 @@ def aplicar_movimiento_mee(conn, codigo_mee, tipo, cantidad, *,
         'stock_nuevo': stock_nuevo,
         'delta': delta,
     }
+
+
+# ─── Drift detectors · CERO SESGO continuo ──────────────────────────
+# Si los helpers se usan correctamente, drift = 0 siempre. Pero data
+# legacy o bugs operacionales pueden introducir drift. Estos helpers
+# corren periódicamente para detectar y alertar.
+
+
+def detect_drift_mp(conn, tolerancia=1.0):
+    """Detecta MPs con stock NEGATIVO (imposible · más salidas que entradas).
+
+    Para MPs el stock se DERIVA siempre desde movimientos · no hay drift entre
+    "calculado" y "persistido" porque solo hay una fuente. Pero stock negativo
+    indica datos malformados (ej. salida sin entrada previa, doble descuento).
+
+    Args:
+        conn: conexión SQLite
+        tolerancia: float · stocks entre [-tolerancia, 0] se ignoran (rounding).
+
+    Returns: lista de dicts {codigo_mp, nombre, stock_g, severidad}
+    """
+    items = []
+    try:
+        rows = conn.execute("""
+            SELECT m.material_id, MAX(m.material_nombre) as nombre,
+                   ROUND(SUM(
+                     CASE
+                       WHEN m.tipo IN ('Entrada','Ajuste +','Ajuste') THEN m.cantidad
+                       WHEN m.tipo IN ('Salida','Ajuste -') THEN -m.cantidad
+                       ELSE 0 END
+                   ), 2) as stock
+            FROM movimientos m
+            GROUP BY m.material_id
+            HAVING stock < ?
+            ORDER BY stock ASC
+            LIMIT 100
+        """, (-tolerancia,)).fetchall()
+        for cod, nom, st in rows:
+            items.append({
+                'codigo_mp': cod or '',
+                'nombre': (nom or '')[:120],
+                'stock_g': float(st or 0),
+                'severidad': 'critical' if st < -1000 else 'high',
+            })
+    except Exception:
+        pass
+    return items
+
+
+def detect_drift_mee(conn, tolerancia=1.0):
+    """Detecta MEEs con drift entre stock_actual y SUM(movimientos_mee).
+
+    Drift = persisted - calculated. Si != 0 (más allá de tolerancia), hay un
+    bug operacional · alguna operación cambió uno sin cambiar el otro.
+
+    Args:
+        conn: conexión SQLite
+        tolerancia: float · drifts en [-tolerancia, +tolerancia] se ignoran.
+
+    Returns: lista de dicts {codigo, nombre, stock_persistido, stock_calculado,
+                              drift, severidad}
+    """
+    items = []
+    try:
+        rows = conn.execute("""
+            SELECT mm.codigo,
+                   MAX(mm.descripcion) as nombre,
+                   COALESCE(mm.stock_actual, 0) as persistido,
+                   COALESCE((
+                     SELECT SUM(
+                       CASE
+                         WHEN tipo = 'Entrada' AND COALESCE(anulado,0)=0 THEN cantidad
+                         WHEN tipo = 'Salida'  AND COALESCE(anulado,0)=0 THEN -cantidad
+                         WHEN tipo = 'Ajuste'  AND COALESCE(anulado,0)=0 THEN cantidad
+                         ELSE 0 END
+                     ) FROM movimientos_mee
+                     WHERE mee_codigo = mm.codigo
+                   ), 0) as calculado
+            FROM maestro_mee mm
+            WHERE COALESCE(mm.estado, 'Activo') != 'Inactivo'
+            GROUP BY mm.codigo, mm.stock_actual
+        """).fetchall()
+        for cod, nom, pers, calc in rows:
+            pers_f = float(pers or 0)
+            calc_f = float(calc or 0)
+            drift = pers_f - calc_f
+            if abs(drift) <= tolerancia:
+                continue
+            items.append({
+                'codigo': cod,
+                'nombre': (nom or '')[:120],
+                'stock_persistido': pers_f,
+                'stock_calculado': calc_f,
+                'drift': drift,
+                'severidad': 'critical' if abs(drift) > 1000 else 'high',
+            })
+        # Ordenar por drift absoluto descendente
+        items.sort(key=lambda x: abs(x['drift']), reverse=True)
+        items = items[:100]  # cap a 100
+    except Exception:
+        pass
+    return items
+
+
+def drift_summary(conn):
+    """Resumen de drift en MP + MEE para health-detailed.
+
+    Returns: dict con counts y top items (para mostrar en cockpit).
+    """
+    mp = detect_drift_mp(conn)
+    mee = detect_drift_mee(conn)
+    return {
+        'mp_negativos': len(mp),
+        'mp_top': mp[:5],
+        'mee_drift': len(mee),
+        'mee_top': mee[:5],
+        'total_items_con_drift': len(mp) + len(mee),
+    }
