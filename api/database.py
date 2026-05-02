@@ -3335,6 +3335,96 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (86, "Aseguramiento: SGD electrónico · sgd_documentos + sgd_versiones + sgd_capacitaciones", [
+        # Sebastián 1-may-2026: SGD electrónico vivo. Reemplaza 124 .docx
+        # sueltos en Downloads por catálogo central · 32 docs vivos vs ~92 borradores
+        # detectados como duplicados. Cumple ASG-NOR-001 (norma documental).
+
+        # Documento principal (procedimiento, norma, manual, política, formato, etc.)
+        """CREATE TABLE IF NOT EXISTS sgd_documentos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            area TEXT NOT NULL,
+            tipo_doc TEXT NOT NULL,
+            numero INTEGER,
+            subtipo TEXT,
+            titulo TEXT NOT NULL,
+            descripcion TEXT,
+            padre_codigo TEXT,
+            version_actual TEXT NOT NULL DEFAULT '1',
+            archivo_pdf_url TEXT,
+            archivo_origen TEXT,
+            fecha_creacion TEXT,
+            fecha_aprobacion TEXT,
+            vigente_desde TEXT,
+            proxima_revision TEXT,
+            estado TEXT NOT NULL DEFAULT 'vigente'
+              CHECK(estado IN ('borrador','revision','vigente','obsoleto','retirado','conflicto')),
+            elaborado_por TEXT,
+            revisado_por TEXT,
+            aprobado_por TEXT,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_area ON sgd_documentos(area, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_tipo ON sgd_documentos(tipo_doc, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_proxima ON sgd_documentos(proxima_revision) WHERE estado='vigente'",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_padre ON sgd_documentos(padre_codigo)",
+
+        # Histórico de versiones (cada versión aprobada queda registrada)
+        """CREATE TABLE IF NOT EXISTS sgd_versiones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            version TEXT NOT NULL,
+            fecha_aprobacion TEXT,
+            archivo_url TEXT,
+            archivo_origen TEXT,
+            motivo_cambio TEXT,
+            aprobado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(codigo, version)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_ver_codigo ON sgd_versiones(codigo, fecha_aprobacion DESC)",
+
+        # Capacitaciones: quién leyó/firmó qué versión de qué SOP (evidencia INVIMA)
+        """CREATE TABLE IF NOT EXISTS sgd_capacitaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sgd_codigo TEXT NOT NULL,
+            sgd_version TEXT NOT NULL,
+            persona_username TEXT NOT NULL,
+            asignado_at TEXT NOT NULL DEFAULT (datetime('now')),
+            leido_at TEXT,
+            firmado_at TEXT,
+            firma_hash TEXT,
+            evaluado INTEGER DEFAULT 0,
+            nota_evaluacion REAL,
+            nota_minima REAL,
+            estado TEXT NOT NULL DEFAULT 'asignada'
+              CHECK(estado IN ('asignada','leida','firmada','aprobada','reprobada','vencida')),
+            fecha_limite TEXT,
+            asignado_por TEXT,
+            UNIQUE(sgd_codigo, sgd_version, persona_username)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_cap_persona ON sgd_capacitaciones(persona_username, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_cap_codigo ON sgd_capacitaciones(sgd_codigo, sgd_version)",
+
+        # Conflictos detectados (códigos repetidos con temas distintos · 14 detectados)
+        """CREATE TABLE IF NOT EXISTS sgd_conflictos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            archivos_detectados TEXT,
+            temas_detectados TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+              CHECK(estado IN ('pendiente','en_revision','resuelto','ignorado')),
+            resolucion TEXT,
+            resuelto_por TEXT,
+            resuelto_at TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sgd_conf_estado ON sgd_conflictos(estado, codigo)",
+    ]),
     (85, "Calidad VIVA: equipos_eventos (hoja de vida) + equipos_cronograma (calendario 2026)", [
         # Sebastián 1-may-2026: Calidad necesita VER cuándo vence cada equipo
         # y BLOQUEAR si calibración expiró. La tabla `calibraciones_instrumentos`
