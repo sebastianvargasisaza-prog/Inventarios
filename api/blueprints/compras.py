@@ -777,8 +777,12 @@ def editar_oc(numero_oc):
     quedaba congelada y no podia ajustar ni el precio si el proveedor cambiaba
     despues.
     """
+    # Audit zero-error 2-may-2026: RBAC mínimo (era cualquier sesión)
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden editar OC'}), 403
     conn = get_db(); c = conn.cursor()
     c.execute('SELECT estado FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
     row = c.fetchone()
@@ -892,8 +896,12 @@ def agregar_item_oc(numero_oc):
     Permitido en estados: Borrador, Pendiente, Revisada, Aprobada, Autorizada.
     Bloqueado en Recibida/Pagada/Cancelada/Rechazada.
     """
+    # Audit zero-error 2-may-2026: RBAC mínimo
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden agregar items'}), 403
     conn = get_db(); c = conn.cursor()
     row = c.execute('SELECT estado, con_iva FROM ordenes_compra WHERE numero_oc=?',
                     (numero_oc,)).fetchone()
@@ -2246,8 +2254,13 @@ def actualizar_estado_solicitud(numero):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
 def recibir_oc(numero_oc):
+    # Audit zero-error 2-may-2026: RBAC mínimo (era cualquier sesión)
+    # Recepción mueve stock e impacta valoración · debe ser Compras/Bodega/Admin
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden registrar recepción'}), 403
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT estado, proveedor, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     oc_row = cur.fetchone()
@@ -2353,10 +2366,20 @@ def recibir_oc(numero_oc):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/revisar', methods=['PATCH'])
 def revisar_oc(numero_oc):
+    # Audit zero-error 2-may-2026: RBAC + bloqueo si OC ya pagada
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden revisar OC'}), 403
     d = request.get_json() or {}
     conn = get_db(); cur = conn.cursor()
+    # Bloquear revisión si OC ya pagada o cancelada (volver de Pagada a Revisada
+    # creaba inconsistencia auditiva)
+    estado_row = cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                              (numero_oc,)).fetchone()
+    if estado_row and estado_row[0] in ('Pagada', 'Cancelada', 'Rechazada'):
+        return jsonify({'error': f'No se puede revisar OC en estado {estado_row[0]}'}), 409
     sets = ["estado='Revisada'"]; params = []
     if d.get('proveedor'):
         sets.append('proveedor=?'); params.append(str(d['proveedor']))
@@ -2447,6 +2470,16 @@ def pagar_oc(numero_oc):
     categoria = row[1] or 'MP'
     proveedor = row[2] or ''
     valor_total_oc = float(row[3] or 0)
+    # Audit zero-error 2-may-2026: respetar LIMITES_APROBACION_OC en pagos
+    # Antes _check_monto_limit solo se aplicaba en autorizar_oc · ahora también
+    # en pagos (segregation of duties: si Catalina autoriza, otro paga).
+    if not monto:
+        monto_para_limit = valor_total_oc
+    else:
+        monto_para_limit = float(monto)
+    err_lim, code_lim = _check_monto_limit(usuario_actual, monto_para_limit)
+    if err_lim:
+        return err_lim, code_lim
     # Audit zero-error 2-may-2026: bloquear pagos sobre OC en estado inválido
     if estado_oc in ('Cancelada', 'Rechazada', 'Borrador'):
         return jsonify({

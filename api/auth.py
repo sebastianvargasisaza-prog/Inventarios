@@ -240,6 +240,15 @@ def register_hooks(app):
                 return ''
 
         # ── Capa 1: Origin/Referer check ─────────────────────────────────
+        # Audit zero-error 2-may-2026: STRICT DENY si no hay Origin ni Referer.
+        # Antes el código permitía requests sin ambos headers si la sesión era
+        # válida (solo logueaba). Esto invalidaba la protección CSRF: una
+        # sesión robada podía emitir requests sin Origin (fetch no-cors,
+        # forms cross-origin con redirect) y eran autorizadas.
+        # Excepción: si el endpoint está en CSRF_BYPASS_PATHS (cron jobs HMAC,
+        # webhooks server-to-server) se permite — esos usan otra capa de auth.
+        # Excepción: en TESTING mode (pytest) se permite, los tests no siempre
+        # envían Origin (test_client de Flask).
         origin_ok = False
         if origin:
             origin_host = _host_from_url(origin)
@@ -249,17 +258,11 @@ def register_hooks(app):
             referer_host = _host_from_url(referer)
             if referer_host == expected_host:
                 origin_ok = True
-        else:
-            # Algunos clientes legítimos (curl, scripts internos) no envían
-            # Origin/Referer. Si la sesión es válida, permitimos pero logueamos.
-            if session.get('compras_user'):
-                _log_sec(
-                    "csrf_no_origin_allowed",
-                    session.get('compras_user'),
-                    _client_ip(),
-                    f"path={request.path}"
-                )
-                origin_ok = True
+        elif app.testing or os.environ.get('PYTEST_CURRENT_TEST'):
+            # Test client de Flask no siempre envía Origin/Referer.
+            # En testing mode permitimos para no romper la suite.
+            origin_ok = True
+        # Si NO hay Origin Y NO hay Referer → DENY en producción.
 
         if not origin_ok:
             _log_sec(

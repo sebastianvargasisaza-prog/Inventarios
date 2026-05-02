@@ -27,6 +27,31 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('maquila', __name__)
 
+# Audit zero-error 2-may-2026: 16 de 17 endpoints estaban sin auth.
+# Solo /api/recall/ejecutar tenía chequeo. El resto permitía a CUALQUIER
+# request (incluso sin sesión) crear/modificar prospectos, órdenes, recalls
+# simulados, y disparar solicitudes a Animus. Audit zero-error encontró.
+_MAQUILA_ALLOWED = lambda: set(COMPRAS_USERS) | set(ADMIN_USERS)
+
+
+@bp.before_request
+def _maquila_gate():
+    """Gate global · solo aplica a endpoints API.
+
+    /hub-salida (HTML) tiene su propio gate. /api/* requieren login.
+    /api/recall/ejecutar requiere ADMIN además (manejado en el endpoint).
+    """
+    p = request.path
+    if not p.startswith('/api/'):
+        return None  # endpoints HTML manejan auth localmente
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    if u not in _MAQUILA_ALLOWED():
+        return jsonify({'error': 'Acceso restringido'}), 403
+    return None
+
+
 @bp.route('/api/maquila/prospectos', methods=['GET','POST'])
 def api_maquila_prospectos():
     conn = get_db(); c = conn.cursor()
