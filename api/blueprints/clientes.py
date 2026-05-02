@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CLIENTES_ACCESS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
+from http_helpers import validate_money
 from templates_py.clientes_html import CLIENTES_HTML
 
 bp = Blueprint('clientes', __name__)
@@ -180,19 +181,34 @@ def cliente_ficha_360(cid):
     err, code = _require_clientes_access()
     if err: return err, code
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT id, codigo, nombre, empresa, tipo, contacto, email,
-                        telefono, nit, condiciones_pago, descuento_pct, observaciones, fecha_creacion
-                 FROM clientes WHERE id=? AND activo=1""", (cid,))
+    # Audit zero-error 2-may-2026: combinado cliente + stats en una sola query
+    # con LEFT JOIN agregado · ahorra 1 roundtrip por GET.
+    c.execute("""
+        SELECT cl.id, cl.codigo, cl.nombre, cl.empresa, cl.tipo, cl.contacto,
+               cl.email, cl.telefono, cl.nit, cl.condiciones_pago,
+               cl.descuento_pct, cl.observaciones, cl.fecha_creacion,
+               COALESCE(s.total_pedidos, 0) as total_pedidos,
+               COALESCE(s.valor_total, 0) as valor_total,
+               s.ultimo_ped, s.primer_ped
+        FROM clientes cl
+        LEFT JOIN (
+            SELECT cliente_id, COUNT(*) as total_pedidos,
+                   SUM(valor_total) as valor_total,
+                   MAX(fecha) as ultimo_ped, MIN(fecha) as primer_ped
+            FROM pedidos GROUP BY cliente_id
+        ) s ON s.cliente_id = cl.id
+        WHERE cl.id=? AND cl.activo=1
+    """, (cid,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Cliente no encontrado'}), 404
     cols_cli = ['id','codigo','nombre','empresa','tipo','contacto','email',
                 'telefono','nit','condiciones_pago','descuento_pct','observaciones','fecha_creacion']
-    cliente = dict(zip(cols_cli, row))
-    # Stats
-    c.execute("SELECT COUNT(*), COALESCE(SUM(valor_total),0), MAX(fecha), MIN(fecha) FROM pedidos WHERE cliente_id=?", (cid,))
-    s = c.fetchone()
-    total_ped, valor_total, ultimo_ped, primer_ped = s[0] or 0, s[1] or 0, s[2], s[3]
+    cliente = dict(zip(cols_cli, row[:len(cols_cli)]))
+    total_ped = row[13] or 0
+    valor_total = row[14] or 0
+    ultimo_ped = row[15]
+    primer_ped = row[16]
     hoy = datetime.now()
     dias_sin_pedido = None
     if ultimo_ped:
@@ -723,17 +739,37 @@ def handle_pedidos():
         d = request.json or {}
         if not d.get('cliente_id'):
             return jsonify({'error': 'cliente_id requerido'}), 400
+        # Money sanity validation por item · audit zero-error 2-may-2026
+        items_raw = d.get('items') or []
+        items_clean = []
+        for it in items_raw:
+            cantidad, err = validate_money(it.get('cantidad', 0), allow_zero=False,
+                                              max_value=100_000, field_name='cantidad')
+            if err: return jsonify(err), 400
+            precio, err = validate_money(it.get('precio_unitario', 0), allow_zero=True,
+                                            field_name='precio_unitario')
+            if err: return jsonify(err), 400
+            subtotal_raw = it.get('subtotal', cantidad * precio)
+            subtotal, err = validate_money(subtotal_raw, allow_zero=True,
+                                              field_name='subtotal')
+            if err: return jsonify(err), 400
+            items_clean.append({
+                'sku': (it.get('sku') or '')[:80],
+                'descripcion': (it.get('descripcion') or '')[:200],
+                'cantidad': int(cantidad),
+                'precio_unitario': precio,
+                'subtotal': subtotal,
+            })
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM pedidos WHERE numero LIKE ?", (f"PED-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
         numero = f"PED-{datetime.now().strftime('%Y')}-{n:04d}"
-        valor_total = sum(float(it.get('subtotal', float(it.get('cantidad',0))*float(it.get('precio_unitario',0)))) for it in (d.get('items') or []))
+        valor_total = sum(it['subtotal'] for it in items_clean)
         c.execute("""INSERT INTO pedidos (numero,cliente_id,fecha,fecha_entrega_est,estado,empresa,valor_total,observaciones,creado_por)
                      VALUES (?,?,datetime('now'),?,?,?,?,?,?)""",
                   (numero, d['cliente_id'], d.get('fecha_entrega_est',''), d.get('estado','Confirmado'),
                    d.get('empresa','ANIMUS'), valor_total, d.get('observaciones',''), session.get('compras_user','sistema')))
-        for it in (d.get('items') or []):
-            subtotal = float(it.get('subtotal', float(it.get('cantidad',0))*float(it.get('precio_unitario',0))))
+        for it in items_clean:
             c.execute("INSERT INTO pedidos_items (numero_pedido,sku,descripcion,cantidad,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)",
-                      (numero, it.get('sku',''), it.get('descripcion',''), int(it.get('cantidad',0)), float(it.get('precio_unitario',0)), subtotal))
+                      (numero, it['sku'], it['descripcion'], it['cantidad'], it['precio_unitario'], it['subtotal']))
         conn.commit()
         return jsonify({'message': f'Pedido {numero} creado', 'numero': numero}), 201
     estado = request.args.get('estado')

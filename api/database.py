@@ -3335,6 +3335,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (93, "Performance: indexes faltantes en pedidos + clientes (audit zero-error)", [
+        # Audit zero-error 2-may-2026: clientes.ficha360 hacía full scan por cliente
+        # porque pedidos.cliente_id no tenía índice. Con 1k pedidos cada GET llamaba
+        # 3 full scans (stats + pedidos_recientes + top_skus).
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_cliente ON pedidos(cliente_id, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_items_numero ON pedidos_items(numero_pedido)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_estado_fecha ON pedidos(estado, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_despachos_cliente ON despachos(cliente_id, fecha DESC)",
+    ]),
     (91, "Audit log regulatorio: agregar columnas antes/despues + indexes", [
         # Sebastián 2-may-2026: los inserts en aseguramiento.py usaban
         # columnas `antes` y `despues` que no existían en audit_log
