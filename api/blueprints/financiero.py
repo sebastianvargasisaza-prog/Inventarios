@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -42,16 +43,20 @@ def handle_fin_ingresos():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
-        if not d.get('concepto') or not d.get('monto'):
-            return jsonify({'error': 'Concepto y monto requeridos'}), 400
+        if not d.get('concepto'):
+            return jsonify({'error': 'Concepto requerido'}), 400
+        # Money sanity validation · audit zero-error
+        monto, err = validate_money(d.get('monto'), allow_zero=False, field_name='monto')
+        if err:
+            return jsonify(err), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
         c.execute("""INSERT INTO flujo_ingresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
-                   d['concepto'], d.get('categoria','Ventas'), float(d['monto']),
+                   d['concepto'], d.get('categoria','Ventas'), monto,
                    periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
         conn.commit()
-        return jsonify({'message': f"Ingreso de ${float(d['monto']):,.0f} registrado"}), 201
+        return jsonify({'message': f"Ingreso de ${monto:,.0f} registrado"}), 201
     mes = request.args.get('mes')
     q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_ingresos"
     params = []
@@ -69,16 +74,19 @@ def handle_fin_egresos():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
-        if not d.get('concepto') or not d.get('monto'):
-            return jsonify({'error': 'Concepto y monto requeridos'}), 400
+        if not d.get('concepto'):
+            return jsonify({'error': 'Concepto requerido'}), 400
+        monto, err = validate_money(d.get('monto'), allow_zero=False, field_name='monto')
+        if err:
+            return jsonify(err), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
         c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
-                   d['concepto'], d.get('categoria','MPs'), float(d['monto']),
+                   d['concepto'], d.get('categoria','MPs'), monto,
                    periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
         conn.commit()
-        return jsonify({'message': f"Egreso de ${float(d['monto']):,.0f} registrado"}), 201
+        return jsonify({'message': f"Egreso de ${monto:,.0f} registrado"}), 201
     mes = request.args.get('mes')
     q = "SELECT id,fecha,empresa,concepto,categoria,monto,periodo,referencia FROM flujo_egresos"
     params = []

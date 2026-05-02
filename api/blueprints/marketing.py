@@ -2208,13 +2208,25 @@ def mkt_ejecutar_agente(agente):
                 SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
                 FROM stock_pt WHERE estado='Disponible' GROUP BY sku ORDER BY stock DESC LIMIT 15
             """).fetchall()
+            # Audit zero-error 2-may-2026: fix N+1 · era 3 queries × N SKUs.
+            # Pre-cargar lib_30, lib_90 y shopify_30 en 3 queries agregadas.
+            lib_30_map = dict(c.execute(
+                "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones WHERE creado_en>=? GROUP BY sku",
+                (hace30,)
+            ).fetchall())
+            lib_90_map = dict(c.execute(
+                "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones WHERE creado_en>=? GROUP BY sku",
+                (hace90,)
+            ).fetchall())
             recos = []
             for row in stock_rows:
                 sku, stock, precio = row["sku"], row["stock"], row["precio"] or 0
-                lib_30 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace30)).fetchone()["t"]
-                lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                lib_30 = lib_30_map.get(sku, 0)
+                lib_90 = lib_90_map.get(sku, 0)
                 rotacion = lib_90 / 3.0
                 meses_cob = round(stock / rotacion, 1) if rotacion > 0 else 99
+                # shopify_30 sigue por SKU porque LIKE '%sku%' impide pre-agregación
+                # (sku_items es CSV string · refactor mayor para normalizar después).
                 shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
                 score = 0; razones = []
                 if meses_cob > 3: score += 1; razones.append(f"{meses_cob} meses de inventario")
@@ -2251,11 +2263,20 @@ def mkt_ejecutar_agente(agente):
         elif agente == "tendencias":
             hace180 = (hoy - timedelta(days=180)).strftime("%Y-%m-%d")
             skus = c.execute("SELECT DISTINCT sku FROM liberaciones WHERE creado_en>=?", (hace180,)).fetchall()
+            # Audit zero-error 2-may-2026: fix N+1 · 2 queries × N skus → 2 queries totales
+            recientes_map = dict(c.execute(
+                "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones WHERE creado_en>=? GROUP BY sku",
+                (hace90,)
+            ).fetchall())
+            anteriores_map = dict(c.execute(
+                "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones WHERE creado_en>=? AND creado_en<? GROUP BY sku",
+                (hace180, hace90)
+            ).fetchall())
             tendencias = []
             for s in skus:
                 sku = s["sku"]
-                r = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
-                a = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=? AND creado_en<?", (sku, hace180, hace90)).fetchone()["t"]
+                r = recientes_map.get(sku, 0)
+                a = anteriores_map.get(sku, 0)
                 if a > 0:
                     cambio = round((r - a) / a * 100, 1)
                     tendencias.append({"sku": sku, "reciente": r, "anterior": a, "cambio_pct": cambio,
