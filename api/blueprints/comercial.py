@@ -84,6 +84,16 @@ def maquila_handler():
         empresa = (d.get('empresa') or '').strip()
         if not empresa:
             return jsonify({'error': 'empresa requerida'}), 400
+        # Validar valor_estimado · audit zero-error
+        from http_helpers import validate_money as _vm
+        valor_est, err = _vm(d.get('valor_estimado_cop', 0), allow_zero=True,
+                              field_name='valor_estimado_cop')
+        if err:
+            return jsonify(err), 400
+        try:
+            volumen = int(d.get('volumen_estimado_unds') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'volumen_estimado_unds inválido'}), 400
         c.execute("""INSERT INTO maquila_pipeline
             (empresa, contacto_nombre, contacto_email, contacto_telefono,
              origen, stage, valor_estimado_cop, volumen_estimado_unds,
@@ -95,13 +105,22 @@ def maquila_handler():
              (d.get('contacto_telefono') or '').strip() or None,
              (d.get('origen') or '').strip() or None,
              (d.get('stage') or 'consulta'),
-             float(d.get('valor_estimado_cop') or 0),
-             int(d.get('volumen_estimado_unds') or 0),
+             valor_est, volumen,
              (d.get('producto_descripcion') or '').strip() or None,
              (d.get('owner') or user),
              (d.get('notas') or '').strip() or None))
+        mid = c.lastrowid
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=user, accion='CREAR_MAQUILA_PIPELINE',
+                tabla='maquila_pipeline', registro_id=mid,
+                despues={'empresa': empresa[:120], 'stage': d.get('stage','consulta'),
+                          'valor_estimado_cop': valor_est, 'owner': d.get('owner') or user},
+                detalle=f"Pipeline maquila · {empresa} · ${valor_est/1_000_000:.1f}M")
+        except Exception:
+            pass
         conn.commit()
-        return jsonify({'ok': True, 'id': c.lastrowid}), 201
+        return jsonify({'ok': True, 'id': mid}), 201
 
     # GET
     stage = request.args.get('stage', '').strip()
@@ -177,7 +196,26 @@ def maquila_actualizar(mid):
     if not sets:
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(mid)
+    # Capturar antes para audit
+    antes_row = c.execute(
+        "SELECT empresa, stage, valor_estimado_cop FROM maquila_pipeline WHERE id=?",
+        (mid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Pipeline item no encontrado'}), 404
+    antes = dict(antes_row)
     cur = c.execute(f"UPDATE maquila_pipeline SET {', '.join(sets)} WHERE id=?", params)
+    try:
+        from audit_helpers import audit_log as _al
+        accion = 'CAMBIO_STAGE_MAQUILA' if 'stage' in d else 'ACTUALIZAR_MAQUILA_PIPELINE'
+        _al(c, usuario=user, accion=accion, tabla='maquila_pipeline',
+            registro_id=mid, antes=antes,
+            despues={k: d.get(k) for k in d
+                      if k in ('empresa', 'stage', 'valor_estimado_cop',
+                               'owner', 'motivo_perdida')},
+            detalle=f"Pipeline {antes.get('empresa','')[:60]} · "
+                    + (f"{antes.get('stage','')}→{d.get('stage','')}" if 'stage' in d else 'editado'))
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True, 'actualizado': cur.rowcount > 0})
 
@@ -214,8 +252,22 @@ def eos_lead_actualizar(lid):
         if col in d:
             sets.append(f'{col}=?'); params.append(d[col])
     if not sets: return jsonify({'error':'nada'}), 400
+    # Capturar antes para audit
+    antes_row = c.execute(
+        "SELECT estado, owner FROM eos_leads WHERE id=?", (lid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Lead no encontrado'}), 404
     params.append(lid)
     c.execute(f"UPDATE eos_leads SET {', '.join(sets)} WHERE id=?", params)
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='ACTUALIZAR_EOS_LEAD',
+            tabla='eos_leads', registro_id=lid,
+            antes={'estado': antes_row[0], 'owner': antes_row[1]},
+            despues={k: d.get(k) for k in d if k in ('estado','owner','notas')},
+            detalle=f"Lead EOS id={lid}")
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True})
 
