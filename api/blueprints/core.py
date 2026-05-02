@@ -121,6 +121,15 @@ def programacion_areas_page():
     return Response(PROGRAMACION_AREAS_HTML, mimetype='text/html; charset=utf-8')
 
 
+@bp.route('/programacion-comparar')
+def programacion_comparar_page():
+    """Comparación del cronograma de Alejandro vs Calendar (real)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/programacion-comparar')
+    from templates_py.cronograma_comparar_html import CRONOGRAMA_COMPARAR_HTML
+    return Response(CRONOGRAMA_COMPARAR_HTML, mimetype='text/html; charset=utf-8')
+
+
 @bp.route('/inventarios')
 @bp.route('/planta')
 def inventarios():

@@ -10293,6 +10293,112 @@ def planta_cronograma_areas():
     })
 
 
+@bp.route('/api/planta/cronograma-comparar-alejandro', methods=['GET'])
+def planta_cronograma_comparar_alejandro():
+    """Compara el cronograma de fabricación que mandó Alejandro vs lo que
+    está realmente en produccion_programada (Calendar sync).
+
+    Devuelve 3 secciones:
+      - matches: producto+fecha que coinciden en ambos
+      - en_alejandro_no_calendar: Alejandro programó pero Calendar NO tiene
+      - en_calendar_no_alejandro: Calendar tiene pero Alejandro NO mencionó
+
+    Esto le ayuda a Sebastián entender qué va a pasar:
+      → Si "en_alejandro_no_calendar" tiene mucho → falta cargar producciones
+      → Si "en_calendar_no_alejandro" tiene mucho → Calendar tiene cosas
+        que Alejandro no contempló (revisar si están bien)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import datetime as _dt
+    from templates_py.cronograma_alejandro_data import (
+        ALEJANDRO_FAB_MAYO_2026, matchea
+    )
+    conn = get_db(); c = conn.cursor()
+
+    # Producciones programadas en Calendar para mayo 2026
+    rows = c.execute("""
+        SELECT pp.fecha_programada, pp.producto, ap.codigo as area_cod,
+               COALESCE(pp.estado, 'pendiente'), pp.id,
+               COALESCE(pp.observaciones, '')
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        WHERE pp.fecha_programada BETWEEN '2026-05-01' AND '2026-05-31'
+          AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado')
+    """).fetchall()
+    calendar_items = []
+    for fecha, producto, area, estado, pid, obs in rows:
+        calendar_items.append({
+            'fecha': fecha, 'producto': producto or '',
+            'area': area or '', 'estado': estado, 'id': pid,
+            'observaciones': obs or '',
+        })
+
+    # Cross-check
+    matches = []
+    en_alejandro_no_calendar = []
+    en_calendar_no_alejandro = list(calendar_items)  # parte como todos, voy quitando los que matchean
+
+    for fecha_a, producto_a, area_a, urgente in ALEJANDRO_FAB_MAYO_2026:
+        # Buscar match en calendar (mismo día + producto similar)
+        match = None
+        for cal in calendar_items:
+            if cal['fecha'] == fecha_a and matchea(cal['producto'], producto_a):
+                match = cal
+                break
+        if match:
+            # Mismo día y producto matchea
+            area_match = (match['area'] == area_a)
+            matches.append({
+                'fecha': fecha_a,
+                'producto_alejandro': producto_a,
+                'producto_calendar': match['producto'],
+                'area_alejandro': area_a,
+                'area_calendar': match['area'],
+                'area_match': area_match,
+                'urgente_alejandro': urgente,
+                'estado': match['estado'],
+                'id_calendar': match['id'],
+            })
+            # Quitar de "en_calendar_no_alejandro"
+            en_calendar_no_alejandro = [
+                x for x in en_calendar_no_alejandro if x['id'] != match['id']
+            ]
+        else:
+            # Buscar match en cualquier fecha (para detectar cambio de fecha)
+            match_otra_fecha = None
+            for cal in calendar_items:
+                if matchea(cal['producto'], producto_a):
+                    match_otra_fecha = cal
+                    break
+            en_alejandro_no_calendar.append({
+                'fecha': fecha_a,
+                'producto': producto_a,
+                'area': area_a,
+                'urgente': urgente,
+                'match_otra_fecha': (match_otra_fecha['fecha']
+                                      if match_otra_fecha else None),
+                'producto_calendar_otra_fecha': (
+                    match_otra_fecha['producto'] if match_otra_fecha else None
+                ),
+            })
+
+    return jsonify({
+        'rango': {'desde': '2026-05-01', 'hasta': '2026-05-31'},
+        'resumen': {
+            'total_alejandro': len(ALEJANDRO_FAB_MAYO_2026),
+            'total_calendar': len(calendar_items),
+            'matches_completos': sum(1 for m in matches if m.get('area_match')),
+            'matches_fecha_distinto_area': sum(1 for m in matches if not m.get('area_match')),
+            'falta_en_calendar': len(en_alejandro_no_calendar),
+            'extra_en_calendar': len(en_calendar_no_alejandro),
+        },
+        'matches': matches,
+        'en_alejandro_no_calendar': en_alejandro_no_calendar,
+        'en_calendar_no_alejandro': en_calendar_no_alejandro,
+    })
+
+
 @bp.route('/api/planta/plan-semanal', methods=['GET'])
 def planta_plan_semanal():
     """Vista consolidada del plan: cada producción ordenada por fecha,

@@ -200,6 +200,7 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
     </div>
     <div class="nav">
       <a href="/planta">← Planta</a>
+      <a href="/programacion-comparar">🔍 Comparar con Alejandro</a>
       <a href="/aseguramiento">Aseguramiento</a>
       <a href="/admin/system-health">System Health</a>
     </div>
