@@ -1871,6 +1871,12 @@ async function loadSGD(){
       else if(it.estado==='obsoleto') bcls='badge-obs';
       else if(it.estado==='conflicto') bcls='badge-confl';
       else if(it.estado==='borrador') bcls='badge-bor';
+      var pdfBtn = it.archivo_pdf_url
+        ? '<a href="'+_esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" title="Abrir PDF">📎</a>'
+        : '<button class="btn btn-ghost btn-sm" title="Sin PDF · agregar" onclick="editarPdfSGD(\''+_esc(it.codigo)+'\', \'\')" style="opacity:.5">📎</button>';
+      var editPdfBtn = it.archivo_pdf_url
+        ? ' <button class="btn btn-ghost btn-sm" onclick="editarPdfSGD(\''+_esc(it.codigo)+'\', \''+_esc(it.archivo_pdf_url)+'\')" title="Editar PDF" style="font-size:0.7em;padding:2px 6px">✎</button>'
+        : '';
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
         +'<td>'+_esc(it.titulo||'')+(it.padre_codigo?' <span style="color:#94a3b8;font-size:0.85em">(hijo de '+_esc(it.padre_codigo)+')</span>':'')+'</td>'
@@ -1878,7 +1884,7 @@ async function loadSGD(){
         +'<td><span class="badge '+bcls+'">'+_esc(it.estado_efectivo||it.estado||'')+'</span></td>'
         +'<td>'+_esc(it.proxima_revision||'—')+'</td>'
         +'<td>'+_esc(it.aprobado_por||'')+'</td>'
-        +'<td><button class="btn btn-ghost btn-sm" onclick="verSGD(\''+_esc(it.codigo)+'\')">Ver</button></td>'
+        +'<td style="white-space:nowrap">'+pdfBtn+editPdfBtn+' <button class="btn btn-ghost btn-sm" onclick="verSGD(\''+_esc(it.codigo)+'\')">Ver</button></td>'
         +'</tr>';
     }).join('');
   }catch(e){ document.getElementById('sgd-tbody').innerHTML = '<tr><td colspan="7" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
@@ -1987,6 +1993,15 @@ async function asignarCap(){
   }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
 }
 
+// Tracker de PDFs abiertos en esta sesión (para validar lectura antes de firmar)
+function _pdfFueAbierto(codigo, version){
+  try { return sessionStorage.getItem('pdf-leido:'+codigo+':'+version) === '1'; }
+  catch(e){ return false; }
+}
+function _marcarPdfAbierto(codigo, version){
+  try { sessionStorage.setItem('pdf-leido:'+codigo+':'+version, '1'); } catch(e){}
+}
+
 async function loadMisCapacitaciones(){
   var tb = document.getElementById('mis-cap-tbody');
   try{
@@ -1996,28 +2011,58 @@ async function loadMisCapacitaciones(){
     tb.innerHTML = d.items.map(function(it){
       var btn = '';
       if(it.estado === 'asignada' || it.estado === 'leida'){
-        btn = '<button class="btn btn-primary btn-sm" onclick="firmarCap(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\')">Firmar lectura</button>';
+        if(it.archivo_pdf_url){
+          // 2 pasos: abrir PDF + firmar
+          var pdfAbierto = _pdfFueAbierto(it.sgd_codigo, it.sgd_version);
+          var firmaBtn = pdfAbierto
+            ? '<button class="btn btn-primary btn-sm" onclick="firmarCap(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\',true)">Firmar lectura</button>'
+            : '<button class="btn btn-ghost btn-sm" disabled style="opacity:.5" title="Abre el PDF primero">Firmar lectura</button>';
+          btn = '<a href="'+_esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" class="btn '+(pdfAbierto?'btn-ghost':'btn-primary')+' btn-sm" onclick="_marcarPdfAbierto(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\');setTimeout(loadMisCapacitaciones,200)">📎 '+(pdfAbierto?'Releer':'1) Abrir PDF')+'</a> '+firmaBtn;
+        } else {
+          // Sin PDF: solo permitir firmar con warning
+          btn = '<button class="btn btn-primary btn-sm" onclick="firmarCap(\''+_esc(it.sgd_codigo)+'\',\''+_esc(it.sgd_version)+'\',false)" title="No hay PDF adjunto">Firmar (sin PDF)</button>';
+        }
       } else if(it.estado === 'firmada' || it.estado === 'aprobada'){
         btn = '<span style="color:#15803d">&#x2713; Firmada '+_esc(it.firmado_at||'')+'</span>';
       }
       return '<tr>'
         +'<td><code>'+_esc(it.sgd_codigo)+'</code></td>'
         +'<td>'+_esc(it.sgd_version)+'</td>'
-        +'<td>'+_esc(it.titulo||'—')+(it.archivo_pdf_url?' · <a href="'+_esc(it.archivo_pdf_url)+'" target="_blank">PDF</a>':'')+'</td>'
+        +'<td>'+_esc(it.titulo||'—')+'</td>'
         +'<td>'+_esc(it.asignado_at||'')+'</td>'
         +'<td><span class="badge badge-bor">'+_esc(it.estado)+'</span></td>'
-        +'<td>'+btn+'</td>'
+        +'<td style="white-space:nowrap">'+btn+'</td>'
         +'</tr>';
     }).join('');
   }catch(e){ tb.innerHTML = '<tr><td colspan="6" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
 }
 
-async function firmarCap(codigo, version){
-  if(!confirm('¿Confirmas que leíste y comprendiste el SOP '+codigo+' v'+version+'?')) return;
+async function firmarCap(codigo, version, pdfDisponible){
+  var msg = '¿Confirmas que leíste y comprendiste el SOP '+codigo+' v'+version+'?';
+  if(!pdfDisponible){
+    msg = '⚠ ATENCIÓN: este SOP NO tiene PDF adjunto.\n\n'+msg+'\n\n(Calidad debería adjuntar el PDF antes que firmes)';
+  }
+  if(!confirm(msg)) return;
   try{
     var r = await fetch('/api/aseguramiento/capacitaciones/firmar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sgd_codigo: codigo, sgd_version: version})});
     var d = await r.json();
     if(d.ok){ alert('Firmada con hash '+d.firma_hash); loadMisCapacitaciones(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+async function editarPdfSGD(codigo, urlActual){
+  var url = prompt('URL del PDF para '+codigo+'\n(http://... o https://... · vacío para quitar):', urlActual || '');
+  if(url === null) return;  // canceló
+  url = (url || '').trim();
+  if(url && !url.match(/^https?:\/\//)){ alert('URL debe empezar con http:// o https://'); return; }
+  try{
+    var r = await fetch('/api/aseguramiento/sgd/'+encodeURIComponent(codigo)+'/pdf', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({archivo_pdf_url: url}),
+    });
+    var d = await r.json();
+    if(d.ok){ alert(url ? '📎 PDF actualizado' : '📎 PDF removido'); loadSGD(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
 }

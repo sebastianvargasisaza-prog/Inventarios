@@ -542,6 +542,48 @@ def sgd_crear_o_actualizar():
     return jsonify({'ok': True, 'codigo': codigo, 'accion': accion})
 
 
+@bp.route('/api/aseguramiento/sgd/<path:codigo>/pdf', methods=['POST'])
+def sgd_actualizar_pdf(codigo):
+    """Actualiza solo el archivo_pdf_url de un documento SGD existente.
+
+    Endpoint dedicado para editar PDFs sin requerir todos los demás campos.
+    Body: { archivo_pdf_url } · puede ser '' para limpiar el PDF.
+    Requiere Calidad/Admin (igual que POST general /sgd).
+    """
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    codigo = (codigo or '').strip().upper()
+    if not codigo or not re.match(r'^[A-Z]{3}-[A-Z]{3}-\d{1,3}(?:-[A-Z]\d{1,2})?$', codigo):
+        return jsonify({'error': 'codigo inválido'}), 400
+    d = request.get_json(silent=True) or {}
+    url = (d.get('archivo_pdf_url') or '').strip()
+    if url and not (url.startswith('http://') or url.startswith('https://')):
+        return jsonify({'error': 'archivo_pdf_url debe ser http(s):// válido'}), 400
+    if len(url) > 500:
+        return jsonify({'error': 'URL demasiado larga (máx 500 chars)'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT codigo FROM sgd_documentos WHERE codigo=?", (codigo,)).fetchone()
+    if not row:
+        return jsonify({'error': 'documento no encontrado'}), 404
+    c.execute("""
+        UPDATE sgd_documentos
+        SET archivo_pdf_url=?, actualizado_en=datetime('now')
+        WHERE codigo=?
+    """, (url or None, codigo))
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, despues)
+            VALUES (?, 'SGD_PDF', ?, ?)
+        """, (user, codigo, _json.dumps({'archivo_pdf_url': url[:200]})))
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'archivo_pdf_url': url or None})
+
+
 @bp.route('/api/aseguramiento/sgd/conflictos', methods=['GET'])
 def sgd_conflictos_listar():
     """Lista los conflictos detectados (códigos repetidos con temas distintos)."""

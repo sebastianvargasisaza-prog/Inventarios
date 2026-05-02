@@ -67,6 +67,75 @@ def test_dashboard_requiere_auth(client, db_clean):
     assert r.status_code == 401
 
 
+def test_sgd_pdf_actualizar_solo_calidad(app, db_clean):
+    """POST /sgd/<codigo>/pdf actualiza el PDF · solo Calidad/Admin."""
+    # Crear doc primero
+    cal = _login(app, "laura")
+    r = cal.post("/api/aseguramiento/sgd",
+                 json={"codigo": "COC-PRO-099", "titulo": "Test PDF doc"},
+                 headers=csrf_headers())
+    assert r.status_code == 200
+
+    # luis (no Calidad) → 403
+    luis = _login(app, "luis")
+    r = luis.post("/api/aseguramiento/sgd/COC-PRO-099/pdf",
+                  json={"archivo_pdf_url": "https://drive.example/test.pdf"},
+                  headers=csrf_headers())
+    assert r.status_code == 403
+
+    # laura (Calidad) → OK
+    r = cal.post("/api/aseguramiento/sgd/COC-PRO-099/pdf",
+                 json={"archivo_pdf_url": "https://drive.example/test.pdf"},
+                 headers=csrf_headers())
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+    assert r.get_json()["archivo_pdf_url"] == "https://drive.example/test.pdf"
+
+    # Verificar persistencia
+    r = cal.get("/api/aseguramiento/sgd/COC-PRO-099")
+    assert r.get_json()["archivo_pdf_url"] == "https://drive.example/test.pdf"
+
+    # Limpiar PDF (URL vacía)
+    r = cal.post("/api/aseguramiento/sgd/COC-PRO-099/pdf",
+                 json={"archivo_pdf_url": ""},
+                 headers=csrf_headers())
+    assert r.status_code == 200
+    assert r.get_json()["archivo_pdf_url"] is None
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM sgd_documentos WHERE codigo='COC-PRO-099'")
+    conn.commit(); conn.close()
+
+
+def test_sgd_pdf_url_invalida_400(app, db_clean):
+    """URL no http(s) → 400."""
+    cal = _login(app, "laura")
+    cal.post("/api/aseguramiento/sgd",
+             json={"codigo": "COC-PRO-098", "titulo": "Test"},
+             headers=csrf_headers())
+    r = cal.post("/api/aseguramiento/sgd/COC-PRO-098/pdf",
+                 json={"archivo_pdf_url": "javascript:alert(1)"},
+                 headers=csrf_headers())
+    assert r.status_code == 400
+    r = cal.post("/api/aseguramiento/sgd/COC-PRO-098/pdf",
+                 json={"archivo_pdf_url": "ftp://server/file.pdf"},
+                 headers=csrf_headers())
+    assert r.status_code == 400
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM sgd_documentos WHERE codigo='COC-PRO-098'")
+    conn.commit(); conn.close()
+
+
+def test_sgd_pdf_doc_inexistente_404(app, db_clean):
+    cal = _login(app, "laura")
+    r = cal.post("/api/aseguramiento/sgd/COC-PRO-777/pdf",
+                 json={"archivo_pdf_url": "https://x.com/y.pdf"},
+                 headers=csrf_headers())
+    assert r.status_code == 404
+
+
 def test_dashboard_kpis_workflows_se_actualizan(app, db_clean):
     """Crear desviación + queja crítica → KPIs del dashboard reflejan cambios."""
     c = _login(app, "laura")
