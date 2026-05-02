@@ -214,7 +214,11 @@ def login():
 
 @bp.route('/logout')
 def logout():
-    session.pop('compras_user', None)
+    # session.clear() en lugar de pop('compras_user') · audit zero-error
+    # 2-may-2026: pop solo borraba compras_user, dejaba csrf_token,
+    # mfa_pending_user, login_time, must_reenroll_mfa vivos. Una sesión
+    # robada post-logout aún tenía artefactos válidos.
+    session.clear()
     return redirect('/')
 
 @bp.route('/compras')

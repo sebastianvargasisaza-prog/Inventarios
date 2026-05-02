@@ -27,6 +27,37 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('rrhh', __name__)
 
+
+_RRHH_AUTHORIZED = lambda: set(RRHH_USERS) | set(ADMIN_USERS) | set(CONTADORA_USERS)
+
+
+@bp.before_request
+def _rrhh_gate():
+    """Audit zero-error 2-may-2026 · gate PII para TODOS los endpoints rrhh.
+
+    Antes 23 endpoints `/api/rrhh/*` solo verificaban `session.get("compras_user")`,
+    permitiendo a CUALQUIER user logueado leer cédulas, salarios, cuentas
+    bancarias de toda la planta. Violación Habeas Data Ley 1581/2012.
+
+    Aplicado a TODOS los endpoints del blueprint vía before_request.
+    Excepción: la página HTML /rrhh tiene su propio gate con sin_acceso_html().
+    """
+    # /rrhh (HTML) ya tiene su propio gate con sin_acceso_html() — skip
+    p = request.path
+    if p == '/rrhh':
+        return None
+    # Solo gating endpoints API
+    if not p.startswith('/api/rrhh'):
+        return None
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    if u not in _RRHH_AUTHORIZED():
+        return jsonify({'error': 'Acceso restringido a RRHH/Admin/Contabilidad'}), 403
+    # OK, sigue al endpoint
+    return None
+
+
 @bp.route("/rrhh")
 def rrhh_panel():
     if "compras_user" not in session:

@@ -14,6 +14,25 @@ from templates_py.clientes_html import CLIENTES_HTML
 
 bp = Blueprint('clientes', __name__)
 
+
+def _require_clientes_access():
+    """Helper de auth · audit zero-error 2-may-2026.
+
+    Antes 14 endpoints `/api/clientes*`, `/api/pedidos`, `/api/despachos`,
+    `/api/stock-pt`, `/api/aliados/*` no validaban sesión. Cualquier
+    visitante con cookie de OTRO módulo válida (ej. RRHH) leía PII
+    completa: NIT, teléfono, email, historial 360°, cartera.
+
+    Retorna (None, None) si OK, o (Response, code) si rechaza.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    if u not in CLIENTES_ACCESS:
+        return jsonify({'error': 'Sin acceso al módulo Clientes'}), 403
+    return None, None
+
+
 @bp.route('/clientes')
 def clientes_page():
     if 'compras_user' not in session:
@@ -25,6 +44,8 @@ def clientes_page():
 
 @bp.route('/api/clientes', methods=['GET','POST'])
 def handle_clientes():
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -79,6 +100,8 @@ def handle_clientes():
 
 @bp.route('/api/clientes/<int:cid>', methods=['GET','PUT'])
 def handle_cliente_detalle(cid):
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'PUT':
         d = request.json or {}
@@ -99,6 +122,8 @@ def handle_cliente_detalle(cid):
 
 @bp.route('/api/clientes/<int:cid>/historial')
 def handle_cliente_historial(cid):
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT numero,fecha,estado,valor_total,fecha_despacho FROM pedidos WHERE cliente_id=? ORDER BY fecha DESC LIMIT 50", (cid,))
     cols = ['numero','fecha','estado','valor_total','fecha_despacho']
@@ -107,6 +132,8 @@ def handle_cliente_historial(cid):
 
 @bp.route('/api/clientes/<int:cid>/stats')
 def handle_cliente_stats(cid):
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*), COALESCE(SUM(valor_total),0), MAX(fecha) FROM pedidos WHERE cliente_id=?", (cid,))
     row = c.fetchone()
@@ -115,6 +142,8 @@ def handle_cliente_stats(cid):
 @bp.route('/api/clientes/alertas-recompra')
 def clientes_alertas_recompra():
     """Clientes con >N dias sin pedido — churn detection."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     umbral = int(request.args.get('dias', 75))
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT cl.id, cl.nombre, cl.tipo, cl.email, cl.telefono,
@@ -148,6 +177,8 @@ def clientes_alertas_recompra():
 @bp.route('/api/clientes/<int:cid>/ficha360')
 def cliente_ficha_360(cid):
     """Cliente 360: datos + stats + historial pedidos recientes + items."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, codigo, nombre, empresa, tipo, contacto, email,
                         telefono, nit, condiciones_pago, descuento_pct, observaciones, fecha_creacion
@@ -195,6 +226,8 @@ def cliente_ficha_360(cid):
 @bp.route('/api/aliados/canal-salud')
 def aliados_canal_salud():
     """Capa 1 — Salud del canal aliados: revenue MoM, retención, concentración, activos vs dormidos."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     try:
         hoy       = datetime.now()
@@ -317,6 +350,8 @@ def aliados_skus_segmento():
     """Capa 3 — Top SKUs comprados por categoria_profesional de aliados ANIMUS.
     Retorna: { segmentos: [{categoria, total_revenue, total_pedidos, top_skus:[{sku,descripcion,uds,pedidos,revenue}]}] }
     """
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     try:
         # SKUs por categoría: join clientes -> pedidos -> pedidos_items
@@ -388,6 +423,8 @@ def aliados_scores():
       MoM       (25 pts) — crecimiento revenue mes actual vs anterior
       LTV rel   (20 pts) — posición en ranking de revenue total
     """
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     try:
         hoy       = datetime.now()
@@ -556,6 +593,8 @@ def aliados_scores():
 @bp.route('/api/aliados/analytics')
 def aliados_analytics():
     """Ventas mensuales por aliado, frecuencia de compra y top SKUs."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     try:
         hace6m = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
@@ -677,6 +716,8 @@ def aliados_analytics():
 
 @bp.route('/api/pedidos', methods=['GET','POST'])
 def handle_pedidos():
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -707,6 +748,8 @@ def handle_pedidos():
 
 @bp.route('/api/pedidos/<numero>', methods=['GET','PATCH','DELETE'])
 def handle_pedido_detalle(numero):
+    err, code = _require_clientes_access()
+    if err: return err, code
     if request.method == 'DELETE':
         if session.get('compras_user') not in ADMIN_USERS:
             return jsonify({'error':'Solo admins'}), 403
@@ -740,6 +783,8 @@ def handle_pedido_detalle(numero):
 
 @bp.route('/api/stock-pt', methods=['GET','POST'])
 def handle_stock_pt():
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -759,6 +804,8 @@ def handle_stock_pt():
 
 @bp.route('/api/despachos', methods=['GET','POST'])
 def handle_despachos():
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -788,6 +835,8 @@ def handle_despachos():
 @bp.route('/api/aliados/<int:cid>', methods=['PATCH'])
 def patch_aliado(cid):
     """Actualiza semaforo y/o nivel_aliado de un aliado ANIMUS."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     d = request.json or {}
     conn = get_db(); c = conn.cursor()
     campos = []; vals = []
@@ -817,6 +866,8 @@ def patch_aliado(cid):
 @bp.route('/api/clientes/cartera')
 def get_cartera():
     """Resumen de cartera por aliado: facturado, pagado, saldo."""
+    err, code = _require_clientes_access()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("""
         SELECT cl.id, cl.nombre, cl.codigo, cl.semaforo,
@@ -838,10 +889,27 @@ def get_cartera():
 
 @bp.route('/api/aliados/<int:cid>', methods=['DELETE'])
 def delete_aliado(cid):
-    """Soft-delete: marca activo=0. No borra datos historicos."""
+    """Soft-delete: marca activo=0. No borra datos historicos.
+
+    Audit zero-error 2-may-2026: requiere ADMIN (era cualquier sesión).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Admin puede desactivar aliados'}), 403
     conn = get_db(); c = conn.cursor()
     c.execute("UPDATE clientes SET activo=0 WHERE id=? AND empresa='ANIMUS'", (cid,))
     conn.commit()
+    try:
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, tabla, registro_id, fecha)
+            VALUES (?, 'DESACTIVAR_ALIADO', 'clientes', ?, datetime('now'))
+        """, (user, str(cid)))
+        conn.commit()
+    except Exception as e:
+        # Log fail (audit_log puede no tener todos los campos en DB pre-migración)
+        pass
     return jsonify({'ok': True, 'message': 'Aliado desactivado'})
 
 # ─── MÓDULO GERENCIA — Rutas ──────────────────────────────────

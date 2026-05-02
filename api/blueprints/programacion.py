@@ -2000,8 +2000,19 @@ def prog_sync_stock_shopify():
                 title = str(product.get('title', '') or '').strip()
                 for variant in product.get('variants', []):
                     sku_raw = str(variant.get('sku', '') or '').strip().upper()
-                    inv_qty = int(variant.get('inventory_quantity', 0) or 0)
-                    all_variants.append({'sku': sku_raw, 'titulo': title, 'inv_qty': inv_qty})
+                    # ⚠ Audit zero-error 2-may-2026: `inventory_quantity` es ON HAND
+                    # (incluye committed). Memoria de Sebastián: para MRP/forecast
+                    # debe usarse AVAILABLE (= On hand - Committed). Fix completo
+                    # requiere segunda API call a /inventory_levels.json con
+                    # inventory_item_ids. Pendiente en ROADMAP. Por ahora se usa
+                    # On hand y el modelo descuenta pipeline 7d como aproximación.
+                    inv_qty_on_hand = int(variant.get('inventory_quantity', 0) or 0)
+                    inv_item_id = variant.get('inventory_item_id')  # para fix futuro
+                    all_variants.append({
+                        'sku': sku_raw, 'titulo': title,
+                        'inv_qty': inv_qty_on_hand,
+                        'inv_item_id': inv_item_id,
+                    })
 
             next_url = None
             for part in link_header.split(','):

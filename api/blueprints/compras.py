@@ -4,7 +4,10 @@ import json
 import sqlite3
 import hmac
 import time
+import logging
 from datetime import datetime, timedelta
+
+log = logging.getLogger('compras')
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import (
@@ -2292,16 +2295,21 @@ def recibir_oc(numero_oc):
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (codigo, nombre, cant_recibida, 'Entrada', fecha,
                      f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
-                     prov_nombre, operador, lote_num or None, fv or None, 'Cuarentena', numero_oc))
+                     prov_nombre, operador, lote_num or None, fv or None, 'CUARENTENA', numero_oc))
             ingresos += 1
-        # Actualizar item OC
+        # Actualizar item OC · audit zero-error 2-may-2026: usar += en
+        # cantidad_recibida_g para soportar recepciones múltiples parciales
+        # sobre el mismo item. Antes era SET = ? que pisaba el acumulado.
         try:
             cur.execute(
-                "UPDATE ordenes_compra_items SET cantidad_recibida_g=?, estado_recepcion=?, notas_recepcion=?, lote_asignado=?"
+                "UPDATE ordenes_compra_items "
+                "SET cantidad_recibida_g = COALESCE(cantidad_recibida_g, 0) + ?, "
+                "    estado_recepcion=?, notas_recepcion=?, "
+                "    lote_asignado=COALESCE(lote_asignado, ?) "
                 " WHERE numero_oc=? AND codigo_mp=?",
                 (cant_recibida, estado_item, notas_item, lote_num, numero_oc, codigo))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning('UPDATE oci en recibir_oc fallo: %s', e)
     # Estado final de la OC
     nuevo_estado = 'Parcial' if es_parcial else 'Recibida'
     try:
@@ -2425,11 +2433,31 @@ def pagar_oc(numero_oc):
     row = cur.fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
+    estado_oc = row[0] or ''
     categoria = row[1] or 'MP'
     proveedor = row[2] or ''
     valor_total_oc = float(row[3] or 0)
+    # Audit zero-error 2-may-2026: bloquear pagos sobre OC en estado inválido
+    if estado_oc in ('Cancelada', 'Rechazada', 'Borrador'):
+        return jsonify({
+            'error': f"OC {numero_oc} en estado '{estado_oc}' no admite pagos",
+            'codigo': 'ESTADO_INVALIDO'
+        }), 409
     if not monto:
         monto = valor_total_oc
+    if monto <= 0:
+        return jsonify({'error': 'monto debe ser > 0', 'codigo': 'MONTO_INVALIDO'}), 400
+    # Audit zero-error 2-may-2026: validar over-payment ANTES de insertar
+    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+    total_pagado_actual = float(cur.fetchone()[0] or 0)
+    if (total_pagado_actual + monto) > (valor_total_oc + 0.01):
+        return jsonify({
+            'error': f"Over-payment: pagado actual {total_pagado_actual:.0f} + nuevo {monto:.0f} "
+                       f"excede valor OC {valor_total_oc:.0f}",
+            'pagado_actual': total_pagado_actual,
+            'valor_oc': valor_total_oc,
+            'codigo': 'OVER_PAYMENT'
+        }), 422
     cat_map = {'MPs':'MPs','MP':'MPs','Envase':'MEE','Insumos':'MEE','MEE':'MEE','SVC':'Servicios','Servicios':'Servicios','Analisis':'Servicios','Ánalisis':'Servicios','Acondicionamiento':'Servicios','Admin':'Administrativo','Nomina':'Administrativo','ADM':'Administrativo','Infraestructura':'Infraestructura','INF':'Infraestructura','CC':'Cuentas de Cobro'}
     cat_egreso = cat_map.get(categoria, 'Compras')
     fecha_pago = datetime.now().isoformat()

@@ -448,9 +448,10 @@ def _unhandled_exception(e):
         }, ensure_ascii=False))
     except Exception:
         pass
-    # Incluir tipo + traceback en la respuesta SOLO si el usuario es admin
-    # (asi Sebastian/Alejandro pueden diagnosticar 500s sin tener que abrir
-    # los logs de Render). Para usuarios normales, mensaje genérico.
+    # Audit zero-error 2-may-2026: NO incluir traceback en la respuesta JSON
+    # ni siquiera para admins. Si la sesión admin está comprometida o se
+    # comparte pantalla, el traceback expone paths internos, schema, secrets.
+    # Los admins consultan logs de Render con request_id (incluido aquí).
     user = session.get("compras_user", "")
     is_admin = user in ADMIN_USERS if 'ADMIN_USERS' in globals() else False
     payload = {
@@ -458,13 +459,10 @@ def _unhandled_exception(e):
         "request_id": rid,
     }
     if is_admin:
-        payload["error"] = f"{type(e).__name__}: {str(e)[:500]}"
+        # Solo el TIPO de excepción + mensaje corto, sin traceback ni path/method
+        # (path ya se ve en network tab, traceback va a logs).
         payload["tipo"] = type(e).__name__
-        payload["mensaje"] = str(e)[:500]
-        payload["fase"] = "errorhandler_global"
-        payload["traceback"] = _tb.format_exc()[-2500:]
-        payload["path"] = request.path
-        payload["method"] = request.method
+        payload["mensaje"] = str(e)[:200]
     return jsonify(payload), 500
 
 
