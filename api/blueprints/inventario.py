@@ -3755,12 +3755,24 @@ def mee_anular_movimiento(mov_id):
     mv = dict(zip(cols_mv, row))
     if mv['anulado']:
         return jsonify({'error': 'Ya anulado'}), 400
+    # Audit zero-error 2-may-2026: tipo='Ajuste' (legacy pre-may-2026) NO se
+    # puede anular automáticamente porque el signo del ajuste se perdía. Para
+    # revertir un ajuste legacy, hay que crear un nuevo ajuste manual con la
+    # operación inversa.
+    if mv['tipo'] == 'Ajuste':
+        return jsonify({
+            'error': 'No se puede anular un ajuste legacy (signo no preservado). '
+                      'Para revertir, crea un nuevo ajuste manual con la operación inversa.',
+            'codigo': 'AJUSTE_LEGACY_NO_ANULABLE',
+        }), 422
     if mv['tipo'] == 'Entrada':
         c.execute("UPDATE maestro_mee SET stock_actual=MAX(0,stock_actual-?) WHERE codigo=?",
                   (mv['cantidad'], mv['mee_codigo']))
     elif mv['tipo'] == 'Salida':
         c.execute("UPDATE maestro_mee SET stock_actual=stock_actual+? WHERE codigo=?",
                   (mv['cantidad'], mv['mee_codigo']))
+    else:
+        return jsonify({'error': f"tipo desconocido '{mv['tipo']}' · no puede anular"}), 400
     c.execute("UPDATE movimientos_mee SET anulado=1, observaciones=observaciones||? WHERE id=?",
               (f' [ANULADO por {user}: {motivo}]', mov_id))
     audit_log(c, usuario=user, accion='ANULAR_MOV_MEE', tabla='movimientos_mee',
@@ -3869,10 +3881,21 @@ def mee_ajustar_stock(codigo):
     stock_anterior = float(row[0] or 0)
     delta = cantidad_nueva - stock_anterior
     c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (cantidad_nueva, codigo))
-    c.execute("""
-        INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
-        VALUES (?, 'Ajuste', ?, ?, ?)
-    """, (codigo, abs(delta), user, f'Ajuste {stock_anterior} → {cantidad_nueva} ({"+" if delta>=0 else ""}{delta}). {motivo}'))
+    # Audit zero-error 2-may-2026: usar Entrada/Salida según signo del delta
+    # (no 'Ajuste' que perdía la dirección · provocaba drift permanente entre
+    # stock_actual y SUM(movimientos_mee)). Observaciones marca AJUSTE MANUAL
+    # para que reportes financieros lo distingan de movimientos operativos.
+    if delta == 0:
+        # Sin cambio · no insertar movimiento (idempotente)
+        pass
+    else:
+        tipo_mov = 'Entrada' if delta > 0 else 'Salida'
+        obs_msg = (f'AJUSTE MANUAL: {stock_anterior} → {cantidad_nueva} '
+                    f'({"+" if delta>=0 else ""}{delta}). {motivo}')
+        c.execute("""
+            INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+            VALUES (?, ?, ?, ?, ?)
+        """, (codigo, tipo_mov, abs(delta), user, obs_msg))
     audit_log(c, usuario=user, accion='AJUSTAR_STOCK_MEE', tabla='maestro_mee',
               registro_id=codigo,
               antes={'stock_actual': stock_anterior},
