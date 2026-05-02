@@ -1390,8 +1390,9 @@ def job_equipos_vencimientos(app):
 
         from datetime import date as _date
         hoy = _date.today()
-        vencidos = []
-        proximos = []
+        vencidos = []     # T-0 o atrás · CRÍTICO
+        urgentes = []     # T-1 a T-7 · URGENTE
+        proximos = []     # T-8 a T-30 · preventivo
         for cod, nom, area, prox in rows:
             try:
                 f = _date.fromisoformat(prox)
@@ -1401,37 +1402,46 @@ def job_equipos_vencimientos(app):
             entry = {'codigo': cod, 'nombre': nom or '', 'area': area or '', 'dias': dias}
             if dias < 0:
                 vencidos.append(entry)
+            elif dias <= 7:
+                urgentes.append(entry)
             else:
                 proximos.append(entry)
 
-        if not vencidos and not proximos:
+        if not (vencidos or urgentes or proximos):
             return True, {'mensaje': 'Sin equipos vencidos ni próximos · sin alerta'}, 0
 
-        # Notificar a Calidad si hay vencidos (urgente) o muchos próximos
-        if vencidos or len(proximos) >= 3:
+        # Notif tiered: vencidos o urgentes (≤7d) son críticos · próximos preventivos
+        # Solo enviar push si hay algo crítico o muchos próximos
+        if vencidos or urgentes or len(proximos) >= 3:
             try:
                 from blueprints.notif import push_notif_multi
                 destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
                                  'laura','miguel','yuliel','sebastian']
-                titulo = (f'⛔ {len(vencidos)} equipos VENCIDOS · {len(proximos)} próximos 30d'
-                          if vencidos else
-                          f'⏰ {len(proximos)} equipos próximos a vencer (30d)')
+                if vencidos:
+                    titulo = f'⛔ {len(vencidos)} equipos VENCIDOS · NO USAR'
+                elif urgentes:
+                    titulo = f'⏰ {len(urgentes)} equipos vencen ≤7d · agendar calibración YA'
+                else:
+                    titulo = f'📅 {len(proximos)} equipos próximos a vencer (8-30d)'
                 cuerpo_lines = []
                 for v in vencidos[:5]:
                     cuerpo_lines.append(f'⛔ {v["codigo"]} · vence hace {abs(v["dias"])}d')
+                for u in urgentes[:5]:
+                    cuerpo_lines.append(f'⏰ {u["codigo"]} · vence en {u["dias"]}d (T-7)')
                 for p in proximos[:5]:
-                    cuerpo_lines.append(f'⏰ {p["codigo"]} · vence en {p["dias"]}d')
+                    cuerpo_lines.append(f'📅 {p["codigo"]} · vence en {p["dias"]}d')
                 push_notif_multi(
                     destinatarios, 'capa', titulo,
                     body='\n'.join(cuerpo_lines),
                     link='/calidad', remitente='cron-equipos',
-                    importante=bool(vencidos),
+                    importante=bool(vencidos or urgentes),
                 )
             except Exception as e:
                 log.warning('equipos_vencimientos push_notif fallo: %s', e)
 
         return True, {
             'vencidos': len(vencidos),
+            'urgentes_7d': len(urgentes),
             'proximos_30d': len(proximos),
         }, 0
 

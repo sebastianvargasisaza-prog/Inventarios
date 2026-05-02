@@ -149,39 +149,57 @@ def capa_handler():
     conn = get_db(); c = conn.cursor()
 
     if request.method == 'POST':
+        # Audit zero-error 2-may-2026: solo responsables BPM crean capa_desviaciones
+        if not _is_responsable(user):
+            return jsonify({'error': 'Solo responsables BPM pueden crear desviaciones'}), 403
         d = request.get_json(force=True, silent=True) or {}
         titulo = (d.get('titulo') or '').strip()
         if not titulo:
             return jsonify({'error': 'titulo requerido'}), 400
-        # Generar codigo DESV-NNN
-        last = c.execute(
-            "SELECT codigo FROM capa_desviaciones WHERE codigo LIKE 'DESV-%' "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        n = 1
-        if last:
-            try: n = int(last[0].split('-')[-1]) + 1
-            except: n = 1
-        codigo = f'DESV-{n:03d}'
         # fecha_objetivo default = +5 dias
         fecha_objetivo = (d.get('fecha_objetivo') or '').strip()
         if not fecha_objetivo:
             fecha_objetivo = (date.today() + timedelta(days=5)).isoformat()
         responsable = (d.get('responsable') or '').strip() or 'aseguramiento.espagiria'
-        c.execute("""INSERT INTO capa_desviaciones
-            (codigo, tipo, titulo, descripcion, producto_relacionado, lote,
-             severidad, fecha_objetivo, responsable, accion_inmediata,
-             creado_por)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (codigo, (d.get('tipo') or 'desviacion'),
-             titulo, (d.get('descripcion') or '').strip() or None,
-             (d.get('producto_relacionado') or '').strip() or None,
-             (d.get('lote') or '').strip() or None,
-             (d.get('severidad') or 'media'),
-             fecha_objetivo, responsable,
-             (d.get('accion_inmediata') or '').strip() or None,
-             user))
-        new_id = c.lastrowid
+        # Race-safe DESV-NNN · audit zero-error · evita IntegrityError 500 al user
+        def _insert_capa():
+            last = c.execute(
+                "SELECT codigo FROM capa_desviaciones WHERE codigo LIKE 'DESV-%' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            n = 1
+            if last:
+                try: n = int(last[0].split('-')[-1]) + 1
+                except: n = 1
+            cod = f'DESV-{n:03d}'
+            c.execute("""INSERT INTO capa_desviaciones
+                (codigo, tipo, titulo, descripcion, producto_relacionado, lote,
+                 severidad, fecha_objetivo, responsable, accion_inmediata,
+                 creado_por)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (cod, (d.get('tipo') or 'desviacion'),
+                 titulo, (d.get('descripcion') or '').strip() or None,
+                 (d.get('producto_relacionado') or '').strip() or None,
+                 (d.get('lote') or '').strip() or None,
+                 (d.get('severidad') or 'media'),
+                 fecha_objetivo, responsable,
+                 (d.get('accion_inmediata') or '').strip() or None,
+                 user))
+            return cod, c.lastrowid
+        try:
+            codigo, new_id = intentar_insert_con_retry(_insert_capa)
+        except Exception as e:
+            log.exception('crear capa_desviacion fallo: %s', e)
+            return jsonify({'error': 'No se pudo crear la desviación'}), 500
+        # Audit log INVIMA · creación de desviación regulatoria
+        try:
+            audit_log(c, usuario=user, accion='CREAR_CAPA_DESV',
+                      tabla='capa_desviaciones', registro_id=codigo,
+                      despues={'titulo': titulo[:200],
+                                'severidad': d.get('severidad','media'),
+                                'lote': (d.get('lote') or '')[:100]})
+        except Exception as e:
+            log.warning('audit_log CREAR_CAPA_DESV fallo: %s', e)
         conn.commit()
         # Push notif al responsable
         try:
@@ -262,6 +280,9 @@ def hallazgos_handler():
     conn = get_db(); c = conn.cursor()
 
     if request.method == 'POST':
+        # Audit zero-error 2-may-2026: solo responsables BPM crean hallazgos
+        if not _is_responsable(user):
+            return jsonify({'error': 'Solo responsables BPM pueden crear hallazgos'}), 403
         d = request.get_json(force=True, silent=True) or {}
         titulo = (d.get('titulo') or '').strip()
         origen = (d.get('origen') or 'BPM_interna').strip()
@@ -269,29 +290,44 @@ def hallazgos_handler():
             return jsonify({'error': 'titulo requerido'}), 400
         if origen not in ('INVIMA','BPM_interna','autoinspeccion','auditoria_externa','queja_cliente','otro'):
             origen = 'otro'
-        last = c.execute(
-            "SELECT codigo FROM hallazgos WHERE codigo LIKE ? ORDER BY id DESC LIMIT 1",
-            (f'HLZ-{origen[:3].upper()}-%',)
-        ).fetchone()
-        n = 1
-        if last:
-            try: n = int(last[0].split('-')[-1]) + 1
-            except: n = 1
-        codigo = f'HLZ-{origen[:3].upper()}-{n:03d}'
         responsable = (d.get('responsable') or '').strip() or 'aseguramiento.espagiria'
-        c.execute("""INSERT INTO hallazgos
-            (codigo, origen, titulo, descripcion, area, severidad,
-             fecha_limite, responsable, accion_propuesta, creado_por)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (codigo, origen, titulo,
-             (d.get('descripcion') or '').strip() or None,
-             (d.get('area') or '').strip() or None,
-             (d.get('severidad') or 'media'),
-             (d.get('fecha_limite') or '').strip() or None,
-             responsable,
-             (d.get('accion_propuesta') or '').strip() or None,
-             user))
-        new_id = c.lastrowid
+        # Race-safe HLZ-XXX-NNN
+        def _insert_hallazgo():
+            last = c.execute(
+                "SELECT codigo FROM hallazgos WHERE codigo LIKE ? ORDER BY id DESC LIMIT 1",
+                (f'HLZ-{origen[:3].upper()}-%',)
+            ).fetchone()
+            n = 1
+            if last:
+                try: n = int(last[0].split('-')[-1]) + 1
+                except: n = 1
+            cod = f'HLZ-{origen[:3].upper()}-{n:03d}'
+            c.execute("""INSERT INTO hallazgos
+                (codigo, origen, titulo, descripcion, area, severidad,
+                 fecha_limite, responsable, accion_propuesta, creado_por)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (cod, origen, titulo,
+                 (d.get('descripcion') or '').strip() or None,
+                 (d.get('area') or '').strip() or None,
+                 (d.get('severidad') or 'media'),
+                 (d.get('fecha_limite') or '').strip() or None,
+                 responsable,
+                 (d.get('accion_propuesta') or '').strip() or None,
+                 user))
+            return cod, c.lastrowid
+        try:
+            codigo, new_id = intentar_insert_con_retry(_insert_hallazgo)
+        except Exception as e:
+            log.exception('crear hallazgo fallo: %s', e)
+            return jsonify({'error': 'No se pudo crear el hallazgo'}), 500
+        # Audit log INVIMA · hallazgos son input regulatorio (ej. INVIMA, auditoría)
+        try:
+            audit_log(c, usuario=user, accion='CREAR_HALLAZGO',
+                      tabla='hallazgos', registro_id=codigo,
+                      despues={'origen': origen, 'titulo': titulo[:200],
+                                'severidad': d.get('severidad','media')})
+        except Exception as e:
+            log.warning('audit_log CREAR_HALLAZGO fallo: %s', e)
         conn.commit()
         try:
             from blueprints.notif import push_notif

@@ -667,13 +667,18 @@ def resumen_cronograma():
 
 @bp.route('/api/calidad/especificaciones', methods=['GET','POST'])
 def especificaciones_list():
-    if 'compras_user' not in session:
+    if request.method == 'POST':
+        # Audit zero-error 2-may-2026: alterar specs farmacopea es decisión técnica
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error':'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
         if not d.get('codigo_mp') or not d.get('parametro'):
             return jsonify({'error':'codigo_mp y parametro requeridos'}), 400
+        user = session.get('compras_user','sistema')
         try:
             c.execute("""INSERT INTO especificaciones_mp
                 (codigo_mp, parametro, unidad, valor_min, valor_max, metodo_ensayo,
@@ -683,9 +688,20 @@ def especificaciones_list():
                  d.get('valor_min'), d.get('valor_max'), d.get('metodo_ensayo',''),
                  1 if d.get('obligatorio', True) else 0,
                  d.get('tipo','fisicoquimico'), d.get('farmacopea_ref',''),
-                 session.get('compras_user','sistema')))
+                 user))
+            spec_id = c.lastrowid
+            # Audit log INVIMA · alterar specs es regulatorio
+            try:
+                audit_log(c, usuario=user, accion='CREAR_SPEC_MP',
+                          tabla='especificaciones_mp', registro_id=spec_id,
+                          despues={'codigo_mp': d['codigo_mp'][:60],
+                                    'parametro': d['parametro'][:80],
+                                    'min': d.get('valor_min'),
+                                    'max': d.get('valor_max')})
+            except Exception as e:
+                log.warning('audit_log CREAR_SPEC_MP fallo: %s', e)
             conn.commit()
-            return jsonify({'ok':True, 'id':c.lastrowid}), 201
+            return jsonify({'ok':True, 'id':spec_id}), 201
         except sqlite3.IntegrityError:
             return jsonify({'error':'Ya existe especificacion para ese MP+parametro'}), 409
     # GET — filtro por codigo_mp opcional
@@ -729,7 +745,11 @@ def coa_list():
     Auto-valida contra especificaciones_mp si existen y marca conforme=0
     si esta fuera de spec.
     """
-    if 'compras_user' not in session:
+    # Audit zero-error 2-may-2026: POST de CoA es evidencia regulatoria INVIMA
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error':'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
 
@@ -738,6 +758,33 @@ def coa_list():
         for k in ('lote','codigo_mp','parametro','valor_obtenido'):
             if not d.get(k):
                 return jsonify({'error':f'{k} requerido'}), 400
+
+        # Audit zero-error: bloquear CoA si equipo tiene calibración vencida.
+        # Antes un instrumento descalibrado podía registrar análisis "válidos".
+        equipo_id = d.get('equipo_id')
+        if equipo_id:
+            try:
+                eq = c.execute("""
+                    SELECT codigo, fecha_proxima FROM equipos_eventos
+                    WHERE equipo_codigo=(SELECT codigo FROM equipos_eventos WHERE id=? LIMIT 1)
+                       OR id=?
+                    ORDER BY fecha DESC LIMIT 1
+                """, (equipo_id, equipo_id)).fetchone()
+                if eq and eq[1]:
+                    from datetime import date as _date
+                    try:
+                        venc = _date.fromisoformat(str(eq[1])[:10])
+                        if venc < _date.today():
+                            return jsonify({
+                                'error': f"Equipo {eq[0]} con calibración vencida ({eq[1]}). No se puede registrar CoA.",
+                                'codigo': 'EQUIPO_VENCIDO',
+                                'equipo': eq[0],
+                                'fecha_vencimiento': eq[1],
+                            }), 409
+                    except (ValueError, TypeError):
+                        pass  # fecha mal formada · no bloquear
+            except Exception as e:
+                log.warning('check equipo vencido fallo: %s', e)
 
         # Buscar especificacion para auto-validacion
         spec = c.execute("""SELECT valor_min, valor_max, unidad, metodo_ensayo
@@ -766,6 +813,7 @@ def coa_list():
         if d.get('decision'):
             decision = d['decision']
 
+        user = session.get('compras_user','sistema')
         c.execute("""INSERT INTO coa_resultados
             (lote, codigo_mp, material_nombre, parametro, unidad,
              valor_obtenido, valor_min_spec, valor_max_spec, conforme,
@@ -775,9 +823,21 @@ def coa_list():
             (d['lote'], d['codigo_mp'], d.get('material_nombre',''),
              d['parametro'], unidad, d['valor_obtenido'],
              valor_min_spec, valor_max_spec, conforme, metodo,
-             d.get('analista', session.get('compras_user','')),
+             d.get('analista', user),
              d.get('fecha_analisis'),
              d.get('equipo_id'), d.get('observaciones',''), decision))
+        coa_id = c.lastrowid
+        # Audit log INVIMA · CoA es evidencia primaria de calidad de MP
+        try:
+            audit_log(c, usuario=user, accion='CREAR_COA',
+                      tabla='coa_resultados', registro_id=coa_id,
+                      despues={'lote': d['lote'], 'codigo_mp': d['codigo_mp'],
+                                'parametro': d['parametro'][:80],
+                                'valor': str(d['valor_obtenido'])[:100],
+                                'conforme': bool(conforme),
+                                'decision': decision})
+        except Exception as e:
+            log.warning('audit_log CREAR_COA fallo: %s', e)
         conn.commit()
 
         # Si NO conforme y no hay NC abierta para este lote+parametro, crear auto
@@ -1104,10 +1164,13 @@ def calidad_micro_resultados():
              user))
         new_id = c.lastrowid
 
-        # Si fuera_industria → crear OOS automáticamente
+        # Si fuera_industria → crear OOS automáticamente · race-safe
+        # Audit zero-error 2-may-2026: el código OOS-NNN se generaba con
+        # SELECT MAX + INSERT sin retry · bajo concurrencia 2 micros simultáneos
+        # podían generar mismo código → IntegrityError 500 al usuario.
         oos_codigo = None
         if estado == 'fuera_industria':
-            try:
+            def _insert_oos():
                 last = c.execute(
                     "SELECT codigo FROM calidad_oos WHERE codigo LIKE 'OOS-%' ORDER BY id DESC LIMIT 1"
                 ).fetchone()
@@ -1115,20 +1178,36 @@ def calidad_micro_resultados():
                 if last:
                     try: n = int(last[0].split('-')[-1]) + 1
                     except: n = 1
-                oos_codigo = f'OOS-{n:03d}'
+                cod = f'OOS-{n:03d}'
                 c.execute("""INSERT INTO calidad_oos
                     (codigo, origen, lote, producto, parametro, valor_obtenido,
                      valor_obtenido_texto, valor_esperado_texto, limite_violado,
                      accion_inmediata, creado_por)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                    (oos_codigo, 'micro', lote, producto, micro, valor, valor_texto,
+                    (cod, 'micro', lote, producto, micro, valor, valor_texto,
                      f'≤ {spec_dict["limite_industria"]} {unidad}' if spec_dict else 'según spec',
                      'limite_industria',
                      f'Lote {lote} pasa a CUARENTENA. No liberar hasta cierre OOS.',
                      user))
-                oos_id = c.lastrowid
+                return cod, c.lastrowid
+            try:
+                oos_codigo, oos_id = intentar_insert_con_retry(_insert_oos)
                 c.execute("UPDATE calidad_micro_resultados SET oos_id=? WHERE id=?", (oos_id, new_id))
-                # Notif in-app a calidad + admin
+                # Audit log INVIMA · OOS es decisión regulatoria crítica
+                try:
+                    audit_log(c, usuario=user, accion='CREAR_OOS',
+                              tabla='calidad_oos', registro_id=oos_codigo,
+                              despues={'lote': lote, 'producto': producto,
+                                        'parametro': micro, 'valor': valor})
+                except Exception as _e:
+                    log.warning('audit_log CREAR_OOS fallo: %s', _e)
+            except Exception as _e:
+                log.exception('crear OOS fallo: %s', _e)
+                # NO silenciar · OOS es regulatorio. Pero tampoco abortar el
+                # registro de micro · loguear y seguir (oos_codigo queda None).
+                oos_codigo = None
+            # Notif in-app a calidad + admin (solo si OOS se creó OK)
+            if oos_codigo:
                 try:
                     from blueprints.notif import push_notif_multi
                     push_notif_multi(
@@ -1139,10 +1218,6 @@ def calidad_micro_resultados():
                     )
                 except Exception:
                     pass
-            except Exception as _e:
-                __import__('logging').getLogger('calidad').warning(
-                    'Auto-OOS fallo para resultado %s: %s', new_id, _e
-                )
         elif estado == 'fuera_meta':
             # Notif menos urgente — solo a calidad
             try:
