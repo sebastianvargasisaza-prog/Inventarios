@@ -739,6 +739,21 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="CREAR_CAPA">CREAR_CAPA</option>
             <option value="CREAR_AUDITORIA">CREAR_AUDITORIA</option>
             <option value="CREAR_HALLAZGO">CREAR_HALLAZGO</option>
+            <option disabled>── Técnica/SGD ──</option>
+            <option value="CREAR_FORMULA">CREAR_FORMULA</option>
+            <option value="MODIFICAR_FORMULA">MODIFICAR_FORMULA</option>
+            <option value="ELIMINAR_FORMULA">ELIMINAR_FORMULA</option>
+            <option value="RESTAURAR_FORMULA">RESTAURAR_FORMULA</option>
+            <option value="CREAR_FICHA">CREAR_FICHA</option>
+            <option value="MODIFICAR_FICHA">MODIFICAR_FICHA</option>
+            <option value="ELIMINAR_FICHA">ELIMINAR_FICHA</option>
+            <option value="CREAR_REGISTRO_INVIMA">CREAR_REGISTRO_INVIMA</option>
+            <option value="MODIFICAR_REGISTRO_INVIMA">MODIFICAR_REGISTRO_INVIMA</option>
+            <option value="ELIMINAR_REGISTRO_INVIMA">ELIMINAR_REGISTRO_INVIMA</option>
+            <option value="CREAR_SGD">CREAR_SGD</option>
+            <option value="MODIFICAR_SGD">MODIFICAR_SGD</option>
+            <option value="ELIMINAR_SGD">ELIMINAR_SGD</option>
+            <option value="REVISAR_SGD">REVISAR_SGD</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>

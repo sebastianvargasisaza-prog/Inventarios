@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime
 from flask import Blueprint, jsonify, request, Response, session, redirect
 from auth import sin_acceso_html
+from audit_helpers import audit_log
 from config import DB_PATH, ADMIN_USERS, TECNICA_USERS
 from database import get_db
 from templates_py.tecnica_html import TECNICA_HTML
@@ -132,6 +133,7 @@ def formulas_list():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        usuario = session.get('compras_user', 'sistema')
         c.execute("""INSERT INTO formulas_maestras
                      (codigo,nombre,version,tipo,estado,fecha_version,descripcion,creado_por)
                      VALUES (?,?,?,?,?,?,?,?)""",
@@ -139,9 +141,13 @@ def formulas_list():
                    d.get('version', '1.0'), d.get('tipo', 'COSMETICO'),
                    d.get('estado', 'Vigente'),
                    d.get('fecha_version', datetime.now().strftime('%Y-%m-%d')),
-                   d.get('descripcion', ''), session.get('compras_user', 'sistema')))
-        conn.commit()
+                   d.get('descripcion', ''), usuario))
         fid = c.lastrowid
+        audit_log(c, usuario=usuario, accion='CREAR_FORMULA', tabla='formulas_maestras',
+                  registro_id=fid,
+                  despues={k: d.get(k) for k in ('codigo','nombre','version','tipo','estado')},
+                  detalle=f"Creó fórmula {d.get('codigo','')} · {d.get('nombre','')}")
+        conn.commit()
         return jsonify({'ok': True, 'id': fid})
     c.execute("SELECT * FROM formulas_maestras ORDER BY fecha_creacion DESC")
     cols = [x[0] for x in c.description]
@@ -190,9 +196,15 @@ def formula_update(fid):
     if request.method == 'DELETE':
         if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
+        # Capturar antes para audit log
+        antes_row = c.execute("SELECT codigo, nombre, version, estado FROM formulas_maestras WHERE id=?", (fid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         # Snapshot antes de eliminar
         _snapshot_formula(c, fid, 'Eliminacion', usuario)
         c.execute("DELETE FROM formulas_maestras WHERE id=?", (fid,))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_FORMULA', tabla='formulas_maestras',
+                  registro_id=fid, antes=antes,
+                  detalle=f"Eliminó fórmula id={fid}" + (f" ({antes.get('codigo','')})" if antes else ""))
         conn.commit()
         return jsonify({'ok': True})
     d = request.json or {}
@@ -202,8 +214,13 @@ def formula_update(fid):
     if sets:
         # Snapshot ANTES del UPDATE
         motivo = d.get('motivo_cambio') or 'Modificacion'
+        antes_row = c.execute("SELECT codigo, nombre, version, estado FROM formulas_maestras WHERE id=?", (fid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         _snapshot_formula(c, fid, motivo, usuario)
         c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
+        audit_log(c, usuario=usuario, accion='MODIFICAR_FORMULA', tabla='formulas_maestras',
+                  registro_id=fid, antes=antes, despues={k: d.get(k) for k in d if k in allowed},
+                  detalle=f"Modificó fórmula id={fid} · motivo: {motivo}")
         conn.commit()
     return jsonify({'ok': True})
 
@@ -277,6 +294,10 @@ def formula_restaurar(fid, vid):
     vals = [snap[f] for f in campos_rest if f in snap] + [fid]
     if sets:
         c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
+        audit_log(c, usuario=usuario, accion='RESTAURAR_FORMULA', tabla='formulas_maestras',
+                  registro_id=fid,
+                  despues={k: snap.get(k) for k in campos_rest if k in snap},
+                  detalle=f"Restauró fórmula id={fid} a versión {row[1]} (vid={vid})")
         conn.commit()
     return jsonify({'ok': True, 'restaurado_a_version': row[1]})
 
@@ -289,6 +310,7 @@ def fichas_list():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        usuario = session.get('compras_user', 'sistema')
         c.execute("""INSERT INTO fichas_tecnicas
                      (codigo,nombre,formula_id,version,estado,fecha_actualizacion,url_documento,notas)
                      VALUES (?,?,?,?,?,?,?,?)""",
@@ -296,8 +318,12 @@ def fichas_list():
                    d.get('version', '1.0'), d.get('estado', 'Vigente'),
                    d.get('fecha_actualizacion', datetime.now().strftime('%Y-%m-%d')),
                    d.get('url_documento', ''), d.get('notas', '')))
-        conn.commit()
         fid = c.lastrowid
+        audit_log(c, usuario=usuario, accion='CREAR_FICHA', tabla='fichas_tecnicas',
+                  registro_id=fid,
+                  despues={k: d.get(k) for k in ('codigo','nombre','version','estado','formula_id')},
+                  detalle=f"Creó ficha técnica {d.get('codigo','')} · {d.get('nombre','')}")
+        conn.commit()
         return jsonify({'ok': True, 'id': fid})
     c.execute("SELECT * FROM fichas_tecnicas ORDER BY fecha_actualizacion DESC")
     cols = [x[0] for x in c.description]
@@ -310,10 +336,16 @@ def ficha_update(fid):
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
     c = conn.cursor()
+    usuario = session.get('compras_user', 'sistema')
     if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
+        if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
+        antes_row = c.execute("SELECT codigo, nombre, version, estado FROM fichas_tecnicas WHERE id=?", (fid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute("DELETE FROM fichas_tecnicas WHERE id=?", (fid,))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_FICHA', tabla='fichas_tecnicas',
+                  registro_id=fid, antes=antes,
+                  detalle=f"Eliminó ficha técnica id={fid}" + (f" ({antes.get('codigo','')})" if antes else ""))
         conn.commit()
         return jsonify({'ok': True})
     d = request.json or {}
@@ -321,7 +353,13 @@ def ficha_update(fid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
     if sets:
+        antes_row = c.execute("SELECT codigo, nombre, version, estado FROM fichas_tecnicas WHERE id=?", (fid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute(f"UPDATE fichas_tecnicas SET {sets} WHERE id=?", vals)
+        audit_log(c, usuario=usuario, accion='MODIFICAR_FICHA', tabla='fichas_tecnicas',
+                  registro_id=fid, antes=antes,
+                  despues={k: d.get(k) for k in d if k in allowed},
+                  detalle=f"Modificó ficha técnica id={fid}")
         conn.commit()
     return jsonify({'ok': True})
 
@@ -334,6 +372,7 @@ def invima_list():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        usuario = session.get('compras_user', 'sistema')
         c.execute("""INSERT INTO registros_invima
                      (producto,num_registro,num_lote,tipo_tramite,fecha_expedicion,fecha_vencimiento,estado,notas)
                      VALUES (?,?,?,?,?,?,?,?)""",
@@ -341,8 +380,12 @@ def invima_list():
                    d.get('tipo_tramite', 'Notificacion Sanitaria'),
                    d.get('fecha_expedicion', ''), d.get('fecha_vencimiento', ''),
                    d.get('estado', 'Vigente'), d.get('notas', '')))
-        conn.commit()
         rid = c.lastrowid
+        audit_log(c, usuario=usuario, accion='CREAR_REGISTRO_INVIMA', tabla='registros_invima',
+                  registro_id=rid,
+                  despues={k: d.get(k) for k in ('producto','num_registro','tipo_tramite','fecha_vencimiento','estado')},
+                  detalle=f"Creó registro INVIMA · {d.get('producto','')} ({d.get('num_registro','—')})")
+        conn.commit()
         return jsonify({'ok': True, 'id': rid})
     c.execute("SELECT * FROM registros_invima ORDER BY fecha_vencimiento ASC")
     cols = [x[0] for x in c.description]
@@ -355,10 +398,16 @@ def invima_update(rid):
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
     c = conn.cursor()
+    usuario = session.get('compras_user', 'sistema')
     if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
+        if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
+        antes_row = c.execute("SELECT producto, num_registro, estado, fecha_vencimiento FROM registros_invima WHERE id=?", (rid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute("DELETE FROM registros_invima WHERE id=?", (rid,))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_REGISTRO_INVIMA', tabla='registros_invima',
+                  registro_id=rid, antes=antes,
+                  detalle=f"Eliminó registro INVIMA id={rid}" + (f" ({antes.get('num_registro','—')})" if antes else ""))
         conn.commit()
         return jsonify({'ok': True})
     d = request.json or {}
@@ -367,7 +416,13 @@ def invima_update(rid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [rid]
     if sets:
+        antes_row = c.execute("SELECT producto, num_registro, estado, fecha_vencimiento FROM registros_invima WHERE id=?", (rid,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute(f"UPDATE registros_invima SET {sets} WHERE id=?", vals)
+        audit_log(c, usuario=usuario, accion='MODIFICAR_REGISTRO_INVIMA', tabla='registros_invima',
+                  registro_id=rid, antes=antes,
+                  despues={k: d.get(k) for k in d if k in allowed},
+                  detalle=f"Modificó registro INVIMA id={rid}")
         conn.commit()
     return jsonify({'ok': True})
 
@@ -380,6 +435,7 @@ def documentos_list():
     c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        usuario = session.get('compras_user', 'sistema')
         # Calcular fecha_proxima_revision si no viene explicita
         from datetime import datetime as _dt, timedelta as _td
         fecha_emision = d.get('fecha_emision', _dt.now().strftime('%Y-%m-%d'))
@@ -415,8 +471,12 @@ def documentos_list():
                        d.get('fecha_revision', ''), d.get('responsable', ''),
                        d.get('estado', 'Vigente'), d.get('url_documento', ''),
                        d.get('notas', '')))
-        conn.commit()
         did = c.lastrowid
+        audit_log(c, usuario=usuario, accion='CREAR_SGD', tabla='documentos_sgd',
+                  registro_id=did,
+                  despues={k: d.get(k) for k in ('tipo','codigo','nombre','version','estado','responsable')},
+                  detalle=f"Creó SGD {d.get('tipo','SOP')} {d.get('codigo','')} · {d.get('nombre','')}")
+        conn.commit()
         return jsonify({'ok': True, 'id': did, 'fecha_proxima_revision': fecha_proxima})
     c.execute("SELECT * FROM documentos_sgd ORDER BY tipo, codigo")
     cols = [x[0] for x in c.description]
@@ -465,6 +525,10 @@ def documento_revisado(did):
     c.execute("""UPDATE documentos_sgd
                  SET fecha_revision=?, fecha_proxima_revision=?
                  WHERE id=?""", (hoy, proxima, did))
+    audit_log(c, usuario=session.get('compras_user', 'sistema'),
+              accion='REVISAR_SGD', tabla='documentos_sgd', registro_id=did,
+              despues={'fecha_revision': hoy, 'fecha_proxima_revision': proxima},
+              detalle=f"Marcó SGD id={did} como revisado · próxima {proxima}")
     conn.commit()
     return jsonify({'ok': True, 'fecha_revision': hoy, 'fecha_proxima_revision': proxima})
 
@@ -474,10 +538,16 @@ def documento_update(did):
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
     c = conn.cursor()
+    usuario = session.get('compras_user', 'sistema')
     if request.method == 'DELETE':
-        if session.get('compras_user') not in ADMIN_USERS:
+        if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
+        antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute("DELETE FROM documentos_sgd WHERE id=?", (did,))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_SGD', tabla='documentos_sgd',
+                  registro_id=did, antes=antes,
+                  detalle=f"Eliminó SGD id={did}" + (f" ({antes.get('codigo','')})" if antes else ""))
         conn.commit()
         return jsonify({'ok': True})
     d = request.json or {}
@@ -486,6 +556,12 @@ def documento_update(did):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [did]
     if sets:
+        antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
+        antes = dict(antes_row) if antes_row else None
         c.execute(f"UPDATE documentos_sgd SET {sets} WHERE id=?", vals)
+        audit_log(c, usuario=usuario, accion='MODIFICAR_SGD', tabla='documentos_sgd',
+                  registro_id=did, antes=antes,
+                  despues={k: d.get(k) for k in d if k in allowed},
+                  detalle=f"Modificó SGD id={did}")
         conn.commit()
     return jsonify({'ok': True})
