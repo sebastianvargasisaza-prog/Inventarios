@@ -119,6 +119,67 @@ def test_lote_trazabilidad_lote_corto_400(app, db_clean):
     assert r.status_code == 400
 
 
+def test_cliente_trazabilidad_requires_auth(client, db_clean):
+    r = client.get("/api/aseguramiento/reportes/cliente-trazabilidad/1")
+    assert r.status_code == 401
+
+
+def test_cliente_trazabilidad_user_no_calidad_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.get("/api/aseguramiento/reportes/cliente-trazabilidad/1")
+    assert r.status_code == 403
+
+
+def test_cliente_trazabilidad_inexistente_404(app, db_clean):
+    c = _login(app, "laura")
+    r = c.get("/api/aseguramiento/reportes/cliente-trazabilidad/99999")
+    assert r.status_code == 404
+
+
+def test_cliente_trazabilidad_estructura(app, db_clean):
+    """Cliente existente devuelve estructura completa."""
+    c = _login(app, "laura")
+    # Crear cliente test
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cur = conn.execute("""
+        INSERT INTO clientes (codigo, nombre, empresa, activo)
+        VALUES ('CLI-TRAZA-T', 'Cliente Traza Test', 'ANIMUS', 1)
+    """)
+    cid = cur.lastrowid
+    conn.commit(); conn.close()
+    try:
+        r = c.get(f"/api/aseguramiento/reportes/cliente-trazabilidad/{cid}")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["cliente"]["nombre"] == "Cliente Traza Test"
+        assert "despachos" in data
+        assert "pedidos" in data
+        assert "lotes_unicos" in data
+        assert "resumen" in data
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM clientes WHERE id=?", (cid,))
+        conn.commit(); conn.close()
+
+
+def test_audit_trail_csv_export(app, db_clean):
+    """Export CSV devuelve text/csv con headers correctos."""
+    c = _login(app, "laura")
+    r = c.get("/api/aseguramiento/reportes/audit-trail/csv")
+    assert r.status_code == 200
+    assert 'text/csv' in r.headers.get('Content-Type', '')
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
+    body = r.get_data(as_text=True)
+    # Headers presentes
+    assert 'usuario' in body and 'accion' in body and 'fecha' in body
+
+
+def test_audit_trail_csv_user_no_calidad_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.get("/api/aseguramiento/reportes/audit-trail/csv")
+    assert r.status_code == 403
+
+
 def test_lote_trazabilidad_encuentra_desviacion(app, db_clean):
     """Si una desviación menciona el lote, aparece en la cadena."""
     c = _login(app, "laura")

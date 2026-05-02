@@ -2734,6 +2734,121 @@ def reporte_audit_trail():
     })
 
 
+@bp.route('/api/aseguramiento/reportes/cliente-trazabilidad/<int:cid>', methods=['GET'])
+def reporte_cliente_trazabilidad(cid):
+    """Dado un cliente, devuelve qué lotes/SKUs recibió.
+
+    Inverso del lote-trazabilidad. Útil para:
+    - Recall: notificar al cliente con lista de su pedido afectado.
+    - Auditoría: detalle de despachos a un cliente específico.
+    """
+    user = session.get('compras_user', '')
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    db = get_db()
+    cliente = db.execute("""
+        SELECT id, codigo, nombre, empresa, email, telefono, nit
+        FROM clientes WHERE id=?
+    """, (cid,)).fetchone()
+    if not cliente:
+        return jsonify({'error': 'cliente no encontrado'}), 404
+    cli_dict = {
+        'id': cliente[0], 'codigo': cliente[1], 'nombre': cliente[2],
+        'empresa': cliente[3], 'email': cliente[4],
+        'telefono': cliente[5], 'nit': cliente[6],
+    }
+    # Despachos con lotes (recall-ready)
+    despachos = [{
+        'numero': r[0], 'fecha': r[1], 'sku': r[2], 'descripcion': r[3],
+        'lote_pt': r[4], 'cantidad': r[5],
+    } for r in db.execute("""
+        SELECT d.numero, d.fecha, di.sku, di.descripcion, di.lote_pt, di.cantidad
+        FROM despachos d
+          INNER JOIN despachos_items di ON di.numero_despacho=d.numero
+        WHERE d.cliente_id=?
+        ORDER BY d.fecha DESC LIMIT 500
+    """, (cid,)).fetchall()]
+    # Pedidos
+    pedidos = [{
+        'numero': r[0], 'fecha': r[1], 'estado': r[2], 'valor_total': r[3],
+    } for r in db.execute("""
+        SELECT numero, fecha, estado, valor_total
+        FROM pedidos WHERE cliente_id=?
+        ORDER BY fecha DESC LIMIT 200
+    """, (cid,)).fetchall()]
+    # Lotes únicos recibidos (para recall rápido)
+    lotes_unicos = list({d['lote_pt'] for d in despachos if d['lote_pt']})
+    return jsonify({
+        'cliente': cli_dict,
+        'consulta_at': datetime.now().isoformat(),
+        'consultado_por': user,
+        'despachos': despachos,
+        'pedidos': pedidos,
+        'lotes_unicos': lotes_unicos,
+        'resumen': {
+            'despachos': len(despachos),
+            'pedidos': len(pedidos),
+            'lotes_distintos': len(lotes_unicos),
+        },
+    })
+
+
+@bp.route('/api/aseguramiento/reportes/audit-trail/csv', methods=['GET'])
+def reporte_audit_trail_csv():
+    """Export CSV del audit-trail · útil para enviar a INVIMA en físico.
+
+    Mismos query params que /reportes/audit-trail.
+    """
+    user = session.get('compras_user', '')
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    accion = (request.args.get('accion') or '').strip()
+    tabla = (request.args.get('tabla') or '').strip()
+    usuario_filtro = (request.args.get('usuario') or '').strip()
+    if not desde:
+        desde = (datetime.now() - timedelta(days=30)).date().isoformat()
+    if not hasta:
+        hasta = datetime.now().date().isoformat()
+    where = ['date(fecha) >= ?', 'date(fecha) <= ?']
+    params = [desde, hasta]
+    if accion:
+        where.append('accion = ?'); params.append(accion)
+    if tabla:
+        where.append('tabla = ?'); params.append(tabla)
+    if usuario_filtro:
+        where.append('usuario = ?'); params.append(usuario_filtro)
+    sql = f"""
+        SELECT id, usuario, accion, tabla, registro_id, antes, despues,
+               detalle, ip, fecha
+        FROM audit_log
+        WHERE {' AND '.join(where)}
+        ORDER BY fecha DESC, id DESC
+        LIMIT 10000
+    """
+    rows = get_db().execute(sql, params).fetchall()
+    # CSV manual (sin pandas) · headers + filas escapadas
+    import csv as _csv
+    import io as _io
+    buf = _io.StringIO()
+    writer = _csv.writer(buf, quoting=_csv.QUOTE_MINIMAL)
+    writer.writerow(['id','usuario','accion','tabla','registro_id',
+                     'antes','despues','detalle','ip','fecha'])
+    for r in rows:
+        writer.writerow([str(c) if c is not None else '' for c in r])
+    fname = f'audit_trail_{desde}_{hasta}.csv'
+    from flask import Response as _Response
+    return _Response(
+        buf.getvalue(),
+        mimetype='text/csv; charset=utf-8',
+        headers={
+            'Content-Disposition': f'attachment; filename="{fname}"',
+            'Cache-Control': 'no-store',
+        }
+    )
+
+
 @bp.route('/api/aseguramiento/reportes/lote-trazabilidad/<path:lote>', methods=['GET'])
 def reporte_lote_trazabilidad(lote):
     """Dado un lote, devuelve toda la cadena · recepción → uso → despachos.

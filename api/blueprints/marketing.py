@@ -811,6 +811,16 @@ def mkt_campanas():
         d = request.get_json() or {}
         if not d.get("nombre"):
             return jsonify({"error": "nombre requerido"}), 400
+        # Money sanity validations · audit zero-error 2-may-2026
+        from http_helpers import validate_money
+        presupuesto, err_p = validate_money(d.get("presupuesto", 0), allow_zero=True,
+                                              field_name='presupuesto')
+        if err_p:
+            return jsonify(err_p), 400
+        gastado, err_g = validate_money(d.get("presupuesto_gastado", 0), allow_zero=True,
+                                          field_name='presupuesto_gastado')
+        if err_g:
+            return jsonify(err_g), 400
         c.execute("""
             INSERT INTO marketing_campanas
             (nombre, tipo, estado, presupuesto, presupuesto_gastado,
@@ -819,7 +829,7 @@ def mkt_campanas():
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             d["nombre"], d.get("tipo", "Digital"), d.get("estado", "Planificada"),
-            d.get("presupuesto", 0), d.get("presupuesto_gastado", 0),
+            presupuesto, gastado,
             d.get("fecha_inicio"), d.get("fecha_fin"),
             d.get("sku_objetivo", ""), d.get("objetivo_unidades", 0),
             d.get("canal", ""), d.get("notas", ""), u
