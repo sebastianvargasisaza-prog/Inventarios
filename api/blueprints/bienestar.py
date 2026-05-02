@@ -73,8 +73,19 @@ def notificaciones_handler():
              (d.get('fecha_fin') or '').strip() or None,
              (d.get('adjunto_url') or '').strip() or None,
              notificado))
+        nid = c.lastrowid
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=user, accion='CREAR_NOTIF_BIENESTAR',
+                tabla='notificaciones_empleados', registro_id=nid,
+                despues={'tipo': tipo, 'asunto': asunto[:200],
+                          'fecha_inicio': d.get('fecha_inicio'),
+                          'fecha_fin': d.get('fecha_fin')},
+                detalle=f"{user} solicitó {tipo} · {asunto[:80]}")
+        except Exception:
+            pass
         conn.commit()
-        return jsonify({'ok': True, 'id': c.lastrowid}), 201
+        return jsonify({'ok': True, 'id': nid}), 201
 
     # GET — filtros opcionales:
     #   ?solo_mias=1  → solo las creadas por el usuario actual
@@ -131,9 +142,18 @@ def notificacion_resolver(nid):
         SET estado=?, comentario_jefe=COALESCE(?, comentario_jefe),
             resuelto_por=?, resuelto_en=datetime('now')
         WHERE id=?""", (nuevo, coment, user, nid))
-    conn.commit()
     if cur.rowcount == 0:
         return jsonify({'error': 'no encontrada'}), 404
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='RESOLVER_NOTIF_BIENESTAR',
+            tabla='notificaciones_empleados', registro_id=nid,
+            despues={'estado': nuevo, 'comentario': (coment or '')[:200],
+                      'resuelto_por': user},
+            detalle=f"Jefe {user} resolvió notif id={nid} → {nuevo}")
+    except Exception:
+        pass
+    conn.commit()
     # Push notif in-app al empleado
     if fila:
         try:
