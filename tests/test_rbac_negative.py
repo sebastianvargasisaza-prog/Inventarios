@@ -53,6 +53,42 @@ def test_calidad_post_nc_user_no_calidad_403(app, db_clean):
     assert r.status_code == 403
 
 
+def test_calidad_post_capa_user_no_calidad_403(app, db_clean):
+    """POST CAPA · audit zero-error 2-may-2026 (cierre Calidad)."""
+    c = _login(app, "luis")
+    r = c.post("/api/calidad/capa",
+               json={"nc_id": 1, "tipo": "correctiva",
+                     "descripcion": "Test sin permiso CAPA"},
+               headers=csrf_headers())
+    assert r.status_code == 403
+
+
+def test_calidad_patch_capa_user_no_calidad_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.patch("/api/calidad/capa/9999",
+                json={"estado": "Verificada"},
+                headers=csrf_headers())
+    assert r.status_code == 403
+
+
+def test_calidad_post_auditorias_user_no_calidad_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.post("/api/calidad/auditorias",
+               json={"tipo": "interna", "ente_auditado": "Producción"},
+               headers=csrf_headers())
+    assert r.status_code == 403
+
+
+def test_calidad_post_estabilidades_user_no_calidad_403(app, db_clean):
+    c = _login(app, "luis")
+    r = c.post("/api/calidad/estabilidades",
+               json={"producto": "P", "lote_piloto": "L1",
+                     "condicion": "30C/65HR", "tiempo_dias": 30,
+                     "fecha_inicio": "2026-05-01"},
+               headers=csrf_headers())
+    assert r.status_code == 403
+
+
 # ─── Compliance: POST endpoints requieren responsables BPM ─────────────
 
 def test_compliance_post_capa_user_no_responsable_403(app, db_clean):

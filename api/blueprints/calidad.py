@@ -165,7 +165,16 @@ def calidad_bandeja():
     out = {'fecha_hoy': fecha_hoy, 'secciones': {}, 'kpis': {}}
 
     # ── 1. Lotes en cuarentena (MP/ME/MEM) ─────────────────────────────
+    # Audit zero-error 2-may-2026: KPIs reales · COUNT separado del LIMIT.
+    # Antes 'total' era len(items) capeado a LIMIT 100 → KPI incorrecto si >100.
     try:
+        kpi_row = c.execute("""
+            SELECT COUNT(*),
+                   COUNT(CASE WHEN (julianday('now') - julianday(m.fecha)) > 5 THEN 1 END)
+            FROM movimientos m
+            LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
+            WHERE m.tipo = 'Entrada' AND COALESCE(m.estado_lote, '') = 'Cuarentena'
+        """).fetchone()
         rows = c.execute("""
             SELECT m.material_id, m.material_nombre, m.lote, m.proveedor,
                    m.cantidad, m.fecha,
@@ -176,7 +185,7 @@ def calidad_bandeja():
             WHERE m.tipo = 'Entrada'
               AND COALESCE(m.estado_lote, '') = 'Cuarentena'
             ORDER BY m.fecha ASC
-            LIMIT 100
+            LIMIT 20
         """).fetchall()
         items = [{
             'material_id': r[0], 'material_nombre': r[1],
@@ -185,9 +194,9 @@ def calidad_bandeja():
             'tipo': r[7], 'critico': (r[6] or 0) > 5,
         } for r in rows]
         out['secciones']['lotes_cuarentena'] = {
-            'total': len(items),
-            'criticos': sum(1 for x in items if x['critico']),
-            'items': items[:20],  # solo top 20 más antiguos
+            'total': kpi_row[0] or 0,
+            'criticos': kpi_row[1] or 0,
+            'items': items,
         }
     except Exception as e:
         log.warning('bandeja lotes_cuarentena fallo: %s', e)
@@ -195,6 +204,11 @@ def calidad_bandeja():
 
     # ── 2. NCs abiertas ────────────────────────────────────────────────
     try:
+        kpi_row = c.execute("""
+            SELECT COUNT(*),
+                   COUNT(CASE WHEN impacto IN ('Critico','Alto') THEN 1 END)
+            FROM no_conformidades WHERE estado = 'Abierta'
+        """).fetchone()
         rows = c.execute("""
             SELECT id, fecha, tipo, descripcion, area, responsable, impacto,
                    CAST((julianday('now') - julianday(fecha)) AS INTEGER) as dias_abierta
@@ -204,7 +218,7 @@ def calidad_bandeja():
                 WHEN 'Critico' THEN 0 WHEN 'Alto' THEN 1
                 WHEN 'Medio' THEN 2 ELSE 3 END,
                 fecha ASC
-            LIMIT 50
+            LIMIT 15
         """).fetchall()
         items = [{
             'id': r[0], 'fecha': r[1], 'tipo': r[2],
@@ -213,9 +227,9 @@ def calidad_bandeja():
             'dias_abierta': r[7], 'urgente': (r[7] or 0) > 30,
         } for r in rows]
         out['secciones']['ncs_abiertas'] = {
-            'total': len(items),
-            'criticas': sum(1 for x in items if x['impacto'] in ('Critico', 'Alto')),
-            'items': items[:15],
+            'total': kpi_row[0] or 0,
+            'criticas': kpi_row[1] or 0,
+            'items': items,
         }
     except Exception as e:
         log.warning('bandeja ncs_abiertas fallo: %s', e)
@@ -223,6 +237,10 @@ def calidad_bandeja():
 
     # ── 3. OOS abiertas (Out of Specification) ─────────────────────────
     try:
+        kpi_oos = c.execute("""
+            SELECT COUNT(*) FROM calidad_oos
+            WHERE COALESCE(estado, 'abierto') NOT IN ('cerrado', 'descartado')
+        """).fetchone()
         rows = c.execute("""
             SELECT id, fecha_deteccion, producto, lote, parametro, valor_obtenido,
                    especificacion, severidad, estado,
@@ -230,7 +248,7 @@ def calidad_bandeja():
             FROM calidad_oos
             WHERE COALESCE(estado, 'abierto') NOT IN ('cerrado', 'descartado')
             ORDER BY fecha_deteccion ASC
-            LIMIT 30
+            LIMIT 15
         """).fetchall()
         items = [{
             'id': r[0], 'fecha': r[1], 'producto': r[2], 'lote': r[3],
@@ -238,8 +256,8 @@ def calidad_bandeja():
             'severidad': r[7], 'estado': r[8], 'dias_abierta': r[9],
         } for r in rows]
         out['secciones']['oos_abiertas'] = {
-            'total': len(items),
-            'items': items[:15],
+            'total': kpi_oos[0] or 0,
+            'items': items,
         }
     except Exception as e:
         log.warning('bandeja oos_abiertas fallo: %s', e)
@@ -904,7 +922,11 @@ def coa_por_lote(lote):
 
 @bp.route('/api/calidad/estabilidades', methods=['GET','POST'])
 def estabilidades_list():
-    if 'compras_user' not in session:
+    # POST requiere RBAC Calidad/Admin · GET libre
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error':'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
@@ -912,6 +934,7 @@ def estabilidades_list():
         for k in ('producto','lote_piloto','condicion','tiempo_dias','fecha_inicio'):
             if not d.get(k):
                 return jsonify({'error':f'{k} requerido'}), 400
+        user = session.get('compras_user','sistema')
         c.execute("""INSERT INTO estabilidades
             (producto, lote_piloto, condicion, tiempo_dias, tiempo_etiqueta,
              fecha_inicio, fecha_evaluacion, parametros_json, conforme,
@@ -922,10 +945,20 @@ def estabilidades_list():
              d['fecha_inicio'], d.get('fecha_evaluacion'),
              d.get('parametros_json','{}'), 1 if d.get('conforme', True) else 0,
              d.get('observaciones',''),
-             d.get('analista', session.get('compras_user','')),
+             d.get('analista', user),
              d.get('estado','Programado')))
+        est_id = c.lastrowid
+        try:
+            audit_log(c, usuario=user, accion='CREAR_ESTABILIDAD',
+                      tabla='estabilidades', registro_id=est_id,
+                      despues={'producto': d['producto'][:80],
+                                'lote_piloto': d['lote_piloto'][:80],
+                                'condicion': d['condicion'][:80],
+                                'tiempo_dias': int(d['tiempo_dias'])})
+        except Exception as e:
+            log.warning('audit_log CREAR_ESTABILIDAD fallo: %s', e)
         conn.commit()
-        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+        return jsonify({'ok':True, 'id':est_id}), 201
     producto = request.args.get('producto','').strip()
     lote = request.args.get('lote','').strip()
     where, params = [], []
@@ -943,7 +976,11 @@ def estabilidades_list():
 
 @bp.route('/api/calidad/capa', methods=['GET','POST'])
 def capa_list():
-    if 'compras_user' not in session:
+    # POST requiere RBAC Calidad/Admin · GET es libre
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error':'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
@@ -953,14 +990,23 @@ def capa_list():
                 return jsonify({'error':f'{k} requerido'}), 400
         if d['tipo'] not in ('correctiva','preventiva','contencion'):
             return jsonify({'error':'tipo debe ser correctiva/preventiva/contencion'}), 400
+        user = session.get('compras_user','sistema')
         c.execute("""INSERT INTO capa_acciones
             (nc_id, tipo, descripcion, responsable, fecha_compromiso, estado)
             VALUES (?,?,?,?,?,?)""",
             (int(d['nc_id']), d['tipo'], d['descripcion'],
              d.get('responsable',''), d.get('fecha_compromiso'),
              d.get('estado','Pendiente')))
+        capa_id = c.lastrowid
+        try:
+            audit_log(c, usuario=user, accion='CREAR_CAPA',
+                      tabla='capa_acciones', registro_id=capa_id,
+                      despues={'nc_id': d['nc_id'], 'tipo': d['tipo'],
+                                'descripcion': d['descripcion'][:200]})
+        except Exception as e:
+            log.warning('audit_log CREAR_CAPA fallo: %s', e)
         conn.commit()
-        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+        return jsonify({'ok':True, 'id':capa_id}), 201
     nc_id = request.args.get('nc_id','').strip()
     if nc_id:
         c.execute("SELECT * FROM capa_acciones WHERE nc_id=? ORDER BY id ASC", (nc_id,))
@@ -972,9 +1018,10 @@ def capa_list():
 
 @bp.route('/api/calidad/capa/<int:cid>', methods=['PATCH'])
 def capa_update(cid):
-    if 'compras_user' not in session:
-        return jsonify({'error':'No autorizado'}), 401
+    err, code = _require_calidad()
+    if err: return err, code
     d = request.json or {}
+    user = session.get('compras_user','sistema')
     conn = get_db(); c = conn.cursor()
     fields = ['descripcion','responsable','fecha_compromiso','fecha_ejecucion',
               'evidencia_url','efectiva','verificada_por','fecha_verificacion','estado']
@@ -986,6 +1033,12 @@ def capa_update(cid):
         sets += ', fecha_verificacion=date(\'now\')'
     vals.append(cid)
     c.execute(f"UPDATE capa_acciones SET {sets} WHERE id=?", vals)
+    try:
+        audit_log(c, usuario=user, accion='ACTUALIZAR_CAPA',
+                  tabla='capa_acciones', registro_id=cid,
+                  despues={k: d[k] for k in fields if k in d})
+    except Exception as e:
+        log.warning('audit_log ACTUALIZAR_CAPA fallo: %s', e)
     conn.commit()
     return jsonify({'ok':True})
 
@@ -994,21 +1047,34 @@ def capa_update(cid):
 
 @bp.route('/api/calidad/auditorias', methods=['GET','POST'])
 def auditorias_list():
-    if 'compras_user' not in session:
+    # POST requiere RBAC Calidad/Admin · GET libre
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error':'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
         if not d.get('tipo') or not d.get('ente_auditado'):
             return jsonify({'error':'tipo y ente_auditado requeridos'}), 400
+        user = session.get('compras_user','sistema')
         c.execute("""INSERT INTO auditorias
             (tipo, ente_auditado, fecha_planeada, auditor, alcance, estado)
             VALUES (?,?,?,?,?,?)""",
             (d['tipo'], d['ente_auditado'], d.get('fecha_planeada'),
-             d.get('auditor', session.get('compras_user','')),
+             d.get('auditor', user),
              d.get('alcance',''), d.get('estado','Planeada')))
+        aud_id = c.lastrowid
+        try:
+            audit_log(c, usuario=user, accion='CREAR_AUDITORIA',
+                      tabla='auditorias', registro_id=aud_id,
+                      despues={'tipo': d['tipo'], 'ente': d['ente_auditado'][:200],
+                                'fecha': d.get('fecha_planeada')})
+        except Exception as e:
+            log.warning('audit_log CREAR_AUDITORIA fallo: %s', e)
         conn.commit()
-        return jsonify({'ok':True, 'id':c.lastrowid}), 201
+        return jsonify({'ok':True, 'id':aud_id}), 201
     c.execute("SELECT * FROM auditorias ORDER BY fecha_planeada DESC LIMIT 100")
     cols = [x[0] for x in c.description]
     return jsonify([dict(zip(cols,r)) for r in c.fetchall()])
