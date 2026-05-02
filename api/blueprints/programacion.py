@@ -4008,6 +4008,8 @@ def prog_completar_evento(evento_id):
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
 
+    # Pre-check rápido para dry_run y mensaje 409 amigable cuando ya descontado.
+    # NO es race-safe por sí solo · el claim atómico dentro del try lo es.
     if descontado_at and not forzar:
         return jsonify({
             'error': f'Inventario ya fue descontado el {descontado_at}',
@@ -4093,6 +4095,39 @@ def prog_completar_evento(evento_id):
     descontados_mees = []
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
     try:
+        # ATOMIC CLAIM (audit zero-error 2-may-2026 · CERO SESGO).
+        # Race condition antes: SELECT descontado_at + check + heavy work +
+        # UPDATE final → 2 requests paralelos podían pasar el SELECT y
+        # descontar 2x. Fix: claim atómico UPDATE-WHERE inventario_descontado_at='' .
+        # Solo uno gana · el otro recibe rowcount=0 → 409.
+        # Está dentro del try · si falla algo post-claim, rollback libera.
+        if forzar:
+            claim_cur = c.execute("""
+                UPDATE produccion_programada
+                   SET inventario_descontado_at = ?
+                 WHERE id = ?
+            """, (fecha_iso, evento_id))
+        else:
+            claim_cur = c.execute("""
+                UPDATE produccion_programada
+                   SET inventario_descontado_at = ?
+                 WHERE id = ?
+                   AND COALESCE(inventario_descontado_at, '') = ''
+            """, (fecha_iso, evento_id))
+        if claim_cur.rowcount == 0:
+            # Otro request ganó la carrera · liberar transacción y devolver 409
+            try: conn.rollback()
+            except Exception: pass
+            actual = c.execute(
+                "SELECT inventario_descontado_at FROM produccion_programada WHERE id=?",
+                (evento_id,)).fetchone()
+            actual_at = actual[0] if actual else descontado_at
+            return jsonify({
+                'error': f'Inventario ya fue descontado el {actual_at}',
+                'codigo': 'YA_DESCONTADO_RACE',
+                'hint': 'Otro proceso descontó al mismo tiempo · idempotencia respetada',
+                'inventario_descontado_at': actual_at,
+            }), 409
         # MPs → FEFO REAL: distribuir el consumo entre lotes según fecha
         # de vencimiento (más cercano primero). Cada lote genera su propio
         # movimiento de Salida con cantidad específica. Si la suma de stock
@@ -4144,15 +4179,15 @@ def prog_completar_evento(evento_id):
             except sqlite3.OperationalError:
                 # Si tabla mee no existe, seguimos
                 continue
-        # Actualizar produccion_programada + marcar área 'sucia'
+        # Actualizar produccion_programada · estado + observaciones
+        # (inventario_descontado_at YA fue seteado por el ATOMIC CLAIM al inicio)
         c.execute("""
             UPDATE produccion_programada
                SET estado='completado',
-                   inventario_descontado_at=?,
                    observaciones = COALESCE(observaciones,'') ||
                                    ' | INVENTARIO DESCONTADO ' || ? || ' por ' || ?
              WHERE id=?
-        """, (fecha_iso, fecha_iso, user, pid))
+        """, (fecha_iso, user, pid))
         # Audit log INVIMA · dispensación es operación regulada GMP/BPM
         # (Resolución 2214/2021). Trazabilidad obligatoria: quién dispensó qué
         # producción y cuándo se descontó inventario.
