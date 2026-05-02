@@ -10066,6 +10066,233 @@ def _stock_mp(material_id, conn):
     return stock_mp_total(conn, material_id)
 
 
+@bp.route('/api/planta/cronograma-areas', methods=['GET'])
+def planta_cronograma_areas():
+    """Matriz semanal · 10 áreas × 5 días Lun-Vie con todas las fases.
+
+    Vista que Alejandro pidió (programacion_mayo_areas.html). Auto-alimentada
+    desde data existente:
+      - FAB1/FYE2/FYE3 ← produccion_programada (sala PROD1/PROD2/PROD3)
+      - ENV1/ENV2     ← produccion_envasado + produccion_programada (PROD4)
+      - MICRO         ← calidad_micro_resultados (fecha_muestreo)
+      - LIB           ← cola_liberacion (fecha_min_liberacion)
+      - ACOND         ← acondicionamiento
+      - ENTR          ← despachos (fecha)
+      - LIMP          ← limpieza_profunda_calendario
+
+    Query params:
+      desde · YYYY-MM-DD del lunes (default: lunes de esta semana)
+
+    Response:
+      {
+        rango: {desde, hasta, semana},
+        days: ['Lun 04', ..., 'Vie 08'],
+        areas: {
+          fab1: [[{t,l,u}, ...], [], ...],   # 5 listas (Lun-Vie)
+          fye2, fye3, env1, env2, micro, lib, acond, entr, limp: idem
+        }
+      }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import datetime as _dt, timedelta as _td
+
+    # Calcular lunes de la semana
+    desde_param = (request.args.get('desde') or '').strip()
+    if desde_param:
+        try:
+            d0 = _dt.strptime(desde_param[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'desde inválido (YYYY-MM-DD)'}), 400
+    else:
+        hoy = _dt.now().date()
+        d0 = hoy - _td(days=hoy.weekday())  # lunes
+    # Avanzar a lunes si cae en mié/dom
+    while d0.weekday() != 0:
+        d0 = d0 - _td(days=1)
+    fechas = [d0 + _td(days=i) for i in range(5)]  # Lun-Vie
+    fechas_iso = [f.isoformat() for f in fechas]
+    fechas_set = set(fechas_iso)
+    desde_iso = fechas_iso[0]
+    hasta_iso = fechas_iso[-1]
+
+    days_labels_es = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie']
+    days_labels = [f"{days_labels_es[i]} {fechas[i].strftime('%d')}" for i in range(5)]
+
+    # Matriz inicializada · 10 áreas × 5 días
+    areas_keys = ['fab1', 'fye2', 'fye3', 'env1', 'env2',
+                  'micro', 'lib', 'acond', 'entr', 'limp']
+    matriz = {k: [[] for _ in range(5)] for k in areas_keys}
+
+    def _idx(fecha_iso):
+        try:
+            return fechas_iso.index(fecha_iso)
+        except ValueError:
+            return None
+
+    def _add(area, idx, t, label, urgente=False):
+        if idx is None: return
+        chip = {'t': t, 'l': label}
+        if urgente:
+            chip['u'] = True
+        matriz[area][idx].append(chip)
+
+    conn = get_db(); c = conn.cursor()
+
+    # ── FAB · produccion_programada con area_id mapeado a PROD1/2/3 ─────
+    # Sala → fila de Alejandro:
+    #   PROD1 → fab1
+    #   PROD2 → fye2 (fase fab del día)
+    #   PROD3 → fye3 (fase fab del día)
+    #   PROD4 → env2 (sala dedicada a envasado en HTML de Alejandro)
+    #   ENV1  → env1
+    SALA_TO_FILA_FAB = {'PROD1': 'fab1', 'PROD2': 'fye2', 'PROD3': 'fye3',
+                         'PROD4': 'env2'}
+    try:
+        rows = c.execute(f"""
+            SELECT pp.fecha_programada, pp.producto, ap.codigo,
+                   COALESCE(pp.observaciones,''),
+                   COALESCE(pp.estado, 'pendiente')
+            FROM produccion_programada pp
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            WHERE pp.fecha_programada BETWEEN ? AND ?
+              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado')
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, producto, sala, obs, estado in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            fila = SALA_TO_FILA_FAB.get(sala or '', 'fab1')
+            urgente = ('urg' in (obs or '').lower() or
+                        'crítico' in (obs or '').lower() or
+                        '⚡' in (obs or ''))
+            _add(fila, idx, 'fab', producto, urgente)
+    except Exception:
+        pass
+
+    # ── ENV · produccion_envasado (iniciado_at o terminado_at en rango) ─
+    try:
+        rows = c.execute(f"""
+            SELECT date(COALESCE(iniciado_at, terminado_at, fecha_creacion)) as fecha,
+                   producto_nombre, lote,
+                   COALESCE(presentacion_etiqueta, ''),
+                   COALESCE(estado, '')
+            FROM produccion_envasado
+            WHERE date(COALESCE(iniciado_at, terminado_at, fecha_creacion))
+                  BETWEEN ? AND ?
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, producto, lote, presentacion, estado in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            label = f"{producto}\n{presentacion}" if presentacion else (producto or '')
+            # Sin info de sala específica · van a env1 por default
+            _add('env1', idx, 'env', label or 'Envasado')
+    except Exception:
+        pass
+
+    # ── MICRO · calidad_micro_resultados (fecha_muestreo o fecha_analisis) ─
+    try:
+        rows = c.execute(f"""
+            SELECT COALESCE(fecha_muestreo, fecha_analisis) as fecha,
+                   producto_nombre, lote, deadline_resultado
+            FROM calidad_micro_resultados
+            WHERE COALESCE(fecha_muestreo, fecha_analisis) BETWEEN ? AND ?
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, producto, lote, deadline in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            label = (producto or 'Muestra MICRO')
+            if deadline:
+                label += f"\n→ libera {deadline[5:10].replace('-','/')}"
+            _add('micro', idx, 'micro', label)
+    except Exception:
+        pass
+
+    # ── LIB · cola_liberacion (fecha_min_liberacion en rango) ───────────
+    try:
+        rows = c.execute(f"""
+            SELECT fecha_min_liberacion, producto_nombre, lote, estado
+            FROM cola_liberacion
+            WHERE fecha_min_liberacion BETWEEN ? AND ?
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, producto, lote, estado in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            label = f"{producto}\n({lote or 'sin-lote'})" if producto else f'Lote {lote}'
+            _add('lib', idx, 'lib', label)
+    except Exception:
+        pass
+
+    # ── ACOND · acondicionamiento (creado_en o fecha_inicio) ───────────
+    try:
+        rows = c.execute(f"""
+            SELECT date(COALESCE(creado_en, datetime('now'))) as fecha,
+                   producto, lote, COALESCE(estado, '')
+            FROM acondicionamiento
+            WHERE date(COALESCE(creado_en, datetime('now')))
+                  BETWEEN ? AND ?
+              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, producto, lote, estado in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            _add('acond', idx, 'acond', producto or f'Lote {lote}')
+    except Exception:
+        pass
+
+    # ── ENTR · despachos (fecha) ────────────────────────────────────────
+    try:
+        rows = c.execute(f"""
+            SELECT date(d.fecha) as fecha, COALESCE(cl.nombre,'') as cliente,
+                   COUNT(di.id) as items
+            FROM despachos d
+              LEFT JOIN clientes cl ON cl.id = d.cliente_id
+              LEFT JOIN despachos_items di ON di.numero_despacho = d.numero
+            WHERE date(d.fecha) BETWEEN ? AND ?
+            GROUP BY d.numero
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, cliente, n_items in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            label = f"Entrega {cliente}" + (f"\n{n_items} items" if n_items else '')
+            _add('entr', idx, 'entr', label.strip() or 'Entrega')
+    except Exception:
+        pass
+
+    # ── LIMP · limpieza_profunda_calendario ─────────────────────────────
+    try:
+        rows = c.execute(f"""
+            SELECT lpc.fecha, lpc.area_codigo,
+                   COALESCE(ap.nombre, lpc.area_codigo) as nombre,
+                   lpc.estado
+            FROM limpieza_profunda_calendario lpc
+            LEFT JOIN areas_planta ap ON ap.codigo = lpc.area_codigo
+            WHERE lpc.fecha BETWEEN ? AND ?
+              AND LOWER(COALESCE(lpc.estado,'')) NOT IN ('cancelada')
+        """, (desde_iso, hasta_iso)).fetchall()
+        for fecha, area_cod, nombre, estado in rows:
+            idx = _idx(fecha)
+            if idx is None:
+                continue
+            _add('limp', idx, 'limp', nombre or area_cod or 'Limpieza')
+    except Exception:
+        pass
+
+    return jsonify({
+        'rango': {
+            'desde': desde_iso, 'hasta': hasta_iso,
+            'semana': f"{fechas[0].strftime('%d')}–{fechas[-1].strftime('%d')} {fechas[0].strftime('%b')} {fechas[0].year}"
+        },
+        'days': days_labels,
+        'areas': matriz,
+    })
+
+
 @bp.route('/api/planta/plan-semanal', methods=['GET'])
 def planta_plan_semanal():
     """Vista consolidada del plan: cada producción ordenada por fecha,

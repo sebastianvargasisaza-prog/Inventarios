@@ -106,6 +106,21 @@ def index():
         return redirect('/login')
     return redirect('/modulos')
 
+@bp.route('/programacion-areas')
+def programacion_areas_page():
+    """Vista calendario por área · cronograma estilo Alejandro.
+
+    Matriz 5 días Lun-Vie × 10 áreas con todas las fases proyectadas
+    automáticamente desde la data del sistema (FAB/ENV/MICRO/LIB/ACOND/
+    ENTR/LIMP). Solo lectura · si Alejandro quiere editar, va al módulo
+    de la fase correspondiente.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/programacion-areas')
+    from templates_py.programacion_areas_html import PROGRAMACION_AREAS_HTML
+    return Response(PROGRAMACION_AREAS_HTML, mimetype='text/html; charset=utf-8')
+
+
 @bp.route('/inventarios')
 @bp.route('/planta')
 def inventarios():
