@@ -813,16 +813,37 @@ def handle_despachos():
         numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
         c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now'),?,?,?)",
                   (numero, d.get('numero_pedido',''), d.get('cliente_id'), session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
+        # Audit zero-error 2-may-2026: trazabilidad lote→cliente recall-ready.
+        # Antes el lote_pt persistido en despachos_items era el que mandó el
+        # frontend (string libre). Ahora se persiste el lote REAL que descontó
+        # FEFO de stock_pt, garantizando que un recall pueda listar todos los
+        # clientes que recibieron el lote afectado.
         for it in (d.get('items') or []):
-            c.execute("INSERT INTO despachos_items (numero_despacho,sku,descripcion,lote_pt,cantidad,precio_unitario) VALUES (?,?,?,?,?,?)",
-                      (numero, it.get('sku',''), it.get('descripcion',''), it.get('lote_pt',''), int(it.get('cantidad',0)), float(it.get('precio_unitario',0))))
-            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
-                         WHERE id=(
-                           SELECT id FROM stock_pt
-                           WHERE sku=? AND unidades_disponible>0
-                           ORDER BY fecha_produccion ASC LIMIT 1
-                         )""",
-                      (int(it.get('cantidad',0)), it.get('sku','')))
+            cantidad = int(it.get('cantidad', 0))
+            sku = it.get('sku', '')
+            # 1. Identificar el lote FEFO que se va a descontar
+            lote_real = None
+            row_lote = c.execute("""
+                SELECT id, lote_produccion FROM stock_pt
+                WHERE sku=? AND unidades_disponible>0
+                ORDER BY fecha_produccion ASC LIMIT 1
+            """, (sku,)).fetchone()
+            if row_lote:
+                lote_real = row_lote[1] or it.get('lote_pt', '')
+                # 2. Descontar del lote identificado (atómico por id)
+                c.execute("""UPDATE stock_pt
+                              SET unidades_disponible=MAX(0, unidades_disponible-?)
+                              WHERE id=?""",
+                          (cantidad, row_lote[0]))
+            else:
+                # No hay stock disponible · usar lote del frontend como fallback
+                lote_real = it.get('lote_pt', '')
+            # 3. Persistir el lote REAL en despachos_items (recall-ready)
+            c.execute("""INSERT INTO despachos_items
+                          (numero_despacho, sku, descripcion, lote_pt, cantidad, precio_unitario)
+                          VALUES (?,?,?,?,?,?)""",
+                      (numero, sku, it.get('descripcion',''),
+                       lote_real, cantidad, float(it.get('precio_unitario',0))))
         if d.get('numero_pedido'):
             c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (d['numero_pedido'],))
         conn.commit()

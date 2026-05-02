@@ -9,13 +9,55 @@ Sebastian (30-abr-2026):
 """
 from flask import Blueprint, jsonify, request, session, Response, redirect
 import json
+import os
+import hmac
+import hashlib
 import logging
+import time
 from datetime import date
 from database import get_db
 from config import ADMIN_USERS
 
 logger = logging.getLogger(__name__)
+log = logger
 bp = Blueprint('comercial', __name__)
+
+
+# ─── Rate limiter en memoria por IP ────────────────────────────────────────
+# Audit zero-error 2-may-2026: webhook público sin rate limit permitía
+# inundar la BD con leads falsos. 5 req/min/IP es suficiente para web3forms
+# (1 lead esperado por sumisión humana) y bloquea bots.
+_RATE_BUCKETS = {}  # ip → [timestamps]
+
+
+def _rate_limit_check(ip: str, max_req: int = 5, window: int = 60) -> bool:
+    """Retorna True si la IP excedió el límite (debe rechazarse)."""
+    now = time.time()
+    bucket = _RATE_BUCKETS.setdefault(ip, [])
+    # Limpiar entradas viejas
+    bucket[:] = [t for t in bucket if (now - t) < window]
+    if len(bucket) >= max_req:
+        return True
+    bucket.append(now)
+    return False
+
+
+def _scrub_webhook_payload(d: dict) -> dict:
+    """Elimina headers/cookies/IP del payload del webhook antes de persistir.
+
+    Audit zero-error 2-may-2026: el INSERT de payload_raw guardaba el dict
+    completo incluyendo posibles headers, cookies, IPs si llegaban en el body.
+    """
+    if not isinstance(d, dict):
+        return {}
+    # Whitelist de claves permitidas (resto se ignora)
+    permitidas = {
+        'Nombre','nombre','name','Email','email','Telefono','telefono','phone',
+        'Empresa','empresa','company','Mensaje','mensaje','message','source',
+        'fuente','asunto','subject','origen','referer_landing',
+    }
+    return {k: str(v)[:500] for k, v in d.items()
+            if k in permitidas and v is not None}
 
 
 # ─── Pagina /comercial ────────────────────────────────────────────────────
@@ -180,16 +222,35 @@ def eos_lead_actualizar(lid):
 
 @bp.route('/api/eos/leads/webhook', methods=['POST'])
 def eos_lead_webhook():
-    """Webhook publico (sin auth) para recibir submissions de web3forms.
+    """Webhook publico (sin auth de sesión) para recibir submissions de web3forms.
+
+    Audit zero-error 2-may-2026: ahora requiere HMAC opcional + rate limit
+    + sanitización del payload. Si la env var EOS_WEBHOOK_SECRET está
+    configurada, el header X-EOS-Signature debe coincidir con
+    HMAC-SHA256(body, EOS_WEBHOOK_SECRET).
 
     Web3Forms envia POST con form fields en el body. Tambien podemos
     recibir desde otros forms.
 
-    Sebastian (30-abr-2026): correo "EOS — nueva solicitud de demo" 30 abr
-    llego como email — webhook lo capturaria directo a BD.
-
     Acepta application/json o application/x-www-form-urlencoded.
     """
+    # ── Rate limit: 5 req/min/IP ──────────────────────────────────────────
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown')
+    ip = (ip or 'unknown').split(',')[0].strip()[:45]
+    if _rate_limit_check(ip):
+        log.warning('eos_lead_webhook rate-limited · ip=%s', ip)
+        return jsonify({'error': 'rate limit excedido', 'codigo': 'RATE_LIMIT'}), 429
+
+    # ── HMAC signature (opcional, recomendado en prod) ────────────────────
+    secret = os.environ.get('EOS_WEBHOOK_SECRET', '').strip()
+    if secret:
+        body_bytes = request.get_data(cache=True) or b''
+        signature = (request.headers.get('X-EOS-Signature') or '').strip()
+        expected = hmac.new(secret.encode(), body_bytes, hashlib.sha256).hexdigest()
+        if not signature or not hmac.compare_digest(signature, expected):
+            log.warning('eos_lead_webhook HMAC fail · ip=%s', ip)
+            return jsonify({'error': 'firma inválida', 'codigo': 'BAD_SIGNATURE'}), 403
+
     try:
         if request.is_json:
             d = request.get_json(force=True, silent=True) or {}
@@ -207,21 +268,23 @@ def eos_lead_webhook():
     empresa = (d.get('Empresa') or d.get('empresa') or d.get('company') or '').strip()
     mensaje = (d.get('Mensaje') or d.get('mensaje') or d.get('message') or '').strip()
     fuente = d.get('source') or 'web3forms'
-    raw = json.dumps(d, ensure_ascii=False, default=str)[:4000]
+    # Audit zero-error: sanitizar payload antes de persistir (no headers/cookies/IP)
+    payload_limpio = _scrub_webhook_payload(d)
+    raw = json.dumps(payload_limpio, ensure_ascii=False, default=str)[:4000]
     conn = get_db(); c = conn.cursor()
     c.execute("""INSERT INTO eos_leads
         (nombre, email, telefono, empresa, mensaje, fuente, payload_raw, owner)
         VALUES (?,?,?,?,?,?,?,?)""",
-        (nombre or None, email or None, telefono or None,
-         empresa or None, mensaje or None, fuente, raw, 'sebastian'))
+        (nombre[:200] or None, email[:200] or None, telefono[:50] or None,
+         empresa[:200] or None, mensaje[:2000] or None, fuente[:100], raw, 'sebastian'))
     new_id = c.lastrowid
     conn.commit()
     # Notif in-app a sebastian
     try:
         from blueprints.notif import push_notif
         push_notif('sebastian', 'generico',
-                   f'🆕 Lead EOS: {nombre or email}',
-                   body=(empresa or '') + ' · ' + (mensaje or '')[:80],
+                   f'🆕 Lead EOS: {(nombre or email)[:60]}',
+                   body=(empresa[:60] if empresa else '') + ' · ' + (mensaje or '')[:80],
                    link='/comercial', remitente=fuente, importante=True)
     except Exception: pass
     return jsonify({'ok': True, 'id': new_id})
