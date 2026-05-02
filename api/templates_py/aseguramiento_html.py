@@ -313,7 +313,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal nueva desviación -->
-<div class="modal-overlay" id="m-desv-new">
+<div class="modal-overlay" id="m-desv-new" role="dialog" aria-modal="true" aria-label="Reportar desviación">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-desv-new')">&times;</button>
     <div class="modal-title">Reportar desviación</div>
@@ -348,7 +348,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal detalle desviación + workflow -->
-<div class="modal-overlay" id="m-desv-det">
+<div class="modal-overlay" id="m-desv-det" role="dialog" aria-modal="true" aria-label="Detalle desviación">
   <div class="modal" style="max-width:900px">
     <button class="modal-close" onclick="closeModal('m-desv-det')">&times;</button>
     <div class="modal-title" id="m-desv-det-title">Detalle</div>
@@ -401,7 +401,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal nueva solicitud -->
-<div class="modal-overlay" id="m-cam-new">
+<div class="modal-overlay" id="m-cam-new" role="dialog" aria-modal="true" aria-label="Solicitar cambio">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-cam-new')">&times;</button>
     <div class="modal-title">Nueva solicitud de cambio</div>
@@ -443,7 +443,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal detalle cambio + workflow -->
-<div class="modal-overlay" id="m-cam-det">
+<div class="modal-overlay" id="m-cam-det" role="dialog" aria-modal="true" aria-label="Detalle cambio">
   <div class="modal" style="max-width:900px">
     <button class="modal-close" onclick="closeModal('m-cam-det')">&times;</button>
     <div class="modal-title" id="m-cam-det-title">Detalle</div>
@@ -497,7 +497,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal nueva queja -->
-<div class="modal-overlay" id="m-qc-new">
+<div class="modal-overlay" id="m-qc-new" role="dialog" aria-modal="true" aria-label="Registrar queja de cliente">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-qc-new')">&times;</button>
     <div class="modal-title">Registrar queja de cliente</div>
@@ -568,7 +568,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal detalle queja + workflow -->
-<div class="modal-overlay" id="m-qc-det">
+<div class="modal-overlay" id="m-qc-det" role="dialog" aria-modal="true" aria-label="Detalle queja">
   <div class="modal" style="max-width:900px">
     <button class="modal-close" onclick="closeModal('m-qc-det')">&times;</button>
     <div class="modal-title" id="m-qc-det-title">Detalle</div>
@@ -627,7 +627,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal nuevo recall -->
-<div class="modal-overlay" id="m-rcl-new">
+<div class="modal-overlay" id="m-rcl-new" role="dialog" aria-modal="true" aria-label="Iniciar recall">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-rcl-new')">&times;</button>
     <div class="modal-title" style="color:#ef4444">🚨 Iniciar recall de producto</div>
@@ -673,7 +673,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal detalle recall + workflow -->
-<div class="modal-overlay" id="m-rcl-det">
+<div class="modal-overlay" id="m-rcl-det" role="dialog" aria-modal="true" aria-label="Detalle recall">
   <div class="modal" style="max-width:900px">
     <button class="modal-close" onclick="closeModal('m-rcl-det')">&times;</button>
     <div class="modal-title" id="m-rcl-det-title">Detalle</div>
@@ -697,7 +697,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal nuevo SGD -->
-<div class="modal-overlay" id="m-sgd">
+<div class="modal-overlay" id="m-sgd" role="dialog" aria-modal="true" aria-label="Documento SGD">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-sgd')">&times;</button>
     <div class="modal-title" id="m-sgd-title">Nuevo documento SGD</div>
@@ -737,7 +737,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </div>
 
 <!-- Modal detalle SGD -->
-<div class="modal-overlay" id="m-sgd-det">
+<div class="modal-overlay" id="m-sgd-det" role="dialog" aria-modal="true" aria-label="Detalle SGD">
   <div class="modal" style="max-width:900px">
     <button class="modal-close" onclick="closeModal('m-sgd-det')">&times;</button>
     <div class="modal-title" id="m-sgd-det-title">Detalle</div>
@@ -1115,23 +1115,39 @@ async function cerrarDesv(id){
   await _postDesvAccion(id, 'cerrar', {efectividad_ok: ok, verificacion_efectividad: verif, observaciones_cierre: obs});
 }
 
-async function _postDesvAccion(id, accion, body){
+// Helper genérico unificado para los 4 workflows ASG.
+// Maps módulo → {endpoint, refresh callbacks, hooks especiales}.
+var _WORKFLOWS = {
+  desviaciones: {path: 'desviaciones', view: function(id){verDesviacion(id);}, list: function(){loadDesviaciones();}},
+  cambios:      {path: 'cambios',      view: function(id){verCambio(id);},     list: function(){loadCambios();}},
+  quejas:       {path: 'quejas',       view: function(id){verQueja(id);},      list: function(){loadQuejas();}},
+  recalls:      {path: 'recalls',      view: function(id){verRecall(id);},     list: function(){loadRecalls();}},
+};
+
+async function _postWorkflowAccion(modulo, id, accion, body){
+  var cfg = _WORKFLOWS[modulo];
+  if(!cfg){ alert('módulo desconocido: '+modulo); return; }
   try{
-    var r = await fetch('/api/aseguramiento/desviaciones/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/'+cfg.path+'/'+id+'/'+accion, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
     var d = await r.json();
-    if(d.ok){
-      // Cierre con efectividad NO OK en desv crítica → backend sugiere recall
-      if(accion === 'cerrar' && d.sugiere_recall){
-        if(confirm('⚠ CAPA NO efectivo en desviación crítica.\n\n¿Iniciar recall ahora con datos pre-rellenados?')){
-          _abrirRecallPrefill(d.recall_prefill || {});
-          loadDesviaciones();
-          return;
-        }
+    if(!d.ok){ alert('Error: '+(d.error||'?')); return; }
+    // Hook: cross-link desv→recall si el backend lo sugiere
+    if(modulo === 'desviaciones' && accion === 'cerrar' && d.sugiere_recall){
+      if(confirm('⚠ CAPA NO efectivo en desviación crítica.\n\n¿Iniciar recall ahora con datos pre-rellenados?')){
+        _abrirRecallPrefill(d.recall_prefill || {});
+        cfg.list();
+        return;
       }
-      verDesviacion(id); loadDesviaciones();
-    } else { alert('Error: '+(d.error||'?')); }
+    }
+    cfg.view(id); cfg.list();
   }catch(e){ alert('Error red: '+e.message); }
 }
+
+// Wrappers para compatibilidad (referencias en HTML inline)
+async function _postDesvAccion(id, accion, body){ return _postWorkflowAccion('desviaciones', id, accion, body); }
 
 async function iniciarRecallDesdeDesv(desvId){
   if(!confirm('Iniciar recall desde esta desviación. ¿Confirmas?')) return;
@@ -1432,14 +1448,7 @@ async function cerrarCambio(id){
   await _postCambioAccion(id, 'cerrar', {verificacion_post: verif, verificacion_ok: ok, observaciones_cierre: obs});
 }
 
-async function _postCambioAccion(id, accion, body){
-  try{
-    var r = await fetch('/api/aseguramiento/cambios/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    var d = await r.json();
-    if(d.ok){ verCambio(id); loadCambios(); }
-    else alert('Error: '+(d.error||'?'));
-  }catch(e){ alert('Error red: '+e.message); }
-}
+async function _postCambioAccion(id, accion, body){ return _postWorkflowAccion('cambios', id, accion, body); }
 
 // === QUEJAS DE CLIENTES (ASG-PRO-013) ==================================
 async function loadQuejas(){
@@ -1698,14 +1707,7 @@ async function cerrarQueja(id){
   await _postQuejaAccion(id, 'cerrar', {cliente_satisfecho: sat, accion_correctiva: accion, observaciones_cierre: obs});
 }
 
-async function _postQuejaAccion(id, accion, body){
-  try{
-    var r = await fetch('/api/aseguramiento/quejas/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    var d = await r.json();
-    if(d.ok){ verQueja(id); loadQuejas(); }
-    else alert('Error: '+(d.error||'?'));
-  }catch(e){ alert('Error red: '+e.message); }
-}
+async function _postQuejaAccion(id, accion, body){ return _postWorkflowAccion('quejas', id, accion, body); }
 
 // === RECALL (ASG-PRO-004) =============================================
 async function loadRecalls(){
@@ -1971,14 +1973,7 @@ async function cerrarRecall(id){
   });
 }
 
-async function _postRecallAccion(id, accion, body){
-  try{
-    var r = await fetch('/api/aseguramiento/recalls/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    var d = await r.json();
-    if(d.ok){ verRecall(id); loadRecalls(); }
-    else alert('Error: '+(d.error||'?'));
-  }catch(e){ alert('Error red: '+e.message); }
-}
+async function _postRecallAccion(id, accion, body){ return _postWorkflowAccion('recalls', id, accion, body); }
 
 async function loadDashboard(){
   try{

@@ -1398,10 +1398,22 @@ def cambio_detalle(cid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT * FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    cols = ['id','codigo','fecha_solicitud','solicitado_por','tipo','titulo',
+            'descripcion','justificacion','impacto_bpm','impacto_regulatorio',
+            'areas_afectadas','severidad','evaluado_por','evaluado_at',
+            'evaluacion_descripcion','aprobado_por','aprobado_at',
+            'aprobacion_observaciones','requiere_invima','notificacion_invima_at',
+            'notificacion_invima_ref','plan_implementacion',
+            'fecha_implementacion_propuesta','responsable_implementacion',
+            'implementado_at','implementado_por','verificacion_post',
+            'verificado_por','verificado_at','verificacion_ok','estado',
+            'fecha_cierre','cerrado_por','observaciones_cierre','creado_en',
+            'actualizado_en']
+    row = c.execute(
+        f"SELECT {', '.join(cols)} FROM control_cambios WHERE id=?", (cid,)
+    ).fetchone()
     if not row:
         return jsonify({'error': 'cambio no encontrado'}), 404
-    cols = [d[0] for d in c.description]
     detalle = dict(zip(cols, row))
     eventos = c.execute("""
         SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
@@ -1783,10 +1795,21 @@ def queja_detalle(qid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT * FROM quejas_clientes WHERE id=?", (qid,)).fetchone()
+    cols = ['id','codigo','fecha_recepcion','recibido_por','canal',
+            'cliente_nombre','cliente_contacto','cliente_tipo','producto',
+            'lote','fecha_compra','establecimiento_compra','tipo_queja',
+            'descripcion','impacto_salud','severidad','triaje_descripcion',
+            'triaje_por','triaje_at','requiere_desviacion','desviacion_id',
+            'requiere_recall','causa_raiz','investigacion_por','investigacion_at',
+            'respuesta_descripcion','respuesta_canal','respondido_por',
+            'respondido_at','fecha_compromiso','cliente_satisfecho',
+            'accion_correctiva','cerrado_por','fecha_cierre',
+            'observaciones_cierre','estado','creado_en','actualizado_en']
+    row = c.execute(
+        f"SELECT {', '.join(cols)} FROM quejas_clientes WHERE id=?", (qid,)
+    ).fetchone()
     if not row:
         return jsonify({'error': 'queja no encontrada'}), 404
-    cols = [d[0] for d in c.description]
     detalle = dict(zip(cols, row))
     eventos = c.execute("""
         SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
@@ -2419,10 +2442,24 @@ def recall_detalle(rid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT * FROM recalls WHERE id=?", (rid,)).fetchone()
+    cols = ['id','codigo','fecha_inicio','iniciado_por','origen',
+            'origen_referencia','desviacion_id','queja_id','producto',
+            'lotes_afectados','cantidad_fabricada','cantidad_distribuida',
+            'motivo','riesgo_descripcion','clase_recall','alcance_geografico',
+            'clasificado_por','clasificado_at','justificacion_clasificacion',
+            'notificacion_invima_at','notificacion_invima_ref',
+            'notificacion_invima_por','notificacion_distribuidores_at',
+            'distribuidores_notificados','notificacion_distribuidores_por',
+            'recoleccion_inicio_at','recoleccion_completada_at',
+            'cantidad_recolectada','disposicion_final','disposicion_descripcion',
+            'efectividad_porcentaje','efectividad_descripcion','estado',
+            'fecha_cierre','cerrado_por','observaciones_cierre','creado_en',
+            'actualizado_en']
+    row = c.execute(
+        f"SELECT {', '.join(cols)} FROM recalls WHERE id=?", (rid,)
+    ).fetchone()
     if not row:
         return jsonify({'error': 'recall no encontrado'}), 404
-    cols = [d[0] for d in c.description]
     detalle = dict(zip(cols, row))
     eventos = c.execute("""
         SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
