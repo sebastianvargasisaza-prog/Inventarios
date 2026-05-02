@@ -581,6 +581,8 @@ JOBS_SCHEDULE = [
     ('agua_recordatorio',    12,  0, [0,1,2,3,4], None,         'job_agua_recordatorio'),
     # ⭐ Calidad · diario 7:30 · alerta equipos próximos a vencer + vencidos (COC-PRO-012)
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
+    # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
+    ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
 ]
 
 
@@ -1425,6 +1427,74 @@ def job_equipos_vencimientos(app):
         return True, {
             'vencidos': len(vencidos),
             'proximos_30d': len(proximos),
+        }, 0
+
+
+def job_desv_plazos(app):
+    """ASG-PRO-001 · diario 8:00 · alerta desviaciones en plazo vencido.
+
+    Plazos según ASG-PRO-001:
+    - crítica sin clasificar > 1 día → alerta
+    - cualquiera sin investigar > 5 días → alerta
+    - CAPA vencido > 0 días → alerta crítica
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            sin_clasif = c.execute("""
+                SELECT codigo, descripcion FROM desviaciones
+                WHERE estado='detectada'
+                  AND date(fecha_deteccion) <= date('now', '-1 day')
+                LIMIT 30
+            """).fetchall()
+            sin_invest = c.execute("""
+                SELECT codigo, clasificacion, descripcion FROM desviaciones
+                WHERE estado IN ('clasificada')
+                  AND date(fecha_deteccion) <= date('now', '-5 days')
+                LIMIT 30
+            """).fetchall()
+            capa_vencido = c.execute("""
+                SELECT codigo, capa_responsable, capa_fecha_limite FROM desviaciones
+                WHERE estado IN ('capa_propuesto','capa_implementado')
+                  AND capa_fecha_limite IS NOT NULL
+                  AND date(capa_fecha_limite) < date('now')
+                LIMIT 30
+            """).fetchall()
+        except Exception as e:
+            log.warning('desv_plazos read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        if not sin_clasif and not sin_invest and not capa_vencido:
+            return True, {'mensaje': 'Sin desviaciones en plazo vencido'}, 0
+
+        try:
+            from blueprints.notif import push_notif_multi
+            destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                             'laura','sebastian']
+            partes = []
+            if sin_clasif:
+                partes.append(f'⏰ {len(sin_clasif)} sin clasificar (>1d)')
+                for r in sin_clasif[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:60]}')
+            if sin_invest:
+                partes.append(f'🔍 {len(sin_invest)} sin investigar (>5d)')
+                for r in sin_invest[:3]: partes.append(f'  · {r[0]} ({r[1] or "?"}): {(r[2] or "")[:60]}')
+            if capa_vencido:
+                partes.append(f'⛔ {len(capa_vencido)} CAPA VENCIDO')
+                for r in capa_vencido[:3]: partes.append(f'  · {r[0]}: resp {r[1]} · venció {r[2]}')
+            push_notif_multi(
+                destinatarios, 'capa',
+                f'⚠ Desviaciones en plazo vencido (ASG-PRO-001)',
+                body='\n'.join(partes),
+                link='/aseguramiento', remitente='cron-desv',
+                importante=bool(capa_vencido or len(sin_clasif) >= 3),
+            )
+        except Exception as e:
+            log.warning('desv_plazos notif fallo: %s', e)
+        return True, {
+            'sin_clasificar_1d': len(sin_clasif),
+            'sin_investigar_5d': len(sin_invest),
+            'capa_vencido': len(capa_vencido),
         }, 0
 
 

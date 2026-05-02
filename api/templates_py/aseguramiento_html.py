@@ -86,6 +86,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
   <div class="tab" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
   <div class="tab" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
+  <div class="tab" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
@@ -189,6 +190,94 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- DESVIACIONES · ASG-PRO-001 -->
+<div id="tab-desv" class="pane">
+  <div class="kpi-row" id="desv-kpis">
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="desv-kp-tot">—</div></div>
+    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="desv-kp-crit">—</div></div>
+    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="desv-kp-sin">—</div></div>
+    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="desv-kp-inv">—</div></div>
+    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="desv-kp-cer">—</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Lista</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <select id="desv-f-estado" onchange="loadDesviaciones()">
+          <option value="">Todos estados</option>
+          <option value="detectada">Detectadas</option>
+          <option value="clasificada">Clasificadas</option>
+          <option value="en_investigacion">En investigación</option>
+          <option value="capa_propuesto">CAPA propuesto</option>
+          <option value="capa_implementado">CAPA implementado</option>
+          <option value="cerrada">Cerradas</option>
+        </select>
+        <select id="desv-f-clasif" onchange="loadDesviaciones()">
+          <option value="">Toda clasificación</option>
+          <option value="critica">Crítica</option>
+          <option value="mayor">Mayor</option>
+          <option value="menor">Menor</option>
+          <option value="informativa">Informativa</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadDesviaciones()">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNuevaDesviacion()">+ Nueva</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Fecha</th><th>Tipo</th><th>Área</th><th>Descripción</th><th>Clasif.</th><th>Estado</th><th>Días</th><th></th></tr></thead>
+        <tbody id="desv-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nueva desviación -->
+<div class="modal-overlay" id="m-desv-new">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-desv-new')">&times;</button>
+    <div class="modal-title">Reportar desviación</div>
+    <div class="form-group"><label>Tipo *</label>
+      <select id="m-desv-tipo">
+        <option value="proceso">Proceso</option>
+        <option value="equipo">Equipo</option>
+        <option value="instalacion">Instalación</option>
+        <option value="sistema_agua">Sistema de agua</option>
+        <option value="ambiental">Ambiental (T/HR)</option>
+        <option value="documental">Documental</option>
+        <option value="personal">Personal</option>
+        <option value="materia_prima">Materia prima</option>
+        <option value="envase">Envase/empaque</option>
+        <option value="otra">Otra</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Área origen</label><input id="m-desv-area" placeholder="Fab1, Disp, Lab..."></div>
+      <div class="form-group"><label>Hora detección</label><input id="m-desv-hora" type="time"></div>
+    </div>
+    <div class="form-group"><label>Descripción * (≥10 chars)</label><textarea id="m-desv-desc" style="min-height:70px" placeholder="Qué pasó · cuándo · cómo se detectó"></textarea></div>
+    <div class="form-group"><label>Contención inmediata</label><textarea id="m-desv-cont" style="min-height:50px" placeholder="Qué se hizo de inmediato para contener"></textarea></div>
+    <div class="form-group"><label><input type="checkbox" id="m-desv-impacto"> Impacta producto / lote en proceso</label></div>
+    <div class="form-group"><label>Lotes afectados (si aplica)</label><input id="m-desv-lotes" placeholder="LOTE-001, LOTE-002..."></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-desv-new')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarDesviacion()">Reportar</button>
+    </div>
+    <div id="m-desv-new-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<!-- Modal detalle desviación + workflow -->
+<div class="modal-overlay" id="m-desv-det">
+  <div class="modal" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('m-desv-det')">&times;</button>
+    <div class="modal-title" id="m-desv-det-title">Detalle</div>
+    <input type="hidden" id="m-desv-det-id">
+    <div id="m-desv-det-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
@@ -258,7 +347,7 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-conf'];
+var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -266,7 +355,244 @@ function goTab(id){
   if(id==='tab-dash') loadDashboard();
   else if(id==='tab-sgd') loadSGD();
   else if(id==='tab-mis-cap') loadMisCapacitaciones();
+  else if(id==='tab-desv') loadDesviaciones();
   else if(id==='tab-conf') loadConflictos();
+}
+
+// === DESVIACIONES (ASG-PRO-001) ========================================
+async function loadDesviaciones(){
+  var estado = document.getElementById('desv-f-estado').value;
+  var clasif = document.getElementById('desv-f-clasif').value;
+  var qs = [];
+  if(estado) qs.push('estado='+estado);
+  if(clasif) qs.push('clasificacion='+clasif);
+  var url = '/api/aseguramiento/desviaciones' + (qs.length ? '?'+qs.join('&') : '');
+  try{
+    var r = await fetch(url);
+    var d = await r.json();
+    var k = d.kpis || {};
+    document.getElementById('desv-kp-tot').textContent = k.total || 0;
+    document.getElementById('desv-kp-crit').textContent = k.criticas_abiertas || 0;
+    document.getElementById('desv-kp-sin').textContent = k.sin_clasificar || 0;
+    document.getElementById('desv-kp-inv').textContent = k.investigando || 0;
+    document.getElementById('desv-kp-cer').textContent = k.cerradas_30d || 0;
+    var tb = document.getElementById('desv-tbody');
+    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="9" class="empty">Sin desviaciones</td></tr>'; return; }
+    tb.innerHTML = d.items.map(function(it){
+      var clasifBadge = it.clasificacion === 'critica' ? '<span class="badge badge-venc">crítica</span>'
+        : it.clasificacion === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
+        : it.clasificacion === 'menor' ? '<span class="badge badge-bor">menor</span>'
+        : it.clasificacion === 'informativa' ? '<span class="badge badge-obs">info</span>'
+        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+      var estadoLabel = (it.estado||'').replace('_',' ');
+      var estadoCol = it.estado === 'cerrada' ? '#15803d'
+        : it.estado === 'rechazada' ? '#94a3b8'
+        : it.estado === 'detectada' ? '#ef4444'
+        : '#fbbf24';
+      var icono = it.impacto_producto ? '⚠ ' : '';
+      return '<tr>'
+        +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
+        +'<td>'+_esc(it.fecha_deteccion||'')+(it.hora_deteccion?' '+_esc(it.hora_deteccion):'')+'</td>'
+        +'<td>'+_esc(it.tipo||'')+'</td>'
+        +'<td>'+_esc(it.area_origen||'')+'</td>'
+        +'<td>'+icono+_esc((it.descripcion||'').slice(0,80))+(it.descripcion && it.descripcion.length > 80 ? '...' : '')+'</td>'
+        +'<td>'+clasifBadge+'</td>'
+        +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
+        +'<td>'+(it.dias_abierta||0)+'d</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verDesviacion('+it.id+')">Abrir</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('desv-tbody').innerHTML = '<tr><td colspan="9" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
+}
+
+function abrirNuevaDesviacion(){
+  ['m-desv-area','m-desv-desc','m-desv-cont','m-desv-lotes','m-desv-new-msg'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('m-desv-impacto').checked = false;
+  document.getElementById('m-desv-hora').value = new Date().toTimeString().slice(0,5);
+  openModal('m-desv-new');
+}
+
+async function guardarDesviacion(){
+  var msg = document.getElementById('m-desv-new-msg');
+  var body = {
+    tipo: document.getElementById('m-desv-tipo').value,
+    area_origen: document.getElementById('m-desv-area').value,
+    hora_deteccion: document.getElementById('m-desv-hora').value,
+    descripcion: document.getElementById('m-desv-desc').value,
+    contencion_inmediata: document.getElementById('m-desv-cont').value,
+    impacto_producto: document.getElementById('m-desv-impacto').checked,
+    lotes_afectados: document.getElementById('m-desv-lotes').value,
+  };
+  if(!body.descripcion || body.descripcion.length < 10){
+    msg.innerHTML = '<span style="color:#ef4444">Descripción requerida (≥10 chars)</span>'; return;
+  }
+  msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
+  try{
+    var r = await fetch('/api/aseguramiento/desviaciones', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
+      setTimeout(function(){ closeModal('m-desv-new'); loadDesviaciones(); }, 700);
+    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+}
+
+async function verDesviacion(id){
+  document.getElementById('m-desv-det-id').value = id;
+  var body = document.getElementById('m-desv-det-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-desv-det');
+  try{
+    var r = await fetch('/api/aseguramiento/desviaciones/'+id);
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    document.getElementById('m-desv-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace('_',' ');
+
+    var html = '<div class="card" style="background:#f8fafc">'
+      +'<div style="font-size:0.85em;color:#475569"><b>Detectada:</b> '+_esc(d.fecha_deteccion||'')+' '+_esc(d.hora_deteccion||'')+' · por '+_esc(d.detectado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+' · <b>Área:</b> '+_esc(d.area_origen||'—')+'</div>'
+      +'<div style="margin-top:8px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
+      +(d.contencion_inmediata ? '<div style="margin-top:6px"><b>Contención:</b><br>'+_esc(d.contencion_inmediata)+'</div>' : '')
+      +(d.impacto_producto ? '<div style="margin-top:6px;color:#ef4444">⚠ <b>Impacta producto</b> · Lotes: '+_esc(d.lotes_afectados||'?')+'</div>' : '')
+      +'</div>';
+
+    // Workflow steps
+    html += '<div class="card-title" style="margin-top:12px">Workflow</div>';
+
+    // Paso 1: Clasificación
+    if(d.clasificacion){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>1. Clasificada</b> como <b>'+_esc(d.clasificacion)+'</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
+        +'</div>';
+    } else {
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>1. Clasificar</b> (pendiente)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
+        +'<select id="cl-clasif" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">--</option><option value="critica">Crítica</option><option value="mayor">Mayor</option><option value="menor">Menor</option><option value="informativa">Informativa</option></select>'
+        +'<input id="cl-just" placeholder="Justificación (≥10 chars)" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'</div>'
+        +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="clasificarDesv('+id+')">Clasificar</button></div>'
+        +'</div>';
+    }
+
+    // Paso 2: Investigación
+    if(d.causa_raiz_descripcion){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>2. Investigada</b> · método: <b>'+_esc(d.metodo_investigacion||'')+'</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Causa raíz:</b><br>'+_esc(d.causa_raiz_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.investigado_por||'')+' · '+_esc(d.investigacion_at||'')+'</div>'
+        +'</div>';
+    } else if(d.clasificacion){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>2. Investigar causa raíz</b> (pendiente)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:6px">'
+        +'<select id="inv-metodo" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="5_porques">5 Porqués</option><option value="ishikawa">Ishikawa</option><option value="arbol_decision">Árbol decisión</option><option value="otro">Otro</option></select>'
+        +'<textarea id="inv-causa" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;min-height:50px" placeholder="Causa raíz (≥20 chars)"></textarea>'
+        +'</div>'
+        +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="investigarDesv('+id+')">Registrar investigación</button></div>'
+        +'</div>';
+    }
+
+    // Paso 3: CAPA
+    if(d.capa_descripcion){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>3. CAPA propuesto</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.capa_descripcion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">Resp: '+_esc(d.capa_responsable||'?')+' · Límite: '+_esc(d.capa_fecha_limite||'sin definir')+'</div>'
+        +'</div>';
+    } else if(d.causa_raiz_descripcion){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>3. Definir CAPA</b> (pendiente)</div>'
+        +'<div class="form-group"><label>Descripción de acciones (≥20 chars)</label><textarea id="capa-desc" style="min-height:50px"></textarea></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+        +'<input id="capa-resp" placeholder="Responsable" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="capa-fecha" type="date" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'</div>'
+        +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="capaDesv('+id+')">Guardar CAPA</button></div>'
+        +'</div>';
+    }
+
+    // Paso 4: Cierre
+    if(d.estado === 'cerrada'){
+      var efCol = d.efectividad_ok ? '#15803d' : '#ef4444';
+      var efLabel = d.efectividad_ok ? '✅ EFECTIVIDAD OK' : '❌ EFECTIVIDAD NO OK';
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+efCol+'">'
+        +'<div style="font-size:1em;font-weight:700;color:'+efCol+'">'+efLabel+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Verificación:</b> '+_esc(d.verificacion_efectividad||'')+'</div>'
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrada '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'</div>';
+    } else if(d.capa_descripcion){
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>4. Cerrar con verificación</b></div>'
+        +'<div class="form-group"><label>Verificación de efectividad (≥20 chars)</label><textarea id="cer-verif" style="min-height:50px"></textarea></div>'
+        +'<div class="form-group"><label><input type="checkbox" id="cer-ok"> CAPA fue efectiva</label></div>'
+        +'<div class="form-group"><label>Observaciones cierre</label><input id="cer-obs"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="cerrarDesv('+id+')">Cerrar desviación</button></div>'
+        +'</div>';
+    }
+
+    // Timeline
+    if(d.timeline && d.timeline.length){
+      html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
+      html += '<div style="font-size:0.85em">';
+      d.timeline.forEach(function(ev){
+        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+          +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
+          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+}
+
+async function clasificarDesv(id){
+  var clasif = document.getElementById('cl-clasif').value;
+  var just = document.getElementById('cl-just').value;
+  if(!clasif){ alert('Elige clasificación'); return; }
+  if(!just || just.length < 10){ alert('Justificación ≥10 chars'); return; }
+  await _postDesvAccion(id, 'clasificar', {clasificacion: clasif, justificacion: just});
+}
+
+async function investigarDesv(id){
+  var metodo = document.getElementById('inv-metodo').value;
+  var causa = document.getElementById('inv-causa').value;
+  if(!causa || causa.length < 20){ alert('Causa raíz ≥20 chars'); return; }
+  await _postDesvAccion(id, 'investigar', {metodo_investigacion: metodo, causa_raiz: causa});
+}
+
+async function capaDesv(id){
+  var desc = document.getElementById('capa-desc').value;
+  var resp = document.getElementById('capa-resp').value;
+  var fecha = document.getElementById('capa-fecha').value;
+  if(!desc || desc.length < 20){ alert('Descripción CAPA ≥20 chars'); return; }
+  if(!resp){ alert('Responsable requerido'); return; }
+  await _postDesvAccion(id, 'capa', {capa_descripcion: desc, capa_responsable: resp, capa_fecha_limite: fecha});
+}
+
+async function cerrarDesv(id){
+  var verif = document.getElementById('cer-verif').value;
+  var ok = document.getElementById('cer-ok').checked;
+  var obs = document.getElementById('cer-obs').value;
+  if(!verif || verif.length < 20){ alert('Verificación efectividad ≥20 chars'); return; }
+  if(!confirm('Confirmas cerrar esta desviación con efectividad ' + (ok ? 'OK' : 'NO OK') + '?')) return;
+  await _postDesvAccion(id, 'cerrar', {efectividad_ok: ok, verificacion_efectividad: verif, observaciones_cierre: obs});
+}
+
+async function _postDesvAccion(id, accion, body){
+  try{
+    var r = await fetch('/api/aseguramiento/desviaciones/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){ verDesviacion(id); loadDesviaciones(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 async function loadDashboard(){

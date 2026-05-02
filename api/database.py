@@ -3335,6 +3335,71 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (87, "Aseguramiento: tabla desviaciones (ASG-PRO-001) workflow completo", [
+        # Sebastián 1-may-2026: workflow estructurado de manejo de desviaciones
+        # según ASG-PRO-001. Plazos: crítica reportar 4h · clasificación 24h ·
+        # investigación 5d · CAPA 10-15d. Cumplimiento Resolución 2214/2021.
+
+        """CREATE TABLE IF NOT EXISTS desviaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            fecha_deteccion TEXT NOT NULL DEFAULT (date('now')),
+            hora_deteccion TEXT,
+            detectado_por TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'otra'
+              CHECK(tipo IN ('proceso','equipo','instalacion','sistema_agua','ambiental',
+                              'documental','personal','materia_prima','envase','otra')),
+            area_origen TEXT,
+            descripcion TEXT NOT NULL,
+            contencion_inmediata TEXT,
+            impacto_producto INTEGER NOT NULL DEFAULT 0,
+            lotes_afectados TEXT,
+            clasificacion TEXT
+              CHECK(clasificacion IN ('critica','mayor','menor','informativa') OR clasificacion IS NULL),
+            clasificado_por TEXT,
+            clasificado_at TEXT,
+            justificacion_clasificacion TEXT,
+            metodo_investigacion TEXT
+              CHECK(metodo_investigacion IN ('5_porques','ishikawa','arbol_decision','otro') OR metodo_investigacion IS NULL),
+            causa_raiz_descripcion TEXT,
+            investigado_por TEXT,
+            investigacion_at TEXT,
+            capa_descripcion TEXT,
+            capa_responsable TEXT,
+            capa_fecha_limite TEXT,
+            capa_implementado_at TEXT,
+            verificacion_efectividad TEXT,
+            verificado_at TEXT,
+            verificado_por TEXT,
+            efectividad_ok INTEGER,
+            estado TEXT NOT NULL DEFAULT 'detectada'
+              CHECK(estado IN ('detectada','clasificada','en_investigacion',
+                                'capa_propuesto','capa_implementado','cerrada','rechazada')),
+            fecha_cierre TEXT,
+            cerrado_por TEXT,
+            observaciones_cierre TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_desv_estado ON desviaciones(estado, fecha_deteccion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_desv_clasif ON desviaciones(clasificacion, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_desv_fecha ON desviaciones(fecha_deteccion DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_desv_area ON desviaciones(area_origen, estado)",
+
+        # Eventos del workflow (timeline visible)
+        """CREATE TABLE IF NOT EXISTS desviaciones_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            desviacion_id INTEGER NOT NULL,
+            evento_tipo TEXT NOT NULL,
+            estado_anterior TEXT,
+            estado_nuevo TEXT,
+            usuario TEXT,
+            comentario TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (desviacion_id) REFERENCES desviaciones(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_desv_ev ON desviaciones_eventos(desviacion_id, creado_en)",
+    ]),
     (86, "Aseguramiento: SGD electrónico · sgd_documentos + sgd_versiones + sgd_capacitaciones", [
         # Sebastián 1-may-2026: SGD electrónico vivo. Reemplaza 124 .docx
         # sueltos en Downloads por catálogo central · 32 docs vivos vs ~92 borradores

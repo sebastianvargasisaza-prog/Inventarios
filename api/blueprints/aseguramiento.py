@@ -602,6 +602,344 @@ def capacitaciones_firmar():
     return jsonify({'ok': True, 'firma_hash': firma_hash})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# DESVIACIONES · ASG-PRO-001
+# Workflow: detectada → clasificada (24h) → en_investigación (5d) →
+# capa_propuesto (10-15d) → cerrada (con verificación efectividad)
+# ════════════════════════════════════════════════════════════════════════
+
+def _generar_codigo_desviacion(c):
+    """Genera código DESV-AAAA-NNNN secuencial por año."""
+    anio = datetime.now().year
+    row = c.execute("""
+        SELECT codigo FROM desviaciones
+        WHERE codigo LIKE ?
+        ORDER BY id DESC LIMIT 1
+    """, (f'DESV-{anio}-%',)).fetchone()
+    if row and row[0]:
+        try:
+            ult = int(row[0].split('-')[-1])
+            return f'DESV-{anio}-{ult+1:04d}'
+        except (ValueError, IndexError):
+            pass
+    return f'DESV-{anio}-0001'
+
+
+@bp.route('/api/aseguramiento/desviaciones', methods=['GET', 'POST'])
+def desviaciones_endpoint():
+    """GET: lista filtrable. POST: crea nueva desviación (cualquier user)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        descripcion = (d.get('descripcion') or '').strip()
+        if len(descripcion) < 10:
+            return jsonify({'error': 'descripcion requerida (≥10 chars)'}), 400
+        tipo = (d.get('tipo') or 'otra').strip()
+        valid_tipos = ('proceso','equipo','instalacion','sistema_agua','ambiental',
+                        'documental','personal','materia_prima','envase','otra')
+        if tipo not in valid_tipos:
+            return jsonify({'error': f'tipo inválido. Uno de: {", ".join(valid_tipos)}'}), 400
+
+        codigo = _generar_codigo_desviacion(c)
+        try:
+            c.execute("""
+                INSERT INTO desviaciones
+                  (codigo, fecha_deteccion, hora_deteccion, detectado_por,
+                   tipo, area_origen, descripcion, contencion_inmediata,
+                   impacto_producto, lotes_afectados, estado)
+                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'detectada')
+            """, (codigo,
+                  (d.get('hora_deteccion') or datetime.now().strftime('%H:%M')),
+                  user, tipo,
+                  (d.get('area_origen') or '').strip()[:80],
+                  descripcion[:2000],
+                  (d.get('contencion_inmediata') or '')[:1000],
+                  1 if d.get('impacto_producto') else 0,
+                  (d.get('lotes_afectados') or '')[:500]))
+            desv_id = c.lastrowid
+            # Evento inicial
+            c.execute("""
+                INSERT INTO desviaciones_eventos
+                  (desviacion_id, evento_tipo, estado_nuevo, usuario, comentario)
+                VALUES (?, 'detectada', 'detectada', ?, ?)
+            """, (desv_id, user, 'Desviación reportada'))
+            conn.commit()
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            log.exception('crear desviacion fallo: %s', e)
+            return jsonify({'error': str(e)[:200]}), 500
+
+        # Notificar a Calidad si parece crítica (impacto_producto o tipo crítico)
+        if d.get('impacto_producto') or tipo in ('sistema_agua', 'materia_prima'):
+            try:
+                from blueprints.notif import push_notif_multi
+                push_notif_multi(
+                    ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                    'capa', f'⚠ Desviación {codigo} reportada · revisar y clasificar',
+                    body=f'{tipo} · {(d.get("area_origen") or "")} · {descripcion[:140]}',
+                    link='/aseguramiento', remitente=user, importante=True,
+                )
+            except Exception as _e:
+                log.warning('notif desviacion fallo: %s', _e)
+
+        return jsonify({'ok': True, 'id': desv_id, 'codigo': codigo}), 201
+
+    # GET · lista con filtros
+    estado = (request.args.get('estado') or '').strip()
+    clasif = (request.args.get('clasificacion') or '').strip()
+    area = (request.args.get('area') or '').strip()
+    where = []; params = []
+    if estado: where.append('estado=?'); params.append(estado)
+    if clasif: where.append('clasificacion=?'); params.append(clasif)
+    if area: where.append('area_origen=?'); params.append(area)
+    sql = """SELECT id, codigo, fecha_deteccion, hora_deteccion, detectado_por,
+                    tipo, area_origen, descripcion, clasificacion, estado,
+                    impacto_producto, capa_responsable, capa_fecha_limite,
+                    fecha_cierre,
+                    CAST((julianday('now') - julianday(fecha_deteccion)) AS INTEGER) as dias_abierta
+             FROM desviaciones"""
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_deteccion DESC, id DESC LIMIT 500'
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','codigo','fecha_deteccion','hora_deteccion','detectado_por',
+            'tipo','area_origen','descripcion','clasificacion','estado',
+            'impacto_producto','capa_responsable','capa_fecha_limite',
+            'fecha_cierre','dias_abierta']
+    items = [dict(zip(cols, r)) for r in rows]
+    # KPIs rápidos
+    kpis = {
+        'total': len(items),
+        'criticas_abiertas': sum(1 for it in items
+                                  if it['clasificacion']=='critica' and it['estado']!='cerrada'),
+        'sin_clasificar': sum(1 for it in items if not it['clasificacion']
+                                                    and it['estado']!='rechazada'),
+        'investigando': sum(1 for it in items if it['estado']=='en_investigacion'),
+        'cerradas_30d': sum(1 for it in items
+                             if it['estado']=='cerrada' and it.get('fecha_cierre')
+                             and (it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat())),
+    }
+    return jsonify({'items': items, 'kpis': kpis})
+
+
+@bp.route('/api/aseguramiento/desviaciones/<int:desv_id>', methods=['GET'])
+def desviacion_detalle(desv_id):
+    """Detalle completo + timeline de eventos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""
+        SELECT id, codigo, fecha_deteccion, hora_deteccion, detectado_por,
+               tipo, area_origen, descripcion, contencion_inmediata,
+               impacto_producto, lotes_afectados, clasificacion, clasificado_por,
+               clasificado_at, justificacion_clasificacion,
+               metodo_investigacion, causa_raiz_descripcion, investigado_por,
+               investigacion_at, capa_descripcion, capa_responsable,
+               capa_fecha_limite, capa_implementado_at, verificacion_efectividad,
+               verificado_at, verificado_por, efectividad_ok,
+               estado, fecha_cierre, cerrado_por, observaciones_cierre,
+               creado_en, actualizado_en
+        FROM desviaciones WHERE id=?
+    """, (desv_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'desviacion no encontrada'}), 404
+    cols = ['id','codigo','fecha_deteccion','hora_deteccion','detectado_por',
+            'tipo','area_origen','descripcion','contencion_inmediata',
+            'impacto_producto','lotes_afectados','clasificacion','clasificado_por',
+            'clasificado_at','justificacion_clasificacion',
+            'metodo_investigacion','causa_raiz_descripcion','investigado_por',
+            'investigacion_at','capa_descripcion','capa_responsable',
+            'capa_fecha_limite','capa_implementado_at','verificacion_efectividad',
+            'verificado_at','verificado_por','efectividad_ok',
+            'estado','fecha_cierre','cerrado_por','observaciones_cierre',
+            'creado_en','actualizado_en']
+    detalle = dict(zip(cols, row))
+
+    eventos = c.execute("""
+        SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
+        FROM desviaciones_eventos WHERE desviacion_id=?
+        ORDER BY id ASC
+    """, (desv_id,)).fetchall()
+    detalle['timeline'] = [{
+        'evento_tipo': r[0], 'estado_anterior': r[1], 'estado_nuevo': r[2],
+        'usuario': r[3], 'comentario': r[4], 'creado_en': r[5],
+    } for r in eventos]
+    return jsonify(detalle)
+
+
+@bp.route('/api/aseguramiento/desviaciones/<int:desv_id>/clasificar', methods=['POST'])
+def desviacion_clasificar(desv_id):
+    """Clasifica (crítica/mayor/menor/informativa). RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    clasif = (d.get('clasificacion') or '').strip()
+    if clasif not in ('critica','mayor','menor','informativa'):
+        return jsonify({'error': 'clasificacion inválida'}), 400
+    just = (d.get('justificacion') or '').strip()
+    if len(just) < 10:
+        return jsonify({'error': 'justificacion requerida (≥10 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM desviaciones WHERE id=?", (desv_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('detectada', 'clasificada'):  # idempotente reclasificar mientras no esté investigando
+        return jsonify({'error': f'no se puede clasificar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE desviaciones
+        SET clasificacion=?, justificacion_clasificacion=?,
+            clasificado_por=?, clasificado_at=datetime('now'),
+            estado='clasificada', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (clasif, just, user, desv_id))
+    c.execute("""
+        INSERT INTO desviaciones_eventos
+          (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'clasificada', ?, 'clasificada', ?, ?)
+    """, (desv_id, estado_ant, user, f'Clasificada como {clasif}: {just[:200]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/desviaciones/<int:desv_id>/investigar', methods=['POST'])
+def desviacion_investigar(desv_id):
+    """Registra causa raíz + método investigación. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    metodo = (d.get('metodo_investigacion') or '').strip()
+    if metodo not in ('5_porques','ishikawa','arbol_decision','otro'):
+        return jsonify({'error': 'metodo_investigacion inválido'}), 400
+    causa = (d.get('causa_raiz') or '').strip()
+    if len(causa) < 20:
+        return jsonify({'error': 'causa_raiz requerida (≥20 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM desviaciones WHERE id=?", (desv_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('clasificada', 'en_investigacion'):
+        return jsonify({'error': f'no se puede investigar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE desviaciones
+        SET metodo_investigacion=?, causa_raiz_descripcion=?,
+            investigado_por=?, investigacion_at=datetime('now'),
+            estado='en_investigacion', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (metodo, causa, user, desv_id))
+    c.execute("""
+        INSERT INTO desviaciones_eventos
+          (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'investigada', ?, 'en_investigacion', ?, ?)
+    """, (desv_id, estado_ant, user, f'Causa raíz ({metodo}): {causa[:200]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/desviaciones/<int:desv_id>/capa', methods=['POST'])
+def desviacion_capa(desv_id):
+    """Define plan CAPA (acciones correctivas/preventivas). RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    capa = (d.get('capa_descripcion') or '').strip()
+    if len(capa) < 20:
+        return jsonify({'error': 'capa_descripcion requerida (≥20 chars)'}), 400
+    responsable = (d.get('capa_responsable') or '').strip()
+    if not responsable:
+        return jsonify({'error': 'capa_responsable requerido'}), 400
+    fecha_limite = (d.get('capa_fecha_limite') or '').strip() or None
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM desviaciones WHERE id=?", (desv_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('en_investigacion', 'capa_propuesto'):
+        return jsonify({'error': f'no se puede definir CAPA en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE desviaciones
+        SET capa_descripcion=?, capa_responsable=?, capa_fecha_limite=?,
+            estado='capa_propuesto', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (capa, responsable, fecha_limite, desv_id))
+    c.execute("""
+        INSERT INTO desviaciones_eventos
+          (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'capa_propuesto', ?, 'capa_propuesto', ?, ?)
+    """, (desv_id, estado_ant, user,
+          f'CAPA: {capa[:150]} · resp: {responsable} · límite: {fecha_limite or "sin definir"}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/desviaciones/<int:desv_id>/cerrar', methods=['POST'])
+def desviacion_cerrar(desv_id):
+    """Cierra la desviación con verificación de efectividad. RBAC Director Técnico/Admin.
+
+    Requiere: efectividad_ok (bool), verificacion_efectividad (texto >=20),
+    observaciones_cierre. Audit log obligatorio.
+    """
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin pueden cerrar (regulación INVIMA)'}), 403
+    d = request.get_json(silent=True) or {}
+    if d.get('efectividad_ok') is None:
+        return jsonify({'error': 'efectividad_ok (true/false) requerido'}), 400
+    verificacion = (d.get('verificacion_efectividad') or '').strip()
+    if len(verificacion) < 20:
+        return jsonify({'error': 'verificacion_efectividad requerida (≥20 chars)'}), 400
+    obs = (d.get('observaciones_cierre') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM desviaciones WHERE id=?", (desv_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no encontrada'}), 404
+    estado_ant = row[0]
+    if estado_ant == 'cerrada':
+        return jsonify({'error': 'ya está cerrada'}), 409
+    if estado_ant not in ('capa_propuesto', 'capa_implementado'):
+        return jsonify({'error': f'no se puede cerrar en estado {estado_ant} · primero CAPA'}), 409
+
+    c.execute("""
+        UPDATE desviaciones
+        SET estado='cerrada', fecha_cierre=date('now'), cerrado_por=?,
+            verificacion_efectividad=?, verificado_at=datetime('now'), verificado_por=?,
+            efectividad_ok=?, observaciones_cierre=?,
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (user, verificacion, user, 1 if d.get('efectividad_ok') else 0,
+          obs[:500] or None, desv_id))
+    c.execute("""
+        INSERT INTO desviaciones_eventos
+          (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'cerrada', ?, 'cerrada', ?, ?)
+    """, (desv_id, estado_ant, user,
+          f'Cerrada · efectividad {"OK" if d.get("efectividad_ok") else "NO_OK"}: {verificacion[:200]}'))
+    # Audit log INVIMA
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, antes, despues)
+            VALUES (?, 'CERRAR_DESVIACION', ?, ?, ?)
+        """, (user, row[1] or str(desv_id),
+              _json.dumps({'estado_anterior': estado_ant}),
+              _json.dumps({'efectividad_ok': bool(d.get('efectividad_ok')),
+                            'verificacion': verificacion[:500],
+                            'observaciones': obs[:500]})))
+    except Exception as _e:
+        log.debug('audit cerrar desviacion fallo: %s', _e)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/aseguramiento/capacitaciones/mias', methods=['GET'])
 def capacitaciones_mias():
     """Capacitaciones del usuario actual."""
