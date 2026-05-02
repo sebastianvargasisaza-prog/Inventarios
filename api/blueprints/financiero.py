@@ -190,6 +190,109 @@ def financiero_flujo_mensual():
     meses = [{'periodo': p, 'ingresos': ings.get(p, 0), 'egresos': egrs.get(p, 0)} for p in periodos]
     return jsonify({'meses': meses})
 
+
+@bp.route('/api/financiero/mom-12-meses')
+def financiero_mom_12_meses():
+    """Retorna últimos 12 meses con ingresos/egresos/margen/MoM%.
+
+    Diseñado para chart de tendencia + tabla de variación. Genera SIEMPRE 12
+    períodos contiguos hacia atrás desde el mes actual (incluso si están
+    vacíos · permite ver la curva sin huecos).
+
+    Stats extra incluídas para análisis rápido:
+    - mejor_mes / peor_mes (por margen)
+    - margen_promedio últimos 12 meses
+    - mejor/peor categoría de egresos del último mes
+    """
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import datetime as _dt
+    conn = get_db(); c = conn.cursor()
+
+    # Generar lista de 12 períodos desde mes actual hacia atrás
+    hoy = _dt.now()
+    periodos = []
+    for i in range(11, -1, -1):  # de hace 11 meses hasta el mes actual
+        anio = hoy.year
+        mes = hoy.month - i
+        while mes <= 0:
+            mes += 12; anio -= 1
+        periodos.append(f"{anio:04d}-{mes:02d}")
+
+    # Bulk fetch de los 12 períodos
+    placeholders = ','.join('?' for _ in periodos)
+    try:
+        ings_rows = c.execute(
+            f"SELECT periodo, COALESCE(SUM(monto),0) FROM flujo_ingresos "
+            f"WHERE periodo IN ({placeholders}) GROUP BY periodo",
+            periodos
+        ).fetchall()
+        ings = {r[0]: float(r[1] or 0) for r in ings_rows}
+    except Exception:
+        ings = {}
+    try:
+        egrs_rows = c.execute(
+            f"SELECT periodo, COALESCE(SUM(monto),0) FROM flujo_egresos "
+            f"WHERE periodo IN ({placeholders}) GROUP BY periodo",
+            periodos
+        ).fetchall()
+        egrs = {r[0]: float(r[1] or 0) for r in egrs_rows}
+    except Exception:
+        egrs = {}
+
+    # Construir lista contigua con margen y MoM
+    meses = []
+    prev_ing = None
+    for p in periodos:
+        ing = ings.get(p, 0.0)
+        egr = egrs.get(p, 0.0)
+        margen = ing - egr
+        margen_pct = (margen / ing * 100) if ing > 0 else 0
+        mom_pct = None
+        if prev_ing is not None and prev_ing > 0:
+            mom_pct = (ing - prev_ing) / prev_ing * 100
+        meses.append({
+            'periodo': p,
+            'ingresos': ing,
+            'egresos': egr,
+            'margen': margen,
+            'margen_pct': round(margen_pct, 1),
+            'mom_pct': round(mom_pct, 1) if mom_pct is not None else None,
+        })
+        prev_ing = ing
+
+    # Stats
+    meses_con_data = [m for m in meses if m['ingresos'] > 0 or m['egresos'] > 0]
+    stats = {}
+    if meses_con_data:
+        sorted_by_margen = sorted(meses_con_data, key=lambda x: x['margen'], reverse=True)
+        stats['mejor_mes'] = sorted_by_margen[0]['periodo']
+        stats['mejor_mes_margen'] = sorted_by_margen[0]['margen']
+        stats['peor_mes'] = sorted_by_margen[-1]['periodo']
+        stats['peor_mes_margen'] = sorted_by_margen[-1]['margen']
+        margenes = [m['margen'] for m in meses_con_data]
+        stats['margen_promedio'] = sum(margenes) / len(margenes)
+        # Top categoría de egresos último mes (último período del rango)
+        ultimo_periodo = periodos[-1]
+        try:
+            top_cat = c.execute("""
+                SELECT COALESCE(categoria,'Otro'), SUM(monto)
+                FROM flujo_egresos WHERE periodo=?
+                GROUP BY categoria ORDER BY 2 DESC LIMIT 1
+            """, (ultimo_periodo,)).fetchone()
+            if top_cat and top_cat[1]:
+                stats['top_categoria_egreso'] = top_cat[0]
+                stats['top_categoria_egreso_monto'] = float(top_cat[1])
+        except Exception:
+            pass
+
+    return jsonify({
+        'meses': meses,
+        'stats': stats,
+        'rango': {'desde': periodos[0], 'hasta': periodos[-1]},
+    })
+
 @bp.route('/api/financiero/config', methods=['GET','POST'])
 def financiero_config():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:

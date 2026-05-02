@@ -105,6 +105,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div class="section-title">⚠️ Alertas financieras</div>
     <div id="alertas-fin"></div>
   </div>
+  <div class="card" style="margin-top:20px">
+    <div class="section-title">📊 Tendencia 12 meses · MoM</div>
+    <div id="mom-12-stats" style="display:flex;flex-wrap:wrap;gap:18px;font-size:0.88em;color:#7A6A55;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #E8E4DE">
+      <span>Cargando…</span>
+    </div>
+    <canvas id="chart-mom-12" height="160"></canvas>
+    <div style="overflow-x:auto;margin-top:18px">
+      <table style="width:100%;font-size:0.85em;border-collapse:collapse">
+        <thead>
+          <tr style="background:#F5F0E8;color:#7A6A55">
+            <th style="padding:8px 10px;text-align:left;font-size:0.78em;text-transform:uppercase">Mes</th>
+            <th style="padding:8px 10px;text-align:right;font-size:0.78em;text-transform:uppercase">Ingresos</th>
+            <th style="padding:8px 10px;text-align:right;font-size:0.78em;text-transform:uppercase">Egresos</th>
+            <th style="padding:8px 10px;text-align:right;font-size:0.78em;text-transform:uppercase">Margen</th>
+            <th style="padding:8px 10px;text-align:right;font-size:0.78em;text-transform:uppercase">% Margen</th>
+            <th style="padding:8px 10px;text-align:right;font-size:0.78em;text-transform:uppercase">MoM Ingreso</th>
+          </tr>
+        </thead>
+        <tbody id="mom-12-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:18px;color:#999">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- ─── INGRESOS ─── -->
@@ -396,7 +420,81 @@ async function loadDashboard(){
         options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:function(v){return fmt(v);}}}}}
       });
     }
+    // 12-month MoM trend (independent · doesn't share state with chart-ing-egr)
+    loadMoM12();
   }catch(e){console.error(e);}
+}
+
+var _chartMoM12 = null;
+async function loadMoM12(){
+  try{
+    var r = await fetch('/api/financiero/mom-12-meses');
+    if(!r.ok) return;
+    var d = await r.json();
+    var meses = d.meses || [];
+    if(!meses.length) return;
+
+    // Stats summary
+    var s = d.stats || {};
+    var statsEl = document.getElementById('mom-12-stats');
+    if(statsEl){
+      var parts = [];
+      if(s.mejor_mes) parts.push('🏆 Mejor: <b>'+s.mejor_mes+'</b> ('+fmt(s.mejor_mes_margen)+')');
+      if(s.peor_mes) parts.push('📉 Peor: <b>'+s.peor_mes+'</b> ('+fmt(s.peor_mes_margen)+')');
+      if(s.margen_promedio !== undefined) parts.push('📊 Promedio: <b>'+fmt(s.margen_promedio)+'</b>');
+      if(s.top_categoria_egreso) parts.push('💸 Top egreso: <b>'+s.top_categoria_egreso+'</b> ('+fmt(s.top_categoria_egreso_monto)+')');
+      statsEl.innerHTML = parts.length ? parts.join(' · ') : '<span style="color:#999">Sin datos en los últimos 12 meses</span>';
+    }
+
+    // Chart bar dual: ingresos / egresos / margen line
+    var labels = meses.map(function(m){return m.periodo;});
+    var ings = meses.map(function(m){return m.ingresos;});
+    var egrs = meses.map(function(m){return m.egresos;});
+    var margenes = meses.map(function(m){return m.margen;});
+
+    if(_chartMoM12) _chartMoM12.destroy();
+    _chartMoM12 = new Chart(document.getElementById('chart-mom-12'), {
+      data: {
+        labels: labels,
+        datasets: [
+          {type:'bar', label:'Ingresos', data:ings,
+            backgroundColor:'rgba(43,122,120,0.65)', borderRadius:3, order:2},
+          {type:'bar', label:'Egresos', data:egrs,
+            backgroundColor:'rgba(192,57,43,0.65)', borderRadius:3, order:2},
+          {type:'line', label:'Margen', data:margenes,
+            borderColor:'#B5924A', backgroundColor:'rgba(181,146,74,0.1)',
+            tension:0.25, fill:false, borderWidth:2.5, pointRadius:4, order:1},
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins: {legend:{position:'top'}},
+        scales: {y:{ticks:{callback:function(v){return fmt(v);}}}},
+      }
+    });
+
+    // Tabla MoM
+    var tbody = document.getElementById('mom-12-tbody');
+    if(tbody){
+      tbody.innerHTML = meses.map(function(m){
+        var marColor = m.margen >= 0 ? '#2B7A78' : '#c0392b';
+        var momHtml = '—';
+        if(m.mom_pct !== null && m.mom_pct !== undefined){
+          var momColor = m.mom_pct >= 0 ? '#2B7A78' : '#c0392b';
+          var arrow = m.mom_pct >= 0 ? '▲' : '▼';
+          momHtml = '<span style="color:'+momColor+';font-weight:600">'+arrow+' '+m.mom_pct.toFixed(1)+'%</span>';
+        }
+        return '<tr style="border-bottom:1px solid #F5F0E8">'
+          +'<td style="padding:8px 10px"><b>'+m.periodo+'</b></td>'
+          +'<td style="padding:8px 10px;text-align:right">'+fmt(m.ingresos)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;color:#c0392b">'+fmt(m.egresos)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;color:'+marColor+';font-weight:700">'+fmt(m.margen)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;color:#7A6A55">'+m.margen_pct.toFixed(1)+'%</td>'
+          +'<td style="padding:8px 10px;text-align:right">'+momHtml+'</td>'
+          +'</tr>';
+      }).join('');
+    }
+  }catch(e){console.error('loadMoM12 fallo:',e);}
 }
 
 async function loadIngresos(){
