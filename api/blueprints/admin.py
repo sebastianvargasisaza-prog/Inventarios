@@ -18,6 +18,7 @@ from config import (
     ESPAGIRIA_ACCESS, CALIDAD_USERS, PLANTA_USERS,
 )
 from auth import _client_ip, _log_sec
+from audit_helpers import audit_log
 from backup import (
     do_backup, list_backups, get_backup_path, BACKUPS_DIR,
     RETENTION_DAYS, BACKUP_INTERVAL_HOURS,
@@ -87,6 +88,21 @@ def admin_backup_now():
 
     _log_sec("backup_manual_triggered", u, _client_ip())
     result = do_backup(triggered_by=f"manual:{u}")
+    # Audit log INVIMA · backup manual queda en trail regulatorio
+    try:
+        conn_a = sqlite3.connect(DB_PATH)
+        conn_a.execute("PRAGMA busy_timeout=2000")
+        cur_a = conn_a.cursor()
+        audit_log(cur_a, usuario=u, accion='BACKUP_MANUAL',
+                  tabla='backup_log', registro_id=None,
+                  despues={'ok': bool(result.get('ok')),
+                            'skipped': bool(result.get('skipped')),
+                            'filename': (result.get('filename') or '')[:200]},
+                  detalle=f"Backup manual triggered por {u} · "
+                          f"ok={result.get('ok')} skipped={result.get('skipped')}")
+        conn_a.commit(); conn_a.close()
+    except Exception:
+        pass  # _log_sec ya queda como evidencia
     # ok=True → backup creado, status 200
     # skipped=True → otro worker está haciendo backup, status 200 (no es error)
     # else → error real, status 500
@@ -244,7 +260,8 @@ def admin_reset_password():
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute("PRAGMA busy_timeout=2000")
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO users_passwords (username, password_hash, changed_at, changed_by)
             VALUES (?, ?, datetime('now', 'utc'), ?)
             ON CONFLICT(username) DO UPDATE SET
@@ -252,6 +269,12 @@ def admin_reset_password():
                 changed_at    = excluded.changed_at,
                 changed_by    = excluded.changed_by
         """, (target, new_hash, admin_user))
+        try:
+            audit_log(cur, usuario=admin_user, accion='RESET_PASSWORD',
+                      tabla='users_passwords', registro_id=target,
+                      detalle=f"Admin {admin_user} reseteó password de {target}")
+        except Exception:
+            pass  # security event ya queda · audit es defense-in-depth
         conn.commit()
         conn.close()
     except Exception as e:
@@ -3429,9 +3452,24 @@ def admin_mps_asignar_proveedor():
         return jsonify({'error': 'codigo_mp requerido'}), 400
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Capturar antes para audit
+    antes_row = c.execute("SELECT proveedor FROM maestro_mps WHERE codigo_mp=?",
+                          (codigo,)).fetchone()
+    if not antes_row:
+        conn.close()
+        return jsonify({'error': f"No se encontró MP '{codigo}'"}), 404
+    antes_prov = antes_row[0] or ''
     c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
               (proveedor, codigo))
     n = c.rowcount or 0
+    try:
+        audit_log(c, usuario=u, accion='ASIGNAR_PROVEEDOR_MP',
+                  tabla='maestro_mps', registro_id=codigo,
+                  antes={'proveedor': antes_prov},
+                  despues={'proveedor': proveedor},
+                  detalle=f"Asignó proveedor MP {codigo}: '{antes_prov}' → '{proveedor}'")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     if n == 0:
@@ -7816,6 +7854,10 @@ def admin_sku_map_upsert():
     if not sku or not producto:
         return jsonify({'error': 'sku y producto_nombre requeridos'}), 400
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    # Capturar antes para audit
+    antes_row = c.execute("SELECT producto_nombre, activo FROM sku_producto_map WHERE sku=?",
+                          (sku,)).fetchone()
+    antes_dict = {'producto_nombre': antes_row[0], 'activo': bool(antes_row[1])} if antes_row else None
     c.execute("""
         INSERT INTO sku_producto_map (sku, producto_nombre, activo)
         VALUES (?, ?, ?)
@@ -7840,6 +7882,17 @@ def admin_sku_map_upsert():
             canceladas = cur.rowcount or 0
         except Exception:
             pass
+    try:
+        accion_audit = 'ACTUALIZAR_SKU_MAP' if antes_dict else 'CREAR_SKU_MAP'
+        audit_log(c, usuario=u, accion=accion_audit,
+                  tabla='sku_producto_map', registro_id=sku,
+                  antes=antes_dict,
+                  despues={'producto_nombre': producto, 'activo': bool(activo),
+                            'producciones_canceladas': canceladas},
+                  detalle=f"{accion_audit} SKU {sku} → {producto}"
+                          + (f" (canceladas {canceladas} producciones)" if canceladas else ""))
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     return jsonify({

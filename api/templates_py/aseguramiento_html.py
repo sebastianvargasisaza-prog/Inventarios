@@ -803,6 +803,15 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="APROBAR_SOLICITUD_INFLUENCER">APROBAR_SOLICITUD_INFLUENCER</option>
             <option value="MARCAR_RECIBIDO_SOLICITANTE">MARCAR_RECIBIDO_SOLICITANTE</option>
             <option value="ELEGIR_COTIZACION_GANADORA">ELEGIR_COTIZACION_GANADORA</option>
+            <option disabled>── Admin / Gerencia ──</option>
+            <option value="RESET_PASSWORD">RESET_PASSWORD</option>
+            <option value="BACKUP_MANUAL">BACKUP_MANUAL</option>
+            <option value="ASIGNAR_PROVEEDOR_MP">ASIGNAR_PROVEEDOR_MP</option>
+            <option value="CREAR_SKU_MAP">CREAR_SKU_MAP</option>
+            <option value="ACTUALIZAR_SKU_MAP">ACTUALIZAR_SKU_MAP</option>
+            <option value="CLEANUP_TEST_DATA">CLEANUP_TEST_DATA</option>
+            <option value="GERENCIA_INPUT_MANUAL">GERENCIA_INPUT_MANUAL</option>
+            <option value="MEE_SET_STOCK_BULK">MEE_SET_STOCK_BULK</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>

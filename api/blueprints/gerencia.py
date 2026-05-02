@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from audit_helpers import audit_log
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -451,6 +452,7 @@ def gerencia_dashboard_extra():
 def admin_cleanup_test_data():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return jsonify({'error': 'Solo admins'}), 401
+    user = session.get('compras_user','')
     d = request.get_json() or {}
     if not d.get('confirm'):
         return jsonify({'error': 'Enviar confirm:true para confirmar'}), 400
@@ -472,6 +474,15 @@ def admin_cleanup_test_data():
     # Test lotes
     c.execute("DELETE FROM movimientos WHERE lote LIKE '%AUDIT%' OR lote LIKE '%TEST%' OR lote LIKE '%-test-%'")
     deleted['lotes'] = c.rowcount
+    try:
+        audit_log(c, usuario=user, accion='CLEANUP_TEST_DATA',
+                  tabla=None, registro_id=None,
+                  despues=deleted,
+                  detalle=f"Admin {user} ejecutó cleanup-test-data · "
+                          f"OCs={deleted.get('ocs',0)} SOLs={deleted.get('solicitudes',0)} "
+                          f"pedidos={deleted.get('pedidos',0)} lotes={deleted.get('lotes',0)}")
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True, 'deleted': deleted, 'message': 'Test data cleaned up'})
 
@@ -479,16 +490,30 @@ def admin_cleanup_test_data():
 def gerencia_input_manual():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user','')
     d = request.json or {}
     periodo = d.get('periodo', datetime.now().strftime('%Y-%m'))
+    saldo_caja = float(d.get('saldo_caja',0))
+    ingresos_animus = float(d.get('ingresos_animus',0))
+    ingresos_maquila = float(d.get('ingresos_maquila',0))
     conn = get_db()
     conn.execute("""INSERT INTO gerencia_inputs (periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha)
                     VALUES (?,?,?,?,?,datetime('now'))
                     ON CONFLICT(periodo) DO UPDATE SET saldo_caja=excluded.saldo_caja,
                     ingresos_animus=excluded.ingresos_animus, ingresos_maquila=excluded.ingresos_maquila,
                     notas=excluded.notas, fecha=excluded.fecha""",
-                 (periodo, float(d.get('saldo_caja',0)), float(d.get('ingresos_animus',0)),
-                  float(d.get('ingresos_maquila',0)), d.get('notas','')))
+                 (periodo, saldo_caja, ingresos_animus, ingresos_maquila, d.get('notas','')))
+    try:
+        audit_log(conn.cursor(), usuario=user, accion='GERENCIA_INPUT_MANUAL',
+                  tabla='gerencia_inputs', registro_id=periodo,
+                  despues={'saldo_caja': saldo_caja,
+                            'ingresos_animus': ingresos_animus,
+                            'ingresos_maquila': ingresos_maquila,
+                            'notas': (d.get('notas','') or '')[:200]},
+                  detalle=f"Input manual gerencia {periodo}: caja={saldo_caja:.0f} "
+                          f"ANIMUS={ingresos_animus:.0f} MAQ={ingresos_maquila:.0f}")
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'message': f'Inputs de {periodo} guardados'})
 
@@ -684,15 +709,30 @@ def seed_mee_xlsx():
 
 @bp.route('/api/admin/mee-set-stock', methods=['POST'])
 def mee_set_stock():
-    """Actualiza stock_actual y stock_minimo de todos los MEE (uso unico admin)."""
+    """Actualiza stock_actual y stock_minimo de todos los MEE (uso unico admin).
+
+    Operación BULK destructiva · sobreescribe stock de TODOS los MEE.
+    Auditada con count actualizado. Solo admin.
+    """
     if 'compras_user' not in session or session.get('compras_user', '') not in ADMIN_USERS:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     data = request.get_json(silent=True) or {}
     stock_actual = float(data.get('stock_actual', 2000))
     stock_minimo = float(data.get('stock_minimo', 1000))
     conn = get_db(); c = conn.cursor()
     c.execute("UPDATE maestro_mee SET stock_actual=?, stock_minimo=?", (stock_actual, stock_minimo))
     updated = c.rowcount
+    try:
+        audit_log(c, usuario=user, accion='MEE_SET_STOCK_BULK',
+                  tabla='maestro_mee', registro_id=None,
+                  despues={'stock_actual': stock_actual,
+                            'stock_minimo': stock_minimo,
+                            'rows_updated': updated},
+                  detalle=f"BULK admin · seteó stock_actual={stock_actual} y "
+                          f"stock_minimo={stock_minimo} en {updated} MEEs")
+    except Exception:
+        pass
     conn.commit()
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE stock_actual < stock_minimo AND stock_minimo > 0")
     bajo = c.fetchone()[0]
