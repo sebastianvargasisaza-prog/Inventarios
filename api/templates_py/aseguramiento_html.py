@@ -100,6 +100,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
   <div class="tab" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
   <div class="tab" onclick="goTab('tab-recalls')">&#x1F6A8; Recall</div>
+  <div class="tab" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
@@ -691,6 +692,97 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- REPORTES INVIMA -->
+<div id="tab-reportes" class="pane">
+  <div class="card" style="background:#eff6ff;border-left:4px solid #0ea5e9">
+    <div style="font-weight:700;color:#0c4a6e;margin-bottom:4px">📋 Reportes regulatorios INVIMA</div>
+    <div style="font-size:0.85em;color:#0c4a6e">Consultas ad-hoc para auditoría INVIMA · acceso solo Calidad/Admin · descarga CSV disponible.</div>
+  </div>
+
+  <!-- Sub-pestañas dentro de Reportes -->
+  <div style="display:flex;gap:0;border-bottom:1px solid #cbd5e1;margin-bottom:14px">
+    <div class="rep-tab active" onclick="repGoTab('rep-audit')" style="padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid #7ACFCC;color:#7ACFCC">Audit Trail</div>
+    <div class="rep-tab" onclick="repGoTab('rep-lote')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Lote</div>
+    <div class="rep-tab" onclick="repGoTab('rep-cliente')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Cliente</div>
+  </div>
+
+  <!-- Audit Trail -->
+  <div id="rep-audit" class="rep-pane">
+    <div class="card">
+      <div class="card-title">Audit Trail · evidencia INVIMA de cambios regulatorios</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
+        <div class="form-group"><label>Desde</label><input id="rep-at-desde" type="date"></div>
+        <div class="form-group"><label>Hasta</label><input id="rep-at-hasta" type="date"></div>
+        <div class="form-group"><label>Acción</label>
+          <select id="rep-at-accion">
+            <option value="">Todas</option>
+            <option value="PAGAR_OC">PAGAR_OC</option>
+            <option value="AUTORIZAR_OC">AUTORIZAR_OC</option>
+            <option value="FACTURA_PAGO">FACTURA_PAGO</option>
+            <option value="FACTURA_ANULAR">FACTURA_ANULAR</option>
+            <option value="COMPLETAR_PRODUCCION">COMPLETAR_PRODUCCION</option>
+            <option value="CERRAR_DESVIACION">CERRAR_DESVIACION</option>
+            <option value="CAMBIO_APROBACION">CAMBIO_APROBACION</option>
+            <option value="CERRAR_CAMBIO">CERRAR_CAMBIO</option>
+            <option value="CAMBIO_NOTIFICAR_INVIMA">CAMBIO_NOTIFICAR_INVIMA</option>
+            <option value="CERRAR_QUEJA">CERRAR_QUEJA</option>
+            <option value="INICIAR_RECALL">INICIAR_RECALL</option>
+            <option value="RECALL_CLASIFICAR">RECALL_CLASIFICAR</option>
+            <option value="RECALL_NOTIFICAR_INVIMA">RECALL_NOTIFICAR_INVIMA</option>
+            <option value="CERRAR_RECALL">CERRAR_RECALL</option>
+            <option value="SGD_FIRMAR_CAP">SGD_FIRMAR_CAP</option>
+            <option value="SGD_PDF">SGD_PDF</option>
+            <option value="CREAR_NC">CREAR_NC</option>
+            <option value="CREAR_COA">CREAR_COA</option>
+            <option value="CREAR_OOS">CREAR_OOS</option>
+            <option value="REGISTRAR_AGUA">REGISTRAR_AGUA</option>
+            <option value="CREAR_CAPA">CREAR_CAPA</option>
+            <option value="CREAR_AUDITORIA">CREAR_AUDITORIA</option>
+            <option value="CREAR_HALLAZGO">CREAR_HALLAZGO</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <button class="btn btn-primary btn-sm" onclick="repAuditCargar()">Consultar</button>
+        <button class="btn btn-ghost btn-sm" onclick="repAuditExport()">📥 Descargar CSV</button>
+        <span id="rep-at-info" style="font-size:0.85em;color:#64748b"></span>
+      </div>
+      <div style="overflow-x:auto;max-height:60vh;overflow-y:auto">
+        <table>
+          <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Tabla</th><th>Registro</th><th>Detalle</th><th>IP</th></tr></thead>
+          <tbody id="rep-at-tbody"><tr><td colspan="7" class="empty">Click "Consultar" para cargar audit log</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lote trazabilidad -->
+  <div id="rep-lote" class="rep-pane" style="display:none">
+    <div class="card">
+      <div class="card-title">Trazabilidad por Lote · cadena recepción → cliente</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="rep-lote-input" placeholder="LOTE-2026-001" style="flex:1;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+        <button class="btn btn-primary btn-sm" onclick="repLoteCargar()">Consultar</button>
+      </div>
+      <div id="rep-lote-body"><p class="empty">Ingresa un código de lote para consultar</p></div>
+    </div>
+  </div>
+
+  <!-- Cliente trazabilidad -->
+  <div id="rep-cliente" class="rep-pane" style="display:none">
+    <div class="card">
+      <div class="card-title">Trazabilidad por Cliente · qué lotes recibió</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="rep-cli-input" type="number" placeholder="ID cliente (ej. 1)" style="width:200px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px">
+        <button class="btn btn-primary btn-sm" onclick="repClienteCargar()">Consultar</button>
+        <span style="font-size:0.85em;color:#64748b">Encuentra el ID en la pestaña Clientes</span>
+      </div>
+      <div id="rep-cli-body"><p class="empty">Ingresa ID de cliente para consultar</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
@@ -782,7 +874,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-conf'];
+var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-reportes','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -795,6 +887,7 @@ function goTab(id){
   else if(id==='tab-cambios') loadCambios();
   else if(id==='tab-quejas') loadQuejas();
   else if(id==='tab-recalls') loadRecalls();
+  else if(id==='tab-reportes') repInit();
   else if(id==='tab-conf') loadConflictos();
 }
 
@@ -2308,6 +2401,197 @@ async function editarPdfSGD(codigo, urlActual){
     if(d.ok){ alert(url ? '📎 PDF actualizado' : '📎 PDF removido'); loadSGD(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
+}
+
+// === REPORTES INVIMA · audit-trail + trazabilidad ============================
+function repInit(){
+  // Set defaults: hasta=hoy, desde=hace 30 días si están vacíos
+  var hasta = document.getElementById('rep-at-hasta');
+  var desde = document.getElementById('rep-at-desde');
+  if(hasta && !hasta.value){
+    var h = new Date();
+    hasta.value = h.toISOString().slice(0,10);
+  }
+  if(desde && !desde.value){
+    var d = new Date(); d.setDate(d.getDate()-30);
+    desde.value = d.toISOString().slice(0,10);
+  }
+}
+
+function repGoTab(subId){
+  ['rep-audit','rep-lote','rep-cliente'].forEach(function(id){
+    var p = document.getElementById(id);
+    if(p) p.style.display = (id===subId ? '' : 'none');
+  });
+  document.querySelectorAll('.rep-tab').forEach(function(t){
+    var active = t.getAttribute('onclick') && t.getAttribute('onclick').indexOf("'"+subId+"'") !== -1;
+    t.style.borderBottom = active ? '2px solid #7ACFCC' : 'none';
+    t.style.color = active ? '#7ACFCC' : '#94a3b8';
+  });
+}
+
+async function repAuditCargar(){
+  var qs = [];
+  var desde = document.getElementById('rep-at-desde').value;
+  var hasta = document.getElementById('rep-at-hasta').value;
+  var accion = document.getElementById('rep-at-accion').value;
+  var usuario = document.getElementById('rep-at-usuario').value.trim();
+  if(desde) qs.push('desde='+encodeURIComponent(desde));
+  if(hasta) qs.push('hasta='+encodeURIComponent(hasta));
+  if(accion) qs.push('accion='+encodeURIComponent(accion));
+  if(usuario) qs.push('usuario='+encodeURIComponent(usuario));
+  var url = '/api/aseguramiento/reportes/audit-trail' + (qs.length ? '?'+qs.join('&') : '');
+  var tb = document.getElementById('rep-at-tbody');
+  var info = document.getElementById('rep-at-info');
+  tb.innerHTML = '<tr><td colspan="7" class="empty">Cargando...</td></tr>';
+  if(info) info.textContent = '';
+  try{
+    var r = await fetch(url);
+    if(r.status === 403){ tb.innerHTML = '<tr><td colspan="7" class="empty">Acceso restringido a Calidad/Admin</td></tr>'; return; }
+    var d = await r.json();
+    if(!d.items || !d.items.length){
+      tb.innerHTML = '<tr><td colspan="7" class="empty">Sin registros para los filtros</td></tr>';
+      if(info) info.textContent = 'Total: 0';
+      return;
+    }
+    if(info) info.textContent = 'Total: '+(d.total||d.items.length)+' · Rango '+(d.desde||'')+' → '+(d.hasta||'');
+    tb.innerHTML = d.items.map(function(it){
+      var det = it.detalle ? String(it.detalle).slice(0,80) : '';
+      return '<tr>'
+        +'<td style="white-space:nowrap;font-size:0.82em">'+_esc((it.fecha||'').slice(0,19))+'</td>'
+        +'<td>'+_esc(it.usuario||'')+'</td>'
+        +'<td><code style="font-size:0.78em">'+_esc(it.accion||'')+'</code></td>'
+        +'<td style="font-size:0.82em">'+_esc(it.tabla||'—')+'</td>'
+        +'<td style="font-size:0.82em">'+_esc(it.registro_id||'—')+'</td>'
+        +'<td style="font-size:0.78em;color:#475569">'+_esc(det)+'</td>'
+        +'<td style="font-size:0.78em;color:#94a3b8">'+_esc(it.ip||'—')+'</td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ tb.innerHTML = '<tr><td colspan="7" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
+}
+
+function repAuditExport(){
+  var qs = [];
+  var desde = document.getElementById('rep-at-desde').value;
+  var hasta = document.getElementById('rep-at-hasta').value;
+  var accion = document.getElementById('rep-at-accion').value;
+  var usuario = document.getElementById('rep-at-usuario').value.trim();
+  if(desde) qs.push('desde='+encodeURIComponent(desde));
+  if(hasta) qs.push('hasta='+encodeURIComponent(hasta));
+  if(accion) qs.push('accion='+encodeURIComponent(accion));
+  if(usuario) qs.push('usuario='+encodeURIComponent(usuario));
+  var url = '/api/aseguramiento/reportes/audit-trail/csv' + (qs.length ? '?'+qs.join('&') : '');
+  window.open(url, '_blank');
+}
+
+function _repBadge(n, label, color){
+  return '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:'+color+';color:#fff;font-size:0.78em;font-weight:600;margin-right:6px;margin-bottom:4px">'+_esc(label)+': '+(n||0)+'</span>';
+}
+
+function _repSeccion(titulo, items, columnas, formatter){
+  var rows = (items||[]).map(formatter).join('');
+  if(!rows) rows = '<tr><td colspan="'+columnas.length+'" class="empty" style="font-size:0.82em">Sin registros</td></tr>';
+  return '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:#1e293b">'+_esc(titulo)+' ('+(items||[]).length+')</div>'
+    +'<div style="overflow-x:auto"><table style="font-size:0.85em"><thead><tr>'
+    +columnas.map(function(c){return '<th>'+_esc(c)+'</th>';}).join('')
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+
+async function repLoteCargar(){
+  var lote = document.getElementById('rep-lote-input').value.trim();
+  if(!lote || lote.length < 3){ alert('Ingresa código de lote (mín 3 caracteres)'); return; }
+  var body = document.getElementById('rep-lote-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  try{
+    var r = await fetch('/api/aseguramiento/reportes/lote-trazabilidad/'+encodeURIComponent(lote));
+    if(r.status === 403){ body.innerHTML = '<p class="empty">Acceso restringido a Calidad/Admin</p>'; return; }
+    if(r.status === 400){ body.innerHTML = '<p class="empty">Lote demasiado corto</p>'; return; }
+    var d = await r.json();
+    var c = d.cadena || {};
+    var rsm = d.resumen || {};
+    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #7ACFCC">'
+      +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Lote: <code>'+_esc(d.lote||lote)+'</code></div>'
+      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Consultado por <b>'+_esc(d.consultado_por||'')+'</b> · '+_esc((d.consulta_at||'').slice(0,19))+'</div>'
+      +'<div>'
+      +_repBadge(rsm.recepciones, 'Recepciones', '#0ea5e9')
+      +_repBadge(rsm.producciones, 'Producciones', '#7ACFCC')
+      +_repBadge(rsm.coas, 'COAs', '#15803d')
+      +_repBadge(rsm.ncs, 'NCs', '#ef4444')
+      +_repBadge(rsm.oos, 'OOS', '#f59e0b')
+      +_repBadge(rsm.despachos, 'Despachos', '#8b5cf6')
+      +_repBadge(rsm.desviaciones, 'Desviaciones', '#dc2626')
+      +_repBadge(rsm.recalls, 'Recalls', '#991b1b')
+      +'</div></div>';
+
+    html += _repSeccion('📦 Recepciones MP', c.recepciones, ['Fecha','OC','Material','Cantidad','Proveedor','Vence'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_oc||'—')+'</code></td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.proveedor||'')+'</td><td>'+_esc((it.fecha_vencimiento||'').slice(0,10))+'</td></tr>';
+    });
+    html += _repSeccion('🏭 Producciones (uso de este lote)', c.producciones_uso, ['Fecha','Material','Cantidad','Operador','Observaciones'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.operador||'—')+'</td><td style="font-size:0.78em">'+_esc((it.observaciones||'').slice(0,80))+'</td></tr>';
+    });
+    html += _repSeccion('🧪 COAs', c.coas, ['Fecha','Parámetro','Valor','Conforme','Analista','Decisión'], function(it){
+      var conforme = it.conforme ? '<span style="color:#15803d">✓</span>' : '<span style="color:#ef4444">✗</span>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor||'')+'</td><td>'+conforme+'</td><td>'+_esc(it.analista||'—')+'</td><td>'+_esc(it.decision||'—')+'</td></tr>';
+    });
+    html += _repSeccion('❌ No-conformidades', c.ncs, ['Fecha','Tipo','Descripción','Impacto','Estado'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc((it.descripcion||'').slice(0,80))+'</td><td>'+_esc(it.impacto||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+    });
+    html += _repSeccion('⚠️ OOS', c.oos, ['Código','Fecha','Parámetro','Valor obtenido','Estado'], function(it){
+      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor_obtenido||'')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+    });
+    html += _repSeccion('🚚 Despachos a clientes', c.despachos_clientes, ['Fecha','Despacho','Cliente','SKU','Cantidad'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_despacho||'')+'</code></td><td>'+_esc(it.cliente||'—')+'</td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
+    });
+    html += _repSeccion('📋 Desviaciones', c.desviaciones, ['Código','Fecha','Tipo','Clasificación','Estado'], function(it){
+      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc(it.clasificacion||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+    });
+    html += _repSeccion('🚨 Recalls', c.recalls, ['Código','Fecha inicio','Producto','Clase','Estado'], function(it){
+      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha_inicio||'').slice(0,10))+'</td><td>'+_esc(it.producto||'—')+'</td><td>'+_esc(it.clase_recall||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+    });
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty">Error: '+_esc(e.message)+'</p>'; }
+}
+
+async function repClienteCargar(){
+  var cid = document.getElementById('rep-cli-input').value.trim();
+  if(!cid){ alert('Ingresa ID de cliente'); return; }
+  var body = document.getElementById('rep-cli-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  try{
+    var r = await fetch('/api/aseguramiento/reportes/cliente-trazabilidad/'+encodeURIComponent(cid));
+    if(r.status === 403){ body.innerHTML = '<p class="empty">Acceso restringido a Calidad/Admin</p>'; return; }
+    if(r.status === 404){ body.innerHTML = '<p class="empty">Cliente no encontrado</p>'; return; }
+    var d = await r.json();
+    var cli = d.cliente || {};
+    var rsm = d.resumen || {};
+    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #8b5cf6">'
+      +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Cliente: '+_esc(cli.nombre||'')+'</div>'
+      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Código: <code>'+_esc(cli.codigo||'')+'</code> · Empresa: '+_esc(cli.empresa||'—')
+      +(cli.email ? ' · '+_esc(cli.email) : '')
+      +(cli.telefono ? ' · ☎ '+_esc(cli.telefono) : '')
+      +' · Consultado por <b>'+_esc(d.consultado_por||'')+'</b></div>'
+      +'<div>'
+      +_repBadge(rsm.despachos, 'Despachos', '#0ea5e9')
+      +_repBadge(rsm.pedidos, 'Pedidos', '#7ACFCC')
+      +_repBadge(rsm.lotes_distintos, 'Lotes únicos', '#15803d')
+      +'</div></div>';
+
+    html += _repSeccion('🚚 Despachos al cliente', d.despachos, ['Fecha','Despacho','SKU','Descripción','Lote PT','Cantidad'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero||'')+'</code></td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc((it.descripcion||'').slice(0,40))+'</td><td><code>'+_esc(it.lote_pt||'—')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
+    });
+    html += _repSeccion('📋 Pedidos', d.pedidos, ['Fecha','Pedido','Estado','Valor total'], function(it){
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero||'')+'</code></td><td>'+_esc(it.estado||'')+'</td><td>'+_esc(it.valor_total||'')+'</td></tr>';
+    });
+
+    var lotes = d.lotes_unicos || [];
+    if(lotes.length){
+      html += '<div style="margin-top:14px"><div style="font-weight:600;margin-bottom:6px;color:#1e293b">📦 Lotes únicos recibidos ('+lotes.length+')</div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:6px">'
+        +lotes.map(function(l){ return '<code style="background:#f1f5f9;padding:3px 8px;border-radius:4px;font-size:0.82em">'+_esc(l)+'</code>'; }).join('')
+        +'</div></div>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty">Error: '+_esc(e.message)+'</p>'; }
 }
 
 async function loadConflictos(){

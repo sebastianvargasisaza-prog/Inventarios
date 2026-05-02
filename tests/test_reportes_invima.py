@@ -180,6 +180,30 @@ def test_audit_trail_csv_user_no_calidad_403(app, db_clean):
     assert r.status_code == 403
 
 
+def test_reportes_ui_pestana_y_handlers(app, db_clean):
+    """La página /aseguramiento incluye la pestaña Reportes INVIMA + handlers JS."""
+    c = _login(app, "laura")
+    r = c.get("/aseguramiento")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # Pestaña + pane
+    assert "tab-reportes" in body
+    assert "Reportes INVIMA" in body
+    # Sub-pestañas
+    assert "rep-audit" in body and "rep-lote" in body and "rep-cliente" in body
+    # Handlers JS declarados (no solo referenciados en onclick)
+    assert "function repInit(" in body
+    assert "function repGoTab(" in body
+    assert "async function repAuditCargar(" in body
+    assert "function repAuditExport(" in body
+    assert "async function repLoteCargar(" in body
+    assert "async function repClienteCargar(" in body
+    # _tabIds incluye tab-reportes
+    assert "'tab-reportes'" in body
+    # goTab dispatch para tab-reportes
+    assert "id==='tab-reportes'" in body
+
+
 def test_lote_trazabilidad_encuentra_desviacion(app, db_clean):
     """Si una desviación menciona el lote, aparece en la cadena."""
     c = _login(app, "laura")
