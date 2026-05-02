@@ -293,6 +293,84 @@ def financiero_mom_12_meses():
         'rango': {'desde': periodos[0], 'hasta': periodos[-1]},
     })
 
+
+@bp.route('/api/financiero/mes-detalle')
+def financiero_mes_detalle():
+    """Drill-down: detalle de un mes por categoría con top items.
+
+    Query params:
+      periodo · YYYY-MM (requerido)
+      tipo    · 'ingresos' | 'egresos' (default 'egresos')
+
+    Devuelve:
+      total · suma del mes
+      categorias · [{categoria, monto, count, pct, top_items: [{fecha,concepto,monto,referencia,fuente}]}]
+    """
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
+    periodo = (request.args.get('periodo') or '').strip()
+    tipo = (request.args.get('tipo') or 'egresos').strip().lower()
+    if not periodo or len(periodo) != 7 or '-' not in periodo:
+        return jsonify({'error': 'periodo requerido (YYYY-MM)'}), 400
+    if tipo not in ('ingresos', 'egresos'):
+        return jsonify({'error': "tipo debe ser 'ingresos' o 'egresos'"}), 400
+
+    tabla = 'flujo_ingresos' if tipo == 'ingresos' else 'flujo_egresos'
+    conn = get_db(); c = conn.cursor()
+    # Total del mes
+    try:
+        total = c.execute(
+            f"SELECT COALESCE(SUM(monto),0), COUNT(*) FROM {tabla} WHERE periodo=?",
+            (periodo,)
+        ).fetchone()
+        total_monto = float(total[0] or 0)
+        total_count = int(total[1] or 0)
+    except Exception as e:
+        return jsonify({'error': f'fallo lectura {tabla}: {str(e)[:200]}'}), 500
+    # Agrupar por categoría
+    try:
+        cat_rows = c.execute(
+            f"""SELECT COALESCE(NULLIF(TRIM(categoria),''),'Sin categoría') as cat,
+                       COALESCE(SUM(monto),0) as total, COUNT(*) as n
+                FROM {tabla} WHERE periodo=?
+                GROUP BY cat ORDER BY total DESC""",
+            (periodo,)
+        ).fetchall()
+    except Exception:
+        cat_rows = []
+    categorias = []
+    for cat, monto_cat, n_cat in cat_rows:
+        pct = (float(monto_cat or 0) / total_monto * 100) if total_monto > 0 else 0
+        # Top 5 items de esta categoría
+        try:
+            items = c.execute(
+                f"""SELECT fecha, concepto, monto, COALESCE(referencia,''),
+                            COALESCE(fuente,'manual')
+                    FROM {tabla}
+                    WHERE periodo=? AND
+                          COALESCE(NULLIF(TRIM(categoria),''),'Sin categoría') = ?
+                    ORDER BY monto DESC LIMIT 5""",
+                (periodo, cat)
+            ).fetchall()
+            top_items = [{
+                'fecha': r[0], 'concepto': (r[1] or '')[:120],
+                'monto': float(r[2] or 0),
+                'referencia': r[3], 'fuente': r[4],
+            } for r in items]
+        except Exception:
+            top_items = []
+        categorias.append({
+            'categoria': cat, 'monto': float(monto_cat or 0),
+            'count': int(n_cat or 0), 'pct': round(pct, 1),
+            'top_items': top_items,
+        })
+    return jsonify({
+        'periodo': periodo, 'tipo': tipo,
+        'total': total_monto, 'count': total_count,
+        'categorias': categorias,
+    })
+
 @bp.route('/api/financiero/config', methods=['GET','POST'])
 def financiero_config():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:

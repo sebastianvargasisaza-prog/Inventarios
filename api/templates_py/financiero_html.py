@@ -484,10 +484,13 @@ async function loadMoM12(){
           var arrow = m.mom_pct >= 0 ? '▲' : '▼';
           momHtml = '<span style="color:'+momColor+';font-weight:600">'+arrow+' '+m.mom_pct.toFixed(1)+'%</span>';
         }
+        // Onclicks computed separately to keep template clean
+        var clickIng = 'abrirMesDetalle("'+m.periodo+'","ingresos")';
+        var clickEgr = 'abrirMesDetalle("'+m.periodo+'","egresos")';
         return '<tr style="border-bottom:1px solid #F5F0E8">'
           +'<td style="padding:8px 10px"><b>'+m.periodo+'</b></td>'
-          +'<td style="padding:8px 10px;text-align:right">'+fmt(m.ingresos)+'</td>'
-          +'<td style="padding:8px 10px;text-align:right;color:#c0392b">'+fmt(m.egresos)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;cursor:pointer;text-decoration:underline dotted #94a3b8" onclick=\\\''+clickIng+'\\\' title="Ver desglose">'+fmt(m.ingresos)+'</td>'
+          +'<td style="padding:8px 10px;text-align:right;color:#c0392b;cursor:pointer;text-decoration:underline dotted #fca5a5" onclick=\\\''+clickEgr+'\\\' title="Ver desglose">'+fmt(m.egresos)+'</td>'
           +'<td style="padding:8px 10px;text-align:right;color:'+marColor+';font-weight:700">'+fmt(m.margen)+'</td>'
           +'<td style="padding:8px 10px;text-align:right;color:#7A6A55">'+m.margen_pct.toFixed(1)+'%</td>'
           +'<td style="padding:8px 10px;text-align:right">'+momHtml+'</td>'
@@ -1337,6 +1340,90 @@ document.addEventListener('DOMContentLoaded',function(){
   var egrFecha=document.getElementById('egr-fecha');if(egrFecha)egrFecha.value=hoy;
   loadConfig().then(function(){loadDashboard();cargarOCsPendientes();});
 });
+
+// ─── Drill-down modal: detalle de mes por categoría ─────────────────
+async function abrirMesDetalle(periodo, tipo){
+  var modal = document.getElementById('mes-detalle-modal');
+  document.getElementById('md-titulo').textContent = (tipo==='ingresos'?'Ingresos':'Egresos')+' · '+periodo;
+  document.getElementById('md-body').innerHTML = '<div style="padding:30px;text-align:center;color:#999">Cargando…</div>';
+  modal.style.display = 'flex';
+  try{
+    var url = '/api/financiero/mes-detalle?periodo='+encodeURIComponent(periodo)+'&tipo='+encodeURIComponent(tipo);
+    var r = await fetch(url);
+    if(!r.ok){
+      document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:#c0392b">Error '+r.status+'</div>';
+      return;
+    }
+    var d = await r.json();
+    var html = '<div style="padding:14px 20px;background:#F5F0E8;border-radius:8px;margin-bottom:14px;font-size:0.95em">';
+    html += '<b>Total '+tipo+'</b>: '+fmt(d.total)+' · <b>'+d.count+'</b> transacciones · <b>'+d.categorias.length+'</b> categorías';
+    html += '</div>';
+    if(!d.categorias.length){
+      html += '<div style="padding:30px;text-align:center;color:#999;font-style:italic">Sin movimientos en '+periodo+'</div>';
+    }else{
+      d.categorias.forEach(function(cat){
+        var color = tipo==='ingresos' ? '#2B7A78' : '#c0392b';
+        html += '<div style="margin-bottom:18px;border:1px solid #E8E4DE;border-radius:10px;overflow:hidden">';
+        html += '<div style="padding:12px 16px;background:#FAFAF7;display:flex;justify-content:space-between;align-items:center">';
+        html += '<div><b style="color:'+color+'">'+_esc(cat.categoria)+'</b> · <span style="color:#7A6A55;font-size:0.88em">'+cat.count+' tx · '+cat.pct.toFixed(1)+'%</span></div>';
+        html += '<div style="font-weight:700;color:'+color+';font-size:1.05em">'+fmt(cat.monto)+'</div>';
+        html += '</div>';
+        if(cat.top_items && cat.top_items.length){
+          html += '<table style="width:100%;font-size:0.85em;border-collapse:collapse">';
+          html += '<thead><tr style="background:#FAFAF7;color:#7A6A55"><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Fecha</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Concepto</th><th style="padding:6px 12px;text-align:right;font-size:0.78em;text-transform:uppercase">Monto</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Ref</th></tr></thead><tbody>';
+          cat.top_items.forEach(function(it){
+            var refLink = it.referencia || '';
+            // Si es OC, link al tab de OCs
+            if(refLink && /^OC-/.test(refLink)){
+              refLink = '<a href="/compras#oc-'+_esc(refLink)+'" style="color:#2B7A78;text-decoration:none">'+_esc(refLink)+'</a>';
+            }else if(refLink){
+              refLink = '<span style="color:#7A6A55;font-size:0.82em">'+_esc(refLink)+'</span>';
+            }else{
+              refLink = '<span style="color:#bbb">—</span>';
+            }
+            html += '<tr style="border-top:1px solid #F5F0E8">';
+            html += '<td style="padding:6px 12px;color:#7A6A55">'+_esc((it.fecha||'').substring(0,10))+'</td>';
+            html += '<td style="padding:6px 12px">'+_esc(it.concepto)+'</td>';
+            html += '<td style="padding:6px 12px;text-align:right;font-weight:600">'+fmt(it.monto)+'</td>';
+            html += '<td style="padding:6px 12px;font-size:0.82em">'+refLink+'</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        }
+        html += '</div>';
+      });
+    }
+    document.getElementById('md-body').innerHTML = html;
+  }catch(e){
+    document.getElementById('md-body').innerHTML = '<div style="padding:20px;color:#c0392b">Error red: '+_esc(e.message)+'</div>';
+  }
+}
+
+function cerrarMesDetalle(){
+  var m = document.getElementById('mes-detalle-modal');
+  if(m) m.style.display = 'none';
+}
+
+// helper escape (puede ya existir; redefinir es seguro)
+function _esc(s){
+  return String(s||'').replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
 </script>
+
+<!-- Mes-detalle modal · drill-down de ingresos/egresos por categoría -->
+<div id="mes-detalle-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:9999;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
+  <div style="background:#fff;max-width:780px;width:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">
+    <div style="padding:18px 24px;background:linear-gradient(135deg,#2B7A78,#205C5A);color:#fff;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:11px;color:#a7f3d0;text-transform:uppercase;letter-spacing:.5px">Detalle del mes</div>
+        <h2 id="md-titulo" style="margin:4px 0 0 0;font-size:18px">—</h2>
+      </div>
+      <button onclick="cerrarMesDetalle()" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700">✕ Cerrar</button>
+    </div>
+    <div id="md-body" style="padding:20px 24px;max-height:75vh;overflow-y:auto"></div>
+  </div>
+</div>
 </body>
 </html>"""
