@@ -199,17 +199,21 @@ def test_pagina_programacion_areas_renderiza(app, db_clean):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     # Elementos clave
-    assert "Programación por Área" in body
+    assert "Programación" in body and "Por Área" in body
     assert "/api/planta/cronograma-areas" in body
-    # Las 10 áreas en AREA_LABELS
+    # Las áreas en la leyenda (mayúsculas) y AREA_INFO (capitalizadas)
     for label in ("FABRICACIÓN", "ENVASADO", "MICROBIOLOGÍA",
                   "LIBERACIÓN", "ACONDICIONAMIENTO", "ENTREGA",
                   "LIMPIEZA PROFUNDA"):
         assert label in body
     # Botones de navegación de semana
-    assert "Semana ant" in body and "Semana sig" in body
-    # Función JS
+    assert "cambiarSemana" in body and "irHoy" in body
+    # Función JS de carga
     assert "function cargarSemana" in body
+    # Estilo nuevo · tarjetas pastel (no chips coloreados)
+    assert "act-card" in body
+    assert "act-type" in body
+    assert "act-label" in body
 
 
 def test_pagina_programacion_areas_requires_auth(client, db_clean):
