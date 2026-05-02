@@ -1361,13 +1361,18 @@ async function abrirMesDetalle(periodo, tipo){
     if(!d.categorias.length){
       html += '<div style="padding:30px;text-align:center;color:#999;font-style:italic">Sin movimientos en '+periodo+'</div>';
     }else{
-      d.categorias.forEach(function(cat){
+      d.categorias.forEach(function(cat, idx){
         var color = tipo==='ingresos' ? '#2B7A78' : '#c0392b';
+        // Header clickeable que toggea el trend inline
+        var trendId = 'trend-'+idx+'-'+Math.random().toString(36).slice(2,7);
+        var toggle = 'toggleCategoriaTrend("'+trendId+'","'+_esc(cat.categoria)+'","'+tipo+'")';
         html += '<div style="margin-bottom:18px;border:1px solid #E8E4DE;border-radius:10px;overflow:hidden">';
-        html += '<div style="padding:12px 16px;background:#FAFAF7;display:flex;justify-content:space-between;align-items:center">';
-        html += '<div><b style="color:'+color+'">'+_esc(cat.categoria)+'</b> · <span style="color:#7A6A55;font-size:0.88em">'+cat.count+' tx · '+cat.pct.toFixed(1)+'%</span></div>';
+        html += '<div style="padding:12px 16px;background:#FAFAF7;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick=\\\''+toggle+'\\\' title="Click para ver tendencia 12 meses">';
+        html += '<div><b style="color:'+color+'">'+_esc(cat.categoria)+'</b> <span style="color:#94a3b8;font-size:0.78em;margin-left:6px">📈 ver 12m</span> · <span style="color:#7A6A55;font-size:0.88em">'+cat.count+' tx · '+cat.pct.toFixed(1)+'%</span></div>';
         html += '<div style="font-weight:700;color:'+color+';font-size:1.05em">'+fmt(cat.monto)+'</div>';
         html += '</div>';
+        // Slot del trend chart (oculto inicialmente)
+        html += '<div id="'+trendId+'" style="display:none;padding:14px 16px;background:#FCFAF7;border-top:1px dashed #E8E4DE"></div>';
         if(cat.top_items && cat.top_items.length){
           html += '<table style="width:100%;font-size:0.85em;border-collapse:collapse">';
           html += '<thead><tr style="background:#FAFAF7;color:#7A6A55"><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Fecha</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Concepto</th><th style="padding:6px 12px;text-align:right;font-size:0.78em;text-transform:uppercase">Monto</th><th style="padding:6px 12px;text-align:left;font-size:0.78em;text-transform:uppercase">Ref</th></tr></thead><tbody>';
@@ -1402,6 +1407,71 @@ async function abrirMesDetalle(periodo, tipo){
 function cerrarMesDetalle(){
   var m = document.getElementById('mes-detalle-modal');
   if(m) m.style.display = 'none';
+}
+
+// Track de charts por slot id para destruir antes de recrear
+var _categoriaTrendCharts = {};
+
+async function toggleCategoriaTrend(slotId, categoria, tipo){
+  var slot = document.getElementById(slotId);
+  if(!slot) return;
+  // Si ya está abierto, cerrar
+  if(slot.style.display !== 'none' && slot.dataset.loaded === '1'){
+    slot.style.display = 'none';
+    return;
+  }
+  slot.style.display = 'block';
+  slot.innerHTML = '<div style="text-align:center;color:#999;font-size:0.85em;padding:14px">Cargando tendencia 12 meses…</div>';
+  try{
+    var url = '/api/financiero/categoria-trend?categoria='+encodeURIComponent(categoria)+'&tipo='+encodeURIComponent(tipo);
+    var r = await fetch(url);
+    if(!r.ok){
+      slot.innerHTML = '<div style="color:#c0392b;font-size:0.85em;padding:8px">Error '+r.status+'</div>';
+      return;
+    }
+    var d = await r.json();
+    var s = d.stats || {};
+    var color = tipo === 'ingresos' ? '#2B7A78' : '#c0392b';
+    // Stats summary
+    var statsLine = [];
+    if(s.promedio !== undefined) statsLine.push('📊 Promedio: <b>'+fmt(s.promedio)+'</b>');
+    if(s.max_mes) statsLine.push('🏔️ Pico: <b>'+s.max_mes+'</b> ('+fmt(s.max_monto)+')');
+    if(s.min_mes && s.min_monto > 0) statsLine.push('🟦 Mínimo: <b>'+s.min_mes+'</b> ('+fmt(s.min_monto)+')');
+    if(s.ultimo_vs_promedio_pct !== null && s.ultimo_vs_promedio_pct !== undefined){
+      var arrow = s.ultimo_vs_promedio_pct >= 0 ? '▲' : '▼';
+      var c2 = s.ultimo_vs_promedio_pct >= 0 ? (tipo==='egresos'?'#c0392b':'#2B7A78') : (tipo==='egresos'?'#2B7A78':'#c0392b');
+      statsLine.push('Último vs prom: <b style="color:'+c2+'">'+arrow+' '+s.ultimo_vs_promedio_pct.toFixed(1)+'%</b>');
+    }
+    var canvasId = slotId+'-canvas';
+    slot.innerHTML = '<div style="font-size:0.85em;color:#7A6A55;margin-bottom:10px">'+statsLine.join(' · ')+'</div>'
+      +'<canvas id="'+canvasId+'" height="80" style="max-height:200px"></canvas>';
+    slot.dataset.loaded = '1';
+
+    // Render chart line
+    var labels = d.meses.map(function(m){return m.periodo.slice(2);});  // YY-MM
+    var montos = d.meses.map(function(m){return m.monto;});
+    if(_categoriaTrendCharts[slotId]) _categoriaTrendCharts[slotId].destroy();
+    _categoriaTrendCharts[slotId] = new Chart(document.getElementById(canvasId), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: categoria,
+          data: montos,
+          borderColor: color,
+          backgroundColor: color+'33',  // 20% alpha
+          tension: 0.25, fill: true, pointRadius: 3, borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {legend: {display: false}},
+        scales: {y: {ticks: {callback: function(v){return fmt(v);}}}},
+      }
+    });
+  }catch(e){
+    slot.innerHTML = '<div style="color:#c0392b;font-size:0.85em;padding:8px">Error red: '+_esc(e.message)+'</div>';
+  }
 }
 
 // helper escape (puede ya existir; redefinir es seguro)

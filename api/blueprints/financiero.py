@@ -371,6 +371,93 @@ def financiero_mes_detalle():
         'categorias': categorias,
     })
 
+
+@bp.route('/api/financiero/categoria-trend')
+def financiero_categoria_trend():
+    """Tendencia de UNA categoría a lo largo de 12 meses.
+
+    Query params:
+      categoria · nombre exacto (ej. 'MPs') · requerido
+      tipo      · 'ingresos' | 'egresos' (default 'egresos')
+
+    Devuelve:
+      meses · 12 períodos contiguos con {periodo, monto, count}
+      stats · {promedio, max_mes, min_mes, total_12m, ultimo_vs_promedio_pct}
+    """
+    u = session.get('compras_user','')
+    if 'compras_user' not in session or (u not in ADMIN_USERS and u not in CONTADORA_USERS):
+        return jsonify({'error': 'No autorizado'}), 401
+    categoria = (request.args.get('categoria') or '').strip()
+    tipo = (request.args.get('tipo') or 'egresos').strip().lower()
+    if not categoria:
+        return jsonify({'error': 'categoria requerida'}), 400
+    if tipo not in ('ingresos', 'egresos'):
+        return jsonify({'error': "tipo debe ser 'ingresos' o 'egresos'"}), 400
+    tabla = 'flujo_ingresos' if tipo == 'ingresos' else 'flujo_egresos'
+
+    from datetime import datetime as _dt
+    conn = get_db(); c = conn.cursor()
+    # 12 períodos hacia atrás desde el mes actual
+    hoy = _dt.now()
+    periodos = []
+    for i in range(11, -1, -1):
+        anio = hoy.year
+        mes = hoy.month - i
+        while mes <= 0:
+            mes += 12; anio -= 1
+        periodos.append(f"{anio:04d}-{mes:02d}")
+
+    # Match flexible: si categoria es 'Sin categoría' busca NULL/empty
+    if categoria == 'Sin categoría':
+        where_cat = "(categoria IS NULL OR TRIM(categoria) = '')"
+        params_cat = []
+    else:
+        where_cat = "categoria = ?"
+        params_cat = [categoria]
+
+    placeholders = ','.join('?' for _ in periodos)
+    try:
+        rows = c.execute(
+            f"""SELECT periodo, COALESCE(SUM(monto),0), COUNT(*)
+                FROM {tabla}
+                WHERE periodo IN ({placeholders}) AND {where_cat}
+                GROUP BY periodo""",
+            periodos + params_cat
+        ).fetchall()
+    except Exception:
+        rows = []
+    by_periodo = {r[0]: (float(r[1] or 0), int(r[2] or 0)) for r in rows}
+
+    meses = []
+    for p in periodos:
+        monto, n = by_periodo.get(p, (0.0, 0))
+        meses.append({'periodo': p, 'monto': monto, 'count': n})
+
+    # Stats
+    montos = [m['monto'] for m in meses]
+    montos_no_zero = [x for x in montos if x > 0]
+    stats = {
+        'total_12m': sum(montos),
+        'promedio': sum(montos_no_zero) / len(montos_no_zero) if montos_no_zero else 0,
+    }
+    if montos_no_zero:
+        max_idx = montos.index(max(montos_no_zero))
+        min_idx = montos.index(min(montos_no_zero))
+        stats['max_mes'] = meses[max_idx]['periodo']
+        stats['max_monto'] = meses[max_idx]['monto']
+        stats['min_mes'] = meses[min_idx]['periodo']
+        stats['min_monto'] = meses[min_idx]['monto']
+        # Último mes vs promedio (cuanto se desvió este mes del promedio)
+        ultimo = montos[-1]
+        if stats['promedio'] > 0:
+            stats['ultimo_vs_promedio_pct'] = round((ultimo - stats['promedio']) / stats['promedio'] * 100, 1)
+        else:
+            stats['ultimo_vs_promedio_pct'] = None
+    return jsonify({
+        'categoria': categoria, 'tipo': tipo,
+        'meses': meses, 'stats': stats,
+    })
+
 @bp.route('/api/financiero/config', methods=['GET','POST'])
 def financiero_config():
     if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
