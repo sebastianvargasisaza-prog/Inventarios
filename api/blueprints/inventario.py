@@ -10,6 +10,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from audit_helpers import audit_log
+from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -2022,11 +2024,28 @@ def consumo_manual():
 
 @bp.route('/api/maestro-mps/<codigo>/archivar', methods=['PUT'])
 def archivar_mp(codigo):
-    """Archiva una MP (la marca como inactiva sin borrarla)."""
+    """Archiva una MP (la marca como inactiva sin borrarla).
+
+    Solo Calidad/Admin · archivar afecta el catálogo regulatorio (la MP
+    queda invisible para nuevas producciones). Auditado.
+    """
+    u, err, code = _require_qc()
+    if err:
+        return err, code
     conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT codigo_mp, nombre_comercial, activo FROM maestro_mps WHERE codigo_mp=?",
+        (codigo,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'MP no encontrada'}), 404
+    antes = dict(antes_row)
     c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", (codigo,))
     if c.rowcount == 0:
         return jsonify({'error': 'MP no encontrada'}), 404
+    audit_log(c, usuario=u, accion='ARCHIVAR_MP', tabla='maestro_mps',
+              registro_id=codigo, antes=antes,
+              despues={'activo': 0},
+              detalle=f"Archivó MP {codigo} ({antes.get('nombre_comercial','')})")
     conn.commit()
     return jsonify({'message': f'MP {codigo} archivada exitosamente'})
 
@@ -3385,14 +3404,40 @@ def liberar_cuarentena(mov_id):
 
 @bp.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
 def actualizar_precio_mp(codigo):
-    d = request.json or {}; precio = float(d.get('precio_kg', 0))
+    """Actualiza precio_referencia de una MP · auditado.
+
+    Solo Compras/Calidad/Admin · cambios de precio impactan margen y
+    presupuestos, requieren trazabilidad.
+    """
+    u, err, code_err = _require_planta_write()
+    if err:
+        return err, code_err
+    d = request.json or {}
+    # Validar precio (allow_zero para "limpiar" precio temporalmente)
+    precio, perr = validate_money(d.get('precio_kg', 0), allow_zero=True,
+                                   field_name='precio_kg')
+    if perr:
+        return jsonify(perr), 400
     conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT codigo_mp, nombre_comercial, precio_referencia, ultima_act_precio "
+        "FROM maestro_mps WHERE codigo_mp=?", (codigo,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'MP no encontrada'}), 404
+    antes = dict(antes_row)
     c.execute("UPDATE maestro_mps SET precio_referencia=?,ultima_act_precio=? WHERE codigo_mp=?",
               (precio, datetime.now().isoformat()[:10], codigo))
     c.execute("""INSERT INTO precios_mp_historico (codigo_mp,proveedor,precio_kg,fecha,origen,observaciones)
                  VALUES (?,?,?,?,?,?)""",
               (codigo, d.get('proveedor',''), precio, datetime.now().isoformat()[:10],
                d.get('origen','manual'), d.get('observaciones','')))
+    audit_log(c, usuario=u, accion='ACTUALIZAR_PRECIO_MP', tabla='maestro_mps',
+              registro_id=codigo, antes=antes,
+              despues={'precio_referencia': precio, 'proveedor': d.get('proveedor',''),
+                       'origen': d.get('origen','manual')},
+              detalle=f"Actualizó precio MP {codigo}: "
+                      f"{antes.get('precio_referencia') or 0} → {precio}"
+                      + (f" · {d.get('observaciones','')}" if d.get('observaciones') else ""))
     conn.commit()
     return jsonify({'ok':True, 'precio_kg':precio})
 
@@ -3693,12 +3738,14 @@ def mee_trazabilidad():
 
 @bp.route('/api/mee/anular/<int:mov_id>', methods=['POST'])
 def mee_anular_movimiento(mov_id):
-    """Anula un movimiento MEE revirtiendo el impacto en stock."""
-    user = session.get('compras_user','')
+    """Anula un movimiento MEE revirtiendo el impacto en stock · auditado."""
+    user, err, code = _require_planta_write()
+    if err:
+        return err, code
     payload = request.json or {}
     motivo = payload.get('motivo','').strip()
-    if not motivo:
-        return jsonify({'error': 'Motivo obligatorio'}), 400
+    if len(motivo) < 5:
+        return jsonify({'error': 'Motivo (≥5 chars) obligatorio'}), 400
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT * FROM movimientos_mee WHERE id=?", (mov_id,))
     row = c.fetchone()
@@ -3716,6 +3763,12 @@ def mee_anular_movimiento(mov_id):
                   (mv['cantidad'], mv['mee_codigo']))
     c.execute("UPDATE movimientos_mee SET anulado=1, observaciones=observaciones||? WHERE id=?",
               (f' [ANULADO por {user}: {motivo}]', mov_id))
+    audit_log(c, usuario=user, accion='ANULAR_MOV_MEE', tabla='movimientos_mee',
+              registro_id=mov_id,
+              antes={'tipo': mv['tipo'], 'cantidad': mv['cantidad'],
+                     'mee_codigo': mv['mee_codigo'], 'anulado': 0},
+              despues={'anulado': 1, 'motivo': motivo},
+              detalle=f"Anuló movimiento MEE #{mov_id} ({mv['tipo']} {mv['cantidad']} de {mv['mee_codigo']}) · motivo: {motivo}")
     conn.commit()
     return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado y stock revertido'})
 
@@ -3820,6 +3873,11 @@ def mee_ajustar_stock(codigo):
         INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
         VALUES (?, 'Ajuste', ?, ?, ?)
     """, (codigo, abs(delta), user, f'Ajuste {stock_anterior} → {cantidad_nueva} ({"+" if delta>=0 else ""}{delta}). {motivo}'))
+    audit_log(c, usuario=user, accion='AJUSTAR_STOCK_MEE', tabla='maestro_mee',
+              registro_id=codigo,
+              antes={'stock_actual': stock_anterior},
+              despues={'stock_actual': cantidad_nueva, 'delta': delta, 'motivo': motivo},
+              detalle=f"Ajustó stock MEE {codigo}: {stock_anterior} → {cantidad_nueva} (Δ {delta:+}) · {motivo}")
     conn.commit()
     return jsonify({'ok': True, 'codigo': codigo, 'stock_anterior': stock_anterior,
                     'stock_nuevo': cantidad_nueva, 'delta': delta})
@@ -4267,12 +4325,26 @@ def acondicionamiento_list():
 
 @bp.route('/api/acondicionamiento/<int:aid>', methods=['PATCH'])
 def acondicionamiento_update(aid):
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT estado, unidades_producidas, observaciones FROM acondicionamiento WHERE id=?",
+        (aid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Acondicionamiento no encontrado'}), 404
+    antes = dict(antes_row)
     if 'estado' in d: c.execute("UPDATE acondicionamiento SET estado=? WHERE id=?", (d['estado'], aid))
     if 'unidades_producidas' in d: c.execute("UPDATE acondicionamiento SET unidades_producidas=? WHERE id=?", (int(d['unidades_producidas']), aid))
     if 'mee_consumido' in d: c.execute("UPDATE acondicionamiento SET mee_consumido=? WHERE id=?", (json.dumps(d['mee_consumido']), aid))
     if 'observaciones' in d: c.execute("UPDATE acondicionamiento SET observaciones=? WHERE id=?", (d['observaciones'], aid))
+    audit_log(c, usuario=u, accion='ACTUALIZAR_ACONDICIONAMIENTO',
+              tabla='acondicionamiento', registro_id=aid, antes=antes,
+              despues={k: d.get(k) for k in ('estado','unidades_producidas','observaciones') if k in d},
+              detalle=f"Actualizó acondicionamiento id={aid}"
+                      + (f" · estado→{d['estado']}" if 'estado' in d else ""))
     conn.commit()
     return jsonify({'ok': True})
 
@@ -4300,10 +4372,28 @@ def liberacion_list():
 
 @bp.route('/api/liberacion/<int:lid>', methods=['PATCH'])
 def liberacion_update(lid):
-    u = session.get('compras_user', '')
+    """Aprueba/rechaza liberación de PT · DECISIÓN INVIMA art. 10.
+
+    Solo Calidad/Admin pueden Liberar/Rechazar. Rechazo requiere observaciones
+    (≥10 chars) como motivo regulatorio.
+    """
+    # RBAC: solo Calidad/Admin para decisiones Liberado/Rechazado
+    u_qc, err_qc, code_qc = _require_qc()
+    if err_qc:
+        return err_qc, code_qc
+    u = u_qc
     d = request.get_json(silent=True) or {}
-    conn = get_db(); c = conn.cursor()
     estado = d.get('estado', '')
+    obs = (d.get('observaciones') or '').strip()
+    if estado == 'Rechazado' and len(obs) < 10:
+        return jsonify({'error': 'observaciones (≥10 chars) requeridas para rechazar liberación'}), 400
+    conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT lote, producto, unidades, sku, estado FROM liberaciones WHERE id=?",
+        (lid,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Liberación no encontrada'}), 404
+    antes = dict(antes_row)
     if estado == 'Liberado':
         c.execute("UPDATE liberaciones SET estado='Liberado', fecha_liberacion=?, aprobado_por=?, cliente=? WHERE id=?",
                   (datetime.now().strftime('%Y-%m-%d'), u, d.get('cliente', ''), lid))
@@ -4337,9 +4427,16 @@ def liberacion_update(lid):
             pass
     elif estado == 'Rechazado':
         c.execute("UPDATE liberaciones SET estado='Rechazado', aprobado_por=?, observaciones=? WHERE id=?",
-                  (u, d.get('observaciones', ''), lid))
+                  (u, obs, lid))
     else:
-        c.execute("UPDATE liberaciones SET observaciones=? WHERE id=?", (d.get('observaciones', ''), lid))
+        c.execute("UPDATE liberaciones SET observaciones=? WHERE id=?", (obs, lid))
+    accion = 'LIBERAR_PT' if estado == 'Liberado' else 'RECHAZAR_PT' if estado == 'Rechazado' else 'ACTUALIZAR_LIBERACION'
+    audit_log(c, usuario=u, accion=accion, tabla='liberaciones',
+              registro_id=lid, antes=antes,
+              despues={'estado': estado, 'aprobado_por': u, 'observaciones': obs,
+                       'cliente': d.get('cliente', '')},
+              detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('producto','')})"
+                      + (f" · {obs}" if obs else ""))
     conn.commit()
     return jsonify({'ok': True})
 

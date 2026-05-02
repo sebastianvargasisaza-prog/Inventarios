@@ -764,6 +764,15 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="LIBERAR_LOTE_PT">LIBERAR_LOTE_PT</option>
             <option value="RECHAZAR_LOTE_PT">RECHAZAR_LOTE_PT</option>
             <option value="REANALIZAR_LOTE_PT">REANALIZAR_LOTE_PT</option>
+            <option value="LIBERAR_PT">LIBERAR_PT</option>
+            <option value="RECHAZAR_PT">RECHAZAR_PT</option>
+            <option value="ACTUALIZAR_LIBERACION">ACTUALIZAR_LIBERACION</option>
+            <option value="ACTUALIZAR_ACONDICIONAMIENTO">ACTUALIZAR_ACONDICIONAMIENTO</option>
+            <option disabled>── Inventario / MP / MEE ──</option>
+            <option value="ARCHIVAR_MP">ARCHIVAR_MP</option>
+            <option value="ACTUALIZAR_PRECIO_MP">ACTUALIZAR_PRECIO_MP</option>
+            <option value="ANULAR_MOV_MEE">ANULAR_MOV_MEE</option>
+            <option value="AJUSTAR_STOCK_MEE">AJUSTAR_STOCK_MEE</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>
