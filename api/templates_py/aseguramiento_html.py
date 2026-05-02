@@ -89,6 +89,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
   <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
   <div class="tab" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
+  <div class="tab" onclick="goTab('tab-recalls')">&#x1F6A8; Recall</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
@@ -500,6 +501,111 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- RECALL · ASG-PRO-004 -->
+<div id="tab-recalls" class="pane">
+  <div class="kpi-row" id="rcl-kpis">
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="rcl-kp-tot">—</div></div>
+    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="rcl-kp-sin">—</div></div>
+    <div class="kpi"><div class="kpi-label">Clase I abiertos</div><div class="kpi-val crit" id="rcl-kp-c1">—</div></div>
+    <div class="kpi"><div class="kpi-label">INVIMA pendiente</div><div class="kpi-val crit" id="rcl-kp-inv">—</div></div>
+    <div class="kpi"><div class="kpi-label">En recolección</div><div class="kpi-val" id="rcl-kp-rec">—</div></div>
+    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="rcl-kp-cer">—</div></div>
+  </div>
+
+  <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px">
+    <div style="font-size:0.85em;color:#991b1b">⚠ <b>RECALL = decisión grave.</b> Solo iniciar tras confirmar que el producto en el mercado representa riesgo. Clase I requiere notificación INVIMA en <b>&lt;24h</b> (Resolución 2214/2021).</div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Recalls</div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+        <select id="rcl-f-estado" onchange="loadRecalls()">
+          <option value="">Todos estados</option>
+          <option value="iniciado">Iniciado</option>
+          <option value="clasificado">Clasificado</option>
+          <option value="invima_notificado">INVIMA notificado</option>
+          <option value="distribuidores_notificados">Distribuidores notif.</option>
+          <option value="en_recoleccion">En recolección</option>
+          <option value="completado">Completado</option>
+          <option value="cerrado">Cerrado</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+        <select id="rcl-f-clase" onchange="loadRecalls()">
+          <option value="">Toda clase</option>
+          <option value="clase_I">Clase I</option>
+          <option value="clase_II">Clase II</option>
+          <option value="clase_III">Clase III</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadRecalls()">↻</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirNuevoRecall()" style="background:#ef4444;color:#fff">+ Iniciar recall</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Código</th><th>Inicio</th><th>Producto / Lotes</th><th>Origen</th><th>Clase</th><th>Alcance</th><th>Estado</th><th>INVIMA</th><th>Días</th><th></th></tr></thead>
+        <tbody id="rcl-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nuevo recall -->
+<div class="modal-overlay" id="m-rcl-new">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('m-rcl-new')">&times;</button>
+    <div class="modal-title" style="color:#ef4444">🚨 Iniciar recall de producto</div>
+    <div style="background:#fef2f2;padding:8px 10px;border-radius:6px;font-size:0.78em;color:#991b1b;margin-bottom:10px">
+      Esta acción inicia el proceso formal de retiro de producto del mercado y notifica inmediato a Calidad+Sebastián.
+    </div>
+    <div class="form-group"><label>Origen *</label>
+      <select id="m-rcl-origen">
+        <option value="desviacion">Desviación detectada</option>
+        <option value="queja_cliente">Queja de cliente</option>
+        <option value="hallazgo_interno">Hallazgo interno</option>
+        <option value="auditoria">Auditoría</option>
+        <option value="reaccion_adversa">Reacción adversa</option>
+        <option value="invima">Solicitud INVIMA</option>
+        <option value="otro" selected>Otro</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Referencia origen (código DESV/QC/etc)</label>
+      <input id="m-rcl-origen-ref" placeholder="DESV-2026-0010 · QC-2026-0005 ...">
+    </div>
+    <div class="form-group"><label>Producto * </label>
+      <input id="m-rcl-prod" placeholder="Ej: SAH-30ml · Sérum Niacinamida 4%">
+    </div>
+    <div class="form-group"><label>Lotes afectados * (separados por coma)</label>
+      <input id="m-rcl-lotes" placeholder="LOTE-2026-001, LOTE-2026-005...">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Cantidad fabricada (uds)</label><input id="m-rcl-fab" type="number"></div>
+      <div class="form-group"><label>Cantidad distribuida (uds)</label><input id="m-rcl-dist" type="number"></div>
+    </div>
+    <div class="form-group"><label>Motivo del recall * (≥20 chars)</label>
+      <textarea id="m-rcl-motivo" style="min-height:60px" placeholder="Defecto detectado, riesgo identificado..."></textarea>
+    </div>
+    <div class="form-group"><label>Descripción del riesgo</label>
+      <textarea id="m-rcl-riesgo" style="min-height:50px" placeholder="Cómo afecta al consumidor"></textarea>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="closeModal('m-rcl-new')">Cancelar</button>
+      <button class="btn btn-primary" style="background:#ef4444;color:#fff" onclick="guardarRecall()">Iniciar recall</button>
+    </div>
+    <div id="m-rcl-new-msg" style="margin-top:8px;font-size:12px"></div>
+  </div>
+</div>
+
+<!-- Modal detalle recall + workflow -->
+<div class="modal-overlay" id="m-rcl-det">
+  <div class="modal" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('m-rcl-det')">&times;</button>
+    <div class="modal-title" id="m-rcl-det-title">Detalle</div>
+    <input type="hidden" id="m-rcl-det-id">
+    <div id="m-rcl-det-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
@@ -569,7 +675,7 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
-var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-conf'];
+var _tabIds = ['tab-dash','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -580,6 +686,7 @@ function goTab(id){
   else if(id==='tab-desv') loadDesviaciones();
   else if(id==='tab-cambios') loadCambios();
   else if(id==='tab-quejas') loadQuejas();
+  else if(id==='tab-recalls') loadRecalls();
   else if(id==='tab-conf') loadConflictos();
 }
 
@@ -1343,6 +1450,279 @@ async function _postQuejaAccion(id, accion, body){
     var r = await fetch('/api/aseguramiento/quejas/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     var d = await r.json();
     if(d.ok){ verQueja(id); loadQuejas(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+// === RECALL (ASG-PRO-004) =============================================
+async function loadRecalls(){
+  var estado = document.getElementById('rcl-f-estado').value;
+  var clase = document.getElementById('rcl-f-clase').value;
+  var qs = [];
+  if(estado) qs.push('estado='+estado);
+  if(clase) qs.push('clase='+clase);
+  var url = '/api/aseguramiento/recalls' + (qs.length ? '?'+qs.join('&') : '');
+  try{
+    var r = await fetch(url);
+    var d = await r.json();
+    var k = d.kpis || {};
+    document.getElementById('rcl-kp-tot').textContent = k.total || 0;
+    document.getElementById('rcl-kp-sin').textContent = k.sin_clasificar || 0;
+    document.getElementById('rcl-kp-c1').textContent = k.clase_I_abiertos || 0;
+    document.getElementById('rcl-kp-inv').textContent = k.invima_pendiente || 0;
+    document.getElementById('rcl-kp-rec').textContent = k.en_recoleccion || 0;
+    document.getElementById('rcl-kp-cer').textContent = k.cerrados_30d || 0;
+    var tb = document.getElementById('rcl-tbody');
+    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="10" class="empty">Sin recalls (lo cual es bueno 🙏)</td></tr>'; return; }
+    tb.innerHTML = d.items.map(function(it){
+      var claseBadge = it.clase_recall === 'clase_I' ? '<span class="badge badge-venc">CLASE I</span>'
+        : it.clase_recall === 'clase_II' ? '<span class="badge badge-prox">Clase II</span>'
+        : it.clase_recall === 'clase_III' ? '<span class="badge badge-bor">Clase III</span>'
+        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+      var estadoLabel = (it.estado||'').replace(/_/g,' ');
+      var estadoCol = it.estado === 'cerrado' ? '#15803d'
+        : it.estado === 'cancelado' ? '#94a3b8'
+        : it.estado === 'iniciado' ? '#ef4444'
+        : it.estado === 'completado' ? '#0ea5e9'
+        : '#fbbf24';
+      var invimaIcon = it.notificacion_invima_at
+        ? '<span title="INVIMA notificado" style="color:#15803d">✓</span>'
+        : '<span title="INVIMA pendiente" style="color:#ef4444">✗</span>';
+      var prodLote = (it.producto||'') + (it.lotes_afectados ? ' / '+it.lotes_afectados.slice(0,30) : '');
+      return '<tr>'
+        +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
+        +'<td>'+_esc(it.fecha_inicio||'')+'</td>'
+        +'<td>'+_esc(prodLote.slice(0,60))+'</td>'
+        +'<td>'+_esc((it.origen||'').replace(/_/g,' '))+'</td>'
+        +'<td>'+claseBadge+'</td>'
+        +'<td>'+_esc(it.alcance_geografico||'—')+'</td>'
+        +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
+        +'<td>'+invimaIcon+'</td>'
+        +'<td>'+(it.dias_abierto||0)+'d</td>'
+        +'<td><button class="btn btn-ghost btn-sm" onclick="verRecall('+it.id+')">Abrir</button></td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){ document.getElementById('rcl-tbody').innerHTML = '<tr><td colspan="10" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
+}
+
+function abrirNuevoRecall(){
+  if(!confirm('Iniciar recall es una decisión grave que activa notificaciones inmediatas. ¿Confirmas que el producto en mercado representa riesgo y debes retirarlo?')) return;
+  ['m-rcl-origen-ref','m-rcl-prod','m-rcl-lotes','m-rcl-fab','m-rcl-dist',
+   'm-rcl-motivo','m-rcl-riesgo','m-rcl-new-msg'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('m-rcl-origen').value = 'otro';
+  openModal('m-rcl-new');
+}
+
+async function guardarRecall(){
+  var msg = document.getElementById('m-rcl-new-msg');
+  var body = {
+    origen: document.getElementById('m-rcl-origen').value,
+    origen_referencia: document.getElementById('m-rcl-origen-ref').value,
+    producto: document.getElementById('m-rcl-prod').value,
+    lotes_afectados: document.getElementById('m-rcl-lotes').value,
+    cantidad_fabricada: parseInt(document.getElementById('m-rcl-fab').value) || null,
+    cantidad_distribuida: parseInt(document.getElementById('m-rcl-dist').value) || null,
+    motivo: document.getElementById('m-rcl-motivo').value,
+    riesgo_descripcion: document.getElementById('m-rcl-riesgo').value,
+  };
+  if(!body.producto){ msg.innerHTML = '<span style="color:#ef4444">Producto requerido</span>'; return; }
+  if(!body.lotes_afectados){ msg.innerHTML = '<span style="color:#ef4444">Lotes requeridos</span>'; return; }
+  if(!body.motivo || body.motivo.length < 20){ msg.innerHTML = '<span style="color:#ef4444">Motivo ≥20 chars</span>'; return; }
+  msg.innerHTML = '<span style="color:#64748b">Iniciando recall...</span>';
+  try{
+    var r = await fetch('/api/aseguramiento/recalls', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){
+      msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' iniciado</span>';
+      setTimeout(function(){ closeModal('m-rcl-new'); loadRecalls(); }, 700);
+    } else { msg.innerHTML = '<span style="color:#ef4444">Error: '+_esc(d.error||'?')+'</span>'; }
+  }catch(e){ msg.innerHTML = '<span style="color:#ef4444">Error red: '+_esc(e.message)+'</span>'; }
+}
+
+async function verRecall(id){
+  document.getElementById('m-rcl-det-id').value = id;
+  var body = document.getElementById('m-rcl-det-body');
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-rcl-det');
+  try{
+    var r = await fetch('/api/aseguramiento/recalls/'+id);
+    var d = await r.json();
+    if(!r.ok){ body.innerHTML = '<p class="empty" style="color:#c00">'+_esc(d.error||'?')+'</p>'; return; }
+    document.getElementById('m-rcl-det-title').textContent = d.codigo + ' · ' + (d.estado||'').replace(/_/g,' ');
+
+    var html = '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+      +'<div style="font-size:0.85em;color:#991b1b"><b>Iniciado:</b> '+_esc(d.fecha_inicio||'')+' por '+_esc(d.iniciado_por||'')+'</div>'
+      +'<div style="font-size:0.85em;color:#991b1b;margin-top:4px"><b>Origen:</b> '+_esc((d.origen||'').replace(/_/g,' '))+(d.origen_referencia?' · ref: '+_esc(d.origen_referencia):'')+'</div>'
+      +'<div style="margin-top:8px;font-weight:700">'+_esc(d.producto||'')+'</div>'
+      +'<div style="font-size:0.9em;margin-top:4px"><b>Lotes:</b> '+_esc(d.lotes_afectados||'')+'</div>'
+      +(d.cantidad_fabricada || d.cantidad_distribuida ? '<div style="font-size:0.85em;color:#475569;margin-top:4px">Fabricado: '+(d.cantidad_fabricada||'?')+' uds · Distribuido: '+(d.cantidad_distribuida||'?')+' uds</div>' : '')
+      +'<div style="margin-top:8px"><b>Motivo:</b><br>'+_esc(d.motivo||'')+'</div>'
+      +(d.riesgo_descripcion ? '<div style="margin-top:6px"><b>Riesgo:</b><br>'+_esc(d.riesgo_descripcion)+'</div>' : '')
+      +'</div>';
+
+    html += '<div class="card-title" style="margin-top:12px">Workflow</div>';
+
+    // Paso 1: Clasificación
+    if(d.clase_recall){
+      var claseCol = d.clase_recall === 'clase_I' ? '#ef4444' : '#fbbf24';
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid '+claseCol+'">'
+        +'<div><b>1. Clasificado</b> como <b style="color:'+claseCol+'">'+_esc(d.clase_recall.replace('_',' ').toUpperCase())+'</b> · alcance '+_esc(d.alcance_geografico||'')+'</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.justificacion_clasificacion||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.clasificado_por||'')+' · '+_esc(d.clasificado_at||'')+'</div>'
+        +'</div>';
+    } else {
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>1. Clasificar</b> (URGENTE · pendiente)</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">'
+        +'<select id="rcl-cl-clase" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Clase...</option><option value="clase_I">Clase I (riesgo grave salud)</option><option value="clase_II">Clase II (temporal/reversible)</option><option value="clase_III">Clase III (improbable daño)</option></select>'
+        +'<select id="rcl-cl-alcance" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px"><option value="">Alcance...</option><option value="local">Local</option><option value="regional">Regional</option><option value="nacional">Nacional</option><option value="internacional">Internacional</option></select>'
+        +'</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Justificación (≥20 chars)</label><textarea id="rcl-cl-just" style="min-height:50px"></textarea></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="clasificarRecall('+id+')">Clasificar</button></div>'
+        +'</div>';
+    }
+
+    // Paso 2: Notificación INVIMA
+    if(d.notificacion_invima_at){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>2. INVIMA notificado</b> · ref: <code>'+_esc(d.notificacion_invima_ref||'')+'</code></div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.notificacion_invima_por||'')+' · '+_esc(d.notificacion_invima_at||'')+'</div>'
+        +'</div>';
+    } else if(d.clase_recall){
+      var urgente = d.clase_recall === 'clase_I' ? ' <span style="color:#ef4444">⏰ <24h</span>' : '';
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>2. Notificar a INVIMA</b>'+urgente+'</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Radicado / oficio INVIMA</label><input id="rcl-inv-ref" placeholder="Ej: 2026-12345"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="recallNotifInvima('+id+')">Registrar notificación</button></div>'
+        +'</div>';
+    }
+
+    // Paso 3: Notificación distribuidores
+    if(d.notificacion_distribuidores_at){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>3. Distribuidores notificados</b></div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px">'+_esc(d.distribuidores_notificados||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">por '+_esc(d.notificacion_distribuidores_por||'')+' · '+_esc(d.notificacion_distribuidores_at||'')+'</div>'
+        +'</div>';
+    } else if(d.notificacion_invima_at){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>3. Notificar a distribuidores y retail</b></div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Lista distribuidores notificados (≥5 chars)</label><textarea id="rcl-dist-list" style="min-height:50px" placeholder="Distribuidor A, Cadena retail B, ..."></textarea></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="recallNotifDist('+id+')">Marcar notificados</button></div>'
+        +'</div>';
+    }
+
+    // Paso 4: Recolección
+    if(d.recoleccion_completada_at){
+      var pct = d.cantidad_distribuida ? Math.round((d.cantidad_recolectada / d.cantidad_distribuida) * 100) : null;
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div><b>4. Recolección completada</b> · '+(d.cantidad_recolectada||0)+' uds'+(pct!==null?' ('+pct+'%)':'')+'</div>'
+        +'<div style="font-size:0.78em;color:#94a3b8">'+_esc(d.recoleccion_completada_at||'')+'</div>'
+        +'</div>';
+    } else if(d.notificacion_distribuidores_at){
+      html += '<div class="card" style="background:#fefce8;border-left:3px solid #fbbf24">'
+        +'<div><b>4. Recolección del producto</b> '+(d.cantidad_recolectada!==null?' · acumulado '+d.cantidad_recolectada+' uds':'')+'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;align-items:center">'
+        +'<input id="rcl-rec-cant" type="number" min="0" placeholder="Cantidad recolectada total" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<label style="font-size:0.85em"><input type="checkbox" id="rcl-rec-fin"> Recolección COMPLETA</label>'
+        +'</div>'
+        +'<div style="text-align:right;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="recallRecoleccion('+id+')">Actualizar recolección</button></div>'
+        +'</div>';
+    }
+
+    // Paso 5: Cierre
+    if(d.estado === 'cerrado'){
+      html += '<div class="card" style="background:#f0fdf4;border-left:3px solid #15803d">'
+        +'<div style="font-size:1em;font-weight:700;color:#15803d">✅ RECALL CERRADO</div>'
+        +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Disposición:</b> '+_esc((d.disposicion_final||'').replace(/_/g,' '))+' · '+_esc(d.disposicion_descripcion||'')+'</div>'
+        +(d.efectividad_porcentaje !== null ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Efectividad:</b> '+d.efectividad_porcentaje+'%'+(d.efectividad_descripcion?' · '+_esc(d.efectividad_descripcion):'')+'</div>' : '')
+        +(d.observaciones_cierre ? '<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Observaciones:</b> '+_esc(d.observaciones_cierre)+'</div>' : '')
+        +'<div style="font-size:0.78em;color:#94a3b8;margin-top:4px">Cerrado '+_esc(d.fecha_cierre||'')+' por '+_esc(d.cerrado_por||'')+'</div>'
+        +'</div>';
+    } else if(d.estado === 'completado'){
+      html += '<div class="card" style="background:#fef2f2;border-left:3px solid #ef4444">'
+        +'<div><b>5. Cerrar con disposición + efectividad</b></div>'
+        +'<div class="form-group"><label>Disposición final</label>'
+        +'<select id="rcl-c-disp" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;width:auto"><option value="destruccion">Destrucción</option><option value="reproceso">Reproceso</option><option value="devolver_proveedor">Devolver a proveedor</option><option value="cuarentena">Cuarentena indefinida</option></select>'
+        +'</div>'
+        +'<div class="form-group"><label>Descripción disposición (≥20 chars)</label><textarea id="rcl-c-disp-desc" style="min-height:50px"></textarea></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">'
+        +'<input id="rcl-c-ef-pct" type="number" min="0" max="100" placeholder="% efectividad" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'<input id="rcl-c-ef-desc" placeholder="Análisis de efectividad" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">'
+        +'</div>'
+        +'<div class="form-group" style="margin-top:6px"><label>Observaciones cierre</label><input id="rcl-c-obs"></div>'
+        +'<div style="text-align:right"><button class="btn btn-primary btn-sm" onclick="cerrarRecall('+id+')">Cerrar recall</button></div>'
+        +'</div>';
+    }
+
+    // Timeline
+    if(d.timeline && d.timeline.length){
+      html += '<div class="card-title" style="margin-top:12px">Timeline</div>';
+      html += '<div style="font-size:0.85em">';
+      d.timeline.forEach(function(ev){
+        html += '<div style="border-left:2px solid #cbd5e1;padding:4px 0 4px 10px;margin-bottom:4px">'
+          +'<div style="font-weight:600">'+_esc(ev.evento_tipo)+(ev.estado_anterior ? ' · '+_esc(ev.estado_anterior)+'→'+_esc(ev.estado_nuevo) : '')+'</div>'
+          +'<div style="color:#475569">'+_esc(ev.comentario||'')+'</div>'
+          +'<div style="color:#94a3b8;font-size:0.85em">'+_esc(ev.usuario||'')+' · '+_esc(ev.creado_en||'')+'</div>'
+          +'</div>';
+      });
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML = '<p class="empty" style="color:#c00">Error: '+_esc(e.message)+'</p>'; }
+}
+
+async function clasificarRecall(id){
+  var clase = document.getElementById('rcl-cl-clase').value;
+  var alcance = document.getElementById('rcl-cl-alcance').value;
+  var just = document.getElementById('rcl-cl-just').value;
+  if(!clase){ alert('Elige clase'); return; }
+  if(!alcance){ alert('Elige alcance'); return; }
+  if(!just || just.length < 20){ alert('Justificación ≥20 chars'); return; }
+  await _postRecallAccion(id, 'clasificar', {clase_recall: clase, alcance_geografico: alcance, justificacion_clasificacion: just});
+}
+
+async function recallNotifInvima(id){
+  var ref = document.getElementById('rcl-inv-ref').value;
+  if(!ref){ alert('Radicado requerido'); return; }
+  await _postRecallAccion(id, 'notificar-invima', {referencia: ref});
+}
+
+async function recallNotifDist(id){
+  var lista = document.getElementById('rcl-dist-list').value;
+  if(!lista || lista.length < 5){ alert('Lista distribuidores requerida'); return; }
+  await _postRecallAccion(id, 'notificar-distribuidores', {distribuidores_notificados: lista});
+}
+
+async function recallRecoleccion(id){
+  var cant = document.getElementById('rcl-rec-cant').value;
+  var fin = document.getElementById('rcl-rec-fin').checked;
+  if(cant === '' || cant === null){ alert('Cantidad requerida'); return; }
+  await _postRecallAccion(id, 'recoleccion', {cantidad_recolectada: parseInt(cant), completa: fin});
+}
+
+async function cerrarRecall(id){
+  var disp = document.getElementById('rcl-c-disp').value;
+  var dispDesc = document.getElementById('rcl-c-disp-desc').value;
+  var efPct = document.getElementById('rcl-c-ef-pct').value;
+  var efDesc = document.getElementById('rcl-c-ef-desc').value;
+  var obs = document.getElementById('rcl-c-obs').value;
+  if(!dispDesc || dispDesc.length < 20){ alert('Descripción disposición ≥20 chars'); return; }
+  if(!confirm('Confirmas cerrar este recall?')) return;
+  await _postRecallAccion(id, 'cerrar', {
+    disposicion_final: disp, disposicion_descripcion: dispDesc,
+    efectividad_porcentaje: efPct === '' ? null : parseInt(efPct),
+    efectividad_descripcion: efDesc, observaciones_cierre: obs,
+  });
+}
+
+async function _postRecallAccion(id, accion, body){
+  try{
+    var r = await fetch('/api/aseguramiento/recalls/'+id+'/'+accion, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var d = await r.json();
+    if(d.ok){ verRecall(id); loadRecalls(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
 }

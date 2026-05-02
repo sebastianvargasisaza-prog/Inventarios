@@ -1661,6 +1661,392 @@ def queja_cerrar(qid):
     return jsonify({'ok': True})
 
 
+# ════════════════════════════════════════════════════════════════════
+# RECALL · ASG-PRO-004 · Retiro de producto del mercado
+# ════════════════════════════════════════════════════════════════════
+# Cumplimiento Resolución 2214/2021 INVIMA: Clase I requiere notificación
+# a INVIMA en <24h. Clase II y III en plazos estándar definidos por
+# severidad del riesgo. Acción de RECALL = uno de los procedimientos
+# críticos para liberación regulatoria de cualquier farmacéutico.
+
+def _generar_codigo_recall(c) -> str:
+    """Genera código RCL-AAAA-NNNN secuencial por año."""
+    anio = datetime.now().year
+    row = c.execute("""
+        SELECT codigo FROM recalls
+        WHERE codigo LIKE ? ORDER BY id DESC LIMIT 1
+    """, (f'RCL-{anio}-%',)).fetchone()
+    if row and row[0]:
+        try:
+            return f'RCL-{anio}-{int(row[0].split("-")[-1])+1:04d}'
+        except (ValueError, IndexError):
+            pass
+    return f'RCL-{anio}-0001'
+
+
+@bp.route('/api/aseguramiento/recalls', methods=['GET', 'POST'])
+def recalls_endpoint():
+    """GET: lista filtrable. POST: iniciar recall (solo Calidad/Admin)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        # Iniciar recall = solo Calidad/Admin (es decisión grave)
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin pueden iniciar recall'}), 403
+        d = request.get_json(silent=True) or {}
+        producto = (d.get('producto') or '').strip()
+        lotes = (d.get('lotes_afectados') or '').strip()
+        motivo = (d.get('motivo') or '').strip()
+        if len(producto) < 2:
+            return jsonify({'error': 'producto requerido'}), 400
+        if len(lotes) < 2:
+            return jsonify({'error': 'lotes_afectados requerido (puede ser uno o varios)'}), 400
+        if len(motivo) < 20:
+            return jsonify({'error': 'motivo requerido (≥20 chars)'}), 400
+        origen = (d.get('origen') or 'otro').strip()
+        valid_origenes = ('desviacion','queja_cliente','hallazgo_interno',
+                            'auditoria','reaccion_adversa','invima','otro')
+        if origen not in valid_origenes:
+            return jsonify({'error': f'origen inválido. Uno de: {", ".join(valid_origenes)}'}), 400
+
+        codigo = _generar_codigo_recall(c)
+        try:
+            c.execute("""
+                INSERT INTO recalls
+                  (codigo, fecha_inicio, iniciado_por, origen, origen_referencia,
+                   desviacion_id, queja_id, producto, lotes_afectados,
+                   cantidad_fabricada, cantidad_distribuida,
+                   motivo, riesgo_descripcion, estado)
+                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iniciado')
+            """, (codigo, user, origen,
+                  (d.get('origen_referencia') or '')[:200],
+                  d.get('desviacion_id'),
+                  d.get('queja_id'),
+                  producto[:200],
+                  lotes[:500],
+                  d.get('cantidad_fabricada'),
+                  d.get('cantidad_distribuida'),
+                  motivo[:3000],
+                  (d.get('riesgo_descripcion') or '')[:2000]))
+            rid = c.lastrowid
+            c.execute("""
+                INSERT INTO recalls_eventos
+                  (recall_id, evento_tipo, estado_nuevo, usuario, comentario)
+                VALUES (?, 'iniciado', 'iniciado', ?, ?)
+            """, (rid, user, f'Recall iniciado · origen {origen} · {producto[:80]}'))
+            # Audit log INVIMA - SIEMPRE para recalls
+            try:
+                import json as _json
+                c.execute("""
+                    INSERT INTO audit_log (usuario, accion, registro_id, despues)
+                    VALUES (?, 'INICIAR_RECALL', ?, ?)
+                """, (user, codigo,
+                      _json.dumps({'producto': producto[:200], 'lotes': lotes[:500],
+                                    'origen': origen, 'motivo': motivo[:500]})))
+            except Exception:
+                pass
+            conn.commit()
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            log.exception('crear recall fallo: %s', e)
+            return jsonify({'error': str(e)[:200]}), 500
+
+        # Recall = SIEMPRE notificación crítica
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['controlcalidad.espagiria','aseguramiento.espagiria','sebastian'],
+                'capa', f'🚨🚨 RECALL INICIADO {codigo} · {producto[:60]}',
+                body=f'Lotes: {lotes[:200]}\nMotivo: {motivo[:200]}\nClasificar URGENTE para INVIMA.',
+                link='/aseguramiento', remitente=user, importante=True,
+            )
+        except Exception as _e:
+            log.warning('notif recall iniciar fallo: %s', _e)
+        return jsonify({'ok': True, 'id': rid, 'codigo': codigo}), 201
+
+    # GET · lista
+    estado = (request.args.get('estado') or '').strip()
+    clase = (request.args.get('clase') or '').strip()
+    where = []; params = []
+    if estado: where.append('estado=?'); params.append(estado)
+    if clase: where.append('clase_recall=?'); params.append(clase)
+    sql = """SELECT id, codigo, fecha_inicio, producto, lotes_afectados,
+                    clase_recall, alcance_geografico, estado, origen,
+                    notificacion_invima_at, cantidad_distribuida, cantidad_recolectada,
+                    fecha_cierre,
+                    CAST((julianday('now') - julianday(fecha_inicio)) AS INTEGER) as dias_abierto
+             FROM recalls"""
+    if where: sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY fecha_inicio DESC, id DESC LIMIT 500'
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id','codigo','fecha_inicio','producto','lotes_afectados',
+            'clase_recall','alcance_geografico','estado','origen',
+            'notificacion_invima_at','cantidad_distribuida','cantidad_recolectada',
+            'fecha_cierre','dias_abierto']
+    items = [dict(zip(cols, r)) for r in rows]
+    kpis = {
+        'total': len(items),
+        'sin_clasificar': sum(1 for it in items if it['estado'] == 'iniciado'),
+        'clase_I_abiertos': sum(1 for it in items
+                                  if it['clase_recall']=='clase_I'
+                                  and it['estado'] not in ('cerrado','cancelado')),
+        'invima_pendiente': sum(1 for it in items
+                                  if it['estado'] in ('iniciado','clasificado')
+                                  and not it['notificacion_invima_at']),
+        'en_recoleccion': sum(1 for it in items if it['estado'] == 'en_recoleccion'),
+        'cerrados_30d': sum(1 for it in items
+                              if it['estado']=='cerrado' and it.get('fecha_cierre')
+                              and it['fecha_cierre'] >= (datetime.now().date() - timedelta(days=30)).isoformat()),
+    }
+    return jsonify({'items': items, 'kpis': kpis})
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>', methods=['GET'])
+def recall_detalle(rid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'recall no encontrado'}), 404
+    cols = [d[0] for d in c.description]
+    detalle = dict(zip(cols, row))
+    eventos = c.execute("""
+        SELECT evento_tipo, estado_anterior, estado_nuevo, usuario, comentario, creado_en
+        FROM recalls_eventos WHERE recall_id=? ORDER BY id ASC
+    """, (rid,)).fetchall()
+    detalle['timeline'] = [{
+        'evento_tipo': r[0], 'estado_anterior': r[1], 'estado_nuevo': r[2],
+        'usuario': r[3], 'comentario': r[4], 'creado_en': r[5],
+    } for r in eventos]
+    return jsonify(detalle)
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>/clasificar', methods=['POST'])
+def recall_clasificar(rid):
+    """Clase I (riesgo grave salud) → INVIMA <24h. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    clase = (d.get('clase_recall') or '').strip()
+    if clase not in ('clase_I','clase_II','clase_III'):
+        return jsonify({'error': 'clase_recall: clase_I/clase_II/clase_III'}), 400
+    alcance = (d.get('alcance_geografico') or '').strip()
+    if alcance not in ('local','regional','nacional','internacional'):
+        return jsonify({'error': 'alcance_geografico: local/regional/nacional/internacional'}), 400
+    just = (d.get('justificacion_clasificacion') or '').strip()
+    if len(just) < 20:
+        return jsonify({'error': 'justificacion_clasificacion requerida (≥20 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('iniciado','clasificado'):
+        return jsonify({'error': f'no se puede clasificar en estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE recalls
+        SET clase_recall=?, alcance_geografico=?, justificacion_clasificacion=?,
+            clasificado_por=?, clasificado_at=datetime('now'),
+            estado='clasificado', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (clase, alcance, just, user, rid))
+    c.execute("""
+        INSERT INTO recalls_eventos
+          (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'clasificado', ?, 'clasificado', ?, ?)
+    """, (rid, estado_ant, user, f'{clase} · alcance {alcance}: {just[:200]}'))
+    conn.commit()
+    # Si Clase I → notificar INVIMA es URGENTE (24h)
+    if clase == 'clase_I':
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['aseguramiento.espagiria','sebastian'],
+                'capa', f'🚨 {row[1]} · CLASE I · NOTIFICAR INVIMA <24H',
+                body=f'Recall Clase I requiere notificación INVIMA inmediata (Resolución 2214/2021).',
+                link='/aseguramiento', remitente=user, importante=True,
+            )
+        except Exception as _e:
+            log.warning('notif clase_I fallo: %s', _e)
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>/notificar-invima', methods=['POST'])
+def recall_notificar_invima(rid):
+    """Registra notificación a INVIMA (radicado/oficio)."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    ref = (d.get('referencia') or '').strip()
+    if not ref:
+        return jsonify({'error': 'referencia (radicado/oficio) requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('clasificado','invima_notificado'):
+        return jsonify({'error': f'no se puede notificar INVIMA en estado {estado_ant} · clasificar primero'}), 409
+    c.execute("""
+        UPDATE recalls
+        SET notificacion_invima_at=datetime('now'),
+            notificacion_invima_ref=?, notificacion_invima_por=?,
+            estado='invima_notificado', actualizado_en=datetime('now')
+        WHERE id=?
+    """, (ref[:200], user, rid))
+    c.execute("""
+        INSERT INTO recalls_eventos
+          (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'invima_notificado', ?, 'invima_notificado', ?, ?)
+    """, (rid, estado_ant, user, f'INVIMA notificado · ref: {ref[:100]}'))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>/notificar-distribuidores', methods=['POST'])
+def recall_notificar_distribuidores(rid):
+    """Notifica a distribuidores y retail. RBAC Calidad/Admin."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    distribuidores = (d.get('distribuidores_notificados') or '').strip()
+    if len(distribuidores) < 5:
+        return jsonify({'error': 'distribuidores_notificados requerido (lista o descripción)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('invima_notificado','distribuidores_notificados','en_recoleccion'):
+        return jsonify({'error': f'INVIMA debe estar notificado primero · estado {estado_ant}'}), 409
+    c.execute("""
+        UPDATE recalls
+        SET notificacion_distribuidores_at=datetime('now'),
+            distribuidores_notificados=?, notificacion_distribuidores_por=?,
+            estado=CASE WHEN estado='en_recoleccion' THEN 'en_recoleccion'
+                          ELSE 'distribuidores_notificados' END,
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (distribuidores[:2000], user, rid))
+    c.execute("""
+        INSERT INTO recalls_eventos
+          (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'distribuidores_notificados', ?, 'distribuidores_notificados', ?, ?)
+    """, (rid, estado_ant, user, distribuidores[:200]))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>/recoleccion', methods=['POST'])
+def recall_recoleccion(rid):
+    """Inicia/actualiza recolección · cantidad recolectada."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    cantidad = d.get('cantidad_recolectada')
+    if cantidad is None:
+        return jsonify({'error': 'cantidad_recolectada requerida (entero)'}), 400
+    try:
+        cantidad = int(cantidad)
+        if cantidad < 0: raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify({'error': 'cantidad_recolectada debe ser entero ≥ 0'}), 400
+    completa = bool(d.get('completa'))
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant not in ('distribuidores_notificados','en_recoleccion'):
+        return jsonify({'error': f'no se puede registrar recolección en estado {estado_ant}'}), 409
+    nuevo_estado = 'completado' if completa else 'en_recoleccion'
+    c.execute("""
+        UPDATE recalls
+        SET cantidad_recolectada=?,
+            recoleccion_inicio_at=COALESCE(recoleccion_inicio_at, datetime('now')),
+            recoleccion_completada_at=CASE WHEN ? THEN datetime('now') ELSE recoleccion_completada_at END,
+            estado=?, actualizado_en=datetime('now')
+        WHERE id=?
+    """, (cantidad, 1 if completa else 0, nuevo_estado, rid))
+    c.execute("""
+        INSERT INTO recalls_eventos
+          (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (rid, 'recoleccion_completada' if completa else 'recoleccion_actualizada',
+          estado_ant, nuevo_estado, user,
+          f'Recolectadas {cantidad} unidades' + (' · COMPLETA' if completa else '')))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/aseguramiento/recalls/<int:rid>/cerrar', methods=['POST'])
+def recall_cerrar(rid):
+    """Cierra el recall con efectividad + disposición final. Audit log."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    disposicion = (d.get('disposicion_final') or '').strip()
+    if disposicion not in ('destruccion','reproceso','devolver_proveedor','cuarentena'):
+        return jsonify({'error': 'disposicion_final: destruccion/reproceso/devolver_proveedor/cuarentena'}), 400
+    disp_desc = (d.get('disposicion_descripcion') or '').strip()
+    if len(disp_desc) < 20:
+        return jsonify({'error': 'disposicion_descripcion requerida (≥20 chars)'}), 400
+    efectividad = d.get('efectividad_porcentaje')
+    try:
+        efectividad = int(efectividad) if efectividad is not None else None
+        if efectividad is not None and not (0 <= efectividad <= 100):
+            return jsonify({'error': 'efectividad_porcentaje debe ser 0-100'}), 400
+    except (ValueError, TypeError):
+        return jsonify({'error': 'efectividad_porcentaje inválido'}), 400
+    ef_desc = (d.get('efectividad_descripcion') or '').strip()
+    obs = (d.get('observaciones_cierre') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado, codigo FROM recalls WHERE id=?", (rid,)).fetchone()
+    if not row: return jsonify({'error': 'no encontrado'}), 404
+    estado_ant = row[0]
+    if estado_ant == 'cerrado':
+        return jsonify({'error': 'ya está cerrado'}), 409
+    if estado_ant != 'completado':
+        return jsonify({'error': f'debe estar completado primero · actualmente {estado_ant}'}), 409
+
+    c.execute("""
+        UPDATE recalls
+        SET disposicion_final=?, disposicion_descripcion=?,
+            efectividad_porcentaje=?, efectividad_descripcion=?,
+            observaciones_cierre=?, estado='cerrado',
+            fecha_cierre=date('now'), cerrado_por=?,
+            actualizado_en=datetime('now')
+        WHERE id=?
+    """, (disposicion, disp_desc[:1000],
+          efectividad, ef_desc[:1000] or None,
+          obs[:500] or None, user, rid))
+    c.execute("""
+        INSERT INTO recalls_eventos
+          (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
+        VALUES (?, 'cerrado', ?, 'cerrado', ?, ?)
+    """, (rid, estado_ant, user,
+          f'Cerrado · {disposicion}' + (f' · efectividad {efectividad}%' if efectividad is not None else '')))
+    try:
+        import json as _json
+        c.execute("""
+            INSERT INTO audit_log (usuario, accion, registro_id, despues)
+            VALUES (?, 'CERRAR_RECALL', ?, ?)
+        """, (user, row[1] or str(rid),
+              _json.dumps({'disposicion': disposicion,
+                            'efectividad_porcentaje': efectividad,
+                            'descripcion': disp_desc[:500]})))
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/aseguramiento/capacitaciones/mias', methods=['GET'])
 def capacitaciones_mias():
     """Capacitaciones del usuario actual."""

@@ -587,6 +587,8 @@ JOBS_SCHEDULE = [
     ('cambios_plazos',        8, 30, None, None,                'job_cambios_plazos'),
     # ⭐ Aseguramiento · diario 9:00 · alerta quejas sin triar/responder/cerrar (ASG-PRO-013)
     ('quejas_plazos',         9,  0, None, None,                'job_quejas_plazos'),
+    # ⭐ Aseguramiento · diario 9:30 · alerta recalls sin clasificar/notificar (ASG-PRO-004)
+    ('recalls_plazos',        9, 30, None, None,                'job_recalls_plazos'),
 ]
 
 
@@ -1665,6 +1667,94 @@ def job_quejas_plazos(app):
             'criticas_lentas_2d': len(criticas_lentas),
             'sin_responder_7d': len(sin_responder),
             'sin_cerrar_14d': len(sin_cerrar),
+        }, 0
+
+
+def job_recalls_plazos(app):
+    """ASG-PRO-004 · diario 9:30 · alerta recalls en plazo vencido.
+
+    Plazos críticos (Resolución 2214/2021):
+    - sin clasificar > 12h → CRÍTICA (todo recall debe clasificarse rápido)
+    - Clase I sin INVIMA notificado > 1 día → SUPER CRÍTICA (regulatoria <24h)
+    - cualquier clase sin INVIMA > 5 días → CRÍTICA
+    - sin completar recolección > 30 días → alerta
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            sin_clasificar = c.execute("""
+                SELECT codigo, producto, lotes_afectados FROM recalls
+                WHERE estado='iniciado'
+                  AND datetime(creado_en) <= datetime('now', '-12 hours')
+                LIMIT 30
+            """).fetchall()
+            clase_I_sin_invima = c.execute("""
+                SELECT codigo, producto FROM recalls
+                WHERE clase_recall='clase_I'
+                  AND notificacion_invima_at IS NULL
+                  AND estado NOT IN ('cerrado','cancelado')
+                  AND datetime(clasificado_at) <= datetime('now', '-1 day')
+                LIMIT 30
+            """).fetchall()
+            sin_invima_5d = c.execute("""
+                SELECT codigo, producto, clase_recall FROM recalls
+                WHERE clase_recall IN ('clase_II','clase_III')
+                  AND notificacion_invima_at IS NULL
+                  AND estado NOT IN ('cerrado','cancelado')
+                  AND date(clasificado_at) <= date('now', '-5 day')
+                LIMIT 30
+            """).fetchall()
+            sin_recolectar_30d = c.execute("""
+                SELECT codigo, producto, cantidad_recolectada, cantidad_distribuida
+                FROM recalls
+                WHERE estado IN ('distribuidores_notificados','en_recoleccion')
+                  AND date(notificacion_invima_at) <= date('now', '-30 day')
+                LIMIT 30
+            """).fetchall()
+        except Exception as e:
+            log.warning('recalls_plazos read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        if not (sin_clasificar or clase_I_sin_invima or sin_invima_5d or sin_recolectar_30d):
+            return True, {'mensaje': 'Sin recalls en plazo vencido'}, 0
+
+        try:
+            from blueprints.notif import push_notif_multi
+            destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
+                             'sebastian']
+            partes = []
+            if sin_clasificar:
+                partes.append(f'⏰ {len(sin_clasificar)} recalls sin clasificar (>12h)')
+                for r in sin_clasificar[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} / {(r[2] or "")[:30]}')
+            if clase_I_sin_invima:
+                partes.append(f'🚨🚨 {len(clase_I_sin_invima)} CLASE I SIN INVIMA NOTIFICADO (>24h regulatoria)')
+                for r in clase_I_sin_invima[:3]: partes.append(f'  · {r[0]}: {(r[1] or "")[:40]}')
+            if sin_invima_5d:
+                partes.append(f'🚨 {len(sin_invima_5d)} recalls sin INVIMA notificado (>5d)')
+                for r in sin_invima_5d[:3]: partes.append(f'  · {r[0]} ({r[2]}): {(r[1] or "")[:30]}')
+            if sin_recolectar_30d:
+                partes.append(f'📦 {len(sin_recolectar_30d)} sin completar recolección (>30d)')
+                for r in sin_recolectar_30d[:3]:
+                    pct = ''
+                    if r[3]:
+                        try: pct = f' ({int((r[2] or 0) / r[3] * 100)}%)'
+                        except Exception: pass
+                    partes.append(f'  · {r[0]}: {(r[1] or "")[:30]} · {(r[2] or 0)}/{(r[3] or "?")}{pct}')
+            push_notif_multi(
+                destinatarios, 'capa',
+                f'🚨 RECALLS en plazo vencido (ASG-PRO-004)',
+                body='\n'.join(partes),
+                link='/aseguramiento', remitente='cron-recalls',
+                importante=True,  # SIEMPRE importante para recalls
+            )
+        except Exception as e:
+            log.warning('recalls_plazos notif fallo: %s', e)
+        return True, {
+            'sin_clasificar_12h': len(sin_clasificar),
+            'clase_I_sin_invima_24h': len(clase_I_sin_invima),
+            'sin_invima_5d': len(sin_invima_5d),
+            'sin_recolectar_30d': len(sin_recolectar_30d),
         }, 0
 
 

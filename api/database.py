@@ -3335,6 +3335,82 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (90, "Aseguramiento: tabla recalls (ASG-PRO-004) retiro producto del mercado", [
+        # Sebastián 2-may-2026: workflow de recall según ASG-PRO-004 + Resolución
+        # 2214/2021 INVIMA. Cuando se descubre un defecto que pone en riesgo al
+        # consumidor (vía desviación, queja, hallazgo interno), se inicia un
+        # recall: clasificación (I/II/III), notificación INVIMA <24h si Clase I,
+        # notificación a distribuidores, recolección del mercado, disposición
+        # final (destrucción/reproceso) y reporte de efectividad.
+
+        """CREATE TABLE IF NOT EXISTS recalls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            fecha_inicio TEXT NOT NULL DEFAULT (date('now')),
+            iniciado_por TEXT NOT NULL,
+            origen TEXT NOT NULL DEFAULT 'otro'
+              CHECK(origen IN ('desviacion','queja_cliente','hallazgo_interno',
+                                'auditoria','reaccion_adversa','invima','otro')),
+            origen_referencia TEXT,
+            desviacion_id INTEGER,
+            queja_id INTEGER,
+            producto TEXT NOT NULL,
+            lotes_afectados TEXT NOT NULL,
+            cantidad_fabricada INTEGER,
+            cantidad_distribuida INTEGER,
+            motivo TEXT NOT NULL,
+            riesgo_descripcion TEXT,
+            clase_recall TEXT
+              CHECK(clase_recall IN ('clase_I','clase_II','clase_III') OR clase_recall IS NULL),
+            alcance_geografico TEXT
+              CHECK(alcance_geografico IN ('local','regional','nacional','internacional')
+                    OR alcance_geografico IS NULL),
+            clasificado_por TEXT,
+            clasificado_at TEXT,
+            justificacion_clasificacion TEXT,
+            notificacion_invima_at TEXT,
+            notificacion_invima_ref TEXT,
+            notificacion_invima_por TEXT,
+            notificacion_distribuidores_at TEXT,
+            distribuidores_notificados TEXT,
+            notificacion_distribuidores_por TEXT,
+            recoleccion_inicio_at TEXT,
+            recoleccion_completada_at TEXT,
+            cantidad_recolectada INTEGER,
+            disposicion_final TEXT
+              CHECK(disposicion_final IN ('destruccion','reproceso','devolver_proveedor','cuarentena')
+                    OR disposicion_final IS NULL),
+            disposicion_descripcion TEXT,
+            efectividad_porcentaje INTEGER,
+            efectividad_descripcion TEXT,
+            estado TEXT NOT NULL DEFAULT 'iniciado'
+              CHECK(estado IN ('iniciado','clasificado','invima_notificado',
+                                'distribuidores_notificados','en_recoleccion',
+                                'completado','cerrado','cancelado')),
+            fecha_cierre TEXT,
+            cerrado_por TEXT,
+            observaciones_cierre TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_estado ON recalls(estado, fecha_inicio DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_clase ON recalls(clase_recall, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_lotes ON recalls(lotes_afectados, fecha_inicio DESC)",
+
+        # Eventos del workflow (timeline)
+        """CREATE TABLE IF NOT EXISTS recalls_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recall_id INTEGER NOT NULL,
+            evento_tipo TEXT NOT NULL,
+            estado_anterior TEXT,
+            estado_nuevo TEXT,
+            usuario TEXT,
+            comentario TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (recall_id) REFERENCES recalls(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_rcl_ev ON recalls_eventos(recall_id, creado_en)",
+    ]),
     (89, "Aseguramiento: tabla quejas_clientes (ASG-PRO-013) workflow completo", [
         # Sebastián 2-may-2026: workflow de quejas/reclamos según ASG-PRO-013.
         # Toda queja entra como 'nueva' → triaje (severidad + ¿desviación? ¿recall?)
