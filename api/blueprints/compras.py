@@ -16,6 +16,7 @@ from config import (
 )
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from audit_helpers import audit_log, intentar_insert_con_retry
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -2381,6 +2382,7 @@ def autorizar_oc(numero_oc):
     row = cur.fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
+    estado_ant = row[0]
     valor = float(row[1] or 0)
     # Sprint 4: límite de aprobación por usuario
     err_lim, code_lim = _check_monto_limit(usuario_actual, valor)
@@ -2395,6 +2397,14 @@ def autorizar_oc(numero_oc):
     fecha_aut = datetime.now().isoformat()
     cur.execute("UPDATE ordenes_compra SET estado='Autorizada', remision_code=?, autorizado_por=?, fecha_autorizacion=? WHERE numero_oc=?",
                 (remision_code, usuario_actual, fecha_aut, numero_oc))
+    # Audit log · autorización es decisión regulatoria/financiera
+    try:
+        audit_log(cur, usuario=usuario_actual, accion='AUTORIZAR_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  antes={'estado': estado_ant, 'valor_total': valor},
+                  despues={'estado': 'Autorizada', 'remision_code': remision_code})
+    except Exception as e:
+        log.warning('audit_log AUTORIZAR_OC fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'estado': 'Autorizada', 'remision_code': remision_code})
 
@@ -2506,6 +2516,18 @@ def pagar_oc(numero_oc):
                    WHERE numero_oc=?""",
                 (nuevo_estado, usuario_actual, fecha_pago, medio,
                  comprobante_imagen, numero_oc))
+    # Audit log INVIMA · Resolución 2214/2021 · pago de OC es operación financiera regulada
+    try:
+        audit_log(cur, usuario=usuario_actual, accion='PAGAR_OC',
+                  tabla='pagos_oc', registro_id=numero_oc,
+                  antes={'estado_oc': estado_oc,
+                         'total_pagado_antes': total_pagado_actual},
+                  despues={'monto': monto, 'medio': medio,
+                           'numero_factura': numero_factura,
+                           'estado_nuevo': nuevo_estado,
+                           'total_pagado_despues': total_pagado})
+    except Exception as e:
+        log.warning('audit_log PAGAR_OC fallo: %s · operación NO se aborta (audit es defense-in-depth)', e)
     # Sync solicitudes_compra estado → Pagada so it leaves the pending list.
     # Sebastian (30-abr-2026): bulletproof fix — antes el WHERE filtraba por
     # estado='Aprobada' y si la SOL estaba en otro estado (ej. Pendiente

@@ -11,6 +11,25 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
+from audit_helpers import audit_log, intentar_insert_con_retry
+
+log = logging.getLogger('calidad')
+
+
+def _require_calidad():
+    """Audit zero-error 2-may-2026 · gating PII + decisiones regulatorias.
+
+    Antes los POSTs de NCs, CAPA, CoA, agua, especificaciones, micro,
+    estabilidades NO tenían RBAC: cualquier compras_user creaba/modificaba
+    estos registros (operario podía inyectar lecturas falsas de agua,
+    CoAs ficticios, etc.).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    if u not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin pueden mutar registros de Calidad'}), 403
+    return None, None
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -420,12 +439,19 @@ def calidad_bandeja():
 
 @bp.route('/api/calidad/no-conformidades', methods=['GET', 'POST'])
 def handle_no_conformidades():
+    # GET es libre para cualquier user logueado · POST requiere Calidad/Admin
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
         desc = (d.get('descripcion') or '').strip()
         if not desc:
             return jsonify({'error': 'descripcion requerida'}), 400
+        user = session.get('compras_user', '')
         c.execute("""INSERT INTO no_conformidades
                      (fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
                       impacto,accion_correctiva,estado,creado_por)
@@ -434,8 +460,19 @@ def handle_no_conformidades():
                    d.get('area',''), d.get('responsable',''),
                    d.get('lote',''), d.get('codigo_mp',''),
                    d.get('impacto','Bajo'), d.get('accion_correctiva',''),
-                   session.get('compras_user','')))
-        conn.commit(); new_id = c.lastrowid
+                   user))
+        new_id = c.lastrowid
+        # Audit log INVIMA · creación de NC es evento regulado
+        try:
+            audit_log(c, usuario=user, accion='CREAR_NC', tabla='no_conformidades',
+                      registro_id=new_id,
+                      despues={'tipo': d.get('tipo','Proceso'),
+                                'descripcion': desc[:300],
+                                'lote': d.get('lote','')[:100],
+                                'impacto': d.get('impacto','Bajo')})
+        except Exception as e:
+            log.warning('audit_log CREAR_NC fallo: %s', e)
+        conn.commit()
         return jsonify({'id': new_id}), 201
     # GET
     c.execute("""SELECT id,fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
@@ -1246,7 +1283,11 @@ def calidad_agua_registros():
        TOC ≤ 500 ppb (USP <643>)
        microorganismos ≤ 100 UFC/100mL (USP)
     """
-    if 'compras_user' not in session:
+    if request.method == 'POST':
+        # POST requiere Calidad/Admin · evidencia INVIMA
+        err, code = _require_calidad()
+        if err: return err, code
+    elif 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
@@ -1257,6 +1298,9 @@ def calidad_agua_registros():
         if not punto:
             return jsonify({'error': 'punto_muestreo requerido'}), 400
 
+        # Audit zero-error 2-may-2026: validación de plausibilidad física
+        # antes de aceptar valores. Antes pH=15 se aceptaba como 'fuera_spec'
+        # · ahora rechazamos físicamente imposible.
         ph = d.get('ph')
         cond = d.get('conductividad_us_cm')
         toc = d.get('toc_ppb')
@@ -1269,6 +1313,15 @@ def calidad_agua_registros():
         except: toc = None
         try: micro = float(micro) if micro not in (None,'') else None
         except: micro = None
+        # Rangos físicos plausibles (valores fuera = error de tipeo)
+        if ph is not None and not (0 <= ph <= 14):
+            return jsonify({'error': f'pH={ph} fuera de rango físico (0-14)'}), 400
+        if cond is not None and not (0 <= cond <= 50):
+            return jsonify({'error': f'conductividad={cond} fuera de rango (0-50 µS/cm)'}), 400
+        if toc is not None and toc < 0:
+            return jsonify({'error': 'TOC no puede ser negativo'}), 400
+        if micro is not None and micro < 0:
+            return jsonify({'error': 'microorganismos no puede ser negativo'}), 400
 
         # Calcular estado (USP — agua purificada)
         estado = 'ok'
@@ -1305,6 +1358,14 @@ def calidad_agua_registros():
              d.get('cloro_residual_ppm'), d.get('temperatura_c'),
              estado, obs_final, user))
         new_id = c.lastrowid
+        # Audit log INVIMA · cada lectura de agua es evidencia regulatoria
+        try:
+            audit_log(c, usuario=user, accion='REGISTRAR_AGUA',
+                      tabla='calidad_sistema_agua', registro_id=new_id,
+                      despues={'fecha': fecha_reg, 'punto': punto, 'estado': estado,
+                                'ph': ph, 'conductividad': cond, 'toc': toc, 'micro': micro})
+        except Exception as _e:
+            log.warning('audit_log REGISTRAR_AGUA fallo: %s', _e)
         # Si fuera_spec → notif urgente
         if estado == 'fuera_spec':
             try:

@@ -20,6 +20,13 @@ import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
 from config import ADMIN_USERS, APP_BASE_URL
+from audit_helpers import audit_log
+
+# Bug latente preexistente fixed 2-may-2026: el blueprint usaba `log.warning()`
+# y `logger.warning()` sin tener el logger definido. Cualquier call a un branch
+# de error fallaba con NameError. Audit zero-error.
+log = logging.getLogger('programacion')
+logger = log  # alias compatible con call-sites históricos
 
 bp = Blueprint('programacion', __name__)
 
@@ -4116,6 +4123,17 @@ def prog_completar_evento(evento_id):
                                    ' | INVENTARIO DESCONTADO ' || ? || ' por ' || ?
              WHERE id=?
         """, (fecha_iso, fecha_iso, user, pid))
+        # Audit log INVIMA · dispensación es operación regulada GMP/BPM
+        # (Resolución 2214/2021). Trazabilidad obligatoria: quién dispensó qué
+        # producción y cuándo se descontó inventario.
+        try:
+            audit_log(c, usuario=user, accion='COMPLETAR_PRODUCCION',
+                      tabla='produccion_programada', registro_id=pid,
+                      despues={'producto': producto, 'lotes': lotes,
+                                'fecha_programada': fecha,
+                                'inventario_descontado_at': fecha_iso})
+        except Exception as e:
+            log.warning('audit_log COMPLETAR_PRODUCCION fallo: %s', e)
 
         # Sebastián 1-may-2026: "queden limpias el mismo día". Si la
         # producción tenía área asignada → marcar sucia + crear limpieza HOY

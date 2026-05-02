@@ -10,8 +10,10 @@ import logging
 from datetime import date, datetime, timedelta
 from database import get_db
 from config import ADMIN_USERS
+from audit_helpers import audit_log, intentar_insert_con_retry
 
 logger = logging.getLogger(__name__)
+log = logger  # alias
 bp = Blueprint('compliance', __name__)
 
 # Roles que pueden cerrar hallazgos / aprobar CAPA
@@ -112,6 +114,10 @@ def cronograma_marcar_cumplido(ej_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # Audit zero-error 2-may-2026: solo responsables BPM pueden marcar cumplido
+    # (antes cualquier compras_user marcaba un cronograma BPM como cumplido)
+    if not _is_responsable(user):
+        return jsonify({'error': 'Solo responsables BPM pueden marcar cumplido'}), 403
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); c = conn.cursor()
     cur = c.execute("""UPDATE cronograma_ejecuciones
@@ -122,6 +128,14 @@ def cronograma_marcar_cumplido(ej_id):
                         (d.get('evidencia_url') or '').strip() or None,
                         (d.get('observaciones') or '').strip() or None,
                         ej_id))
+    # Audit log INVIMA · cumplimiento de cronograma BPM
+    try:
+        audit_log(c, usuario=user, accion='CRONOGRAMA_CUMPLIR',
+                  tabla='cronograma_ejecuciones', registro_id=ej_id,
+                  despues={'evidencia_url': (d.get('evidencia_url') or '')[:300],
+                            'observaciones': (d.get('observaciones') or '')[:300]})
+    except Exception as e:
+        log.warning('audit_log CRONOGRAMA_CUMPLIR fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'actualizado': cur.rowcount > 0})
 

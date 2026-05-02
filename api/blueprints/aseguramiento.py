@@ -29,6 +29,11 @@ from flask import Blueprint, jsonify, request, session, Response
 
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS, COMPRAS_USERS
+from audit_helpers import (
+    audit_log as _audit_log_global,
+    intentar_insert_con_retry as _retry_global,
+    siguiente_codigo_secuencial as _siguiente_codigo_global,
+)
 from templates_py.aseguramiento_html import ASEGURAMIENTO_HTML
 
 bp = Blueprint('aseguramiento', __name__)
@@ -74,82 +79,22 @@ def _autorizados_escritura():
     return set(CALIDAD_USERS) | set(ADMIN_USERS)
 
 
+# Helpers locales son ahora wrappers thin del módulo global api/audit_helpers.py
+# (extraído 2-may-2026 para uso compartido en compras, contabilidad, planta, calidad,
+# compliance). Mantienen compatibilidad con call-sites existentes en este blueprint.
 def _siguiente_codigo_secuencial(c, prefijo, tabla, anio=None):
-    """Genera código <prefijo>-AAAA-NNNN secuencial · race-safe vs concurrencia.
-
-    Lee MAX(NNNN) actual y devuelve el siguiente. El caller debe reintentar
-    si el INSERT subsiguiente falla por UNIQUE constraint (race ganada por
-    otro request). Auditoría 2-may-2026 detectó que la versión anterior
-    (sin retry) producía 500 al cliente bajo concurrencia.
-    """
-    if anio is None:
-        anio = datetime.now().year
-    row = c.execute(
-        f"SELECT codigo FROM {tabla} WHERE codigo LIKE ? "
-        f"ORDER BY id DESC LIMIT 1",
-        (f'{prefijo}-{anio}-%',),
-    ).fetchone()
-    if row and row[0]:
-        try:
-            return f'{prefijo}-{anio}-{int(row[0].split("-")[-1])+1:04d}'
-        except (ValueError, IndexError):
-            pass
-    return f'{prefijo}-{anio}-0001'
+    return _siguiente_codigo_global(c, prefijo, tabla, anio=anio)
 
 
 def _intentar_insert_con_retry(insert_fn, *, max_intentos=5):
-    """Ejecuta insert_fn() con retry si falla por UNIQUE (race condition).
-
-    insert_fn debe devolver (codigo_intentado, lastrowid) en éxito.
-    Si UNIQUE constraint en `codigo`, reintenta hasta max_intentos veces.
-    Para otros errores, propaga.
-    """
-    import sqlite3 as _sq
-    for intento in range(max_intentos):
-        try:
-            return insert_fn()
-        except _sq.IntegrityError as e:
-            if 'codigo' in str(e).lower() and intento < max_intentos - 1:
-                # Race con otro request · reintentar
-                log.info('codigo race · reintento %d/%d: %s', intento+1, max_intentos, e)
-                continue
-            raise
+    return _retry_global(insert_fn, max_intentos=max_intentos)
 
 
 def _audit_log(c, *, usuario, accion, registro_id, tabla=None,
                 antes=None, despues=None, detalle=None):
-    """Helper centralizado para audit_log (Resolución 2214/2021).
-
-    Loguea en `audit_log` con todas las columnas del schema actual:
-    (usuario, accion, tabla, registro_id, detalle, antes, despues, fecha, ip).
-    Errores NO se silencian: se levantan para que el endpoint pueda
-    rollback la transacción regulatoria.
-    """
-    import json as _json
-    try:
-        antes_s = _json.dumps(antes) if antes is not None and not isinstance(antes, str) else antes
-        despues_s = _json.dumps(despues) if despues is not None and not isinstance(despues, str) else despues
-        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')[:45]
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, tabla, registro_id,
-                                     detalle, antes, despues, ip, fecha)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """, (usuario or '', accion, tabla, str(registro_id) if registro_id is not None else None,
-              detalle, antes_s, despues_s, ip))
-    except Exception as e:
-        # Si la columna antes/despues no existe (DB pre-migración 91)
-        # caer al schema mínimo para no perder el evento.
-        log.warning('audit_log con antes/despues fallo (%s) · usando fallback', e)
-        try:
-            c.execute("""
-                INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-            """, (usuario or '', accion, tabla,
-                  str(registro_id) if registro_id is not None else None,
-                  detalle, ip))
-        except Exception as e2:
-            log.exception('audit_log fallback también falló: %s', e2)
-            raise  # ahora sí: regulatorio · debe rollback la operación
+    return _audit_log_global(c, usuario=usuario, accion=accion,
+                              registro_id=registro_id, tabla=tabla,
+                              antes=antes, despues=despues, detalle=detalle)
 
 
 # ════════════════════════════════════════════════════════════════════════

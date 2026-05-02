@@ -1,13 +1,16 @@
 # blueprints/contabilidad.py — Centro de mando de la contadora (Mayra)
 import json
 import sqlite3
+import logging
 from datetime import datetime, date, timedelta
 from io import BytesIO
 
 from flask import Blueprint, jsonify, request, Response, session
 from config import DB_PATH, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
+from audit_helpers import audit_log
 
+log = logging.getLogger('contabilidad')
 bp = Blueprint('contabilidad', __name__)
 CONT_USERS = CONTADORA_USERS | ADMIN_USERS
 
@@ -449,6 +452,17 @@ def cont_factura_pago(numero):
     if not f:
         return jsonify({'error': 'Factura no encontrada'}), 404
 
+    f_total = dict(f)['total']
+    # Audit zero-error 2-may-2026: validar over-payment
+    total_actual = conn.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
+    ).fetchone()[0]
+    if (total_actual + monto) > (f_total + 0.01):
+        return jsonify({
+            'error': f"Over-payment: pagado {total_actual:.0f} + nuevo {monto:.0f} > total factura {f_total:.0f}",
+            'codigo': 'OVER_PAYMENT'
+        }), 422
+
     fecha_pago = data.get('fecha') or date.today().isoformat()
     medio = data.get('medio', 'Transferencia')
     referencia = data.get('referencia', '')
@@ -461,9 +475,17 @@ def cont_factura_pago(numero):
     total_pagado = conn.execute(
         "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
     ).fetchone()[0]
-    f_total = dict(f)['total']
     nuevo_estado = 'Pagada' if total_pagado >= f_total else 'Parcial'
     conn.execute("UPDATE facturas SET estado=? WHERE numero=?", (nuevo_estado, numero))
+    # Audit log INVIMA · cobro de factura es operación financiera regulada
+    try:
+        audit_log(conn.cursor(), usuario=_user(), accion='FACTURA_PAGO',
+                  tabla='facturas_pagos', registro_id=numero,
+                  antes={'total_pagado_antes': total_actual, 'estado_antes': dict(f).get('estado')},
+                  despues={'monto': monto, 'medio': medio, 'referencia': referencia[:200],
+                            'estado_nuevo': nuevo_estado, 'total_pagado_despues': total_pagado})
+    except Exception as e:
+        log.warning('audit_log FACTURA_PAGO fallo: %s', e)
 
     # ── Gap 5 cerrado: cobranza → flujo_ingresos automático ──
     # Cada vez que se registra un pago de factura, espejarlo en flujo_ingresos
@@ -512,10 +534,21 @@ def cont_factura_anular(numero):
     data = request.get_json() or {}
     motivo = data.get('motivo', 'Sin motivo')
     conn = get_db()
+    # Estado anterior para audit
+    f_ant = conn.execute("SELECT estado, total FROM facturas WHERE numero=?", (numero,)).fetchone()
     conn.execute(
         "UPDATE facturas SET estado='Anulada', notas=notas||' | ANULADA: '||? WHERE numero=?",
         (motivo, numero)
     )
+    # Audit log · anulación de factura es operación financiera SENSIBLE
+    try:
+        audit_log(conn.cursor(), usuario=_user(), accion='FACTURA_ANULAR',
+                  tabla='facturas', registro_id=numero,
+                  antes={'estado': f_ant[0] if f_ant else None,
+                         'total': f_ant[1] if f_ant else None},
+                  despues={'estado': 'Anulada', 'motivo': motivo[:300]})
+    except Exception as e:
+        log.warning('audit_log FACTURA_ANULAR fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True})
 
