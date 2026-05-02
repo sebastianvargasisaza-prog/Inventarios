@@ -32,6 +32,7 @@ import json
 import logging
 from database import get_db
 from config import ADMIN_USERS
+from inventario_helpers import stock_mp_total, stock_mp_disponible
 
 bp = Blueprint('auto_plan', __name__)
 log = logging.getLogger('auto_plan')
@@ -716,15 +717,10 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
 
     compras_propuestas = []
     for mat_id, req_g in consumo_acumulado.items():
-        # Stock actual
-        stock = c.execute("""
-            SELECT COALESCE(SUM(
-                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                     ELSE 0 END
-            ), 0) FROM movimientos WHERE material_id=?
-        """, (mat_id,)).fetchone()
-        stock_g = float(stock[0] if stock else 0)
+        # Stock disponible · audit zero-error 2-may-2026: usar helper canónico.
+        # Antes usaba 'Ingreso'/'Consumo' (no existen) y devolvía 0/negativo
+        # siempre · IA proponía compras erróneas (toda MP aparecía en déficit).
+        stock_g = stock_mp_disponible(c, mat_id)
         # Lead time + buffer
         lt = c.execute("""
             SELECT lead_time_dias, buffer_dias, cobertura_min_dias, cobertura_ideal_dias,
@@ -2252,14 +2248,8 @@ def mp_para_lote():
            Devuelve (stock_g, fuente) - fuente para diagnóstico.
         """
         if mp_stock_map is None:
-            # Fallback: query directa
-            r = conn.execute("""
-                SELECT COALESCE(SUM(
-                    CASE WHEN tipo IN ('Entrada','Ingreso','Ajuste','Devolucion') THEN cantidad
-                         WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                         ELSE 0 END), 0) FROM movimientos WHERE material_id=?
-            """, (mat_id,)).fetchone()
-            return float(r[0] or 0) if r else 0, 'fallback_query'
+            # Fallback · audit zero-error 2-may-2026: helper canónico
+            return stock_mp_total(conn, mat_id), 'fallback_query'
         mid = str(mat_id or '').strip()
         if mid in mp_stock_map:
             return float(mp_stock_map[mid]), 'material_id'
@@ -9708,16 +9698,10 @@ def conteo_registrar(item_id):
     if not row:
         return jsonify({'error': 'Conteo no existe'}), 404
     material_id, stock_esperado = row
-    # Calcular esperado si no está seteado: sumar movimientos
+    # Calcular esperado si no está seteado · audit zero-error 2-may-2026:
+    # SQL anterior usaba 'Ingreso'/'Consumo' inexistentes · stock siempre 0.
     if stock_esperado is None:
-        r = c.execute("""
-            SELECT COALESCE(SUM(
-                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                     ELSE 0 END
-            ), 0) FROM movimientos WHERE material_id=?
-        """, (material_id,)).fetchone()
-        stock_esperado = float(r[0] if r else 0)
+        stock_esperado = stock_mp_total(c, material_id)
     diferencia = stock_real - (stock_esperado or 0)
     pct = abs(diferencia) / max(1, stock_esperado or 1) * 100
     estado = 'con_diferencia' if pct > 5 else 'cerrado'

@@ -20,6 +20,7 @@ import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
 from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS
+from inventario_helpers import stock_mp_total, stock_mp_disponible
 from audit_helpers import audit_log
 
 # Bug latente preexistente fixed 2-may-2026: el blueprint usaba `log.warning()`
@@ -2227,14 +2228,47 @@ def prog_crear_evento():
 
 @bp.route('/api/programacion/programar/<int:evento_id>', methods=['DELETE'])
 def prog_cancelar_evento(evento_id):
-    """Cancel a scheduled production event."""
+    """Cancel a scheduled production event.
+
+    Audit zero-error 2-may-2026: guard contra cancelar producciones que ya
+    descontaron inventario. Si fue completada, redirigir a /revertir-completado
+    que sí revierte stock. Cancelar una producción completada sin revertir
+    dejaría stock fantasma (consumido pero sin razón) → drift de inventario.
+    """
     if 'compras_user' not in session:
         return jsonify({'ok': False, 'error': 'No autorizado'}), 401
-    conn = get_db()
-    conn.execute(
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT estado, COALESCE(inventario_descontado_at,'') FROM produccion_programada WHERE id=?",
+        (evento_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'ok': False, 'error': 'Producción no encontrada'}), 404
+    estado_actual = row[0] or ''
+    descontado_at = row[1]
+    if estado_actual == 'cancelado':
+        return jsonify({'ok': True, 'id': evento_id, 'ya_cancelado': True})
+    if estado_actual == 'completado' or descontado_at:
+        return jsonify({
+            'ok': False,
+            'error': 'Producción ya completada · usar /revertir-completado para revertir descuento de inventario',
+            'codigo': 'YA_COMPLETADA',
+            'inventario_descontado_at': descontado_at or None,
+        }), 409
+    estado_anterior = estado_actual
+    c.execute(
         "UPDATE produccion_programada SET estado='cancelado' WHERE id=?",
         (evento_id,)
     )
+    try:
+        audit_log(c, usuario=user, accion='CANCELAR_PRODUCCION',
+                  tabla='produccion_programada', registro_id=evento_id,
+                  antes={'estado': estado_anterior},
+                  despues={'estado': 'cancelado'},
+                  detalle=f"Canceló producción id={evento_id} (estaba {estado_anterior})")
+    except Exception as e:
+        log.warning('audit_log CANCELAR_PRODUCCION fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True, 'id': evento_id})
 
@@ -2740,15 +2774,10 @@ def planta_listo_producir(producto):
         else:
             req_g = (pct or 0) / 100.0 * total_g
 
-        # Disponible en bodega = SUM movimientos por material
-        disp = c.execute("""
-            SELECT COALESCE(SUM(
-                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                     ELSE 0 END
-            ), 0) FROM movimientos WHERE material_id=?
-        """, (mat_id,)).fetchone()
-        disp_g = float(disp[0] if disp else 0)
+        # Disponible en bodega · excluye CUARENTENA/VENCIDO/RECHAZADO
+        # Audit zero-error 2-may-2026: SQL anterior usaba 'Ingreso'/'Consumo'
+        # (no existen) y devolvía valores negativos siempre · semáforo roto.
+        disp_g = stock_mp_disponible(c, mat_id)
 
         # Status
         if disp_g >= req_g:
@@ -9313,14 +9342,8 @@ def _gate_mp_disponibles(produccion, conn):
     justo = []
     for mat_id, mat_nom, pct, cant_lote_g in items:
         req_g = (cant_lote_g or 0) * lotes if cant_lote_g else (pct or 0) / 100.0 * (fh[0] or 0) * 1000 * lotes
-        disp = conn.execute("""
-            SELECT COALESCE(SUM(
-                CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                     WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                     ELSE 0 END
-            ), 0) FROM movimientos WHERE material_id=?
-        """, (mat_id,)).fetchone()
-        disp_g = float(disp[0] if disp else 0)
+        # Audit zero-error 2-may-2026: usar helper canónico · excluye cuarentena
+        disp_g = stock_mp_disponible(conn, mat_id)
         if disp_g < req_g:
             if disp_g >= req_g * 0.5:
                 justo.append({'codigo': mat_id, 'nombre': mat_nom,
@@ -9949,14 +9972,13 @@ def _calcular_mp_requerido(producto, lotes, conn):
 
 
 def _stock_mp(material_id, conn):
-    r = conn.execute("""
-        SELECT COALESCE(SUM(
-            CASE WHEN tipo IN ('Ingreso','Ajuste','Devolucion') THEN cantidad
-                 WHEN tipo IN ('Salida','Consumo') THEN -cantidad
-                 ELSE 0 END
-        ), 0) FROM movimientos WHERE material_id=?
-    """, (material_id,)).fetchone()
-    return float(r[0] if r else 0)
+    """Stock total de MP · audit zero-error 2-may-2026.
+
+    Wrapper sobre stock_mp_total para compatibilidad con código legacy. El
+    plan_semanal usa total (incluye cuarentena) porque calcula consumos
+    futuros · si llegan en QC a tiempo, contarán.
+    """
+    return stock_mp_total(conn, material_id)
 
 
 @bp.route('/api/planta/plan-semanal', methods=['GET'])
