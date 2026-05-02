@@ -589,6 +589,8 @@ JOBS_SCHEDULE = [
     ('quejas_plazos',         9,  0, None, None,                'job_quejas_plazos'),
     # ⭐ Aseguramiento · diario 9:30 · alerta recalls sin clasificar/notificar (ASG-PRO-004)
     ('recalls_plazos',        9, 30, None, None,                'job_recalls_plazos'),
+    # ⭐ CEO · LUNES 7:30 · executive brief con health snapshot + KPIs semanales
+    ('weekly_executive',      7, 30, [0],  None,                'job_weekly_executive_email'),
 ]
 
 
@@ -1776,6 +1778,219 @@ def job_auto_sc_urgente(app):
         conn = get_db()
         plan = _calcular_auto_sc(conn, horizontes_dias=(14, 30), modo='urgente')
         return True, {'kpis': plan.get('kpis', {})}, 0
+
+
+def _build_weekly_executive_html(snapshot, kpis):
+    """Construye el HTML del email semanal ejecutivo.
+
+    snapshot: dict con secciones de /api/admin/health-detailed
+    kpis: dict con KPIs financieros + operacionales agregados de la semana.
+    """
+    fecha_str = datetime.now().strftime('%A %d-%b-%Y')
+    overall = snapshot.get('overall', 'ok')
+    overall_color = {'ok': '#15803d', 'warning': '#d97706', 'error': '#dc2626'}.get(overall, '#64748b')
+    overall_icon = {'ok': '🟢', 'warning': '🟡', 'error': '🔴'}.get(overall, '⚪')
+
+    # ── Sección Operacional crítica ──
+    sections = snapshot.get('sections', {})
+    accion_rows = []
+    PRIORITY = [
+        ('invima', 'Registros INVIMA'),
+        ('recalls', 'Recalls activos'),
+        ('hallazgos_vencidos', 'Hallazgos vencidos'),
+        ('cuarentena', 'Lotes en cuarentena'),
+        ('liberacion_pt', 'Liberación PT pendiente'),
+        ('caja', 'Caja vs commitments'),
+    ]
+    for key, label in PRIORITY:
+        sec = sections.get(key, {})
+        st = sec.get('status', 'ok')
+        if st == 'ok':
+            continue
+        color = '#dc2626' if st == 'error' else '#d97706'
+        hint = sec.get('hint', '')
+        # Resumen breve de la sección
+        bullets = []
+        for k, v in sec.items():
+            if k in ('status', 'hint', 'detail'):
+                continue
+            if isinstance(v, (int, float)) and v == 0:
+                continue
+            bullets.append(f"{k}: <b>{v}</b>")
+        bullets_html = ' · '.join(bullets[:4]) or '(sin datos)'
+        accion_rows.append(f"""
+        <tr><td style="padding:10px 14px;border-left:4px solid {color};background:#fef2f2;font-size:13px">
+          <b style="color:{color}">{label}</b><br>
+          <span style="color:#475569;font-size:12px">{bullets_html}</span>
+          {f'<div style="margin-top:6px;color:{color};font-size:12px">→ {hint}</div>' if hint else ''}
+        </td></tr>""")
+    accion_html = ''.join(accion_rows) or (
+        '<tr><td style="padding:14px;color:#15803d;font-size:13px">✓ Sin acciones críticas pendientes</td></tr>'
+    )
+
+    # ── KPIs ejecutivos ──
+    kpi_html = ''
+    for k, v in kpis.items():
+        kpi_html += f"""
+        <td style="padding:14px;text-align:center;border-right:1px solid #e5e7eb">
+          <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">{k}</div>
+          <div style="font-size:22px;font-weight:700;color:#0f172a;margin-top:4px">{v}</div>
+        </td>"""
+
+    # ── Salas planta ──
+    salas = sections.get('salas', {})
+    salas_html = ''
+    for estado, count in salas.items():
+        if estado == 'status':
+            continue
+        emoji = {'libre': '🟢', 'ocupada': '🔵', 'sucia': '🟡', 'limpiando': '🧽'}.get(estado, '⚪')
+        salas_html += f'<span style="margin-right:14px;font-size:13px">{emoji} {estado}: <b>{count}</b></span>'
+
+    return f"""<!DOCTYPE html>
+<html><body style="font-family:-apple-system,'Segoe UI',Roboto,sans-serif;background:#f3f4f6;padding:20px;color:#1f2937;margin:0">
+  <div style="max-width:680px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.08)">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:24px 28px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h1 style="margin:0;font-size:20px;font-weight:700">📊 Executive Brief · {fecha_str}</h1>
+          <div style="margin-top:4px;font-size:12px;color:#94a3b8">HHA Group · semana entrante</div>
+        </div>
+        <div style="background:{overall_color};color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700">
+          {overall_icon} {overall.upper()}
+        </div>
+      </div>
+    </div>
+
+    <!-- KPIs ejecutivos -->
+    <div style="padding:0">
+      <table style="width:100%;border-collapse:collapse;border-bottom:1px solid #e5e7eb">
+        <tr>{kpi_html}</tr>
+      </table>
+    </div>
+
+    <!-- Acciones críticas -->
+    <div style="padding:20px 28px">
+      <h2 style="margin:0 0 14px 0;font-size:15px;color:#0f172a;border-bottom:2px solid #0f172a;padding-bottom:6px">
+        🎯 Tu atención esta semana
+      </h2>
+      <table style="width:100%;border-collapse:collapse">
+        {accion_html}
+      </table>
+    </div>
+
+    <!-- Salas planta -->
+    <div style="padding:14px 28px;background:#f8fafc;border-top:1px solid #e5e7eb">
+      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+        🏭 Estado planta (ahora)
+      </div>
+      <div>{salas_html or '(sin datos)'}</div>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:16px 28px;background:#0f172a;color:#94a3b8;font-size:11px;text-align:center">
+      Cockpit completo: <a href="https://app.eossuite.com/admin/system-health" style="color:#7ACFCC;text-decoration:none">app.eossuite.com/admin/system-health</a><br>
+      <span style="color:#64748b">Generado por cron · weekly_executive · cada lunes 7:30am COT</span>
+    </div>
+  </div>
+</body></html>"""
+
+
+def _calcular_kpis_semanales(conn):
+    """KPIs agregados de la última semana para el email ejecutivo."""
+    kpis = {}
+    try:
+        c = conn.cursor()
+        # Pedidos B2B emitidos última semana
+        r = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor_total),0)
+                         FROM pedidos
+                         WHERE fecha >= date('now','-7 days')""").fetchone()
+        kpis['Pedidos 7d'] = f"{r[0] or 0}"
+        kpis['Ventas 7d'] = f"${(r[1] or 0)/1_000_000:.1f}M"
+    except Exception:
+        kpis['Pedidos 7d'] = '—'; kpis['Ventas 7d'] = '—'
+    try:
+        # OCs creadas última semana
+        n_oc = c.execute("""SELECT COUNT(*) FROM ordenes_compra
+                            WHERE fecha >= date('now','-7 days')""").fetchone()[0]
+        kpis['OCs 7d'] = f"{n_oc or 0}"
+    except Exception:
+        kpis['OCs 7d'] = '—'
+    try:
+        # Producciones completadas semana
+        n_prod = c.execute("""SELECT COUNT(*) FROM produccion_programada
+                              WHERE fin_real_at IS NOT NULL
+                                AND fin_real_at >= datetime('now','-7 days')""").fetchone()[0]
+        kpis['Prod 7d'] = f"{n_prod or 0}"
+    except Exception:
+        kpis['Prod 7d'] = '—'
+    try:
+        # Audit log entries 7d (señal de actividad regulatoria)
+        n_audit = c.execute("""SELECT COUNT(*) FROM audit_log
+                               WHERE fecha >= datetime('now','-7 days')""").fetchone()[0]
+        kpis['Audit 7d'] = f"{n_audit or 0}"
+    except Exception:
+        kpis['Audit 7d'] = '—'
+    return kpis
+
+
+def _capturar_health_snapshot(app):
+    """Llama internamente a /api/admin/health-detailed y retorna el dict.
+
+    Reusa la lógica del endpoint sin pasar por HTTP — más rápido y sin
+    necesidad de auth.
+    """
+    try:
+        import time as _time
+        tc = app.test_client()
+        with tc.session_transaction() as sess:
+            sess['compras_user'] = 'sebastian'
+            sess['login_time'] = _time.time()  # evita timeout de 8h en before_request
+        r = tc.get('/api/admin/health-detailed')
+        if r.status_code == 200:
+            return r.get_json()
+        log.warning('health snapshot retorna %s · body=%s',
+                     r.status_code, r.get_data(as_text=True)[:200])
+    except Exception as e:
+        log.warning('health snapshot exception: %s', e)
+    return {'overall': 'error', 'sections': {},
+            'snapshot_error': True}
+
+
+def job_weekly_executive_email(app):
+    """Cron lunes 7:30am · email ejecutivo a Sebastián con health + KPIs.
+
+    Hace que el dashboard de salud sea PROACTIVO en vez de reactivo. El CEO
+    no necesita abrir /admin/system-health · llega a su inbox.
+    """
+    with app.app_context():
+        from database import get_db
+        try:
+            snapshot = _capturar_health_snapshot(app)
+            conn = get_db()
+            kpis = _calcular_kpis_semanales(conn)
+            html = _build_weekly_executive_html(snapshot, kpis)
+            from config import USER_EMAILS
+            destino = USER_EMAILS.get('sebastian', '').strip()
+            if not destino:
+                log.warning('weekly_executive_email · EMAIL_SEBASTIAN no configurado')
+                return False, {'error': 'EMAIL_SEBASTIAN no configurado'}, 0
+            overall = snapshot.get('overall', 'ok')
+            icon = {'ok': '🟢', 'warning': '🟡', 'error': '🔴'}.get(overall, '⚪')
+            asunto = f"{icon} Executive Brief HHA · {datetime.now().strftime('%d-%b-%Y')}"
+            _enviar_email_async(asunto, html, [destino])
+            return True, {
+                'destino': destino, 'overall': overall,
+                'kpis': kpis,
+                'secciones_warning_or_error': sum(
+                    1 for s in snapshot.get('sections', {}).values()
+                    if isinstance(s, dict) and s.get('status') in ('warning', 'error')
+                ),
+            }, 0
+        except Exception as e:
+            log.exception('weekly_executive_email fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
 
 
 def _loop_multi_cron(app):
