@@ -132,21 +132,31 @@ def financiero_kpis():
     desglose_ing = [{'categoria': r[0], 'total': r[1]} for r in c.fetchall()]
     c.execute("SELECT categoria, SUM(monto) as total FROM flujo_egresos WHERE periodo=? GROUP BY categoria ORDER BY total DESC", (periodo_actual,))
     desglose_egr = [{'categoria': r[0], 'total': r[1]} for r in c.fetchall()]
-    # Histórico 6 meses
-    historico = []
+    # Histórico 6 meses · audit zero-error 2-may-2026
+    # Antes: 12 queries (2 × 6 meses) en loop. Ahora: 2 queries pre-agregadas.
+    from datetime import date as _d
+    hoy_d = _d.today()
+    periodos = []
     for i in range(5, -1, -1):
-        from datetime import date as _d
-        import calendar
-        hoy = _d.today()
-        mes = hoy.month - i
-        anio = hoy.year
+        mes = hoy_d.month - i
+        anio = hoy_d.year
         while mes <= 0: mes += 12; anio -= 1
-        p = f"{anio}-{mes:02d}"
-        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE periodo=?", (p,))
-        ing = c.fetchone()[0]
-        c.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE periodo=?", (p,))
-        egr = c.fetchone()[0]
-        historico.append({'periodo': p, 'ingresos': ing, 'egresos': egr})
+        periodos.append(f"{anio}-{mes:02d}")
+    placeholders = ','.join(['?'] * len(periodos))
+    ing_map = dict(c.execute(
+        f"SELECT periodo, COALESCE(SUM(monto),0) FROM flujo_ingresos "
+        f"WHERE periodo IN ({placeholders}) GROUP BY periodo",
+        periodos
+    ).fetchall())
+    egr_map = dict(c.execute(
+        f"SELECT periodo, COALESCE(SUM(monto),0) FROM flujo_egresos "
+        f"WHERE periodo IN ({placeholders}) GROUP BY periodo",
+        periodos
+    ).fetchall())
+    historico = [
+        {'periodo': p, 'ingresos': ing_map.get(p, 0), 'egresos': egr_map.get(p, 0)}
+        for p in periodos
+    ]
     # Shopify real-time (DTC directo) — no está en flujo_ingresos manual
     try:
         c.execute("SELECT COALESCE(SUM(total),0), COUNT(*) FROM animus_shopify_orders WHERE creado_en LIKE ?",

@@ -2286,7 +2286,18 @@ def recibir_oc(numero_oc):
     for _idx, item in enumerate(items_oc):
         codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
-        cant_recibida = float(ir.get('cantidad_recibida', 0) or cantidad_pedida)
+        # Money sanity validation · audit zero-error 2-may-2026
+        # cantidad_recibida puede ser 0 (item rechazado) · allow_zero=True
+        cant_raw = ir.get('cantidad_recibida', 0)
+        if cant_raw is None or cant_raw == '' or cant_raw == 0:
+            cant_recibida = float(cantidad_pedida or 0)
+        else:
+            cant_validada, err = validate_money(cant_raw, allow_zero=True,
+                                                  max_value=10_000_000_000,
+                                                  field_name='cantidad_recibida')
+            if err:
+                return jsonify(err), 400
+            cant_recibida = cant_validada
         lote_num = ir.get('lote', '').strip()
         fv = ir.get('fecha_vencimiento', '').strip()
         estado_item = ir.get('estado', 'OK')
