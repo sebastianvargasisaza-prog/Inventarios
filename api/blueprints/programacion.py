@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, request, session
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
-from config import ADMIN_USERS, APP_BASE_URL
+from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS
 from audit_helpers import audit_log
 
 # Bug latente preexistente fixed 2-may-2026: el blueprint usaba `log.warning()`
@@ -2632,6 +2632,10 @@ def prog_iniciar_produccion(evento_id):
             VALUES (?,?,?,?,?,?,?)""",
             (pp[2], 'iniciar_prod', (prev[0] if prev else None), 'ocupada',
              evento_id, user, f'inicio: {pp[1]}'))
+    audit_log(c, usuario=user, accion='INICIAR_PRODUCCION', tabla='produccion_programada',
+              registro_id=evento_id,
+              despues={'producto': pp[1], 'area_id': pp[2]},
+              detalle=f"Inició producción {pp[1]} (id={evento_id})")
     conn.commit()
     return jsonify({'ok': True, 'evento_id': evento_id})
 
@@ -2667,13 +2671,19 @@ def prog_terminar_produccion(evento_id):
             VALUES (?,?,?,?,?,?,?)""",
             (pp[2], 'terminar_prod', (prev[0] if prev else None), 'sucia',
              evento_id, user, f'fin: {pp[1]} → sala sucia, espera limpieza'))
-    conn.commit()
     # Calcular cycle time real
     cycle = c.execute("""SELECT
         CAST((julianday(fin_real_at) - julianday(inicio_real_at)) * 24 * 60 AS INTEGER) as min
         FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
+    cycle_min = cycle[0] if cycle else None
+    audit_log(c, usuario=user, accion='TERMINAR_PRODUCCION', tabla='produccion_programada',
+              registro_id=evento_id,
+              despues={'producto': pp[1], 'area_id': pp[2], 'cycle_time_min': cycle_min},
+              detalle=f"Terminó producción {pp[1]} (id={evento_id})"
+                      + (f" · cycle {cycle_min} min" if cycle_min else ""))
+    conn.commit()
     return jsonify({'ok': True, 'evento_id': evento_id,
-                    'cycle_time_min': cycle[0] if cycle else None})
+                    'cycle_time_min': cycle_min})
 
 
 @bp.route('/api/planta/listo-producir/<path:producto>', methods=['GET'])
@@ -9562,6 +9572,14 @@ def planta_envasado_iniciar():
         VALUES (?, ?, ?, ?, ?, ?, ?, 'esperando_micro')
     """, (envasado_id, producto, lote, pres_etiqueta or None,
           d.get('unidades_planeadas'), fecha_hoy, deadline))
+    audit_log(c, usuario=user, accion='INICIAR_ENVASADO', tabla='produccion_envasado',
+              registro_id=envasado_id,
+              despues={'producto': producto, 'lote': lote,
+                       'presentacion': pres_etiqueta,
+                       'unidades_planeadas': d.get('unidades_planeadas'),
+                       'envase_codigo': d.get('envase_codigo')},
+              detalle=f"Inició envasado lote {lote} ({producto})"
+                      + (f" · {pres_etiqueta}" if pres_etiqueta else ""))
     conn.commit()
     return jsonify({
         'ok': True,
@@ -9622,6 +9640,13 @@ def planta_envasado_terminar(envasado_id):
     except Exception as e:
         log.warning(f'Descuento MEE envasado fallo (envasado_id={envasado_id}): {e}')
 
+    audit_log(c, usuario=user, accion='TERMINAR_ENVASADO', tabla='produccion_envasado',
+              registro_id=envasado_id,
+              despues={'unidades_envasadas': d.get('unidades_envasadas'),
+                       'notas': d.get('notas'),
+                       'mees_descontados': len(descontados_mees)},
+              detalle=f"Terminó envasado id={envasado_id}"
+                      + (f" · {d.get('unidades_envasadas')} unidades" if d.get('unidades_envasadas') else ""))
     conn.commit()
     return jsonify({
         'ok': True,
@@ -9675,26 +9700,53 @@ def planta_cola_liberacion():
 @bp.route('/api/planta/cola-liberacion/<int:item_id>/disposicion', methods=['POST'])
 def planta_cola_liberacion_disposicion(item_id):
     """QC/Alejandro decide la disposición del lote tras revisar el resultado micro.
+
+    Decisión INVIMA crítica (Resolución 2214/2021 art. 10): liberación de
+    producto terminado solo por Calidad/Admin con motivo si rechaza.
+
     Body: {disposicion: 'aprobado'|'rechazado'|'reanalizar', notas?}"""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin puede liberar lotes'}), 403
     d = request.json or {}
     disposicion = (d.get('disposicion') or '').strip()
+    notas = (d.get('notas') or '').strip()
     if disposicion not in ('aprobado', 'rechazado', 'reanalizar'):
         return jsonify({'error': 'disposicion debe ser aprobado/rechazado/reanalizar'}), 400
+    if disposicion == 'rechazado' and len(notas) < 10:
+        return jsonify({'error': 'notas (≥10 chars) requeridas para rechazar lote'}), 400
     estado_nuevo = {
         'aprobado': 'liberado',
         'rechazado': 'rechazado',
         'reanalizar': 'reanalisis',
     }[disposicion]
     conn = get_db(); c = conn.cursor()
+    # Capturar antes para audit log
+    antes_row = c.execute(
+        "SELECT producto_nombre, lote, estado, disposicion, unidades "
+        "FROM cola_liberacion WHERE id=?", (item_id,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Item no encontrado'}), 404
+    antes = dict(antes_row)
     c.execute("""
         UPDATE cola_liberacion SET
           disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now'),
           notas=COALESCE(?, notas)
         WHERE id=?
-    """, (disposicion, estado_nuevo, user, d.get('notas'), item_id))
+    """, (disposicion, estado_nuevo, user, notas or None, item_id))
+    accion = {
+        'aprobado': 'LIBERAR_LOTE_PT',
+        'rechazado': 'RECHAZAR_LOTE_PT',
+        'reanalizar': 'REANALIZAR_LOTE_PT',
+    }[disposicion]
+    audit_log(c, usuario=user, accion=accion, tabla='cola_liberacion',
+              registro_id=item_id, antes=antes,
+              despues={'disposicion': disposicion, 'estado': estado_nuevo,
+                       'aprobado_por': user, 'notas': notas},
+              detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('producto_nombre','')})"
+                      + (f" · {notas}" if notas else ""))
     conn.commit()
     return jsonify({'ok': True, 'estado': estado_nuevo})
 

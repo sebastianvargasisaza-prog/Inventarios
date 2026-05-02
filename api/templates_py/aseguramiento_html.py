@@ -754,6 +754,16 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="MODIFICAR_SGD">MODIFICAR_SGD</option>
             <option value="ELIMINAR_SGD">ELIMINAR_SGD</option>
             <option value="REVISAR_SGD">REVISAR_SGD</option>
+            <option disabled>── Planta/Liberación ──</option>
+            <option value="APROBAR_LOTE">APROBAR_LOTE</option>
+            <option value="RECHAZAR_LOTE">RECHAZAR_LOTE</option>
+            <option value="INICIAR_PRODUCCION">INICIAR_PRODUCCION</option>
+            <option value="TERMINAR_PRODUCCION">TERMINAR_PRODUCCION</option>
+            <option value="INICIAR_ENVASADO">INICIAR_ENVASADO</option>
+            <option value="TERMINAR_ENVASADO">TERMINAR_ENVASADO</option>
+            <option value="LIBERAR_LOTE_PT">LIBERAR_LOTE_PT</option>
+            <option value="RECHAZAR_LOTE_PT">RECHAZAR_LOTE_PT</option>
+            <option value="REANALIZAR_LOTE_PT">REANALIZAR_LOTE_PT</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>

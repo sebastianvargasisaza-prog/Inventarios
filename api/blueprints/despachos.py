@@ -7,8 +7,9 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
 from database import get_db
+from audit_helpers import audit_log
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -142,17 +143,48 @@ def recepcion_lotes_cuarentena():
 
 @bp.route('/api/recepcion/aprobar-lote', methods=['POST'])
 def recepcion_aprobar_lote():
+    """Aprobar o rechazar un lote en cuarentena · decisión INVIMA de calidad.
+
+    Solo Calidad/Admin puede liberar (Resolución 2214/2021 art. 10).
+    Estados válidos: 'Aprobado' (libera para uso) o 'Rechazado' (bloquea uso).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', '')
+    if usuario not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin puede aprobar lotes'}), 403
     d = request.get_json() or {}
     mov_id = d.get('mov_id')
-    nuevo_estado = d.get('estado', 'Aprobado')  # Aprobado o Rechazado
+    nuevo_estado = d.get('estado', 'Aprobado')
+    motivo = (d.get('motivo') or '').strip()
     if not mov_id:
         return jsonify({'error': 'mov_id requerido'}), 400
-    usuario = session.get('compras_user', '')
+    try:
+        mov_id = int(mov_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'mov_id inválido'}), 400
+    if nuevo_estado not in ('Aprobado', 'Rechazado'):
+        return jsonify({'error': "estado debe ser 'Aprobado' o 'Rechazado'"}), 400
+    if nuevo_estado == 'Rechazado' and len(motivo) < 10:
+        return jsonify({'error': 'motivo (≥10 chars) requerido para rechazar'}), 400
     conn = get_db(); c = conn.cursor()
+    # Capturar estado anterior para audit log
+    antes_row = c.execute(
+        "SELECT estado_lote, lote, material_nombre, cantidad, operador "
+        "FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Movimiento no encontrado'}), 404
+    antes = dict(antes_row)
     c.execute("UPDATE movimientos SET estado_lote=?, operador=? WHERE id=?",
               (nuevo_estado, usuario, mov_id))
+    accion = 'APROBAR_LOTE' if nuevo_estado == 'Aprobado' else 'RECHAZAR_LOTE'
+    audit_log(c, usuario=usuario, accion=accion, tabla='movimientos',
+              registro_id=mov_id, antes=antes,
+              despues={'estado_lote': nuevo_estado, 'operador': usuario,
+                       'motivo': motivo} if motivo else
+                      {'estado_lote': nuevo_estado, 'operador': usuario},
+              detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('material_nombre','')})"
+                      + (f" · motivo: {motivo}" if motivo else ""))
     conn.commit()
     return jsonify({'ok': True, 'estado': nuevo_estado})
 
