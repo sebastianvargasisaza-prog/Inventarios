@@ -2672,3 +2672,225 @@ def capacitaciones_mias():
         'asignado_at': r[5], 'leido_at': r[6], 'firmado_at': r[7],
         'estado': r[8], 'fecha_limite': r[9],
     } for r in rows]})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# REPORTES INVIMA · consultas ad-hoc para auditoría regulatoria
+# ════════════════════════════════════════════════════════════════════════
+# Sebastián 2-may-2026: cuando llegue auditoría INVIMA (Resolución 2214/2021),
+# estos endpoints centralizan las consultas más frecuentes en lugar de hacer
+# SQL ad-hoc en producción. Solo Calidad+Admin pueden consultarlos.
+
+@bp.route('/api/aseguramiento/reportes/audit-trail', methods=['GET'])
+def reporte_audit_trail():
+    """Audit log filtrable · evidencia INVIMA de cambios regulatorios.
+
+    Query params:
+      - desde · YYYY-MM-DD (default: hace 30 días)
+      - hasta · YYYY-MM-DD (default: hoy)
+      - accion · filtro exacto (ej. 'CERRAR_RECALL')
+      - tabla · filtro exacto (ej. 'recalls')
+      - usuario · filtro exacto
+    """
+    user = session.get('compras_user', '')
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    accion = (request.args.get('accion') or '').strip()
+    tabla = (request.args.get('tabla') or '').strip()
+    usuario_filtro = (request.args.get('usuario') or '').strip()
+    if not desde:
+        desde = (datetime.now() - timedelta(days=30)).date().isoformat()
+    if not hasta:
+        hasta = datetime.now().date().isoformat()
+    where = ['date(fecha) >= ?', 'date(fecha) <= ?']
+    params = [desde, hasta]
+    if accion:
+        where.append('accion = ?'); params.append(accion)
+    if tabla:
+        where.append('tabla = ?'); params.append(tabla)
+    if usuario_filtro:
+        where.append('usuario = ?'); params.append(usuario_filtro)
+    sql = f"""
+        SELECT id, usuario, accion, tabla, registro_id, antes, despues,
+               detalle, ip, fecha
+        FROM audit_log
+        WHERE {' AND '.join(where)}
+        ORDER BY fecha DESC, id DESC
+        LIMIT 500
+    """
+    rows = get_db().execute(sql, params).fetchall()
+    items = [{
+        'id': r[0], 'usuario': r[1], 'accion': r[2], 'tabla': r[3],
+        'registro_id': r[4], 'antes': r[5], 'despues': r[6],
+        'detalle': r[7], 'ip': r[8], 'fecha': r[9],
+    } for r in rows]
+    return jsonify({
+        'desde': desde, 'hasta': hasta,
+        'filtros': {'accion': accion, 'tabla': tabla, 'usuario': usuario_filtro},
+        'total': len(items),
+        'items': items,
+    })
+
+
+@bp.route('/api/aseguramiento/reportes/lote-trazabilidad/<path:lote>', methods=['GET'])
+def reporte_lote_trazabilidad(lote):
+    """Dado un lote, devuelve toda la cadena · recepción → uso → despachos.
+
+    Útil para:
+    - Recall: qué clientes recibieron este lote.
+    - Auditoría INVIMA: trazabilidad completa de un lote sospechoso.
+    """
+    user = session.get('compras_user', '')
+    if user not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Calidad/Admin'}), 403
+    if not lote or len(lote) < 2:
+        return jsonify({'error': 'lote requerido'}), 400
+    import urllib.parse
+    lote = urllib.parse.unquote(lote).strip()
+    db = get_db()
+
+    # 1. Recepciones (movimientos de entrada)
+    try:
+        recepciones = [{
+            'fecha': r[0], 'material': r[1], 'cantidad': r[2],
+            'proveedor': r[3], 'numero_oc': r[4], 'estado_lote': r[5],
+            'fecha_vencimiento': r[6],
+        } for r in db.execute("""
+            SELECT fecha, material_nombre, cantidad, proveedor, numero_oc,
+                   estado_lote, fecha_vencimiento
+            FROM movimientos
+            WHERE tipo='Entrada' AND lote=?
+            ORDER BY fecha DESC LIMIT 50
+        """, (lote,)).fetchall()]
+    except Exception as e:
+        log.warning('lote-trazabilidad recepciones fallo: %s', e)
+        recepciones = []
+
+    # 2. Producciones que usaron este lote (movimientos de Salida con observación)
+    try:
+        producciones = [{
+            'fecha': r[0], 'material': r[1], 'cantidad': r[2],
+            'observaciones': r[3] or '', 'operador': r[4],
+        } for r in db.execute("""
+            SELECT fecha, material_nombre, cantidad, observaciones, operador
+            FROM movimientos
+            WHERE tipo='Salida' AND lote=?
+            ORDER BY fecha DESC LIMIT 100
+        """, (lote,)).fetchall()]
+    except Exception:
+        producciones = []
+
+    # 3. CoAs del lote
+    try:
+        coas = [{
+            'fecha': r[0], 'parametro': r[1], 'valor': r[2],
+            'conforme': bool(r[3]), 'analista': r[4], 'decision': r[5],
+        } for r in db.execute("""
+            SELECT fecha_analisis, parametro, valor_obtenido, conforme,
+                   analista, decision
+            FROM coa_resultados
+            WHERE lote=?
+            ORDER BY fecha_analisis DESC LIMIT 50
+        """, (lote,)).fetchall()]
+    except Exception:
+        coas = []
+
+    # 4. NCs / OOS asociadas
+    try:
+        ncs = [{
+            'id': r[0], 'fecha': r[1], 'tipo': r[2], 'descripcion': r[3],
+            'impacto': r[4], 'estado': r[5],
+        } for r in db.execute("""
+            SELECT id, fecha, tipo, descripcion, impacto, estado
+            FROM no_conformidades
+            WHERE lote=?
+            ORDER BY fecha DESC LIMIT 20
+        """, (lote,)).fetchall()]
+    except Exception:
+        ncs = []
+
+    try:
+        oos = [{
+            'id': r[0], 'codigo': r[1], 'fecha': r[2], 'parametro': r[3],
+            'valor_obtenido': r[4], 'estado': r[5],
+        } for r in db.execute("""
+            SELECT id, codigo, fecha_deteccion, parametro,
+                   valor_obtenido_texto, estado
+            FROM calidad_oos
+            WHERE lote=?
+            ORDER BY fecha_deteccion DESC LIMIT 20
+        """, (lote,)).fetchall()]
+    except Exception:
+        oos = []
+
+    # 5. Despachos a clientes (uso B2B con lote_pt)
+    try:
+        despachos = [{
+            'numero_despacho': r[0], 'fecha': r[1], 'cliente': r[2],
+            'sku': r[3], 'cantidad': r[4],
+        } for r in db.execute("""
+            SELECT di.numero_despacho, d.fecha, cl.nombre, di.sku, di.cantidad
+            FROM despachos_items di
+              LEFT JOIN despachos d ON d.numero=di.numero_despacho
+              LEFT JOIN clientes cl ON cl.id=d.cliente_id
+            WHERE di.lote_pt=?
+            ORDER BY d.fecha DESC LIMIT 100
+        """, (lote,)).fetchall()]
+    except Exception:
+        despachos = []
+
+    # 6. Desviaciones que mencionan el lote
+    try:
+        desviaciones = [{
+            'codigo': r[0], 'fecha': r[1], 'tipo': r[2], 'estado': r[3],
+            'clasificacion': r[4],
+        } for r in db.execute("""
+            SELECT codigo, fecha_deteccion, tipo, estado, clasificacion
+            FROM desviaciones
+            WHERE lotes_afectados LIKE ?
+            ORDER BY fecha_deteccion DESC LIMIT 20
+        """, (f'%{lote}%',)).fetchall()]
+    except Exception:
+        desviaciones = []
+
+    # 7. Recalls que afectaron el lote
+    try:
+        recalls = [{
+            'codigo': r[0], 'fecha_inicio': r[1], 'producto': r[2],
+            'clase_recall': r[3], 'estado': r[4],
+        } for r in db.execute("""
+            SELECT codigo, fecha_inicio, producto, clase_recall, estado
+            FROM recalls
+            WHERE lotes_afectados LIKE ?
+            ORDER BY fecha_inicio DESC LIMIT 20
+        """, (f'%{lote}%',)).fetchall()]
+    except Exception:
+        recalls = []
+
+    return jsonify({
+        'lote': lote,
+        'consulta_at': datetime.now().isoformat(),
+        'consultado_por': user,
+        'cadena': {
+            'recepciones': recepciones,
+            'producciones_uso': producciones,
+            'coas': coas,
+            'ncs': ncs,
+            'oos': oos,
+            'despachos_clientes': despachos,
+            'desviaciones': desviaciones,
+            'recalls': recalls,
+        },
+        'resumen': {
+            'recepciones': len(recepciones),
+            'producciones': len(producciones),
+            'coas': len(coas),
+            'ncs': len(ncs),
+            'oos': len(oos),
+            'despachos': len(despachos),
+            'desviaciones': len(desviaciones),
+            'recalls': len(recalls),
+        },
+    })
