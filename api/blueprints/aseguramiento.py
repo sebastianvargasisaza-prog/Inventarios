@@ -166,6 +166,141 @@ def aseguramiento_dashboard():
     except Exception:
         out['auditorias_60d'] = 0
 
+    # Desviaciones (ASG-PRO-001)
+    try:
+        dv = c.execute("""
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN estado='detectada' THEN 1 END) as sin_clasificar,
+              COUNT(CASE WHEN clasificacion='critica'
+                          AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
+              COUNT(CASE WHEN estado IN ('en_investigacion','clasificada') THEN 1 END) as investigando,
+              COUNT(CASE WHEN estado='cerrada'
+                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerradas_30d
+            FROM desviaciones
+        """).fetchone()
+        out['desviaciones'] = {
+            'total': dv[0] or 0, 'sin_clasificar': dv[1] or 0,
+            'criticas_abiertas': dv[2] or 0, 'investigando': dv[3] or 0,
+            'cerradas_30d': dv[4] or 0,
+        }
+    except Exception:
+        out['desviaciones'] = {}
+
+    # Control de cambios (ASG-PRO-007)
+    try:
+        cm = c.execute("""
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN estado='solicitado' THEN 1 END) as sin_evaluar,
+              COUNT(CASE WHEN estado IN ('aprobado','en_implementacion') THEN 1 END) as aprobados_pendientes,
+              COUNT(CASE WHEN requiere_invima=1
+                          AND estado NOT IN ('cerrado','rechazado')
+                          AND notificacion_invima_at IS NULL THEN 1 END) as invima_pendiente,
+              COUNT(CASE WHEN estado='cerrado'
+                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerrados_30d
+            FROM control_cambios
+        """).fetchone()
+        out['cambios'] = {
+            'total': cm[0] or 0, 'sin_evaluar': cm[1] or 0,
+            'aprobados_pendientes': cm[2] or 0, 'invima_pendiente': cm[3] or 0,
+            'cerrados_30d': cm[4] or 0,
+        }
+    except Exception:
+        out['cambios'] = {}
+
+    # Quejas de cliente (ASG-PRO-013)
+    try:
+        qc = c.execute("""
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN estado='nueva' THEN 1 END) as nuevas,
+              COUNT(CASE WHEN estado='respondida' THEN 1 END) as pendientes_cierre,
+              COUNT(CASE WHEN (severidad='critica' OR impacto_salud=1)
+                          AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
+              COUNT(CASE WHEN estado='cerrada'
+                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerradas_30d
+            FROM quejas_clientes
+        """).fetchone()
+        out['quejas'] = {
+            'total': qc[0] or 0, 'nuevas': qc[1] or 0,
+            'pendientes_cierre': qc[2] or 0, 'criticas_abiertas': qc[3] or 0,
+            'cerradas_30d': qc[4] or 0,
+        }
+    except Exception:
+        out['quejas'] = {}
+
+    # Recalls (ASG-PRO-004)
+    try:
+        rcl = c.execute("""
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN estado='iniciado' THEN 1 END) as sin_clasificar,
+              COUNT(CASE WHEN clase_recall='clase_I'
+                          AND estado NOT IN ('cerrado','cancelado') THEN 1 END) as clase_I_abiertos,
+              COUNT(CASE WHEN estado IN ('iniciado','clasificado')
+                          AND notificacion_invima_at IS NULL THEN 1 END) as invima_pendiente,
+              COUNT(CASE WHEN estado='en_recoleccion' THEN 1 END) as en_recoleccion,
+              COUNT(CASE WHEN estado='cerrado'
+                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerrados_30d
+            FROM recalls
+        """).fetchone()
+        out['recalls'] = {
+            'total': rcl[0] or 0, 'sin_clasificar': rcl[1] or 0,
+            'clase_I_abiertos': rcl[2] or 0, 'invima_pendiente': rcl[3] or 0,
+            'en_recoleccion': rcl[4] or 0, 'cerrados_30d': rcl[5] or 0,
+        }
+    except Exception:
+        out['recalls'] = {}
+
+    # Alertas críticas consolidadas (top 5 más urgentes)
+    alertas = []
+    try:
+        # Recalls Clase I sin INVIMA → super crítica
+        for r in c.execute("""
+            SELECT codigo, producto FROM recalls
+            WHERE clase_recall='clase_I' AND notificacion_invima_at IS NULL
+              AND estado NOT IN ('cerrado','cancelado')
+            LIMIT 3
+        """).fetchall():
+            alertas.append({'tipo': 'recall_clase_I_sin_invima', 'severidad': 'super_critica',
+                            'codigo': r[0], 'descripcion': f'Clase I sin INVIMA: {(r[1] or "")[:60]}',
+                            'modulo': 'recalls'})
+        # Desviaciones críticas sin investigar
+        for r in c.execute("""
+            SELECT codigo, descripcion FROM desviaciones
+            WHERE clasificacion='critica' AND estado IN ('clasificada','detectada')
+              AND date(fecha_deteccion) <= date('now','-2 days')
+            LIMIT 3
+        """).fetchall():
+            alertas.append({'tipo': 'desviacion_critica_sin_investigar', 'severidad': 'critica',
+                            'codigo': r[0], 'descripcion': (r[1] or '')[:60],
+                            'modulo': 'desviaciones'})
+        # Quejas con impacto salud sin responder
+        for r in c.execute("""
+            SELECT codigo, cliente_nombre FROM quejas_clientes
+            WHERE impacto_salud=1 AND estado IN ('nueva','en_triaje','en_investigacion')
+              AND date(fecha_recepcion) <= date('now','-2 days')
+            LIMIT 3
+        """).fetchall():
+            alertas.append({'tipo': 'queja_salud_sin_responder', 'severidad': 'critica',
+                            'codigo': r[0], 'descripcion': f'Cliente: {(r[1] or "")[:60]}',
+                            'modulo': 'quejas'})
+        # Cambios aprobados con INVIMA pendiente
+        for r in c.execute("""
+            SELECT codigo, titulo FROM control_cambios
+            WHERE requiere_invima=1 AND notificacion_invima_at IS NULL
+              AND estado IN ('aprobado','en_implementacion')
+              AND date(aprobado_at) <= date('now','-3 days')
+            LIMIT 3
+        """).fetchall():
+            alertas.append({'tipo': 'cambio_invima_pendiente', 'severidad': 'critica',
+                            'codigo': r[0], 'descripcion': (r[1] or '')[:60],
+                            'modulo': 'cambios'})
+    except Exception as e:
+        log.warning('dashboard alertas fallo: %s', e)
+    out['alertas_criticas'] = alertas[:10]
+
     return jsonify(out)
 
 

@@ -97,16 +97,53 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- DASHBOARD -->
 <div id="tab-dash" class="pane active">
-  <div class="kpi-row" id="dash-kpis">
+  <!-- Alertas críticas (banner rojo si hay) -->
+  <div id="dash-alertas-wrap" style="display:none">
+    <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin-bottom:14px">
+      <div style="font-weight:700;color:#991b1b;margin-bottom:6px">🚨 Alertas críticas (acción requerida)</div>
+      <div id="dash-alertas-list" style="font-size:0.85em"></div>
+    </div>
+  </div>
+
+  <!-- SGD -->
+  <div class="card-title" style="margin-top:6px">📚 SGD electrónico</div>
+  <div class="kpi-row">
     <div class="kpi"><div class="kpi-label">Docs Vigentes</div><div class="kpi-val good" id="kp-vig">—</div></div>
     <div class="kpi"><div class="kpi-label">Vencen 30d</div><div class="kpi-val warn" id="kp-prox">—</div></div>
     <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="kp-venc">—</div></div>
     <div class="kpi"><div class="kpi-label">Conflictos</div><div class="kpi-val warn" id="kp-confl">—</div></div>
     <div class="kpi"><div class="kpi-label">Capacit. pendientes</div><div class="kpi-val warn" id="kp-cap">—</div></div>
+  </div>
+
+  <!-- Workflows ASG -->
+  <div class="card-title" style="margin-top:14px">⚙️ Workflows ASG</div>
+  <div class="kpi-row">
+    <div class="kpi" onclick="goTab('tab-desv')" style="cursor:pointer"><div class="kpi-label">📢 Desviaciones</div>
+      <div class="kpi-val" id="kp-desv-tot">—</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-desv-crit">—</span> críticas · <span id="kp-desv-sin">—</span> s/clasificar</div>
+    </div>
+    <div class="kpi" onclick="goTab('tab-cambios')" style="cursor:pointer"><div class="kpi-label">🔄 Cambios</div>
+      <div class="kpi-val" id="kp-cam-tot">—</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-cam-inv">—</span> INVIMA · <span id="kp-cam-sin">—</span> s/evaluar</div>
+    </div>
+    <div class="kpi" onclick="goTab('tab-quejas')" style="cursor:pointer"><div class="kpi-label">💬 Quejas</div>
+      <div class="kpi-val" id="kp-qc-tot">—</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-qc-crit">—</span> críticas · <span id="kp-qc-nue">—</span> nuevas</div>
+    </div>
+    <div class="kpi" onclick="goTab('tab-recalls')" style="cursor:pointer"><div class="kpi-label">🚨 Recalls</div>
+      <div class="kpi-val" id="kp-rcl-tot">—</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-rcl-c1">—</span> Clase I · <span id="kp-rcl-inv">—</span> s/INVIMA</div>
+    </div>
+  </div>
+
+  <!-- Otros -->
+  <div class="card-title" style="margin-top:14px">📋 Otros</div>
+  <div class="kpi-row">
     <div class="kpi"><div class="kpi-label">NCs abiertas</div><div class="kpi-val" id="kp-nc">—</div></div>
     <div class="kpi"><div class="kpi-label">Auditorías 60d</div><div class="kpi-val" id="kp-aud">—</div></div>
   </div>
-  <div class="card">
+
+  <div class="card" style="margin-top:14px">
     <div class="card-title">Resumen del SGD por área</div>
     <div id="dash-areas"><p class="empty">Cargando...</p></div>
   </div>
@@ -1733,13 +1770,61 @@ async function loadDashboard(){
     var d = await r.json();
     var sgd = d.sgd || {};
     var cap = d.capacitaciones || {};
+    var dv = d.desviaciones || {};
+    var cm = d.cambios || {};
+    var qc = d.quejas || {};
+    var rcl = d.recalls || {};
+
+    // SGD
     document.getElementById('kp-vig').textContent = sgd.vigentes || 0;
     document.getElementById('kp-prox').textContent = sgd.vencen_30d || 0;
     document.getElementById('kp-venc').textContent = sgd.vencidos || 0;
     document.getElementById('kp-confl').textContent = sgd.conflictos || 0;
     document.getElementById('kp-cap').textContent = cap.pendientes || 0;
+
+    // Workflows
+    document.getElementById('kp-desv-tot').textContent = dv.total || 0;
+    document.getElementById('kp-desv-crit').textContent = dv.criticas_abiertas || 0;
+    document.getElementById('kp-desv-sin').textContent = dv.sin_clasificar || 0;
+    document.getElementById('kp-cam-tot').textContent = cm.total || 0;
+    document.getElementById('kp-cam-inv').textContent = cm.invima_pendiente || 0;
+    document.getElementById('kp-cam-sin').textContent = cm.sin_evaluar || 0;
+    document.getElementById('kp-qc-tot').textContent = qc.total || 0;
+    document.getElementById('kp-qc-crit').textContent = qc.criticas_abiertas || 0;
+    document.getElementById('kp-qc-nue').textContent = qc.nuevas || 0;
+    document.getElementById('kp-rcl-tot').textContent = rcl.total || 0;
+    document.getElementById('kp-rcl-c1').textContent = rcl.clase_I_abiertos || 0;
+    document.getElementById('kp-rcl-inv').textContent = rcl.invima_pendiente || 0;
+
+    // Otros
     document.getElementById('kp-nc').textContent = d.ncs_abiertas || 0;
     document.getElementById('kp-aud').textContent = d.auditorias_60d || 0;
+
+    // Alertas críticas consolidadas
+    var alertas = d.alertas_criticas || [];
+    var wrap = document.getElementById('dash-alertas-wrap');
+    var list = document.getElementById('dash-alertas-list');
+    if(alertas.length){
+      wrap.style.display = 'block';
+      var tipoLabel = {
+        'recall_clase_I_sin_invima': '🚨🚨 RECALL CLASE I SIN INVIMA',
+        'desviacion_critica_sin_investigar': '⚠ Desviación crítica sin investigar',
+        'queja_salud_sin_responder': '⚠ Queja salud sin responder',
+        'cambio_invima_pendiente': '⚠ Cambio aprobado · INVIMA pendiente',
+      };
+      var tabFor = {
+        'recalls': 'tab-recalls', 'desviaciones': 'tab-desv',
+        'quejas': 'tab-quejas', 'cambios': 'tab-cambios',
+      };
+      list.innerHTML = alertas.map(function(a){
+        var tab = tabFor[a.modulo] || 'tab-dash';
+        return '<div style="padding:4px 0;border-top:1px solid #fecaca;cursor:pointer" onclick="goTab(\''+tab+'\')">'
+          +'<b>'+_esc(tipoLabel[a.tipo] || a.tipo)+'</b> · <code>'+_esc(a.codigo)+'</code> · '+_esc(a.descripcion)
+          +'</div>';
+      }).join('');
+    } else {
+      wrap.style.display = 'none';
+    }
 
     // Resumen áreas vendrá del listado
     var rArea = await fetch('/api/aseguramiento/sgd/listado?estado=vigente');

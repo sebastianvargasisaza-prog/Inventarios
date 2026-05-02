@@ -33,7 +33,7 @@ def test_aseguramiento_pagina_con_login(app, db_clean):
 
 
 def test_dashboard_estructura(app, db_clean):
-    """GET /api/aseguramiento/dashboard retorna estructura completa."""
+    """GET /api/aseguramiento/dashboard retorna estructura completa con 4 workflows."""
     c = _login(app, "laura")
     r = c.get("/api/aseguramiento/dashboard")
     assert r.status_code == 200
@@ -43,11 +43,66 @@ def test_dashboard_estructura(app, db_clean):
     assert "capacitaciones" in data
     assert "ncs_abiertas" in data
     assert "auditorias_60d" in data
+    # Workflows ASG
+    assert "desviaciones" in data
+    assert "cambios" in data
+    assert "quejas" in data
+    assert "recalls" in data
+    # Cada workflow tiene KPIs mínimos
+    for k in ("total","sin_clasificar","criticas_abiertas","investigando","cerradas_30d"):
+        assert k in data["desviaciones"], f"falta {k} en desviaciones"
+    for k in ("total","sin_evaluar","aprobados_pendientes","invima_pendiente","cerrados_30d"):
+        assert k in data["cambios"], f"falta {k} en cambios"
+    for k in ("total","nuevas","pendientes_cierre","criticas_abiertas","cerradas_30d"):
+        assert k in data["quejas"], f"falta {k} en quejas"
+    for k in ("total","sin_clasificar","clase_I_abiertos","invima_pendiente","en_recoleccion","cerrados_30d"):
+        assert k in data["recalls"], f"falta {k} en recalls"
+    # Alertas consolidadas (lista, vacía si no hay urgentes)
+    assert "alertas_criticas" in data
+    assert isinstance(data["alertas_criticas"], list)
 
 
 def test_dashboard_requiere_auth(client, db_clean):
     r = client.get("/api/aseguramiento/dashboard")
     assert r.status_code == 401
+
+
+def test_dashboard_kpis_workflows_se_actualizan(app, db_clean):
+    """Crear desviación + queja crítica → KPIs del dashboard reflejan cambios."""
+    c = _login(app, "laura")
+    # Crear desviación crítica abierta
+    r = c.post("/api/aseguramiento/desviaciones",
+               json={"tipo": "equipo", "area_origen": "Lab",
+                     "descripcion": "Test desviación dashboard KPI funcional"},
+               headers=csrf_headers())
+    desv_id = r.get_json()["id"]
+    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/clasificar",
+           json={"clasificacion": "critica",
+                 "justificacion": "Test crítica para KPI dashboard"},
+           headers=csrf_headers())
+    # Crear queja con impacto salud
+    r = c.post("/api/aseguramiento/quejas",
+               json={"canal":"email","tipo_queja":"reaccion_adversa",
+                     "cliente_nombre":"Test Cliente",
+                     "descripcion":"Test queja salud para KPI dashboard",
+                     "impacto_salud": True},
+               headers=csrf_headers())
+    queja_id = r.get_json()["id"]
+
+    r = c.get("/api/aseguramiento/dashboard")
+    data = r.get_json()
+    assert data["desviaciones"]["total"] >= 1
+    assert data["desviaciones"]["criticas_abiertas"] >= 1
+    assert data["quejas"]["total"] >= 1
+    assert data["quejas"]["criticas_abiertas"] >= 1  # impacto_salud cuenta
+
+    # Cleanup
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
+    conn.execute("DELETE FROM quejas_clientes_eventos WHERE queja_id=?", (queja_id,))
+    conn.execute("DELETE FROM quejas_clientes WHERE id=?", (queja_id,))
+    conn.commit(); conn.close()
 
 
 # ─── SGD electrónico ─────────────────────────────────────────────────────
