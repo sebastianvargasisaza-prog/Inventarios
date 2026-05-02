@@ -324,6 +324,16 @@ def mfa_admin_disable():
                    backup_code_hash = NULL
              WHERE username = ?
         """, (target,))
+        # Audit log · acción admin sensible
+        try:
+            from audit_helpers import audit_log as _al
+            cur_audit = conn.cursor()
+            _al(cur_audit, usuario=actor, accion='MFA_ADMIN_DISABLE',
+                tabla='users_mfa', registro_id=target,
+                despues={'target': target, 'enabled': 0, 'disabled_by': actor},
+                detalle=f"Admin {actor} desactivó MFA de {target} (recovery flow)")
+        except Exception:
+            pass
         conn.commit()
     finally:
         conn.close()
