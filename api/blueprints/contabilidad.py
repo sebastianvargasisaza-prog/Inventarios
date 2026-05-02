@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request, Response, session
 from config import DB_PATH, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from audit_helpers import audit_log
+from http_helpers import validate_money
 
 log = logging.getLogger('contabilidad')
 bp = Blueprint('contabilidad', __name__)
@@ -443,9 +444,10 @@ def cont_factura_pago(numero):
     if not _auth():
         return jsonify({'error': 'No autorizado'}), 401
     data = request.get_json() or {}
-    monto = float(data.get('monto', 0))
-    if monto <= 0:
-        return jsonify({'error': 'Monto debe ser mayor a 0'}), 400
+    # Money sanity validation · audit zero-error 2-may-2026
+    monto, err = validate_money(data.get('monto', 0), allow_zero=False, field_name='monto')
+    if err:
+        return jsonify(err), 400
 
     conn = get_db()
     f = conn.execute("SELECT * FROM facturas WHERE numero=?", (numero,)).fetchone()

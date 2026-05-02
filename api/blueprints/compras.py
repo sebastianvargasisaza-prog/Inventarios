@@ -17,6 +17,7 @@ from config import (
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from audit_helpers import audit_log, intentar_insert_con_retry
+from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -2449,7 +2450,15 @@ def pagar_oc(numero_oc):
     if err:
         return err, code
     d = request.get_json() or {}
-    monto = float(d.get('monto', 0) or 0)
+    # Money sanity validation · audit zero-error 2-may-2026
+    raw_monto = d.get('monto', 0) or 0
+    if raw_monto:
+        monto_validado, err = validate_money(raw_monto, allow_zero=False, field_name='monto')
+        if err:
+            return jsonify(err), 400
+        monto = monto_validado
+    else:
+        monto = 0  # se completará con valor_total_oc después si viene 0
     medio = d.get('medio', 'Transferencia')
     obs = d.get('observaciones', '')
     numero_factura = (d.get('numero_factura_proveedor') or '').strip()

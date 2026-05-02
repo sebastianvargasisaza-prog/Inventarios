@@ -70,9 +70,18 @@ tr:hover{background:#fafafa}
 .badge-confl{background:#ffedd5;color:#c2410c}
 .badge-bor{background:#dbeafe;color:#1e40af}
 code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Regular,Consolas,monospace;font-size:0.85em}
+/* Toast notifications · audit zero-error 2-may-2026 · reemplazo de alert() */
+#_toast-container{position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:#fff;border-left:4px solid #7ACFCC;padding:12px 18px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:260px;max-width:400px;font-size:0.9em;animation:slideIn .25s ease-out;pointer-events:auto;cursor:pointer}
+.toast.success{border-left-color:#15803d}.toast.error{border-left-color:#ef4444}
+.toast.warn{border-left-color:#fbbf24}.toast.fade-out{animation:fadeOut .25s ease-in forwards}
+@keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
+@keyframes fadeOut{to{transform:translateX(120%);opacity:0}}
+.btn[disabled]{opacity:.5;cursor:wait}
 </style>
 </head>
 <body>
+<div id="_toast-container" aria-live="polite" aria-atomic="true"></div>
 <header>
   <div class="logo">EOS · ASEGURAMIENTO DE CALIDAD</div>
   <div style="display:flex;gap:10px;align-items:center">
@@ -751,6 +760,28 @@ function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
+// Toast notifications · audit zero-error · reemplazo de alert() bloqueante
+function toast(msg, type){
+  type = type || 'info';
+  var c = document.getElementById('_toast-container'); if(!c) return alert(msg);
+  var t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  t.onclick = function(){ t.classList.add('fade-out'); setTimeout(function(){ t.remove(); }, 250); };
+  c.appendChild(t);
+  setTimeout(function(){ t.classList.add('fade-out'); setTimeout(function(){ t.remove(); }, 250); },
+             type==='error' ? 6000 : 3500);
+}
+
+// withBusy: ejecuta async fn() con el botón deshabilitado · evita doble-click
+async function withBusy(btn, fn){
+  if(!btn || btn.disabled) return;
+  btn.disabled = true;
+  var prev = btn.textContent;
+  try { return await fn(); }
+  finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
+}
+
 var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
@@ -1126,14 +1157,14 @@ var _WORKFLOWS = {
 
 async function _postWorkflowAccion(modulo, id, accion, body){
   var cfg = _WORKFLOWS[modulo];
-  if(!cfg){ alert('módulo desconocido: '+modulo); return; }
+  if(!cfg){ toast('módulo desconocido: '+modulo, 'error'); return; }
   try{
     var r = await fetch('/api/aseguramiento/'+cfg.path+'/'+id+'/'+accion, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body),
     });
     var d = await r.json();
-    if(!d.ok){ alert('Error: '+(d.error||'?')); return; }
+    if(!d.ok){ toast('Error: '+(d.error||'?'), 'error'); return; }
     // Hook: cross-link desv→recall si el backend lo sugiere
     if(modulo === 'desviaciones' && accion === 'cerrar' && d.sugiere_recall){
       if(confirm('⚠ CAPA NO efectivo en desviación crítica.\n\n¿Iniciar recall ahora con datos pre-rellenados?')){
@@ -1142,8 +1173,9 @@ async function _postWorkflowAccion(modulo, id, accion, body){
         return;
       }
     }
+    toast('✓ '+accion+' OK', 'success');
     cfg.view(id); cfg.list();
-  }catch(e){ alert('Error red: '+e.message); }
+  }catch(e){ toast('Error red: '+e.message, 'error'); }
 }
 
 // Wrappers para compatibilidad (referencias en HTML inline)

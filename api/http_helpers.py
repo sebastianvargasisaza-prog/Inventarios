@@ -1,15 +1,14 @@
-"""HTTP helpers reutilizables · retries exponenciales con jitter.
+"""HTTP helpers + money validators reutilizables.
 
-Sebastián 2-may-2026 · audit zero-error · Día 3 ROADMAP.
+Sebastián 2-may-2026 · audit zero-error.
 
-Antes los call-sites a Shopify/Meta/GHL fallaban inmediato ante 429/5xx,
-sin reintentos. Una caída transitoria de 5s rompía el sync. Este helper
-reintenta hasta 3 veces con backoff exponencial (1s, 2s, 4s) + jitter
-aleatorio ±25%.
+- fetch_with_retry: retries exponenciales con jitter para integraciones.
+- validate_money: sanity check sobre montos antes de persistir.
 """
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from urllib import error as _urllib_error
@@ -60,3 +59,48 @@ def fetch_with_retry(req, *, timeout: int = 30, max_intentos: int = 3,
     if ultimo_error:
         raise ultimo_error
     raise RuntimeError('fetch_with_retry: sin intentos válidos')
+
+
+# ─── Money validators ─────────────────────────────────────────────────────
+
+# Cap razonable para evitar errores absurdos (1 billón COP = 1e12).
+# Si alguna OC genuinamente excede esto, ajustar después de revisar uso.
+MAX_MONTO_COP = 1_000_000_000_000  # 1B COP
+
+
+def validate_money(valor, *, allow_zero: bool = False, max_value: float = None,
+                    field_name: str = 'monto') -> tuple:
+    """Valida un valor monetario · sanity check antes de persistir.
+
+    Antes los endpoints aceptaban NaN/Infinity/negativos/valores absurdos
+    en `monto`/`valor_total`. Audit zero-error agregó esta validación.
+
+    Args:
+        valor: el valor a validar (puede ser str, int, float, None).
+        allow_zero: si False (default), rechaza 0 y negativos.
+        max_value: cap superior · default MAX_MONTO_COP.
+        field_name: nombre del campo para el error message.
+
+    Returns:
+        (valor_float, None) si OK · (None, dict_error) si inválido.
+    """
+    if max_value is None:
+        max_value = MAX_MONTO_COP
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None, {'error': f'{field_name} debe ser numérico',
+                      'codigo': 'MONTO_INVALIDO'}
+    if math.isnan(v) or math.isinf(v):
+        return None, {'error': f'{field_name} es NaN o Infinity',
+                      'codigo': 'MONTO_INVALIDO'}
+    if not allow_zero and v <= 0:
+        return None, {'error': f'{field_name} debe ser > 0',
+                      'codigo': 'MONTO_INVALIDO'}
+    if allow_zero and v < 0:
+        return None, {'error': f'{field_name} no puede ser negativo',
+                      'codigo': 'MONTO_INVALIDO'}
+    if v > max_value:
+        return None, {'error': f'{field_name}={v:.0f} excede el cap razonable ({max_value:.0f})',
+                      'codigo': 'MONTO_FUERA_DE_RANGO'}
+    return v, None
