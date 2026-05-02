@@ -10,6 +10,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+from audit_helpers import audit_log
+from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -60,6 +62,11 @@ def api_maquila_prospectos():
         empresa = (d.get('empresa') or '').strip()
         if not empresa:
             return jsonify({'error':'Empresa requerida'}), 400
+        # Validar valor_estimado · audit zero-error
+        valor_est, err = validate_money(d.get('valor_estimado', 0), allow_zero=True,
+                                          field_name='valor_estimado')
+        if err:
+            return jsonify(err), 400
         c.execute('''INSERT INTO maquila_prospectos
                      (empresa,contacto,email,whatsapp,categoria_producto,etapa,
                       observaciones,valor_estimado_lote,nivel_servicio,
@@ -68,13 +75,25 @@ def api_maquila_prospectos():
                   (empresa, d.get('contacto',''), d.get('email',''),
                    d.get('telefono',''), d.get('producto_tipo',''),
                    d.get('etapa','Contacto'), d.get('notas',''),
-                   float(d.get('valor_estimado',0)),
+                   valor_est,
                    d.get('nivel_servicio',''),
                    d.get('kam_asignado','Luz'),
                    1 if d.get('es_incubacion') else 0,
                    d.get('contacto_referido',''),
                    session.get('compras_user') or d.get('operador','sistema')))
-        conn.commit(); pid = c.lastrowid
+        pid = c.lastrowid
+        try:
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='CREAR_PROSPECTO_MAQUILA',
+                      tabla='maquila_prospectos', registro_id=pid,
+                      despues={'empresa': empresa[:120],
+                                'etapa': d.get('etapa','Contacto'),
+                                'valor_estimado': valor_est,
+                                'kam': d.get('kam_asignado','Luz')},
+                      detalle=f"Creó prospecto maquila · {empresa}")
+        except Exception:
+            pass
+        conn.commit()
         return jsonify({'id': pid}), 201
     c.execute('''SELECT id, empresa, contacto, email,
                         COALESCE(whatsapp,'') as telefono,
@@ -123,16 +142,37 @@ def api_maquila_ordenes():
         producto = (d.get('producto') or '').strip()
         if not empresa or not producto:
             return jsonify({'error':'Empresa y producto requeridos'}), 400
+        # Validar batch_size + valor_total
+        batch_kg, err = validate_money(d.get('batch_size_kg', 0), allow_zero=True,
+                                         max_value=10_000, field_name='batch_size_kg')
+        if err:
+            return jsonify(err), 400
+        valor_total, err = validate_money(d.get('valor_total', 0), allow_zero=True,
+                                            field_name='valor_total')
+        if err:
+            return jsonify(err), 400
         c.execute('''INSERT INTO maquila_ordenes
                      (cliente_nombre,producto,lote_kg,fecha_orden,
                       fecha_entrega_est,estado,precio_lote,observaciones,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)''',
-                  (empresa, producto, float(d.get('batch_size_kg',0)),
+                  (empresa, producto, batch_kg,
                    d.get('fecha_inicio',''), d.get('fecha_entrega',''),
-                   d.get('estado','Cotizacion'), float(d.get('valor_total',0)),
+                   d.get('estado','Cotizacion'), valor_total,
                    d.get('observaciones',''),
                    session.get('compras_user') or d.get('operador','sistema')))
-        conn.commit(); oid=c.lastrowid
+        oid = c.lastrowid
+        try:
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='CREAR_ORDEN_MAQUILA',
+                      tabla='maquila_ordenes', registro_id=oid,
+                      despues={'cliente': empresa[:120], 'producto': producto[:120],
+                                'batch_kg': batch_kg, 'valor_total': valor_total,
+                                'estado': d.get('estado','Cotizacion')},
+                      detalle=f"Orden maquila · {empresa} · {producto} · "
+                              f"{batch_kg:.0f}kg · ${valor_total/1_000_000:.1f}M")
+        except Exception:
+            pass
+        conn.commit()
         return jsonify({'id': oid}), 201
     c.execute('''SELECT id,
                         COALESCE(cliente_nombre,'') as empresa,
