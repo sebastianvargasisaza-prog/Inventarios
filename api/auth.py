@@ -1,5 +1,6 @@
 # auth.py — rate limiting, hooks y utilidades de seguridad
 # Fase B refactor: extraído de index.py
+import os
 import sqlite3
 import time
 from datetime import datetime
