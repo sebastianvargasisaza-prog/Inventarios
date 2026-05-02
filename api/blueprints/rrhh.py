@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, RRHH_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
+from audit_helpers import audit_log
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -441,13 +442,28 @@ def rrhh_comprobante(periodo, eid):
 
 @bp.route("/api/rrhh/nomina/<periodo>/aprobar", methods=["PATCH"])
 def rrhh_nomina_aprobar(periodo):
+    """Aprueba nómina del período · solo admins · auditado para trail laboral."""
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return jsonify({"error": "Sin permiso"}), 403
     conn = get_db(); c = conn.cursor()
+    # Capturar totales del período antes de cambiar estado (para audit)
+    info = c.execute("""SELECT COUNT(*), COALESCE(SUM(salario_neto),0)
+                        FROM nomina_registros WHERE periodo=?""", (periodo,)).fetchone()
+    n_registros, total_neto = info[0], float(info[1] or 0)
+    if n_registros == 0:
+        return jsonify({"error": "No hay registros para este período"}), 404
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     c.execute("UPDATE nomina_registros SET estado='Aprobada',aprobado_por=?,aprobado_en=? WHERE periodo=?", (u, ts, periodo))
-    updated = c.rowcount; conn.commit()
+    updated = c.rowcount
+    audit_log(c, usuario=u, accion='APROBAR_NOMINA', tabla='nomina_registros',
+              registro_id=periodo,
+              despues={'estado': 'Aprobada', 'aprobado_por': u, 'aprobado_en': ts,
+                        'registros_aprobados': updated,
+                        'total_neto_periodo': total_neto},
+              detalle=f"Aprobó nómina {periodo} · {updated} empleados · "
+                      f"total neto {total_neto:.0f}")
+    conn.commit()
     return jsonify({"ok": True, "periodo": periodo, "aprobados": updated, "por": u})
 
 @bp.route("/api/rrhh/nomina/<periodo>/pagar", methods=["PATCH"])
@@ -507,6 +523,13 @@ def rrhh_nomina_pagar(periodo):
         # No bloquear el flujo de pago si el espejo falla
         pass
 
+    audit_log(c, usuario=u, accion='PAGAR_NOMINA', tabla='nomina_registros',
+              registro_id=periodo,
+              despues={'estado': 'Pagada', 'pagado_por': u, 'pagado_en': ts,
+                        'registros_pagados': pagados,
+                        'total_neto': locals().get('total_devengado'),
+                        'egresos_flujo_creados': egresos_creados},
+              detalle=f"Marcó nómina {periodo} como Pagada · {pagados} empleados")
     conn.commit()
     return jsonify({"ok": True, "periodo": periodo, "pagados": pagados,
                     "por": u, "fecha": ts,

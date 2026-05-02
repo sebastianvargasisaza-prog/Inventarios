@@ -353,13 +353,25 @@ def cont_facturas_list():
 
 @bp.route('/api/contabilidad/facturas/generar', methods=['POST'])
 def cont_facturas_generar():
+    """Genera factura · operación regulada DIAN (Decreto 358/2020).
+
+    Audita CREAR_FACTURA con cliente, total, items count para trazabilidad
+    obligatoria del libro fiscal.
+    """
     if not _auth():
         return jsonify({'error': 'No autorizado'}), 401
     data = request.get_json() or {}
 
     numero_pedido = data.get('numero_pedido', '')
     empresa = data.get('empresa', 'ANIMUS')
-    iva_pct = float(data.get('iva_pct', 0))
+    # Validar iva_pct sea un número en rango razonable (0-50%)
+    try:
+        iva_pct = float(data.get('iva_pct', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'iva_pct inválido', 'codigo': 'IVA_INVALIDO'}), 400
+    if iva_pct < 0 or iva_pct > 50:
+        return jsonify({'error': 'iva_pct debe estar entre 0 y 50',
+                        'codigo': 'IVA_FUERA_DE_RANGO'}), 400
     notas = data.get('notas', '')
     fecha_venc = data.get('fecha_vencimiento', '')
     items_manual = data.get('items', [])  # si no viene de pedido
@@ -389,10 +401,17 @@ def cont_facturas_generar():
 
     # Calcular totales
     subtotal = sum(it.get('subtotal', 0) or (it.get('cantidad', 0) * it.get('precio_unitario', 0)) for it in items_src)
-    descuento = float(data.get('descuento', 0))
+    try:
+        descuento = float(data.get('descuento', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'descuento inválido'}), 400
     base_iva = subtotal - descuento
     iva_valor = round(base_iva * iva_pct / 100, 2)
     total = base_iva + iva_valor
+    # Validar total final (sanity check antes de persistir factura DIAN)
+    total_validado, err = validate_money(total, allow_zero=False, field_name='total_factura')
+    if err:
+        return jsonify(err), 400
 
     numero = _next_numero(conn, empresa)
     hoy = date.today().isoformat()
@@ -416,6 +435,20 @@ def cont_facturas_generar():
         """, (numero, it.get('sku',''), it.get('descripcion',''),
               it.get('cantidad', 0), it.get('precio_unitario', 0),
               it.get('descuento_pct', 0), sub))
+    # Audit log DIAN · creación de factura es operación financiera regulada
+    try:
+        audit_log(conn.cursor(), usuario=_user(), accion='CREAR_FACTURA',
+                  tabla='facturas', registro_id=numero,
+                  despues={'cliente_nombre': cliente_nombre[:200],
+                            'cliente_nit': cliente_nit[:30],
+                            'empresa': empresa, 'subtotal': subtotal,
+                            'iva_pct': iva_pct, 'iva_valor': iva_valor,
+                            'total': total, 'items_count': len(items_src),
+                            'numero_pedido': numero_pedido or None},
+                  detalle=f"Generó factura {numero} · {empresa} · "
+                          f"cliente {cliente_nombre or '—'} · total {total:.0f}")
+    except Exception as e:
+        log.warning('audit_log CREAR_FACTURA fallo: %s', e)
     conn.commit()
 
     return jsonify({'ok': True, 'numero': numero, 'total': total})

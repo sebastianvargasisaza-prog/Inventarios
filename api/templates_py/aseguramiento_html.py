@@ -780,6 +780,12 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
             <option value="ACTUALIZAR_PRECIO_MP">ACTUALIZAR_PRECIO_MP</option>
             <option value="ANULAR_MOV_MEE">ANULAR_MOV_MEE</option>
             <option value="AJUSTAR_STOCK_MEE">AJUSTAR_STOCK_MEE</option>
+            <option disabled>── Financiero / DIAN / Laboral ──</option>
+            <option value="CREAR_FACTURA">CREAR_FACTURA</option>
+            <option value="FACTURA_PAGO">FACTURA_PAGO</option>
+            <option value="FACTURA_ANULAR">FACTURA_ANULAR</option>
+            <option value="APROBAR_NOMINA">APROBAR_NOMINA</option>
+            <option value="PAGAR_NOMINA">PAGAR_NOMINA</option>
           </select>
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>
