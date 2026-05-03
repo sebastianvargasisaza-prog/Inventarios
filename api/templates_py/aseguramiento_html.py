@@ -244,6 +244,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="sgd-tbody"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-sgd"></div>
   </div>
 </div>
 
@@ -292,7 +293,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card" style="margin-bottom:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Lista</div>
-      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('desv', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
         <select id="desv-f-estado" onchange="loadDesviaciones()">
           <option value="">Todos estados</option>
           <option value="detectada">Detectadas</option>
@@ -319,6 +321,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="desv-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-desv"></div>
   </div>
 </div>
 
@@ -381,7 +384,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Solicitudes de cambio</div>
-      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('cambios', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
         <select id="cam-f-estado" onchange="loadCambios()">
           <option value="">Todos estados</option>
           <option value="solicitado">Solicitado</option>
@@ -407,6 +411,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="cam-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-cambios"></div>
   </div>
 </div>
 
@@ -476,7 +481,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Quejas y reclamos</div>
-      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('quejas', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
         <select id="qc-f-estado" onchange="loadQuejas()">
           <option value="">Todos estados</option>
           <option value="nueva">Nueva</option>
@@ -503,6 +509,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="qc-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-quejas"></div>
   </div>
 </div>
 
@@ -605,7 +612,8 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
       <div class="card-title" style="margin:0">Recalls</div>
-      <div style="display:flex;gap:6px;align-items:center;font-size:12px">
+      <div style="display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('recalls', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
         <select id="rcl-f-estado" onchange="loadRecalls()">
           <option value="">Todos estados</option>
           <option value="iniciado">Iniciado</option>
@@ -633,6 +641,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="rcl-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-recalls"></div>
   </div>
 </div>
 
@@ -816,9 +825,10 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         </div>
         <div class="form-group"><label>Usuario</label><input id="rep-at-usuario" placeholder="laura, sebastian..."></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="repAuditCargar()">Consultar</button>
         <button class="btn btn-ghost btn-sm" onclick="repAuditExport()">📥 Descargar CSV</button>
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('audittrail', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
         <span id="rep-at-info" style="font-size:0.85em;color:#64748b"></span>
       </div>
       <div style="overflow-x:auto;max-height:60vh;overflow-y:auto">
@@ -827,6 +837,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
           <tbody id="rep-at-tbody"><tr><td colspan="7" class="empty">Click "Consultar" para cargar audit log</td></tr></tbody>
         </table>
       </div>
+      <div id="pg-audittrail"></div>
     </div>
   </div>
 
@@ -859,7 +870,10 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <!-- CONFLICTOS SGD -->
 <div id="tab-conf" class="pane">
   <div class="card">
-    <div class="card-title">&#x26A0;&#xFE0F; Conflictos detectados (códigos repetidos con temas distintos)</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <span class="card-title" style="margin:0">&#x26A0;&#xFE0F; Conflictos detectados (códigos repetidos con temas distintos)</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarTabla('conf', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+    </div>
     <div style="font-size:0.85em;color:#64748b;margin-bottom:8px">Estos códigos del SGD físico aparecen con temas diferentes en los archivos · resolver eligiendo qué tema queda con el código original.</div>
     <div style="overflow-x:auto">
       <table>
@@ -867,6 +881,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <tbody id="conf-tbody"><tr><td colspan="5" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
+    <div id="pg-conf"></div>
   </div>
 </div>
 
@@ -924,6 +939,107 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ── CSRF defense-in-depth ──────────────────────────────────────────────
+// Origin check del backend ya bloquea CSRF cross-origin. Este helper
+// agrega X-CSRF-Token en cada POST/PATCH/DELETE como segunda capa.
+// Sebastian 3-may-2026.
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+// Pre-fetch CSRF token al cargar para garantizar el cookie
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Filtros + Paginacion (client-side) ─────────────────────────────────
+// Estado por tabla con campos searchable. Sebastian 3-may-2026.
+var TBL_STATE = {
+  sgd:        {q: '', page: 1, size: 25, fields: ['codigo','titulo','area','tipo_doc','estado','elaborado_por']},
+  cap:        {q: '', page: 1, size: 25, fields: ['sgd_codigo','sgd_titulo','usuario_username','estado']},
+  miscap:     {q: '', page: 1, size: 25, fields: ['sgd_codigo','sgd_titulo','estado']},
+  desv:       {q: '', page: 1, size: 25, fields: ['codigo','tipo','origen','estado','severidad','descripcion']},
+  cambios:    {q: '', page: 1, size: 25, fields: ['codigo','titulo','tipo','estado','solicitante']},
+  quejas:     {q: '', page: 1, size: 25, fields: ['codigo','cliente_nombre','tipo','estado','severidad']},
+  recalls:    {q: '', page: 1, size: 25, fields: ['codigo','producto','clase','estado','motivo']},
+  audittrail: {q: '', page: 1, size: 50, fields: ['accion','tabla','usuario','registro_id','detalle']},
+  conf:       {q: '', page: 1, size: 25, fields: ['codigo_actual','codigo_nuevo','tipo_conflicto','estado']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {
+    items: data.slice((p-1)*size, p*size),
+    total: total, totalPages: totalPages, page: p,
+  };
+}
+function _renderPag(tabla, info, refreshFn) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 26) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#94a3b8;">';
+  html += '<span>Pág ' + info.page + '/' + info.totalPages + ' · ' + info.total + ' total</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',-1)"' +
+          (info.page <= 1 ? ' disabled' : '') + '>&larr;</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',1)"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
+  html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
+          'style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+var _PAG_REFRESH = {
+  sgd: function(){ if (window.loadSGD) loadSGD(); },
+  cap: function(){ if (window.loadCapacitaciones) loadCapacitaciones(); },
+  miscap: function(){ if (window.loadMisCapacitaciones) loadMisCapacitaciones(); },
+  desv: function(){ if (window.loadDesviaciones) loadDesviaciones(); },
+  cambios: function(){ if (window.loadCambios) loadCambios(); },
+  quejas: function(){ if (window.loadQuejas) loadQuejas(); },
+  recalls: function(){ if (window.loadRecalls) loadRecalls(); },
+  audittrail: function(){ if (window.repAuditCargar) repAuditCargar(); },
+  conf: function(){ if (window.loadConflictos) loadConflictos(); },
+};
+function cambiarPag(tabla, delta){
+  TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta);
+  if (_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla]();
+}
+function cambiarPagSize(tabla, valor){
+  TBL_STATE[tabla].size = parseInt(valor, 10) || 25;
+  TBL_STATE[tabla].page = 1;
+  if (_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla]();
+}
+function buscarTabla(tabla, valor){
+  TBL_STATE[tabla].q = valor || '';
+  TBL_STATE[tabla].page = 1;
+  if (_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla]();
+}
 
 // Toast notifications · audit zero-error · reemplazo de alert() bloqueante
 function toast(msg, type){
@@ -1095,8 +1211,18 @@ async function loadDesviaciones(){
     document.getElementById('desv-kp-inv').textContent = k.investigando || 0;
     document.getElementById('desv-kp-cer').textContent = k.cerradas_30d || 0;
     var tb = document.getElementById('desv-tbody');
-    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="9" class="empty">Sin desviaciones</td></tr>'; return; }
-    tb.innerHTML = d.items.map(function(it){
+    var s = TBL_STATE.desv;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-desv');
+    if(!info.items.length){
+      tb.innerHTML = '<tr><td colspan="9" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin desviaciones') + '</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if (pgEl) pgEl.innerHTML = _renderPag('desv', info);
+    tb.innerHTML = info.items.map(function(it){
       var clasifBadge = it.clasificacion === 'critica' ? '<span class="badge badge-venc">crítica</span>'
         : it.clasificacion === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.clasificacion === 'menor' ? '<span class="badge badge-bor">menor</span>'
@@ -1148,7 +1274,7 @@ async function guardarDesviacion(){
   }
   msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/desviaciones', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/desviaciones', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
@@ -1325,10 +1451,7 @@ async function _postWorkflowAccion(modulo, id, accion, body){
   var cfg = _WORKFLOWS[modulo];
   if(!cfg){ toast('módulo desconocido: '+modulo, 'error'); return; }
   try{
-    var r = await fetch('/api/aseguramiento/'+cfg.path+'/'+id+'/'+accion, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
+    var r = await fetch('/api/aseguramiento/'+cfg.path+'/'+id+'/'+accion, _fetchOpts('POST', body));
     var d = await r.json();
     if(!d.ok){ toast('Error: '+(d.error||'?'), 'error'); return; }
     // Hook: cross-link desv→recall si el backend lo sugiere
@@ -1397,8 +1520,18 @@ async function loadCambios(){
     document.getElementById('cam-kp-inv').textContent = k.requieren_invima || 0;
     document.getElementById('cam-kp-cer').textContent = k.cerrados_30d || 0;
     var tb = document.getElementById('cam-tbody');
-    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="9" class="empty">Sin solicitudes de cambio</td></tr>'; return; }
-    tb.innerHTML = d.items.map(function(it){
+    var s = TBL_STATE.cambios;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-cambios');
+    if(!info.items.length){
+      tb.innerHTML = '<tr><td colspan="9" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin solicitudes de cambio') + '</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if (pgEl) pgEl.innerHTML = _renderPag('cambios', info);
+    tb.innerHTML = info.items.map(function(it){
       var sevBadge = it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
         : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
@@ -1454,7 +1587,7 @@ async function guardarCambio(){
   }
   msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/cambios', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/cambios', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' creada</span>';
@@ -1667,8 +1800,18 @@ async function loadQuejas(){
     document.getElementById('qc-kp-crit').textContent = k.criticas_abiertas || 0;
     document.getElementById('qc-kp-cer').textContent = k.cerradas_30d || 0;
     var tb = document.getElementById('qc-tbody');
-    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="10" class="empty">Sin quejas</td></tr>'; return; }
-    tb.innerHTML = d.items.map(function(it){
+    var s = TBL_STATE.quejas;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-quejas');
+    if(!info.items.length){
+      tb.innerHTML = '<tr><td colspan="10" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin quejas') + '</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if (pgEl) pgEl.innerHTML = _renderPag('quejas', info);
+    tb.innerHTML = info.items.map(function(it){
       var sevBadge = it.severidad === 'critica' ? '<span class="badge badge-venc">crítica</span>'
         : it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
@@ -1732,7 +1875,7 @@ async function guardarQueja(){
   }
   msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/quejas', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/quejas', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' registrada</span>';
@@ -1867,11 +2010,8 @@ async function triarQueja(id){
   if(!desc || desc.length < 10){ alert('Análisis ≥10 chars'); return; }
   // Llamada directa para capturar respuesta con desviacion_codigo
   try{
-    var r = await fetch('/api/aseguramiento/quejas/'+id+'/triaje', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({severidad: sev, triaje_descripcion: desc,
-                              requiere_desviacion: desv, requiere_recall: recall}),
-    });
+    var r = await fetch('/api/aseguramiento/quejas/'+id+'/triaje', _fetchOpts('POST', {severidad: sev, triaje_descripcion: desc,
+                              requiere_desviacion: desv, requiere_recall: recall}));
     var d = await r.json();
     if(d.ok){
       if(d.desviacion_codigo){
@@ -1926,8 +2066,18 @@ async function loadRecalls(){
     document.getElementById('rcl-kp-rec').textContent = k.en_recoleccion || 0;
     document.getElementById('rcl-kp-cer').textContent = k.cerrados_30d || 0;
     var tb = document.getElementById('rcl-tbody');
-    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="10" class="empty">Sin recalls (lo cual es bueno 🙏)</td></tr>'; return; }
-    tb.innerHTML = d.items.map(function(it){
+    var s = TBL_STATE.recalls;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-recalls');
+    if(!info.items.length){
+      tb.innerHTML = '<tr><td colspan="10" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin recalls (lo cual es bueno 🙏)') + '</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if (pgEl) pgEl.innerHTML = _renderPag('recalls', info);
+    tb.innerHTML = info.items.map(function(it){
       var claseBadge = it.clase_recall === 'clase_I' ? '<span class="badge badge-venc">CLASE I</span>'
         : it.clase_recall === 'clase_II' ? '<span class="badge badge-prox">Clase II</span>'
         : it.clase_recall === 'clase_III' ? '<span class="badge badge-bor">Clase III</span>'
@@ -1985,7 +2135,7 @@ async function guardarRecall(){
   if(!body.motivo || body.motivo.length < 20){ msg.innerHTML = '<span style="color:#ef4444">Motivo ≥20 chars</span>'; return; }
   msg.innerHTML = '<span style="color:#64748b">Iniciando recall...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/recalls', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/recalls', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.codigo)+' iniciado</span>';
@@ -2269,11 +2419,18 @@ async function loadSGD(){
     var d = await r.json();
     document.getElementById('sgd-resumen').textContent = (d.total||0) + ' documentos';
     var tb = document.getElementById('sgd-tbody');
-    if(!d.items || d.items.length===0){
+    var s = TBL_STATE.sgd;
+    // SGD ya filtra server-side via sgd-q. Solo paginar el resultado.
+    var info = _paginar(d.items || [], s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-sgd');
+    if(!info.items.length){
       tb.innerHTML = '<tr><td colspan="7" class="empty">Sin documentos</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
       return;
     }
-    tb.innerHTML = d.items.map(function(it){
+    if (pgEl) pgEl.innerHTML = _renderPag('sgd', info);
+    tb.innerHTML = info.items.map(function(it){
       var bcls = 'badge-vig';
       if(it.estado_efectivo==='vencido') bcls='badge-venc';
       else if(it.estado_efectivo==='vence_pronto') bcls='badge-prox';
@@ -2370,7 +2527,7 @@ async function guardarSGD(){
   if(!body.codigo || !body.titulo){ msg.innerHTML='<span style="color:#ef4444">Código y título requeridos</span>'; return; }
   msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/sgd', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/sgd', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+_esc(d.accion||'guardado')+'</span>';
@@ -2394,7 +2551,7 @@ async function asignarCap(){
   }
   msg.innerHTML = '<span style="color:#64748b">Asignando...</span>';
   try{
-    var r = await fetch('/api/aseguramiento/capacitaciones/asignar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/aseguramiento/capacitaciones/asignar', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d">&#x2705; '+d.asignados+' asignaciones · '+d.saltados_ya_existian+' ya existían</span>';
@@ -2453,7 +2610,7 @@ async function firmarCap(codigo, version, pdfDisponible){
   }
   if(!confirm(msg)) return;
   try{
-    var r = await fetch('/api/aseguramiento/capacitaciones/firmar', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({sgd_codigo: codigo, sgd_version: version})});
+    var r = await fetch('/api/aseguramiento/capacitaciones/firmar', _fetchOpts('POST', {sgd_codigo: codigo, sgd_version: version}));
     var d = await r.json();
     if(d.ok){ alert('Firmada con hash '+d.firma_hash); loadMisCapacitaciones(); }
     else alert('Error: '+(d.error||'?'));
@@ -2466,10 +2623,7 @@ async function editarPdfSGD(codigo, urlActual){
   url = (url || '').trim();
   if(url && !url.match(/^https?:\/\//)){ alert('URL debe empezar con http:// o https://'); return; }
   try{
-    var r = await fetch('/api/aseguramiento/sgd/'+encodeURIComponent(codigo)+'/pdf', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({archivo_pdf_url: url}),
-    });
+    var r = await fetch('/api/aseguramiento/sgd/'+encodeURIComponent(codigo)+'/pdf', _fetchOpts('POST', {archivo_pdf_url: url}));
     var d = await r.json();
     if(d.ok){ alert(url ? '📎 PDF actualizado' : '📎 PDF removido'); loadSGD(); }
     else alert('Error: '+(d.error||'?'));
@@ -2522,13 +2676,20 @@ async function repAuditCargar(){
     var r = await fetch(url);
     if(r.status === 403){ tb.innerHTML = '<tr><td colspan="7" class="empty">Acceso restringido a Calidad/Admin</td></tr>'; return; }
     var d = await r.json();
-    if(!d.items || !d.items.length){
-      tb.innerHTML = '<tr><td colspan="7" class="empty">Sin registros para los filtros</td></tr>';
+    var s = TBL_STATE.audittrail;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var pi = _paginar(filtrado, s.page, s.size);
+    s.page = pi.page;
+    var pgEl = document.getElementById('pg-audittrail');
+    if(!pi.items.length){
+      tb.innerHTML = '<tr><td colspan="7" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin registros para los filtros') + '</td></tr>';
       if(info) info.textContent = 'Total: 0';
+      if (pgEl) pgEl.innerHTML = '';
       return;
     }
     if(info) info.textContent = 'Total: '+(d.total||d.items.length)+' · Rango '+(d.desde||'')+' → '+(d.hasta||'');
-    tb.innerHTML = d.items.map(function(it){
+    if (pgEl) pgEl.innerHTML = _renderPag('audittrail', pi);
+    tb.innerHTML = pi.items.map(function(it){
       var det = it.detalle ? String(it.detalle).slice(0,80) : '';
       return '<tr>'
         +'<td style="white-space:nowrap;font-size:0.82em">'+_esc((it.fecha||'').slice(0,19))+'</td>'
@@ -2672,8 +2833,18 @@ async function loadConflictos(){
   try{
     var r = await fetch('/api/aseguramiento/sgd/conflictos');
     var d = await r.json();
-    if(!d.items || !d.items.length){ tb.innerHTML = '<tr><td colspan="5" class="empty">Sin conflictos detectados</td></tr>'; return; }
-    tb.innerHTML = d.items.map(function(it){
+    var s = TBL_STATE.conf;
+    var filtrado = _filtrar(d.items || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-conf');
+    if(!info.items.length){
+      tb.innerHTML = '<tr><td colspan="5" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin conflictos detectados') + '</td></tr>';
+      if (pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if (pgEl) pgEl.innerHTML = _renderPag('conf', info);
+    tb.innerHTML = info.items.map(function(it){
       var btn = it.estado === 'pendiente'
         ? '<button class="btn btn-ghost btn-sm" onclick="resolverConf('+it.id+')">Marcar resuelto</button>'
         : '<span style="color:#94a3b8">'+_esc(it.estado)+'</span>';
@@ -2692,7 +2863,7 @@ async function resolverConf(id){
   var resolucion = prompt('Describe cómo se resolvió (mín 10 chars):');
   if(!resolucion || resolucion.length < 10) return;
   try{
-    var r = await fetch('/api/aseguramiento/sgd/conflictos/'+id+'/resolver', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({resolucion: resolucion})});
+    var r = await fetch('/api/aseguramiento/sgd/conflictos/'+id+'/resolver', _fetchOpts('POST', {resolucion: resolucion}));
     var d = await r.json();
     if(d.ok){ loadConflictos(); }
     else alert('Error: '+(d.error||'?'));
